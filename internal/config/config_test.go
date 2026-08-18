@@ -99,6 +99,19 @@ func TestMissingFileEnvOnly(t *testing.T) {
 	}
 }
 
+func TestFlagOverrideBeatsEnv(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("GEMAGENT_PROJECT", "env-project")
+	t.Setenv("GEMAGENT_MODEL", "env-model")
+	cfg, err := LoadWithOverrides(filepath.Join(t.TempDir(), "nonexistent.toml"), Overrides{Model: "flag-model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Model.Name != "flag-model" {
+		t.Errorf("flag should beat env: got %q", cfg.Model.Name)
+	}
+}
+
 func TestUnknownKeyIsError(t *testing.T) {
 	clearEnv(t)
 	path := writeConfig(t, `

@@ -61,12 +61,23 @@ func defaults() Config {
 	}
 }
 
-// Load reads the config file at path (missing file is not an error — env
-// vars alone can carry a complete config), applies env overrides, and
-// validates. Unknown keys in the file are an error (strict decode): a typo
-// like [modle] silently ignored would surface as a confusing runtime
-// failure far from its cause.
+// Overrides carries CLI-flag values, which sit at the top of the
+// precedence order: flags > GEMAGENT_* > GOOGLE_CLOUD_* > file > defaults.
+type Overrides struct {
+	Model string
+}
+
+// Load reads the config with no CLI overrides.
 func Load(path string) (*Config, error) {
+	return LoadWithOverrides(path, Overrides{})
+}
+
+// LoadWithOverrides reads the config file at path (missing file is not an
+// error — env vars alone can carry a complete config), applies env and
+// flag overrides, and validates. Unknown keys in the file are an error
+// (strict decode): a typo like [modle] silently ignored would surface as
+// a confusing runtime failure far from its cause.
+func LoadWithOverrides(path string, ov Overrides) (*Config, error) {
 	cfg := defaults()
 
 	if _, err := os.Stat(path); err == nil {
@@ -86,6 +97,10 @@ func Load(path string) (*Config, error) {
 	}
 
 	applyEnv(&cfg)
+
+	if ov.Model != "" {
+		cfg.Model.Name = ov.Model
+	}
 
 	if err := cfg.validate(); err != nil {
 		return nil, err
