@@ -88,6 +88,29 @@ func TestMergeEmptySides(t *testing.T) {
 	}
 }
 
+// TestExampleMCPConfigLoads pins the shipped template: a stale example
+// would only fail in a user's hands.
+func TestExampleMCPConfigLoads(t *testing.T) {
+	path := filepath.Join("..", "..", "mcp.example.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("mcp.example.json is missing: %v", err)
+	}
+	servers, skipped, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("shipped MCP template does not parse: %v", err)
+	}
+	if len(servers) == 0 {
+		t.Error("template should define at least one usable server")
+	}
+	if len(skipped) != 0 {
+		t.Errorf("template entries should all be usable, skipped: %v", skipped)
+	}
+	// The documentation comment must not become a phantom server.
+	if _, ok := servers["_comment"]; ok {
+		t.Error("_comment leaked into the server list")
+	}
+}
+
 func TestLoadConfigMissingFileIsEmpty(t *testing.T) {
 	servers, skipped, err := LoadConfig(filepath.Join(t.TempDir(), ".mcp.json"))
 	if err != nil || len(servers) != 0 || skipped != nil {

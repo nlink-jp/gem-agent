@@ -189,6 +189,14 @@ make test
 
 ## 設定
 
+リポジトリ同梱のテンプレートから始められます:
+
+```sh
+mkdir -p ~/.config/gem-agent
+cp config.example.toml ~/.config/gem-agent/config.toml
+cp mcp.example.json    ~/.config/gem-agent/mcp.json   # 任意: MCP サーバー
+```
+
 `~/.config/gem-agent/config.toml`:
 
 ```toml

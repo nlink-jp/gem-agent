@@ -1,0 +1,61 @@
+# gem-agent configuration
+# Copy to ~/.config/gem-agent/config.toml and adjust values.
+#
+# Precedence: command-line flags > GEMAGENT_* > GOOGLE_CLOUD_* > this
+# file > built-in defaults. Unknown keys are rejected, so a typo fails
+# loudly at startup instead of being silently ignored.
+
+[gcp]
+# Google Cloud project with Vertex AI enabled. Required.
+# Also settable via GEMAGENT_PROJECT or GOOGLE_CLOUD_PROJECT.
+project = "your-project-id"
+
+# Vertex AI endpoint location. "global" is the default and is required
+# for the Gemini 3 family — regional endpoints return 404 for those
+# models. Use a region (e.g. "us-central1") only for Gemini 2.5 models.
+location = "global"
+
+[model]
+# Gemini model ID. Required, and deliberately without a built-in
+# default: model IDs churn, and a stale hardcoded one fails at runtime.
+name = "gemini-3.7-flash"
+
+# Context window shown in the status line. Optional — Vertex does not
+# report inputTokenLimit, so gem-agent falls back to the Gemini-family
+# 1M estimate (displayed as "~1.0M"). Set this for an exact figure.
+#context_window = 1048576
+
+[sandbox]
+# Wrap shell_exec in macOS sandbox-exec, confining file writes to the
+# project directory (ADR-0001 defense-in-depth). Leave enabled unless
+# you are debugging the sandbox itself.
+enabled = true
+
+[agent]
+# Maximum model rounds in one turn before giving up (a runaway
+# tool-calling loop backstop).
+max_turns = 50
+
+# Per-command timeout for shell_exec, in seconds.
+shell_timeout_sec = 120
+
+# Start sessions with auto-approve on (ADR-0004). Off by default:
+# weakening the approval gate should be a deliberate choice. Toggle at
+# runtime with shift+tab or /auto regardless of this setting.
+auto_approve = false
+
+[mcp]
+# Connect MCP servers declared in ~/.config/gem-agent/mcp.json (global)
+# and <project>/.mcp.json (project; wins name collisions). Both files
+# use the Claude Code format — see mcp.example.json.
+enabled = true
+
+# Per-call timeout for MCP tools, in seconds. On timeout the server
+# child is killed and respawned on the next call (MCP has no cancel).
+call_timeout_sec = 60
+
+[tui]
+# Interactive UI theme: "auto" detects the terminal background at
+# startup, "dark"/"light" force it when detection guesses wrong, and
+# "plain" disables all styling for terminal themes that fight colors.
+theme = "auto"

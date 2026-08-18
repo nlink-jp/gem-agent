@@ -2,6 +2,15 @@
 
 ## [0.1.0] - Unreleased
 
+### Added — shipped config templates (operator feedback)
+
+- `config.example.toml` (every key, its default, and why it exists) and
+  `mcp.example.json` (both scopes, stdio, `${VAR}` expansion), following
+  the org convention. Loader tests parse both and compare the template
+  values against the built-in defaults, so a drifted template fails in
+  CI-less development rather than in a user's hands; a second test keeps
+  environment-specific values and credential-shaped tokens out
+
 ### Added — @-references to files and directories (operator feedback)
 
 - `@path` in a message attaches that project file (or a directory

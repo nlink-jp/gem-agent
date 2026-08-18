@@ -26,6 +26,8 @@ Version is injected via `-X main.version` from `git describe` — never edit the
 ## Structure
 
 ```
+config.example.toml  shipped config template (pinned by a loader test)
+mcp.example.json     shipped MCP server template (pinned by a loader test)
 main.go            entry point (package main, calls cmd.Execute(version))
 cmd/               cobra root command, REPL loop, wiring, system prompt
 internal/config/   strict-decode TOML + env/flag precedence
@@ -73,6 +75,10 @@ docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
 - **Never write from the MCP read loop** — a blocking write while the peer
   is not reading deadlocks both directions (internal/mcp refuses server
   requests from a goroutine; caught by the pipe-based tests).
+- **A new config key means updating `config.example.toml`** — strict
+  decode makes a stale template a hard startup error for users, so the
+  loader tests parse the shipped templates and compare their values
+  against the built-in defaults. Same for `mcp.example.json`.
 - **Modifier+Enter is not a key you can rely on** — Shift+Enter always,
   and Option+Enter unless the terminal sends Meta, arrive as a plain CR
   that is byte-identical to submit. Any "insert newline" affordance must

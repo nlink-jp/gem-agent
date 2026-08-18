@@ -1,0 +1,28 @@
+{
+  "_comment": [
+    "MCP server list in Claude Code .mcp.json format — entries can be copied",
+    "verbatim between the two scopes and from an existing Claude Code setup.",
+    "Global scope:  ~/.config/gem-agent/mcp.json  (every project)",
+    "Project scope: <project>/.mcp.json           (wins name collisions)",
+    "Only stdio servers are supported; ${VAR} is expanded from the environment.",
+    "Remove this _comment key before use if you prefer a clean file."
+  ],
+  "mcpServers": {
+    "tor-exit": {
+      "command": "tor-exit-lookup",
+      "args": ["mcp"]
+    },
+    "with-env": {
+      "type": "stdio",
+      "command": "some-mcp-server",
+      "args": ["--flag", "value"],
+      "env": {
+        "SOME_API_KEY": "${SOME_API_KEY}"
+      }
+    },
+    "guarded-example": {
+      "command": "mcp-guardian",
+      "args": ["--profile", "your-profile-name"]
+    }
+  }
+}

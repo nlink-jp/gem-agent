@@ -194,6 +194,14 @@ make test
 
 ## Configuration
 
+Start from the template in this repository:
+
+```sh
+mkdir -p ~/.config/gem-agent
+cp config.example.toml ~/.config/gem-agent/config.toml
+cp mcp.example.json    ~/.config/gem-agent/mcp.json   # optional, MCP servers
+```
+
 `~/.config/gem-agent/config.toml`:
 
 ```toml
