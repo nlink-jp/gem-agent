@@ -3,9 +3,10 @@
 Vertex AI Gemini 3.x をバックエンドとする CLI 対話型エージェント — Claude Code が
 利用できない状況での開発作業継続手段。
 
-> **リリース済 — v0.1.0。** `brew install nlink-jp/tap/gem-agent` または
+> **リリース済。** `brew install nlink-jp/tap/gem-agent` または
 > [リリースページ](https://github.com/nlink-jp/gem-agent/releases)から
 > 導入できます（Developer ID 署名 + Apple notarize 済み、macOS arm64）。
+> 現在の版はリリースページが正であり、ここには書きません（腐るため）。
 > 実験的ツール（lab-series）であり、リリース間でインターフェースが変わる
 > ことがあります。完全な仕様は [RFP](docs/ja/gem-agent-rfp.ja.md) を参照。
 

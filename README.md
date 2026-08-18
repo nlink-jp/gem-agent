@@ -3,10 +3,12 @@
 Interactive CLI agent backed by Vertex AI Gemini 3.x — a continuity tool for
 development work when Claude Code is unavailable.
 
-> **Released — v0.1.0.** Install with `brew install nlink-jp/tap/gem-agent`
+> **Released.** Install with `brew install nlink-jp/tap/gem-agent`
 > or from the [releases page](https://github.com/nlink-jp/gem-agent/releases)
-> (Developer ID signed, Apple-notarized, macOS arm64). It is an
-> experimental (lab-series) tool: interfaces may change between releases.
+> (Developer ID signed, Apple-notarized, macOS arm64) — the releases page
+> is the authority on the current version, so this line does not repeat it.
+> It is an experimental (lab-series) tool: interfaces may change between
+> releases.
 > See the [RFP](docs/en/gem-agent-rfp.md) for the full specification.
 
 [日本語版 README](README.ja.md)
