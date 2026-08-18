@@ -132,11 +132,19 @@ max_turns = 50
 ### Out of scope (explicit)
 
 - Memory subsystems (Global/Session Memory, etc.)
-- Context compaction (v1 truncates with a warning only)
 - Data analysis features (DuckDB, etc.)
 - GUI
-- Session resume (considered for v2)
 - Linux / Windows support
+
+**Admitted after v1, each by ADR** (use argued against the original
+reasoning; both are recorded rather than quietly added):
+
+- Session resume — [ADR-0005](adr/0005-session-resume.md). A fallback
+  tool is reached for during long work, and a session that ends took its
+  context with it.
+- Context compaction — [ADR-0006](adr/0006-context-compaction.md). A
+  session that dies at the context window, with `/clear` as the only
+  recovery, is not much of a fallback.
 
 Scope minimization follows the shell-agent v1 lesson (feature accumulation → complexity
 → rewrite). A backup tool needs the core 20% of Claude Code's daily features.
@@ -227,4 +235,7 @@ mitigated by the monthly drill routine and written promotion criteria.
   heavy to start for a backup tool. Recorded the macOS 26 Containerization framework
   as a future alternative
 - **Context compaction / memory / resume:** explicitly excluded from v1
-  (shell-agent v1 over-scoping lesson)
+  (shell-agent v1 over-scoping lesson). Compaction and resume were
+  admitted after v1 shipped, each with an ADR (0006, 0005) — use showed
+  that both are load-bearing for the fallback role, not conveniences.
+  Memory subsystems remain out
