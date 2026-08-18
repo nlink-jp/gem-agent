@@ -221,13 +221,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 
 	// --- interactive TUI (ADR-0002) ---
 	if useTUI {
-		// Theme detection sends an OSC query and reads the reply — it
-		// must happen HERE, before Bubble Tea puts the terminal in raw
-		// mode, or the reply leaks into the input box as phantom keys.
-		dark := lipgloss.HasDarkBackground()
 		model := tui.New(tui.Options{
-			BaseCtx:        ctx,
-			DarkBackground: dark,
+			BaseCtx: ctx,
+			Theme:   resolveTheme(cfg.TUI.Theme),
 			StartTurn: func(turnCtx context.Context, input string) {
 				go func() {
 					_, err := ag.Run(turnCtx, input, func(s string) { prog.Send(tui.TextDelta(s)) })
@@ -239,7 +235,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 					prog.Send(tui.TurnDone{Err: err})
 				}()
 			},
-			Slash: func(in string) (string, bool) {
+			Slash: func(in string) (string, bool, bool) {
 				return slashOutput(in, ag, registry, mcpSummary)
 			},
 		})
@@ -266,7 +262,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		if strings.HasPrefix(input, "/") {
-			out, quit := slashOutput(input, ag, registry, mcpSummary)
+			out, _, quit := slashOutput(input, ag, registry, mcpSummary)
 			fmt.Fprint(stderr, out)
 			if quit {
 				return nil
@@ -347,10 +343,28 @@ func buildExecFn(sandboxOn bool, projectDir string) (tools.ExecFunc, error) {
 	}, nil
 }
 
+// resolveTheme maps [tui].theme to the TUI's theme value. "auto" runs
+// background detection, which sends an OSC query and reads the reply —
+// it must happen HERE, before Bubble Tea puts the terminal in raw mode,
+// or the reply leaks into the input box as phantom keys.
+func resolveTheme(configured string) string {
+	switch configured {
+	case "dark", "light":
+		return configured
+	case "plain":
+		return "notty"
+	default: // "auto"
+		if lipgloss.HasDarkBackground() {
+			return "dark"
+		}
+		return "light"
+	}
+}
+
 // slashOutput executes a /command and returns its output text — shared
-// by the TUI (which prints it into scrollback) and the plain REPL
-// (which writes it to stderr).
-func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string) (output string, quit bool) {
+// by the TUI (which prints it into scrollback, errors highlighted) and
+// the plain REPL (which writes it to stderr).
+func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string) (output string, isErr bool, quit bool) {
 	var b strings.Builder
 	switch strings.Fields(input)[0] {
 	case "/help":
@@ -374,7 +388,7 @@ mutating tools prompt for approval: y = once, a = always this session
 		ag.Reset()
 		b.WriteString("history cleared — the next message starts a fresh conversation\n")
 	case "/quit", "/exit":
-		return "bye\n", true
+		return "bye\n", false, true
 	case "/mcp":
 		if len(mcpSummary) == 0 {
 			b.WriteString("no MCP servers connected (define them in the project's .mcp.json)\n")
@@ -386,8 +400,9 @@ mutating tools prompt for approval: y = once, a = always this session
 		}
 	default:
 		fmt.Fprintf(&b, "unknown command %q — /help lists commands\n", input)
+		return b.String(), true, false
 	}
-	return b.String(), false
+	return b.String(), false, false
 }
 
 func firstSentence(s string) string {

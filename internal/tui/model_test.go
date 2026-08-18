@@ -42,12 +42,23 @@ func newTestModel(c *capture) Model {
 		StartTurn: func(ctx context.Context, input string) {
 			c.turns = append(c.turns, input)
 		},
-		Slash:   func(cmd string) (string, bool) { return "slash:" + cmd, cmd == "/quit" },
+		Slash:   slashStub,
 		Printer: c.printer,
 		RenderFactory: func(width int) func(string) string {
 			return func(s string) string { return "MD[" + s + "]" }
 		},
 	})
+}
+
+func slashStub(cmd string) (string, bool, bool) {
+	switch cmd {
+	case "/quit":
+		return "bye", false, true
+	case "/nope":
+		return "unknown command \"/nope\"", true, false
+	default:
+		return "slash:" + cmd, false, false
+	}
 }
 
 func press(m Model, key tea.KeyMsg) Model {
@@ -100,6 +111,22 @@ func TestSlashCommandDoesNotStartTurn(t *testing.T) {
 	}
 	if !strings.Contains(c.all(), "slash:/tools") {
 		t.Error("slash output not printed")
+	}
+}
+
+// TestUnknownSlashCommandStandsOut: an unknown command is an error, and
+// errors carry the ✗ marker so they never blend into dim meta text
+// (color alone is not relied upon — plain theme keeps the marker).
+func TestUnknownSlashCommandStandsOut(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	m.ta.SetValue("/nope")
+	m = press(m, enter())
+	if m.phase != phaseInput {
+		t.Fatal("unknown command must not start a turn")
+	}
+	if !strings.Contains(c.all(), "✗") || !strings.Contains(c.all(), "/nope") {
+		t.Errorf("error output should carry the ✗ marker: %q", c.all())
 	}
 }
 

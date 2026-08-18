@@ -2,6 +2,16 @@
 
 ## [0.1.0] - Unreleased
 
+### Changed — TUI readability (operator feedback)
+
+- Errors stand out: unknown /commands and turn failures render bold red
+  with a `✗` marker instead of blending into dim meta text
+- Theme-safe colors: chrome uses only the ANSI-16 palette (follows the
+  terminal theme); the barely-visible Faint attribute is replaced with
+  palette gray (color 8)
+- New `[tui].theme` config: auto (default) / dark / light / plain —
+  plain disables all styling for terminal themes that fight any colors
+
 ### Added — interactive TUI (ADR-0002)
 
 - Bubble Tea inline TUI: completed conversation flushes to native

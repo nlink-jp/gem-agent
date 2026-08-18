@@ -27,35 +27,65 @@ const (
 	maxMDWidth     = 100
 )
 
-var (
-	styleUser   = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
-	styleTool   = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	styleErr    = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	styleHint   = lipgloss.NewStyle().Faint(true)
-	styleStatus = lipgloss.NewStyle().Faint(true).Italic(true)
-	styleBox    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("3")).Padding(0, 1)
-)
+// styleSet holds the chrome styles. Only ANSI-16 palette colors are
+// used — they follow the user's terminal theme, unlike fixed 256/RGB
+// values that can vanish against unknown backgrounds. Dim text uses
+// color 8 (theme-defined gray), never the Faint attribute, which some
+// terminals render close to invisible.
+type styleSet struct {
+	user   lipgloss.Style
+	tool   lipgloss.Style
+	errS   lipgloss.Style
+	hint   lipgloss.Style
+	status lipgloss.Style
+	box    lipgloss.Style
+}
+
+func defaultStyles() styleSet {
+	return styleSet{
+		user:   lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true),
+		tool:   lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+		errS:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
+		hint:   lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
+		status: lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true),
+		box: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("3")).Padding(0, 1),
+	}
+}
+
+// plainStyles renders everything in the default foreground — the
+// [tui].theme = "plain" escape hatch for terminal themes that fight
+// any styling. Errors keep their "✗" prefix, so nothing depends on
+// color alone.
+func plainStyles() styleSet {
+	plain := lipgloss.NewStyle()
+	return styleSet{
+		user: plain, tool: plain, errS: plain, hint: plain, status: plain,
+		box: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1),
+	}
+}
 
 // TurnStarter launches one agent turn in a goroutine. It must not
 // block; completion arrives as a TurnDone message.
 type TurnStarter func(ctx context.Context, input string)
 
-// SlashHandler executes a /command and returns its output and whether
-// the program should quit.
-type SlashHandler func(cmd string) (output string, quit bool)
+// SlashHandler executes a /command and returns its output, whether the
+// output is an error (rendered so it stands out — an unknown command
+// must never look like dim meta text), and whether the program should
+// quit.
+type SlashHandler func(cmd string) (output string, isErr bool, quit bool)
 
 // Options configures the model.
 type Options struct {
 	StartTurn TurnStarter
 	Slash     SlashHandler
 	BaseCtx   context.Context
-	// DarkBackground selects the Markdown style. It MUST be decided by
-	// the caller BEFORE the Bubble Tea program starts: detecting it
-	// later would send an OSC query to the terminal while raw mode owns
-	// stdin, and the terminal's "rgb:..." reply would leak into the
-	// input box as if the user typed it.
-	DarkBackground bool
+	// Theme is "dark", "light", or "notty" (plain: no colors anywhere).
+	// It MUST be decided by the caller BEFORE the Bubble Tea program
+	// starts: background detection sends an OSC query, and once raw
+	// mode owns stdin the terminal's "rgb:..." reply would leak into
+	// the input box as if the user typed it.
+	Theme string
 	// Printer overrides tea.Println for tests.
 	Printer func(...any) tea.Cmd
 	// RenderFactory overrides the Markdown renderer factory for tests.
@@ -90,6 +120,7 @@ type Model struct {
 
 	width    int
 	sized    bool // first WindowSizeMsg received
+	st       styleSet
 	render   func(string) string
 	mkRender func(width int) func(string) string
 	println  func(...any) tea.Cmd
@@ -125,13 +156,18 @@ func New(opts Options) Model {
 	if m.println == nil {
 		m.println = tea.Println
 	}
+	theme := opts.Theme
+	if theme == "" {
+		theme = "dark"
+	}
+	if theme == "notty" {
+		m.st = plainStyles()
+	} else {
+		m.st = defaultStyles()
+	}
 	if m.mkRender == nil {
-		style := "light"
-		if opts.DarkBackground {
-			style = "dark"
-		}
 		m.mkRender = func(width int) func(string) string {
-			return newGlamourRenderer(width, style)
+			return newGlamourRenderer(width, theme)
 		}
 	}
 	m.render = m.mkRender(m.width)
@@ -202,7 +238,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 		cmds = append(cmds, m.flushLive()...)
 		m.status = "running " + msg.Name
-		cmds = append(cmds, m.println(styleTool.Render("⚙ "+msg.Name+" "+msg.Detail)))
+		cmds = append(cmds, m.println(m.st.tool.Render("⚙ "+msg.Name+" "+msg.Detail)))
 		return m, tea.Batch(cmds...)
 
 	case ApprovalRequest:
@@ -216,9 +252,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.flushLive()...)
 		if msg.Err != nil {
 			if errors.Is(msg.Err, context.Canceled) {
-				cmds = append(cmds, m.println(styleStatus.Render("(interrupted)")))
+				cmds = append(cmds, m.println(m.st.status.Render("(interrupted)")))
 			} else {
-				cmds = append(cmds, m.println(styleErr.Render("error: "+msg.Err.Error())))
+				cmds = append(cmds, m.println(m.st.errS.Render("✗ error: "+msg.Err.Error())))
 			}
 		}
 		m.phase = phaseInput
@@ -284,7 +320,7 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		req.Resp <- answer
 	}
 	verdict := map[byte]string{'y': "approved", 'n': "denied", 'a': "approved (always this session)"}[answer]
-	return m, m.println(styleTool.Render("  ↳ " + verdict))
+	return m, m.println(m.st.tool.Render("  ↳ " + verdict))
 }
 
 func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -295,11 +331,11 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.histIdx = -1
 			return m, nil
 		}
-		return m, tea.Sequence(m.println(styleHint.Render("bye")), tea.Quit)
+		return m, tea.Sequence(m.println(m.st.hint.Render("bye")), tea.Quit)
 
 	case msg.Type == tea.KeyCtrlD:
 		if strings.TrimSpace(m.ta.Value()) == "" {
-			return m, tea.Sequence(m.println(styleHint.Render("bye")), tea.Quit)
+			return m, tea.Sequence(m.println(m.st.hint.Render("bye")), tea.Quit)
 		}
 		return m, nil
 
@@ -389,8 +425,17 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		if m.slash == nil {
 			return m, nil
 		}
-		out, quit := m.slash(input)
-		cmds := []tea.Cmd{m.println(styleHint.Render(strings.TrimRight(out, "\n")))}
+		out, isErr, quit := m.slash(input)
+		text := strings.TrimRight(out, "\n")
+		var line string
+		if isErr {
+			// Errors must stand out — dim meta styling here is how an
+			// unknown command got camouflaged as help text.
+			line = m.st.errS.Render("✗ " + text)
+		} else {
+			line = text // default foreground: readable on any theme
+		}
+		cmds := []tea.Cmd{m.println(line)}
 		if quit {
 			cmds = append(cmds, tea.Quit)
 			return m, tea.Sequence(cmds...)
@@ -406,7 +451,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	if m.startTurn != nil {
 		m.startTurn(ctx, input)
 	}
-	return m, tea.Batch(m.println(styleUser.Render("> ")+input), m.spin.Tick)
+	return m, tea.Batch(m.println(m.st.user.Render("> ")+input), m.spin.Tick)
 }
 
 // View implements tea.Model. Every line is clipped to the terminal
@@ -433,20 +478,20 @@ func clipLines(s string, width int) string {
 func (m Model) viewContent() string {
 	switch m.phase {
 	case phaseRunning:
-		return m.liveView() + "\n" + m.spin.View() + " " + styleStatus.Render(m.status) +
-			styleHint.Render("  (Ctrl+C で中断)") + "\n"
+		return m.liveView() + "\n" + m.spin.View() + " " + m.st.status.Render(m.status) +
+			m.st.hint.Render("  (Ctrl+C で中断)") + "\n"
 	case phaseApproval:
 		req := m.approval
 		if req == nil {
 			return ""
 		}
 		body := "approval required: " + req.Tool + "\n" +
-			styleHint.Render(clip(req.Detail, 300)) + "\n" +
+			m.st.hint.Render(clip(req.Detail, 300)) + "\n" +
 			"[y] 許可   [n] 拒否   [a] このセッションでは常に許可"
-		return m.liveView() + "\n" + styleBox.Render(body) + "\n"
+		return m.liveView() + "\n" + m.st.box.Render(body) + "\n"
 	default:
 		return m.ta.View() + "\n" +
-			styleHint.Render("Enter 送信 · Ctrl+J 改行 · ↑↓ 履歴 · /help · Ctrl+D 終了") + "\n"
+			m.st.hint.Render("Enter 送信 · Ctrl+J 改行 · ↑↓ 履歴 · /help · Ctrl+D 終了") + "\n"
 	}
 }
 

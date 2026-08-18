@@ -53,6 +53,26 @@ name = "example-model"
 	if !cfg.MCP.Enabled || cfg.MCP.CallTimeoutSec != 60 {
 		t.Errorf("mcp defaults = %+v", cfg.MCP)
 	}
+	if cfg.TUI.Theme != "auto" {
+		t.Errorf("tui theme default = %q, want auto", cfg.TUI.Theme)
+	}
+}
+
+func TestInvalidThemeRejected(t *testing.T) {
+	clearEnv(t)
+	path := writeConfig(t, `
+[gcp]
+project = "p"
+
+[model]
+name = "m"
+
+[tui]
+theme = "solarized"
+`)
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "[tui].theme") {
+		t.Fatalf("invalid theme should be rejected, got %v", err)
+	}
 }
 
 func TestEnvPrecedence(t *testing.T) {

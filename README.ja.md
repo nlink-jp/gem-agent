@@ -129,7 +129,16 @@ enabled = true             # デフォルト
 [agent]
 max_turns = 50             # デフォルト
 shell_timeout_sec = 120    # デフォルト
+
+[tui]
+theme = "auto"             # auto | dark | light | plain
 ```
+
+TUI の配色は ANSI 16 色パレットのみを使うため、ターミナルのテーマに追従します。
+`theme = "auto"` は起動時に背景の明暗を判定して Markdown 描画に反映します。
+判定が合わない場合は `dark`/`light` を明示、どうしても合わないテーマでは
+`plain` で全装飾を無効化できます（エラーは `✗` マーカー付きなので色に
+依存しません）。
 
 優先順位: フラグ（`--model`）> `GEMAGENT_*` > `GOOGLE_CLOUD_*` > config file
 > defaults。設定ファイル内の未知キーはエラーになります（strict decode）。

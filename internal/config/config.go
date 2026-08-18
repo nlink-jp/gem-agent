@@ -19,6 +19,15 @@ type Config struct {
 	Sandbox SandboxConfig `toml:"sandbox"`
 	Agent   AgentConfig   `toml:"agent"`
 	MCP     MCPConfig     `toml:"mcp"`
+	TUI     TUIConfig     `toml:"tui"`
+}
+
+// TUIConfig controls the interactive UI appearance.
+type TUIConfig struct {
+	// Theme: "auto" (detect background before startup), "dark", "light",
+	// or "plain" (no colors at all — the escape hatch for terminal
+	// themes that fight any styling).
+	Theme string `toml:"theme"`
 }
 
 // MCPConfig controls the MCP client. Server definitions live in the
@@ -72,6 +81,7 @@ func defaults() Config {
 		Sandbox: SandboxConfig{Enabled: true},
 		Agent:   AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120},
 		MCP:     MCPConfig{Enabled: true, CallTimeoutSec: 60},
+		TUI:     TUIConfig{Theme: "auto"},
 	}
 }
 
@@ -161,6 +171,11 @@ func (c *Config) validate() error {
 	}
 	if c.MCP.CallTimeoutSec <= 0 {
 		return fmt.Errorf("[mcp].call_timeout_sec must be positive")
+	}
+	switch c.TUI.Theme {
+	case "auto", "dark", "light", "plain":
+	default:
+		return fmt.Errorf("[tui].theme must be auto, dark, light, or plain (got %q)", c.TUI.Theme)
 	}
 	return nil
 }
