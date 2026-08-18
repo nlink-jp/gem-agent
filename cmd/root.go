@@ -237,6 +237,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			ModelName:  cfg.Model.Name,
 			ProjectDir: abbreviateHome(projectDir),
 			Banner:     bannerLines,
+			Shell: func(shellCtx context.Context, command string) {
+				go func() {
+					out := runDirectShell(shellCtx, registry, ag, command)
+					prog.Send(tui.ShellDone{Output: out})
+				}()
+			},
 			StartTurn: func(turnCtx context.Context, input string) {
 				go func() {
 					_, err := ag.Run(turnCtx, input, func(s string) { prog.Send(tui.TextDelta(s)) })
@@ -296,6 +302,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		input = strings.TrimSpace(input)
 		if input == "" {
+			continue
+		}
+		if strings.HasPrefix(input, "!") {
+			command := strings.TrimSpace(strings.TrimPrefix(input, "!"))
+			if command == "" {
+				continue
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), runDirectShell(ctx, registry, ag, command))
 			continue
 		}
 		if strings.HasPrefix(input, "/") {
@@ -380,6 +394,27 @@ func buildExecFn(sandboxOn bool, projectDir string) (tools.ExecFunc, error) {
 	}, nil
 }
 
+// runDirectShell executes a !-prefixed command through the same
+// sandboxed shell_exec tool the agent uses (same timeout, output cap,
+// exit-status surfacing — no approval prompt: the user typed it), and
+// feeds command + output into the agent history so the next turn can
+// refer to what happened.
+func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Agent, command string) string {
+	tool, ok := registry.Get("shell_exec")
+	if !ok {
+		return "error: shell_exec is unavailable"
+	}
+	out, err := tool.Run(ctx, map[string]any{"command": command})
+	if err != nil {
+		out = "error: " + err.Error()
+	}
+	if strings.TrimSpace(out) == "" {
+		out = "(no output)"
+	}
+	ag.AddContext("I ran this shell command myself:\n$ " + command + "\n\nOutput:\n" + out)
+	return out
+}
+
 // abbreviateHome shortens the home-directory prefix to "~" for display.
 func abbreviateHome(path string) string {
 	home, err := os.UserHomeDir()
@@ -426,6 +461,8 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
   /mcp     show connected MCP servers
   /clear   reset the conversation history
   /quit    exit (Ctrl+D also works)
+shell:
+  !<command>  run it directly (sandboxed, no approval; output is shared with the model)
 keys:
   Enter 送信 · Ctrl+J 改行 · ↑↓ 履歴 · Ctrl+C 中断/クリア · Ctrl+D 終了
 mutating tools prompt for approval: y = once, a = always this session

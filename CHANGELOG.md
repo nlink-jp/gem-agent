@@ -2,6 +2,14 @@
 
 ## [0.1.0] - Unreleased
 
+### Added — direct shell mode (operator feedback)
+
+- `!<command>` runs a shell command directly: sandboxed through the
+  same shell_exec path (timeout, output cap, exit-status surfacing) but
+  with no approval prompt (the user typed it). Command and output are
+  injected into the model's context, verified live (the model recalls
+  the output on the next turn). Works in the TUI and the plain REPL
+
 ### Added — bottom-pinned layout (ADR-0003, operator feedback)
 
 - The input box and status line pin to the window bottom like current

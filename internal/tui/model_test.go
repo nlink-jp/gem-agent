@@ -114,6 +114,46 @@ func TestSlashCommandDoesNotStartTurn(t *testing.T) {
 	}
 }
 
+// TestShellMode: "!cmd" runs the shell runner (never the LLM turn),
+// shows the command and its output, and returns to input phase.
+func TestShellMode(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	var shellCmds []string
+	m.shell = func(ctx context.Context, command string) { shellCmds = append(shellCmds, command) }
+
+	m.ta.SetValue("!git status")
+	m = press(m, enter())
+	if m.phase != phaseRunning {
+		t.Fatal("shell mode should enter running phase")
+	}
+	if len(c.turns) != 0 {
+		t.Fatal("! input must not start an LLM turn")
+	}
+	if len(shellCmds) != 1 || shellCmds[0] != "git status" {
+		t.Fatalf("shell runner got %v", shellCmds)
+	}
+	if !strings.Contains(c.all(), "git status") {
+		t.Error("command line not echoed to scrollback")
+	}
+
+	next, _ := m.Update(ShellDone{Output: "on branch main\n"})
+	m = next.(Model)
+	if m.phase != phaseInput {
+		t.Error("ShellDone should return to input phase")
+	}
+	if !strings.Contains(c.all(), "on branch main") {
+		t.Error("shell output not emitted")
+	}
+
+	// Bare "!" is a no-op.
+	m.ta.SetValue("!")
+	m = press(m, enter())
+	if len(shellCmds) != 1 {
+		t.Error("bare ! must not run anything")
+	}
+}
+
 // TestUnknownSlashCommandStandsOut: an unknown command is an error, and
 // errors carry the ✗ marker so they never blend into dim meta text
 // (color alone is not relied upon — plain theme keeps the marker).

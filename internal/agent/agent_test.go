@@ -270,6 +270,28 @@ func TestToolResultsNonceWrapped(t *testing.T) {
 	}
 }
 
+// TestAddContextFeedsNextTurn: a !-shell note lands in history so the
+// next backend call sees it before the new user input.
+func TestAddContextFeedsNextTurn(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{{Content: "ok"}}}
+	a, _ := newAgent(t, mb, &approveAll{}, 5)
+
+	a.AddContext("I ran this shell command myself:\n$ git status\n\nOutput:\nclean")
+	if _, err := a.Run(context.Background(), "何か問題ある？", nil); err != nil {
+		t.Fatal(err)
+	}
+	first := mb.calls[0]
+	if len(first) != 2 {
+		t.Fatalf("history = %d messages, want context note + user input", len(first))
+	}
+	if first[0].Role != llm.RoleUser || !strings.Contains(first[0].Content, "git status") {
+		t.Errorf("context note missing or malformed: %+v", first[0])
+	}
+	if first[1].Content != "何か問題ある？" {
+		t.Errorf("user input must follow the note: %+v", first[1])
+	}
+}
+
 func TestOnUsageReportsEachRound(t *testing.T) {
 	mb := &mockBackend{responses: []*llm.Response{
 		{

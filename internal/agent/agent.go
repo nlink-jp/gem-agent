@@ -86,6 +86,15 @@ func New(opts Options) *Agent {
 // Reset clears the conversation history (REPL /clear).
 func (a *Agent) Reset() { a.history = nil }
 
+// AddContext appends an out-of-band note to the conversation history
+// without starting a turn — the `!` direct-shell mode uses it so the
+// model sees what the user ran and what came back. Must not be called
+// while Run is in flight (the UI's phase machine guarantees that).
+func (a *Agent) AddContext(text string) {
+	a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: text})
+	a.logRecord("user_context", map[string]any{"content": clip(text, 2000)})
+}
+
 // HistoryLen reports the number of history messages (REPL status display).
 func (a *Agent) HistoryLen() int { return len(a.history) }
 

@@ -25,6 +25,11 @@ type TurnDone struct {
 	Err error
 }
 
+// ShellDone signals completion of a direct (!-prefixed) shell command.
+type ShellDone struct {
+	Output string
+}
+
 // Usage carries one LLM round's token counts. Prompt tokens approximate
 // the current context size; output tokens are the round's generation.
 type Usage struct {

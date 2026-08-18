@@ -77,6 +77,11 @@ func plainStyles() styleSet {
 // block; completion arrives as a TurnDone message.
 type TurnStarter func(ctx context.Context, input string)
 
+// ShellStarter launches one direct (!-prefixed) shell command in a
+// goroutine. It must not block; completion arrives as a ShellDone
+// message.
+type ShellStarter func(ctx context.Context, command string)
+
 // SlashHandler executes a /command and returns its output, whether the
 // output is an error (rendered so it stands out — an unknown command
 // must never look like dim meta text), and whether the program should
@@ -86,6 +91,7 @@ type SlashHandler func(cmd string) (output string, isErr bool, quit bool)
 // Options configures the model.
 type Options struct {
 	StartTurn TurnStarter
+	Shell     ShellStarter
 	Slash     SlashHandler
 	BaseCtx   context.Context
 	// Theme is "dark", "light", or "notty" (plain: no colors anywhere).
@@ -129,6 +135,7 @@ type Model struct {
 	approval *ApprovalRequest
 
 	startTurn  TurnStarter
+	shell      ShellStarter
 	slash      SlashHandler
 	baseCtx    context.Context
 	cancelTurn context.CancelFunc
@@ -155,7 +162,7 @@ type Model struct {
 // New creates the model.
 func New(opts Options) Model {
 	ta := textarea.New()
-	ta.Placeholder = "message… (/help)"
+	ta.Placeholder = "message… (/help · !shell)"
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0
 	ta.SetHeight(1)
@@ -170,6 +177,7 @@ func New(opts Options) Model {
 		histIdx:    -1,
 		live:       &strings.Builder{},
 		startTurn:  opts.StartTurn,
+		shell:      opts.Shell,
 		slash:      opts.Slash,
 		baseCtx:    opts.BaseCtx,
 		println:    opts.Printer,
@@ -301,6 +309,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.approval = &req
 		m.phase = phaseApproval
 		return m, nil
+
+	case ShellDone:
+		out := msg.Output
+		if strings.TrimSpace(out) == "" {
+			out = "(no output)"
+		}
+		// Raw terminal output — never through the Markdown renderer.
+		cmds := []tea.Cmd{m.emit(strings.TrimRight(out, "\n"))}
+		m.phase = phaseInput
+		m.status = ""
+		m.cancelTurn = nil
+		m.ta.Focus()
+		cmds = append(cmds, textarea.Blink)
+		return m, tea.Batch(cmds...)
 
 	case TurnDone:
 		var cmds []tea.Cmd
@@ -494,6 +516,22 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	m.history = append(m.history, input)
 	m.histIdx = -1
 	m.draft = ""
+
+	// !command — direct shell mode: runs sandboxed without an approval
+	// prompt (the user typed it themselves); the output is also fed to
+	// the model as context by the runner.
+	if strings.HasPrefix(input, "!") {
+		command := strings.TrimSpace(strings.TrimPrefix(input, "!"))
+		if command == "" || m.shell == nil {
+			return m, nil
+		}
+		m.phase = phaseRunning
+		m.status = "shell: " + clip(command, 60)
+		ctx, cancel := context.WithCancel(m.baseCtx)
+		m.cancelTurn = cancel
+		m.shell(ctx, command)
+		return m, tea.Batch(m.emit(m.st.user.Render("! ")+command), m.spin.Tick)
+	}
 
 	if strings.HasPrefix(input, "/") {
 		if m.slash == nil {

@@ -70,6 +70,11 @@ TUI keys (also listed in `/help`): Enter sends, Ctrl+J inserts a newline,
 the input), Ctrl+D quits. Multi-line pastes land in the input box as one
 message.
 
+`!<command>` runs a shell command directly — sandboxed like `shell_exec`
+(same timeout and output cap) but without an approval prompt, since you
+typed it yourself. The command and its output are added to the model's
+context, so `!git status` followed by "fix that" just works.
+
 The input box and its status line pin to the window bottom (like Claude
 Code), while the conversation scrolls above with native terminal
 scrollback intact (ADR-0003; the screen is cleared once at startup). The
