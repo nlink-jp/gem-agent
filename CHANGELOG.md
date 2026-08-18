@@ -2,6 +2,12 @@
 
 ## [0.1.0] - Unreleased
 
+### Changed — single status line (operator feedback)
+
+- The always-on key-hint line is gone; key bindings moved into /help.
+  The input block is now "input box + one status line", matching the
+  status-bar reading of the footer
+
 ### Added — persistent footer (operator feedback)
 
 - Footer line across all TUI phases: model name, context occupancy vs

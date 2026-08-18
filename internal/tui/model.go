@@ -522,8 +522,10 @@ func (m Model) viewContent() string {
 			"[y] 許可   [n] 拒否   [a] このセッションでは常に許可"
 		return m.liveView() + "\n" + m.st.box.Render(body) + "\n" + m.footer() + "\n"
 	default:
-		return m.ta.View() + "\n" + m.footer() + "\n" +
-			m.st.hint.Render("Enter 送信 · Ctrl+J 改行 · ↑↓ 履歴 · /help · Ctrl+D 終了") + "\n"
+		// One status line only — the key bindings live in /help. Two
+		// stacked meta lines made the block read as clutter rather than
+		// a status bar (operator feedback).
+		return m.ta.View() + "\n" + m.footer() + "\n"
 	}
 }
 

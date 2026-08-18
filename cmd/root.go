@@ -417,6 +417,8 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
   /mcp     show connected MCP servers
   /clear   reset the conversation history
   /quit    exit (Ctrl+D also works)
+keys:
+  Enter 送信 · Ctrl+J 改行 · ↑↓ 履歴 · Ctrl+C 中断/クリア · Ctrl+D 終了
 mutating tools prompt for approval: y = once, a = always this session
 `)
 	case "/tools":

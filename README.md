@@ -65,14 +65,16 @@ an approval dialog before running (`y` once / `n` deny / `a` always this
 session). `--no-sandbox` disables the Seatbelt wrapper (debugging only),
 `--model` overrides the configured model.
 
-TUI keys: Enter sends, Ctrl+J inserts a newline, ↑/↓ navigate input
-history, Ctrl+C interrupts a running turn (or clears the input), Ctrl+D
-quits. Multi-line pastes land in the input box as one message.
+TUI keys (also listed in `/help`): Enter sends, Ctrl+J inserts a newline,
+↑/↓ navigate input history, Ctrl+C interrupts a running turn (or clears
+the input), Ctrl+D quits. Multi-line pastes land in the input box as one
+message.
 
-A persistent footer shows the model, current context occupancy against
-the model's window (auto-detected from model metadata, or
-`[model].context_window`), cumulative token consumption, and the project
-directory.
+A single status line under the input box shows the model, current
+context occupancy against the model's window (auto-detected from model
+metadata, or `[model].context_window`), cumulative token consumption,
+and the project directory. It travels with the conversation (inline
+rendering, ADR-0002) rather than pinning to the window bottom.
 
 ## MCP servers
 
