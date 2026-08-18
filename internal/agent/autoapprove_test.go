@@ -43,8 +43,8 @@ func (b *autoBackend) ChatStream(ctx context.Context, system string, msgs []llm.
 
 type recordingGate struct{ asked []string }
 
-func (g *recordingGate) Approve(name, detail string) bool {
-	g.asked = append(g.asked, name+"|"+detail)
+func (g *recordingGate) Approve(name, detail, reason string) bool {
+	g.asked = append(g.asked, name+"|"+detail+"|"+reason)
 	return false // deny: tests assert on whether the gate was reached
 }
 
@@ -121,8 +121,10 @@ func TestAutoBlockNeverConsultsModel(t *testing.T) {
 	if len(gate.asked) != 1 {
 		t.Fatalf("block tier must reach the human gate: %v", gate.asked)
 	}
-	if !strings.Contains(gate.asked[0], "delete") {
-		t.Errorf("escalation should carry the reason: %q", gate.asked[0])
+	// The escalation must name the tier that objected as well as why:
+	// "blocked by rule" reads differently from a model judgment call.
+	if !strings.Contains(gate.asked[0], "delete") || !strings.Contains(gate.asked[0], "blocked by rule") {
+		t.Errorf("escalation should carry tier and reason: %q", gate.asked[0])
 	}
 	if d := (*decisions)[0]; d.Approved || d.Tier != risk.Block || d.ModelConsulted {
 		t.Errorf("decision = %+v", d)
@@ -175,8 +177,30 @@ func TestAutoReviewLowConfidenceEscalates(t *testing.T) {
 	if len(gate.asked) != 1 {
 		t.Fatal("low confidence must escalate")
 	}
-	if !strings.Contains(gate.asked[0], "confidence") {
-		t.Errorf("escalation should explain the confidence shortfall: %q", gate.asked[0])
+	if !strings.Contains(gate.asked[0], "confidence") || !strings.Contains(gate.asked[0], "risk review") {
+		t.Errorf("escalation should name the risk review and the confidence shortfall: %q", gate.asked[0])
+	}
+}
+
+// TestOrdinaryPromptCarriesNoReason: with auto mode off there is no
+// escalation to explain, so the prompt must not invent one.
+func TestOrdinaryPromptCarriesNoReason(t *testing.T) {
+	b := &autoBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{writeCall("src/main.go")}},
+		{Content: "ok"},
+	}}
+	gate := &recordingGate{}
+	a, _, _ := newAutoAgent(t, b, gate)
+	a.SetAutoApprove(false)
+
+	if _, err := a.Run(context.Background(), "write", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.asked) != 1 {
+		t.Fatal("auto off must still ask")
+	}
+	if !strings.HasSuffix(gate.asked[0], "|") {
+		t.Errorf("ordinary prompt should carry an empty reason: %q", gate.asked[0])
 	}
 }
 

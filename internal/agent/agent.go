@@ -16,9 +16,12 @@ import (
 )
 
 // Approver gates mutating tool calls (see internal/approve for the
-// interactive implementation).
+// interactive implementation). reason is empty for an ordinary prompt
+// and carries the escalation cause when auto-approve declined to run
+// the call unattended — the operator must be able to see why they are
+// being asked.
 type Approver interface {
-	Approve(toolName, detail string) bool
+	Approve(toolName, detail, reason string) bool
 }
 
 // SessionLog receives session records. May be nil.
@@ -211,8 +214,7 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
 		return fmt.Sprintf("error: unknown tool %q", tc.Name)
 	}
 	if tool.Mutating {
-		detail := CallDetail(tc)
-		approved := false
+		approved, reason := false, ""
 		if a.AutoApprove() {
 			d := a.decideAuto(ctx, tc)
 			if a.onAuto != nil {
@@ -224,12 +226,10 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
 			})
 			approved = d.Approved
 			if !approved {
-				// Escalation carries the reason so the human sees what
-				// the ladder objected to.
-				detail = detail + "\n  ⚠ " + d.Reason
+				reason = EscalationReason(d)
 			}
 		}
-		if !approved && !a.gate.Approve(tc.Name, detail) {
+		if !approved && !a.gate.Approve(tc.Name, CallDetail(tc), reason) {
 			return "Tool execution denied by the user. Do not retry the same call; ask the user how to proceed instead."
 		}
 	}

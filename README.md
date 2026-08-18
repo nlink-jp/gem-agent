@@ -89,8 +89,12 @@ Off by default. shift+tab (or `/auto`) toggles it; the status line shows
 
 Anything that fails — model error, malformed verdict, unknown tool —
 asks. The blocked tier is a hard floor the model cannot override, and the
-sandbox applies in every mode. Auto-approved calls are printed with their
-reason, so you can see what ran unattended.
+sandbox applies in every mode.
+
+Both outcomes are explained: auto-approved calls print their reason, and
+an escalated call's approval dialog carries a `⚠` line naming the tier
+that objected and why — `blocked by rule (always asks): …` for the
+deterministic floor, `escalated by risk review: …` for a model judgment.
 
 `!<command>` runs a shell command directly — sandboxed like `shell_exec`
 (same timeout and output cap) but without an approval prompt, since you

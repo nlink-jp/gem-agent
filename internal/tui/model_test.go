@@ -438,6 +438,10 @@ func TestApprovalFlow(t *testing.T) {
 		t.Error("approval view should show the tool")
 	}
 
+	if strings.Contains(m.View(), "⚠") {
+		t.Error("an ordinary prompt has no escalation reason to show")
+	}
+
 	m = press(m, runeMsg("a"))
 	select {
 	case got := <-resp:
@@ -582,6 +586,34 @@ func TestResizeNeverQueriesTerminal(t *testing.T) {
 	m = next.(Model)
 	if got := m.render("x"); got != "MD[x]" {
 		t.Fatalf("resize replaced the injected renderer factory: %q", got)
+	}
+}
+
+// TestApprovalShowsEscalationReason: in auto mode the operator's first
+// question is "why is this asking at all?" — the reason gets its own
+// marked line in the dialog, not a dim suffix on the arguments.
+func TestApprovalShowsEscalationReason(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = next.(Model)
+	m.ta.SetValue("go")
+	m = press(m, enter())
+
+	next, _ = m.Update(ApprovalRequest{
+		Tool:   "shell_exec",
+		Detail: "rm -rf build",
+		Reason: "auto-approve blocked by rule (always asks): recursive force delete",
+		Resp:   make(chan byte, 1),
+	})
+	m = next.(Model)
+
+	v := m.View()
+	if !strings.Contains(v, "⚠") {
+		t.Fatalf("escalation reason missing its marker: %q", v)
+	}
+	if !strings.Contains(v, "blocked by rule") || !strings.Contains(v, "recursive force delete") {
+		t.Errorf("dialog should name the tier and the cause: %q", v)
 	}
 }
 

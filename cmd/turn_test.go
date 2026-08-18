@@ -52,7 +52,7 @@ func TestAbbreviateHome(t *testing.T) {
 func TestDenyGateAlwaysDenies(t *testing.T) {
 	var buf strings.Builder
 	g := denyGate{out: &buf}
-	if g.Approve("shell_exec", "rm -rf /") {
+	if g.Approve("shell_exec", "rm -rf /", "") {
 		t.Fatal("one-shot gate must deny mutating tools")
 	}
 	if !strings.Contains(buf.String(), "one-shot") {

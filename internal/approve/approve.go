@@ -41,13 +41,18 @@ func New(in io.Reader, out io.Writer) *Gate {
 
 // Approve asks the user whether the named tool may run. detail is a short
 // human-readable summary of what the call will do (command line, file
-// path). EOF or read errors deny — failing closed is the only safe
-// default for an approval gate.
-func (g *Gate) Approve(toolName, detail string) bool {
+// path); reason, when non-empty, says why auto-approve escalated instead
+// of running it. EOF or read errors deny — failing closed is the only
+// safe default for an approval gate.
+func (g *Gate) Approve(toolName, detail, reason string) bool {
 	if g.always[toolName] {
 		return true
 	}
-	fmt.Fprintf(g.out, "\n[approval] %s\n  %s\n  allow? [y]es / [n]o / [a]lways this session: ", toolName, detail)
+	fmt.Fprintf(g.out, "\n[approval] %s\n  %s\n", toolName, detail)
+	if reason != "" {
+		fmt.Fprintf(g.out, "  ⚠ %s\n", reason)
+	}
+	fmt.Fprint(g.out, "  allow? [y]es / [n]o / [a]lways this session: ")
 	for {
 		line, err := g.in.ReadString('\n')
 		if err != nil && line == "" {

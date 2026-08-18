@@ -2,6 +2,15 @@
 
 ## [0.1.0] - Unreleased
 
+### Changed — escalation reasons are shown (operator feedback)
+
+- When auto-approve asks instead of running, the approval dialog now
+  carries a marked `⚠` line naming the tier that objected and why
+  ("blocked by rule (always asks): …" vs "escalated by risk review: …")
+  instead of appending it to the dim argument summary. The Approver
+  interface gained a `reason` parameter so the TUI and the plain REPL
+  both render it distinctly; ordinary (non-auto) prompts carry none
+
 ### Added — global MCP scope (operator feedback)
 
 - MCP servers now load from two scopes: `~/.config/gem-agent/mcp.json`

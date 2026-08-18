@@ -360,7 +360,7 @@ var errInterrupted = errors.New("interrupted")
 // nothing will answer.
 type denyGate struct{ out io.Writer }
 
-func (d denyGate) Approve(toolName, detail string) bool {
+func (d denyGate) Approve(toolName, detail, reason string) bool {
 	fmt.Fprintf(d.out, "[denied: %s %s — mutating tools are disabled in one-shot mode; run interactively to approve]\n", toolName, detail)
 	return false
 }

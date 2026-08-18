@@ -39,6 +39,7 @@ const (
 type styleSet struct {
 	user   lipgloss.Style
 	tool   lipgloss.Style
+	warn   lipgloss.Style
 	errS   lipgloss.Style
 	hint   lipgloss.Style
 	status lipgloss.Style
@@ -53,6 +54,7 @@ func defaultStyles(darkBackground bool) styleSet {
 	return styleSet{
 		user:   lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true),
 		tool:   lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+		warn:   lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true),
 		errS:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
 		hint:   lipgloss.NewStyle().Foreground(dim),
 		status: lipgloss.NewStyle().Foreground(dim).Italic(true),
@@ -68,7 +70,7 @@ func defaultStyles(darkBackground bool) styleSet {
 func plainStyles() styleSet {
 	plain := lipgloss.NewStyle()
 	return styleSet{
-		user: plain, tool: plain, errS: plain, hint: plain, status: plain,
+		user: plain, tool: plain, warn: plain, errS: plain, hint: plain, status: plain,
 		box: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1),
 	}
 }
@@ -639,8 +641,15 @@ func (m Model) viewContent() string {
 			return ""
 		}
 		body := "approval required: " + req.Tool + "\n" +
-			m.st.hint.Render(clip(req.Detail, 300)) + "\n" +
-			"[y] 許可   [n] 拒否   [a] このセッションでは常に許可"
+			m.st.hint.Render(clip(req.Detail, 300))
+		if req.Reason != "" {
+			// The escalation cause gets its own accented line: in auto
+			// mode the operator's first question is "why is this asking
+			// at all?", and dim text beside the arguments does not
+			// answer it.
+			body += "\n" + m.st.warn.Render("⚠ "+clip(req.Reason, 200))
+		}
+		body += "\n" + "[y] 許可   [n] 拒否   [a] このセッションでは常に許可"
 		return m.liveView() + "\n" + m.st.box.Render(body) + "\n" + m.footer() + "\n"
 	default:
 		// One status line only — the key bindings live in /help. Two

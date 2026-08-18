@@ -24,6 +24,21 @@ type AutoDecision struct {
 	ModelConsulted bool
 }
 
+// EscalationReason renders why auto mode is asking instead of running,
+// naming the tier that objected: the rule tier is a hard floor, the
+// model tier is a judgment call, and the operator reads them
+// differently.
+func EscalationReason(d AutoDecision) string {
+	switch {
+	case d.Tier == risk.Block:
+		return "auto-approve blocked by rule (always asks): " + d.Reason
+	case d.ModelConsulted:
+		return "auto-approve escalated by risk review: " + d.Reason
+	default:
+		return "auto-approve escalated: " + d.Reason
+	}
+}
+
 // riskEvalPrompt instructs the model tier. The defensive framing leads
 // (org lesson), and the call under review arrives nonce-wrapped: text
 // inside the tags that argues for approval is itself a red flag, since

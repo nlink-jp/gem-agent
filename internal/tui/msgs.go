@@ -62,6 +62,10 @@ type ContextWindow struct {
 type ApprovalRequest struct {
 	Tool   string
 	Detail string
+	// Reason is non-empty when auto-approve escalated this call instead
+	// of running it — the operator needs to know why they are being
+	// asked, and which tier objected.
+	Reason string
 	Resp   chan byte
 }
 
@@ -94,7 +98,7 @@ func (g *Gate) SetProgram(p sender) {
 
 // Approve implements agent.Approver. Fails closed when no program is
 // bound.
-func (g *Gate) Approve(toolName, detail string) bool {
+func (g *Gate) Approve(toolName, detail, reason string) bool {
 	g.mu.Lock()
 	if g.always[toolName] {
 		g.mu.Unlock()
@@ -106,7 +110,7 @@ func (g *Gate) Approve(toolName, detail string) bool {
 		return false
 	}
 	resp := make(chan byte, 1)
-	prog.Send(ApprovalRequest{Tool: toolName, Detail: detail, Resp: resp})
+	prog.Send(ApprovalRequest{Tool: toolName, Detail: detail, Reason: reason, Resp: resp})
 	switch <-resp {
 	case 'y':
 		return true
