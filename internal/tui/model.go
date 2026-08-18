@@ -194,7 +194,10 @@ type Model struct {
 // New creates the model.
 func New(opts Options) Model {
 	ta := textarea.New()
-	ta.Placeholder = "message… (/help · !shell)"
+	// The placeholder is where key discovery lives now that the
+	// always-on hint line is gone (it only shows while the input is
+	// empty, so it costs nothing during a conversation).
+	ta.Placeholder = "message…  Enter 送信 · Ctrl+J 改行 · /help · !shell"
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0
 	ta.SetHeight(1)
@@ -496,7 +499,10 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case msg.Type == tea.KeyCtrlJ:
+	case msg.Type == tea.KeyCtrlJ, msg.Type == tea.KeyEnter && msg.Alt:
+		// Newline, IME-safe: Ctrl+J and Alt/Option+Enter both arrive as
+		// distinct keys. Shift+Enter is deliberately absent — most
+		// terminals send it as a plain CR, indistinguishable from submit.
 		m.ta.InsertString("\n")
 		m.syncHeight()
 		return m, nil
@@ -512,7 +518,16 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.emit(m.st.tool.Render(state))
 
-	case msg.Type == tea.KeyEnter && !msg.Alt:
+	case msg.Type == tea.KeyEnter:
+		// A trailing backslash continues the line, the shell convention
+		// — the third newline route, for muscle memory that expects it.
+		if strings.HasSuffix(m.ta.Value(), "\\") {
+			v := m.ta.Value()
+			m.ta.SetValue(v[:len(v)-1] + "\n")
+			m.ta.CursorEnd()
+			m.syncHeight()
+			return m, nil
+		}
 		// Bracketed paste never arrives as KeyEnter (pasted newlines
 		// travel inside a Paste-flagged KeyRunes message), so Enter
 		// here is always a human submit.

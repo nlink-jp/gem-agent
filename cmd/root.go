@@ -483,7 +483,10 @@ auto-approve: safe changes run unattended; destructive, out-of-project,
 shell:
   !<command>  run it directly (sandboxed, no approval; output is shared with the model)
 keys:
-  Enter 送信 · Ctrl+J 改行 · ↑↓ 履歴 · Ctrl+C 中断/クリア · Ctrl+D 終了
+  Enter 送信 · ↑↓ 履歴 · Ctrl+C 中断/クリア · Ctrl+D 終了
+  改行（複数行入力）: Ctrl+J / Option+Enter / 行末に \ を置いて Enter
+  複数行ペーストはそのまま 1 メッセージになります
+  承認ダイアログ: ←→/Tab で選択 · Enter 決定（y/n/a も可）
 mutating tools prompt for approval: y = once, a = always this session
 `)
 	case "/tools":

@@ -92,6 +92,58 @@ func TestSubmitStartsTurn(t *testing.T) {
 	}
 }
 
+// TestMultiLineInputRoutes: three ways to add a newline without
+// submitting — Ctrl+J, Alt/Option+Enter, and a trailing backslash.
+// (Shift+Enter is not among them: terminals send it as a plain CR.)
+func TestMultiLineInputRoutes(t *testing.T) {
+	c := &capture{}
+
+	// Ctrl+J
+	m := newTestModel(c)
+	m.ta.SetValue("first")
+	m = press(m, tea.KeyMsg{Type: tea.KeyCtrlJ})
+	m = press(m, runeMsg("x"))
+	if !strings.Contains(m.ta.Value(), "\n") || m.phase != phaseInput {
+		t.Errorf("Ctrl+J should insert a newline, got %q phase=%v", m.ta.Value(), m.phase)
+	}
+
+	// Alt+Enter
+	m = newTestModel(c)
+	m.ta.SetValue("first")
+	m = press(m, tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
+	if !strings.Contains(m.ta.Value(), "\n") {
+		t.Errorf("Alt+Enter should insert a newline, got %q", m.ta.Value())
+	}
+	if m.phase != phaseInput || len(c.turns) != 0 {
+		t.Error("Alt+Enter must not submit")
+	}
+
+	// Trailing backslash + Enter
+	m = newTestModel(c)
+	m.ta.SetValue("first\\")
+	m = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.ta.Value() != "first\n" {
+		t.Errorf("backslash continuation = %q, want %q", m.ta.Value(), "first\n")
+	}
+	if m.phase != phaseInput || len(c.turns) != 0 {
+		t.Error("backslash continuation must not submit")
+	}
+
+	// A plain Enter on a multi-line draft still submits the whole thing.
+	m = press(m, runeMsg("second"))
+	m = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(c.turns) != 1 || !strings.Contains(c.turns[0], "\n") {
+		t.Errorf("multi-line submit = %v", c.turns)
+	}
+}
+
+func TestPlaceholderTeachesKeys(t *testing.T) {
+	m := newTestModel(&capture{})
+	if !strings.Contains(m.ta.Placeholder, "Ctrl+J") {
+		t.Errorf("placeholder should teach the newline key: %q", m.ta.Placeholder)
+	}
+}
+
 func TestSubmitSeparatesTurns(t *testing.T) {
 	c := &capture{}
 	m := newTestModel(c)

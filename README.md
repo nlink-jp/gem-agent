@@ -75,10 +75,22 @@ escalated, where it starts on *deny* so a reflexive Enter cannot approve
 it. `--no-sandbox` disables the Seatbelt wrapper (debugging only),
 `--model` overrides the configured model.
 
-TUI keys (also listed in `/help`): Enter sends, Ctrl+J inserts a newline,
-↑/↓ navigate input history, Ctrl+C interrupts a running turn (or clears
-the input), Ctrl+D quits. Multi-line pastes land in the input box as one
-message.
+TUI keys (also listed in `/help`): Enter sends, ↑/↓ navigate input
+history, Ctrl+C interrupts a running turn (or clears the input), Ctrl+D
+quits.
+
+**Multi-line input** — any of three routes, since terminals send
+Shift+Enter as a plain carriage return and it cannot be distinguished
+from submit:
+
+| Route | Notes |
+|---|---|
+| `Ctrl+J` | always available |
+| `Option`/`Alt` + `Enter` | conventional in chat UIs |
+| trailing `\` then `Enter` | the shell convention |
+
+Pasting multi-line text also works: the whole paste lands in the input
+box as one message, never one LLM call per line.
 
 ### Auto-approve mode
 

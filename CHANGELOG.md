@@ -2,6 +2,14 @@
 
 ## [0.1.0] - Unreleased
 
+### Added — discoverable multi-line input (operator feedback)
+
+- Newlines can now be entered three ways: `Ctrl+J`, `Option`/`Alt`+`Enter`,
+  and a trailing `\` before `Enter`. (Shift+Enter is impossible: terminals
+  send it as a plain CR, indistinguishable from submit.) The input
+  placeholder teaches the keys, and `/help` lists all routes — the
+  always-on hint line was removed earlier, leaving them undiscoverable
+
 ### Added — IME-safe approval dialog (operator feedback)
 
 - The approval dialog is now selectable: ←→/Tab move, Enter confirms,
