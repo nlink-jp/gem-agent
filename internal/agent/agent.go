@@ -171,8 +171,12 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 		// one initialized field" — a 400 that poisons the whole session,
 		// observed in the field). Report it instead of recording it.
 		if resp.Content == "" && len(resp.ToolCalls) == 0 {
-			a.logRecord("assistant_empty", map[string]any{"round": round})
-			return "", fmt.Errorf("the model returned an empty response (no text, no tool calls); try rephrasing, or /clear to start a fresh conversation")
+			a.logRecord("assistant_empty", map[string]any{
+				"round": round, "finish_reason": resp.FinishReason,
+				"block_reason": resp.BlockReason, "thought_tokens": resp.ThoughtTokens,
+				"output_tokens": resp.OutputTokens, "prompt_tokens": resp.PromptTokens,
+			})
+			return "", emptyResponseError(resp)
 		}
 
 		// The assistant turn is appended verbatim — including thought
@@ -208,6 +212,34 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 		}
 	}
 	return "", fmt.Errorf("reached max turns (%d) without a final answer — /clear to reset, or raise [agent].max_turns", a.maxTurns)
+}
+
+// emptyResponseError explains a response that carried nothing, naming
+// the cause the API reported. "The model returned nothing" is not
+// actionable on its own: a thinking budget spent before any text was
+// emitted and a safety block look identical from the outside.
+func emptyResponseError(resp *llm.Response) error {
+	switch {
+	case resp.BlockReason != "":
+		// Naming the escape hatch matters: security material (an
+		// incident runbook, a phishing analysis) trips the configurable
+		// dangerous-content filter routinely, and without this the
+		// operator has no way to tell a policy block from a bug.
+		return fmt.Errorf("the model provider blocked this request (%s) — the conversation content tripped a content filter; set [model].safety = \"relaxed\" or \"off\" in ~/.config/gem-agent/config.toml if this is legitimate work, or /clear and rephrase",
+			resp.BlockReason)
+	case resp.FinishReason == "MAX_TOKENS":
+		return fmt.Errorf("the model hit its output limit before answering (%d reasoning tokens spent); raise [model].max_output_tokens or ask for something narrower",
+			resp.ThoughtTokens)
+	case resp.FinishReason == "SAFETY":
+		return fmt.Errorf("the model stopped without answering: its response tripped a content filter (SAFETY); set [model].safety = \"relaxed\" or \"off\" if this is legitimate work, or rephrase")
+	case resp.FinishReason == "RECITATION":
+		return fmt.Errorf("the model stopped without answering (RECITATION: the answer looked like verbatim recitation); rephrase the request")
+	case resp.FinishReason != "" && resp.FinishReason != "STOP":
+		return fmt.Errorf("the model returned no text (finish reason %s); try rephrasing, or /clear to start a fresh conversation", resp.FinishReason)
+	default:
+		return fmt.Errorf("the model returned an empty response (no text, no tool calls; finish reason %q); try rephrasing, or /clear to start a fresh conversation",
+			resp.FinishReason)
+	}
 }
 
 func attachRefs(atts []mention.Attachment) []string {

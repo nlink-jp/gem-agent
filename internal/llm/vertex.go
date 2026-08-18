@@ -19,10 +19,13 @@ import (
 type Vertex struct {
 	client *genai.Client
 	model  string
+	safety []*genai.SafetySetting
 }
 
 // NewVertex creates the backend. The client is created once and reused.
-func NewVertex(ctx context.Context, project, location, model string) (*Vertex, error) {
+// safety selects the configurable content-filter thresholds — see
+// SafetySettings.
+func NewVertex(ctx context.Context, project, location, model, safety string) (*Vertex, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		Project:  project,
 		Location: location,
@@ -31,7 +34,37 @@ func NewVertex(ctx context.Context, project, location, model string) (*Vertex, e
 	if err != nil {
 		return nil, fmt.Errorf("vertex AI client: %w", err)
 	}
-	return &Vertex{client: client, model: model}, nil
+	return &Vertex{client: client, model: model, safety: SafetySettings(safety)}, nil
+}
+
+// SafetySettings maps a policy name to per-category thresholds.
+//
+// Only four categories are configurable; Vertex also applies filters
+// that no setting can turn off (a block reason of PROHIBITED_CONTENT
+// comes from those). Loosening these is a deliberate operator choice —
+// security work trips DANGEROUS_CONTENT on ordinary material, such as
+// an incident-response runbook.
+func SafetySettings(policy string) []*genai.SafetySetting {
+	var threshold genai.HarmBlockThreshold
+	switch policy {
+	case "relaxed":
+		threshold = genai.HarmBlockThresholdBlockOnlyHigh
+	case "off":
+		threshold = genai.HarmBlockThresholdOff
+	default: // "default": send nothing, keep the provider's own defaults
+		return nil
+	}
+	categories := []genai.HarmCategory{
+		genai.HarmCategoryHarassment,
+		genai.HarmCategoryHateSpeech,
+		genai.HarmCategorySexuallyExplicit,
+		genai.HarmCategoryDangerousContent,
+	}
+	settings := make([]*genai.SafetySetting, 0, len(categories))
+	for _, c := range categories {
+		settings = append(settings, &genai.SafetySetting{Category: c, Threshold: threshold})
+	}
+	return settings
 }
 
 // Model returns the configured model name.
@@ -54,6 +87,7 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 		// Keep chain-of-thought text out of responses; Gemini 3 still
 		// attaches thought signatures, which we capture regardless.
 		ThinkingConfig: &genai.ThinkingConfig{IncludeThoughts: false},
+		SafetySettings: v.safety,
 	}
 	if system != "" {
 		cfg.SystemInstruction = genai.NewContentFromText(system, genai.RoleUser)
@@ -133,8 +167,18 @@ func accumulateChunk(chunk *genai.GenerateContentResponse, resp *Response, text 
 	if chunk.UsageMetadata != nil {
 		resp.PromptTokens = int(chunk.UsageMetadata.PromptTokenCount)
 		resp.OutputTokens = int(chunk.UsageMetadata.CandidatesTokenCount)
+		resp.ThoughtTokens = int(chunk.UsageMetadata.ThoughtsTokenCount)
 	}
-	if len(chunk.Candidates) == 0 || chunk.Candidates[0].Content == nil {
+	if chunk.PromptFeedback != nil && chunk.PromptFeedback.BlockReason != "" {
+		resp.BlockReason = string(chunk.PromptFeedback.BlockReason)
+	}
+	if len(chunk.Candidates) == 0 {
+		return
+	}
+	if r := chunk.Candidates[0].FinishReason; r != "" {
+		resp.FinishReason = string(r)
+	}
+	if chunk.Candidates[0].Content == nil {
 		return
 	}
 	for _, part := range chunk.Candidates[0].Content.Parts {

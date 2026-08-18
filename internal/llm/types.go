@@ -72,6 +72,14 @@ type Response struct {
 	TextPartSig     []byte
 	PromptTokens    int
 	OutputTokens    int
+	// FinishReason and BlockReason explain a response that carries no
+	// text — without them, "the model returned nothing" is untriageable
+	// (MAX_TOKENS spent on thinking reads exactly like a safety block).
+	FinishReason string
+	BlockReason  string
+	// ThoughtTokens counts reasoning tokens, which are billed as output
+	// and consume the output budget on thinking models.
+	ThoughtTokens int
 }
 
 // Backend is one LLM provider. onText receives streamed text deltas as

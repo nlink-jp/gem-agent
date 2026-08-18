@@ -274,3 +274,24 @@ func TestAutoToggle(t *testing.T) {
 		t.Fatal("toggle off failed")
 	}
 }
+
+// TestEmptyResponseErrorNamesTheCause: "the model returned nothing" is
+// not actionable — a blocked prompt, an exhausted output budget, and a
+// safety stop look identical without the reason the API reported.
+func TestEmptyResponseErrorNamesTheCause(t *testing.T) {
+	cases := []struct {
+		resp llm.Response
+		want string
+	}{
+		{llm.Response{BlockReason: "PROHIBITED_CONTENT"}, "PROHIBITED_CONTENT"},
+		{llm.Response{FinishReason: "MAX_TOKENS", ThoughtTokens: 4096}, "output limit"},
+		{llm.Response{FinishReason: "SAFETY"}, "SAFETY"},
+		{llm.Response{}, "empty response"},
+	}
+	for _, c := range cases {
+		resp := c.resp
+		if err := emptyResponseError(&resp); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%+v -> %v, want mention of %q", c.resp, err, c.want)
+		}
+	}
+}

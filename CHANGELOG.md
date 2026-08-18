@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.1.2] - 2026-08-19
+
+### Fixed
+
+- A blocked request now says so. v0.1.1 reported "the model returned an
+  empty response" for every empty turn, which hid the actual cause: the
+  provider's content filter had rejected the conversation
+  (`PROHIBITED_CONTENT`), reproduced live with an incident-response
+  runbook in context. The finish/block reason is now captured and the
+  error names it — filter block, output limit reached while reasoning,
+  safety stop, or genuinely empty — with the remedy for each
+
+### Added
+
+- `[model].safety` (`default` / `relaxed` / `off`) adjusts the four
+  configurable harm-category thresholds. Security material routinely
+  trips the dangerous-content filter; `off` was verified to unblock a
+  request that `default` rejected. The default is unchanged — loosening
+  a content filter is the operator's decision, and the block message
+  points at this setting when it fires
+- Empty-turn diagnostics (finish reason, block reason, reasoning tokens,
+  usage) are written to the session log
+
 ## [0.1.1] - 2026-08-19
 
 ### Fixed

@@ -52,6 +52,13 @@ type ModelConfig struct {
 	// ContextWindow overrides the context window size shown in the TUI
 	// footer. 0 (default) auto-detects from the model metadata.
 	ContextWindow int `toml:"context_window"`
+	// Safety selects the configurable content-filter thresholds:
+	// "default" (the provider's own), "relaxed" (block only high-
+	// confidence hits), or "off". Security work trips the dangerous-
+	// content filter on ordinary material, so the escape hatch is
+	// explicit rather than silent — and some filters cannot be turned
+	// off at any setting.
+	Safety string `toml:"safety"`
 }
 
 // SandboxConfig controls the sandbox-exec wrapper for shell_exec.
@@ -84,6 +91,7 @@ func defaults() Config {
 		// endpoints 404 them (measured 2026-08 with gemini-3-flash-preview
 		// and gemini-3.7-flash). Gemini 2.5 users set a regional location.
 		GCP:     GCPConfig{Location: "global"},
+		Model:   ModelConfig{Safety: "default"},
 		Sandbox: SandboxConfig{Enabled: true},
 		Agent:   AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120},
 		MCP:     MCPConfig{Enabled: true, CallTimeoutSec: 60},
@@ -177,6 +185,11 @@ func (c *Config) validate() error {
 	}
 	if c.MCP.CallTimeoutSec <= 0 {
 		return fmt.Errorf("[mcp].call_timeout_sec must be positive")
+	}
+	switch c.Model.Safety {
+	case "default", "relaxed", "off":
+	default:
+		return fmt.Errorf("[model].safety must be default, relaxed, or off (got %q)", c.Model.Safety)
 	}
 	switch c.TUI.Theme {
 	case "auto", "dark", "light", "plain":

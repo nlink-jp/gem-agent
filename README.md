@@ -261,6 +261,26 @@ their `✗` marker, so nothing depends on color alone).
 Precedence: flags (`--model`) > `GEMAGENT_*` > `GOOGLE_CLOUD_*` > config file
 > defaults. Unknown keys in the file are rejected (strict decode).
 
+### Content filters
+
+Vertex applies content filters to both the request and the response. When
+one fires, gem-agent says so explicitly — naming the reason the API
+reported — rather than showing an empty answer.
+
+Security work trips the configurable *dangerous content* filter on
+ordinary material (an incident-response runbook, a phishing analysis).
+`[model].safety` adjusts the four configurable categories:
+
+| Value | Effect |
+|---|---|
+| `default` | the provider's own thresholds |
+| `relaxed` | block only high-confidence hits |
+| `off` | do not block on those categories |
+
+Loosening it is a deliberate choice, so the default is left alone. Some
+Vertex filters cannot be turned off at any setting; a block from those is
+reported the same way, and the remedy is to rephrase or `/clear`.
+
 Note: as of 2026-08, the Gemini 3 family (verified with gemini-3.7-flash and
 gemini-3-flash-preview) is served only from the global endpoint — regional
 locations return 404. Gemini 2.5 models work from regional endpoints such as

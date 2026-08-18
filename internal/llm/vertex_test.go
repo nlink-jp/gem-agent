@@ -204,3 +204,23 @@ func TestConvertTools(t *testing.T) {
 		t.Errorf("declaration = %+v", fd)
 	}
 }
+
+func TestSafetySettings(t *testing.T) {
+	if s := SafetySettings("default"); s != nil {
+		t.Errorf("default policy must send nothing (keep the provider's own): %v", s)
+	}
+	for policy, want := range map[string]genai.HarmBlockThreshold{
+		"relaxed": genai.HarmBlockThresholdBlockOnlyHigh,
+		"off":     genai.HarmBlockThresholdOff,
+	} {
+		s := SafetySettings(policy)
+		if len(s) != 4 {
+			t.Fatalf("%s: %d settings, want the 4 configurable categories", policy, len(s))
+		}
+		for _, setting := range s {
+			if setting.Threshold != want {
+				t.Errorf("%s: %s threshold = %s, want %s", policy, setting.Category, setting.Threshold, want)
+			}
+		}
+	}
+}
