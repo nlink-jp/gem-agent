@@ -1,5 +1,50 @@
 # Changelog
 
+## [Unreleased]
+
+### Added — development Phase 3 (Release), the last of the RFP plan
+
+- **[Monthly drill runbook](docs/en/reference/drill.md)** — a backup that
+  is not exercised is not a backup. Twenty minutes, seven steps, each one
+  tied to something that decays without anyone touching gem-agent
+  (credentials expiring, a model retiring, an OS update invalidating the
+  binary, an MCP server moving). The verdict is pass or issue; there is no
+  "mostly worked", and a skipped step is recorded as skipped
+- **[Promotion criteria](docs/en/reference/promotion.md)** for leaving
+  lab-series — seven checkable facts rather than a judgement call, none of
+  them counting features. A sandbox failure in any drill resets the count.
+  Current status is stated in the document and is *not met*
+- **[Architecture reference](docs/en/reference/architecture.md)** —
+  current behaviour written to be read cold: the turn loop, the two
+  confinement boundaries and how they fail differently, persistence, and
+  every failure mode in one table
+- **Three-tier docs structure** with a single catalog
+  ([`INDEX.md`](docs/en/INDEX.md) / `INDEX.ja.md`): `reference/` for
+  current behaviour, `adr/` for decisions, `history/` for what gets
+  superseded. README and AGENTS.md now point at the index instead of
+  maintaining parallel lists that drift
+- `scripts/docs-mirror-check.sh`, wired into `make check` as
+  `make docs-check`: en/ja must be full structural mirrors. A missing
+  translation is invisible in review — it looks exactly like a document
+  nobody has written yet
+
+### Fixed — in the runbook, by running it
+
+The first drill rewrote three of its own steps, which is the reason to run
+a runbook rather than review it:
+
+- The read-only step asked what the project does and what its build
+  commands are — answered correctly with **zero tool calls**, because the
+  injected `AGENTS.md` already says so. It proved nothing. Now it asks
+  something no instruction file can answer
+- Auto-approve was on by config, so most of the approval step would have
+  run unattended. Step 1 now checks the indicator and turns it off
+- The containment check asked the model to write outside the project. The
+  model read the confinement out of the system prompt and declined to try
+  — a pass that tests nothing — while an earlier run of the same request
+  did try and hit the gate first. Replaced with a direct `!echo >
+  ../file`, which has no model discretion in it
+
 ## [0.2.1] - 2026-08-19
 
 ### Fixed

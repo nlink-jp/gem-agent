@@ -330,11 +330,17 @@ Vertex はリクエストとレスポンスの両方にコンテンツフィル�
 
 ## ドキュメント
 
-- [RFP（日本語）](docs/ja/gem-agent-rfp.ja.md) / [RFP (English)](docs/en/gem-agent-rfp.md)
-- [ADR-0001: サンドボックス方式](docs/ja/adr/0001-sandbox-mechanism.ja.md)
-- [ADR-0004: 自動承認](docs/ja/adr/0004-auto-approve.ja.md)
-- [ADR-0005: セッション再開](docs/ja/adr/0005-session-resume.ja.md)
-- [ADR-0006: コンテキスト圧縮](docs/ja/adr/0006-context-compaction.ja.md)
+入口は [**docs/ja/INDEX.ja.md**](docs/ja/INDEX.ja.md)
+（[English](docs/en/INDEX.md)）— 複数箇所で並列維持する一覧ではなく、
+カタログ 1 箇所を正とする構成です。内容:
+
+- [RFP](docs/ja/gem-agent-rfp.ja.md)（仕様の正本）
+- [アーキテクチャ](docs/ja/reference/architecture.ja.md) — 現在の挙動、
+  2 つの封じ込め境界、失敗時挙動の一覧
+- [月次訓練](docs/ja/reference/drill.ja.md) — 訓練しないバックアップは
+  バックアップではない
+- lab-series を出るための[昇格基準](docs/ja/reference/promotion.ja.md)
+- ADR 6 本（sandbox 方式からコンテキスト圧縮まで）
 
 ## ライセンス
 

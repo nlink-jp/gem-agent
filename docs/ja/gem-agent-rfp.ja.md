@@ -168,11 +168,18 @@ max_turns = 50
 
 ### Phase 3: Release
 
-- docs/{en,ja} 三層ドキュメント + ADR（sandbox 方式選定 等）
-- 実プロジェクトでの E2E（訓練シナリオ 1 件を gem-agent のみで完走）
-- リリース（署名 + notarize、darwin/arm64）
-- **月次訓練手順書の作成**（バックアップ鮮度の担保）
-- **cli-series 昇格基準の明文化**
+すべて完了（2026-08-19）:
+
+- docs/{en,ja} 三層ドキュメント + ADR — [`INDEX.ja.md`](INDEX.ja.md)、
+  `reference/`、`adr/`（ADR 6 本）。en/ja ミラーは
+  `scripts/docs-mirror-check.sh` が `make check` で機械検証する
+- 実プロジェクトでの E2E — 初回訓練を `json-filter` と本リポジトリに対して実施。
+  ステップ 7（gem-agent だけで実タスク 1 件）はツール層のパス封じ込めの
+  読み取り専用レビューで、回答をソースと照合して確認した
+- リリース — 署名 + notarize 済み darwin/arm64、Homebrew tap
+- [**月次訓練手順書**](reference/drill.ja.md) — 初回実行で自分自身の
+  ステップ 3 つを書き換えた
+- cli-series の[**昇格基準の明文化**](reference/promotion.ja.md)
 
 各 Phase は独立してレビュー可能。
 

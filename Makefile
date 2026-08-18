@@ -11,7 +11,7 @@ DIST_DIR := dist
 CODESIGN_IDENTITY ?= Developer ID Application
 NOTARY_PROFILE    ?= nlink-jp-notary
 
-.PHONY: build build-all package test vet check clean
+.PHONY: build build-all package test vet docs-check check clean
 
 build:
 	@mkdir -p $(DIST_DIR)
@@ -43,7 +43,13 @@ test:
 vet:
 	go vet ./...
 
-check: vet test build
+## docs-check: docs/en and docs/ja must be full structural mirrors. A
+## missing translation is invisible in review — it looks exactly like a
+## document nobody has written yet — so it is checked mechanically.
+docs-check:
+	@scripts/docs-mirror-check.sh
+
+check: vet test docs-check build
 
 clean:
 	rm -rf $(DIST_DIR)

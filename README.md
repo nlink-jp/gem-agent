@@ -344,11 +344,18 @@ locations return 404. Gemini 2.5 models work from regional endpoints such as
 
 ## Documentation
 
-- [RFP (English)](docs/en/gem-agent-rfp.md) / [RFP (日本語)](docs/ja/gem-agent-rfp.ja.md)
-- [ADR-0001: Sandbox mechanism](docs/en/adr/0001-sandbox-mechanism.md)
-- [ADR-0004: Auto-approve](docs/en/adr/0004-auto-approve.md)
-- [ADR-0005: Session resume](docs/en/adr/0005-session-resume.md)
-- [ADR-0006: Context compaction](docs/en/adr/0006-context-compaction.md)
+[**docs/en/INDEX.md**](docs/en/INDEX.md) is the entry point
+([日本語](docs/ja/INDEX.ja.md)) — one catalog rather than a list
+maintained in several places. It covers:
+
+- the [RFP](docs/en/gem-agent-rfp.md), which is the canonical spec
+- [architecture](docs/en/reference/architecture.md) — current behaviour,
+  the two confinement boundaries, failure behaviour in one table
+- the [monthly drill](docs/en/reference/drill.md) — a backup that is not
+  exercised is not a backup
+- [promotion criteria](docs/en/reference/promotion.md) for leaving
+  lab-series
+- six ADRs, from the sandbox mechanism to context compaction
 
 ## License
 

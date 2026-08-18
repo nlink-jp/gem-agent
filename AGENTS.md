@@ -9,9 +9,13 @@ live. Outstanding: monthly drill runbook and written cli-series promotion
 criteria (RFP Phase 3).
 
 - **Module:** `github.com/nlink-jp/gem-agent`
-- **Series:** lab-series (promotion to cli-series considered after E2E + drill
-  operations prove it — criteria to be written in development Phase 3)
+- **Series:** lab-series. Promotion criteria are written down in
+  `docs/en/reference/promotion.md`; the count restarts if the sandbox ever
+  fails a drill.
 - **Spec:** `docs/en/gem-agent-rfp.md` / `docs/ja/gem-agent-rfp.ja.md` (canonical)
+- **Docs entry point:** `docs/en/INDEX.md` / `docs/ja/INDEX.ja.md` — three
+  tiers (reference / adr / history). Add a doc to the INDEX, not to a
+  parallel list in this file or the README.
 
 ## Build / test
 
@@ -19,7 +23,8 @@ criteria (RFP Phase 3).
 |------|---------|
 | Build | `make build` → `dist/gem-agent` (never `go build` directly) |
 | Test | `make test` (or `go test ./...`) |
-| Vet + test + build | `make check` |
+| Vet + test + docs mirror + build | `make check` |
+| Docs mirror only | `make docs-check` |
 | Release archive | `make package` → `dist/gem-agent-vX.Y.Z-darwin-arm64.zip` |
 
 Version is injected via `-X main.version` from `git describe` — never edit the
@@ -48,7 +53,7 @@ internal/session/  JSONL transcript: logger + resume loader (ADR-0005)
 internal/repl/     paste-safe input reader (plain REPL, non-TTY fallback)
 internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate
 scripts/           codesign-darwin.sh / notarize-darwin.sh (org templates, verbatim)
-docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
+docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 ```
 
 ## Gotchas
@@ -157,3 +162,12 @@ docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
   asynchronously** — `resolveWindow` must run in *every* mode. It
   originally ran only on the interactive paths, so one-shot never knew
   the window and compaction silently never fired (measured, not reasoned).
+- **A new docs file needs its mirror in the same commit** — `make check`
+  runs `scripts/docs-mirror-check.sh`, because a missing translation is
+  invisible in review: it looks exactly like a document nobody has
+  written yet.
+- **The drill runbook is executable, and its steps were wrong until they
+  were run.** Two of them tested nothing (a question the injected
+  instruction files already answered; a containment check the model could
+  satisfy by politely declining). When editing
+  `docs/*/reference/drill*.md`, run the step you changed.

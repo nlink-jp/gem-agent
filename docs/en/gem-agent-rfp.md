@@ -55,8 +55,8 @@ a session-scoped allowlist (not persisted).
   navigation (ArrowUp/Down) must be implemented with an explicit "navigating history"
   state flag
 - **Output:** model responses stream to the terminal; tool executions are shown as event lines
-- **Session log:** appended as JSONL (`~/.local/state/gem-agent/sessions/`). Resume is
-  v2 scope (v1 records only)
+- **Session log:** appended as JSONL (`~/.local/state/gem-agent/sessions/`). After v1
+  shipped this became the resume source of truth (ADR-0005)
 
 ### Configuration
 
@@ -173,11 +173,18 @@ Scope minimization follows the shell-agent v1 lesson (feature accumulation → c
 
 ### Phase 3: Release
 
-- docs/{en,ja} three-tier documentation + ADRs (sandbox mechanism selection, etc.)
-- E2E on a real project (complete one drill scenario using gem-agent only)
-- Release (signed + notarized, darwin/arm64)
-- **Monthly drill runbook** (keeps the backup fresh)
-- **Written promotion criteria for cli-series**
+All delivered (2026-08-19):
+
+- docs/{en,ja} three-tier documentation + ADRs — [`INDEX.md`](INDEX.md),
+  `reference/`, `adr/` (six ADRs), with `scripts/docs-mirror-check.sh`
+  enforcing the en/ja mirror in `make check`
+- E2E on a real project — first drill run against `json-filter` and this
+  repository; step 7 (a real task with gem-agent alone) was a read-only
+  review of the tool layer's path confinement, verified against the source
+- Release — signed + notarized darwin/arm64, Homebrew tap
+- [**Monthly drill runbook**](reference/drill.md) — three of its steps
+  were rewritten by its own first run
+- [**Written promotion criteria**](reference/promotion.md) for cli-series
 
 Each phase is independently reviewable.
 

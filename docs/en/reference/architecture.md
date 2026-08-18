@@ -1,0 +1,161 @@
+# Architecture
+
+Current behaviour of gem-agent, written to be readable cold. Why a given
+decision was made lives in the [ADRs](../INDEX.md#adrs); this document
+describes what the code does today.
+
+## Shape
+
+One binary, one process, one conversation. `main.go` hands off to
+`cmd.Execute`, which builds five things and wires them together:
+
+```
+cmd/            flags, config load, project resolution, wiring, REPL/TUI
+  ├── internal/config      strict-decode TOML + env/flag precedence
+  ├── internal/llm         Backend interface + Vertex AI Gemini
+  ├── internal/tools       the five built-ins + MCP registrations
+  ├── internal/agent       the turn loop, approval dispatch, compaction
+  └── internal/tui         Bubble Tea inline UI (or internal/repl, non-TTY)
+```
+
+Supporting packages: `internal/sandbox` (Seatbelt profile generation),
+`internal/approve` (plain-REPL gate), `internal/risk` (auto-approve rule
+tier), `internal/mcp` (stdio JSON-RPC client), `internal/mention`
+(`@`-references), `internal/instructions` (`AGENTS.md` discovery),
+`internal/session` (transcript: logger + resume loader).
+
+The agent core knows nothing about the UI. It receives an `Approver`
+interface and a set of callbacks (`OnToolCall`, `OnUsage`, `OnNotice`,
+`OnAutoDecision`, `OnAttach`); the TUI implements them by sending Bubble
+Tea messages, and the plain REPL by writing to stderr. That is what lets
+the same loop run under a pty, a pipe, and `-p`.
+
+## The project directory
+
+The current working directory at startup is the project, resolved through
+`sandbox.ResolveWriteDir` so it is a real path with symlinks already
+followed. Everything else derives from it: which files tools may touch,
+where the sandbox permits writes, which `.mcp.json` is read, which
+instruction files are collected, and which sessions `--continue` will
+consider.
+
+Two independent boundaries enforce it, and they fail differently on
+purpose:
+
+- **Go-level path confinement** (`internal/tools`). `resolvePath`
+  converts to an absolute path under the project, cleans it, checks
+  containment, then resolves symlinks and checks containment *again* —
+  the second check is what stops a symlink inside the project pointing
+  out of it. For a path that does not exist yet, symlinks are resolved on
+  the deepest existing ancestor before the remaining tail is re-attached.
+  Four of the five built-ins take a path and all four route through it.
+- **Process-level containment** (`internal/sandbox`). `shell_exec` takes
+  no path — it takes a command — so it is wrapped in `sandbox-exec` with
+  a generated SBPL profile that denies `file-write*` outside the project
+  plus scratch directories. `cmd.Dir` is the project. `--no-sandbox`
+  removes this layer and says so in the banner.
+
+## One turn
+
+```
+input ──▶ @-references expanded ──▶ history append + transcript record
+            │
+            ▼
+      ┌─────────────────────────────────────────────┐
+      │ round: compaction check → request → stream  │
+      │   ├── text ──▶ UI (and scrollback at flush) │
+      │   └── tool calls                            │
+      │         ├── auto-approve ladder (if on)     │
+      │         ├── human gate (if not approved)    │
+      │         └── execute ──▶ result into history │
+      └───────────────┬─────────────────────────────┘
+                      │ tool calls present? loop.  text only? done.
+```
+
+Per-round details that matter:
+
+- **Thought signatures** are captured from every response Part and
+  replayed on the next request, in the order thoughts → text → function
+  calls. Gemini 3 rejects a function-call part sent without its
+  signature, so this is a hard requirement rather than an optimisation.
+- **Function responses are coalesced**: when one assistant turn issued
+  several calls, all their responses travel in a single user Content.
+- **Untrusted content is wrapped at send time**, not at store time. Tool
+  results and `@`-attachments are stored raw and enclosed in a fresh
+  nonce tag (nlk/guard) on every request, because the tag must change per
+  call. The system prompt carries the matching `{{DATA_TAG}}`.
+- **A response with neither text nor tool calls is never stored.** An
+  empty part in the history makes every later request fail with 400. A
+  content-filter block retries once, then reports the reason.
+- **Round cap**: `[agent].max_turns` bounds a runaway loop.
+
+## Approval
+
+Mutating tools (`write_file`, `edit_file`, `shell_exec`, and every MCP
+tool) pass the gate. `y` allows once, `a` allows that tool for the
+session, `n`/Esc denies; a denial is returned to the model as a result,
+never as silence. Answers are selectable with ←→/Tab + Enter because a
+Japanese IME swallows letter keys.
+
+With auto-approve on (opt-in; `shift+tab` toggles it, mid-run included),
+each mutating call first passes a pure rule classifier: *safe* runs,
+*blocked* always asks, *uncertain* goes to a model evaluation that must
+both approve and be confident. Every failure path asks. The blocked tier
+is a floor the model cannot lift, and the sandbox applies in all modes.
+
+## Context
+
+The status line shows occupancy against the model's input window — from
+`[model].context_window` if set, else model metadata, else the 1M family
+estimate marked `~` (Vertex does not report `inputTokenLimit`). The same
+value drives auto-compaction, which is why it is resolved in every mode
+including `-p`.
+
+At `[agent].compact_at_pct` of the window, between rounds, the older part
+of the conversation is replaced by a summary and the recent part kept
+verbatim. The cut never lands on a tool result, so no function response
+is orphaned. The summariser gets no tools and reads the transcript as
+nonce-wrapped data; the summary comes back as an attachment, quoted as
+data. Any failure leaves history untouched.
+
+## Persistence
+
+One JSONL file per session under `~/.local/state/gem-agent/sessions/`,
+mode `0600`, named by timestamp. It is both the diagnostic log and the
+resume source, so records that carry conversation state are complete —
+tool-call arguments, attachments, thought signatures — while diagnostic
+records stay summarised and are skipped on load. Compactions are recorded
+and replayed, so a compacted session resumes compacted.
+
+`--continue` picks the most recent session **of this project that has a
+conversation in it**; `--resume <id>` names one. Resume refuses a
+different project directory or a different model rather than warning.
+Ids are validated as ids and never interpreted as paths.
+
+## Configuration and drop-in behaviour
+
+`~/.config/gem-agent/config.toml`, strict decode (unknown keys are
+errors), precedence flags > `GEMAGENT_*` > `GOOGLE_CLOUD_*` > file >
+defaults. Model names are always configured, never compiled in.
+
+Nothing per-project is required. `AGENTS.md` / `AGENT.md` / `CLAUDE.md` /
+`GEMINI.md` are collected from `~/.config/gem-agent/`, then ancestor
+directories outermost-first, then the project — the walk stops at `$HOME`,
+because an instruction file is obeyed as instructions. MCP servers come
+from `~/.config/gem-agent/mcp.json` and `<project>/.mcp.json` in Claude
+Code format; the project wins a name collision. MCP has no cancel, so a
+timed-out call kills the server child and the next call respawns it.
+
+## Failure behaviour, in one place
+
+| Situation | What happens |
+|---|---|
+| Content filter blocks a response | announced, retried once, then reported by name |
+| Model returns nothing | reported with the finish/block reason, never stored |
+| Summarisation fails | history untouched, turn continues; twice disables auto-compaction |
+| Tool denied or errors | result string to the model, so it can react |
+| MCP call times out | server killed, respawned lazily on the next call |
+| 429 / 5xx before any chunk | exponential backoff retry; never after output has been consumed |
+| Session log unwritable | warning, session continues (a broken log must not stop a fallback) |
+| Resume target unreadable | fatal — the operator asked for that history |
+| SIGINT | cancels the turn, not the process |
