@@ -28,6 +28,7 @@ var (
 	flagConfig    string
 	flagModel     string
 	flagNoSandbox bool
+	flagPrompt    string
 )
 
 // Execute runs the root command.
@@ -60,6 +61,7 @@ func init() {
 	rootCmd.Flags().StringVar(&flagConfig, "config", "", "config file path (default ~/.config/gem-agent/config.toml)")
 	rootCmd.Flags().StringVar(&flagModel, "model", "", "override the configured model name")
 	rootCmd.Flags().BoolVar(&flagNoSandbox, "no-sandbox", false, "disable the sandbox-exec wrapper for shell_exec (debugging only, unsafe)")
+	rootCmd.Flags().StringVarP(&flagPrompt, "prompt", "p", "", "one-shot mode: run this prompt and exit (mutating tools are denied)")
 }
 
 const shell = "/bin/bash"
@@ -136,12 +138,20 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	oneShot := flagPrompt != ""
+
 	// One shared buffered reader for the REPL and the approval gate:
 	// bufio.NewReader returns an existing *bufio.Reader unchanged, so
 	// both components drain the same buffer and no typed-ahead input is
 	// stranded in a second one.
 	stdin := bufio.NewReader(cmd.InOrStdin())
-	gate := approve.New(stdin, stderr)
+	var gate agent.Approver = approve.New(stdin, stderr)
+	if oneShot {
+		// One-shot runs non-interactively (stdin may be a pipe): a
+		// blocking approval prompt would hang, so mutating tools are
+		// denied outright. Read-only pipelines still work.
+		gate = denyGate{out: stderr}
+	}
 	reader := repl.NewReader(stdin, stderr)
 
 	ag := agent.New(agent.Options{
@@ -155,6 +165,22 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(stderr, "\n[tool] %s %s\n", tc.Name, agent.CallDetail(tc))
 		},
 	})
+
+	// --- one-shot mode: single turn, quiet stderr, exit ---
+	if oneShot {
+		if !sandboxOn {
+			fmt.Fprintln(stderr, "sandbox: DISABLED — shell commands run unconfined")
+		}
+		runErr := runTurn(ctx, func(turnCtx context.Context) error {
+			_, err := ag.Run(turnCtx, flagPrompt, func(s string) { fmt.Fprint(cmd.OutOrStdout(), s) })
+			return err
+		})
+		fmt.Fprintln(cmd.OutOrStdout())
+		if errors.Is(runErr, errInterrupted) {
+			return fmt.Errorf("interrupted")
+		}
+		return runErr
+	}
 
 	// --- banner ---
 	fmt.Fprintf(stderr, "gem-agent %s — %s @ %s/%s\n", cmd.Root().Version, cfg.Model.Name, cfg.GCP.Project, cfg.GCP.Location)
@@ -208,6 +234,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 }
 
 var errInterrupted = errors.New("interrupted")
+
+// denyGate is the one-shot approver: it denies every mutating call with
+// a visible reason instead of blocking on an approval prompt that
+// nothing will answer.
+type denyGate struct{ out io.Writer }
+
+func (d denyGate) Approve(toolName, detail string) bool {
+	fmt.Fprintf(d.out, "[denied: %s %s — mutating tools are disabled in one-shot mode; run interactively to approve]\n", toolName, detail)
+	return false
+}
 
 // runTurn runs fn under a SIGINT-cancellable context and maps a
 // cancellation-caused failure to errInterrupted. The context error MUST
@@ -300,4 +336,3 @@ func firstSentence(s string) string {
 	}
 	return s
 }
-

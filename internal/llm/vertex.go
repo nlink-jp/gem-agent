@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/nlink-jp/nlk/backoff"
 	"google.golang.org/genai"
 )
 
@@ -50,16 +53,63 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 
 	contents := buildContents(messages)
 
-	resp := &Response{}
-	var text strings.Builder
-	for chunk, err := range v.client.Models.GenerateContentStream(ctx, v.model, contents, cfg) {
-		if err != nil {
-			return nil, fmt.Errorf("vertex AI stream: %w", err)
+	// Vertex rate limits fire readily under sequential agent traffic
+	// (429), so transient failures retry with exponential backoff — but
+	// only when nothing has been consumed from the stream yet: a retry
+	// after emitted text would duplicate output, and after a captured
+	// function call would duplicate the call.
+	bo := backoff.New(backoff.WithBase(500*time.Millisecond), backoff.WithMax(15*time.Second))
+	var lastErr error
+	for attempt := 0; attempt < maxStreamAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-time.After(bo.Duration(attempt - 1)):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}
-		accumulateChunk(chunk, resp, &text, onText)
+		resp := &Response{}
+		var text strings.Builder
+		chunks := 0
+		var streamErr error
+		for chunk, err := range v.client.Models.GenerateContentStream(ctx, v.model, contents, cfg) {
+			if err != nil {
+				streamErr = err
+				break
+			}
+			chunks++
+			accumulateChunk(chunk, resp, &text, onText)
+		}
+		if streamErr == nil {
+			resp.Content = text.String()
+			return resp, nil
+		}
+		if !shouldRetryStream(streamErr, chunks) || ctx.Err() != nil {
+			return nil, fmt.Errorf("vertex AI stream: %w", streamErr)
+		}
+		lastErr = streamErr
 	}
-	resp.Content = text.String()
-	return resp, nil
+	return nil, fmt.Errorf("vertex AI stream: %d attempts exhausted: %w", maxStreamAttempts, lastErr)
+}
+
+const maxStreamAttempts = 5
+
+// shouldRetryStream reports whether a failed stream may be retried:
+// transient HTTP status AND no chunk consumed yet (otherwise a retry
+// duplicates already-delivered output or captured calls).
+func shouldRetryStream(err error, chunksSeen int) bool {
+	if chunksSeen > 0 {
+		return false
+	}
+	var apiErr genai.APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	switch apiErr.Code {
+	case 429, 500, 502, 503, 504:
+		return true
+	}
+	return false
 }
 
 // accumulateChunk folds one stream chunk into the response accumulator.

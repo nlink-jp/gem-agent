@@ -139,6 +139,34 @@ func TestAccumulateChunkStreams(t *testing.T) {
 	}
 }
 
+func TestShouldRetryStream(t *testing.T) {
+	rateLimited := genai.APIError{Code: 429, Message: "rate limited"}
+	if !shouldRetryStream(rateLimited, 0) {
+		t.Error("429 before any chunk should retry")
+	}
+	if shouldRetryStream(rateLimited, 1) {
+		t.Error("retry after consumed chunks would duplicate output")
+	}
+	if shouldRetryStream(genai.APIError{Code: 404}, 0) {
+		t.Error("404 is not transient")
+	}
+	if shouldRetryStream(genai.APIError{Code: 400}, 0) {
+		t.Error("400 is not transient")
+	}
+	if !shouldRetryStream(genai.APIError{Code: 503}, 0) {
+		t.Error("503 should retry")
+	}
+	if shouldRetryStream(errNotAPI, 0) {
+		t.Error("non-API errors are not retryable")
+	}
+}
+
+var errNotAPI = &customErr{}
+
+type customErr struct{}
+
+func (*customErr) Error() string { return "boom" }
+
 func TestConvertTools(t *testing.T) {
 	defs := convertTools([]ToolDef{{
 		Name:        "read_file",

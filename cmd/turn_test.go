@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -24,6 +25,17 @@ func TestRunTurnRealErrorNotMasked(t *testing.T) {
 	}
 	if errors.Is(err, errInterrupted) {
 		t.Fatal("real error misclassified as interrupt")
+	}
+}
+
+func TestDenyGateAlwaysDenies(t *testing.T) {
+	var buf strings.Builder
+	g := denyGate{out: &buf}
+	if g.Approve("shell_exec", "rm -rf /") {
+		t.Fatal("one-shot gate must deny mutating tools")
+	}
+	if !strings.Contains(buf.String(), "one-shot") {
+		t.Errorf("denial should explain itself: %q", buf.String())
 	}
 }
 
