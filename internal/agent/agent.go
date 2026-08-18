@@ -12,6 +12,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mention"
+	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/nlk/guard"
 )
@@ -112,6 +113,11 @@ func New(opts Options) *Agent {
 // Reset clears the conversation history (REPL /clear).
 func (a *Agent) Reset() { a.history = nil }
 
+// SetHistory replaces the conversation with a restored transcript
+// (--continue / --resume, ADR-0005). Like AddContext, it must not be
+// called while Run is in flight.
+func (a *Agent) SetHistory(history []llm.Message) { a.history = history }
+
 // AutoApprove reports whether auto-approve mode is on.
 func (a *Agent) AutoApprove() bool {
 	a.mu.Lock()
@@ -131,8 +137,7 @@ func (a *Agent) SetAutoApprove(on bool) {
 // model sees what the user ran and what came back. Must not be called
 // while Run is in flight (the UI's phase machine guarantees that).
 func (a *Agent) AddContext(text string) {
-	a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: text})
-	a.logRecord("user_context", map[string]any{"content": clip(text, 2000)})
+	a.appendMessage(llm.Message{Role: llm.RoleUser, Content: text})
 }
 
 // HistoryLen reports the number of history messages (REPL status display).
@@ -153,8 +158,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 			Ref: att.Ref, Kind: att.Kind, Content: att.Content,
 		})
 	}
-	a.history = append(a.history, msg)
-	a.logRecord("user", map[string]any{"content": input, "attachments": attachRefs(atts)})
+	a.appendMessage(msg)
 
 	filterRetries := 0
 
@@ -170,6 +174,9 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 		}
 		if a.onUsage != nil && (resp.PromptTokens > 0 || resp.OutputTokens > 0) {
 			a.onUsage(resp.PromptTokens, resp.OutputTokens)
+			a.logRecord("usage", map[string]int{
+				"prompt": resp.PromptTokens, "output": resp.OutputTokens, "thoughts": resp.ThoughtTokens,
+			})
 		}
 
 		// A response with neither text nor tool calls carries nothing to
@@ -198,15 +205,16 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 
 		// The assistant turn is appended verbatim — including thought
 		// signatures — because the next request replays it (Gemini 3
-		// hard requirement; see internal/llm).
-		a.history = append(a.history, llm.Message{
+		// hard requirement; see internal/llm). The transcript records it
+		// just as verbatim, for the same reason: a resumed session
+		// (ADR-0005) replays these signatures too.
+		a.appendMessage(llm.Message{
 			Role:            llm.RoleAssistant,
 			Content:         resp.Content,
 			ToolCalls:       resp.ToolCalls,
 			ThoughtPartSigs: resp.ThoughtPartSigs,
 			TextPartSig:     resp.TextPartSig,
 		})
-		a.logRecord("assistant", assistantRecord(resp))
 
 		if len(resp.ToolCalls) == 0 {
 			return resp.Content, nil
@@ -217,14 +225,11 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 				a.onToolCall(tc)
 			}
 			result := a.execCall(ctx, tc)
-			a.history = append(a.history, llm.Message{
+			a.appendMessage(llm.Message{
 				Role:       llm.RoleTool,
 				ToolName:   tc.Name,
 				ToolCallID: tc.ID,
 				Content:    result,
-			})
-			a.logRecord("tool_result", map[string]any{
-				"id": tc.ID, "name": tc.Name, "result": clip(result, 2000),
 			})
 		}
 	}
@@ -260,12 +265,13 @@ func emptyResponseError(resp *llm.Response) error {
 	}
 }
 
-func attachRefs(atts []mention.Attachment) []string {
-	refs := make([]string, 0, len(atts))
-	for _, a := range atts {
-		refs = append(refs, a.Ref)
-	}
-	return refs
+// appendMessage adds one message to the conversation and records it in
+// the transcript verbatim. Every history append goes through here: a
+// message that reaches the model but not the transcript is a hole in a
+// resumed session, and the two would drift silently (ADR-0005).
+func (a *Agent) appendMessage(m llm.Message) {
+	a.history = append(a.history, m)
+	a.logRecord(session.KindMessage, m)
 }
 
 // wrapToolMessages returns a copy of the history where every tool result
@@ -367,21 +373,6 @@ func CallDetail(tc llm.ToolCall) string {
 		return "(no arguments)"
 	}
 	return clip(strings.Join(parts, " "), 300)
-}
-
-func assistantRecord(resp *llm.Response) map[string]any {
-	rec := map[string]any{"content": resp.Content}
-	if len(resp.ToolCalls) > 0 {
-		var calls []map[string]any
-		for _, tc := range resp.ToolCalls {
-			calls = append(calls, map[string]any{"id": tc.ID, "name": tc.Name, "args": tc.Args})
-		}
-		rec["tool_calls"] = calls
-	}
-	if resp.PromptTokens > 0 || resp.OutputTokens > 0 {
-		rec["tokens"] = map[string]int{"prompt": resp.PromptTokens, "output": resp.OutputTokens}
-	}
-	return rec
 }
 
 // maxFilterRetries bounds automatic retries of a content-filter block.

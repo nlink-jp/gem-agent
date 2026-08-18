@@ -17,44 +17,49 @@ const (
 )
 
 // ToolCall is one function call requested by the model.
+//
+// The JSON tags are load-bearing, not decoration: a Message is written
+// verbatim to the session transcript and read back to resume a session
+// (ADR-0005), so these names are a persisted format. []byte fields
+// round-trip as base64 through encoding/json.
 type ToolCall struct {
-	ID   string
-	Name string
-	Args map[string]any
+	ID   string         `json:"id,omitempty"`
+	Name string         `json:"name"`
+	Args map[string]any `json:"args,omitempty"`
 	// ThoughtSignature is the Gemini 3 opaque continuation token attached
 	// to the function-call part. It must be echoed back on the same part
 	// shape in the next request or the API fails with 400 (ADR-0009
 	// pattern, ported from shell-agent-v2).
-	ThoughtSignature []byte
+	ThoughtSignature []byte `json:"thought_signature,omitempty"`
 }
 
 // Attachment is file or directory content pulled in by an @-reference.
 // It is stored apart from Content because it is untrusted data: the
 // agent wraps it in the turn's nonce tag, exactly like a tool result.
 type Attachment struct {
-	Ref     string
-	Kind    string
-	Content string
+	Ref     string `json:"ref"`
+	Kind    string `json:"kind"`
+	Content string `json:"content"`
 }
 
 // Message is one turn in the conversation history.
 type Message struct {
-	Role    Role
-	Content string
+	Role    Role   `json:"role"`
+	Content string `json:"content,omitempty"`
 	// Attachments accompany a user message (@-references).
-	Attachments []Attachment
+	Attachments []Attachment `json:"attachments,omitempty"`
 
 	// Assistant-role fields.
-	ToolCalls []ToolCall
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 	// ThoughtPartSigs holds signatures of thought parts (text filtered
 	// out at parse time; the signature is the load-bearing payload).
-	ThoughtPartSigs [][]byte
+	ThoughtPartSigs [][]byte `json:"thought_part_sigs,omitempty"`
 	// TextPartSig holds the signature attached to the text part, if any.
-	TextPartSig []byte
+	TextPartSig []byte `json:"text_part_sig,omitempty"`
 
 	// Tool-role fields.
-	ToolName   string
-	ToolCallID string
+	ToolName   string `json:"tool_name,omitempty"`
+	ToolCallID string `json:"tool_call_id,omitempty"`
 }
 
 // ToolDef describes one tool to the model.

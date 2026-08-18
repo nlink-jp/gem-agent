@@ -40,7 +40,12 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
 - `shell_exec` wrapped in macOS sandbox-exec — file writes restricted to the
   project directory + scratch dirs (enforcement covered by a real Seatbelt test)
 - Paste-safe input: a multi-line paste becomes one input, never one LLM call per line
-- JSONL session log under `~/.local/state/gem-agent/sessions/`
+- **Session resume**: `--continue` picks up this project's most recent
+  session, `--resume <id>` a specific one, `gem-agent sessions` lists
+  them. The JSONL transcript under `~/.local/state/gem-agent/sessions/`
+  is both the log and the resume source, recorded in full fidelity
+  (Gemini reasoning tokens included, which the API requires on replay).
+  See [ADR-0005](docs/en/adr/0005-session-resume.md)
 - Slash commands: `/help` `/tools` `/mcp` `/clear` `/quit`
 - **Drop-in project compatibility**: the project's agent-instruction files
   are injected into the system prompt — `AGENTS.md`, `AGENT.md`,
@@ -56,14 +61,16 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   tools denied (pipe-friendly)
 - Transient Vertex failures (429/5xx) retry with exponential backoff
 
-Out of scope by design: memory subsystems, context compaction, data analysis,
-GUI, session resume, non-macOS platforms.
+Out of scope by design: memory subsystems, context compaction, data
+analysis, GUI, non-macOS platforms.
 
 ## Usage
 
 ```sh
 cd /path/to/your/project
 gem-agent                                  # interactive REPL
+gem-agent -c                               # continue the last session here
+gem-agent sessions                         # list resumable sessions
 gem-agent -p "summarize this repository"   # one-shot, pipe-friendly
 ```
 
@@ -146,6 +153,24 @@ status line shows the model, current context occupancy against the
 model's window (auto-detected from model metadata, or
 `[model].context_window`), cumulative token consumption, and the project
 directory.
+
+### Resuming a session
+
+```sh
+gem-agent sessions        # ids, age, model, and the opening question
+gem-agent -c              # the most recent session in this directory
+gem-agent --resume 20260819-150102
+```
+
+A resumed session continues its own transcript — one file is one
+conversation however many processes it took — and comes back exactly as
+it was, tool results included. Two refusals are deliberate: a session
+resumes only in the directory it was recorded in, and only under the
+model that produced it (the replayed reasoning tokens are model-bound).
+Each message names what to do instead.
+
+The transcript therefore holds the full text of every file the agent
+read. It lives under `~/.local/state/gem-agent/sessions/`, mode `0600`.
 
 ## Project instructions
 
@@ -296,6 +321,8 @@ locations return 404. Gemini 2.5 models work from regional endpoints such as
 
 - [RFP (English)](docs/en/gem-agent-rfp.md) / [RFP (日本語)](docs/ja/gem-agent-rfp.ja.md)
 - [ADR-0001: Sandbox mechanism](docs/en/adr/0001-sandbox-mechanism.md)
+- [ADR-0004: Auto-approve](docs/en/adr/0004-auto-approve.md)
+- [ADR-0005: Session resume](docs/en/adr/0005-session-resume.md)
 
 ## License
 

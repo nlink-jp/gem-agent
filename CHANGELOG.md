@@ -1,5 +1,31 @@
 # Changelog
 
+## [Unreleased]
+
+### Added — session resume (ADR-0005, operator request)
+
+- `--continue` resumes this project's most recent session, `--resume <id>`
+  a specific one, and `gem-agent sessions` lists them with age, model and
+  opening question. A resumed session appends to its own transcript: one
+  file is one conversation, however many processes it took
+- The JSONL session log became the resume source of truth, which meant
+  making it lossless. Conversation records now hold the complete message
+  — tool-call arguments, attachments and **Gemini thought signatures**,
+  which were not recorded at all and which the API requires on replay.
+  Tool results are no longer clipped to 2000 characters: a resumed
+  session with half of a file it read is worse than no resume, because
+  nothing announces the gap. Diagnostic records stay summarised
+- Verified live before shipping, since the whole design rests on it:
+  signatures recorded by one process replay in another (a resumed run
+  answered from a restored tool result without re-reading anything)
+- Two refusals rather than warnings — a session resumes only in the
+  directory it was recorded in, and only under the model that produced
+  it. Both errors name the recorded value, so the way forward is a
+  copy-paste. Ids are validated as ids, never interpreted as paths
+- **The transcript now holds the full text of every file the agent read.**
+  It always half-did; now it does so completely. `0600`, under
+  `~/.local/state/gem-agent/sessions/`
+
 ## [0.1.3] - 2026-08-19
 
 ### Fixed

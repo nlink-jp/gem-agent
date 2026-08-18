@@ -4,7 +4,11 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/nlink-jp/gem-agent/internal/llm"
 )
 
 func TestLogAppendsJSONL(t *testing.T) {
@@ -60,5 +64,266 @@ func TestOpenCreatesUniqueFilePerSession(t *testing.T) {
 	defer l2.Close()
 	if l1.Path() == l2.Path() {
 		t.Error("two sessions share one file")
+	}
+	if !ValidID(l1.ID()) || !ValidID(l2.ID()) {
+		t.Errorf("generated ids are not accepted by ValidID: %q %q", l1.ID(), l2.ID())
+	}
+}
+
+// A resumed conversation is only as good as what the transcript kept.
+// Thought signatures are the part that is easy to lose and impossible to
+// do without: Gemini rejects a function-call part replayed without one.
+func TestLoadRestoresFullFidelityHistory(t *testing.T) {
+	dir := t.TempDir()
+	l, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Log(KindHeader, Header{Schema: SchemaVersion, Version: "v0.1.3", Model: "test-model", Project: "/p"}); err != nil {
+		t.Fatal(err)
+	}
+	want := []llm.Message{
+		{Role: llm.RoleUser, Content: "read the file", Attachments: []llm.Attachment{{Ref: "a.txt", Kind: "file", Content: "body"}}},
+		{Role: llm.RoleAssistant, Content: "sure",
+			ToolCalls:       []llm.ToolCall{{ID: "c1", Name: "read_file", Args: map[string]any{"path": "a.txt"}, ThoughtSignature: []byte{0x01, 0x02, 0xff}}},
+			ThoughtPartSigs: [][]byte{{0xde, 0xad}}, TextPartSig: []byte{0xbe, 0xef}},
+		{Role: llm.RoleTool, ToolName: "read_file", ToolCallID: "c1", Content: strings.Repeat("x", 100_000)},
+	}
+	for _, m := range want {
+		if err := l.Log(KindMessage, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	l.Close()
+
+	got, header, err := Load(l.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if header.Model != "test-model" || header.Project != "/p" {
+		t.Errorf("header = %+v", header)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("loaded %d messages, want %d", len(got), len(want))
+	}
+	if string(got[1].ToolCalls[0].ThoughtSignature) != "\x01\x02\xff" {
+		t.Errorf("tool-call thought signature lost: %q", got[1].ToolCalls[0].ThoughtSignature)
+	}
+	if len(got[1].ThoughtPartSigs) != 1 || string(got[1].ThoughtPartSigs[0]) != "\xde\xad" {
+		t.Errorf("thought part signatures lost: %q", got[1].ThoughtPartSigs)
+	}
+	if string(got[1].TextPartSig) != "\xbe\xef" {
+		t.Errorf("text part signature lost: %q", got[1].TextPartSig)
+	}
+	if got[1].ToolCalls[0].Args["path"] != "a.txt" {
+		t.Errorf("tool-call args lost: %v", got[1].ToolCalls[0].Args)
+	}
+	if got[0].Attachments[0].Content != "body" {
+		t.Errorf("attachment lost: %+v", got[0].Attachments)
+	}
+	// The clipping the log used to apply would silently amputate a large
+	// tool result — a resumed session must not have half a file.
+	if len(got[2].Content) != 100_000 {
+		t.Errorf("tool result truncated to %d bytes", len(got[2].Content))
+	}
+}
+
+func TestLoadAppliesCompaction(t *testing.T) {
+	dir := t.TempDir()
+	l, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []string{"one", "two", "three"} {
+		if err := l.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: c}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := l.Log(KindCompaction, Compaction{
+		Replaced: 2,
+		Message:  llm.Message{Role: llm.RoleUser, Content: "summary"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "four"}); err != nil {
+		t.Fatal(err)
+	}
+	l.Close()
+
+	got, _, err := Load(l.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contents []string
+	for _, m := range got {
+		contents = append(contents, m.Content)
+	}
+	// Re-inflating a conversation that was deliberately shrunk would put
+	// the resumed session straight back over the window.
+	want := []string{"summary", "three", "four"}
+	if strings.Join(contents, ",") != strings.Join(want, ",") {
+		t.Errorf("history = %v, want %v", contents, want)
+	}
+}
+
+func TestLoadRejectsNewerSchema(t *testing.T) {
+	dir := t.TempDir()
+	l, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Log(KindHeader, Header{Schema: SchemaVersion + 1}); err != nil {
+		t.Fatal(err)
+	}
+	l.Close()
+	if _, _, err := Load(l.Path()); err == nil {
+		t.Fatal("a transcript from a newer build loaded silently")
+	}
+}
+
+// A crash mid-write leaves a torn last line. Everything before it is
+// still a valid conversation.
+func TestLoadToleratesTruncatedFinalLine(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "20260819-101010.jsonl")
+	good, err := json.Marshal(Record{Kind: KindMessage, Data: llm.Message{Role: llm.RoleUser, Content: "kept"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(append(good, '\n'), []byte(`{"kind":"message","data":{"role":"us`)...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := Load(path)
+	if err != nil {
+		t.Fatalf("a torn final line made the whole transcript unresumable: %v", err)
+	}
+	if len(got) != 1 || got[0].Content != "kept" {
+		t.Errorf("history = %+v", got)
+	}
+}
+
+func TestValidIDRejectsPaths(t *testing.T) {
+	for _, bad := range []string{"../../etc/passwd", "20260819-101010/../x", "/abs/20260819-101010", "notanid", "", "20260819-101010.jsonl"} {
+		if ValidID(bad) {
+			t.Errorf("ValidID(%q) = true — an id must not be able to name a file outside the sessions directory", bad)
+		}
+	}
+	for _, ok := range []string{"20260819-101010", "20260819-101010-2"} {
+		if !ValidID(ok) {
+			t.Errorf("ValidID(%q) = false", ok)
+		}
+	}
+}
+
+func TestReopenAppendsToTheSameTranscript(t *testing.T) {
+	dir := t.TempDir()
+	l, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "before"}); err != nil {
+		t.Fatal(err)
+	}
+	l.Close()
+
+	l2, err := Reopen(dir, l.ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l2.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "after"}); err != nil {
+		t.Fatal(err)
+	}
+	l2.Close()
+	if l2.Path() != l.Path() {
+		t.Errorf("resume wrote to %s, want %s", l2.Path(), l.Path())
+	}
+
+	got, _, err := Load(l.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Content != "before" || got[1].Content != "after" {
+		t.Errorf("history = %+v", got)
+	}
+}
+
+func TestReopenRefusesInvalidID(t *testing.T) {
+	if _, err := Reopen(t.TempDir(), "../escape"); err == nil {
+		t.Fatal("Reopen accepted a path as an id")
+	}
+}
+
+func TestListFiltersByProjectAndSortsNewestFirst(t *testing.T) {
+	dir := t.TempDir()
+	write := func(project, preview string) string {
+		l, err := Open(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer l.Close()
+		if err := l.Log(KindHeader, Header{Schema: SchemaVersion, Model: "m", Project: project}); err != nil {
+			t.Fatal(err)
+		}
+		if err := l.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: preview}); err != nil {
+			t.Fatal(err)
+		}
+		return l.ID()
+	}
+	older := write("/proj", "first question\nsecond line")
+	newer := write("/proj", "later question")
+	write("/other", "different project")
+
+	metas, err := List(dir, "/proj")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(metas) != 2 {
+		t.Fatalf("listed %d sessions, want 2 (the other project must not appear)", len(metas))
+	}
+	// Same-second ids get a numeric suffix, so mtime alone may tie;
+	// either order is acceptable as long as both are present and the
+	// foreign project is absent.
+	ids := metas[0].ID + " " + metas[1].ID
+	if !strings.Contains(ids, older) || !strings.Contains(ids, newer) {
+		t.Errorf("ids = %s, want both %s and %s", ids, older, newer)
+	}
+	for _, m := range metas {
+		if m.Header.Project != "/proj" {
+			t.Errorf("%s: project = %q", m.ID, m.Header.Project)
+		}
+		if m.Preview == "" || strings.Contains(m.Preview, "\n") {
+			t.Errorf("%s: preview = %q, want a single non-empty line", m.ID, m.Preview)
+		}
+	}
+
+	if _, ok, err := Latest(dir, "/nowhere"); err != nil || ok {
+		t.Errorf("Latest for an unknown project: ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := Latest(dir, "/proj"); err != nil || !ok {
+		t.Errorf("Latest for a known project: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestListIgnoresForeignFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "planted.jsonl"), []byte(`{"kind":"session","data":{"project":"/proj"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metas, err := List(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(metas) != 0 {
+		t.Errorf("listed %d entries, want 0 — only generated session ids are sessions", len(metas))
+	}
+}
+
+func TestListOnMissingDirIsEmptyNotAnError(t *testing.T) {
+	metas, err := List(filepath.Join(t.TempDir(), "never-created"), "")
+	if err != nil || len(metas) != 0 {
+		t.Errorf("List = %v, %v; want no sessions and no error on a first run", metas, err)
 	}
 }

@@ -34,6 +34,8 @@ var (
 	flagModel     string
 	flagNoSandbox bool
 	flagPrompt    string
+	flagContinue  bool
+	flagResume    string
 )
 
 // Execute runs the root command.
@@ -67,6 +69,8 @@ func init() {
 	rootCmd.Flags().StringVar(&flagModel, "model", "", "override the configured model name")
 	rootCmd.Flags().BoolVar(&flagNoSandbox, "no-sandbox", false, "disable the sandbox-exec wrapper for shell_exec (debugging only, unsafe)")
 	rootCmd.Flags().StringVarP(&flagPrompt, "prompt", "p", "", "one-shot mode: run this prompt and exit (mutating tools are denied)")
+	rootCmd.Flags().BoolVarP(&flagContinue, "continue", "c", false, "resume this project's most recent session")
+	rootCmd.Flags().StringVar(&flagResume, "resume", "", "resume a specific session id (see `gem-agent sessions`)")
 }
 
 const shell = "/bin/bash"
@@ -122,19 +126,44 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// --- session log (a broken log warns; it must not block a backup tool) ---
+	// --- session transcript: the log, and the resume source (ADR-0005) ---
+	if flagContinue && flagResume != "" {
+		return fmt.Errorf("--continue and --resume name different sessions; use one")
+	}
+	sessionDir, sessionDirErr := session.DefaultDir()
+
+	var restored []llm.Message
+	resumedID := ""
+	if flagContinue || flagResume != "" {
+		if sessionDirErr != nil {
+			return fmt.Errorf("cannot resume: %w", sessionDirErr)
+		}
+		meta, history, err := resolveResume(sessionDir, projectDir, cfg.Model.Name, flagResume)
+		if err != nil {
+			return err
+		}
+		restored, resumedID = history, meta.ID
+	}
+
+	// A broken log warns; it must not block a backup tool. A broken
+	// *resume* is fatal, though — the operator asked for that history,
+	// and continuing without it silently would be worse than stopping.
 	var sessionLog agent.SessionLog
 	sessionPath := "(disabled)"
-	if dir, err := session.DefaultDir(); err == nil {
-		if lg, err := session.Open(dir); err == nil {
+	if sessionDirErr != nil {
+		fmt.Fprintf(stderr, "warning: session log disabled: %v\n", sessionDirErr)
+	} else {
+		lg, err := openSessionLog(sessionDir, resumedID, projectDir, cfg.Model.Name, cmd.Root().Version)
+		switch {
+		case err != nil && resumedID != "":
+			return fmt.Errorf("cannot append to session %s: %w", resumedID, err)
+		case err != nil:
+			fmt.Fprintf(stderr, "warning: session log disabled: %v\n", err)
+		default:
 			defer lg.Close()
 			sessionLog = lg
 			sessionPath = lg.Path()
-		} else {
-			fmt.Fprintf(stderr, "warning: session log disabled: %v\n", err)
 		}
-	} else {
-		fmt.Fprintf(stderr, "warning: session log disabled: %v\n", err)
 	}
 
 	// --- LLM backend ---
@@ -240,6 +269,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(stderr, "[auto-approved: %s (%s) — %s]\n", tc.Name, d.Tier, d.Reason)
 		},
 	})
+	if len(restored) > 0 {
+		ag.SetHistory(restored)
+	}
 
 	// --- one-shot mode: single turn, quiet stderr, exit ---
 	if oneShot {
@@ -273,6 +305,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 	if len(contextLabels) > 0 {
 		bannerLines = append(bannerLines, "instructions: "+strings.Join(contextLabels, ", "))
+	}
+	if resumedID != "" {
+		bannerLines = append(bannerLines,
+			fmt.Sprintf("resumed: session %s (%d messages restored)", resumedID, len(restored)))
 	}
 
 	// --- interactive TUI (ADR-0002/0003) ---

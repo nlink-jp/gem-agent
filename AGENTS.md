@@ -1,10 +1,12 @@
 # AGENTS.md — gem-agent
 
 Interactive CLI agent backed by Vertex AI Gemini. Continuity (backup) tool
-for when Claude Code is unavailable. macOS-only. Pre-release: development
-Phases 1–2 implemented and verified live (agent loop, MCP client,
-drop-in AGENTS.md/CLAUDE.md/.mcp.json, one-shot mode, nonce isolation,
-backoff); Phase 3 (real-project E2E, drill runbook, release) pending.
+for when Claude Code is unavailable. macOS-only. Released (v0.1.x, Homebrew
+tap + notarized zip): agent loop, MCP client, drop-in
+AGENTS.md/CLAUDE.md/.mcp.json, one-shot mode, nonce isolation, backoff,
+inline TUI, auto-approve, session resume — all verified live. Outstanding:
+monthly drill runbook and written cli-series promotion criteria (RFP
+Phase 3).
 
 - **Module:** `github.com/nlink-jp/gem-agent`
 - **Series:** lab-series (promotion to cli-series considered after E2E + drill
@@ -41,7 +43,7 @@ internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery
                    (ancestor walk, stops at $HOME)
 internal/sandbox/  SBPL profile generation, sandbox-exec wrapping
 internal/approve/  MITL gate (y/n/a + session allowlist)
-internal/session/  JSONL session logger
+internal/session/  JSONL transcript: logger + resume loader (ADR-0005)
 internal/repl/     paste-safe input reader (plain REPL, non-TTY fallback)
 internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate
 scripts/           codesign-darwin.sh / notarize-darwin.sh (org templates, verbatim)
@@ -133,3 +135,13 @@ docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
   rebuilds go through a factory that never touches the terminal
   (TestResizeNeverQueriesTerminal). Note: expect-based pty E2E cannot
   catch this class — expect answers no OSC queries; only real terminals do.
+- **The transcript is the resume format** (ADR-0005) — `llm.Message`'s JSON
+  tags are a persisted schema, not decoration, and every history append
+  goes through `appendMessage` so the conversation and the transcript
+  cannot drift. Clipping a `message` record would silently amputate a
+  resumed session; clip diagnostic records instead. Bump
+  `session.SchemaVersion` on a breaking change.
+- **Resume replays thought signatures across processes** — verified live
+  (2026-08-19). That is why resume refuses a different model and a
+  different project directory rather than warning: the failure would be a
+  400 after the operator believed they were back at work.

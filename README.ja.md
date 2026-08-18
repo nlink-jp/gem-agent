@@ -40,7 +40,12 @@ Claude Code が使えない状況（プロバイダ側障害・契約やネッ�
   ディレクトリ + scratch に制限（実 Seatbelt での強制テスト付き）
 - ペースト安全な入力: 複数行ペーストは 1 つの入力になる（行ごとに LLM コールが
   飛ぶことはない）
-- JSONL セッションログ（`~/.local/state/gem-agent/sessions/`）
+- **セッション再開**: `--continue` でこのプロジェクトの最新セッション、
+  `--resume <id>` で特定のセッションを再開。`gem-agent sessions` で一覧。
+  `~/.local/state/gem-agent/sessions/` の JSONL トランスクリプトはログで
+  あると同時に resume の正本であり、完全忠実に記録されます（API が再生時に
+  要求する Gemini の推論トークンを含む）。詳細は
+  [ADR-0005](docs/ja/adr/0005-session-resume.ja.md)
 - スラッシュコマンド: `/help` `/tools` `/mcp` `/clear` `/quit`
 - **drop-in プロジェクト互換**: プロジェクトが既に持つエージェント指示ファイル
   （`AGENTS.md` / `AGENT.md` / `CLAUDE.md` / `GEMINI.md`）を、他のエージェントと
@@ -57,13 +62,15 @@ Claude Code が使えない状況（プロバイダ側障害・契約やネッ�
 - Vertex の一時障害（429/5xx）は指数バックオフでリトライ
 
 設計上のスコープ外: メモリサブシステム、コンテキスト圧縮、データ分析、GUI、
-セッション resume、macOS 以外のプラットフォーム。
+macOS 以外のプラットフォーム。
 
 ## 使い方
 
 ```sh
 cd /path/to/your/project
 gem-agent                                  # 対話 REPL
+gem-agent -c                               # ここでの最新セッションを再開
+gem-agent sessions                         # 再開可能なセッション一覧
 gem-agent -p "このリポジトリを要約して"      # 単発実行、パイプ向け
 ```
 
@@ -139,6 +146,24 @@ sandbox 下（タイムアウト・出力上限も共通）ですが、自分で
 1 回クリアします）。ステータスバーには使用モデル・コンテキスト使用量と
 ウィンドウサイズ（モデルメタデータから自動検出、`[model].context_window` で
 上書き可）・累計消費トークン・プロジェクトディレクトリを表示します。
+
+### セッションの再開
+
+```sh
+gem-agent sessions        # id・経過時間・モデル・最初の質問
+gem-agent -c              # このディレクトリの最新セッション
+gem-agent --resume 20260819-150102
+```
+
+再開したセッションは自分自身のトランスクリプトに追記されます — 何プロセスに
+またがろうと 1 ファイル = 1 会話 — そしてツール結果まで含めて元のとおりに
+戻ります。2 つの拒否は意図的なものです: セッションは記録されたディレクトリで
+のみ、そして記録したモデルでのみ再開できます（再生する推論トークンがモデルに
+紐づくため）。それぞれのメッセージが代わりの手を示します。
+
+したがってトランスクリプトには、エージェントが読んだ全ファイルの本文が
+入ります。置き場所は `~/.local/state/gem-agent/sessions/`、モードは `0600`
+です。
 
 ## プロジェクト指示ファイル
 
@@ -287,6 +312,8 @@ Vertex はリクエストとレスポンスの両方にコンテンツフィル�
 
 - [RFP（日本語）](docs/ja/gem-agent-rfp.ja.md) / [RFP (English)](docs/en/gem-agent-rfp.md)
 - [ADR-0001: サンドボックス方式](docs/ja/adr/0001-sandbox-mechanism.ja.md)
+- [ADR-0004: 自動承認](docs/ja/adr/0004-auto-approve.ja.md)
+- [ADR-0005: セッション再開](docs/ja/adr/0005-session-resume.ja.md)
 
 ## ライセンス
 
