@@ -87,6 +87,11 @@ docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
 - **TUI E2E runs through a pty** — see the expect pattern in the Phase 2
   history (scratchpad tui_e2e.exp); piped stdin exercises the plain-REPL
   fallback, not the TUI.
+- **No managed-view line may reach the terminal width** — a soft-wrapped
+  line desyncs the inline renderer's height math and stale frames stack
+  up (the resize staircase). View() clips every line to width-1; a
+  genuine shrink additionally returns tea.ClearScreen once. Keep both
+  when touching View().
 - **Never query the terminal after Bubble Tea starts** — OSC queries
   (glamour WithAutoStyle, termenv/lipgloss HasDarkBackground) get their
   "rgb:..." reply delivered as phantom keystrokes once raw mode owns
