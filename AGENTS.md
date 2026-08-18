@@ -73,6 +73,12 @@ docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
 - **Never write from the MCP read loop** — a blocking write while the peer
   is not reading deadlocks both directions (internal/mcp refuses server
   requests from a goroutine; caught by the pipe-based tests).
+- **Modifier+Enter is not a key you can rely on** — Shift+Enter always,
+  and Option+Enter unless the terminal sends Meta, arrive as a plain CR
+  that is byte-identical to submit. Any "insert newline" affordance must
+  have a route that is a distinct key (Ctrl+J) or pure text (trailing
+  backslash). Bubble Tea v1 does not decode the kitty/CSI-u protocols
+  that would disambiguate them.
 - **Every interactive answer needs an IME-free route** — with a Japanese
   IME on, letter keys are swallowed by composition; arrows, Tab, Enter,
   and Esc are not. Any new prompt must be answerable without typing

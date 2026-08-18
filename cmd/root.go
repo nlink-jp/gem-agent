@@ -484,7 +484,9 @@ shell:
   !<command>  run it directly (sandboxed, no approval; output is shared with the model)
 keys:
   Enter 送信 · ↑↓ 履歴 · Ctrl+C 中断/クリア · Ctrl+D 終了
-  改行（複数行入力）: Ctrl+J / Option+Enter / 行末に \ を置いて Enter
+  改行（複数行入力）: Ctrl+J もしくは 行末に \ を置いて Enter
+    ※ Option+Enter は「Option を Meta として送る」設定の端末でのみ有効
+      （既定では通常の Enter と同じバイトになり送信されます）
   複数行ペーストはそのまま 1 メッセージになります
   承認ダイアログ: ←→/Tab で選択 · Enter 決定（y/n/a も可）
 mutating tools prompt for approval: y = once, a = always this session

@@ -500,9 +500,12 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.Type == tea.KeyCtrlJ, msg.Type == tea.KeyEnter && msg.Alt:
-		// Newline, IME-safe: Ctrl+J and Alt/Option+Enter both arrive as
-		// distinct keys. Shift+Enter is deliberately absent — most
-		// terminals send it as a plain CR, indistinguishable from submit.
+		// Newline. Ctrl+J always arrives as a distinct key; Alt+Enter
+		// only reaches us when the terminal is configured to send Meta
+		// for Option (macOS defaults are not), and Shift+Enter never
+		// does — both otherwise arrive as a plain CR that cannot be
+		// told apart from submit. Hence the always-available Ctrl+J and
+		// the trailing-backslash route below.
 		m.ta.InsertString("\n")
 		m.syncHeight()
 		return m, nil

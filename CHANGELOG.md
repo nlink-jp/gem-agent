@@ -4,10 +4,12 @@
 
 ### Added — discoverable multi-line input (operator feedback)
 
-- Newlines can now be entered three ways: `Ctrl+J`, `Option`/`Alt`+`Enter`,
-  and a trailing `\` before `Enter`. (Shift+Enter is impossible: terminals
-  send it as a plain CR, indistinguishable from submit.) The input
-  placeholder teaches the keys, and `/help` lists all routes — the
+- Newlines can be entered with `Ctrl+J` or a trailing `\` before `Enter`
+  — both always available. `Option`/`Alt`+`Enter` also works, but only
+  where the terminal sends Meta for Option (macOS defaults do not; docs
+  give the Terminal.app and iTerm2 settings). Shift+Enter is impossible:
+  terminals send it as a plain CR, indistinguishable from submit. The
+  input placeholder teaches the keys and `/help` lists every route — the
   always-on hint line was removed earlier, leaving them undiscoverable
 
 ### Added — IME-safe approval dialog (operator feedback)

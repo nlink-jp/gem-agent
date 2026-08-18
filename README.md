@@ -79,18 +79,25 @@ TUI keys (also listed in `/help`): Enter sends, ↑/↓ navigate input
 history, Ctrl+C interrupts a running turn (or clears the input), Ctrl+D
 quits.
 
-**Multi-line input** — any of three routes, since terminals send
-Shift+Enter as a plain carriage return and it cannot be distinguished
-from submit:
+**Multi-line input**:
 
-| Route | Notes |
+| Route | Availability |
 |---|---|
-| `Ctrl+J` | always available |
-| `Option`/`Alt` + `Enter` | conventional in chat UIs |
-| trailing `\` then `Enter` | the shell convention |
+| `Ctrl+J` | always — the reliable one |
+| trailing `\` then `Enter` | always (the shell convention) |
+| `Option`/`Alt` + `Enter` | only if your terminal sends Meta for Option |
 
-Pasting multi-line text also works: the whole paste lands in the input
-box as one message, never one LLM call per line.
+Modifier+Enter combinations are a terminal limitation, not an
+application choice: unless the terminal is configured to send an escape
+prefix, `Option+Enter` and `Shift+Enter` arrive as an ordinary carriage
+return, indistinguishable from submit — so they send the message. To
+enable `Option+Enter`:
+
+- **Terminal.app** — Settings → Profiles → Keyboard → *Use Option as Meta key*
+- **iTerm2** — Settings → Profiles → Keys → Left Option key → *Esc+*
+
+Pasting multi-line text always works regardless: the whole paste lands
+in the input box as one message, never one LLM call per line.
 
 ### Auto-approve mode
 
