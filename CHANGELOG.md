@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0] - 2026-08-19
 
 Both features were out of scope in the RFP; use argued otherwise, so each
 arrives with an ADR rather than being quietly added.
