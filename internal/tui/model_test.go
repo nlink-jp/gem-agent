@@ -92,6 +92,26 @@ func TestSubmitStartsTurn(t *testing.T) {
 	}
 }
 
+func TestSubmitSeparatesTurns(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	m.ta.SetValue("hi")
+	m = press(m, enter())
+	// The user echo is preceded by a blank line so a new turn is
+	// visually separated from the previous output.
+	found := false
+	c.mu.Lock()
+	for _, s := range c.printed {
+		if strings.HasPrefix(s, "\n") && strings.Contains(s, "hi") {
+			found = true
+		}
+	}
+	c.mu.Unlock()
+	if !found {
+		t.Error("user echo should carry a leading blank line separator")
+	}
+}
+
 func TestEmptySubmitIgnored(t *testing.T) {
 	c := &capture{}
 	m := newTestModel(c)

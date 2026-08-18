@@ -556,7 +556,9 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		ctx, cancel := context.WithCancel(m.baseCtx)
 		m.cancelTurn = cancel
 		m.shell(ctx, command)
-		return m, tea.Batch(m.emit(m.st.user.Render("! ")+command), m.spin.Tick)
+		// Leading blank line separates this turn from the previous
+		// output so consecutive turns don't run together.
+		return m, tea.Batch(m.emit("\n"+m.st.user.Render("! ")+command), m.spin.Tick)
 	}
 
 	if strings.HasPrefix(input, "/") {
@@ -589,7 +591,8 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	if m.startTurn != nil {
 		m.startTurn(ctx, input)
 	}
-	return m, tea.Batch(m.emit(m.st.user.Render("> ")+input), m.spin.Tick)
+	// Leading blank line separates this turn from the previous output.
+	return m, tea.Batch(m.emit("\n"+m.st.user.Render("> ")+input), m.spin.Tick)
 }
 
 // View implements tea.Model. Every line is clipped to the terminal
