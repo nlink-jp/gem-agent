@@ -73,7 +73,12 @@ type Model struct {
 	histIdx int // -1 = not navigating (the guard the org lesson demands)
 	draft   string
 
-	live     strings.Builder
+	// live is a pointer on purpose: Bubble Tea passes the model BY VALUE
+	// through every Update, and a non-zero strings.Builder held by value
+	// panics on the second WriteString after a copy ("illegal use of
+	// non-zero Builder copied by value"). Found live: the second stream
+	// chunk of the first real conversation crashed the program.
+	live     *strings.Builder
 	status   string
 	approval *ApprovalRequest
 
@@ -104,6 +109,7 @@ func New(opts Options) Model {
 		ta:        ta,
 		spin:      sp,
 		histIdx:   -1,
+		live:      &strings.Builder{},
 		startTurn: opts.StartTurn,
 		slash:     opts.Slash,
 		baseCtx:   opts.BaseCtx,

@@ -204,6 +204,28 @@ func TestStreamFlushOrder(t *testing.T) {
 	}
 }
 
+// TestConsecutiveTextDeltas reproduces the live crash: Bubble Tea copies
+// the model by value on every Update, and a strings.Builder held by
+// value panics on the second WriteString after a copy. Two consecutive
+// deltas with reassignment in between mimic the real event loop.
+func TestConsecutiveTextDeltas(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	m.ta.SetValue("go")
+	m = press(m, enter())
+
+	for _, chunk := range []string{"こん", "にち", "は！"} {
+		next, _ := m.Update(TextDelta(chunk))
+		m = next.(Model)
+	}
+	next, _ := m.Update(TurnDone{})
+	m = next.(Model)
+
+	if !strings.Contains(c.all(), "MD[こんにちは！]") {
+		t.Errorf("accumulated stream lost: %q", c.all())
+	}
+}
+
 func TestApprovalFlow(t *testing.T) {
 	c := &capture{}
 	m := newTestModel(c)
