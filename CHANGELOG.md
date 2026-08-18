@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.0] - 2026-08-19
 
 ### Added — per-tool approval policy (ADR-0008, operator request)
 
