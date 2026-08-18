@@ -1221,3 +1221,104 @@ func TestApprovalPersistDegradesWithoutAPolicyStore(t *testing.T) {
 		t.Fatal("the gate was never answered")
 	}
 }
+
+// settingsRows builds a panel shaped like the real one: a few short
+// sections, then one long list (every MCP tool).
+func settingsRows(n int) []SettingRow {
+	rows := []SettingRow{}
+	for _, s := range []string{"backend", "backend", "backend", "backend", "backend",
+		"safety", "limits", "limits", "limits", "session", "session", "session"} {
+		rows = append(rows, SettingRow{Section: s, Label: "setting", Value: "value", Source: "default"})
+	}
+	for i := 0; i < n; i++ {
+		rows = append(rows, SettingRow{Section: "approval policy",
+			Label: "mcp__some-lookup-server__a_tool_name", Value: "default", Source: "default",
+			Values: []string{"default", "always", "never"}})
+	}
+	return rows
+}
+
+func settingsModel(t *testing.T, c *capture, rows []SettingRow) Model {
+	t.Helper()
+	m := New(Options{
+		StartTurn: func(ctx context.Context, input string) {},
+		Slash:     slashStub,
+		Printer:   c.printer,
+		Settings:  &SettingsData{Rows: rows, ProjectDir: "~/work/p"},
+		ApplySetting: func(SettingChange) (SettingsData, string) {
+			return SettingsData{Rows: rows, ProjectDir: "~/work/p"}, ""
+		},
+		RenderFactory: func(width int) func(string) string {
+			return func(s string) string { return s }
+		},
+	})
+	next, _ := m.openSettings()
+	return next.(Model)
+}
+
+// A managed view taller than the terminal scrolls it, and the inline
+// renderer's line accounting then drifts by exactly the overflow — which
+// is how closing the panel left the input line one row higher than it
+// started. The bottom-pinning math reserves one line, so the view must
+// fit in height-1.
+func TestSettingsViewNeverExceedsTheTerminal(t *testing.T) {
+	c := &capture{}
+	for _, tools := range []int{0, 3, 60} {
+		rows := settingsRows(tools)
+		m := settingsModel(t, c, rows)
+		for _, height := range []int{6, 10, 24, 40, 60, 120} {
+			m.height, m.width = height, 120
+			for _, cursor := range []int{0, 1, 6, 11, 12, len(rows) / 2, len(rows) - 1} {
+				if cursor >= len(rows) {
+					continue
+				}
+				m.settingsCursor = cursor
+				got := strings.Count(m.View(), "\n") + 1
+				if got > height-1 {
+					t.Errorf("tools=%d height=%d cursor=%d: view is %d lines, want at most %d",
+						tools, height, cursor, got, height-1)
+				}
+			}
+		}
+	}
+}
+
+// Whatever the window, the highlighted row has to be in it — a cursor
+// you cannot see is worse than no cursor.
+func TestSettingsWindowAlwaysContainsTheCursor(t *testing.T) {
+	c := &capture{}
+	rows := settingsRows(60)
+	m := settingsModel(t, c, rows)
+	for _, height := range []int{6, 10, 24, 40} {
+		m.height = height
+		for cursor := 0; cursor < len(rows); cursor++ {
+			m.settingsCursor = cursor
+			start, end := m.settingsWindow(height - 7)
+			if cursor < start || cursor >= end {
+				t.Fatalf("height=%d cursor=%d not inside window [%d,%d)", height, cursor, start, end)
+			}
+		}
+	}
+}
+
+// Closing the panel must leave the model exactly where it was, so the
+// input block returns to the same row it occupied before.
+func TestClosingSettingsRestoresTheInputPhase(t *testing.T) {
+	c := &capture{}
+	m := settingsModel(t, c, settingsRows(20))
+	m.height, m.width = 40, 120
+	before := m.printed
+
+	m = press(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.phase != phaseInput {
+		t.Fatalf("phase = %v", m.phase)
+	}
+	if m.settings != nil {
+		t.Error("panel state survived the close")
+	}
+	// Opening and closing prints nothing, so the pinning counter — which
+	// decides where the input block sits — must be untouched.
+	if m.printed != before {
+		t.Errorf("printed = %d, was %d: opening the panel moved the pinning counter", m.printed, before)
+	}
+}

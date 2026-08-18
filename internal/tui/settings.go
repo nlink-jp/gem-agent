@@ -144,22 +144,42 @@ func (m Model) cycleSetting(delta int) (tea.Model, tea.Cmd) {
 }
 
 // settingsView renders the panel.
+//
+// Every line of the managed region has to fit on screen. A view taller
+// than the terminal scrolls it, and the inline renderer's accounting
+// then drifts by exactly the overflow — which is how closing this panel
+// left the input line one row higher than it started (measured: the
+// panel ran 2-3 lines over on a 40-line terminal). So the row list is
+// budgeted against the real chrome rather than a guessed margin.
 func (m Model) settingsView() string {
+	rows := m.settings.Rows
+	// Below this there is no honest layout: the header, one row, the
+	// scope line, the footer and the trailing newline already exceed the
+	// screen. Say so rather than overflowing it.
+	if m.height > 0 && m.height < minSettingsHeight {
+		return m.st.user.Render("settings") + "\n" +
+			m.st.hint.Render("  terminal too short — resize, or edit the config file directly")
+	}
+	// Chrome outside the row list: this function's header and scope
+	// lines, the footer viewContent appends, its trailing newline, and
+	// one spare row so the panel never sits flush against the bottom.
+	budget := m.height - 5
+	if budget < 1 {
+		budget = 1
+	}
+	// Reserve the two "… more" markers up front. Over-reserving costs an
+	// invisible blank row; under-reserving scrolls the terminal.
+	start, end := m.settingsWindow(budget - 2)
+	if start == 0 && end == len(rows) {
+		start, end = m.settingsWindow(budget)
+	}
+
 	var b strings.Builder
 	b.WriteString(m.st.user.Render("settings") + m.st.hint.Render("  ↑↓ 選択 · ←→/Enter 変更 · s 保存先 · Esc 閉じる"))
-
-	section := ""
-	// Show a window around the cursor: the panel is inline, so it must
-	// not be taller than the terminal (ADR-0003's accounting).
-	rows := m.settings.Rows
-	height := m.height - 8
-	if height < 6 {
-		height = 6
-	}
-	start, end := windowAround(m.settingsCursor, len(rows), height)
 	if start > 0 {
 		b.WriteString("\n" + m.st.hint.Render(fmt.Sprintf("  … %d more above", start)))
 	}
+	section := ""
 	for i := start; i < end; i++ {
 		row := rows[i]
 		if row.Section != section {
@@ -182,9 +202,6 @@ func (m Model) settingsView() string {
 		if len(row.Values) == 0 {
 			value = m.st.hint.Render(value)
 		}
-		// MCP tool names run past 35 characters, which pushed the value
-		// column out of alignment. Pad on the plain text, then style:
-		// %-Ns counts bytes, and a styled label is full of escapes.
 		b.WriteString(fmt.Sprintf("\n%s%s%s %s %s", marker, label, pad, value,
 			m.st.hint.Render("("+row.Source+")")))
 	}
@@ -199,6 +216,56 @@ func (m Model) settingsView() string {
 	b.WriteString("\n" + m.st.hint.Render("  policy changes are saved to: ") + m.st.tool.Render(scope))
 	return b.String()
 }
+
+// settingsWindow picks the slice of rows to show, keeping the cursor
+// inside it and never exceeding budget rendered lines.
+//
+// The cost of a window is counted exactly rather than approximated,
+// because the approximation was wrong in the one direction that matters:
+// the first rendered row always prints its section heading, even when it
+// shares a section with the row above it, and that single uncounted line
+// was enough to push the panel past the bottom of the screen.
+func (m Model) settingsWindow(budget int) (int, int) {
+	rows := m.settings.Rows
+	if len(rows) == 0 {
+		return 0, 0
+	}
+	if budget < 1 {
+		budget = 1
+	}
+	// lines reports how many terminal lines rows[s:e] actually renders.
+	lines := func(s, e int) int {
+		n := e - s
+		for i := s; i < e; i++ {
+			if i == s || rows[i].Section != rows[i-1].Section {
+				n++ // this row opens a section heading
+			}
+		}
+		return n
+	}
+
+	cursor := wrapCursor(m.settingsCursor, len(rows))
+	start, end := cursor, cursor+1
+	for {
+		grew := false
+		if end < len(rows) && lines(start, end+1) <= budget {
+			end++
+			grew = true
+		}
+		if start > 0 && lines(start-1, end) <= budget {
+			start--
+			grew = true
+		}
+		if !grew {
+			return start, end
+		}
+	}
+}
+
+// minSettingsHeight is the shortest terminal the panel can render on
+// without overflowing: header + one row (with its section heading) +
+// scope + footer + trailing newline + the row the pinning reserves.
+const minSettingsHeight = 8
 
 // labelWidth is the value column's start. Long MCP tool names
 // (mcp__urlscan-lookup__get_screenshot) set the floor.
@@ -218,20 +285,4 @@ func indexOf(values []string, v string) int {
 		}
 	}
 	return 0
-}
-
-// windowAround returns the slice bounds of a scrolling window that keeps
-// the cursor visible.
-func windowAround(cursor, total, height int) (int, int) {
-	if total <= height {
-		return 0, total
-	}
-	start := cursor - height/2
-	if start < 0 {
-		start = 0
-	}
-	if start+height > total {
-		start = total - height
-	}
-	return start, start + height
 }

@@ -132,6 +132,17 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   typing assertion fails in a way that looks like an app bug. (The app
   now floors the size, but the harness should still be honest.) Piped
   stdin exercises the plain-REPL fallback, not the TUI.
+- **No managed view may be taller than the terminal, either** — the same
+  failure on the other axis. A view of `height` lines or more scrolls the
+  screen, and the inline renderer's line accounting drifts by exactly the
+  overflow: closing the settings panel left the input block one row up.
+  The bottom-pinning math reserves one line, so the invariant is
+  `view lines <= height-1`, and `TestSettingsViewNeverExceedsTheTerminal`
+  pins it across sizes and cursor positions. Budget a scrolling list
+  against the *real* chrome (headers, "… more" markers, the footer, the
+  trailing newline) — a guessed margin was 2-3 lines short — and count a
+  window's cost exactly: the first rendered row always prints its section
+  heading even when it shares one with the row above.
 - **No managed-view line may reach the terminal width** — a soft-wrapped
   line desyncs the inline renderer's height math and stale frames stack
   up (the resize staircase). View() clips every line to width-1; a

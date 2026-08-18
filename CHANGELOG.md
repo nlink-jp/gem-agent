@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.1] - 2026-08-19
+
+### Fixed
+
+- Closing `/settings` with Esc left the input line one row higher than it
+  started. The panel's view was **taller than the terminal** — 42-43
+  lines on a 40-line screen — which scrolls the screen and drifts the
+  inline renderer's line accounting by exactly the overflow. It is the
+  same failure as the resize staircase, on the other axis
+- The row budget was a guessed margin (`height - 8`) that did not account
+  for section headings, the two "… more" markers, the scope line, the
+  footer, or the trailing newline. It is now derived from the real
+  chrome, and a window's cost is counted exactly — the first rendered row
+  always prints its section heading, even when it shares one with the row
+  above, and that single uncounted line was enough to go over
+- A terminal too short for any honest layout (under 8 lines) now says so
+  instead of overflowing
+- Long MCP tool names pushed the value column out of alignment: padding
+  is computed on the plain text before styling, since `%-Ns` counts bytes
+  and a styled label is mostly escape sequences
+
 ## [0.5.0] - 2026-08-19
 
 ### Added — `/settings` (ADR-0009, operator request)
