@@ -226,6 +226,56 @@ func TestAutoModeToggleAndIndicator(t *testing.T) {
 	}
 }
 
+// TestAutoModeToggleDuringRun: a long agent loop started in manual mode
+// would otherwise demand an approval per step until it finished — the
+// toggle has to work mid-run, not only at the prompt.
+func TestAutoModeToggleDuringRun(t *testing.T) {
+	c := &capture{}
+	state := false
+	m := New(Options{
+		Printer: c.printer,
+		RenderFactory: func(width int) func(string) string {
+			return func(s string) string { return "MD[" + s + "]" }
+		},
+		Slash:      slashStub,
+		StartTurn:  func(ctx context.Context, input string) {},
+		ModelName:  "m",
+		ToggleAuto: func() bool { state = !state; return state },
+	})
+	m.ta.SetValue("long task")
+	m = press(m, enter())
+	if m.phase != phaseRunning {
+		t.Fatal("expected a running turn")
+	}
+
+	// Streamed text already arrived; the notice must land after it.
+	next, _ := m.Update(TextDelta("partial output"))
+	m = next.(Model)
+
+	m = press(m, tea.KeyMsg{Type: tea.KeyShiftTab})
+	if !m.autoMode || !state {
+		t.Fatal("shift+tab during a run should turn auto mode on")
+	}
+	if m.phase != phaseRunning {
+		t.Error("toggling must not disturb the running turn")
+	}
+	out := c.all()
+	iText := strings.Index(out, "MD[partial output]")
+	iNotice := strings.Index(out, "auto-approve: ON")
+	if iText == -1 || iNotice == -1 || iText > iNotice {
+		t.Errorf("notice should follow the streamed text: %q", out)
+	}
+	if !strings.Contains(m.View(), "auto") {
+		t.Error("status line should show the indicator immediately")
+	}
+
+	// Ctrl+C during a run must still interrupt, not toggle.
+	m = press(m, tea.KeyMsg{Type: tea.KeyCtrlC})
+	if !m.autoMode {
+		t.Error("Ctrl+C must not flip auto mode")
+	}
+}
+
 func TestAutoApprovedEventIsVisible(t *testing.T) {
 	c := &capture{}
 	m := newTestModel(c)

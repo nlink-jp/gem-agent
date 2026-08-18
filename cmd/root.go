@@ -475,7 +475,7 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
   /help    show this help
   /tools   list available tools
   /mcp     show connected MCP servers
-  /auto    toggle auto-approve (shift+tab does the same)
+  /auto    toggle auto-approve (shift+tab does the same, and works mid-run)
   /clear   reset the conversation history
   /quit    exit (Ctrl+D also works)
 auto-approve: safe changes run unattended; destructive, out-of-project,

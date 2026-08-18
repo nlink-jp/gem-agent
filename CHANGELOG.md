@@ -2,6 +2,14 @@
 
 ## [0.1.0] - Unreleased
 
+### Changed — auto-approve toggles mid-run (operator feedback)
+
+- shift+tab now works while a turn is running, not only at the prompt:
+  a long agent loop started in manual mode no longer forces an approval
+  for every remaining step. The agent reads the flag per tool call, so
+  the switch lands on the next one; the status indicator updates at
+  once and the notice is printed after the streamed text it followed
+
 ### Added — discoverable multi-line input (operator feedback)
 
 - Newlines can be entered with `Ctrl+J` or a trailing `\` before `Enter`

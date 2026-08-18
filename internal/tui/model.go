@@ -397,11 +397,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case phaseApproval:
 			return m.updateApproval(msg)
 		case phaseRunning:
-			if msg.Type == tea.KeyCtrlC {
+			switch msg.Type {
+			case tea.KeyCtrlC:
 				if m.cancelTurn != nil {
 					m.cancelTurn()
 					m.status = "interrupting…"
 				}
+			case tea.KeyShiftTab:
+				// Toggling mid-run matters most here: a long agent loop
+				// that started in manual mode would otherwise demand an
+				// approval for every step until it finishes.
+				return m.toggleAutoMode()
 			}
 			return m, nil
 		default:
@@ -511,15 +517,7 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.Type == tea.KeyShiftTab:
-		if m.toggleAuto == nil {
-			return m, nil
-		}
-		m.autoMode = m.toggleAuto()
-		state := "auto-approve: OFF (every change asks)"
-		if m.autoMode {
-			state = "auto-approve: ON (risky actions still ask)"
-		}
-		return m, m.emit(m.st.tool.Render(state))
+		return m.toggleAutoMode()
 
 	case msg.Type == tea.KeyEnter:
 		// A trailing backslash continues the line, the shell convention
@@ -720,6 +718,26 @@ func (m Model) viewContent() string {
 		// a status bar (operator feedback).
 		return m.ta.View() + "\n" + m.footer() + "\n"
 	}
+}
+
+// toggleAutoMode flips auto-approve and announces the new state. It
+// works during a run as well as at the prompt; the agent reads the flag
+// per tool call, so the change lands on the next one (a call already
+// waiting at the approval dialog still needs its answer).
+func (m Model) toggleAutoMode() (tea.Model, tea.Cmd) {
+	if m.toggleAuto == nil {
+		return m, nil
+	}
+	m.autoMode = m.toggleAuto()
+	state := "auto-approve: OFF (every change asks)"
+	if m.autoMode {
+		state = "auto-approve: ON (risky actions still ask)"
+	}
+	// Flush streamed text first so the notice lands after the output it
+	// followed, not before it.
+	cmds := m.flushLive()
+	cmds = append(cmds, m.emit(m.st.tool.Render(state)))
+	return m, tea.Batch(cmds...)
 }
 
 // optionsLine renders the selectable answers. The selection is marked

@@ -102,7 +102,10 @@ in the input box as one message, never one LLM call per line.
 ### Auto-approve mode
 
 Off by default. shift+tab (or `/auto`) toggles it; the status line shows
-`⚡auto` while on. Each mutating tool call then goes through:
+`⚡auto` while on. **shift+tab also works while a turn is running**, so a
+long agent loop that started in manual mode can be switched over without
+waiting for it to finish — the change applies from the next tool call (a
+call already waiting at the dialog still needs its answer). Each mutating tool call then goes through:
 
 1. **Rule tier** (no model call): *safe* → runs; *blocked* → always asks
    (`rm -rf`, `sudo`, `git push`, download-piped-to-shell, disk writes,
