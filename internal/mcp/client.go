@@ -67,6 +67,7 @@ type Client struct {
 	stdin  io.WriteCloser
 	kill   func()
 	alive  bool
+	gen    int // spawn generation; read loops of dead incarnations must not touch newer state
 	nextID int64
 
 	pmu     sync.Mutex
@@ -148,9 +149,11 @@ func (c *Client) ensureStarted(ctx context.Context) error {
 	c.stdin = stdin
 	c.kill = kill
 	c.alive = true
+	c.gen++
+	gen := c.gen
 	c.mu.Unlock()
 
-	go c.readLoop(stdout)
+	go c.readLoop(stdout, gen)
 
 	initParams := map[string]any{
 		"protocolVersion": protocolVersion,
@@ -173,7 +176,7 @@ func (c *Client) ensureStarted(ctx context.Context) error {
 // readLoop routes responses to pending calls, drops notifications, and
 // politely refuses server-initiated requests (unanswered requests could
 // hang a server that waits for the reply).
-func (c *Client) readLoop(stdout io.ReadCloser) {
+func (c *Client) readLoop(stdout io.ReadCloser, gen int) {
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, scannerInitial), scannerMax)
 	for scanner.Scan() {
@@ -211,10 +214,20 @@ func (c *Client) readLoop(stdout io.ReadCloser) {
 			}
 		}
 	}
-	// EOF: the server exited (or we killed it). Fail all waiters.
+	// EOF: the server exited (or we killed it). Fail all waiters — but
+	// only if a newer incarnation has not already been spawned: a stale
+	// loop draining after kill-and-respawn must not close the pending
+	// channels (e.g. the fresh initialize) of its successor. Stale
+	// waiters of THIS incarnation are covered by their per-call timeouts.
 	c.mu.Lock()
-	c.alive = false
+	stale := c.gen != gen
+	if !stale {
+		c.alive = false
+	}
 	c.mu.Unlock()
+	if stale {
+		return
+	}
 	c.pmu.Lock()
 	for id, ch := range c.pending {
 		close(ch)
