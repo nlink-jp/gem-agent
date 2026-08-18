@@ -33,6 +33,8 @@ type Agent struct {
 	system   string
 	maxTurns int
 
+	onToolCall func(tc llm.ToolCall)
+
 	history  []llm.Message
 	toolDefs []llm.ToolDef
 }
@@ -45,6 +47,11 @@ type Options struct {
 	Log      SessionLog // optional
 	System   string
 	MaxTurns int
+	// OnToolCall, when set, observes every tool call before it is gated
+	// and executed — the REPL uses it to show activity for read-only
+	// calls that never hit the approval prompt (a silent pause reads as
+	// a hang).
+	OnToolCall func(tc llm.ToolCall)
 }
 
 // New creates an agent.
@@ -58,13 +65,14 @@ func New(opts Options) *Agent {
 		})
 	}
 	return &Agent{
-		backend:  opts.Backend,
-		registry: opts.Registry,
-		gate:     opts.Gate,
-		log:      opts.Log,
-		system:   opts.System,
-		maxTurns: opts.MaxTurns,
-		toolDefs: defs,
+		backend:    opts.Backend,
+		registry:   opts.Registry,
+		gate:       opts.Gate,
+		log:        opts.Log,
+		system:     opts.System,
+		maxTurns:   opts.MaxTurns,
+		onToolCall: opts.OnToolCall,
+		toolDefs:   defs,
 	}
 }
 
@@ -103,6 +111,9 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 		}
 
 		for _, tc := range resp.ToolCalls {
+			if a.onToolCall != nil {
+				a.onToolCall(tc)
+			}
 			result := a.execCall(ctx, tc)
 			a.history = append(a.history, llm.Message{
 				Role:       llm.RoleTool,
