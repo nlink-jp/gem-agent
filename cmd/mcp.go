@@ -82,22 +82,39 @@ func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Too
 	return added, errs
 }
 
-// connectMCPServers loads .mcp.json from the project and registers every
-// reachable server's tools. Failures are warnings — a broken MCP server
-// must not block a backup tool.
+// connectMCPServers loads the global (~/.config/gem-agent/mcp.json) and
+// project (.mcp.json) server lists — the project entry wins a name
+// collision — and registers every reachable server's tools. Failures on
+// either scope are warnings; a broken file or server must not block a
+// backup tool.
 func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, version string, registry *tools.Registry, stderr io.Writer) (clients []*mcp.Client, summary []string) {
 	if !cfg.MCP.Enabled {
 		return nil, nil
 	}
-	path := filepath.Join(projectDir, ".mcp.json")
-	servers, skipped, err := mcp.LoadConfig(path)
-	if err != nil {
-		fmt.Fprintf(stderr, "warning: %v — MCP disabled for this session\n", err)
-		return nil, nil
+
+	load := func(path, scope string) map[string]mcp.ServerConfig {
+		servers, skipped, err := mcp.LoadConfig(path)
+		if err != nil {
+			fmt.Fprintf(stderr, "warning: %s MCP config: %v — skipped\n", scope, err)
+			return nil
+		}
+		for _, s := range skipped {
+			fmt.Fprintf(stderr, "warning: skipping %s MCP server %s\n", scope, s)
+		}
+		return servers
 	}
-	for _, s := range skipped {
-		fmt.Fprintf(stderr, "warning: skipping MCP server %s\n", s)
+
+	var global map[string]mcp.ServerConfig
+	if gp := mcp.GlobalConfigPath(); gp != "" {
+		global = load(gp, "global")
 	}
+	project := load(filepath.Join(projectDir, ".mcp.json"), "project")
+
+	servers, scopes, overridden := mcp.Merge(global, project)
+	for _, name := range overridden {
+		fmt.Fprintf(stderr, "note: project .mcp.json overrides global MCP server %q\n", name)
+	}
+
 	names := make([]string, 0, len(servers))
 	for name := range servers {
 		names = append(names, name)
@@ -125,7 +142,7 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 			continue
 		}
 		clients = append(clients, client)
-		summary = append(summary, fmt.Sprintf("%s (%d tools)", name, len(added)))
+		summary = append(summary, fmt.Sprintf("%s [%s] (%d tools)", name, scopes[name], len(added)))
 	}
 	return clients, summary
 }

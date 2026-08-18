@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // ServerConfig is one entry under "mcpServers" in .mcp.json.
@@ -22,6 +23,38 @@ type ServerConfig struct {
 
 type mcpFile struct {
 	MCPServers map[string]ServerConfig `json:"mcpServers"`
+}
+
+// GlobalConfigPath is the user-scope server list: same format as a
+// project's .mcp.json, so entries can be copied verbatim between the
+// two (and from a Claude Code setup).
+func GlobalConfigPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "gem-agent", "mcp.json")
+}
+
+// Merge combines the global and project server maps. On a name
+// collision the project entry wins — the more specific scope overrides
+// the broader one. Returns the merged map, each server's scope
+// ("global" or "project"), and the names the project overrode.
+func Merge(global, project map[string]ServerConfig) (merged map[string]ServerConfig, scopes map[string]string, overridden []string) {
+	merged = map[string]ServerConfig{}
+	scopes = map[string]string{}
+	for name, sc := range global {
+		merged[name] = sc
+		scopes[name] = "global"
+	}
+	for name, sc := range project {
+		if _, exists := merged[name]; exists {
+			overridden = append(overridden, name)
+		}
+		merged[name] = sc
+		scopes[name] = "project"
+	}
+	return merged, scopes, overridden
 }
 
 // LoadConfig reads a .mcp.json file. A missing file yields an empty map

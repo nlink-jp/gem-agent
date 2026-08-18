@@ -2,6 +2,14 @@
 
 ## [0.1.0] - Unreleased
 
+### Added — global MCP scope (operator feedback)
+
+- MCP servers now load from two scopes: `~/.config/gem-agent/mcp.json`
+  (global, every project) and `<project>/.mcp.json` (project). Both use
+  the Claude Code format, are merged, and the project entry wins a name
+  collision (announced as a note). Banner and `/mcp` label each server
+  with its scope. Verified live with two org lookup servers
+
 ### Added — auto-approve mode (ADR-0004, operator feedback)
 
 - Opt-in auto-approve with a two-tier review of every mutating call:

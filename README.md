@@ -107,8 +107,17 @@ directory.
 
 ## MCP servers
 
-gem-agent reads the project's `.mcp.json` (Claude Code format; stdio
-transport, `${VAR}` expansion):
+Servers are read from two scopes, both in Claude Code `.mcp.json` format
+(stdio transport, `${VAR}` expansion) so entries move between them
+verbatim:
+
+| Scope | Path | Use for |
+|---|---|---|
+| Global | `~/.config/gem-agent/mcp.json` | servers you want in every project |
+| Project | `<project>/.mcp.json` | servers specific to one repository |
+
+Both are optional. They are merged, and on a name collision the project
+entry wins. `/mcp` lists the connected servers with their scope.
 
 ```json
 {

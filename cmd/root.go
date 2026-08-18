@@ -508,7 +508,7 @@ mutating tools prompt for approval: y = once, a = always this session
 		return "bye\n", false, true
 	case "/mcp":
 		if len(mcpSummary) == 0 {
-			b.WriteString("no MCP servers connected (define them in the project's .mcp.json)\n")
+			b.WriteString("no MCP servers connected — define them in ~/.config/gem-agent/mcp.json (global) or the project's .mcp.json (project; wins name collisions)\n")
 		} else {
 			for _, s := range mcpSummary {
 				b.WriteString("  " + s + "\n")
