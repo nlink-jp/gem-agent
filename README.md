@@ -3,9 +3,10 @@
 Interactive CLI agent backed by Vertex AI Gemini 3.x — a continuity tool for
 development work when Claude Code is unavailable.
 
-> **Status: pre-release (development Phase 1 complete).** The interactive
-> agent loop works end-to-end against Vertex AI (Gemini 2.5 and Gemini 3
-> verified live). MCP / `.mcp.json` / AGENTS.md injection arrive in Phase 2.
+> **Status: pre-release (development Phase 2 complete).** The agent loop,
+> MCP client, and drop-in project compatibility all work end-to-end against
+> Vertex AI (verified live with Gemini 3.7). Remaining before release
+> (Phase 3): real-project E2E, drill runbook, packaging.
 > See the [RFP](docs/en/gem-agent-rfp.md) for the full specification.
 
 [日本語版 README](README.ja.md)
@@ -18,7 +19,7 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
 **drop-in**: it reads an existing project's `AGENTS.md` / `CLAUDE.md` /
 `.mcp.json` as-is, so switching over requires no per-project reconfiguration.
 
-## Features (Phase 1, implemented)
+## Features (implemented)
 
 - Interactive REPL with a Gemini agent loop — streaming output, Gemini 3
   thought-signature capture/replay (verified live)
@@ -30,13 +31,17 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   project directory + scratch dirs (enforcement covered by a real Seatbelt test)
 - Paste-safe input: a multi-line paste becomes one input, never one LLM call per line
 - JSONL session log under `~/.local/state/gem-agent/sessions/`
-- Slash commands: `/help` `/tools` `/clear` `/quit`
-
-## Planned (Phase 2)
-
-- MCP client (stdio, Claude Code `.mcp.json` compatible) + mcp-guardian opt-in
-- AGENTS.md / CLAUDE.md system prompt injection (drop-in compatibility)
-- nlk/guard nonce isolation of tool output, one-shot mode (`-p`), 429 backoff
+- Slash commands: `/help` `/tools` `/mcp` `/clear` `/quit`
+- **Drop-in project compatibility**: the project's `AGENTS.md` / `CLAUDE.md`
+  are injected into the system prompt, and its `.mcp.json` (Claude Code
+  format, stdio servers) is connected as-is — zero per-project setup
+- MCP client: tools appear as `mcp__<server>__<tool>`, always approval-gated;
+  timed-out calls kill the server child (MCP has no cancel) and it respawns lazily
+- Tool output is isolated with per-call nonce XML tags (nlk/guard) — content
+  returned by tools is framed as data, never instructions
+- One-shot mode `-p "<prompt>"`: single turn, answer on stdout, mutating
+  tools denied (pipe-friendly)
+- Transient Vertex failures (429/5xx) retry with exponential backoff
 
 Out of scope by design: memory subsystems, context compaction, data analysis,
 GUI, session resume, non-macOS platforms.
@@ -45,13 +50,40 @@ GUI, session resume, non-macOS platforms.
 
 ```sh
 cd /path/to/your/project
-gem-agent
+gem-agent                                  # interactive REPL
+gem-agent -p "summarize this repository"   # one-shot, pipe-friendly
 ```
 
 The current directory becomes the project: file tools cannot leave it, and
 sandboxed shell commands cannot write outside it. Mutating tool calls show
-an approval prompt before running. `--no-sandbox` disables the Seatbelt
-wrapper (debugging only), `--model` overrides the configured model.
+an approval prompt before running (`y` once / `n` deny / `a` always this
+session). `--no-sandbox` disables the Seatbelt wrapper (debugging only),
+`--model` overrides the configured model.
+
+## MCP servers
+
+gem-agent reads the project's `.mcp.json` (Claude Code format; stdio
+transport, `${VAR}` expansion):
+
+```json
+{
+  "mcpServers": {
+    "tor-exit": { "command": "tor-exit-lookup", "args": ["mcp"] }
+  }
+}
+```
+
+To add governance and an audit trail, route a server through
+[mcp-guardian](https://github.com/nlink-jp/mcp-guardian) — it is itself a
+stdio MCP server, so the opt-in is just a `.mcp.json` entry:
+
+```json
+{
+  "mcpServers": {
+    "guarded": { "command": "mcp-guardian", "args": ["--profile", "myserver"] }
+  }
+}
+```
 
 ## Requirements
 

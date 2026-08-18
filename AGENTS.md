@@ -2,8 +2,9 @@
 
 Interactive CLI agent backed by Vertex AI Gemini. Continuity (backup) tool
 for when Claude Code is unavailable. macOS-only. Pre-release: development
-Phase 1 (Core) implemented and verified live; Phase 2 (MCP, .mcp.json,
-AGENTS.md injection, one-shot mode) pending.
+Phases 1–2 implemented and verified live (agent loop, MCP client,
+drop-in AGENTS.md/CLAUDE.md/.mcp.json, one-shot mode, nonce isolation,
+backoff); Phase 3 (real-project E2E, drill runbook, release) pending.
 
 - **Module:** `github.com/nlink-jp/gem-agent`
 - **Series:** lab-series (promotion to cli-series considered after E2E + drill
@@ -28,9 +29,10 @@ Version is injected via `-X main.version` from `git describe` — never edit the
 main.go            entry point (package main, calls cmd.Execute(version))
 cmd/               cobra root command, REPL loop, wiring, system prompt
 internal/config/   strict-decode TOML + env/flag precedence
-internal/llm/      Backend interface + Vertex AI impl (thought signatures)
-internal/agent/    tool-calling loop, approval dispatch, history
-internal/tools/    built-in tools, path confinement, ExecFunc injection
+internal/llm/      Backend interface + Vertex AI impl (thought signatures, backoff)
+internal/agent/    tool-calling loop, approval dispatch, nonce wrapping, history
+internal/tools/    built-in tools, path confinement, ExecFunc injection, Register
+internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
 internal/sandbox/  SBPL profile generation, sandbox-exec wrapping
 internal/approve/  MITL gate (y/n/a + session allowlist)
 internal/session/  JSONL session logger
@@ -66,3 +68,11 @@ docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
 - **signal.NotifyContext's stop() cancels the context** — capture ctx.Err()
   before stop() or every backend error reads as a user interrupt (regression
   test in cmd/turn_test.go).
+- **Never write from the MCP read loop** — a blocking write while the peer
+  is not reading deadlocks both directions (internal/mcp refuses server
+  requests from a goroutine; caught by the pipe-based tests).
+- **nlk/guard tags are per-LLM-call** — history stores raw tool results and
+  the agent wraps them at send time; storing wrapped results would freeze
+  the tag and break the guard contract.
+- **.mcp.json is a foreign format** — unknown keys are tolerated there
+  (Claude Code owns it); strict decode applies to our own config.toml only.

@@ -2,6 +2,23 @@
 
 ## [0.1.0] - Unreleased
 
+### Added — development Phase 2 (Integration)
+
+- Stdio MCP client with Claude Code `.mcp.json` compatibility (stdio
+  entries, `${VAR}` expansion); tools register as `mcp__<server>__<tool>`,
+  always approval-gated; kill-and-lazy-respawn on timeout (MCP has no
+  cancel); verified live against tor-exit-lookup with gemini-3.7-flash
+- mcp-guardian opt-in documented as a plain `.mcp.json` entry (guardian is
+  itself a stdio MCP server — no gem-agent-side wiring needed)
+- AGENTS.md / CLAUDE.md injection into the system prompt (32KB/file cap),
+  verified live (injected rule observed in responses)
+- Nonce-tag isolation of tool output via nlk/guard — fresh tag per LLM
+  call, expanded into the system prompt and wrapped at send time
+- One-shot mode `-p` (single turn, stdout answer, mutating tools denied
+  with a visible reason, pipe-friendly)
+- Exponential backoff (nlk/backoff) for 429/5xx stream starts, retrying
+  only before any chunk is consumed
+
 ### Added — development Phase 1 (Core)
 
 - Interactive REPL with a streaming Vertex AI Gemini agent loop; Gemini 3

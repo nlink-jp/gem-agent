@@ -3,9 +3,10 @@
 Vertex AI Gemini 3.x をバックエンドとする CLI 対話型エージェント — Claude Code が
 利用できない状況での開発作業継続手段。
 
-> **Status: pre-release（開発 Phase 1 完了）。** 対話エージェントループは
-> Vertex AI に対して end-to-end で動作します（Gemini 2.5 / Gemini 3 で実機
-> 検証済み）。MCP / `.mcp.json` / AGENTS.md 注入は Phase 2 で追加されます。
+> **Status: pre-release（開発 Phase 2 完了）。** エージェントループ・MCP
+> クライアント・drop-in プロジェクト互換のすべてが Vertex AI に対して
+> end-to-end で動作します（Gemini 3.7 で実機検証済み）。リリース前の残り
+> （Phase 3）: 実プロジェクト E2E、訓練手順書、パッケージング。
 > 完全な仕様は [RFP](docs/ja/gem-agent-rfp.ja.md) を参照してください。
 
 [English README](README.md)
@@ -18,7 +19,7 @@ Claude Code が使えない状況（プロバイダ側障害・契約やネッ�
 します: 既存プロジェクトの `AGENTS.md` / `CLAUDE.md` / `.mcp.json` をそのまま
 解釈するため、乗り換えにプロジェクト単位の再設定は不要です。
 
-## 機能（Phase 1、実装済み）
+## 機能（実装済み）
 
 - Gemini エージェントループの対話 REPL — ストリーミング出力、Gemini 3
   thought signature の capture/replay（実機検証済み）
@@ -31,13 +32,18 @@ Claude Code が使えない状況（プロバイダ側障害・契約やネッ�
 - ペースト安全な入力: 複数行ペーストは 1 つの入力になる（行ごとに LLM コールが
   飛ぶことはない）
 - JSONL セッションログ（`~/.local/state/gem-agent/sessions/`）
-- スラッシュコマンド: `/help` `/tools` `/clear` `/quit`
-
-## 予定（Phase 2）
-
-- MCP クライアント（stdio、Claude Code の `.mcp.json` 互換）+ mcp-guardian opt-in
-- AGENTS.md / CLAUDE.md のシステムプロンプト注入（drop-in 互換）
-- nlk/guard ノンス隔離、単発実行モード（`-p`）、429 backoff
+- スラッシュコマンド: `/help` `/tools` `/mcp` `/clear` `/quit`
+- **drop-in プロジェクト互換**: プロジェクトの `AGENTS.md` / `CLAUDE.md` を
+  システムプロンプトに注入し、`.mcp.json`（Claude Code 形式、stdio サーバー）を
+  そのまま接続 — プロジェクト単位の追加設定ゼロ
+- MCP クライアント: ツールは `mcp__<server>__<tool>` として常に承認ゲート付き。
+  タイムアウトした呼び出しはサーバー子プロセスを kill（MCP にキャンセルは無い）、
+  次回呼び出しで遅延再起動
+- ツール出力は呼び出しごとのノンス XML タグ（nlk/guard）で隔離 — ツールが返す
+  内容は常にデータであり指示ではない、という枠付けを強制
+- 単発実行モード `-p "<prompt>"`: 1 ターンで終了、回答は stdout、変更系ツールは
+  拒否（パイプ向け）
+- Vertex の一時障害（429/5xx）は指数バックオフでリトライ
 
 設計上のスコープ外: メモリサブシステム、コンテキスト圧縮、データ分析、GUI、
 セッション resume、macOS 以外のプラットフォーム。
@@ -46,13 +52,41 @@ Claude Code が使えない状況（プロバイダ側障害・契約やネッ�
 
 ```sh
 cd /path/to/your/project
-gem-agent
+gem-agent                                  # 対話 REPL
+gem-agent -p "このリポジトリを要約して"      # 単発実行、パイプ向け
 ```
 
 カレントディレクトリがプロジェクトになります: ファイルツールはそこから出られず、
 サンドボックス化されたシェルコマンドは外側に書き込めません。変更系ツールは実行前に
-承認プロンプトが出ます。`--no-sandbox` は Seatbelt ラップの無効化（デバッグ専用）、
-`--model` はモデルの上書きです。
+承認プロンプトが出ます（`y` = 1回 / `n` = 拒否 / `a` = このセッションでは常に許可）。
+`--no-sandbox` は Seatbelt ラップの無効化（デバッグ専用）、`--model` はモデルの
+上書きです。
+
+## MCP サーバー
+
+gem-agent はプロジェクトの `.mcp.json`（Claude Code 形式; stdio トランスポート、
+`${VAR}` 展開対応）を読みます:
+
+```json
+{
+  "mcpServers": {
+    "tor-exit": { "command": "tor-exit-lookup", "args": ["mcp"] }
+  }
+}
+```
+
+ガバナンスと監査証跡を付けたい場合は
+[mcp-guardian](https://github.com/nlink-jp/mcp-guardian) を経由させます —
+guardian 自体が stdio MCP サーバーなので、opt-in は `.mcp.json` のエントリ
+1 つで済みます:
+
+```json
+{
+  "mcpServers": {
+    "guarded": { "command": "mcp-guardian", "args": ["--profile", "myserver"] }
+  }
+}
+```
 
 ## 動作要件
 
