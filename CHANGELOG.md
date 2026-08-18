@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.0] - 2026-08-19
 
 ### Added — input stays live during a turn (ADR-0007, first drill finding)
 
