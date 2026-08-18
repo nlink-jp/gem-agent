@@ -47,3 +47,10 @@ check: vet test build
 
 clean:
 	rm -rf $(DIST_DIR)
+
+# Homebrew tap generation (see scripts/release-brew.mk). After `make package`,
+# `make brew` generates this formula from the built darwin-arm64 zip into the
+# local nlink-jp/homebrew-tap checkout. The package target is unchanged.
+BREW_KIND := formula
+BREW_DESC := Interactive CLI agent on Vertex AI Gemini (Claude Code fallback)
+include scripts/release-brew.mk
