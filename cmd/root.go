@@ -23,6 +23,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -220,8 +221,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 
 	// --- interactive TUI (ADR-0002) ---
 	if useTUI {
+		// Theme detection sends an OSC query and reads the reply — it
+		// must happen HERE, before Bubble Tea puts the terminal in raw
+		// mode, or the reply leaks into the input box as phantom keys.
+		dark := lipgloss.HasDarkBackground()
 		model := tui.New(tui.Options{
-			BaseCtx: ctx,
+			BaseCtx:        ctx,
+			DarkBackground: dark,
 			StartTurn: func(turnCtx context.Context, input string) {
 				go func() {
 					_, err := ag.Run(turnCtx, input, func(s string) { prog.Send(tui.TextDelta(s)) })

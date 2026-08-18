@@ -49,10 +49,18 @@ type Options struct {
 	StartTurn TurnStarter
 	Slash     SlashHandler
 	BaseCtx   context.Context
+	// DarkBackground selects the Markdown style. It MUST be decided by
+	// the caller BEFORE the Bubble Tea program starts: detecting it
+	// later would send an OSC query to the terminal while raw mode owns
+	// stdin, and the terminal's "rgb:..." reply would leak into the
+	// input box as if the user typed it.
+	DarkBackground bool
 	// Printer overrides tea.Println for tests.
 	Printer func(...any) tea.Cmd
-	// Render overrides the glamour Markdown renderer for tests.
-	Render func(string) string
+	// RenderFactory overrides the Markdown renderer factory for tests.
+	// The factory is re-invoked on resize; it must never query the
+	// terminal (see DarkBackground).
+	RenderFactory func(width int) func(string) string
 }
 
 // Model is the Bubble Tea model for the interactive session.
@@ -74,9 +82,10 @@ type Model struct {
 	baseCtx    context.Context
 	cancelTurn context.CancelFunc
 
-	width   int
-	render  func(string) string
-	println func(...any) tea.Cmd
+	width    int
+	render   func(string) string
+	mkRender func(width int) func(string) string
+	println  func(...any) tea.Cmd
 }
 
 // New creates the model.
@@ -99,7 +108,7 @@ func New(opts Options) Model {
 		slash:     opts.Slash,
 		baseCtx:   opts.BaseCtx,
 		println:   opts.Printer,
-		render:    opts.Render,
+		mkRender:  opts.RenderFactory,
 		width:     80,
 	}
 	if m.baseCtx == nil {
@@ -108,18 +117,28 @@ func New(opts Options) Model {
 	if m.println == nil {
 		m.println = tea.Println
 	}
-	if m.render == nil {
-		m.render = newGlamourRenderer(m.width)
+	if m.mkRender == nil {
+		style := "light"
+		if opts.DarkBackground {
+			style = "dark"
+		}
+		m.mkRender = func(width int) func(string) string {
+			return newGlamourRenderer(width, style)
+		}
 	}
+	m.render = m.mkRender(m.width)
 	return m
 }
 
-func newGlamourRenderer(width int) func(string) string {
+// newGlamourRenderer builds a fixed-style renderer. WithAutoStyle is
+// deliberately absent: it queries the terminal (OSC), and once Bubble
+// Tea owns stdin the reply arrives as phantom user input.
+func newGlamourRenderer(width int, style string) func(string) string {
 	w := min(width-2, maxMDWidth)
 	if w < 20 {
 		w = 20
 	}
-	r, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(w))
+	r, err := glamour.NewTermRenderer(glamour.WithStandardStyle(style), glamour.WithWordWrap(w))
 	if err != nil {
 		return func(s string) string { return s }
 	}
@@ -141,7 +160,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.ta.SetWidth(msg.Width - 2)
-		m.render = newGlamourRenderer(msg.Width)
+		m.render = m.mkRender(msg.Width)
 		return m, nil
 
 	case spinner.TickMsg:

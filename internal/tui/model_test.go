@@ -41,7 +41,9 @@ func newTestModel(c *capture) Model {
 		},
 		Slash:   func(cmd string) (string, bool) { return "slash:" + cmd, cmd == "/quit" },
 		Printer: c.printer,
-		Render:  func(s string) string { return "MD[" + s + "]" },
+		RenderFactory: func(width int) func(string) string {
+			return func(s string) string { return "MD[" + s + "]" }
+		},
 	})
 }
 
@@ -229,6 +231,20 @@ func TestApprovalFlow(t *testing.T) {
 	}
 	if m.phase != phaseRunning {
 		t.Error("answer should return to running phase")
+	}
+}
+
+// TestResizeNeverQueriesTerminal pins the OSC-leak fix: resizing must
+// rebuild the renderer through the injected factory only — a renderer
+// that queries the terminal mid-session turns the reply into phantom
+// keystrokes in the input box.
+func TestResizeNeverQueriesTerminal(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = next.(Model)
+	if got := m.render("x"); got != "MD[x]" {
+		t.Fatalf("resize replaced the injected renderer factory: %q", got)
 	}
 }
 
