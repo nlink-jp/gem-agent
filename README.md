@@ -74,7 +74,7 @@ make test
 ```toml
 [gcp]
 project  = "your-project-id"
-location = "us-central1"   # Gemini 3 preview models require "global"
+location = "global"        # default; Gemini 3 models are global-endpoint-only
 
 [model]
 name = "<gemini model id>"
@@ -90,9 +90,10 @@ shell_timeout_sec = 120    # default
 Precedence: flags (`--model`) > `GEMAGENT_*` > `GOOGLE_CLOUD_*` > config file
 > defaults. Unknown keys in the file are rejected (strict decode).
 
-Note: as of 2026-08, Gemini 3 preview models are not served from regional
-endpoints — set `location = "global"` for them; Gemini 2.5 models work from
-regional endpoints such as `us-central1`.
+Note: as of 2026-08, the Gemini 3 family (verified with gemini-3.7-flash and
+gemini-3-flash-preview) is served only from the global endpoint — regional
+locations return 404. Gemini 2.5 models work from regional endpoints such as
+`us-central1`; set `location` accordingly if you use one.
 
 ## Documentation
 

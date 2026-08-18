@@ -55,8 +55,9 @@ docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
   (`[gcp]` project/location, `[model]` name), precedence
   flags > `GEMAGENT_*` > `GOOGLE_CLOUD_*` > file > defaults. Strict decode —
   unknown keys are errors.
-- **Gemini 3 preview models need `location = "global"`** (2026-08: regional
-  endpoints 404 them); Gemini 2.5 works regionally. Verified live.
+- **The Gemini 3 family is global-endpoint-only** — `location = "global"`
+  (the default). Regional endpoints 404 them (2026-08, verified live with
+  gemini-3.7-flash and gemini-3-flash-preview); Gemini 2.5 works regionally.
 - **stdout is model text only** — banner, prompts, tool events, and approval
   prompts go to stderr. Keep it that way; Phase 2's one-shot mode depends on it.
 - **REPL and approval gate share ONE bufio.Reader** (bufio.NewReader returns

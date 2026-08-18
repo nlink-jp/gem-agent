@@ -55,7 +55,11 @@ func DefaultPath() (string, error) {
 
 func defaults() Config {
 	return Config{
-		GCP:     GCPConfig{Location: "us-central1"},
+		// "global": Vertex AI serves the Gemini 3 family (gem-agent's
+		// target, RFP §3) only from the global endpoint — regional
+		// endpoints 404 them (measured 2026-08 with gemini-3-flash-preview
+		// and gemini-3.7-flash). Gemini 2.5 users set a regional location.
+		GCP:     GCPConfig{Location: "global"},
 		Sandbox: SandboxConfig{Enabled: true},
 		Agent:   AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120},
 	}

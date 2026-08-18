@@ -75,7 +75,7 @@ make test
 ```toml
 [gcp]
 project  = "your-project-id"
-location = "us-central1"   # Gemini 3 プレビューモデルは "global" が必要
+location = "global"        # デフォルト; Gemini 3 系は global エンドポイント専用
 
 [model]
 name = "<gemini model id>"
@@ -91,9 +91,10 @@ shell_timeout_sec = 120    # デフォルト
 優先順位: フラグ（`--model`）> `GEMAGENT_*` > `GOOGLE_CLOUD_*` > config file
 > defaults。設定ファイル内の未知キーはエラーになります（strict decode）。
 
-注: 2026-08 時点で Gemini 3 プレビューモデルはリージョナルエンドポイントから
-提供されていません — `location = "global"` を指定してください。Gemini 2.5 系は
-`us-central1` 等のリージョナルエンドポイントで動作します。
+注: 2026-08 時点で Gemini 3 系（gemini-3.7-flash / gemini-3-flash-preview で
+実測）は global エンドポイントからのみ提供されており、リージョナル指定は 404 に
+なります。Gemini 2.5 系は `us-central1` 等のリージョナルで動作するので、使う
+場合は `location` をそちらに設定してください。
 
 ## ドキュメント
 

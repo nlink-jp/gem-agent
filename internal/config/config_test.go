@@ -41,8 +41,8 @@ name = "example-model"
 	if cfg.GCP.Project != "example-project" {
 		t.Errorf("project = %q", cfg.GCP.Project)
 	}
-	if cfg.GCP.Location != "us-central1" {
-		t.Errorf("default location = %q, want us-central1", cfg.GCP.Location)
+	if cfg.GCP.Location != "global" {
+		t.Errorf("default location = %q, want global (Gemini 3 family is global-endpoint-only)", cfg.GCP.Location)
 	}
 	if !cfg.Sandbox.Enabled {
 		t.Error("sandbox should default to enabled")
