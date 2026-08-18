@@ -181,18 +181,37 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 
 		// SIGINT cancels the in-flight turn, not the process.
-		turnCtx, stop := signal.NotifyContext(ctx, os.Interrupt)
-		_, runErr := ag.Run(turnCtx, input, func(s string) { fmt.Fprint(cmd.OutOrStdout(), s) })
-		stop()
+		runErr := runTurn(ctx, func(turnCtx context.Context) error {
+			_, err := ag.Run(turnCtx, input, func(s string) { fmt.Fprint(cmd.OutOrStdout(), s) })
+			return err
+		})
 		fmt.Fprintln(cmd.OutOrStdout())
 		if runErr != nil {
-			if errors.Is(turnCtx.Err(), context.Canceled) {
+			if errors.Is(runErr, errInterrupted) {
 				fmt.Fprintln(stderr, "(interrupted)")
 				continue
 			}
 			fmt.Fprintf(stderr, "error: %v\n", runErr)
 		}
 	}
+}
+
+var errInterrupted = errors.New("interrupted")
+
+// runTurn runs fn under a SIGINT-cancellable context and maps a
+// cancellation-caused failure to errInterrupted. The context error MUST
+// be captured before stop() — signal.NotifyContext's stop() cancels the
+// context itself, so consulting it afterwards misreports every error
+// (404s included) as a user interrupt.
+func runTurn(parent context.Context, fn func(ctx context.Context) error) error {
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt)
+	err := fn(ctx)
+	canceled := ctx.Err() != nil
+	stop()
+	if err != nil && canceled {
+		return errInterrupted
+	}
+	return err
 }
 
 // buildExecFn returns the shell execution strategy: sandbox-exec-wrapped
