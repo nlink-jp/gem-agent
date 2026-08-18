@@ -11,6 +11,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/tools"
+	"github.com/nlink-jp/nlk/guard"
 )
 
 // Approver gates mutating tool calls (see internal/approve for the
@@ -89,7 +90,12 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 	a.logRecord("user", map[string]any{"content": input})
 
 	for round := 0; round < a.maxTurns; round++ {
-		resp, err := a.backend.ChatStream(ctx, a.system, a.history, a.toolDefs, onText)
+		// Fresh nonce tag per LLM call (nlk/guard contract: a previous
+		// response may echo the tag name, so reuse across calls is
+		// unsafe). The system prompt's {{DATA_TAG}} placeholder and the
+		// tool results in the history view are bound to this turn's tag.
+		tag := guard.NewTagWithPrefix("tool_output")
+		resp, err := a.backend.ChatStream(ctx, tag.Expand(a.system), wrapToolMessages(a.history, tag), a.toolDefs, onText)
 		if err != nil {
 			return "", err
 		}
@@ -127,6 +133,29 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 		}
 	}
 	return "", fmt.Errorf("reached max turns (%d) without a final answer — /clear to reset, or raise [agent].max_turns", a.maxTurns)
+}
+
+// wrapToolMessages returns a copy of the history where every tool result
+// is enclosed in this turn's nonce tag. Raw results stay in the stored
+// history — wrapping happens at send time precisely because the tag must
+// change every call.
+func wrapToolMessages(history []llm.Message, tag guard.Tag) []llm.Message {
+	out := make([]llm.Message, len(history))
+	copy(out, history)
+	for i := range out {
+		if out[i].Role != llm.RoleTool {
+			continue
+		}
+		wrapped, err := tag.Wrap(out[i].Content)
+		if err != nil {
+			// Collision with a nonce generated microseconds ago means
+			// the content is adversarially echoing tag names. Withhold
+			// it rather than ship it unwrapped.
+			wrapped = "[tool output withheld: data-tag collision]"
+		}
+		out[i].Content = wrapped
+	}
+	return out
 }
 
 // execCall runs one tool call and always returns a result string for the

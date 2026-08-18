@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -222,6 +223,50 @@ func TestResetClearsHistory(t *testing.T) {
 	}
 	if len(mb.calls[1]) != 1 {
 		t.Errorf("after Reset, second run should start fresh: %d messages", len(mb.calls[1]))
+	}
+}
+
+func TestToolResultsNonceWrapped(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "list_files", Args: map[string]any{}}}},
+		{Content: "done"},
+	}}
+	reg, err := tools.New(t.TempDir(),
+		func(ctx context.Context, command string) *exec.Cmd {
+			return exec.CommandContext(ctx, "/bin/bash", "-c", command)
+		}, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(Options{
+		Backend: mb, Registry: reg, Gate: &approveAll{},
+		System: "sys with tag <{{DATA_TAG}}>", MaxTurns: 5,
+	})
+	if _, err := a.Run(context.Background(), "list", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Round 2's tool message must be wrapped in this round's nonce tag,
+	// and the same tag must appear expanded in the system prompt.
+	re := regexp.MustCompile(`^<(tool_output_[0-9a-f]{32})>(?s).*</(tool_output_[0-9a-f]{32})>$`)
+	toolMsg := mb.calls[1][2]
+	m := re.FindStringSubmatch(toolMsg.Content)
+	if m == nil {
+		t.Fatalf("tool result not nonce-wrapped: %q", toolMsg.Content)
+	}
+	if m[1] != m[2] {
+		t.Fatalf("open/close tags differ: %s vs %s", m[1], m[2])
+	}
+	if !strings.Contains(mb.systems[1], "<"+m[1]+">") {
+		t.Error("system prompt does not reference the same turn tag")
+	}
+	if strings.Contains(mb.systems[1], "{{DATA_TAG}}") {
+		t.Error("placeholder not expanded")
+	}
+	// Fresh tag per LLM call: round 1 and round 2 system prompts must
+	// carry different tag names.
+	if mb.systems[0] == mb.systems[1] {
+		t.Error("tag must be regenerated for every LLM call")
 	}
 }
 

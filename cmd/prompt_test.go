@@ -31,6 +31,11 @@ func TestProjectContextInjection(t *testing.T) {
 	if !strings.HasPrefix(sys, "SECURITY, read first:") {
 		t.Error("defensive instructions must lead the prompt")
 	}
+	// The prompt is a template: the agent expands {{DATA_TAG}} with a
+	// fresh nonce every LLM call.
+	if !strings.Contains(sys, "{{DATA_TAG}}") {
+		t.Error("prompt must carry the data-tag placeholder")
+	}
 }
 
 func TestProjectContextAbsent(t *testing.T) {
