@@ -212,25 +212,31 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- banner ---
-	fmt.Fprintf(stderr, "gem-agent %s — %s @ %s/%s\n", cmd.Root().Version, cfg.Model.Name, cfg.GCP.Project, cfg.GCP.Location)
-	fmt.Fprintf(stderr, "project: %s\n", projectDir)
-	if sandboxOn {
-		fmt.Fprintf(stderr, "sandbox: enabled (shell writes confined to the project directory)\n")
-	} else {
-		fmt.Fprintf(stderr, "sandbox: DISABLED — shell commands run unconfined\n")
+	sandboxLine := "sandbox: enabled (shell writes confined to the project directory)"
+	if !sandboxOn {
+		sandboxLine = "sandbox: DISABLED — shell commands run unconfined"
 	}
-	fmt.Fprintf(stderr, "session log: %s\n", sessionPath)
+	bannerLines := []string{
+		fmt.Sprintf("gem-agent %s — %s @ %s/%s", cmd.Root().Version, cfg.Model.Name, cfg.GCP.Project, cfg.GCP.Location),
+		"project: " + projectDir,
+		sandboxLine,
+		"session log: " + sessionPath,
+	}
 	if len(mcpSummary) > 0 {
-		fmt.Fprintf(stderr, "mcp: %s\n", strings.Join(mcpSummary, ", "))
+		bannerLines = append(bannerLines, "mcp: "+strings.Join(mcpSummary, ", "))
 	}
 
-	// --- interactive TUI (ADR-0002) ---
+	// --- interactive TUI (ADR-0002/0003) ---
 	if useTUI {
+		// The banner goes through the TUI (not stderr): bottom pinning
+		// counts every printed line, and the startup clear would wipe a
+		// pre-printed banner anyway.
 		model := tui.New(tui.Options{
 			BaseCtx:    ctx,
 			Theme:      resolveTheme(cfg.TUI.Theme),
 			ModelName:  cfg.Model.Name,
 			ProjectDir: abbreviateHome(projectDir),
+			Banner:     bannerLines,
 			StartTurn: func(turnCtx context.Context, input string) {
 				go func() {
 					_, err := ag.Run(turnCtx, input, func(s string) { prog.Send(tui.TextDelta(s)) })
@@ -273,6 +279,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	for _, line := range bannerLines {
+		fmt.Fprintln(stderr, line)
+	}
 	fmt.Fprintf(stderr, "/help for commands, Ctrl+D to quit\n")
 
 	// --- plain REPL loop (non-TTY fallback) ---

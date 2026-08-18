@@ -2,6 +2,14 @@
 
 ## [0.1.0] - Unreleased
 
+### Added — bottom-pinned layout (ADR-0003, operator feedback)
+
+- The input box and status line pin to the window bottom like current
+  Claude Code, still without alt-screen: the TUI clears the screen once
+  at startup, prints the banner through a physical-line counter, and
+  pads the view top by the remaining height. Padding floors at zero
+  when the conversation fills the screen; shrink-clears reset the count
+
 ### Changed — single status line (operator feedback)
 
 - The always-on key-hint line is gone; key bindings moved into /help.

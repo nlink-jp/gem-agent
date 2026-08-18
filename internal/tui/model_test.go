@@ -372,29 +372,92 @@ func TestViewLinesClippedToWidth(t *testing.T) {
 	}
 }
 
-// TestShrinkClearsScreenOnce: a genuine width shrink returns a clear
-// command to sweep re-wrapped stale frames; the first size report and
-// growth do not (clearing at startup would wipe the banner).
+// TestShrinkClearsScreenOnce: the first size report performs the ADR-0003
+// startup clear (banner follows it inside the same sequence, so nothing
+// is lost); growth must not clear; a genuine width shrink clears to sweep
+// re-wrapped stale frames and resets the line counter.
 func TestShrinkClearsScreenOnce(t *testing.T) {
 	c := &capture{}
 	m := newTestModel(c)
 
 	next, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
 	m = next.(Model)
-	if cmd != nil {
-		t.Error("first size report must not clear the screen")
+	if cmd == nil {
+		t.Error("first size report should run the startup clear sequence")
 	}
 	next, cmd = m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m = next.(Model)
 	if cmd != nil {
 		t.Error("growth must not clear the screen")
 	}
+	m.printed = 7
 	next, cmd = m.Update(tea.WindowSizeMsg{Width: 50, Height: 40})
 	m = next.(Model)
 	if cmd == nil {
 		t.Error("shrink must trigger a screen clear")
 	}
-	_ = m
+	if m.printed != 0 {
+		t.Errorf("shrink clear must reset the line counter, got %d", m.printed)
+	}
+}
+
+// TestBottomPinning pins ADR-0003: the view pads from the top so the
+// input block sits at the window bottom, the banner prints through the
+// line counter after the startup clear, and the padding floors at zero
+// once the conversation fills the screen.
+func TestBottomPinning(t *testing.T) {
+	c := &capture{}
+	m := New(Options{
+		Printer: c.printer,
+		RenderFactory: func(width int) func(string) string {
+			return func(s string) string { return s }
+		},
+		Slash:  slashStub,
+		Banner: []string{"banner line 1", "banner line 2"},
+	})
+
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = next.(Model)
+	if m.printed != 2 {
+		t.Fatalf("banner should be counted: printed = %d", m.printed)
+	}
+	if !strings.Contains(c.all(), "banner line 1") {
+		t.Fatal("banner not emitted through the TUI")
+	}
+
+	v := m.View()
+	core := strings.Count(clipLines(m.viewContent(), m.width), "\n") + 1
+	wantPad := 24 - 2 - core - 1
+	gotPad := 0
+	for _, r := range v {
+		if r != '\n' {
+			break
+		}
+		gotPad++
+	}
+	if gotPad != wantPad {
+		t.Errorf("top padding = %d, want %d", gotPad, wantPad)
+	}
+
+	// A wide line counts its wrapped physical lines.
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 20, Height: 24}) // no shrink reset on first... width shrinks: clear resets
+	m = next.(Model)
+	if m.printed != 0 {
+		t.Fatalf("shrink clear should reset the counter: %d", m.printed)
+	}
+	before := m.printed
+	cmd := m.emit(strings.Repeat("x", 45)) // 45 cells / 20 wide = 3 physical lines
+	_ = cmd
+	if m.printed-before != 3 {
+		t.Errorf("wrapped emit counted %d physical lines, want 3", m.printed-before)
+	}
+
+	// Fill beyond the screen: padding floors at zero.
+	m.printed = 1000
+	v = m.View()
+	if strings.HasPrefix(v, "\n\n") {
+		t.Error("padding must floor at zero when the screen is full")
+	}
 }
 
 // TestResizeNeverQueriesTerminal pins the OSC-leak fix: resizing must

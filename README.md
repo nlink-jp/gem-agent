@@ -70,11 +70,13 @@ TUI keys (also listed in `/help`): Enter sends, Ctrl+J inserts a newline,
 the input), Ctrl+D quits. Multi-line pastes land in the input box as one
 message.
 
-A single status line under the input box shows the model, current
-context occupancy against the model's window (auto-detected from model
-metadata, or `[model].context_window`), cumulative token consumption,
-and the project directory. It travels with the conversation (inline
-rendering, ADR-0002) rather than pinning to the window bottom.
+The input box and its status line pin to the window bottom (like Claude
+Code), while the conversation scrolls above with native terminal
+scrollback intact (ADR-0003; the screen is cleared once at startup). The
+status line shows the model, current context occupancy against the
+model's window (auto-detected from model metadata, or
+`[model].context_window`), cumulative token consumption, and the project
+directory.
 
 ## MCP servers
 

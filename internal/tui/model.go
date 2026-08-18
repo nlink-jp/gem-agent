@@ -97,6 +97,10 @@ type Options struct {
 	// ModelName and ProjectDir feed the persistent footer.
 	ModelName  string
 	ProjectDir string
+	// Banner lines are printed by the TUI itself right after the
+	// startup screen clear — they must go through the line counter or
+	// the bottom pinning (ADR-0003) would drift from frame one.
+	Banner []string
 	// Printer overrides tea.Println for tests.
 	Printer func(...any) tea.Cmd
 	// RenderFactory overrides the Markdown renderer factory for tests.
@@ -130,7 +134,10 @@ type Model struct {
 	cancelTurn context.CancelFunc
 
 	width    int
+	height   int
 	sized    bool // first WindowSizeMsg received
+	banner   []string
+	printed  int // physical lines emitted since the last screen clear (ADR-0003)
 	st       styleSet
 	render   func(string) string
 	mkRender func(width int) func(string) string
@@ -168,6 +175,7 @@ func New(opts Options) Model {
 		println:    opts.Printer,
 		mkRender:   opts.RenderFactory,
 		width:      80,
+		banner:     opts.Banner,
 		modelName:  opts.ModelName,
 		projectDir: opts.ProjectDir,
 	}
@@ -232,11 +240,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// leftovers. The first size report must not clear — it would
 		// wipe the banner.
 		shrank := m.sized && msg.Width < m.width
+		first := !m.sized
 		m.sized = true
 		m.width = msg.Width
+		m.height = msg.Height
 		m.ta.SetWidth(msg.Width - 2)
 		m.render = m.mkRender(msg.Width)
-		if shrank {
+		switch {
+		case first:
+			// ADR-0003: clear to a known cursor row, then print the
+			// banner through the counter so pinning is exact from the
+			// first frame. Deferred to the first size report because
+			// counting needs the real width.
+			m.printed = 0
+			cmds := []tea.Cmd{tea.ClearScreen}
+			for _, line := range m.banner {
+				cmds = append(cmds, m.emit(line))
+			}
+			return m, tea.Sequence(cmds...)
+		case shrank:
+			m.printed = 0 // the clear empties the viewport
 			return m, tea.ClearScreen
 		}
 		return m, nil
@@ -270,7 +293,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 		cmds = append(cmds, m.flushLive()...)
 		m.status = "running " + msg.Name
-		cmds = append(cmds, m.println(m.st.tool.Render("⚙ "+msg.Name+" "+msg.Detail)))
+		cmds = append(cmds, m.emit(m.st.tool.Render("⚙ "+msg.Name+" "+msg.Detail)))
 		return m, tea.Batch(cmds...)
 
 	case ApprovalRequest:
@@ -284,9 +307,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.flushLive()...)
 		if msg.Err != nil {
 			if errors.Is(msg.Err, context.Canceled) {
-				cmds = append(cmds, m.println(m.st.status.Render("(interrupted)")))
+				cmds = append(cmds, m.emit(m.st.status.Render("(interrupted)")))
 			} else {
-				cmds = append(cmds, m.println(m.st.errS.Render("✗ error: "+msg.Err.Error())))
+				cmds = append(cmds, m.emit(m.st.errS.Render("✗ error: "+msg.Err.Error())))
 			}
 		}
 		m.phase = phaseInput
@@ -318,6 +341,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// emit prints one string into scrollback AND counts its physical lines
+// (ANSI-aware, wrap-adjusted) — the accounting the bottom pinning rests
+// on (ADR-0003). Every print of the model must go through here, never
+// through m.println directly.
+func (m *Model) emit(s string) tea.Cmd {
+	w := m.width
+	if w <= 0 {
+		w = 80
+	}
+	for _, line := range strings.Split(s, "\n") {
+		phys := 1
+		if lw := ansi.StringWidth(line); lw > w {
+			phys = (lw + w - 1) / w
+		}
+		m.printed += phys
+	}
+	return m.println(s)
+}
+
 // flushLive renders accumulated streamed text as Markdown and emits it
 // to scrollback. Rendering happens exactly once per segment — the live
 // region shows raw text, the flush shows the pretty version.
@@ -327,7 +369,7 @@ func (m *Model) flushLive() []tea.Cmd {
 	if text == "" {
 		return nil
 	}
-	return []tea.Cmd{m.println(m.render(text))}
+	return []tea.Cmd{m.emit(m.render(text))}
 }
 
 func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -352,7 +394,7 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		req.Resp <- answer
 	}
 	verdict := map[byte]string{'y': "approved", 'n': "denied", 'a': "approved (always this session)"}[answer]
-	return m, m.println(m.st.tool.Render("  ↳ " + verdict))
+	return m, m.emit(m.st.tool.Render("  ↳ " + verdict))
 }
 
 func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -363,11 +405,11 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.histIdx = -1
 			return m, nil
 		}
-		return m, tea.Sequence(m.println(m.st.hint.Render("bye")), tea.Quit)
+		return m, tea.Sequence(m.emit(m.st.hint.Render("bye")), tea.Quit)
 
 	case msg.Type == tea.KeyCtrlD:
 		if strings.TrimSpace(m.ta.Value()) == "" {
-			return m, tea.Sequence(m.println(m.st.hint.Render("bye")), tea.Quit)
+			return m, tea.Sequence(m.emit(m.st.hint.Render("bye")), tea.Quit)
 		}
 		return m, nil
 
@@ -467,7 +509,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		} else {
 			line = text // default foreground: readable on any theme
 		}
-		cmds := []tea.Cmd{m.println(line)}
+		cmds := []tea.Cmd{m.emit(line)}
 		if quit {
 			cmds = append(cmds, tea.Quit)
 			return m, tea.Sequence(cmds...)
@@ -483,14 +525,26 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	if m.startTurn != nil {
 		m.startTurn(ctx, input)
 	}
-	return m, tea.Batch(m.println(m.st.user.Render("> ")+input), m.spin.Tick)
+	return m, tea.Batch(m.emit(m.st.user.Render("> ")+input), m.spin.Tick)
 }
 
 // View implements tea.Model. Every line is clipped to the terminal
 // width: a managed-region line that soft-wraps breaks the inline
 // renderer's height accounting and leaves stale frames behind.
+//
+// The view is padded from the top so the input block pins to the window
+// bottom (ADR-0003): height − printed lines − view height − 1. Once the
+// conversation fills the screen the padding floors at zero and the
+// layout degrades to plain inline following.
 func (m Model) View() string {
-	return clipLines(m.viewContent(), m.width)
+	content := clipLines(m.viewContent(), m.width)
+	if m.height > 0 {
+		core := strings.Count(content, "\n") + 1
+		if pad := m.height - m.printed - core - 1; pad > 0 {
+			content = strings.Repeat("\n", pad) + content
+		}
+	}
+	return content
 }
 
 // clipLines truncates each line to width-1 display cells (ANSI-aware).
