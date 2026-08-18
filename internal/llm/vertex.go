@@ -222,6 +222,13 @@ func buildContents(messages []Message) []*genai.Content {
 		switch m.Role {
 		case RoleAssistant:
 			if len(m.ToolCalls) == 0 {
+				// An empty text part violates the Part oneof and fails
+				// the whole request with 400, so a message carrying
+				// nothing is dropped rather than sent (defence in depth:
+				// the agent already refuses to store empty turns).
+				if m.Content == "" {
+					continue
+				}
 				contents = append(contents, genai.NewContentFromText(m.Content, genai.RoleModel))
 				continue
 			}
@@ -254,6 +261,9 @@ func buildContents(messages []Message) []*genai.Content {
 			pendingToolParts = append(pendingToolParts,
 				genai.NewPartFromFunctionResponse(m.ToolName, map[string]any{"result": m.Content}))
 		default: // RoleUser
+			if m.Content == "" {
+				continue // see above: an empty part fails the request
+			}
 			contents = append(contents, genai.NewContentFromText(m.Content, genai.RoleUser))
 		}
 	}

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.1] - 2026-08-19
+
+### Fixed
+
+- A model response with neither text nor tool calls was stored in the
+  conversation, and every later request then carried an empty part —
+  Vertex rejects that with `parts[0].data: required oneof field 'data'
+  must have one initialized field` (400), so once it happened the
+  session failed on every subsequent message until `/clear`. Such a
+  response is now reported as an error and never recorded, and the
+  request builder drops empty messages as a second line of defence
+
 ## [0.1.0] - 2026-08-19
 
 ### Added — full instruction-file conventions (operator feedback)

@@ -212,6 +212,38 @@ func TestMaxTurnsCap(t *testing.T) {
 	}
 }
 
+// TestEmptyResponseDoesNotPoisonHistory is the field-reported bug: a
+// model turn with neither text nor tool calls was stored, and every
+// later request then carried an empty part — a 400 that repeated until
+// the session was cleared. The turn must fail loudly and leave nothing
+// behind, so the next message still works.
+func TestEmptyResponseDoesNotPoisonHistory(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{
+		{}, // empty: no content, no tool calls
+		{Content: "recovered"},
+	}}
+	a, _ := newAgent(t, mb, &approveAll{}, 5)
+
+	_, err := a.Run(context.Background(), "first", nil)
+	if err == nil {
+		t.Fatal("an empty response should be reported as an error")
+	}
+	if !strings.Contains(err.Error(), "empty response") {
+		t.Errorf("error should name the cause: %v", err)
+	}
+	for i, m := range a.history {
+		if m.Role == llm.RoleAssistant && m.Content == "" && len(m.ToolCalls) == 0 {
+			t.Fatalf("history[%d] stored an empty assistant turn", i)
+		}
+	}
+
+	// The session stays usable.
+	out, err := a.Run(context.Background(), "second", nil)
+	if err != nil || out != "recovered" {
+		t.Fatalf("next turn failed after an empty response: %q %v", out, err)
+	}
+}
+
 func TestResetClearsHistory(t *testing.T) {
 	mb := &mockBackend{responses: []*llm.Response{{Content: "a"}, {Content: "b"}}}
 	a, _ := newAgent(t, mb, &approveAll{}, 5)

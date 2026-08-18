@@ -72,6 +72,29 @@ func TestBuildContentsCoalescesToolResponses(t *testing.T) {
 	}
 }
 
+// TestBuildContentsSkipsEmptyMessages: an empty text part violates the
+// Part oneof and fails the entire request with 400 — which, once such a
+// message is in history, repeats on every later turn and poisons the
+// session (observed in the field).
+func TestBuildContentsSkipsEmptyMessages(t *testing.T) {
+	contents := buildContents([]Message{
+		{Role: RoleUser, Content: "hi"},
+		{Role: RoleAssistant, Content: ""}, // an empty model response
+		{Role: RoleUser, Content: ""},      // an empty user turn
+		{Role: RoleUser, Content: "again"},
+	})
+	if len(contents) != 2 {
+		t.Fatalf("len = %d, want the two non-empty messages", len(contents))
+	}
+	for i, c := range contents {
+		for j, p := range c.Parts {
+			if p.Text == "" && p.FunctionCall == nil && p.FunctionResponse == nil && !p.Thought {
+				t.Errorf("contents[%d].parts[%d] carries no data", i, j)
+			}
+		}
+	}
+}
+
 func TestBuildContentsPlainAssistantTurn(t *testing.T) {
 	contents := buildContents([]Message{
 		{Role: RoleUser, Content: "hi"},

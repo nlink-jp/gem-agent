@@ -165,6 +165,16 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 			a.onUsage(resp.PromptTokens, resp.OutputTokens)
 		}
 
+		// A response with neither text nor tool calls carries nothing to
+		// replay, and storing it would put an empty part in every later
+		// request ("parts[0].data: required oneof field 'data' must have
+		// one initialized field" — a 400 that poisons the whole session,
+		// observed in the field). Report it instead of recording it.
+		if resp.Content == "" && len(resp.ToolCalls) == 0 {
+			a.logRecord("assistant_empty", map[string]any{"round": round})
+			return "", fmt.Errorf("the model returned an empty response (no text, no tool calls); try rephrasing, or /clear to start a fresh conversation")
+		}
+
 		// The assistant turn is appended verbatim — including thought
 		// signatures — because the next request replays it (Gemini 3
 		// hard requirement; see internal/llm).
