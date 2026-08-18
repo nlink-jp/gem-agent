@@ -20,8 +20,11 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/tools"
+	"github.com/nlink-jp/gem-agent/internal/tui"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var (
@@ -139,20 +142,36 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	oneShot := flagPrompt != ""
+	// The TUI needs a real terminal on both ends (ADR-0002); piped use
+	// falls back to the plain line REPL so scripts and smoke pipelines
+	// keep working.
+	useTUI := !oneShot &&
+		term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
 
-	// One shared buffered reader for the REPL and the approval gate:
-	// bufio.NewReader returns an existing *bufio.Reader unchanged, so
-	// both components drain the same buffer and no typed-ahead input is
-	// stranded in a second one.
+	// One shared buffered reader for the plain REPL and its approval
+	// gate: bufio.NewReader returns an existing *bufio.Reader unchanged,
+	// so both components drain the same buffer and no typed-ahead input
+	// is stranded in a second one. (The TUI reads the terminal itself.)
 	stdin := bufio.NewReader(cmd.InOrStdin())
-	var gate agent.Approver = approve.New(stdin, stderr)
-	if oneShot {
+	var gate agent.Approver
+	var tuiGate *tui.Gate
+	switch {
+	case oneShot:
 		// One-shot runs non-interactively (stdin may be a pipe): a
 		// blocking approval prompt would hang, so mutating tools are
 		// denied outright. Read-only pipelines still work.
 		gate = denyGate{out: stderr}
+	case useTUI:
+		tuiGate = tui.NewGate()
+		gate = tuiGate
+	default:
+		gate = approve.New(stdin, stderr)
 	}
 	reader := repl.NewReader(stdin, stderr)
+
+	// prog is assigned before the TUI runs; the agent only executes
+	// inside prog.Run, so the callbacks below never see it half-set.
+	var prog *tea.Program
 
 	ag := agent.New(agent.Options{
 		Backend:  backend,
@@ -162,6 +181,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		System:   buildSystemPrompt(projectDir),
 		MaxTurns: cfg.Agent.MaxTurns,
 		OnToolCall: func(tc llm.ToolCall) {
+			if prog != nil {
+				prog.Send(tui.ToolCall{Name: tc.Name, Detail: agent.CallDetail(tc)})
+				return
+			}
 			fmt.Fprintf(stderr, "\n[tool] %s %s\n", tc.Name, agent.CallDetail(tc))
 		},
 	})
@@ -194,9 +217,35 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if len(mcpSummary) > 0 {
 		fmt.Fprintf(stderr, "mcp: %s\n", strings.Join(mcpSummary, ", "))
 	}
+
+	// --- interactive TUI (ADR-0002) ---
+	if useTUI {
+		model := tui.New(tui.Options{
+			BaseCtx: ctx,
+			StartTurn: func(turnCtx context.Context, input string) {
+				go func() {
+					_, err := ag.Run(turnCtx, input, func(s string) { prog.Send(tui.TextDelta(s)) })
+					if err != nil && turnCtx.Err() != nil {
+						// Mirror runTurn's mapping: a cancellation-caused
+						// failure is an interrupt, not a backend error.
+						err = context.Canceled
+					}
+					prog.Send(tui.TurnDone{Err: err})
+				}()
+			},
+			Slash: func(in string) (string, bool) {
+				return slashOutput(in, ag, registry, mcpSummary)
+			},
+		})
+		prog = tea.NewProgram(model)
+		tuiGate.SetProgram(prog)
+		_, err := prog.Run()
+		return err
+	}
+
 	fmt.Fprintf(stderr, "/help for commands, Ctrl+D to quit\n")
 
-	// --- REPL loop ---
+	// --- plain REPL loop (non-TTY fallback) ---
 	for {
 		input, err := reader.Read("\n> ")
 		if errors.Is(err, io.EOF) {
@@ -211,7 +260,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		if strings.HasPrefix(input, "/") {
-			if quit := runSlashCommand(input, ag, registry, mcpSummary, stderr); quit {
+			out, quit := slashOutput(input, ag, registry, mcpSummary)
+			fmt.Fprint(stderr, out)
+			if quit {
 				return nil
 			}
 			continue
@@ -290,10 +341,14 @@ func buildExecFn(sandboxOn bool, projectDir string) (tools.ExecFunc, error) {
 	}, nil
 }
 
-func runSlashCommand(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, out io.Writer) (quit bool) {
+// slashOutput executes a /command and returns its output text — shared
+// by the TUI (which prints it into scrollback) and the plain REPL
+// (which writes it to stderr).
+func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string) (output string, quit bool) {
+	var b strings.Builder
 	switch strings.Fields(input)[0] {
 	case "/help":
-		fmt.Fprint(out, `commands:
+		b.WriteString(`commands:
   /help    show this help
   /tools   list available tools
   /mcp     show connected MCP servers
@@ -307,27 +362,26 @@ mutating tools prompt for approval: y = once, a = always this session
 			if t.Mutating {
 				marker = "requires approval"
 			}
-			fmt.Fprintf(out, "  %-12s %s (%s)\n", t.Name, firstSentence(t.Description), marker)
+			fmt.Fprintf(&b, "  %-12s %s (%s)\n", t.Name, firstSentence(t.Description), marker)
 		}
 	case "/clear":
 		ag.Reset()
-		fmt.Fprintln(out, "history cleared — the next message starts a fresh conversation")
+		b.WriteString("history cleared — the next message starts a fresh conversation\n")
 	case "/quit", "/exit":
-		fmt.Fprintln(out, "bye")
-		return true
+		return "bye\n", true
 	case "/mcp":
 		if len(mcpSummary) == 0 {
-			fmt.Fprintln(out, "no MCP servers connected (define them in the project's .mcp.json)")
+			b.WriteString("no MCP servers connected (define them in the project's .mcp.json)\n")
 		} else {
 			for _, s := range mcpSummary {
-				fmt.Fprintln(out, "  "+s)
+				b.WriteString("  " + s + "\n")
 			}
-			fmt.Fprintln(out, "MCP tools appear in /tools as mcp__<server>__<tool> and always require approval")
+			b.WriteString("MCP tools appear in /tools as mcp__<server>__<tool> and always require approval\n")
 		}
 	default:
-		fmt.Fprintf(out, "unknown command %q — /help lists commands\n", input)
+		fmt.Fprintf(&b, "unknown command %q — /help lists commands\n", input)
 	}
-	return false
+	return b.String(), false
 }
 
 func firstSentence(s string) string {
