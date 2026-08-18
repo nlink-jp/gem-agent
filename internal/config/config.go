@@ -21,6 +21,35 @@ type Config struct {
 	MCP      MCPConfig      `toml:"mcp"`
 	TUI      TUIConfig      `toml:"tui"`
 	Approval ApprovalConfig `toml:"approval"`
+
+	// Sources records where each setting's effective value came from,
+	// keyed by its TOML path ("model.name"). Four precedence layers with
+	// nothing on screen is a design that assumes the operator remembers
+	// them; /settings shows this instead (ADR-0009).
+	Sources map[string]string `toml:"-"`
+}
+
+// Provenance values used in Sources.
+const (
+	FromFlag    = "flag"
+	FromEnv     = "env"
+	FromFile    = "config.toml"
+	FromDefault = "default"
+)
+
+func (c *Config) note(key, source string) {
+	if c.Sources == nil {
+		c.Sources = map[string]string{}
+	}
+	c.Sources[key] = source
+}
+
+// Source returns where a setting came from, for display.
+func (c *Config) Source(key string) string {
+	if s, ok := c.Sources[key]; ok {
+		return s
+	}
+	return FromDefault
 }
 
 // ApprovalConfig carries the per-tool approval policy (ADR-0008).
@@ -198,6 +227,14 @@ func LoadWithOverrides(path string, ov Overrides) (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", path, err)
 		}
+		// IsDefined tells us exactly which keys the file set, which is
+		// the only honest way to say "this came from the file" rather
+		// than "this happens to differ from the default".
+		for _, key := range trackedKeys {
+			if md.IsDefined(strings.Split(key, ".")...) {
+				cfg.note(key, FromFile)
+			}
+		}
 		if undecoded := md.Undecoded(); len(undecoded) > 0 {
 			keys := make([]string, len(undecoded))
 			for i, k := range undecoded {
@@ -213,6 +250,7 @@ func LoadWithOverrides(path string, ov Overrides) (*Config, error) {
 
 	if ov.Model != "" {
 		cfg.Model.Name = ov.Model
+		cfg.note("model.name", FromFlag)
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -224,21 +262,32 @@ func LoadWithOverrides(path string, ov Overrides) (*Config, error) {
 // applyEnv applies the org-standard precedence: GEMAGENT_<FIELD> beats
 // GOOGLE_CLOUD_<FIELD>, which beats the file value.
 func applyEnv(cfg *Config) {
-	if v := os.Getenv("GOOGLE_CLOUD_PROJECT"); v != "" {
-		cfg.GCP.Project = v
+	for _, e := range []struct {
+		env, key string
+		set      func(string)
+	}{
+		{"GOOGLE_CLOUD_PROJECT", "gcp.project", func(v string) { cfg.GCP.Project = v }},
+		{"GOOGLE_CLOUD_LOCATION", "gcp.location", func(v string) { cfg.GCP.Location = v }},
+		{"GEMAGENT_PROJECT", "gcp.project", func(v string) { cfg.GCP.Project = v }},
+		{"GEMAGENT_LOCATION", "gcp.location", func(v string) { cfg.GCP.Location = v }},
+		{"GEMAGENT_MODEL", "model.name", func(v string) { cfg.Model.Name = v }},
+	} {
+		if v := os.Getenv(e.env); v != "" {
+			e.set(v)
+			cfg.note(e.key, FromEnv+":"+e.env)
+		}
 	}
-	if v := os.Getenv("GOOGLE_CLOUD_LOCATION"); v != "" {
-		cfg.GCP.Location = v
-	}
-	if v := os.Getenv("GEMAGENT_PROJECT"); v != "" {
-		cfg.GCP.Project = v
-	}
-	if v := os.Getenv("GEMAGENT_LOCATION"); v != "" {
-		cfg.GCP.Location = v
-	}
-	if v := os.Getenv("GEMAGENT_MODEL"); v != "" {
-		cfg.Model.Name = v
-	}
+}
+
+// trackedKeys are the settings /settings displays with provenance.
+var trackedKeys = []string{
+	"gcp.project", "gcp.location",
+	"model.name", "model.context_window", "model.safety",
+	"sandbox.enabled",
+	"agent.max_turns", "agent.shell_timeout_sec", "agent.auto_approve",
+	"agent.auto_compact", "agent.compact_at_pct",
+	"mcp.enabled", "mcp.call_timeout_sec",
+	"tui.theme",
 }
 
 func (c *Config) validate() error {

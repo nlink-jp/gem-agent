@@ -203,6 +203,29 @@ history is left exactly as it was and the turn continues on a full
 context. `auto_compact = false` turns the automatic path off; `/compact`
 still works.
 
+### `/settings`
+
+`/settings` opens a panel showing every setting **with where its value
+came from** — `flag`, `env:VAR`, `config.toml`, `policy.toml`, the
+project file, or `default`. Four precedence layers with nothing on screen
+is a design that assumes you remember them.
+
+↑↓ moves, ←→/Enter changes a value, `s` switches whether a policy change
+is saved globally or for this project only, Esc closes. Settings that
+cannot change mid-session (the model, the GCP project, the sandbox
+switch) are shown read-only and say why.
+
+Persisted changes go to `~/.config/gem-agent/policy.toml`, a file
+gem-agent owns and rewrites. Your hand-written `config.toml` is never
+touched, so its comments survive; entries in `policy.toml` win a
+collision, and the panel shows which file decided each one. In a pipe or
+the plain REPL, `/settings` prints the same rows read-only. See
+[ADR-0009](docs/en/adr/0009-settings-panel.md).
+
+The approval dialog gained a fourth answer, **今後聞かない (`p`)** — allow
+this call and never ask about that tool again. It writes the policy and
+says so; it is deliberately separate from `a`, which lasts one session.
+
 ### Per-tool approval policy
 
 Every MCP tool asks for approval on every call, because gem-agent cannot

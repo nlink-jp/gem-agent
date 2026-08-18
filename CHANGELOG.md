@@ -1,5 +1,39 @@
 # Changelog
 
+## [Unreleased]
+
+### Added — `/settings` (ADR-0009, operator request)
+
+- Configuration resolves through four layers — flags, `GEMAGENT_*`,
+  `GOOGLE_CLOUD_*`, the file, defaults — and **none of it was visible
+  from inside a session**. `/settings` opens a panel where every row
+  carries its value *and where that value came from*
+- Editable: the approval policy per tool, auto-approve, auto-compaction,
+  and the theme. Settings that cannot change mid-session (model, GCP
+  project, the sandbox switch) are shown read-only and say why, because a
+  menu that offers to change something it cannot is worse than a
+  read-only row
+- ↑↓ moves, ←→/Enter changes, `s` switches whether a policy change saves
+  globally or for this project only, Esc closes. Non-TTY prints the same
+  rows read-only
+- **Persisted changes go to `~/.config/gem-agent/policy.toml`**, a
+  machine-owned file that announces itself in its first line. The
+  hand-written `config.toml` is never rewritten, so its comments survive
+  — the TOML encoder does not preserve them, and the shipped template is
+  71 lines of explanation. `policy.toml` wins a collision, so a UI change
+  is never silently overridden, and each row names the file that decided
+  it — including `(ignored: untrusted)` for a project entry that was
+  dropped
+- Project-scoped policy is written **inside** the machine-owned file
+  (`[projects."<path>".tools]`), not into the project: adding a file to
+  somebody's repository is a surprising side effect of a keypress, and a
+  loosening entry there would be inert anyway unless the project were
+  trusted
+- **The approval dialog gained a fourth answer, 今後聞かない (`p`)** —
+  allow this call and never ask about that tool again. It writes the
+  policy and reports what it wrote. Deliberately separate from `a`, which
+  lasts one session: one is a convenience, the other edits a file on disk
+
 ## [0.4.0] - 2026-08-19
 
 ### Added — per-tool approval policy (ADR-0008, operator request)

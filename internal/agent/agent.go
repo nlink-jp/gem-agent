@@ -175,6 +175,35 @@ func (a *Agent) contextWindow() int {
 	return a.window
 }
 
+// SetPolicy replaces the per-tool approval policy (ADR-0008), which the
+// settings panel edits mid-session. Guarded because the UI goroutine
+// sets it while the agent goroutine reads it per tool call.
+func (a *Agent) SetPolicy(p policy.Policy) {
+	a.mu.Lock()
+	a.policy = p
+	a.mu.Unlock()
+}
+
+func (a *Agent) toolPolicy(tool string) policy.Decision {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.policy.For(tool)
+}
+
+// AutoCompact reports whether automatic compaction is on.
+func (a *Agent) AutoCompact() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.autoCompact
+}
+
+// SetAutoCompact turns automatic compaction on or off (settings panel).
+func (a *Agent) SetAutoCompact(on bool) {
+	a.mu.Lock()
+	a.autoCompact = on
+	a.mu.Unlock()
+}
+
 // AutoApprove reports whether auto-approve mode is on.
 func (a *Agent) AutoApprove() bool {
 	a.mu.Lock()
@@ -393,7 +422,7 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
 		// A tool the operator marked "always" skips the ladder: the
 		// question is settled, and spending a model round on it would
 		// both cost a request and risk answering it differently.
-		if a.AutoApprove() && a.policy.For(tc.Name) != policy.AlwaysAsk {
+		if a.AutoApprove() && a.toolPolicy(tc.Name) != policy.AlwaysAsk {
 			d := a.decideAuto(ctx, tc)
 			if a.onAuto != nil {
 				a.onAuto(tc, d)
@@ -430,7 +459,7 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
 // shell_exec above all — must not become "run anything unattended"
 // because of one config line, so a Block verdict still asks.
 func (a *Agent) gated(mutating bool, tc llm.ToolCall) bool {
-	switch a.policy.For(tc.Name) {
+	switch a.toolPolicy(tc.Name) {
 	case policy.AlwaysAsk:
 		return true
 	case policy.NeverAsk:

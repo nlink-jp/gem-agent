@@ -48,6 +48,8 @@ excepted).
   kept and queued; auto-sent only when the turn finished cleanly
 - [`ADR-0008`](adr/0008-per-tool-approval-policy.md) — per-tool approval
   policy; a project may tighten freely and loosen only where trusted
+- [`ADR-0009`](adr/0009-settings-panel.md) — a settings panel showing
+  provenance, and a machine-owned policy file so comments survive
 
 ## History
 

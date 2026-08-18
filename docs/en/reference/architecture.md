@@ -112,6 +112,12 @@ each mutating call first passes a pure rule classifier: *safe* runs,
 both approve and be confident. Every failure path asks. The blocked tier
 is a floor the model cannot lift, and the sandbox applies in all modes.
 
+`/settings` shows every setting with its provenance and edits what can
+take effect now: the approval policy, auto-approve, auto-compaction, and
+the theme. Persisted policy goes to `~/.config/gem-agent/policy.toml`, a
+machine-owned file that wins collisions with hand-written `config.toml`
+(ADR-0009), which is never rewritten so its comments survive.
+
 ## Context
 
 The status line shows occupancy against the model's input window — from

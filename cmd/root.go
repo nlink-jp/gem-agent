@@ -115,8 +115,22 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	policyPath := config.PolicyPath(cfgPath)
+	policyFile, err := config.LoadPolicyFile(policyPath)
+	if err != nil {
+		return err
+	}
+	mergedTools := map[string]string{}
+	for k, v := range cfg.Approval.Tools {
+		mergedTools[k] = v
+	}
+	// The machine-owned file wins: a change made through /settings must
+	// not be silently overridden by the hand-written config (ADR-0009).
+	for k, v := range policyFile.ForProject(projectDir) {
+		mergedTools[k] = v
+	}
 	approvalPolicy, policyNotes, err := policy.Build(
-		cfg.Approval.Tools, projectCfg.Approval.Tools, cfg.TrustsProject(projectDir))
+		mergedTools, projectCfg.Approval.Tools, cfg.TrustsProject(projectDir))
 	if err != nil {
 		return err
 	}
@@ -291,6 +305,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		ag.SetHistory(restored)
 	}
 
+	settings := &settingsStore{
+		cfg: cfg, projectCfg: projectCfg, policyFile: policyFile,
+		policyPath: policyPath, projectDir: projectDir,
+		registry: registry, ag: ag, current: approvalPolicy,
+	}
+	settingsData := settings.data()
+
 	// resolveWindow settles the model's input token limit and hands it to
 	// everyone who needs it: the footer displays it, and auto-compaction
 	// (ADR-0006) measures against it. It runs in the background — a
@@ -388,6 +409,8 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			CompletePath: func(prefix string) []string {
 				return mention.Complete(projectDir, prefix, 24)
 			},
+			Settings:     &settingsData,
+			ApplySetting: settings.Apply,
 			Shell: func(shellCtx context.Context, command string) {
 				go func() {
 					out := runDirectShell(shellCtx, registry, ag, command)
@@ -451,6 +474,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				continue
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), runDirectShell(ctx, registry, ag, command))
+			continue
+		}
+		if input == "/settings" {
+			writeSettingsTable(stderr, settings.data())
 			continue
 		}
 		if input == "/compact" {
@@ -630,6 +657,7 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
   /mcp     show connected MCP servers
   /auto    toggle auto-approve (shift+tab does the same, and works mid-run)
   /compact summarise the older half of the conversation to free context
+  /settings show every setting with where it came from; edit policy + toggles
   /clear   reset the conversation history
   /quit    exit (Ctrl+D also works)
 auto-approve: safe changes run unattended; destructive, out-of-project,

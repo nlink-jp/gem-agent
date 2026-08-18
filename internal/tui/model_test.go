@@ -824,12 +824,20 @@ func TestApprovalSelectionKeys(t *testing.T) {
 		t.Errorf("Tab should move to 常に許可, got %d", m.choice)
 	}
 	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.choice != 3 {
+		t.Errorf("Tab should move to 今後聞かない, got %d", m.choice)
+	}
+	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
 	if m.choice != choiceAllow {
 		t.Errorf("Tab should wrap to 許可, got %d", m.choice)
 	}
 	m = press(m, tea.KeyMsg{Type: tea.KeyLeft})
+	if m.choice != len(approvalOptions)-1 {
+		t.Errorf("Left should wrap backwards to the last option, got %d", m.choice)
+	}
+	m = press(m, tea.KeyMsg{Type: tea.KeyLeft})
 	if m.choice != 2 {
-		t.Errorf("Left should wrap backwards to 常に許可, got %d", m.choice)
+		t.Errorf("Left should step back to 常に許可, got %d", m.choice)
 	}
 
 	// Enter confirms the highlighted option — no letter typed.
@@ -1153,5 +1161,63 @@ func TestApprovalDialogStillOwnsTheKeysWhileOpen(t *testing.T) {
 	}
 	if m.pending != "" || m.ta.Value() != "" {
 		t.Errorf("dialog keys leaked into the input box: pending=%q value=%q", m.pending, m.ta.Value())
+	}
+}
+
+// "never ask again" edits a file on disk, so it is a separate answer
+// from "a" (this session only) and it must report what it wrote.
+func TestApprovalPersistAnswerWritesPolicyAndAllows(t *testing.T) {
+	c := &capture{}
+	var got SettingChange
+	m := New(Options{
+		StartTurn: func(ctx context.Context, input string) {},
+		Slash:     slashStub,
+		Printer:   c.printer,
+		Settings:  &SettingsData{ProjectDir: "/p"},
+		ApplySetting: func(ch SettingChange) (SettingsData, string) {
+			got = ch
+			return SettingsData{ProjectDir: "/p"}, "saved: mcp__x__y will not ask again (policy.toml)"
+		},
+		RenderFactory: func(width int) func(string) string {
+			return func(s string) string { return s }
+		},
+	})
+	resp := make(chan byte, 1)
+	next, _ := m.Update(ApprovalRequest{Tool: "mcp__x__y", Detail: "d", Resp: resp})
+	m = next.(Model)
+
+	m = press(m, runeMsg("p"))
+	if got.Tool != "mcp__x__y" || got.Value != "never" || got.Scope != ScopeGlobal {
+		t.Fatalf("change = %+v", got)
+	}
+	// The call still has to be allowed, or the operator answered a
+	// question the tool never got.
+	select {
+	case answer := <-resp:
+		if answer != 'y' {
+			t.Errorf("gate answered %c, want y", answer)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("the gate was never answered")
+	}
+	out := c.all()
+	if !strings.Contains(out, "will not ask again") {
+		t.Errorf("what was written was not reported:\n%s", out)
+	}
+}
+
+// Without a policy store (one-shot, tests), the persist answer must not
+// silently do nothing: it degrades to a plain allow.
+func TestApprovalPersistDegradesWithoutAPolicyStore(t *testing.T) {
+	c := &capture{}
+	m, resp := openApproval(t, newTestModel(c), "")
+	m = press(m, runeMsg("p"))
+	select {
+	case answer := <-resp:
+		if answer != 'y' {
+			t.Errorf("gate answered %c, want y", answer)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("the gate was never answered")
 	}
 }

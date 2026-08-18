@@ -275,3 +275,33 @@ trusted_projects = ["/work/mine"]
 		t.Errorf("approval tools = %v", cfg.Approval.Tools)
 	}
 }
+
+// Four precedence layers with nothing on screen assumes the operator
+// remembers them. /settings shows this instead (ADR-0009).
+func TestConfigRecordsWhereEachValueCameFrom(t *testing.T) {
+	clearEnv(t)
+	path := writeConfig(t, `
+[gcp]
+project = "file-project"
+[model]
+name = "file-model"
+[agent]
+max_turns = 7
+`)
+	t.Setenv("GEMAGENT_PROJECT", "env-project")
+	cfg, err := LoadWithOverrides(path, Overrides{Model: "flag-model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]string{
+		"model.name":              FromFlag,
+		"gcp.project":             FromEnv + ":GEMAGENT_PROJECT",
+		"agent.max_turns":         FromFile,
+		"agent.shell_timeout_sec": FromDefault,
+		"tui.theme":               FromDefault,
+	} {
+		if got := cfg.Source(key); got != want {
+			t.Errorf("Source(%q) = %q, want %q", key, got, want)
+		}
+	}
+}

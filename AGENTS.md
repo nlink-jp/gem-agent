@@ -46,6 +46,7 @@ internal/tools/    built-in tools, path confinement, ExecFunc injection, Registe
 internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
 internal/risk/     rule tier of the auto-approve ladder (pure, no model)
 internal/policy/   per-tool approval policy (ADR-0008), pure resolver
+cmd/settings.go    /settings panel content + edits (ADR-0009)
 internal/mention/  @-reference parsing, project-confined resolution, completion
 internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery
                    (ancestor walk, stops at $HOME)
@@ -194,3 +195,16 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   tier *is* skipped under both `never` and `always`: the operator has
   already decided, and paying for a model round could answer it
   differently.
+- **The settings panel never writes `config.toml`** (ADR-0009) — the TOML
+  encoder does not preserve comments, and that file is hand-written with
+  71 lines of them. Persisted policy goes to the machine-owned
+  `policy.toml`, which wins collisions so a UI change is never silently
+  overridden, and every row shows which file decided it.
+- **`cmd.settingsStore` owns the merge; `internal/tui` only renders.**
+  Apply returns the refreshed data, so the panel shows what was stored
+  rather than what the keypress asked for, and `SetPolicy` hands the
+  result to the running agent in the same step — panel and agent cannot
+  disagree.
+- **Anything the agent reads per tool call and the UI writes needs the
+  mutex** — policy, auto-approve, auto-compact all crossed that line when
+  the panel arrived (`go test -race` covers it).

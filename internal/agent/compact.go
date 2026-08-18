@@ -195,7 +195,7 @@ func renderTranscript(msgs []llm.Message) string {
 // that dies because the summariser had a bad minute is worse than a turn
 // that runs on a full context.
 func (a *Agent) maybeAutoCompact(ctx context.Context) {
-	if !a.autoCompact || a.lastPrompt <= 0 {
+	if !a.AutoCompact() || a.lastPrompt <= 0 {
 		return
 	}
 	window := a.contextWindow()
@@ -225,7 +225,7 @@ func (a *Agent) maybeAutoCompact(ctx context.Context) {
 		a.compactFailures++
 		msg := "context compaction failed: " + err.Error()
 		if a.compactFailures >= maxCompactFailures {
-			a.autoCompact = false
+			a.SetAutoCompact(false)
 			msg += " — automatic compaction is off for this session (/compact retries by hand)"
 		}
 		a.notify(msg)

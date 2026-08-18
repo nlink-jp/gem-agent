@@ -20,6 +20,7 @@ const (
 	phaseInput phase = iota
 	phaseRunning
 	phaseApproval
+	phaseSettings
 )
 
 const (
@@ -40,6 +41,9 @@ var approvalOptions = []struct {
 	{"許可 (y)", 'y'},
 	{"拒否 (n)", 'n'},
 	{"常に許可 (a)", 'a'},
+	// Persisting is deliberately a separate answer from "a": one is a
+	// session convenience, the other edits a file on disk (ADR-0009 §5).
+	{"今後聞かない (p)", 'p'},
 }
 
 const (
@@ -144,6 +148,11 @@ type Options struct {
 	// CompletePath returns candidate project paths for an @-reference
 	// prefix (Tab completion in the input box).
 	CompletePath func(prefix string) []string
+	// Settings supplies the panel's initial content, and ApplySetting
+	// stores one edit and returns the refreshed content (ADR-0009).
+	// Both nil disables /settings (the plain REPL prints a table).
+	Settings     *SettingsData
+	ApplySetting SettingsApplier
 	// Printer overrides tea.Println for tests.
 	Printer func(...any) tea.Cmd
 	// RenderFactory overrides the Markdown renderer factory for tests.
@@ -174,6 +183,14 @@ type Model struct {
 	// back to the input box unsent when it does not.
 	pending  string
 	approval *ApprovalRequest
+
+	// Settings panel (ADR-0009). settingsData is the caller-supplied
+	// snapshot used to open the panel; settings is the live copy.
+	settingsData   *SettingsData
+	settings       *SettingsData
+	settingsCursor int
+	settingsScope  string
+	applySetting   SettingsApplier
 	// choice indexes approvalOptions. Selection + Enter exists because
 	// typing y/n/a is impossible with a Japanese IME switched on — the
 	// letters are swallowed by composition — while arrows, Tab, and
@@ -236,6 +253,8 @@ func New(opts Options) Model {
 		toggleAuto:   opts.ToggleAuto,
 		autoMode:     opts.AutoMode,
 		completePath: opts.CompletePath,
+		settingsData: opts.Settings,
+		applySetting: opts.ApplySetting,
 		baseCtx:      opts.BaseCtx,
 		println:      opts.Printer,
 		mkRender:     opts.RenderFactory,
@@ -436,6 +455,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch m.phase {
+		case phaseSettings:
+			return m.updateSettings(msg)
 		case phaseApproval:
 			return m.updateApproval(msg)
 		case phaseRunning:
@@ -520,6 +541,8 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			answer = 'n'
 		case "a":
 			answer = 'a'
+		case "p":
+			answer = 'p'
 		default:
 			return m, nil
 		}
@@ -528,11 +551,38 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.approval = nil
 	m.phase = phaseRunning
 	m.status = "waiting for the tool…"
-	if req != nil {
-		req.Resp <- answer
+
+	var cmds []tea.Cmd
+	if answer == 'p' && req != nil {
+		// Persist first, so the line printed below reports what was
+		// actually written rather than what was asked for.
+		if m.applySetting == nil {
+			answer = 'y' // no policy store in this mode: allow once
+		} else {
+			data, line := m.applySetting(SettingChange{
+				Tool: req.Tool, Value: "never", Scope: ScopeGlobal,
+			})
+			m.settingsData = &data
+			if line != "" {
+				cmds = append(cmds, m.emit(m.st.warn.Render("  ⚠ "+line)))
+			}
+		}
 	}
-	verdict := map[byte]string{'y': "approved", 'n': "denied", 'a': "approved (always this session)"}[answer]
-	return m, m.emit(m.st.tool.Render("  ↳ " + verdict))
+	if req != nil {
+		if answer == 'p' {
+			req.Resp <- 'y'
+		} else {
+			req.Resp <- answer
+		}
+	}
+	verdict := map[byte]string{
+		'y': "approved",
+		'n': "denied",
+		'a': "approved (always this session)",
+		'p': "approved (and this tool will not ask again)",
+	}[answer]
+	cmds = append([]tea.Cmd{m.emit(m.st.tool.Render("  ↳ " + verdict))}, cmds...)
+	return m, tea.Sequence(cmds...)
 }
 
 // updateRunningInput handles typing while a turn is running (ADR-0007).
@@ -750,6 +800,10 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.emit("\n"+m.st.user.Render("! ")+command), m.spin.Tick)
 	}
 
+	if input == "/settings" && m.settingsData != nil && m.applySetting != nil {
+		return m.openSettings()
+	}
+
 	// /compact makes an LLM call, so it runs like a turn rather than
 	// like a slash command: the UI stays interruptible, and the result
 	// arrives as TurnDone.
@@ -831,6 +885,8 @@ func clipLines(s string, width int) string {
 
 func (m Model) viewContent() string {
 	switch m.phase {
+	case phaseSettings:
+		return m.settingsView() + "\n" + m.footer() + "\n"
 	case phaseRunning:
 		return m.liveView() + "\n" + m.spin.View() + " " + m.st.status.Render(m.status) +
 			m.st.hint.Render("  (Ctrl+C で中断)") + "\n" + m.footer() + "\n"
