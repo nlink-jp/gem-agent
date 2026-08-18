@@ -42,6 +42,8 @@ supersede する（typo とリンク修正は例外）。
   古い側を要約する。fail safe であって fail small ではない
 - [`ADR-0007`](adr/0007-input-during-a-turn.ja.md) — ターン実行中の入力は
   捨てずに予約する。自動送信は正常終了のときだけ
+- [`ADR-0008`](adr/0008-per-tool-approval-policy.ja.md) — ファンクション単位の
+  承認ポリシー。プロジェクトは自由に締められ、緩められるのは信頼した場合だけ
 
 ## History（履歴）
 

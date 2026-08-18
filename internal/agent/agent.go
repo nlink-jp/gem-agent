@@ -12,6 +12,8 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mention"
+	"github.com/nlink-jp/gem-agent/internal/policy"
+	"github.com/nlink-jp/gem-agent/internal/risk"
 	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/nlk/guard"
@@ -60,6 +62,10 @@ type Agent struct {
 	compactFailures int  // consecutive failures; two disables auto-compaction
 	warnedNoCut     bool // "nothing safe to compact" is said once, not per round
 
+	// policy is the operator's per-tool approval policy (ADR-0008). The
+	// zero value leaves every tool at the default behaviour.
+	policy policy.Policy
+
 	history  []llm.Message
 	toolDefs []llm.ToolDef
 }
@@ -93,6 +99,8 @@ type Options struct {
 	// content-filter block, a compaction) so the operator sees what
 	// happened.
 	OnNotice func(msg string)
+	// Policy is the per-tool approval policy (ADR-0008).
+	Policy policy.Policy
 	// AutoCompact enables automatic history compaction (ADR-0006), and
 	// CompactAtPct is the share of the model's input window at which it
 	// fires. Compaction still needs a known window; see SetContextWindow.
@@ -125,6 +133,7 @@ func New(opts Options) *Agent {
 		auto:       opts.AutoApprove,
 		toolDefs:   defs,
 
+		policy:       opts.Policy,
 		autoCompact:  opts.AutoCompact,
 		compactAtPct: opts.CompactAtPct,
 	}
@@ -379,9 +388,12 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
 	if !ok {
 		return fmt.Sprintf("error: unknown tool %q", tc.Name)
 	}
-	if tool.Mutating {
+	if a.gated(tool.Mutating, tc) {
 		approved, reason := false, ""
-		if a.AutoApprove() {
+		// A tool the operator marked "always" skips the ladder: the
+		// question is settled, and spending a model round on it would
+		// both cost a request and risk answering it differently.
+		if a.AutoApprove() && a.policy.For(tc.Name) != policy.AlwaysAsk {
 			d := a.decideAuto(ctx, tc)
 			if a.onAuto != nil {
 				a.onAuto(tc, d)
@@ -407,6 +419,32 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
 		return "(no output)"
 	}
 	return out
+}
+
+// gated reports whether this call goes through the approval machinery at
+// all, applying the operator's per-tool policy (ADR-0008) on top of the
+// default "mutating tools ask" rule.
+//
+// The one subtlety is `never`: it skips the gate, but it does not lift
+// the rule tier's Block floor. A tool whose effect varies per call —
+// shell_exec above all — must not become "run anything unattended"
+// because of one config line, so a Block verdict still asks.
+func (a *Agent) gated(mutating bool, tc llm.ToolCall) bool {
+	switch a.policy.For(tc.Name) {
+	case policy.AlwaysAsk:
+		return true
+	case policy.NeverAsk:
+		if !mutating {
+			return false
+		}
+		tool, ok := a.registry.Get(tc.Name)
+		if !ok {
+			return true
+		}
+		return risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir()).Tier == risk.Block
+	default:
+		return mutating
+	}
 }
 
 // CallDetail renders a one-line human-readable summary of a tool call for

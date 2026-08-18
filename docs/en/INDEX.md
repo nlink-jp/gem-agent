@@ -46,6 +46,8 @@ excepted).
   half instead of failing at the window; fail safe, never fail small
 - [`ADR-0007`](adr/0007-input-during-a-turn.md) — typing during a turn is
   kept and queued; auto-sent only when the turn finished cleanly
+- [`ADR-0008`](adr/0008-per-tool-approval-policy.md) — per-tool approval
+  policy; a project may tighten freely and loosen only where trusted
 
 ## History
 

@@ -70,3 +70,24 @@ func containsToken(haystack, needle string) bool {
 			return false
 		}()
 }
+
+// TestExampleProjectConfigLoads pins the shipped project template the
+// same way: strict decode makes a drifted template a hard error in a
+// user's hands, so it is checked mechanically.
+func TestExampleProjectConfigLoads(t *testing.T) {
+	dir := t.TempDir()
+	data, err := os.ReadFile(filepath.Join("..", "..", "gem-agent.example.project.toml"))
+	if err != nil {
+		t.Fatalf("project template is missing: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ProjectFileName), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadProject(dir)
+	if err != nil {
+		t.Fatalf("shipped project template does not load: %v", err)
+	}
+	if cfg.Approval.Tools["write_file"] != "always" {
+		t.Errorf("template policy = %v", cfg.Approval.Tools)
+	}
+}

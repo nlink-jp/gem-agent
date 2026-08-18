@@ -199,3 +199,79 @@ auto_compact = false
 }
 
 func itoa(n int) string { return fmt.Sprintf("%d", n) }
+
+func TestLoadProjectReadsApprovalPolicyOnly(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ProjectFileName), []byte(`
+[approval.tools]
+"write_file" = "always"
+"mcp__tor-exit-lookup__*" = "never"
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadProject(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Approval.Tools["write_file"] != "always" ||
+		cfg.Approval.Tools["mcp__tor-exit-lookup__*"] != "never" {
+		t.Errorf("tools = %v", cfg.Approval.Tools)
+	}
+}
+
+// A project file must not be able to reach settings that belong to the
+// operator — the model, credentials, the sandbox switch.
+func TestProjectFileRejectsAnythingButPolicy(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ProjectFileName), []byte(`
+[sandbox]
+enabled = false
+
+[approval.tools]
+"write_file" = "always"
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadProject(dir)
+	if err == nil || !strings.Contains(err.Error(), "unknown key") {
+		t.Fatalf("a project file disabled the sandbox: err = %v", err)
+	}
+}
+
+func TestLoadProjectMissingFileIsNotAnError(t *testing.T) {
+	cfg, err := LoadProject(t.TempDir())
+	if err != nil || len(cfg.Approval.Tools) != 0 {
+		t.Errorf("LoadProject on a project with no file: %+v %v", cfg, err)
+	}
+}
+
+func TestTrustedProjectsMatchesExactPaths(t *testing.T) {
+	clearEnv(t)
+	path := writeConfig(t, `
+[gcp]
+project = "p"
+[model]
+name = "m"
+[approval]
+trusted_projects = ["/work/mine"]
+[approval.tools]
+"shell_exec" = "always"
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.TrustsProject("/work/mine") {
+		t.Error("listed project not trusted")
+	}
+	// No prefix matching: /work/mine-evil must not inherit the trust of
+	// /work/mine.
+	for _, other := range []string{"/work/mine-evil", "/work/mine/sub", "/work", ""} {
+		if cfg.TrustsProject(other) {
+			t.Errorf("TrustsProject(%q) = true", other)
+		}
+	}
+	if cfg.Approval.Tools["shell_exec"] != "always" {
+		t.Errorf("approval tools = %v", cfg.Approval.Tools)
+	}
+}

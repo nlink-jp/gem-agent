@@ -97,6 +97,15 @@ session, `n`/Esc denies; a denial is returned to the model as a result,
 never as silence. Answers are selectable with ←→/Tab + Enter because a
 Japanese IME swallows letter keys.
 
+The operator can override this per tool (ADR-0008). `[approval.tools]`
+in the global config, and `<project>/.gem-agent.toml` for the project,
+map a tool name — or a `mcp__server__*` prefix — to `always` (gate in
+every mode, ladder skipped) or `never` (no gate in any mode). `never`
+does not lift the rule tier's Block floor, so a `shell_exec` command
+matching a blocked pattern still asks. The project scope may tighten
+anywhere and may loosen only in a directory listed in
+`[approval].trusted_projects`; ignored entries are named at startup.
+
 With auto-approve on (opt-in; `shift+tab` toggles it, mid-run included),
 each mutating call first passes a pure rule classifier: *safe* runs,
 *blocked* always asks, *uncertain* goes to a model evaluation that must

@@ -14,12 +14,80 @@ import (
 
 // Config is the gem-agent configuration.
 type Config struct {
-	GCP     GCPConfig     `toml:"gcp"`
-	Model   ModelConfig   `toml:"model"`
-	Sandbox SandboxConfig `toml:"sandbox"`
-	Agent   AgentConfig   `toml:"agent"`
-	MCP     MCPConfig     `toml:"mcp"`
-	TUI     TUIConfig     `toml:"tui"`
+	GCP      GCPConfig      `toml:"gcp"`
+	Model    ModelConfig    `toml:"model"`
+	Sandbox  SandboxConfig  `toml:"sandbox"`
+	Agent    AgentConfig    `toml:"agent"`
+	MCP      MCPConfig      `toml:"mcp"`
+	TUI      TUIConfig      `toml:"tui"`
+	Approval ApprovalConfig `toml:"approval"`
+}
+
+// ApprovalConfig carries the per-tool approval policy (ADR-0008).
+type ApprovalConfig struct {
+	// Tools maps a tool name — or a trailing-wildcard prefix such as
+	// "mcp__tor-exit-lookup__*" — to "always" or "never".
+	Tools map[string]string `toml:"tools"`
+	// TrustedProjects lists project directories whose own
+	// .gem-agent.toml may REMOVE approvals. Everywhere else a project
+	// file may only add them: a directory's contents are not necessarily
+	// written by the operator, and cloning a repository must not be able
+	// to switch the gate off (ADR-0008 §4).
+	TrustedProjects []string `toml:"trusted_projects"`
+}
+
+// ProjectConfig is <project>/.gem-agent.toml — the project-scoped half
+// of ADR-0008. Deliberately tiny: it carries policy, nothing else. Model
+// names, credentials and sandbox settings stay in the operator's own
+// config, where a checked-out repository cannot reach them.
+type ProjectConfig struct {
+	Approval ProjectApproval `toml:"approval"`
+}
+
+// ProjectApproval is the project file's [approval] table.
+type ProjectApproval struct {
+	Tools map[string]string `toml:"tools"`
+}
+
+// ProjectFileName is the project-scoped config file.
+const ProjectFileName = ".gem-agent.toml"
+
+// LoadProject reads <dir>/.gem-agent.toml. A missing file is not an
+// error. Unknown keys are, for the same reason as in the main config:
+// a policy that does not do what it says is worse than no policy.
+func LoadProject(dir string) (*ProjectConfig, error) {
+	path := filepath.Join(dir, ProjectFileName)
+	var cfg ProjectConfig
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return &cfg, nil
+		}
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	md, err := toml.DecodeFile(path, &cfg)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	if undecoded := md.Undecoded(); len(undecoded) > 0 {
+		keys := make([]string, len(undecoded))
+		for i, k := range undecoded {
+			keys[i] = k.String()
+		}
+		return nil, fmt.Errorf("unknown key(s) in %s: %s (this file carries [approval.tools] only)",
+			path, strings.Join(keys, ", "))
+	}
+	return &cfg, nil
+}
+
+// TrustsProject reports whether the operator listed dir as a project
+// whose own policy file may remove approvals.
+func (c *Config) TrustsProject(dir string) bool {
+	for _, p := range c.Approval.TrustedProjects {
+		if p == dir {
+			return true
+		}
+	}
+	return false
 }
 
 // TUIConfig controls the interactive UI appearance.

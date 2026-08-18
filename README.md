@@ -203,6 +203,47 @@ history is left exactly as it was and the turn continues on a full
 context. `auto_compact = false` turns the automatic path off; `/compact`
 still works.
 
+### Per-tool approval policy
+
+Every MCP tool asks for approval on every call, because gem-agent cannot
+know what a server's tool does. You do — so you can say so:
+
+```toml
+# ~/.config/gem-agent/config.toml
+[approval.tools]
+"mcp__tor-exit-lookup__*" = "never"   # a read-only lookup server
+"shell_exec"              = "always"  # even in auto-approve mode
+```
+
+`"never"` skips the gate in every mode, `"always"` gates in every mode
+(auto-approve cannot lift it), and an unset tool keeps today's behaviour.
+A trailing `*` matches a whole MCP server; exact names win over
+wildcards, and a bare `"*"` is rejected — switching off every gate at
+once should not be reachable by a one-character entry.
+
+**`"never"` is not "run anything."** For a tool whose effect varies per
+call — `shell_exec` — the rule tier's blocked patterns (`rm -rf`,
+`sudo`, `curl … | sh`, credential paths, writes outside the project)
+still ask.
+
+A project can carry its own policy in `<project>/.gem-agent.toml` (see
+`gem-agent.example.project.toml`), and **direction matters**:
+
+| From a project file | Honoured |
+|---|---|
+| `"always"` — more approvals | always |
+| `"never"` — fewer approvals | only if the project is listed in `[approval].trusted_projects` in *your* config |
+
+A checked-out repository is not necessarily something you wrote, and
+cloning one must not be able to switch the gate off. Ignored entries are
+named at startup, with the line to add if you do want them. See
+[ADR-0008](docs/en/adr/0008-per-tool-approval-policy.md).
+
+One consequence worth knowing: `-p` one-shot mode denies mutating tools
+because nothing can answer a prompt there, but a tool set to `"never"`
+was never going to ask — so it runs. A read-only MCP lookup with a
+`"never"` policy is usable in a pipeline.
+
 ## Project instructions
 
 gem-agent reads the instruction files a repository already carries, in

@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased]
+
+### Added — per-tool approval policy (ADR-0008, operator request)
+
+- Every MCP tool asked for approval on **every call**, because gem-agent
+  cannot know what a server's tool does. The operator does.
+  `[approval.tools]` now maps a tool name — or a `mcp__server__*` prefix —
+  to `"always"` or `"never"`:
+  - `"never"` skips the gate in every mode, manual included. It is not
+    "run anything": for a tool whose effect varies per call
+    (`shell_exec`), the rule tier's blocked patterns still ask, and the
+    model tier is skipped because the operator already decided
+  - `"always"` gates in every mode — an operator-set floor that
+    auto-approve cannot lift, the counterpart of ADR-0004's Block tier
+  - Exact names beat wildcards, longer wildcards beat shorter ones, and a
+    bare `"*"` is a config error: switching off every gate at once must
+    not be reachable by a one-character entry
+- **Project scope**, in `<project>/.gem-agent.toml` — a file that carries
+  policy and nothing else, so a repository cannot reach the model,
+  credentials, or the sandbox switch. Direction is asymmetric on purpose:
+  a project may **tighten** anywhere, and may **loosen** only where its
+  path is listed in `[approval].trusted_projects` in the operator's own
+  config. A checked-out repository must not be able to disarm the gate by
+  existing. Ignored entries are named at startup, with the line to add
+- One consequence: `-p` one-shot mode denies mutating tools because
+  nothing can answer a prompt, but a `"never"` tool was never going to
+  ask, so it runs — a read-only MCP lookup is now usable in a pipeline
+- `gem-agent.example.project.toml` ships alongside `config.example.toml`,
+  both pinned against the loader by tests
+
 ## [0.3.0] - 2026-08-19
 
 ### Added — input stays live during a turn (ADR-0007, first drill finding)

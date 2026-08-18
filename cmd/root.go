@@ -17,6 +17,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mention"
+	"github.com/nlink-jp/gem-agent/internal/policy"
 	"github.com/nlink-jp/gem-agent/internal/repl"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/session"
@@ -102,6 +103,20 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	projectDir, err := sandbox.ResolveWriteDir(cwd)
+	if err != nil {
+		return err
+	}
+
+	// --- per-tool approval policy (ADR-0008) ---
+	// The project half may tighten freely and may only loosen where the
+	// operator trusted this directory: a checked-out repository must not
+	// be able to switch the gate off.
+	projectCfg, err := config.LoadProject(projectDir)
+	if err != nil {
+		return err
+	}
+	approvalPolicy, policyNotes, err := policy.Build(
+		cfg.Approval.Tools, projectCfg.Approval.Tools, cfg.TrustsProject(projectDir))
 	if err != nil {
 		return err
 	}
@@ -218,6 +233,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		Log:      sessionLog,
 		System:   buildSystemPrompt(projectDir, projectContext),
 		MaxTurns: cfg.Agent.MaxTurns,
+		Policy:   approvalPolicy,
 		OnToolCall: func(tc llm.ToolCall) {
 			if prog != nil {
 				prog.Send(tui.ToolCall{Name: tc.Name, Detail: agent.CallDetail(tc)})
@@ -306,6 +322,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 
 	// --- one-shot mode: single turn, quiet stderr, exit ---
 	if oneShot {
+		for _, n := range policyNotes {
+			fmt.Fprintf(stderr, "warning: %s\n", n)
+		}
 		go resolveWindow()
 		if !sandboxOn {
 			fmt.Fprintln(stderr, "sandbox: DISABLED — shell commands run unconfined")
@@ -341,6 +360,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if resumedID != "" {
 		bannerLines = append(bannerLines,
 			fmt.Sprintf("resumed: session %s (%d messages restored)", resumedID, len(restored)))
+	}
+	if approvalPolicy.Configured() {
+		bannerLines = append(bannerLines,
+			"approval policy: "+strings.Join(approvalPolicy.Describe(), ", "))
+	}
+	for _, n := range policyNotes {
+		bannerLines = append(bannerLines, "warning: "+string(n))
 	}
 
 	// --- interactive TUI (ADR-0002/0003) ---
@@ -389,7 +415,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				}()
 			},
 			Slash: func(in string) (string, bool, bool) {
-				return slashOutput(in, ag, registry, mcpSummary)
+				return slashOutput(in, ag, registry, mcpSummary, approvalPolicy)
 			},
 		})
 		prog = tea.NewProgram(model)
@@ -439,7 +465,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		if strings.HasPrefix(input, "/") {
-			out, _, quit := slashOutput(input, ag, registry, mcpSummary)
+			out, _, quit := slashOutput(input, ag, registry, mcpSummary, approvalPolicy)
 			fmt.Fprint(stderr, out)
 			if quit {
 				return nil
@@ -594,7 +620,7 @@ func resolveTheme(configured string) string {
 // slashOutput executes a /command and returns its output text — shared
 // by the TUI (which prints it into scrollback, errors highlighted) and
 // the plain REPL (which writes it to stderr).
-func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string) (output string, isErr bool, quit bool) {
+func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, pol policy.Policy) (output string, isErr bool, quit bool) {
 	var b strings.Builder
 	switch strings.Fields(input)[0] {
 	case "/help":
@@ -628,6 +654,17 @@ mutating tools prompt for approval: y = once, a = always this session
 			marker := "read-only"
 			if t.Mutating {
 				marker = "requires approval"
+			}
+			// The effective policy, not the default, is what the
+			// operator needs to see here.
+			switch pol.For(t.Name) {
+			case policy.AlwaysAsk:
+				marker = "always asks (policy)"
+			case policy.NeverAsk:
+				marker = "never asks (policy)"
+				if t.Mutating {
+					marker = "never asks (policy; blocked commands still ask)"
+				}
 			}
 			fmt.Fprintf(&b, "  %-12s %s (%s)\n", t.Name, firstSentence(t.Description), marker)
 		}

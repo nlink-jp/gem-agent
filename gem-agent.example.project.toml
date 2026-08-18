@@ -1,0 +1,21 @@
+# gem-agent project policy — copy to <project>/.gem-agent.toml
+#
+# This file carries the per-tool approval policy (ADR-0008) and nothing
+# else. Model, credentials, and the sandbox switch stay in your own
+# ~/.config/gem-agent/config.toml, where a checked-out repository cannot
+# reach them; an unknown key here is an error, not an ignored line.
+#
+# Direction matters:
+#   "always" (more approvals) is honoured in any project.
+#   "never"  (fewer approvals) is honoured ONLY if this project's path is
+#            listed in [approval].trusted_projects in your own config.
+#            Otherwise it is ignored, and startup says so — a repository
+#            you cloned must not be able to disarm the gate.
+
+[approval.tools]
+# Ask for every write in this repository, even in auto-approve mode.
+"write_file" = "always"
+"edit_file"  = "always"
+
+# Needs the project to be trusted; ignored (with a note) otherwise.
+#"mcp__tor-exit-lookup__*" = "never"

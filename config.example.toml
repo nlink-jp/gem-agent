@@ -65,6 +65,30 @@ auto_compact = true
 # window comes from [model].context_window, or the family estimate.
 compact_at_pct = 80
 
+[approval]
+# Per-tool approval policy (ADR-0008). Two values:
+#   "always" — always ask, in every mode (an operator-set floor that
+#              auto-approve cannot lift)
+#   "never"  — never ask, in every mode. For a tool whose effect varies
+#              per call (shell_exec), the rule tier's blocked patterns
+#              (rm -rf, sudo, curl|sh, credential paths, out-of-project
+#              writes) still ask — "never" is not "run anything".
+# Unset means today's behaviour: mutating tools ask; auto-approve runs
+# them through its two-tier ladder.
+#
+# The main use: every MCP tool asks on every call, because gem-agent
+# cannot know what a server's tool does. You do. A trailing "*" matches a
+# whole server, which is usually what you want for a read-only lookup.
+#[approval.tools]
+#"mcp__tor-exit-lookup__*" = "never"
+#"shell_exec"              = "always"
+
+# Project directories whose own .gem-agent.toml may REMOVE approvals.
+# Everywhere else a project file may only ADD them: a checked-out
+# repository is not necessarily something you wrote, and it must not be
+# able to switch the gate off. Ignored entries are reported at startup.
+#trusted_projects = ["/Users/you/works/your-repo"]
+
 [mcp]
 # Connect MCP servers declared in ~/.config/gem-agent/mcp.json (global)
 # and <project>/.mcp.json (project; wins name collisions). Both files

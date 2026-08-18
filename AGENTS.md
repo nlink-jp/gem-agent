@@ -34,6 +34,7 @@ Version is injected via `-X main.version` from `git describe` — never edit the
 
 ```
 config.example.toml  shipped config template (pinned by a loader test)
+gem-agent.example.project.toml  shipped <project>/.gem-agent.toml template
 mcp.example.json     shipped MCP server template (pinned by a loader test)
 main.go            entry point (package main, calls cmd.Execute(version))
 cmd/               cobra root command, REPL loop, wiring, system prompt
@@ -44,6 +45,7 @@ internal/agent/    tool-calling loop, approval dispatch, nonce wrapping, history
 internal/tools/    built-in tools, path confinement, ExecFunc injection, Register
 internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
 internal/risk/     rule tier of the auto-approve ladder (pure, no model)
+internal/policy/   per-tool approval policy (ADR-0008), pure resolver
 internal/mention/  @-reference parsing, project-confined resolution, completion
 internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery
                    (ancestor walk, stops at $HOME)
@@ -180,3 +182,15 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   context message is injected as a user-role message, and the session
   listing needs to tell it from something the operator typed. Sniffing
   for the sentence in two places would drift.
+- **A project file may tighten the gate, never loosen it unless trusted**
+  (ADR-0008) — `<project>/.gem-agent.toml` carries `[approval.tools]` and
+  nothing else, and a `"never"` entry is dropped (loudly) unless the
+  project path is in `[approval].trusted_projects`. A checked-out
+  repository must not be able to disarm the approval gate. When touching
+  `internal/policy`, keep that direction rule and the bare-`"*"`
+  rejection; both have tests that state why.
+- **`"never"` never lifts the rule tier's Block floor** — otherwise
+  `shell_exec = "never"` would mean "run anything unattended". The model
+  tier *is* skipped under both `never` and `always`: the operator has
+  already decided, and paying for a model round could answer it
+  differently.
