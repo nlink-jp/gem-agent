@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.0] - 2026-08-19
 
 ### Added — `/settings` (ADR-0009, operator request)
 
