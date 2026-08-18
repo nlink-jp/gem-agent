@@ -105,20 +105,11 @@ func resolveResume(dir, projectDir, model, id string) (session.Meta, []llm.Messa
 		if !session.ValidID(id) {
 			return meta, nil, fmt.Errorf("%q is not a session id; `gem-agent sessions` lists them (ids look like 20260819-150102)", id)
 		}
-		all, err := session.List(dir, "")
+		found, err := session.Find(dir, id)
 		if err != nil {
-			return meta, nil, err
-		}
-		found := false
-		for _, m := range all {
-			if m.ID == id {
-				meta, found = m, true
-				break
-			}
-		}
-		if !found {
 			return meta, nil, fmt.Errorf("no session %s in %s — `gem-agent sessions` lists what is there", id, dir)
 		}
+		meta = found
 	}
 
 	if meta.Header.Project != "" && meta.Header.Project != projectDir {

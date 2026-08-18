@@ -73,6 +73,10 @@ type Meta struct {
 	// Preview is the first user message, clipped — the only reliable way
 	// to recognise a session in a list of timestamps.
 	Preview string
+	// HasConversation is false for a transcript that only ever recorded a
+	// header: a run that exited at the prompt, or one that used nothing
+	// but slash commands. There is nothing in it to resume.
+	HasConversation bool
 }
 
 // Logger appends records to one session file.
@@ -233,10 +237,15 @@ func Load(path string) ([]llm.Message, Header, error) {
 	return history, header, nil
 }
 
-// List returns the sessions in dir, newest first. When projectDir is
-// non-empty only sessions recorded in that project are returned —
-// resuming into a different tree is refused (ADR-0005), so offering
-// those in a list would only mislead.
+// List returns the resumable sessions in dir, newest first. When
+// projectDir is non-empty only sessions recorded in that project are
+// returned — resuming into a different tree is refused (ADR-0005), so
+// offering those in a list would only mislead.
+//
+// Transcripts with no conversation are left out for the same reason.
+// They are easy to make — start gem-agent, run /help, quit — and being
+// the newest file they would shadow the real session that --continue is
+// meant to find, turning a resume into an error message.
 func List(dir, projectDir string) ([]Meta, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -261,10 +270,24 @@ func List(dir, projectDir string) ([]Meta, error) {
 		if projectDir != "" && meta.Header.Project != projectDir {
 			continue
 		}
+		if !meta.HasConversation {
+			continue
+		}
 		metas = append(metas, meta)
 	}
 	sort.Slice(metas, func(i, j int) bool { return metas[i].LastActive.After(metas[j].LastActive) })
 	return metas, nil
+}
+
+// Find describes one session by id, whether or not it holds a
+// conversation. Resume by explicit id goes through here rather than
+// List: an id the operator typed deserves the accurate answer ("that
+// session has nothing in it") over List's "no such session".
+func Find(dir, id string) (Meta, error) {
+	if !ValidID(id) {
+		return Meta{}, fmt.Errorf("invalid session id %q", id)
+	}
+	return describe(filepath.Join(dir, id+".jsonl"), id)
 }
 
 // Latest returns the most recent session for a project, if any.
@@ -305,8 +328,9 @@ func describe(path, id string) (Meta, error) {
 		case KindHeader:
 			_ = json.Unmarshal(rec.Data, &meta.Header)
 			meta.Started = rec.Time
-		case KindMessage:
-			if meta.Preview != "" {
+		case KindMessage, KindCompaction:
+			meta.HasConversation = true
+			if rec.Kind != KindMessage || meta.Preview != "" {
 				continue
 			}
 			var m llm.Message

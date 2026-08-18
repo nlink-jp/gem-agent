@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.1] - 2026-08-19
+
+### Fixed
+
+- `--continue` failed with "has no conversation to resume" when the most
+  recent transcript held only a header. Such a file is easy to make —
+  start gem-agent, run `/help`, quit — and being the newest it shadowed
+  the real session `--continue` exists to find. Conversation-less
+  transcripts are now left out of the listing and of `--continue`; naming
+  one explicitly with `--resume <id>` still reports what is actually
+  wrong with it. Found by running the released build, not by reading it
+
 ## [0.2.0] - 2026-08-19
 
 Both features were out of scope in the RFP; use argued otherwise, so each

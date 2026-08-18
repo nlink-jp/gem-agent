@@ -327,3 +327,58 @@ func TestListOnMissingDirIsEmptyNotAnError(t *testing.T) {
 		t.Errorf("List = %v, %v; want no sessions and no error on a first run", metas, err)
 	}
 }
+
+// A run that only used slash commands leaves a header and nothing else.
+// Being the newest file, such a transcript would shadow the real session
+// --continue is meant to find and turn a resume into an error.
+func TestListSkipsSessionsWithNoConversation(t *testing.T) {
+	dir := t.TempDir()
+	real, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := real.Log(KindHeader, Header{Schema: SchemaVersion, Model: "m", Project: "/proj"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := real.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "the actual work"}); err != nil {
+		t.Fatal(err)
+	}
+	real.Close()
+
+	empty, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := empty.Log(KindHeader, Header{Schema: SchemaVersion, Model: "m", Project: "/proj"}); err != nil {
+		t.Fatal(err)
+	}
+	empty.Close()
+
+	metas, err := List(dir, "/proj")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(metas) != 1 || metas[0].ID != real.ID() {
+		t.Fatalf("List = %+v, want only %s", metas, real.ID())
+	}
+	latest, ok, err := Latest(dir, "/proj")
+	if err != nil || !ok || latest.ID != real.ID() {
+		t.Errorf("Latest = %s (ok=%v, err=%v), want %s — an empty transcript must not shadow the real one",
+			latest.ID, ok, err, real.ID())
+	}
+	// Find still reaches it, so an id the operator typed gets the
+	// accurate answer rather than "no such session".
+	found, err := Find(dir, empty.ID())
+	if err != nil {
+		t.Fatalf("Find on an empty session: %v", err)
+	}
+	if found.HasConversation {
+		t.Error("an empty transcript reported a conversation")
+	}
+}
+
+func TestFindRejectsAnIDShapedLikeAPath(t *testing.T) {
+	if _, err := Find(t.TempDir(), "../../etc/passwd"); err == nil {
+		t.Fatal("Find accepted a path as an id")
+	}
+}

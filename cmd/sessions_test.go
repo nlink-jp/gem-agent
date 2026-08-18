@@ -153,3 +153,27 @@ func TestWriteSessionsShowsIDAndPreview(t *testing.T) {
 		}
 	}
 }
+
+// --continue must land on the last session that has something in it.
+func TestContinueSkipsConversationlessSessions(t *testing.T) {
+	dir := t.TempDir()
+	want := seed(t, dir, "/proj", "m", llm.Message{Role: llm.RoleUser, Content: "real work"})
+	// A later run that only used slash commands: header, no conversation.
+	empty := seed(t, dir, "/proj", "m")
+
+	meta, history, err := resolveResume(dir, "/proj", "m", "")
+	if err != nil {
+		t.Fatalf("--continue failed with an empty session present: %v", err)
+	}
+	if meta.ID != want {
+		t.Errorf("resumed %s, want %s", meta.ID, want)
+	}
+	if len(history) != 1 {
+		t.Errorf("history = %+v", history)
+	}
+	// Named explicitly, the empty one still reports what is actually wrong.
+	if _, _, err := resolveResume(dir, "/proj", "m", empty); err == nil ||
+		!strings.Contains(err.Error(), "no conversation") {
+		t.Errorf("explicit --resume of an empty session: %v", err)
+	}
+}
