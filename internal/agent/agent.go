@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/tools"
@@ -36,6 +37,10 @@ type Agent struct {
 
 	onToolCall func(tc llm.ToolCall)
 	onUsage    func(promptTokens, outputTokens int)
+	onAuto     func(tc llm.ToolCall, d AutoDecision)
+
+	mu   sync.Mutex // guards autoApprove (toggled from the UI goroutine)
+	auto bool
 
 	history  []llm.Message
 	toolDefs []llm.ToolDef
@@ -58,6 +63,11 @@ type Options struct {
 	// approximate the current context size; output tokens the round's
 	// generation) — the TUI footer consumes it.
 	OnUsage func(promptTokens, outputTokens int)
+	// AutoApprove starts the session in auto-approve mode (ADR-0004).
+	AutoApprove bool
+	// OnAutoDecision, when set, observes each auto-mode verdict so the
+	// UI can show what ran without asking, and why.
+	OnAutoDecision func(tc llm.ToolCall, d AutoDecision)
 }
 
 // New creates an agent.
@@ -79,12 +89,28 @@ func New(opts Options) *Agent {
 		maxTurns:   opts.MaxTurns,
 		onToolCall: opts.OnToolCall,
 		onUsage:    opts.OnUsage,
+		onAuto:     opts.OnAutoDecision,
+		auto:       opts.AutoApprove,
 		toolDefs:   defs,
 	}
 }
 
 // Reset clears the conversation history (REPL /clear).
 func (a *Agent) Reset() { a.history = nil }
+
+// AutoApprove reports whether auto-approve mode is on.
+func (a *Agent) AutoApprove() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.auto
+}
+
+// SetAutoApprove turns auto-approve mode on or off (UI toggle).
+func (a *Agent) SetAutoApprove(on bool) {
+	a.mu.Lock()
+	a.auto = on
+	a.mu.Unlock()
+}
 
 // AddContext appends an out-of-band note to the conversation history
 // without starting a turn — the `!` direct-shell mode uses it so the
@@ -184,8 +210,28 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
 	if !ok {
 		return fmt.Sprintf("error: unknown tool %q", tc.Name)
 	}
-	if tool.Mutating && !a.gate.Approve(tc.Name, CallDetail(tc)) {
-		return "Tool execution denied by the user. Do not retry the same call; ask the user how to proceed instead."
+	if tool.Mutating {
+		detail := CallDetail(tc)
+		approved := false
+		if a.AutoApprove() {
+			d := a.decideAuto(ctx, tc)
+			if a.onAuto != nil {
+				a.onAuto(tc, d)
+			}
+			a.logRecord("auto_decision", map[string]any{
+				"name": tc.Name, "approved": d.Approved,
+				"tier": d.Tier.String(), "reason": d.Reason, "model": d.ModelConsulted,
+			})
+			approved = d.Approved
+			if !approved {
+				// Escalation carries the reason so the human sees what
+				// the ladder objected to.
+				detail = detail + "\n  ⚠ " + d.Reason
+			}
+		}
+		if !approved && !a.gate.Approve(tc.Name, detail) {
+			return "Tool execution denied by the user. Do not retry the same call; ask the user how to proceed instead."
+		}
 	}
 	out, err := tool.Run(ctx, tc.Args)
 	if err != nil {
