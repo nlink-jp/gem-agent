@@ -55,6 +55,16 @@ shell_timeout_sec = 120
 # runtime with shift+tab or /auto regardless of this setting.
 auto_approve = false
 
+# Summarise the older part of the conversation when the context window
+# fills, instead of failing the turn (ADR-0006). On by default: this
+# weakens no defense, and a session that dies at the window is not much
+# of a fallback. /compact does it by hand at any time.
+auto_compact = true
+
+# Share of the model's input window at which compaction fires. The
+# window comes from [model].context_window, or the family estimate.
+compact_at_pct = 80
+
 [mcp]
 # Connect MCP servers declared in ~/.config/gem-agent/mcp.json (global)
 # and <project>/.mcp.json (project; wins name collisions). Both files

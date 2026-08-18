@@ -35,6 +35,8 @@ func TestExampleConfigLoads(t *testing.T) {
 		cfg.Agent.MaxTurns != def.Agent.MaxTurns ||
 		cfg.Agent.ShellTimeoutSec != def.Agent.ShellTimeoutSec ||
 		cfg.Agent.AutoApprove != def.Agent.AutoApprove ||
+		cfg.Agent.AutoCompact != def.Agent.AutoCompact ||
+		cfg.Agent.CompactAtPct != def.Agent.CompactAtPct ||
 		cfg.MCP.Enabled != def.MCP.Enabled ||
 		cfg.MCP.CallTimeoutSec != def.MCP.CallTimeoutSec ||
 		cfg.TUI.Theme != def.TUI.Theme {

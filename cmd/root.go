@@ -257,7 +257,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				prog.Send(tui.Usage{Prompt: promptTokens, Output: outputTokens})
 			}
 		},
-		AutoApprove: cfg.Agent.AutoApprove && !oneShot,
+		AutoCompact:  cfg.Agent.AutoCompact,
+		CompactAtPct: cfg.Agent.CompactAtPct,
+		AutoApprove:  cfg.Agent.AutoApprove && !oneShot,
 		OnAutoDecision: func(tc llm.ToolCall, d agent.AutoDecision) {
 			if !d.Approved {
 				return // the escalation shows up in the approval prompt
@@ -273,8 +275,38 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		ag.SetHistory(restored)
 	}
 
+	// resolveWindow settles the model's input token limit and hands it to
+	// everyone who needs it: the footer displays it, and auto-compaction
+	// (ADR-0006) measures against it. It runs in the background — a
+	// metadata lookup must never delay the first prompt — and it runs in
+	// every mode, one-shot included: a long one-shot tool loop fills the
+	// window exactly like an interactive one, and with no window known
+	// compaction silently never fires (measured).
+	resolveWindow := func() {
+		tokens, assumed := cfg.Model.ContextWindow, false
+		if tokens <= 0 {
+			mctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			defer cancel()
+			if w, err := backend.ContextWindow(mctx); err == nil && w > 0 {
+				tokens = w
+			} else {
+				// Vertex publisher metadata omits inputTokenLimit
+				// (measured 2026-08: Models.Get succeeds with 0). The
+				// Gemini 2.5/3 family is uniformly 1M input tokens, so
+				// use that as an explicit estimate (~) rather than a
+				// permanent unknown; [model].context_window overrides.
+				tokens, assumed = 1_048_576, true
+			}
+		}
+		ag.SetContextWindow(tokens)
+		if prog != nil {
+			prog.Send(tui.ContextWindow{Tokens: tokens, Assumed: assumed})
+		}
+	}
+
 	// --- one-shot mode: single turn, quiet stderr, exit ---
 	if oneShot {
+		go resolveWindow()
 		if !sandboxOn {
 			fmt.Fprintln(stderr, "sandbox: DISABLED — shell commands run unconfined")
 		}
@@ -336,6 +368,15 @@ func runREPL(cmd *cobra.Command, args []string) error {
 					prog.Send(tui.ShellDone{Output: out})
 				}()
 			},
+			Compact: func(compactCtx context.Context) {
+				go func() {
+					note, err := compactNow(compactCtx, ag)
+					if err == nil {
+						prog.Send(tui.Attached{Notes: []string{note}})
+					}
+					prog.Send(tui.TurnDone{Err: err})
+				}()
+			},
 			StartTurn: func(turnCtx context.Context, input string) {
 				go func() {
 					_, err := ag.Run(turnCtx, input, func(s string) { prog.Send(tui.TextDelta(s)) })
@@ -353,30 +394,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		})
 		prog = tea.NewProgram(model)
 		tuiGate.SetProgram(prog)
-		// Resolve the context window for the footer: config override
-		// first, otherwise an async model-metadata fetch (never blocks
-		// startup; the footer shows "–" until known).
-		go func() {
-			if cw := cfg.Model.ContextWindow; cw > 0 {
-				prog.Send(tui.ContextWindow{Tokens: cw})
-				return
-			}
-			mctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-			defer cancel()
-			if w, err := backend.ContextWindow(mctx); err == nil && w > 0 {
-				prog.Send(tui.ContextWindow{Tokens: w})
-				return
-			}
-			// Vertex publisher metadata omits inputTokenLimit (measured
-			// 2026-08: Models.Get succeeds with 0). The Gemini 2.5/3
-			// family is uniformly 1M input tokens, so show that as an
-			// explicit estimate (~) rather than a permanent unknown;
-			// [model].context_window overrides with a firm value.
-			prog.Send(tui.ContextWindow{Tokens: 1_048_576, Assumed: true})
-		}()
+		go resolveWindow()
 		_, err := prog.Run()
 		return err
 	}
+	go resolveWindow()
 
 	for _, line := range bannerLines {
 		fmt.Fprintln(stderr, line)
@@ -403,6 +425,17 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				continue
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), runDirectShell(ctx, registry, ag, command))
+			continue
+		}
+		if input == "/compact" {
+			// Synchronous here: the plain REPL has no phase machine, and
+			// nothing else can be happening while it waits for a line.
+			note, err := compactNow(ctx, ag)
+			if err != nil {
+				fmt.Fprintf(stderr, "error: %v\n", err)
+			} else {
+				fmt.Fprintln(stderr, note)
+			}
 			continue
 		}
 		if strings.HasPrefix(input, "/") {
@@ -487,6 +520,21 @@ func buildExecFn(sandboxOn bool, projectDir string) (tools.ExecFunc, error) {
 	}, nil
 }
 
+// compactNow runs a manual /compact and renders the outcome. "Nothing
+// to compact" is a normal answer, not an error: the operator asked a
+// reasonable question and the answer is no.
+func compactNow(ctx context.Context, ag *agent.Agent) (string, error) {
+	res, err := ag.Compact(ctx)
+	switch {
+	case errors.Is(err, agent.ErrNothingToCompact):
+		return "nothing to compact yet — the conversation is short enough that a summary would lose more than it saves", nil
+	case err != nil:
+		return "", err
+	}
+	return fmt.Sprintf("compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
+		res.Replaced, res.After-1), nil
+}
+
 // runDirectShell executes a !-prefixed command through the same
 // sandboxed shell_exec tool the agent uses (same timeout, output cap,
 // exit-status surfacing — no approval prompt: the user typed it), and
@@ -553,6 +601,7 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
   /tools   list available tools
   /mcp     show connected MCP servers
   /auto    toggle auto-approve (shift+tab does the same, and works mid-run)
+  /compact summarise the older half of the conversation to free context
   /clear   reset the conversation history
   /quit    exit (Ctrl+D also works)
 auto-approve: safe changes run unattended; destructive, out-of-project,

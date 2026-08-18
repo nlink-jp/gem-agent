@@ -974,3 +974,51 @@ func TestCtrlCInterruptsTurn(t *testing.T) {
 		t.Error("Ctrl+C during a turn should cancel the turn context")
 	}
 }
+
+// /compact makes an LLM call, so it must run like a turn — the slash
+// handler is synchronous and would freeze the UI mid-call.
+func TestCompactRunsAsATurnNotAsASlashCommand(t *testing.T) {
+	c := &capture{}
+	var started int
+	m := New(Options{
+		StartTurn: func(ctx context.Context, input string) { c.turns = append(c.turns, input) },
+		Compact:   func(ctx context.Context) { started++ },
+		Slash:     slashStub,
+		Printer:   c.printer,
+		RenderFactory: func(width int) func(string) string {
+			return func(s string) string { return s }
+		},
+	})
+	m.ta.SetValue("/compact")
+	m = press(m, enter())
+
+	if started != 1 {
+		t.Fatalf("compact starter called %d times", started)
+	}
+	if m.phase != phaseRunning {
+		t.Errorf("phase = %v, want phaseRunning while the summariser works", m.phase)
+	}
+	if m.cancelTurn == nil {
+		t.Error("a running compaction must be interruptible (Ctrl+C)")
+	}
+	if strings.Contains(c.all(), "slash:/compact") {
+		t.Error("/compact went through the synchronous slash handler")
+	}
+	// And it ends like a turn.
+	next, _ := m.Update(TurnDone{})
+	if next.(Model).phase != phaseInput {
+		t.Error("TurnDone did not return the UI to the prompt")
+	}
+}
+
+// With no compaction wired (one-shot, tests), /compact must still fall
+// through to the slash handler rather than silently doing nothing.
+func TestCompactFallsBackToTheSlashHandler(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	m.ta.SetValue("/compact")
+	m = press(m, enter())
+	if !strings.Contains(c.all(), "slash:/compact") {
+		t.Errorf("printed = %q", c.all())
+	}
+}

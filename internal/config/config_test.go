@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,3 +162,40 @@ func TestMissingRequiredFields(t *testing.T) {
 		t.Errorf("error should name both missing fields: %v", err)
 	}
 }
+
+func TestCompactThresholdIsRangeChecked(t *testing.T) {
+	clearEnv(t)
+	for _, pct := range []int{0, 5, 100, 200, -1} {
+		path := writeConfig(t, `
+[gcp]
+project = "p"
+[model]
+name = "m"
+[agent]
+compact_at_pct = `+itoa(pct)+`
+`)
+		if _, err := Load(path); err == nil {
+			t.Errorf("compact_at_pct = %d accepted; it must be a usable share of the window", pct)
+		}
+	}
+	// 100 would fire only after the request that already failed; 80 is
+	// the default and must load.
+	path := writeConfig(t, `
+[gcp]
+project = "p"
+[model]
+name = "m"
+[agent]
+compact_at_pct = 90
+auto_compact = false
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agent.CompactAtPct != 90 || cfg.Agent.AutoCompact {
+		t.Errorf("agent config = %+v", cfg.Agent)
+	}
+}
+
+func itoa(n int) string { return fmt.Sprintf("%d", n) }

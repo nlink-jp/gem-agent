@@ -73,6 +73,13 @@ type AgentConfig struct {
 	// AutoApprove starts sessions in auto-approve mode (ADR-0004).
 	// Default false: weakening the primary defense is opt-in.
 	AutoApprove bool `toml:"auto_approve"`
+	// AutoCompact summarises older history when the context window fills
+	// (ADR-0006). Default true — unlike auto-approve this weakens no
+	// defense, and a session that dies at the window is not a fallback.
+	AutoCompact bool `toml:"auto_compact"`
+	// CompactAtPct is the share of the model's input window at which
+	// compaction fires.
+	CompactAtPct int `toml:"compact_at_pct"`
 }
 
 // DefaultPath returns the org-standard per-tool config path.
@@ -93,7 +100,7 @@ func defaults() Config {
 		GCP:     GCPConfig{Location: "global"},
 		Model:   ModelConfig{Safety: "default"},
 		Sandbox: SandboxConfig{Enabled: true},
-		Agent:   AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120},
+		Agent:   AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120, AutoCompact: true, CompactAtPct: 80},
 		MCP:     MCPConfig{Enabled: true, CallTimeoutSec: 60},
 		TUI:     TUIConfig{Theme: "auto"},
 	}
@@ -185,6 +192,12 @@ func (c *Config) validate() error {
 	}
 	if c.MCP.CallTimeoutSec <= 0 {
 		return fmt.Errorf("[mcp].call_timeout_sec must be positive")
+	}
+	// Below ~10% compaction would fire constantly and summarise nothing
+	// useful; at 100% it would fire after the request that already
+	// failed, which is too late to help.
+	if c.Agent.CompactAtPct < 10 || c.Agent.CompactAtPct > 99 {
+		return fmt.Errorf("[agent].compact_at_pct must be between 10 and 99 (got %d)", c.Agent.CompactAtPct)
 	}
 	switch c.Model.Safety {
 	case "default", "relaxed", "off":

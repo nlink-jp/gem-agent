@@ -4,9 +4,9 @@ Interactive CLI agent backed by Vertex AI Gemini. Continuity (backup) tool
 for when Claude Code is unavailable. macOS-only. Released (v0.1.x, Homebrew
 tap + notarized zip): agent loop, MCP client, drop-in
 AGENTS.md/CLAUDE.md/.mcp.json, one-shot mode, nonce isolation, backoff,
-inline TUI, auto-approve, session resume — all verified live. Outstanding:
-monthly drill runbook and written cli-series promotion criteria (RFP
-Phase 3).
+inline TUI, auto-approve, session resume, context compaction — all verified
+live. Outstanding: monthly drill runbook and written cli-series promotion
+criteria (RFP Phase 3).
 
 - **Module:** `github.com/nlink-jp/gem-agent`
 - **Series:** lab-series (promotion to cli-series considered after E2E + drill
@@ -34,7 +34,8 @@ main.go            entry point (package main, calls cmd.Execute(version))
 cmd/               cobra root command, REPL loop, wiring, system prompt
 internal/config/   strict-decode TOML + env/flag precedence
 internal/llm/      Backend interface + Vertex AI impl (thought signatures, backoff)
-internal/agent/    tool-calling loop, approval dispatch, nonce wrapping, history
+internal/agent/    tool-calling loop, approval dispatch, nonce wrapping, history,
+                   compaction (compact.go, ADR-0006)
 internal/tools/    built-in tools, path confinement, ExecFunc injection, Register
 internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
 internal/risk/     rule tier of the auto-approve ladder (pure, no model)
@@ -145,3 +146,14 @@ docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
   (2026-08-19). That is why resume refuses a different model and a
   different project directory rather than warning: the failure would be a
   400 after the operator believed they were back at work.
+- **A compaction cut must never land on a tool result** (ADR-0006) —
+  Gemini requires every function call to be paired with its response in
+  one request. Cutting only at user messages looks safer but cannot
+  compact a long agent loop, which contains exactly one user message.
+- **Compaction fails safe** — on any summariser error the history is left
+  untouched and the turn continues; auto-compaction switches itself off
+  after two failures rather than paying for a failing call every round.
+- **Auto-compaction needs the context window, and the window resolves
+  asynchronously** — `resolveWindow` must run in *every* mode. It
+  originally ran only on the interactive paths, so one-shot never knew
+  the window and compaction silently never fired (measured, not reasoned).

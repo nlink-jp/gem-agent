@@ -46,8 +46,19 @@ type Agent struct {
 	onAttach   func(atts []mention.Attachment, problems []mention.Problem)
 	onNotice   func(msg string)
 
-	mu   sync.Mutex // guards autoApprove (toggled from the UI goroutine)
+	mu   sync.Mutex // guards auto and window (both set from the UI goroutine)
 	auto bool
+	// window is the model's input token limit, 0 while unknown. Set
+	// asynchronously: the footer's lookup feeds it (ADR-0006).
+	window int
+
+	// Compaction state (ADR-0006). Touched only from the agent goroutine.
+	autoCompact     bool
+	compactAtPct    int
+	lastPrompt      int  // prompt tokens of the most recent round
+	compactedAt     int  // history length right after the last compaction
+	compactFailures int  // consecutive failures; two disables auto-compaction
+	warnedNoCut     bool // "nothing safe to compact" is said once, not per round
 
 	history  []llm.Message
 	toolDefs []llm.ToolDef
@@ -79,8 +90,14 @@ type Options struct {
 	// what it could not) so the operator sees it landed.
 	OnAttach func(atts []mention.Attachment, problems []mention.Problem)
 	// OnNotice, when set, receives in-turn notices (a retry after a
-	// content-filter block) so the operator sees what happened.
+	// content-filter block, a compaction) so the operator sees what
+	// happened.
 	OnNotice func(msg string)
+	// AutoCompact enables automatic history compaction (ADR-0006), and
+	// CompactAtPct is the share of the model's input window at which it
+	// fires. Compaction still needs a known window; see SetContextWindow.
+	AutoCompact  bool
+	CompactAtPct int
 }
 
 // New creates an agent.
@@ -107,16 +124,47 @@ func New(opts Options) *Agent {
 		onNotice:   opts.OnNotice,
 		auto:       opts.AutoApprove,
 		toolDefs:   defs,
+
+		autoCompact:  opts.AutoCompact,
+		compactAtPct: opts.CompactAtPct,
 	}
 }
 
 // Reset clears the conversation history (REPL /clear).
-func (a *Agent) Reset() { a.history = nil }
+func (a *Agent) Reset() {
+	a.history = nil
+	a.compactedAt = 0
+	a.lastPrompt = 0
+}
 
 // SetHistory replaces the conversation with a restored transcript
 // (--continue / --resume, ADR-0005). Like AddContext, it must not be
 // called while Run is in flight.
-func (a *Agent) SetHistory(history []llm.Message) { a.history = history }
+func (a *Agent) SetHistory(history []llm.Message) {
+	a.history = history
+	// Not len(history): compactedAt exists to stop a compaction from
+	// firing twice at the same size, and a restore is not a compaction.
+	// A resumed session that is already near the window must be free to
+	// compact on its first round.
+	a.compactedAt = 0
+	a.lastPrompt = 0
+}
+
+// SetContextWindow records the model's input token limit, which
+// auto-compaction measures against. It arrives asynchronously (the
+// lookup that feeds the footer), so it is guarded — 0 means "unknown",
+// and auto-compaction stays off until it is known.
+func (a *Agent) SetContextWindow(tokens int) {
+	a.mu.Lock()
+	a.window = tokens
+	a.mu.Unlock()
+}
+
+func (a *Agent) contextWindow() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.window
+}
 
 // AutoApprove reports whether auto-approve mode is on.
 func (a *Agent) AutoApprove() bool {
@@ -163,6 +211,11 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 	filterRetries := 0
 
 	for round := 0; round < a.maxTurns; round++ {
+		// Compaction happens between rounds, before the request that
+		// would overflow — a long tool loop is where the window actually
+		// runs out (ADR-0006).
+		a.maybeAutoCompact(ctx)
+
 		// Fresh nonce tag per LLM call (nlk/guard contract: a previous
 		// response may echo the tag name, so reuse across calls is
 		// unsafe). The system prompt's {{DATA_TAG}} placeholder and the
@@ -171,6 +224,9 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 		resp, err := a.backend.ChatStream(ctx, tag.Expand(a.system), wrapToolMessages(a.history, tag), a.toolDefs, onText)
 		if err != nil {
 			return "", err
+		}
+		if resp.PromptTokens > 0 {
+			a.lastPrompt = resp.PromptTokens
 		}
 		if a.onUsage != nil && (resp.PromptTokens > 0 || resp.OutputTokens > 0) {
 			a.onUsage(resp.PromptTokens, resp.OutputTokens)

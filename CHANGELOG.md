@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+Both features were out of scope in the RFP; use argued otherwise, so each
+arrives with an ADR rather than being quietly added.
+
 ### Added — session resume (ADR-0005, operator request)
 
 - `--continue` resumes this project's most recent session, `--resume <id>`
@@ -25,6 +28,38 @@
 - **The transcript now holds the full text of every file the agent read.**
   It always half-did; now it does so completely. `0600`, under
   `~/.local/state/gem-agent/sessions/`
+
+### Added — context compaction (ADR-0006, operator request)
+
+- Nearing the model's window, the older half of the conversation is
+  replaced by a summary of it and the recent half is kept verbatim,
+  instead of a turn failing with `/clear` as the only recovery.
+  Automatic at `[agent].compact_at_pct` (default 80) between rounds —
+  where a long tool loop actually runs out of room — and `/compact` on
+  demand
+- The summariser is offered no tools and receives the transcript
+  nonce-wrapped as untrusted data; the summary comes back into the
+  conversation as an attachment, quoted as data, because it is
+  model-generated text derived from tool output — facts to rely on, not
+  new instructions
+- Fails safe: any summariser error, filter block or empty answer leaves
+  the history exactly as it was and the turn continues. Two failures
+  switch automatic compaction off for the session rather than paying for
+  a failing call every round
+- Each compaction is recorded, so a resumed session comes back compacted
+  instead of re-inflating to the size it was deliberately shrunk from
+- The cut never lands on a tool result (Gemini pairs every function call
+  with its response in one request). Cutting only at user messages was
+  the first rule written and was withdrawn during verification: one long
+  agent loop contains exactly one user message, at the beginning, so that
+  rule could never compact the case the feature exists for
+
+### Fixed
+
+- The context-window lookup now runs in every mode. It ran only on the
+  interactive paths, so a one-shot session never learned its window and
+  auto-compaction silently never fired — found by measuring a one-shot
+  run that reached 17k tokens against a 12k window without compacting
 
 ## [0.1.3] - 2026-08-19
 

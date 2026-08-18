@@ -46,7 +46,12 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   is both the log and the resume source, recorded in full fidelity
   (Gemini reasoning tokens included, which the API requires on replay).
   See [ADR-0005](docs/en/adr/0005-session-resume.md)
-- Slash commands: `/help` `/tools` `/mcp` `/clear` `/quit`
+- **Context compaction**: when the conversation approaches the model's
+  window it is summarised instead of failing the turn — the older half
+  becomes one summary, the recent half stays verbatim. Automatic at 80%
+  (`[agent].compact_at_pct`), or `/compact` at any time. See
+  [ADR-0006](docs/en/adr/0006-context-compaction.md)
+- Slash commands: `/help` `/tools` `/mcp` `/compact` `/clear` `/quit`
 - **Drop-in project compatibility**: the project's agent-instruction files
   are injected into the system prompt — `AGENTS.md`, `AGENT.md`,
   `CLAUDE.md`, `GEMINI.md`, searched up through ancestor directories the
@@ -61,8 +66,8 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   tools denied (pipe-friendly)
 - Transient Vertex failures (429/5xx) retry with exponential backoff
 
-Out of scope by design: memory subsystems, context compaction, data
-analysis, GUI, non-macOS platforms.
+Out of scope by design: memory subsystems, data analysis, GUI, non-macOS
+platforms.
 
 ## Usage
 
@@ -167,10 +172,26 @@ conversation however many processes it took — and comes back exactly as
 it was, tool results included. Two refusals are deliberate: a session
 resumes only in the directory it was recorded in, and only under the
 model that produced it (the replayed reasoning tokens are model-bound).
-Each message names what to do instead.
+Each message names what to do instead. A session that was compacted
+resumes compacted, rather than re-inflating to the size it was shrunk
+from.
 
 The transcript therefore holds the full text of every file the agent
 read. It lives under `~/.local/state/gem-agent/sessions/`, mode `0600`.
+
+### Compacting the conversation
+
+At `[agent].compact_at_pct` of the model's window (80% by default), the
+older part of the conversation is replaced by a summary of it and the
+recent part is kept verbatim; `/compact` does the same on demand. The
+notice says how many messages were summarised, because detail from that
+half is second-hand afterwards and a model that has forgotten something
+must not look like one that never knew it.
+
+If the summarisation call fails — an error, a content filter — the
+history is left exactly as it was and the turn continues on a full
+context. `auto_compact = false` turns the automatic path off; `/compact`
+still works.
 
 ## Project instructions
 
@@ -262,7 +283,7 @@ location = "global"        # default; Gemini 3 models are global-endpoint-only
 
 [model]
 name = "<gemini model id>"
-# context_window = 1048576  # optional; footer display override (default: auto-detect)
+# context_window = 1048576  # optional; exact window for the footer and compaction
 
 [sandbox]
 enabled = true             # default
@@ -271,6 +292,8 @@ enabled = true             # default
 max_turns = 50             # default
 shell_timeout_sec = 120    # default
 auto_approve = false       # default; start sessions in auto-approve mode
+auto_compact = true        # default; summarise older history near the window
+compact_at_pct = 80        # default; share of the window that triggers it
 
 [tui]
 theme = "auto"             # auto | dark | light | plain
@@ -323,6 +346,7 @@ locations return 404. Gemini 2.5 models work from regional endpoints such as
 - [ADR-0001: Sandbox mechanism](docs/en/adr/0001-sandbox-mechanism.md)
 - [ADR-0004: Auto-approve](docs/en/adr/0004-auto-approve.md)
 - [ADR-0005: Session resume](docs/en/adr/0005-session-resume.md)
+- [ADR-0006: Context compaction](docs/en/adr/0006-context-compaction.md)
 
 ## License
 
