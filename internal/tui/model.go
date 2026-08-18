@@ -26,6 +26,9 @@ const (
 	maxInputHeight = 6
 	liveTailLines  = 12
 	maxMDWidth     = 100
+	// Floors for a terminal that reports a bogus size.
+	minWidth  = 20
+	minHeight = 4
 )
 
 // approvalOptions are the approval dialog's selectable answers, in
@@ -289,13 +292,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// shrink clears the viewport once to sweep the re-wrapped
 		// leftovers. The first size report must not clear — it would
 		// wipe the banner.
-		shrank := m.sized && msg.Width < m.width
+		// A terminal that reports no size (some pty harnesses, and any
+		// environment where the ioctl fails) would otherwise give the
+		// textarea a negative width and render an input box that shows
+		// nothing the operator types.
+		width, height := msg.Width, msg.Height
+		if width < minWidth {
+			width = minWidth
+		}
+		if height < minHeight {
+			height = minHeight
+		}
+		shrank := m.sized && width < m.width
 		first := !m.sized
 		m.sized = true
-		m.width = msg.Width
-		m.height = msg.Height
-		m.ta.SetWidth(msg.Width - 2)
-		m.render = m.mkRender(msg.Width)
+		m.width = width
+		m.height = height
+		m.ta.SetWidth(width - 2)
+		m.render = m.mkRender(width)
 		switch {
 		case first:
 			// ADR-0003: clear to a known cursor row, then print the

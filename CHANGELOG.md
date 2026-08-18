@@ -2,6 +2,12 @@
 
 ## [0.1.0] - Unreleased
 
+### Fixed
+
+- A terminal reporting no size (a failed ioctl, some pty harnesses) gave
+  the input box a negative width, so nothing typed was drawn; sizes are
+  now floored at 20×4
+
 ### Added — shipped config templates (operator feedback)
 
 - `config.example.toml` (every key, its default, and why it exists) and

@@ -755,6 +755,28 @@ func TestBottomPinning(t *testing.T) {
 	}
 }
 
+// TestZeroSizedTerminalStaysUsable: a terminal that reports no size
+// (some pty harnesses; any failed ioctl) must not leave the input box
+// with a negative width, where nothing the operator types is drawn.
+func TestZeroSizedTerminalStaysUsable(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 0, Height: 0})
+	m = next.(Model)
+
+	if m.width < minWidth || m.height < minHeight {
+		t.Fatalf("size floors not applied: %dx%d", m.width, m.height)
+	}
+	m = press(m, runeMsg("a"))
+	m = press(m, runeMsg("b"))
+	if m.ta.Value() != "ab" {
+		t.Fatalf("typing lost at zero size: %q", m.ta.Value())
+	}
+	if !strings.Contains(m.View(), "ab") {
+		t.Errorf("typed text not rendered at zero size: %q", m.View())
+	}
+}
+
 // TestResizeNeverQueriesTerminal pins the OSC-leak fix: resizing must
 // rebuild the renderer through the injected factory only — a renderer
 // that queries the terminal mid-session turns the reply into phantom

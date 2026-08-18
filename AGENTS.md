@@ -106,9 +106,12 @@ docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
   streamed text; glamour renders at flush time (tool-call boundary or
   turn end). Rendering the live region per frame would duplicate work
   and flicker.
-- **TUI E2E runs through a pty** — see the expect pattern in the Phase 2
-  history (scratchpad tui_e2e.exp); piped stdin exercises the plain-REPL
-  fallback, not the TUI.
+- **TUI E2E runs through a pty, and the pty needs an explicit size** —
+  `set stty_init "rows 40 columns 120"` before `spawn`. Without it the
+  terminal can report 0×0, the input box renders nothing, and every
+  typing assertion fails in a way that looks like an app bug. (The app
+  now floors the size, but the harness should still be honest.) Piped
+  stdin exercises the plain-REPL fallback, not the TUI.
 - **No managed-view line may reach the terminal width** — a soft-wrapped
   line desyncs the inline renderer's height math and stale frames stack
   up (the resize staircase). View() clips every line to width-1; a
