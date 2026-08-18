@@ -2,7 +2,28 @@
 
 ## [0.1.0] - Unreleased
 
-### Added
+### Added — development Phase 1 (Core)
+
+- Interactive REPL with a streaming Vertex AI Gemini agent loop; Gemini 3
+  thought-signature capture/replay (ported from shell-agent-v2 ADR-0009,
+  verified live against gemini-3-flash-preview via the global endpoint)
+- Built-in tools (`list_files` / `read_file` / `write_file` / `edit_file` /
+  `shell_exec`) with project-dir confinement including symlink-escape checks,
+  output caps, and non-zero exit status / timeout surfacing
+- MITL approval gate (y/n/a) with session-scoped allowlist, failing closed
+- macOS sandbox-exec SBPL profile generation for shell_exec (deny file-write*
+  outside project + scratch dirs; real Seatbelt enforcement test)
+- Paste-safe REPL input (multi-line paste aggregates into one input)
+- Strict-decode TOML config with flags > `GEMAGENT_*` > `GOOGLE_CLOUD_*` >
+  file > defaults precedence
+- JSONL session logging under `~/.local/state/gem-agent/sessions/`
+
+### Fixed
+
+- Backend errors are no longer misreported as "(interrupted)"
+  (signal.NotifyContext stop() ordering bug, found in live smoke testing)
+
+### Added — scaffold
 
 - Project scaffold (CONVENTIONS.md Phase 2): Go module, cobra root command
   answering `--version` (with a pinning test), Makefile (`dist/` output,
