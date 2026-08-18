@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type phase int
@@ -88,6 +89,7 @@ type Model struct {
 	cancelTurn context.CancelFunc
 
 	width    int
+	sized    bool // first WindowSizeMsg received
 	render   func(string) string
 	mkRender func(width int) func(string) string
 	println  func(...any) tea.Cmd
@@ -164,9 +166,22 @@ func (m Model) Init() tea.Cmd { return textarea.Blink }
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		// Inline-renderer resize is the fragile spot: when the terminal
+		// narrows, the previous frame's lines re-wrap and the renderer's
+		// recorded height no longer matches, leaving stale copies of the
+		// input box on screen. Two defenses: View() clips every line to
+		// the width (no line of ours ever soft-wraps), and a genuine
+		// shrink clears the viewport once to sweep the re-wrapped
+		// leftovers. The first size report must not clear — it would
+		// wipe the banner.
+		shrank := m.sized && msg.Width < m.width
+		m.sized = true
 		m.width = msg.Width
 		m.ta.SetWidth(msg.Width - 2)
 		m.render = m.mkRender(msg.Width)
+		if shrank {
+			return m, tea.ClearScreen
+		}
 		return m, nil
 
 	case spinner.TickMsg:
@@ -394,8 +409,28 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(m.println(styleUser.Render("> ")+input), m.spin.Tick)
 }
 
-// View implements tea.Model.
+// View implements tea.Model. Every line is clipped to the terminal
+// width: a managed-region line that soft-wraps breaks the inline
+// renderer's height accounting and leaves stale frames behind.
 func (m Model) View() string {
+	return clipLines(m.viewContent(), m.width)
+}
+
+// clipLines truncates each line to width-1 display cells (ANSI-aware).
+// The -1 keeps the cursor off the last column, where pending auto-wrap
+// behaviour differs between terminals.
+func clipLines(s string, width int) string {
+	if width <= 1 {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = ansi.Truncate(line, width-1, "")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) viewContent() string {
 	switch m.phase {
 	case phaseRunning:
 		return m.liveView() + "\n" + m.spin.View() + " " + styleStatus.Render(m.status) +

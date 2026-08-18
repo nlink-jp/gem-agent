@@ -8,7 +8,10 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
+
+func lipglossWidth(s string) int { return ansi.StringWidth(s) }
 
 // capture collects Println output and turn starts.
 type capture struct {
@@ -254,6 +257,62 @@ func TestApprovalFlow(t *testing.T) {
 	if m.phase != phaseRunning {
 		t.Error("answer should return to running phase")
 	}
+}
+
+// TestViewLinesClippedToWidth pins the resize-artifact fix: no line of
+// the managed view may exceed the terminal width, or soft wrapping
+// desyncs the inline renderer's height accounting and stale frames
+// stack up on screen.
+func TestViewLinesClippedToWidth(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 24, Height: 40})
+	m = next.(Model)
+
+	// Streaming phase with long lines is the worst case.
+	m.ta.SetValue("go")
+	m = press(m, enter())
+	next, _ = m.Update(TextDelta(strings.Repeat("長い行です。", 40) + "\n" + strings.Repeat("x", 500)))
+	m = next.(Model)
+
+	for i, line := range strings.Split(m.View(), "\n") {
+		if w := lipglossWidth(line); w >= 24 {
+			t.Errorf("view line %d is %d cells wide (must stay under 24)", i, w)
+		}
+	}
+	// Input phase (hint line) must clip too.
+	next, _ = m.Update(TurnDone{})
+	m = next.(Model)
+	for i, line := range strings.Split(m.View(), "\n") {
+		if w := lipglossWidth(line); w >= 24 {
+			t.Errorf("input view line %d is %d cells wide", i, w)
+		}
+	}
+}
+
+// TestShrinkClearsScreenOnce: a genuine width shrink returns a clear
+// command to sweep re-wrapped stale frames; the first size report and
+// growth do not (clearing at startup would wipe the banner).
+func TestShrinkClearsScreenOnce(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+
+	next, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	m = next.(Model)
+	if cmd != nil {
+		t.Error("first size report must not clear the screen")
+	}
+	next, cmd = m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = next.(Model)
+	if cmd != nil {
+		t.Error("growth must not clear the screen")
+	}
+	next, cmd = m.Update(tea.WindowSizeMsg{Width: 50, Height: 40})
+	m = next.(Model)
+	if cmd == nil {
+		t.Error("shrink must trigger a screen clear")
+	}
+	_ = m
 }
 
 // TestResizeNeverQueriesTerminal pins the OSC-leak fix: resizing must
