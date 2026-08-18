@@ -2,6 +2,18 @@
 
 ## [0.1.0] - Unreleased
 
+### Added — interactive TUI (ADR-0002)
+
+- Bubble Tea inline TUI: completed conversation flushes to native
+  scrollback; the managed live region carries streaming text, a
+  spinner/status line, and the input box. Textarea input with
+  paste-flagged newlines (a paste can never submit), Ctrl+J manual
+  newline, ↑↓ history behind an explicit navigation-state flag, approval
+  dialog (y/n/a) answering the gate over a channel, glamour Markdown
+  rendering per segment (text/tool-event order preserved). Non-TTY use
+  falls back to the plain line REPL; `-p` unchanged. Verified through a
+  pty-driven E2E (expect) against live Vertex AI
+
 ### Added — development Phase 2 (Integration)
 
 - Stdio MCP client with Claude Code `.mcp.json` compatibility (stdio

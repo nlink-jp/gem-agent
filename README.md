@@ -21,8 +21,13 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
 
 ## Features (implemented)
 
-- Interactive REPL with a Gemini agent loop — streaming output, Gemini 3
-  thought-signature capture/replay (verified live)
+- **Interactive TUI** (Bubble Tea, inline mode — native scrollback and
+  copy/paste keep working): streaming output with a spinner/status line,
+  input box with ↑↓ history and multi-line editing (Ctrl+J), styled tool
+  events, an approval dialog, and glamour-rendered Markdown responses.
+  Piped/scripted use falls back to a plain line REPL automatically
+- Gemini agent loop with Gemini 3 thought-signature capture/replay
+  (verified live)
 - Built-in tools: `list_files` / `read_file` / `write_file` / `edit_file` / `shell_exec`,
   all confined to the project directory (symlink escapes included)
 - Per-call approval gates (MITL) for mutating tools, with a session-scoped
@@ -56,9 +61,13 @@ gem-agent -p "summarize this repository"   # one-shot, pipe-friendly
 
 The current directory becomes the project: file tools cannot leave it, and
 sandboxed shell commands cannot write outside it. Mutating tool calls show
-an approval prompt before running (`y` once / `n` deny / `a` always this
+an approval dialog before running (`y` once / `n` deny / `a` always this
 session). `--no-sandbox` disables the Seatbelt wrapper (debugging only),
 `--model` overrides the configured model.
+
+TUI keys: Enter sends, Ctrl+J inserts a newline, ↑/↓ navigate input
+history, Ctrl+C interrupts a running turn (or clears the input), Ctrl+D
+quits. Multi-line pastes land in the input box as one message.
 
 ## MCP servers
 

@@ -36,7 +36,8 @@ internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
 internal/sandbox/  SBPL profile generation, sandbox-exec wrapping
 internal/approve/  MITL gate (y/n/a + session allowlist)
 internal/session/  JSONL session logger
-internal/repl/     paste-safe input reader
+internal/repl/     paste-safe input reader (plain REPL, non-TTY fallback)
+internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate
 scripts/           codesign-darwin.sh / notarize-darwin.sh (org templates, verbatim)
 docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
 ```
@@ -76,3 +77,13 @@ docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
   the tag and break the guard contract.
 - **.mcp.json is a foreign format** — unknown keys are tolerated there
   (Claude Code owns it); strict decode applies to our own config.toml only.
+- **TUI is inline, never alt-screen** (ADR-0002) — completed content goes
+  through tea.Println into native scrollback; only the live region is
+  managed. Switching to alt-screen would break scrollback/copy.
+- **Rendering happens once per segment** — the live region shows raw
+  streamed text; glamour renders at flush time (tool-call boundary or
+  turn end). Rendering the live region per frame would duplicate work
+  and flicker.
+- **TUI E2E runs through a pty** — see the expect pattern in the Phase 2
+  history (scratchpad tui_e2e.exp); piped stdin exercises the plain-REPL
+  fallback, not the TUI.
