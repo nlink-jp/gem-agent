@@ -25,6 +25,17 @@ type TurnDone struct {
 	Err error
 }
 
+// AutoApproved reports a tool call that auto mode let through, with the
+// reason — the operator must be able to see what ran unattended.
+type AutoApproved struct {
+	Tool   string
+	Reason string
+	Tier   string
+}
+
+// AutoMode reports the current auto-approve state for the status line.
+type AutoMode bool
+
 // ShellDone signals completion of a direct (!-prefixed) shell command.
 type ShellDone struct {
 	Output string

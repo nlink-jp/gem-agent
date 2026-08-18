@@ -63,6 +63,9 @@ type SandboxConfig struct {
 type AgentConfig struct {
 	MaxTurns        int `toml:"max_turns"`
 	ShellTimeoutSec int `toml:"shell_timeout_sec"`
+	// AutoApprove starts sessions in auto-approve mode (ADR-0004).
+	// Default false: weakening the primary defense is opt-in.
+	AutoApprove bool `toml:"auto_approve"`
 }
 
 // DefaultPath returns the org-standard per-tool config path.

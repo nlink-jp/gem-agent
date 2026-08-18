@@ -32,6 +32,11 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   all confined to the project directory (symlink escapes included)
 - Per-call approval gates (MITL) for mutating tools, with a session-scoped
   allowlist (`y` = once, `a` = always this session; deny fails closed)
+- **Auto-approve mode** (opt-in, shift+tab or `/auto`): each mutating call
+  passes a two-tier review — a rule-based classifier first, then a model
+  risk evaluation for anything uncertain. Safe calls run unattended;
+  destructive, out-of-project, credential-touching, or uncertain ones
+  still ask. See [ADR-0004](docs/en/adr/0004-auto-approve.md)
 - `shell_exec` wrapped in macOS sandbox-exec — file writes restricted to the
   project directory + scratch dirs (enforcement covered by a real Seatbelt test)
 - Paste-safe input: a multi-line paste becomes one input, never one LLM call per line
@@ -69,6 +74,23 @@ TUI keys (also listed in `/help`): Enter sends, Ctrl+J inserts a newline,
 ↑/↓ navigate input history, Ctrl+C interrupts a running turn (or clears
 the input), Ctrl+D quits. Multi-line pastes land in the input box as one
 message.
+
+### Auto-approve mode
+
+Off by default. shift+tab (or `/auto`) toggles it; the status line shows
+`⚡auto` while on. Each mutating tool call then goes through:
+
+1. **Rule tier** (no model call): *safe* → runs; *blocked* → always asks
+   (`rm -rf`, `sudo`, `git push`, download-piped-to-shell, disk writes,
+   credential paths, anything outside the project…); *uncertain* → tier 2.
+2. **Model tier**: a separate evaluation round judges the proposed call
+   (delivered to it as nonce-wrapped untrusted data, with no tools
+   available). It must both approve *and* be confident, or the call asks.
+
+Anything that fails — model error, malformed verdict, unknown tool —
+asks. The blocked tier is a hard floor the model cannot override, and the
+sandbox applies in every mode. Auto-approved calls are printed with their
+reason, so you can see what ran unattended.
 
 `!<command>` runs a shell command directly — sandboxed like `shell_exec`
 (same timeout and output cap) but without an approval prompt, since you
@@ -141,6 +163,7 @@ enabled = true             # default
 [agent]
 max_turns = 50             # default
 shell_timeout_sec = 120    # default
+auto_approve = false       # default; start sessions in auto-approve mode
 
 [tui]
 theme = "auto"             # auto | dark | light | plain

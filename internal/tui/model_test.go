@@ -114,6 +114,57 @@ func TestSlashCommandDoesNotStartTurn(t *testing.T) {
 	}
 }
 
+func TestAutoModeToggleAndIndicator(t *testing.T) {
+	c := &capture{}
+	state := false
+	m := New(Options{
+		Printer: c.printer,
+		RenderFactory: func(width int) func(string) string {
+			return func(s string) string { return s }
+		},
+		Slash:      slashStub,
+		ModelName:  "m",
+		ToggleAuto: func() bool { state = !state; return state },
+	})
+
+	if strings.Contains(m.View(), "auto") {
+		t.Error("auto indicator must be absent while off")
+	}
+	m = press(m, tea.KeyMsg{Type: tea.KeyShiftTab})
+	if !m.autoMode || !state {
+		t.Fatal("shift+tab should turn auto mode on")
+	}
+	if !strings.Contains(m.View(), "auto") {
+		t.Error("status line must show the auto indicator while on")
+	}
+	if !strings.Contains(c.all(), "auto-approve: ON") {
+		t.Errorf("toggle should announce the new state: %q", c.all())
+	}
+	m = press(m, tea.KeyMsg{Type: tea.KeyShiftTab})
+	if m.autoMode || state {
+		t.Fatal("shift+tab should turn auto mode off again")
+	}
+
+	// External state changes (config default, /auto in the plain REPL)
+	// arrive as a message.
+	next, _ := m.Update(AutoMode(true))
+	m = next.(Model)
+	if !strings.Contains(m.View(), "auto") {
+		t.Error("AutoMode message should update the indicator")
+	}
+}
+
+func TestAutoApprovedEventIsVisible(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	next, _ := m.Update(AutoApproved{Tool: "shell_exec", Reason: "local build", Tier: "review"})
+	m = next.(Model)
+	out := c.all()
+	if !strings.Contains(out, "auto-approved") || !strings.Contains(out, "local build") || !strings.Contains(out, "review") {
+		t.Errorf("auto-approval must be visible with tier and reason: %q", out)
+	}
+}
+
 // TestShellMode: "!cmd" runs the shell runner (never the LLM turn),
 // shows the command and its output, and returns to input phase.
 func TestShellMode(t *testing.T) {

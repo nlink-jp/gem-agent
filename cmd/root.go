@@ -193,6 +193,17 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				prog.Send(tui.Usage{Prompt: promptTokens, Output: outputTokens})
 			}
 		},
+		AutoApprove: cfg.Agent.AutoApprove && !oneShot,
+		OnAutoDecision: func(tc llm.ToolCall, d agent.AutoDecision) {
+			if !d.Approved {
+				return // the escalation shows up in the approval prompt
+			}
+			if prog != nil {
+				prog.Send(tui.AutoApproved{Tool: tc.Name, Reason: d.Reason, Tier: d.Tier.String()})
+				return
+			}
+			fmt.Fprintf(stderr, "[auto-approved: %s (%s) — %s]\n", tc.Name, d.Tier, d.Reason)
+		},
 	})
 
 	// --- one-shot mode: single turn, quiet stderr, exit ---
@@ -237,6 +248,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			ModelName:  cfg.Model.Name,
 			ProjectDir: abbreviateHome(projectDir),
 			Banner:     bannerLines,
+			AutoMode:   ag.AutoApprove(),
+			ToggleAuto: func() bool {
+				ag.SetAutoApprove(!ag.AutoApprove())
+				return ag.AutoApprove()
+			},
 			Shell: func(shellCtx context.Context, command string) {
 				go func() {
 					out := runDirectShell(shellCtx, registry, ag, command)
@@ -459,8 +475,11 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
   /help    show this help
   /tools   list available tools
   /mcp     show connected MCP servers
+  /auto    toggle auto-approve (shift+tab does the same)
   /clear   reset the conversation history
   /quit    exit (Ctrl+D also works)
+auto-approve: safe changes run unattended; destructive, out-of-project,
+  credential-touching, or uncertain calls still ask (two-tier review)
 shell:
   !<command>  run it directly (sandboxed, no approval; output is shared with the model)
 keys:
@@ -474,6 +493,13 @@ mutating tools prompt for approval: y = once, a = always this session
 				marker = "requires approval"
 			}
 			fmt.Fprintf(&b, "  %-12s %s (%s)\n", t.Name, firstSentence(t.Description), marker)
+		}
+	case "/auto":
+		ag.SetAutoApprove(!ag.AutoApprove())
+		if ag.AutoApprove() {
+			b.WriteString("auto-approve: ON — safe changes run unattended; risky ones still ask\n")
+		} else {
+			b.WriteString("auto-approve: OFF — every change asks\n")
 		}
 	case "/clear":
 		ag.Reset()

@@ -2,6 +2,21 @@
 
 ## [0.1.0] - Unreleased
 
+### Added — auto-approve mode (ADR-0004, operator feedback)
+
+- Opt-in auto-approve with a two-tier review of every mutating call:
+  a pure rule classifier (Safe / Review / Block) followed, for Review
+  only, by a model risk evaluation. Auto-approval requires approve AND
+  confidence ≥ 0.8; Block is a deterministic floor the model cannot
+  override; model errors, malformed verdicts, and unknown tools all
+  escalate to the human gate carrying the reason
+- The evaluator sees the proposed call as nonce-wrapped untrusted data
+  and is offered no tools; sandbox and MITL backstop apply in all modes
+- `[agent].auto_approve` config default (false), shift+tab and `/auto`
+  toggles, `⚡auto` status indicator, auto-approved calls printed with
+  tier and reason. Verified live: an in-project file write auto-ran,
+  `rm -rf /` escalated
+
 ### Added — direct shell mode (operator feedback)
 
 - `!<command>` runs a shell command directly: sandboxed through the

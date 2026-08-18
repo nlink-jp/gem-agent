@@ -107,6 +107,10 @@ type Options struct {
 	// startup screen clear — they must go through the line counter or
 	// the bottom pinning (ADR-0003) would drift from frame one.
 	Banner []string
+	// AutoMode is the initial auto-approve state; ToggleAuto flips it
+	// (shift+tab) and returns the new state.
+	AutoMode   bool
+	ToggleAuto func() bool
 	// Printer overrides tea.Println for tests.
 	Printer func(...any) tea.Cmd
 	// RenderFactory overrides the Markdown renderer factory for tests.
@@ -137,6 +141,8 @@ type Model struct {
 	startTurn  TurnStarter
 	shell      ShellStarter
 	slash      SlashHandler
+	toggleAuto func() bool
+	autoMode   bool
 	baseCtx    context.Context
 	cancelTurn context.CancelFunc
 
@@ -179,6 +185,8 @@ func New(opts Options) Model {
 		startTurn:  opts.StartTurn,
 		shell:      opts.Shell,
 		slash:      opts.Slash,
+		toggleAuto: opts.ToggleAuto,
+		autoMode:   opts.AutoMode,
 		baseCtx:    opts.BaseCtx,
 		println:    opts.Printer,
 		mkRender:   opts.RenderFactory,
@@ -310,6 +318,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.phase = phaseApproval
 		return m, nil
 
+	case AutoApproved:
+		return m, m.emit(m.st.tool.Render("  ↳ auto-approved (" + msg.Tier + "): " + msg.Reason))
+
+	case AutoMode:
+		m.autoMode = bool(msg)
+		return m, nil
+
 	case ShellDone:
 		out := msg.Output
 		if strings.TrimSpace(out) == "" {
@@ -439,6 +454,17 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ta.InsertString("\n")
 		m.syncHeight()
 		return m, nil
+
+	case msg.Type == tea.KeyShiftTab:
+		if m.toggleAuto == nil {
+			return m, nil
+		}
+		m.autoMode = m.toggleAuto()
+		state := "auto-approve: OFF (every change asks)"
+		if m.autoMode {
+			state = "auto-approve: ON (risky actions still ask)"
+		}
+		return m, m.emit(m.st.tool.Render(state))
 
 	case msg.Type == tea.KeyEnter && !msg.Alt:
 		// Bracketed paste never arrives as KeyEnter (pasted newlines
@@ -643,7 +669,13 @@ func (m Model) footer() string {
 	if m.projectDir != "" {
 		parts = append(parts, m.projectDir)
 	}
-	return m.st.hint.Render(strings.Join(parts, " · "))
+	line := m.st.hint.Render(strings.Join(parts, " · "))
+	if m.autoMode {
+		// Auto mode changes what runs without asking — it must be
+		// visible at all times, and in the accent color, not the dim one.
+		line = m.st.tool.Render("⚡auto") + m.st.hint.Render(" · ") + line
+	}
+	return line
 }
 
 // humanTokens renders a token count compactly (999 / 12.3k / 1.0M).

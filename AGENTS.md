@@ -33,6 +33,7 @@ internal/llm/      Backend interface + Vertex AI impl (thought signatures, backo
 internal/agent/    tool-calling loop, approval dispatch, nonce wrapping, history
 internal/tools/    built-in tools, path confinement, ExecFunc injection, Register
 internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
+internal/risk/     rule tier of the auto-approve ladder (pure, no model)
 internal/sandbox/  SBPL profile generation, sandbox-exec wrapping
 internal/approve/  MITL gate (y/n/a + session allowlist)
 internal/session/  JSONL session logger
@@ -72,6 +73,10 @@ docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
 - **Never write from the MCP read loop** — a blocking write while the peer
   is not reading deadlocks both directions (internal/mcp refuses server
   requests from a goroutine; caught by the pipe-based tests).
+- **Auto-approve fails closed, and Block is a floor** (ADR-0004) — when
+  changing the ladder, keep: Block never consults the model, model errors
+  and malformed verdicts escalate, and confidence alone never approves.
+  New dangerous patterns go in `internal/risk`, with a corpus test.
 - **nlk/guard tags are per-LLM-call** — history stores raw tool results and
   the agent wraps them at send time; storing wrapped results would freeze
   the tag and break the guard contract.
