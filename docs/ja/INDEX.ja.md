@@ -40,6 +40,8 @@ supersede する（typo とリンク修正は例外）。
   正本にする。プロジェクトとモデルは警告ではなく拒否
 - [`ADR-0006`](adr/0006-context-compaction.ja.md) — ウィンドウで死ぬ代わりに
   古い側を要約する。fail safe であって fail small ではない
+- [`ADR-0007`](adr/0007-input-during-a-turn.ja.md) — ターン実行中の入力は
+  捨てずに予約する。自動送信は正常終了のときだけ
 
 ## History（履歴）
 

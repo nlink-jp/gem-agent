@@ -96,6 +96,14 @@ TUI keys (also listed in `/help`): Enter sends, ↑/↓ navigate input
 history, Ctrl+C interrupts a running turn (or clears the input), Ctrl+D
 quits.
 
+**You can keep typing while a turn runs.** Enter queues the message
+instead of sending it — the agent loop owns the conversation until it
+returns — and it goes out as the next turn once that one finishes
+cleanly. If the turn errors or you interrupt it, the queued text comes
+back to the input box **unsent**, because a message written against a
+turn that then failed is rarely still the message you want
+([ADR-0007](docs/en/adr/0007-input-during-a-turn.md)).
+
 **Multi-line input**:
 
 | Route | Availability |

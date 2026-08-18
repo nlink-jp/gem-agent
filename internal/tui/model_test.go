@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -1020,5 +1021,137 @@ func TestCompactFallsBackToTheSlashHandler(t *testing.T) {
 	m = press(m, enter())
 	if !strings.Contains(c.all(), "slash:/compact") {
 		t.Errorf("printed = %q", c.all())
+	}
+}
+
+// ADR-0007: typing during a turn used to be dropped on the floor, with
+// no characters appearing — the operator retyped the message.
+func TestTypingDuringATurnIsKeptAndQueued(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	m.ta.SetValue("first")
+	m = press(m, enter())
+	if m.phase != phaseRunning {
+		t.Fatalf("phase = %v", m.phase)
+	}
+
+	// Typing mid-run reaches the box.
+	m = press(m, runeMsg("no, the other file"))
+	if m.ta.Value() != "no, the other file" {
+		t.Fatalf("mid-run typing was dropped: %q", m.ta.Value())
+	}
+
+	// Enter queues rather than sending: the agent loop owns the
+	// conversation until it returns.
+	m = press(m, enter())
+	if m.pending != "no, the other file" {
+		t.Fatalf("pending = %q", m.pending)
+	}
+	if m.ta.Value() != "" {
+		t.Errorf("input box should be cleared after queueing, got %q", m.ta.Value())
+	}
+	if len(c.turns) != 1 {
+		t.Fatalf("a queued message was sent mid-turn: turns = %v", c.turns)
+	}
+	if !strings.Contains(c.all(), "queued") {
+		t.Errorf("queueing was silent:\n%s", c.all())
+	}
+
+	// A clean finish sends it as the next turn.
+	next, _ := m.Update(TurnDone{})
+	m = next.(Model)
+	if len(c.turns) != 2 || c.turns[1] != "no, the other file" {
+		t.Fatalf("queued message not sent after a clean turn: %v", c.turns)
+	}
+	if m.pending != "" {
+		t.Error("pending was not cleared")
+	}
+}
+
+// A message written during a turn that then failed was written against a
+// world that no longer exists. Hand it back rather than firing it.
+func TestQueuedMessageIsHandedBackWhenTheTurnFails(t *testing.T) {
+	for name, err := range map[string]error{
+		"error":       errors.New("backend exploded"),
+		"interrupted": context.Canceled,
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := &capture{}
+			m := newTestModel(c)
+			m.ta.SetValue("first")
+			m = press(m, enter())
+			m = press(m, runeMsg("follow-up"))
+			m = press(m, enter())
+
+			next, _ := m.Update(TurnDone{Err: err})
+			m = next.(Model)
+			if len(c.turns) != 1 {
+				t.Fatalf("queued message was sent into a failed turn: %v", c.turns)
+			}
+			if m.ta.Value() != "follow-up" {
+				t.Errorf("queued message not returned to the input box: %q", m.ta.Value())
+			}
+			if m.pending != "" {
+				t.Error("pending should be cleared once handed back")
+			}
+			if !strings.Contains(c.all(), "not sent") {
+				t.Errorf("the operator was not told:\n%s", c.all())
+			}
+		})
+	}
+}
+
+// Nothing typed is dropped: a second Enter appends to what is pending.
+func TestSecondQueuedMessageAppends(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	m.ta.SetValue("first")
+	m = press(m, enter())
+	m = press(m, runeMsg("one"))
+	m = press(m, enter())
+	m = press(m, runeMsg("two"))
+	m = press(m, enter())
+	if m.pending != "one\ntwo" {
+		t.Errorf("pending = %q, want both lines kept", m.pending)
+	}
+}
+
+// Ctrl+C while running is the interrupt, unconditionally — an escape
+// hatch that depends on the input box being empty is not an escape hatch.
+func TestCtrlCDuringATurnInterruptsEvenWithText(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	m.ta.SetValue("first")
+	m = press(m, enter())
+	m = press(m, runeMsg("half-typed"))
+
+	canceled := false
+	m.cancelTurn = func() { canceled = true }
+	m = press(m, tea.KeyMsg{Type: tea.KeyCtrlC})
+	if !canceled {
+		t.Fatal("Ctrl+C did not interrupt the turn")
+	}
+	if m.ta.Value() != "half-typed" {
+		t.Errorf("Ctrl+C cleared the draft: %q", m.ta.Value())
+	}
+}
+
+// While the approval dialog is open, keys answer the dialog. A keystroke
+// captured as input there could become an approval nobody meant to give.
+func TestApprovalDialogStillOwnsTheKeysWhileOpen(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	m.ta.SetValue("first")
+	m = press(m, enter())
+	resp := make(chan byte, 1)
+	next, _ := m.Update(ApprovalRequest{Tool: "write_file", Detail: "x", Resp: resp})
+	m = next.(Model)
+
+	m = press(m, runeMsg("y"))
+	if got := <-resp; got != 'y' {
+		t.Fatalf("approval answer = %q", got)
+	}
+	if m.pending != "" || m.ta.Value() != "" {
+		t.Errorf("dialog keys leaked into the input box: pending=%q value=%q", m.pending, m.ta.Value())
 	}
 }

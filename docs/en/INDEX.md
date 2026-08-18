@@ -44,6 +44,8 @@ excepted).
   resume source of truth; refusals over warnings on project and model
 - [`ADR-0006`](adr/0006-context-compaction.md) — summarise the older
   half instead of failing at the window; fail safe, never fail small
+- [`ADR-0007`](adr/0007-input-during-a-turn.md) — typing during a turn is
+  kept and queued; auto-sent only when the turn finished cleanly
 
 ## History
 

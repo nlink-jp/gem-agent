@@ -171,3 +171,12 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   instruction files already answered; a containment check the model could
   satisfy by politely declining). When editing
   `docs/*/reference/drill*.md`, run the step you changed.
+- **Keys during a running turn are not "ignored"** (ADR-0007) — the input
+  box stays live, Enter queues one message, and it auto-sends only when
+  the turn finished cleanly; on error or interrupt it is handed back
+  unsent. Ctrl+C stays the unconditional interrupt while running, and the
+  approval dialog still owns every key while it is open.
+- **`session.ShellContextPrefix` is shared on purpose** — the `!` shell
+  context message is injected as a user-role message, and the session
+  listing needs to tell it from something the operator typed. Sniffing
+  for the sentence in two places would drift.

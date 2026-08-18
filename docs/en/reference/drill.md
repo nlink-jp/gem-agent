@@ -243,14 +243,18 @@ explained the not-yet-existing-file case correctly. Every claim checked
 against the source. This is the step that says the tool is usable, not
 merely running.
 
-Two findings that are gem-agent's, not the runbook's:
+Two findings that were gem-agent's, not the runbook's — **both fixed the
+same day** (the drill's purpose is to produce these, so leaving them open
+would have wasted the run):
 
-- **Typing while a turn is running is discarded with no feedback.** The
-  TUI accepts only Ctrl+C and shift+tab during a run. A human notices
-  the prompt is gone; it still costs a retyped message.
-- A session whose only input was a `!` command previews in
+- **Typing while a turn was running was discarded with no feedback.** The
+  TUI accepted only Ctrl+C and shift+tab during a run. Now the box stays
+  live and Enter queues the message
+  ([ADR-0007](../adr/0007-input-during-a-turn.md)).
+- A session whose only input was a `!` command previewed in
   `gem-agent sessions` as `I ran this shell command myself:` — accurate
-  (it is a user-role message) but it reads like a bug.
+  (it is a user-role message) but it read like a bug. It now shows the
+  command, and a typed message always wins the preview.
 
 ## Why in this order
 

@@ -552,7 +552,9 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 	if strings.TrimSpace(out) == "" {
 		out = "(no output)"
 	}
-	ag.AddContext("I ran this shell command myself:\n$ " + command + "\n\nOutput:\n" + out)
+	// The prefix is a shared constant: the session listing uses it to
+	// tell an injected message from one the operator typed.
+	ag.AddContext(session.ShellContextPrefix + "\n$ " + command + "\n\nOutput:\n" + out)
 	return out
 }
 
@@ -612,6 +614,8 @@ shell:
   !<command>  run it directly (sandboxed, no approval; output is shared with the model)
 keys:
   Enter 送信 · ↑↓ 履歴 · Ctrl+C 中断/クリア · Ctrl+D 終了
+  実行中も入力できます: Enter で次のメッセージとして予約され、ターンが正常に
+    終わった時点で送信されます（失敗・中断時は未送信のまま入力欄へ戻ります）
   改行（複数行入力）: Ctrl+J もしくは 行末に \ を置いて Enter
     ※ Option+Enter は「Option を Meta として送る」設定の端末でのみ有効
       （既定では通常の Enter と同じバイトになり送信されます）

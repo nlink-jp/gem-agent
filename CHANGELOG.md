@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Added — input stays live during a turn (ADR-0007, first drill finding)
+
+- Typing while a turn ran used to be **discarded silently** — the TUI
+  accepted only Ctrl+C and shift+tab, so a follow-up typed while output
+  scrolled past simply never appeared, and had to be retyped. This is not
+  a rare state: an agent turn runs for tens of seconds, which is exactly
+  when the next instruction occurs to you, often because of what you are
+  watching
+- The input box now stays live, and **Enter queues** the message rather
+  than sending it: the agent loop owns the conversation until it returns,
+  and splicing a user message into a half-finished tool round would break
+  the call/response pairing Gemini requires. A second Enter appends, so
+  nothing typed is dropped
+- **The queued message is auto-sent only when the turn finished cleanly.**
+  On an error or an interrupt it is handed back to the input box unsent,
+  with a note — a message written during a turn that then failed was
+  written against a world that no longer exists, and firing it into a
+  broken state is the surprise that makes queueing untrustworthy
+- Ctrl+C stays the unconditional interrupt while running, and the
+  approval dialog still owns every key while it is open
+
+### Fixed
+
+- A session whose only input was a `!` command listed in
+  `gem-agent sessions` as `I ran this shell command myself:` — the wrapper
+  sentence the agent injects around the command. It now shows the command
+  itself, and a message the operator actually typed always wins the
+  preview, whatever the order
+
 ### Added — development Phase 3 (Release), the last of the RFP plan
 
 - **[Monthly drill runbook](docs/en/reference/drill.md)** — a backup that

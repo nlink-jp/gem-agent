@@ -167,8 +167,12 @@ type Model struct {
 	// panics on the second WriteString after a copy ("illegal use of
 	// non-zero Builder copied by value"). Found live: the second stream
 	// chunk of the first real conversation crashed the program.
-	live     *strings.Builder
-	status   string
+	live   *strings.Builder
+	status string
+	// pending holds a message typed and entered while a turn was running
+	// (ADR-0007). It is sent when the turn finishes cleanly, and handed
+	// back to the input box unsent when it does not.
+	pending  string
 	approval *ApprovalRequest
 	// choice indexes approvalOptions. Selection + Enter exists because
 	// typing y/n/a is impossible with a Japanese IME switched on — the
@@ -412,8 +416,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		m.cancelTurn = nil
 		m.ta.Focus()
-		cmds = append(cmds, textarea.Blink)
-		return m, tea.Sequence(cmds...)
+		return m.resumeAfterTurn(cmds, true)
 
 	case TurnDone:
 		var cmds []tea.Cmd
@@ -429,8 +432,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = ""
 		m.cancelTurn = nil
 		m.ta.Focus()
-		cmds = append(cmds, textarea.Blink)
-		return m, tea.Sequence(cmds...)
+		return m.resumeAfterTurn(cmds, msg.Err == nil)
 
 	case tea.KeyMsg:
 		switch m.phase {
@@ -439,17 +441,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case phaseRunning:
 			switch msg.Type {
 			case tea.KeyCtrlC:
+				// Always the interrupt while running, never a draft
+				// clear: an escape hatch conditional on the input box
+				// being empty is not an escape hatch (ADR-0007).
 				if m.cancelTurn != nil {
 					m.cancelTurn()
 					m.status = "interrupting…"
 				}
+				return m, nil
 			case tea.KeyShiftTab:
 				// Toggling mid-run matters most here: a long agent loop
 				// that started in manual mode would otherwise demand an
 				// approval for every step until it finishes.
 				return m.toggleAutoMode()
 			}
-			return m, nil
+			return m.updateRunningInput(msg)
 		default:
 			return m.updateInput(msg)
 		}
@@ -527,6 +533,84 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	verdict := map[byte]string{'y': "approved", 'n': "denied", 'a': "approved (always this session)"}[answer]
 	return m, m.emit(m.st.tool.Render("  ↳ " + verdict))
+}
+
+// updateRunningInput handles typing while a turn is running (ADR-0007).
+// The box stays live so the operator can see what they are writing;
+// Enter queues the message rather than sending it, because the agent
+// loop owns the conversation until it returns.
+func (m Model) updateRunningInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case msg.Type == tea.KeyCtrlJ, msg.Type == tea.KeyEnter && msg.Alt:
+		m.ta.InsertString("\n")
+		m.syncHeight()
+		return m, nil
+
+	case msg.Type == tea.KeyEnter:
+		// The trailing-backslash newline route works here too.
+		if strings.HasSuffix(m.ta.Value(), "\\") {
+			v := m.ta.Value()
+			m.ta.SetValue(v[:len(v)-1] + "\n")
+			m.ta.CursorEnd()
+			m.syncHeight()
+			return m, nil
+		}
+		text := strings.TrimSpace(m.ta.Value())
+		if text == "" {
+			return m, nil
+		}
+		m.ta.Reset()
+		m.ta.SetHeight(1)
+		// A second Enter appends rather than replacing: nothing the
+		// operator typed is dropped, and one pending message keeps the
+		// agent one-turn-per-instruction (ADR-0007).
+		if m.pending != "" {
+			m.pending += "\n" + text
+		} else {
+			m.pending = text
+		}
+		return m, m.emit(m.st.hint.Render("⏎ queued: " + clip(text, 100)))
+
+	case msg.Type == tea.KeyCtrlD, msg.Type == tea.KeyUp, msg.Type == tea.KeyDown:
+		// Quitting and history navigation stay prompt-only: both would
+		// mean something different in the middle of a turn.
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.ta, cmd = m.ta.Update(msg)
+	m.syncHeight()
+	return m, cmd
+}
+
+// takePending returns the queued message, if any, and clears it.
+func (m *Model) takePending() string {
+	text := m.pending
+	m.pending = ""
+	return text
+}
+
+// resumeAfterTurn returns the UI to the prompt and deals with anything
+// queued while the turn was running (ADR-0007). clean says whether the
+// turn finished normally: a queued message is only sent when it did.
+// A message written during a turn that then failed was written against a
+// world that no longer exists, so it is handed back instead.
+func (m Model) resumeAfterTurn(cmds []tea.Cmd, clean bool) (tea.Model, tea.Cmd) {
+	pending := m.takePending()
+	if pending == "" {
+		return m, tea.Sequence(append(cmds, textarea.Blink)...)
+	}
+	m.ta.SetValue(pending)
+	m.ta.CursorEnd()
+	m.syncHeight()
+	if !clean {
+		cmds = append(cmds,
+			m.emit(m.st.warn.Render("⚠ the queued message was not sent — the turn did not finish. It is back in the input box")),
+			textarea.Blink)
+		return m, tea.Sequence(cmds...)
+	}
+	next, cmd := m.submit()
+	return next, tea.Sequence(append(cmds, cmd)...)
 }
 
 func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

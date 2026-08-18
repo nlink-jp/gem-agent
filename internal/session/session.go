@@ -38,6 +38,13 @@ const (
 	KindResumed    = "resumed"
 )
 
+// ShellContextPrefix opens the user-role message the agent injects when
+// the operator runs a `!` command. It lives here, rather than being
+// sniffed for, because the session listing has to tell an injected
+// message from something the operator actually typed: showing the
+// wrapper text as a session's preview reads like a bug.
+const ShellContextPrefix = "I ran this shell command myself:"
+
 // Record is one JSONL line.
 type Record struct {
 	Time time.Time `json:"ts"`
@@ -330,18 +337,21 @@ func describe(path, id string) (Meta, error) {
 			meta.Started = rec.Time
 		case KindMessage, KindCompaction:
 			meta.HasConversation = true
-			if rec.Kind != KindMessage || meta.Preview != "" {
+			if rec.Kind != KindMessage {
 				continue
 			}
 			var m llm.Message
 			if err := json.Unmarshal(rec.Data, &m); err != nil {
 				continue
 			}
-			if m.Role == llm.RoleUser && strings.TrimSpace(m.Content) != "" {
-				meta.Preview = firstLine(m.Content, previewChars)
+			if m.Role != llm.RoleUser || strings.TrimSpace(m.Content) == "" {
+				continue
+			}
+			if p := previewOf(m.Content); p != "" && betterPreview(meta.Preview, p) {
+				meta.Preview = p
 			}
 		}
-		if meta.Preview != "" && !meta.Started.IsZero() {
+		if meta.Preview != "" && !strings.HasPrefix(meta.Preview, "!") && !meta.Started.IsZero() {
 			break
 		}
 	}
@@ -357,6 +367,32 @@ const (
 	previewScanLimit = 64
 	previewChars     = 72
 )
+
+// previewOf renders one user message for the listing. A `!` shell
+// context message is shown as the command the operator ran, not as the
+// wrapper sentence the agent injected around it.
+func previewOf(content string) string {
+	if !strings.HasPrefix(content, ShellContextPrefix) {
+		return firstLine(content, previewChars)
+	}
+	for _, line := range strings.Split(content, "\n") {
+		if cmd, ok := strings.CutPrefix(line, "$ "); ok {
+			return firstLine("!"+cmd, previewChars)
+		}
+	}
+	return ""
+}
+
+// betterPreview reports whether candidate should replace current. A
+// typed message always beats a `!` command, whatever the order: the
+// question the session was about is what makes it recognisable in a list
+// of timestamps.
+func betterPreview(current, candidate string) bool {
+	if current == "" {
+		return true
+	}
+	return strings.HasPrefix(current, "!") && !strings.HasPrefix(candidate, "!")
+}
 
 func firstLine(s string, limit int) string {
 	s = strings.TrimSpace(s)

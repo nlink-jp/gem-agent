@@ -382,3 +382,55 @@ func TestFindRejectsAnIDShapedLikeAPath(t *testing.T) {
 		t.Fatal("Find accepted a path as an id")
 	}
 }
+
+// A session whose only input was a `!` command previewed as the wrapper
+// sentence the agent injects ("I ran this shell command myself:"), which
+// reads like a bug. Show the command instead — and always prefer a
+// message the operator actually typed.
+func TestPreviewPrefersTypedMessagesAndRendersShellCommands(t *testing.T) {
+	shellContext := func(cmd string) llm.Message {
+		return llm.Message{Role: llm.RoleUser,
+			Content: ShellContextPrefix + "\n$ " + cmd + "\n\nOutput:\nsome output"}
+	}
+	cases := []struct {
+		name string
+		msgs []llm.Message
+		want string
+	}{
+		{"shell only", []llm.Message{shellContext("git status --short")}, "!git status --short"},
+		{"shell then typed", []llm.Message{shellContext("git diff"), {Role: llm.RoleUser, Content: "fix the parser"}}, "fix the parser"},
+		{"typed then shell", []llm.Message{{Role: llm.RoleUser, Content: "fix the parser"}, shellContext("git diff")}, "fix the parser"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			l, err := Open(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := l.Log(KindHeader, Header{Schema: SchemaVersion, Model: "m", Project: "/proj"}); err != nil {
+				t.Fatal(err)
+			}
+			for _, m := range tc.msgs {
+				if err := l.Log(KindMessage, m); err != nil {
+					t.Fatal(err)
+				}
+			}
+			l.Close()
+
+			metas, err := List(dir, "/proj")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(metas) != 1 {
+				t.Fatalf("listed %d sessions", len(metas))
+			}
+			if metas[0].Preview != tc.want {
+				t.Errorf("preview = %q, want %q", metas[0].Preview, tc.want)
+			}
+			if strings.Contains(metas[0].Preview, ShellContextPrefix) {
+				t.Error("the injected wrapper sentence reached the listing")
+			}
+		})
+	}
+}
