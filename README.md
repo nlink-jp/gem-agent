@@ -42,9 +42,12 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
 - Paste-safe input: a multi-line paste becomes one input, never one LLM call per line
 - JSONL session log under `~/.local/state/gem-agent/sessions/`
 - Slash commands: `/help` `/tools` `/mcp` `/clear` `/quit`
-- **Drop-in project compatibility**: the project's `AGENTS.md` / `CLAUDE.md`
-  are injected into the system prompt, and its `.mcp.json` (Claude Code
-  format, stdio servers) is connected as-is — zero per-project setup
+- **Drop-in project compatibility**: the project's agent-instruction files
+  are injected into the system prompt — `AGENTS.md`, `AGENT.md`,
+  `CLAUDE.md`, `GEMINI.md`, searched up through ancestor directories the
+  way other agents do, so workspace-wide rules apply to every repository
+  beneath them — and its `.mcp.json` (Claude Code format, stdio servers)
+  is connected as-is. Zero per-project setup
 - MCP client: tools appear as `mcp__<server>__<tool>`, always approval-gated;
   timed-out calls kill the server child (MCP has no cancel) and it respawns lazily
 - Tool output is isolated with per-call nonce XML tags (nlk/guard) — content
@@ -143,6 +146,29 @@ status line shows the model, current context occupancy against the
 model's window (auto-detected from model metadata, or
 `[model].context_window`), cumulative token consumption, and the project
 directory.
+
+## Project instructions
+
+gem-agent reads the instruction files a repository already carries, in
+this order per directory:
+
+| File | Convention |
+|---|---|
+| `AGENTS.md` | the cross-vendor standard |
+| `AGENT.md` | its singular variant |
+| `CLAUDE.md` | Claude Code |
+| `GEMINI.md` | Gemini CLI |
+
+They are collected from `~/.config/gem-agent/` (your own defaults for
+every project), then from ancestor directories outermost-first, then
+from the project itself — so workspace-wide rules apply to sibling
+repositories and the nearest file is read last, as the most specific.
+Files with identical content are injected once. The startup banner lists
+what was loaded.
+
+The ancestor walk stops at your home directory: an instruction file is
+obeyed as instructions, so gem-agent will not pick one up from a shared
+location like `/tmp` that you do not own.
 
 ## MCP servers
 

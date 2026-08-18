@@ -2,8 +2,24 @@
 
 ## [0.1.0] - Unreleased
 
+### Added — full instruction-file conventions (operator feedback)
+
+- Instruction files now cover the ecosystem conventions — `AGENTS.md`,
+  `AGENT.md`, `CLAUDE.md`, `GEMINI.md` (the native one for a Gemini
+  agent) — and are searched up through ancestor directories the way
+  other agents do, so a workspace-wide `CLAUDE.md` applies to every
+  repository beneath it. `~/.config/gem-agent/` supplies personal
+  defaults, duplicates by content are injected once, and the banner
+  lists what was loaded
+- The ancestor walk stops at `$HOME`: instruction files are obeyed as
+  instructions, so one planted in a shared location is never picked up
+
 ### Fixed
 
+- `@`-references directly after Japanese punctuation ("…直して。@src/main.go")
+  were not recognised — the parser required a space or bracket before
+  the `@`; it now rejects only genuinely mid-word cases (email
+  addresses, module paths)
 - A terminal reporting no size (a failed ioctl, some pty harnesses) gave
   the input box a negative width, so nothing typed was drawn; sizes are
   now floored at 20×4

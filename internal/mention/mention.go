@@ -44,9 +44,13 @@ type Problem struct {
 	Reason string
 }
 
-// openers may precede an @-reference; anything else means the @ is
-// mid-word (an email address, a decorator) and not a reference.
-const openers = `("'「『（[{`
+// pathChars are the characters that make a preceding rune part of a
+// word: an @ after one of these is mid-word (an email address, a Python
+// decorator, a Go module path) and not a reference. Everything else —
+// spaces, brackets, and punctuation, including Japanese punctuation
+// with no space after it ("…してください。@src/main.go") — may precede
+// a reference.
+const pathChars = `._-/~\`
 
 // stoppers end a reference. Japanese punctuation is included because
 // "@README.md、これ直して" has no space to stop at.
@@ -66,7 +70,7 @@ func Refs(text string) []string {
 			// multi-byte opener like 「 would otherwise look like an
 			// ordinary character and the reference would be missed.
 			prev, _ := utf8.DecodeLastRuneInString(text[:i])
-			if !unicode.IsSpace(prev) && !strings.ContainsRune(openers, prev) {
+			if unicode.IsLetter(prev) || unicode.IsDigit(prev) || strings.ContainsRune(pathChars, prev) {
 				continue
 			}
 		}

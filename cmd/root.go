@@ -143,6 +143,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// --- project instruction files (drop-in: AGENTS.md and friends,
+	// including ancestor directories, exactly as other agents read them)
+	projectContext, contextLabels, contextNotes := loadInstructions(projectDir)
+	for _, n := range contextNotes {
+		fmt.Fprintf(stderr, "warning: instructions %s\n", n)
+	}
+
 	oneShot := flagPrompt != ""
 	// The TUI needs a real terminal on both ends (ADR-0002); piped use
 	// falls back to the plain line REPL so scripts and smoke pipelines
@@ -180,7 +187,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		Registry: registry,
 		Gate:     gate,
 		Log:      sessionLog,
-		System:   buildSystemPrompt(projectDir),
+		System:   buildSystemPrompt(projectDir, projectContext),
 		MaxTurns: cfg.Agent.MaxTurns,
 		OnToolCall: func(tc llm.ToolCall) {
 			if prog != nil {
@@ -256,6 +263,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 	if len(mcpSummary) > 0 {
 		bannerLines = append(bannerLines, "mcp: "+strings.Join(mcpSummary, ", "))
+	}
+	if len(contextLabels) > 0 {
+		bannerLines = append(bannerLines, "instructions: "+strings.Join(contextLabels, ", "))
 	}
 
 	// --- interactive TUI (ADR-0002/0003) ---

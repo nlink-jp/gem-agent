@@ -7,27 +7,11 @@ import (
 	"testing"
 )
 
-func TestProjectContextInjection(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# proj\nBuild with make."), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte("Always answer in Japanese."), 0o644); err != nil {
-		t.Fatal(err)
-	}
+func TestSystemPromptShape(t *testing.T) {
+	sys := buildSystemPrompt("/tmp/proj", "")
 
-	sys := buildSystemPrompt(dir)
-	if !strings.Contains(sys, "### AGENTS.md") || !strings.Contains(sys, "Build with make.") {
-		t.Error("AGENTS.md not injected")
-	}
-	if !strings.Contains(sys, "### CLAUDE.md") || !strings.Contains(sys, "Always answer in Japanese.") {
-		t.Error("CLAUDE.md not injected")
-	}
-	if strings.Index(sys, "### AGENTS.md") > strings.Index(sys, "### CLAUDE.md") {
-		t.Error("AGENTS.md should come first")
-	}
-	// The defensive framing must stay at the very top, before any
-	// project content.
+	// The defensive framing must stay at the very top, ahead of
+	// anything a project could put in front of it.
 	if !strings.HasPrefix(sys, "SECURITY, read first:") {
 		t.Error("defensive instructions must lead the prompt")
 	}
@@ -36,36 +20,59 @@ func TestProjectContextInjection(t *testing.T) {
 	if !strings.Contains(sys, "{{DATA_TAG}}") {
 		t.Error("prompt must carry the data-tag placeholder")
 	}
-}
-
-func TestProjectContextAbsent(t *testing.T) {
-	sys := buildSystemPrompt(t.TempDir())
-	if strings.Contains(sys, "Project instructions") {
-		t.Error("no context files -> no context section")
+	if !strings.Contains(sys, "/tmp/proj") {
+		t.Error("prompt must name the project directory")
 	}
 }
 
-func TestProjectContextEmptyFileSkipped(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("   \n"), 0o644); err != nil {
+func TestSystemPromptAppendsProjectContext(t *testing.T) {
+	sys := buildSystemPrompt("/tmp/proj", "\n\nProject instructions:\n\n### AGENTS.md\n\nbuild with make")
+	if !strings.Contains(sys, "build with make") {
+		t.Error("project context not appended")
+	}
+	if strings.Index(sys, "SECURITY, read first:") > strings.Index(sys, "build with make") {
+		t.Error("project context must come after the defensive framing")
+	}
+}
+
+// TestLoadInstructionsReadsVendorFiles wires the loader to a real
+// directory: the names and the ancestor walk are covered in
+// internal/instructions, this checks the cmd-level seam.
+func TestLoadInstructionsReadsVendorFiles(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("no home directory")
+	}
+	// Build the project under the real home so the ancestor walk (which
+	// stops at home) reaches it.
+	base, err := os.MkdirTemp(home, "gem-agent-test-")
+	if err != nil {
+		t.Skip("cannot create a temp dir under home")
+	}
+	defer os.RemoveAll(base)
+	proj := filepath.Join(base, "proj")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got := loadProjectContext(dir); got != "" {
-		t.Errorf("blank file should be skipped: %q", got)
-	}
-}
-
-func TestProjectContextTruncation(t *testing.T) {
-	dir := t.TempDir()
-	big := strings.Repeat("x", contextFileCap+1000)
-	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(big), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(proj, "GEMINI.md"), []byte("gemini rules"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := loadProjectContext(dir)
-	if !strings.Contains(got, "[truncated") {
-		t.Error("oversized file should carry a truncation marker")
+	if err := os.WriteFile(filepath.Join(base, "CLAUDE.md"), []byte("workspace rules"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if len(got) > contextFileCap+500 {
-		t.Errorf("truncated section still too large: %d", len(got))
+
+	section, labels, notes := loadInstructions(proj)
+	if len(notes) != 0 {
+		t.Fatalf("notes = %v", notes)
+	}
+	if !strings.Contains(section, "gemini rules") || !strings.Contains(section, "workspace rules") {
+		t.Errorf("section missing content: %q", section)
+	}
+	if len(labels) < 2 {
+		t.Errorf("labels = %v, want the ancestor file and the project file", labels)
+	}
+	// Nearest last: the project's own file is the final section.
+	if strings.Index(section, "workspace rules") > strings.Index(section, "gemini rules") {
+		t.Error("project rules should come after ancestor rules")
 	}
 }

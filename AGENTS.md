@@ -36,6 +36,9 @@ internal/agent/    tool-calling loop, approval dispatch, nonce wrapping, history
 internal/tools/    built-in tools, path confinement, ExecFunc injection, Register
 internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
 internal/risk/     rule tier of the auto-approve ladder (pure, no model)
+internal/mention/  @-reference parsing, project-confined resolution, completion
+internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery
+                   (ancestor walk, stops at $HOME)
 internal/sandbox/  SBPL profile generation, sandbox-exec wrapping
 internal/approve/  MITL gate (y/n/a + session allowlist)
 internal/session/  JSONL session logger

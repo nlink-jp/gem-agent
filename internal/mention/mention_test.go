@@ -34,6 +34,12 @@ func TestRefs(t *testing.T) {
 		{"@README.md を読んで", []string{"README.md"}},
 		{"@src/main.go と @docs/ を比較", []string{"src/main.go", "docs/"}},
 		{"先頭以外の user@example.com は無視", nil},
+		// Japanese sentences run punctuation straight into the next
+		// word, with no space for the parser to lean on.
+		{"これ直して。@src/main.go も見て", []string{"src/main.go"}},
+		{"次は、@docs/ を確認", []string{"docs/"}},
+		{"パス風の前置きは無視: ./tools@v1", nil},
+		{"@decorator は参照扱い", []string{"decorator"}},
 		{"「@a.txt」と(@b.txt)", []string{"a.txt", "b.txt"}},
 		{"@README.md、これ直して。", []string{"README.md"}},
 		{"重複 @x.txt @x.txt", []string{"x.txt"}},
