@@ -87,3 +87,10 @@ docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
 - **TUI E2E runs through a pty** — see the expect pattern in the Phase 2
   history (scratchpad tui_e2e.exp); piped stdin exercises the plain-REPL
   fallback, not the TUI.
+- **Never query the terminal after Bubble Tea starts** — OSC queries
+  (glamour WithAutoStyle, termenv/lipgloss HasDarkBackground) get their
+  "rgb:..." reply delivered as phantom keystrokes once raw mode owns
+  stdin. Theme is detected once in cmd before the program runs; renderer
+  rebuilds go through a factory that never touches the terminal
+  (TestResizeNeverQueriesTerminal). Note: expect-based pty E2E cannot
+  catch this class — expect answers no OSC queries; only real terminals do.
