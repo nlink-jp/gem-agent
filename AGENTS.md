@@ -105,6 +105,12 @@ docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
 - **TUI is inline, never alt-screen** (ADR-0002) — completed content goes
   through tea.Println into native scrollback; only the live region is
   managed. Switching to alt-screen would break scrollback/copy.
+- **Two Println commands need tea.Sequence, never tea.Batch** — Batch
+  runs commands concurrently, so their output lands in arbitrary order
+  (measured: a `⚠` note printed 32 bytes *before* the `📎` line it was
+  meant to follow). **Unit tests cannot catch this**: the test printer
+  records at command-construction time, so it always sees the intended
+  order. Only a pty run reveals it — check byte offsets, not eyeballs.
 - **Rendering happens once per segment** — the live region shows raw
   streamed text; glamour renders at flush time (tool-call boundary or
   turn end). Rendering the live region per frame would duplicate work

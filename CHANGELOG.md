@@ -16,6 +16,9 @@
 
 ### Fixed
 
+- Scrollback order could scramble: two Println commands returned in one
+  tea.Batch execute concurrently, so a note could print before the line
+  it followed (measured in a pty). Ordered emissions now use tea.Sequence
 - `@`-references directly after Japanese punctuation ("…直して。@src/main.go")
   were not recognised — the parser required a space or bracket before
   the `@`; it now rejects only genuinely mid-word cases (email

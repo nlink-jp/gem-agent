@@ -353,12 +353,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ToolCall:
 		// Flush accumulated text first so scrollback keeps the true
-		// order: text → tool event → next text.
+		// order: text → tool event → next text. tea.Sequence, never
+		// tea.Batch: Batch runs commands concurrently, and two Println
+		// commands then land in arbitrary order (measured — a note
+		// printed before the line it followed).
 		var cmds []tea.Cmd
 		cmds = append(cmds, m.flushLive()...)
 		m.status = "running " + msg.Name
 		cmds = append(cmds, m.emit(m.st.tool.Render("⚙ "+msg.Name+" "+msg.Detail)))
-		return m, tea.Batch(cmds...)
+		return m, tea.Sequence(cmds...)
 
 	case ApprovalRequest:
 		req := msg
@@ -388,7 +391,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, note := range msg.Notes {
 			cmds = append(cmds, m.emit(m.st.warn.Render("⚠ "+note)))
 		}
-		return m, tea.Batch(cmds...)
+		return m, tea.Sequence(cmds...)
 
 	case ShellDone:
 		out := msg.Output
@@ -402,7 +405,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cancelTurn = nil
 		m.ta.Focus()
 		cmds = append(cmds, textarea.Blink)
-		return m, tea.Batch(cmds...)
+		return m, tea.Sequence(cmds...)
 
 	case TurnDone:
 		var cmds []tea.Cmd
@@ -419,7 +422,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cancelTurn = nil
 		m.ta.Focus()
 		cmds = append(cmds, textarea.Blink)
-		return m, tea.Batch(cmds...)
+		return m, tea.Sequence(cmds...)
 
 	case tea.KeyMsg:
 		switch m.phase {
@@ -822,7 +825,7 @@ func (m Model) toggleAutoMode() (tea.Model, tea.Cmd) {
 	// followed, not before it.
 	cmds := m.flushLive()
 	cmds = append(cmds, m.emit(m.st.tool.Render(state)))
-	return m, tea.Batch(cmds...)
+	return m, tea.Sequence(cmds...)
 }
 
 // optionsLine renders the selectable answers. The selection is marked
