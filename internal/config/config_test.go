@@ -50,6 +50,9 @@ name = "example-model"
 	if cfg.Agent.MaxTurns != 50 || cfg.Agent.ShellTimeoutSec != 120 {
 		t.Errorf("agent defaults = %+v", cfg.Agent)
 	}
+	if !cfg.MCP.Enabled || cfg.MCP.CallTimeoutSec != 60 {
+		t.Errorf("mcp defaults = %+v", cfg.MCP)
+	}
 }
 
 func TestEnvPrecedence(t *testing.T) {

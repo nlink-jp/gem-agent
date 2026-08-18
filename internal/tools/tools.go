@@ -78,6 +78,17 @@ func New(projectDir string, execFn ExecFunc, shellTimeout time.Duration) (*Regis
 // ProjectDir returns the resolved project directory.
 func (r *Registry) ProjectDir() string { return r.projectDir }
 
+// Register adds an external tool (MCP). Name collisions are errors — a
+// duplicate would silently shadow one implementation.
+func (r *Registry) Register(t *Tool) error {
+	if _, exists := r.tools[t.Name]; exists {
+		return fmt.Errorf("tool %q already registered", t.Name)
+	}
+	r.tools[t.Name] = t
+	r.order = append(r.order, t.Name)
+	return nil
+}
+
 // Get returns a tool by name.
 func (r *Registry) Get(name string) (*Tool, bool) {
 	t, ok := r.tools[name]

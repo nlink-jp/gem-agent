@@ -52,6 +52,27 @@ func TestRegistryShape(t *testing.T) {
 	}
 }
 
+func TestRegisterExternalTool(t *testing.T) {
+	r := newRegistry(t)
+	ext := &Tool{Name: "mcp__x__lookup", Description: "d", Mutating: true,
+		Run: func(ctx context.Context, args map[string]any) (string, error) { return "ok", nil }}
+	if err := r.Register(ext); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := r.Get("mcp__x__lookup"); got != ext {
+		t.Error("registered tool not retrievable")
+	}
+	if r.List()[len(r.List())-1] != ext {
+		t.Error("registered tool should append to order")
+	}
+	if err := r.Register(ext); err == nil {
+		t.Error("duplicate registration must fail")
+	}
+	if err := r.Register(&Tool{Name: "read_file"}); err == nil {
+		t.Error("collision with built-in must fail")
+	}
+}
+
 func TestPathConfinement(t *testing.T) {
 	r := newRegistry(t)
 	outside := t.TempDir()

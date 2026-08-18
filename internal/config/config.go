@@ -18,6 +18,15 @@ type Config struct {
 	Model   ModelConfig   `toml:"model"`
 	Sandbox SandboxConfig `toml:"sandbox"`
 	Agent   AgentConfig   `toml:"agent"`
+	MCP     MCPConfig     `toml:"mcp"`
+}
+
+// MCPConfig controls the MCP client. Server definitions live in the
+// project's .mcp.json (Claude Code format), not here — drop-in
+// compatibility is the point.
+type MCPConfig struct {
+	Enabled        bool `toml:"enabled"`
+	CallTimeoutSec int  `toml:"call_timeout_sec"`
 }
 
 // GCPConfig identifies the Vertex AI project.
@@ -62,6 +71,7 @@ func defaults() Config {
 		GCP:     GCPConfig{Location: "global"},
 		Sandbox: SandboxConfig{Enabled: true},
 		Agent:   AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120},
+		MCP:     MCPConfig{Enabled: true, CallTimeoutSec: 60},
 	}
 }
 
@@ -148,6 +158,9 @@ func (c *Config) validate() error {
 	}
 	if c.Agent.ShellTimeoutSec <= 0 {
 		return fmt.Errorf("[agent].shell_timeout_sec must be positive")
+	}
+	if c.MCP.CallTimeoutSec <= 0 {
+		return fmt.Errorf("[mcp].call_timeout_sec must be positive")
 	}
 	return nil
 }

@@ -107,6 +107,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// --- MCP servers from the project's .mcp.json (drop-in) ---
+	mcpClients, mcpSummary := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr)
+	defer func() {
+		for _, c := range mcpClients {
+			c.Close()
+		}
+	}()
+
 	// --- session log (a broken log warns; it must not block a backup tool) ---
 	var sessionLog agent.SessionLog
 	sessionPath := "(disabled)"
@@ -157,6 +165,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(stderr, "sandbox: DISABLED — shell commands run unconfined\n")
 	}
 	fmt.Fprintf(stderr, "session log: %s\n", sessionPath)
+	if len(mcpSummary) > 0 {
+		fmt.Fprintf(stderr, "mcp: %s\n", strings.Join(mcpSummary, ", "))
+	}
 	fmt.Fprintf(stderr, "/help for commands, Ctrl+D to quit\n")
 
 	// --- REPL loop ---
@@ -174,7 +185,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		if strings.HasPrefix(input, "/") {
-			if quit := runSlashCommand(input, ag, registry, stderr); quit {
+			if quit := runSlashCommand(input, ag, registry, mcpSummary, stderr); quit {
 				return nil
 			}
 			continue
@@ -243,12 +254,13 @@ func buildExecFn(sandboxOn bool, projectDir string) (tools.ExecFunc, error) {
 	}, nil
 }
 
-func runSlashCommand(input string, ag *agent.Agent, registry *tools.Registry, out io.Writer) (quit bool) {
+func runSlashCommand(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, out io.Writer) (quit bool) {
 	switch strings.Fields(input)[0] {
 	case "/help":
 		fmt.Fprint(out, `commands:
   /help    show this help
   /tools   list available tools
+  /mcp     show connected MCP servers
   /clear   reset the conversation history
   /quit    exit (Ctrl+D also works)
 mutating tools prompt for approval: y = once, a = always this session
@@ -268,7 +280,14 @@ mutating tools prompt for approval: y = once, a = always this session
 		fmt.Fprintln(out, "bye")
 		return true
 	case "/mcp":
-		fmt.Fprintln(out, "MCP support arrives in Phase 2 (see docs/en/gem-agent-rfp.md)")
+		if len(mcpSummary) == 0 {
+			fmt.Fprintln(out, "no MCP servers connected (define them in the project's .mcp.json)")
+		} else {
+			for _, s := range mcpSummary {
+				fmt.Fprintln(out, "  "+s)
+			}
+			fmt.Fprintln(out, "MCP tools appear in /tools as mcp__<server>__<tool> and always require approval")
+		}
 	default:
 		fmt.Fprintf(out, "unknown command %q — /help lists commands\n", input)
 	}
