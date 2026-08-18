@@ -28,11 +28,14 @@ const (
 	maxMDWidth     = 100
 )
 
-// styleSet holds the chrome styles. Only ANSI-16 palette colors are
-// used — they follow the user's terminal theme, unlike fixed 256/RGB
-// values that can vanish against unknown backgrounds. Dim text uses
-// color 8 (theme-defined gray), never the Faint attribute, which some
-// terminals render close to invisible.
+// styleSet holds the chrome styles. Accent colors use the ANSI-16
+// palette (they follow the terminal theme). Dim text is harder:
+// the Faint attribute and ANSI color 8 both render near-invisible on
+// real themes (measured on the operator's terminal), so dim uses a
+// fixed 256-palette mid-gray picked by the pre-detected background —
+// 245 on dark, 240 on light — which keeps a real luminance gap to any
+// background. Never lipgloss.AdaptiveColor here: it lazily queries the
+// terminal at render time (the OSC leak).
 type styleSet struct {
 	user   lipgloss.Style
 	tool   lipgloss.Style
@@ -42,13 +45,17 @@ type styleSet struct {
 	box    lipgloss.Style
 }
 
-func defaultStyles() styleSet {
+func defaultStyles(darkBackground bool) styleSet {
+	dim := lipgloss.Color("240") // readable dark gray on light backgrounds
+	if darkBackground {
+		dim = lipgloss.Color("245") // readable light gray on dark backgrounds
+	}
 	return styleSet{
 		user:   lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true),
 		tool:   lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
 		errS:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
-		hint:   lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
-		status: lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true),
+		hint:   lipgloss.NewStyle().Foreground(dim),
+		status: lipgloss.NewStyle().Foreground(dim).Italic(true),
 		box: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("3")).Padding(0, 1),
 	}
@@ -177,7 +184,7 @@ func New(opts Options) Model {
 	if theme == "notty" {
 		m.st = plainStyles()
 	} else {
-		m.st = defaultStyles()
+		m.st = defaultStyles(theme == "dark")
 	}
 	if m.mkRender == nil {
 		m.mkRender = func(width int) func(string) string {

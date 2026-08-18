@@ -137,11 +137,12 @@ shell_timeout_sec = 120    # default
 theme = "auto"             # auto | dark | light | plain
 ```
 
-TUI colors use only the ANSI-16 palette, so they follow your terminal
-theme. `theme = "auto"` detects a dark/light background at startup for
-Markdown rendering; set `dark`/`light` if detection picks wrong, or
-`plain` to disable all styling (errors keep their `✗` marker, so nothing
-depends on color alone).
+TUI accent colors use the ANSI-16 palette (they follow your terminal
+theme); secondary text (footer, hints) uses a mid-gray chosen for the
+detected background, keeping a real luminance gap on any theme.
+`theme = "auto"` detects dark/light at startup; set `dark`/`light` if
+detection picks wrong, or `plain` to disable all styling (errors keep
+their `✗` marker, so nothing depends on color alone).
 
 Precedence: flags (`--model`) > `GEMAGENT_*` > `GOOGLE_CLOUD_*` > config file
 > defaults. Unknown keys in the file are rejected (strict decode).

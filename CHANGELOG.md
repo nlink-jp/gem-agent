@@ -19,9 +19,10 @@
 
 - Errors stand out: unknown /commands and turn failures render bold red
   with a `✗` marker instead of blending into dim meta text
-- Theme-safe colors: chrome uses only the ANSI-16 palette (follows the
-  terminal theme); the barely-visible Faint attribute is replaced with
-  palette gray (color 8)
+- Theme-safe colors: accents use the ANSI-16 palette (follows the
+  terminal theme); dim text (footer/hints) uses a background-aware
+  256-palette mid-gray (245 on dark / 240 on light) — both the Faint
+  attribute and ANSI color 8 render near-invisible on real themes
 - New `[tui].theme` config: auto (default) / dark / light / plain —
   plain disables all styling for terminal themes that fight any colors
 
