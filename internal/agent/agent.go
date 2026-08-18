@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/mention"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/nlk/guard"
 )
@@ -41,6 +42,7 @@ type Agent struct {
 	onToolCall func(tc llm.ToolCall)
 	onUsage    func(promptTokens, outputTokens int)
 	onAuto     func(tc llm.ToolCall, d AutoDecision)
+	onAttach   func(atts []mention.Attachment, problems []mention.Problem)
 
 	mu   sync.Mutex // guards autoApprove (toggled from the UI goroutine)
 	auto bool
@@ -71,6 +73,9 @@ type Options struct {
 	// OnAutoDecision, when set, observes each auto-mode verdict so the
 	// UI can show what ran without asking, and why.
 	OnAutoDecision func(tc llm.ToolCall, d AutoDecision)
+	// OnAttach, when set, reports what an @-reference pulled in (and
+	// what it could not) so the operator sees it landed.
+	OnAttach func(atts []mention.Attachment, problems []mention.Problem)
 }
 
 // New creates an agent.
@@ -93,6 +98,7 @@ func New(opts Options) *Agent {
 		onToolCall: opts.OnToolCall,
 		onUsage:    opts.OnUsage,
 		onAuto:     opts.OnAutoDecision,
+		onAttach:   opts.OnAttach,
 		auto:       opts.AutoApprove,
 		toolDefs:   defs,
 	}
@@ -130,8 +136,20 @@ func (a *Agent) HistoryLen() int { return len(a.history) }
 // Run executes one user turn to completion. onText receives streamed
 // model text as it arrives. Returns the model's final text.
 func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (string, error) {
-	a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: input})
-	a.logRecord("user", map[string]any{"content": input})
+	// @-references become attachments carried beside the text; the text
+	// the operator typed is left exactly as written.
+	atts, problems := mention.Expand(input, a.registry.ProjectDir(), mention.DefaultLimits())
+	if a.onAttach != nil && (len(atts) > 0 || len(problems) > 0) {
+		a.onAttach(atts, problems)
+	}
+	msg := llm.Message{Role: llm.RoleUser, Content: input}
+	for _, att := range atts {
+		msg.Attachments = append(msg.Attachments, llm.Attachment{
+			Ref: att.Ref, Kind: att.Kind, Content: att.Content,
+		})
+	}
+	a.history = append(a.history, msg)
+	a.logRecord("user", map[string]any{"content": input, "attachments": attachRefs(atts)})
 
 	for round := 0; round < a.maxTurns; round++ {
 		// Fresh nonce tag per LLM call (nlk/guard contract: a previous
@@ -182,27 +200,53 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 	return "", fmt.Errorf("reached max turns (%d) without a final answer — /clear to reset, or raise [agent].max_turns", a.maxTurns)
 }
 
+func attachRefs(atts []mention.Attachment) []string {
+	refs := make([]string, 0, len(atts))
+	for _, a := range atts {
+		refs = append(refs, a.Ref)
+	}
+	return refs
+}
+
 // wrapToolMessages returns a copy of the history where every tool result
-// is enclosed in this turn's nonce tag. Raw results stay in the stored
-// history — wrapping happens at send time precisely because the tag must
-// change every call.
+// and every @-attachment is enclosed in this turn's nonce tag. Raw
+// content stays in the stored history — wrapping happens at send time
+// precisely because the tag must change every call.
+//
+// Attachments are wrapped for the same reason tool output is: the
+// operator chose the file, but not what is inside it.
 func wrapToolMessages(history []llm.Message, tag guard.Tag) []llm.Message {
 	out := make([]llm.Message, len(history))
 	copy(out, history)
 	for i := range out {
-		if out[i].Role != llm.RoleTool {
+		if out[i].Role == llm.RoleTool {
+			out[i].Content = wrapUntrusted(out[i].Content, tag)
 			continue
 		}
-		wrapped, err := tag.Wrap(out[i].Content)
-		if err != nil {
-			// Collision with a nonce generated microseconds ago means
-			// the content is adversarially echoing tag names. Withhold
-			// it rather than ship it unwrapped.
-			wrapped = "[tool output withheld: data-tag collision]"
+		if len(out[i].Attachments) == 0 {
+			continue
 		}
-		out[i].Content = wrapped
+		var b strings.Builder
+		b.WriteString(out[i].Content)
+		for _, att := range out[i].Attachments {
+			fmt.Fprintf(&b, "\n\nAttached %s (%s), quoted as data:\n%s",
+				att.Kind, att.Ref, wrapUntrusted(att.Content, tag))
+		}
+		out[i].Content = b.String()
+		out[i].Attachments = nil
 	}
 	return out
+}
+
+func wrapUntrusted(content string, tag guard.Tag) string {
+	wrapped, err := tag.Wrap(content)
+	if err != nil {
+		// Collision with a nonce generated microseconds ago means the
+		// content is adversarially echoing tag names. Withhold it
+		// rather than ship it unwrapped.
+		return "[content withheld: data-tag collision]"
+	}
+	return wrapped
 }
 
 // execCall runs one tool call and always returns a result string for the

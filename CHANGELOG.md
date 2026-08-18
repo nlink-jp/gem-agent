@@ -2,6 +2,17 @@
 
 ## [0.1.0] - Unreleased
 
+### Added — @-references to files and directories (operator feedback)
+
+- `@path` in a message attaches that project file (or a directory
+  listing) to the turn, with Tab completion in the input box (common
+  prefix, then a candidate list). Resolution is confined to the project
+  including symlinks; failures are reported, never silently dropped
+- Attached content is nonce-wrapped as untrusted data like tool output:
+  the operator chose the file, but not what is inside it. The typed text
+  itself is sent unmodified, and the raw attachment stays in history
+  (the isolation tag is regenerated per LLM call)
+
 ### Changed — auto-approve toggles mid-run (operator feedback)
 
 - shift+tab now works while a turn is running, not only at the prompt:

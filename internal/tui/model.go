@@ -132,6 +132,9 @@ type Options struct {
 	// (shift+tab) and returns the new state.
 	AutoMode   bool
 	ToggleAuto func() bool
+	// CompletePath returns candidate project paths for an @-reference
+	// prefix (Tab completion in the input box).
+	CompletePath func(prefix string) []string
 	// Printer overrides tea.Println for tests.
 	Printer func(...any) tea.Cmd
 	// RenderFactory overrides the Markdown renderer factory for tests.
@@ -164,13 +167,14 @@ type Model struct {
 	// Enter reach the app untouched when nothing is being composed.
 	choice int
 
-	startTurn  TurnStarter
-	shell      ShellStarter
-	slash      SlashHandler
-	toggleAuto func() bool
-	autoMode   bool
-	baseCtx    context.Context
-	cancelTurn context.CancelFunc
+	startTurn    TurnStarter
+	shell        ShellStarter
+	slash        SlashHandler
+	toggleAuto   func() bool
+	autoMode     bool
+	completePath func(prefix string) []string
+	baseCtx      context.Context
+	cancelTurn   context.CancelFunc
 
 	width    int
 	height   int
@@ -207,22 +211,23 @@ func New(opts Options) Model {
 	sp.Spinner = spinner.MiniDot
 
 	m := Model{
-		ta:         ta,
-		spin:       sp,
-		histIdx:    -1,
-		live:       &strings.Builder{},
-		startTurn:  opts.StartTurn,
-		shell:      opts.Shell,
-		slash:      opts.Slash,
-		toggleAuto: opts.ToggleAuto,
-		autoMode:   opts.AutoMode,
-		baseCtx:    opts.BaseCtx,
-		println:    opts.Printer,
-		mkRender:   opts.RenderFactory,
-		width:      80,
-		banner:     opts.Banner,
-		modelName:  opts.ModelName,
-		projectDir: opts.ProjectDir,
+		ta:           ta,
+		spin:         sp,
+		histIdx:      -1,
+		live:         &strings.Builder{},
+		startTurn:    opts.StartTurn,
+		shell:        opts.Shell,
+		slash:        opts.Slash,
+		toggleAuto:   opts.ToggleAuto,
+		autoMode:     opts.AutoMode,
+		completePath: opts.CompletePath,
+		baseCtx:      opts.BaseCtx,
+		println:      opts.Printer,
+		mkRender:     opts.RenderFactory,
+		width:        80,
+		banner:       opts.Banner,
+		modelName:    opts.ModelName,
+		projectDir:   opts.ProjectDir,
 	}
 	if m.baseCtx == nil {
 		m.baseCtx = context.Background()
@@ -360,6 +365,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AutoMode:
 		m.autoMode = bool(msg)
 		return m, nil
+
+	case Attached:
+		var cmds []tea.Cmd
+		for _, line := range msg.Lines {
+			cmds = append(cmds, m.emit(m.st.tool.Render("📎 "+line)))
+		}
+		for _, note := range msg.Notes {
+			cmds = append(cmds, m.emit(m.st.warn.Render("⚠ "+note)))
+		}
+		return m, tea.Batch(cmds...)
 
 	case ShellDone:
 		out := msg.Output
@@ -518,6 +533,9 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case msg.Type == tea.KeyShiftTab:
 		return m.toggleAutoMode()
+
+	case msg.Type == tea.KeyTab:
+		return m.completeMention()
 
 	case msg.Type == tea.KeyEnter:
 		// A trailing backslash continues the line, the shell convention
@@ -718,6 +736,59 @@ func (m Model) viewContent() string {
 		// a status bar (operator feedback).
 		return m.ta.View() + "\n" + m.footer() + "\n"
 	}
+}
+
+// completeMention completes the @-reference the input ends with. Tab is
+// a no-op otherwise, so it never inserts a stray tab character into a
+// message. With one match it completes fully; with several it advances
+// to the longest common prefix and lists the candidates.
+func (m Model) completeMention() (tea.Model, tea.Cmd) {
+	if m.completePath == nil {
+		return m, nil
+	}
+	value := m.ta.Value()
+	at := strings.LastIndex(value, "@")
+	if at < 0 {
+		return m, nil
+	}
+	prefix := value[at+1:]
+	if strings.ContainsAny(prefix, " \t\n") {
+		return m, nil // the @-reference already ended
+	}
+	candidates := m.completePath(prefix)
+	if len(candidates) == 0 {
+		return m, nil
+	}
+	completed := candidates[0]
+	var cmd tea.Cmd
+	if len(candidates) > 1 {
+		completed = longestCommonPrefix(candidates)
+		if completed == prefix {
+			// No further progress possible — show what is available
+			// rather than leaving Tab looking broken.
+			cmd = m.emit(m.st.hint.Render("  " + strings.Join(candidates, "  ")))
+		}
+	}
+	m.ta.SetValue(value[:at+1] + completed)
+	m.ta.CursorEnd()
+	m.syncHeight()
+	return m, cmd
+}
+
+func longestCommonPrefix(candidates []string) string {
+	if len(candidates) == 0 {
+		return ""
+	}
+	prefix := candidates[0]
+	for _, c := range candidates[1:] {
+		for !strings.HasPrefix(c, prefix) {
+			prefix = prefix[:len(prefix)-1]
+			if prefix == "" {
+				return ""
+			}
+		}
+	}
+	return prefix
 }
 
 // toggleAutoMode flips auto-approve and announces the new state. It

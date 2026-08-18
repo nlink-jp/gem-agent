@@ -36,6 +36,13 @@ type AutoApproved struct {
 // AutoMode reports the current auto-approve state for the status line.
 type AutoMode bool
 
+// Attached reports what @-references pulled in, and what they could not
+// — a silently dropped reference would look like the file was read.
+type Attached struct {
+	Lines []string
+	Notes []string
+}
+
 // ShellDone signals completion of a direct (!-prefixed) shell command.
 type ShellDone struct {
 	Output string

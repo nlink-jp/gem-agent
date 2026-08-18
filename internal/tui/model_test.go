@@ -137,6 +137,84 @@ func TestMultiLineInputRoutes(t *testing.T) {
 	}
 }
 
+// TestMentionTabCompletion: Tab completes an @-reference in place, and
+// is inert otherwise (it must never drop a tab character into a message).
+func TestMentionTabCompletion(t *testing.T) {
+	c := &capture{}
+	newM := func() Model {
+		m := New(Options{
+			Printer: c.printer,
+			RenderFactory: func(width int) func(string) string {
+				return func(s string) string { return s }
+			},
+			Slash: slashStub,
+			CompletePath: func(prefix string) []string {
+				all := []string{"README.md", "main.go", "makefile", "src/"}
+				var out []string
+				for _, p := range all {
+					if strings.HasPrefix(p, prefix) {
+						out = append(out, p)
+					}
+				}
+				return out
+			},
+		})
+		return m
+	}
+
+	// Unique match completes fully.
+	m := newM()
+	m.ta.SetValue("これ直して @RE")
+	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.ta.Value() != "これ直して @README.md" {
+		t.Errorf("unique completion = %q", m.ta.Value())
+	}
+
+	// Ambiguous match advances to the common prefix, then lists.
+	m = newM()
+	m.ta.SetValue("@ma")
+	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.ta.Value() != "@ma" {
+		t.Errorf("ambiguous completion = %q, want the common prefix", m.ta.Value())
+	}
+	if !strings.Contains(c.all(), "main.go") || !strings.Contains(c.all(), "makefile") {
+		t.Errorf("candidates should be listed when Tab cannot advance: %q", c.all())
+	}
+
+	// No @-reference under the cursor: Tab is inert.
+	m = newM()
+	m.ta.SetValue("普通の文章")
+	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.ta.Value() != "普通の文章" {
+		t.Errorf("Tab must not alter a plain message: %q", m.ta.Value())
+	}
+
+	// A finished reference (space after it) is not re-completed.
+	m = newM()
+	m.ta.SetValue("@README.md を")
+	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.ta.Value() != "@README.md を" {
+		t.Errorf("completed reference should be left alone: %q", m.ta.Value())
+	}
+}
+
+func TestAttachedNoticeIsVisible(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	next, _ := m.Update(Attached{
+		Lines: []string{"attached file: README.md (120 bytes)"},
+		Notes: []string{"@nope.txt: not found"},
+	})
+	m = next.(Model)
+	out := c.all()
+	if !strings.Contains(out, "📎") || !strings.Contains(out, "README.md") {
+		t.Errorf("attachment notice missing: %q", out)
+	}
+	if !strings.Contains(out, "⚠") || !strings.Contains(out, "not found") {
+		t.Errorf("failed reference must be reported, not dropped: %q", out)
+	}
+}
+
 func TestPlaceholderTeachesKeys(t *testing.T) {
 	m := newTestModel(&capture{})
 	if !strings.Contains(m.ta.Placeholder, "Ctrl+J") {

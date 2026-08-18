@@ -28,10 +28,21 @@ type ToolCall struct {
 	ThoughtSignature []byte
 }
 
+// Attachment is file or directory content pulled in by an @-reference.
+// It is stored apart from Content because it is untrusted data: the
+// agent wraps it in the turn's nonce tag, exactly like a tool result.
+type Attachment struct {
+	Ref     string
+	Kind    string
+	Content string
+}
+
 // Message is one turn in the conversation history.
 type Message struct {
 	Role    Role
 	Content string
+	// Attachments accompany a user message (@-references).
+	Attachments []Attachment
 
 	// Assistant-role fields.
 	ToolCalls []ToolCall

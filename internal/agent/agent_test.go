@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/mention"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
@@ -223,6 +224,54 @@ func TestResetClearsHistory(t *testing.T) {
 	}
 	if len(mb.calls[1]) != 1 {
 		t.Errorf("after Reset, second run should start fresh: %d messages", len(mb.calls[1]))
+	}
+}
+
+// TestMentionAttachmentsAreNonceWrapped: the operator chose the file,
+// but not what is inside it — attached content must reach the model as
+// isolated data, exactly like tool output.
+func TestMentionAttachmentsAreNonceWrapped(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{{Content: "ok"}}}
+	a, reg := newAgent(t, mb, &approveAll{}, 5)
+
+	if err := os.WriteFile(filepath.Join(reg.ProjectDir(), "notes.md"), []byte("SECRET-MARKER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var attached []string
+	var problems []string
+	a.onAttach = func(atts []mention.Attachment, probs []mention.Problem) {
+		for _, at := range atts {
+			attached = append(attached, at.Ref)
+		}
+		for _, p := range probs {
+			problems = append(problems, p.Ref+": "+p.Reason)
+		}
+	}
+
+	if _, err := a.Run(context.Background(), "@notes.md と @missing.txt を見て", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(attached) != 1 || attached[0] != "notes.md" {
+		t.Errorf("attached = %v", attached)
+	}
+	if len(problems) != 1 || !strings.Contains(problems[0], "not found") {
+		t.Errorf("problems = %v", problems)
+	}
+
+	sent := mb.calls[0][0].Content
+	if !strings.Contains(sent, "SECRET-MARKER") {
+		t.Fatal("attachment content never reached the model")
+	}
+	re := regexp.MustCompile(`<(tool_output_[0-9a-f]{32})>[^<]*SECRET-MARKER`)
+	if !re.MatchString(sent) {
+		t.Errorf("attachment not nonce-wrapped: %q", sent)
+	}
+	if !strings.Contains(sent, "@notes.md と @missing.txt を見て") {
+		t.Error("the operator's own text must be sent unmodified")
+	}
+	// Stored history keeps the raw attachment (the tag is per-call).
+	if a.history[0].Attachments[0].Content != "SECRET-MARKER" {
+		t.Error("history should keep the raw attachment")
 	}
 }
 

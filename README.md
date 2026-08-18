@@ -123,6 +123,14 @@ an escalated call's approval dialog carries a `⚠` line naming the tier
 that objected and why — `blocked by rule (always asks): …` for the
 deterministic floor, `escalated by risk review: …` for a model judgment.
 
+`@<path>` attaches a project file or directory to your message —
+`@src/main.go これ直して` sends the file with the instruction, and
+`@docs/` sends a directory listing. **Tab completes** the path (common
+prefix first, then a candidate list). References resolve inside the
+project only, symlinks included; anything that cannot be attached is
+reported rather than silently dropped, and attached content reaches the
+model isolated as untrusted data, exactly like tool output.
+
 `!<command>` runs a shell command directly — sandboxed like `shell_exec`
 (same timeout and output cap) but without an approval prompt, since you
 typed it yourself. The command and its output are added to the model's

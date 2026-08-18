@@ -16,6 +16,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/approve"
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/mention"
 	"github.com/nlink-jp/gem-agent/internal/repl"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/session"
@@ -188,6 +189,26 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Fprintf(stderr, "\n[tool] %s %s\n", tc.Name, agent.CallDetail(tc))
 		},
+		OnAttach: func(atts []mention.Attachment, problems []mention.Problem) {
+			lines := make([]string, 0, len(atts))
+			for _, a := range atts {
+				lines = append(lines, fmt.Sprintf("attached %s: %s (%d bytes)", a.Kind, a.Ref, a.Bytes))
+			}
+			notes := make([]string, 0, len(problems))
+			for _, p := range problems {
+				notes = append(notes, fmt.Sprintf("@%s: %s", p.Ref, p.Reason))
+			}
+			if prog != nil {
+				prog.Send(tui.Attached{Lines: lines, Notes: notes})
+				return
+			}
+			for _, l := range lines {
+				fmt.Fprintln(stderr, "[📎 "+l+"]")
+			}
+			for _, n := range notes {
+				fmt.Fprintln(stderr, "[⚠ "+n+"]")
+			}
+		},
 		OnUsage: func(promptTokens, outputTokens int) {
 			if prog != nil {
 				prog.Send(tui.Usage{Prompt: promptTokens, Output: outputTokens})
@@ -252,6 +273,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			ToggleAuto: func() bool {
 				ag.SetAutoApprove(!ag.AutoApprove())
 				return ag.AutoApprove()
+			},
+			CompletePath: func(prefix string) []string {
+				return mention.Complete(projectDir, prefix, 24)
 			},
 			Shell: func(shellCtx context.Context, command string) {
 				go func() {
@@ -480,6 +504,8 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
   /quit    exit (Ctrl+D also works)
 auto-approve: safe changes run unattended; destructive, out-of-project,
   credential-touching, or uncertain calls still ask (two-tier review)
+file references:
+  @<path>     attach a project file or directory to the message (Tab completes)
 shell:
   !<command>  run it directly (sandboxed, no approval; output is shared with the model)
 keys:
