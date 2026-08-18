@@ -43,7 +43,8 @@ func TestAbbreviateHome(t *testing.T) {
 	if got := abbreviateHome("/opt/other"); got != "/opt/other" {
 		t.Errorf("non-home path altered: %q", got)
 	}
-	// A sibling like /Users/magibackup must not be abbreviated.
+	// A directory whose name merely starts with the home path (a
+	// "<home>backup" sibling) must not be abbreviated.
 	if got := abbreviateHome(home + "backup/x"); got != home+"backup/x" {
 		t.Errorf("prefix-sibling path altered: %q", got)
 	}
