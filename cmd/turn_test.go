@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -25,6 +26,26 @@ func TestRunTurnRealErrorNotMasked(t *testing.T) {
 	}
 	if errors.Is(err, errInterrupted) {
 		t.Fatal("real error misclassified as interrupt")
+	}
+}
+
+func TestAbbreviateHome(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home dir")
+	}
+	if got := abbreviateHome(home + "/works/demo"); got != "~/works/demo" {
+		t.Errorf("got %q", got)
+	}
+	if got := abbreviateHome(home); got != "~" {
+		t.Errorf("home itself = %q", got)
+	}
+	if got := abbreviateHome("/opt/other"); got != "/opt/other" {
+		t.Errorf("non-home path altered: %q", got)
+	}
+	// A sibling like /Users/magibackup must not be abbreviated.
+	if got := abbreviateHome(home + "backup/x"); got != home+"backup/x" {
+		t.Errorf("prefix-sibling path altered: %q", got)
 	}
 }
 

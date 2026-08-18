@@ -49,6 +49,9 @@ type GCPConfig struct {
 // default and hardcoding one anywhere else is a bug.
 type ModelConfig struct {
 	Name string `toml:"name"`
+	// ContextWindow overrides the context window size shown in the TUI
+	// footer. 0 (default) auto-detects from the model metadata.
+	ContextWindow int `toml:"context_window"`
 }
 
 // SandboxConfig controls the sandbox-exec wrapper for shell_exec.
@@ -176,6 +179,9 @@ func (c *Config) validate() error {
 	case "auto", "dark", "light", "plain":
 	default:
 		return fmt.Errorf("[tui].theme must be auto, dark, light, or plain (got %q)", c.TUI.Theme)
+	}
+	if c.Model.ContextWindow < 0 {
+		return fmt.Errorf("[model].context_window must not be negative")
 	}
 	return nil
 }

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -86,6 +87,9 @@ type Options struct {
 	// mode owns stdin the terminal's "rgb:..." reply would leak into
 	// the input box as if the user typed it.
 	Theme string
+	// ModelName and ProjectDir feed the persistent footer.
+	ModelName  string
+	ProjectDir string
 	// Printer overrides tea.Println for tests.
 	Printer func(...any) tea.Cmd
 	// RenderFactory overrides the Markdown renderer factory for tests.
@@ -124,6 +128,13 @@ type Model struct {
 	render   func(string) string
 	mkRender func(width int) func(string) string
 	println  func(...any) tea.Cmd
+
+	// Footer state.
+	modelName  string
+	projectDir string
+	ctxTokens  int // last round's prompt+output ≈ current context size
+	usedTokens int // cumulative prompt+output across the session
+	window     int // model input token limit, 0 = unknown
 }
 
 // New creates the model.
@@ -139,16 +150,18 @@ func New(opts Options) Model {
 	sp.Spinner = spinner.MiniDot
 
 	m := Model{
-		ta:        ta,
-		spin:      sp,
-		histIdx:   -1,
-		live:      &strings.Builder{},
-		startTurn: opts.StartTurn,
-		slash:     opts.Slash,
-		baseCtx:   opts.BaseCtx,
-		println:   opts.Printer,
-		mkRender:  opts.RenderFactory,
-		width:     80,
+		ta:         ta,
+		spin:       sp,
+		histIdx:    -1,
+		live:       &strings.Builder{},
+		startTurn:  opts.StartTurn,
+		slash:      opts.Slash,
+		baseCtx:    opts.BaseCtx,
+		println:    opts.Printer,
+		mkRender:   opts.RenderFactory,
+		width:      80,
+		modelName:  opts.ModelName,
+		projectDir: opts.ProjectDir,
 	}
 	if m.baseCtx == nil {
 		m.baseCtx = context.Background()
@@ -230,6 +243,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case TextDelta:
 		m.live.WriteString(string(msg))
+		return m, nil
+
+	case Usage:
+		round := msg.Prompt + msg.Output
+		m.ctxTokens = round
+		m.usedTokens += round
+		return m, nil
+
+	case ContextWindow:
+		m.window = int(msg)
 		return m, nil
 
 	case ToolCall:
@@ -479,7 +502,7 @@ func (m Model) viewContent() string {
 	switch m.phase {
 	case phaseRunning:
 		return m.liveView() + "\n" + m.spin.View() + " " + m.st.status.Render(m.status) +
-			m.st.hint.Render("  (Ctrl+C で中断)") + "\n"
+			m.st.hint.Render("  (Ctrl+C で中断)") + "\n" + m.footer() + "\n"
 	case phaseApproval:
 		req := m.approval
 		if req == nil {
@@ -488,10 +511,44 @@ func (m Model) viewContent() string {
 		body := "approval required: " + req.Tool + "\n" +
 			m.st.hint.Render(clip(req.Detail, 300)) + "\n" +
 			"[y] 許可   [n] 拒否   [a] このセッションでは常に許可"
-		return m.liveView() + "\n" + m.st.box.Render(body) + "\n"
+		return m.liveView() + "\n" + m.st.box.Render(body) + "\n" + m.footer() + "\n"
 	default:
-		return m.ta.View() + "\n" +
+		return m.ta.View() + "\n" + m.footer() + "\n" +
 			m.st.hint.Render("Enter 送信 · Ctrl+J 改行 · ↑↓ 履歴 · /help · Ctrl+D 終了") + "\n"
+	}
+}
+
+// footer is the persistent status line: model, context occupancy vs the
+// model's window, cumulative token consumption, project directory.
+func (m Model) footer() string {
+	ctx := "–"
+	if m.ctxTokens > 0 {
+		ctx = humanTokens(m.ctxTokens)
+	}
+	window := "–"
+	if m.window > 0 {
+		window = humanTokens(m.window)
+	}
+	occupancy := "ctx " + ctx + "/" + window
+	if m.ctxTokens > 0 && m.window > 0 {
+		occupancy += fmt.Sprintf(" (%.0f%%)", float64(m.ctxTokens)/float64(m.window)*100)
+	}
+	parts := []string{m.modelName, occupancy, "total " + humanTokens(m.usedTokens)}
+	if m.projectDir != "" {
+		parts = append(parts, m.projectDir)
+	}
+	return m.st.hint.Render(strings.Join(parts, " · "))
+}
+
+// humanTokens renders a token count compactly (999 / 12.3k / 1.0M).
+func humanTokens(n int) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	case n >= 1_000:
+		return fmt.Sprintf("%.1fk", float64(n)/1_000)
+	default:
+		return fmt.Sprintf("%d", n)
 	}
 }
 

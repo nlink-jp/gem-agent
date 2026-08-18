@@ -25,6 +25,17 @@ type TurnDone struct {
 	Err error
 }
 
+// Usage carries one LLM round's token counts. Prompt tokens approximate
+// the current context size; output tokens are the round's generation.
+type Usage struct {
+	Prompt int
+	Output int
+}
+
+// ContextWindow reports the model's input token limit once known
+// (config override or async model-metadata fetch).
+type ContextWindow int
+
 // ApprovalRequest asks the operator to approve a mutating tool call.
 // The gate goroutine blocks on Resp until the UI answers 'y', 'n' or 'a'.
 type ApprovalRequest struct {

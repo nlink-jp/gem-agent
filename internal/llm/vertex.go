@@ -37,6 +37,17 @@ func NewVertex(ctx context.Context, project, location, model string) (*Vertex, e
 // Model returns the configured model name.
 func (v *Vertex) Model() string { return v.model }
 
+// ContextWindow fetches the model's input token limit from the model
+// metadata. Callers treat failures as "unknown", never fatal — the
+// footer display must not block a backup tool.
+func (v *Vertex) ContextWindow(ctx context.Context) (int, error) {
+	info, err := v.client.Models.Get(ctx, v.model, nil)
+	if err != nil {
+		return 0, fmt.Errorf("model metadata: %w", err)
+	}
+	return int(info.InputTokenLimit), nil
+}
+
 // ChatStream implements Backend.
 func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Message, tools []ToolDef, onText func(string)) (*Response, error) {
 	cfg := &genai.GenerateContentConfig{

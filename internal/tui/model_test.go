@@ -256,6 +256,53 @@ func TestConsecutiveTextDeltas(t *testing.T) {
 	}
 }
 
+func TestFooterShowsModelUsageAndProject(t *testing.T) {
+	c := &capture{}
+	m := New(Options{
+		Printer: c.printer,
+		RenderFactory: func(width int) func(string) string {
+			return func(s string) string { return s }
+		},
+		Slash:      slashStub,
+		ModelName:  "gemini-3.7-flash",
+		ProjectDir: "~/works/demo",
+	})
+
+	// Before any usage: placeholders, never garbage.
+	v := m.View()
+	if !strings.Contains(v, "gemini-3.7-flash") || !strings.Contains(v, "~/works/demo") {
+		t.Fatalf("footer missing static fields: %q", v)
+	}
+	if !strings.Contains(v, "ctx –/–") {
+		t.Errorf("unknown usage/window should show placeholders: %q", v)
+	}
+
+	// Usage accumulates: ctx tracks the last round, total accumulates.
+	next, _ := m.Update(Usage{Prompt: 1000, Output: 200})
+	m = next.(Model)
+	next, _ = m.Update(Usage{Prompt: 11800, Output: 500})
+	m = next.(Model)
+	next, _ = m.Update(ContextWindow(1_048_576))
+	m = next.(Model)
+
+	v = m.View()
+	if !strings.Contains(v, "ctx 12.3k/1.0M (1%)") {
+		t.Errorf("footer occupancy wrong: %q", v)
+	}
+	if !strings.Contains(v, "total 13.5k") {
+		t.Errorf("footer total wrong: %q", v)
+	}
+}
+
+func TestHumanTokens(t *testing.T) {
+	cases := map[int]string{999: "999", 1000: "1.0k", 12345: "12.3k", 1_048_576: "1.0M"}
+	for n, want := range cases {
+		if got := humanTokens(n); got != want {
+			t.Errorf("humanTokens(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
 func TestApprovalFlow(t *testing.T) {
 	c := &capture{}
 	m := newTestModel(c)

@@ -35,6 +35,7 @@ type Agent struct {
 	maxTurns int
 
 	onToolCall func(tc llm.ToolCall)
+	onUsage    func(promptTokens, outputTokens int)
 
 	history  []llm.Message
 	toolDefs []llm.ToolDef
@@ -53,6 +54,10 @@ type Options struct {
 	// calls that never hit the approval prompt (a silent pause reads as
 	// a hang).
 	OnToolCall func(tc llm.ToolCall)
+	// OnUsage, when set, receives per-round token usage (prompt tokens
+	// approximate the current context size; output tokens the round's
+	// generation) — the TUI footer consumes it.
+	OnUsage func(promptTokens, outputTokens int)
 }
 
 // New creates an agent.
@@ -73,6 +78,7 @@ func New(opts Options) *Agent {
 		system:     opts.System,
 		maxTurns:   opts.MaxTurns,
 		onToolCall: opts.OnToolCall,
+		onUsage:    opts.OnUsage,
 		toolDefs:   defs,
 	}
 }
@@ -98,6 +104,9 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 		resp, err := a.backend.ChatStream(ctx, tag.Expand(a.system), wrapToolMessages(a.history, tag), a.toolDefs, onText)
 		if err != nil {
 			return "", err
+		}
+		if a.onUsage != nil && (resp.PromptTokens > 0 || resp.OutputTokens > 0) {
+			a.onUsage(resp.PromptTokens, resp.OutputTokens)
 		}
 
 		// The assistant turn is appended verbatim — including thought

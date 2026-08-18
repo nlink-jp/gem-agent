@@ -270,6 +270,36 @@ func TestToolResultsNonceWrapped(t *testing.T) {
 	}
 }
 
+func TestOnUsageReportsEachRound(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{
+		{
+			ToolCalls:    []llm.ToolCall{{ID: "c1", Name: "list_files", Args: map[string]any{}}},
+			PromptTokens: 100, OutputTokens: 20,
+		},
+		{Content: "done", PromptTokens: 150, OutputTokens: 30},
+	}}
+	reg, err := tools.New(t.TempDir(),
+		func(ctx context.Context, command string) *exec.Cmd {
+			return exec.CommandContext(ctx, "/bin/bash", "-c", command)
+		}, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got [][2]int
+	a := New(Options{
+		Backend: mb, Registry: reg, Gate: &approveAll{},
+		System: "s", MaxTurns: 5,
+		OnUsage: func(p, o int) { got = append(got, [2]int{p, o}) },
+	})
+	if _, err := a.Run(context.Background(), "go", nil); err != nil {
+		t.Fatal(err)
+	}
+	want := [][2]int{{100, 20}, {150, 30}}
+	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("usage reports = %v, want %v", got, want)
+	}
+}
+
 func TestCallDetail(t *testing.T) {
 	shell := llm.ToolCall{Name: "shell_exec", Args: map[string]any{"command": "make build"}}
 	if got := CallDetail(shell); got != "make build" {

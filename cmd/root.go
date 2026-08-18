@@ -188,6 +188,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Fprintf(stderr, "\n[tool] %s %s\n", tc.Name, agent.CallDetail(tc))
 		},
+		OnUsage: func(promptTokens, outputTokens int) {
+			if prog != nil {
+				prog.Send(tui.Usage{Prompt: promptTokens, Output: outputTokens})
+			}
+		},
 	})
 
 	// --- one-shot mode: single turn, quiet stderr, exit ---
@@ -222,8 +227,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// --- interactive TUI (ADR-0002) ---
 	if useTUI {
 		model := tui.New(tui.Options{
-			BaseCtx: ctx,
-			Theme:   resolveTheme(cfg.TUI.Theme),
+			BaseCtx:    ctx,
+			Theme:      resolveTheme(cfg.TUI.Theme),
+			ModelName:  cfg.Model.Name,
+			ProjectDir: abbreviateHome(projectDir),
 			StartTurn: func(turnCtx context.Context, input string) {
 				go func() {
 					_, err := ag.Run(turnCtx, input, func(s string) { prog.Send(tui.TextDelta(s)) })
@@ -241,6 +248,20 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		})
 		prog = tea.NewProgram(model)
 		tuiGate.SetProgram(prog)
+		// Resolve the context window for the footer: config override
+		// first, otherwise an async model-metadata fetch (never blocks
+		// startup; the footer shows "–" until known).
+		go func() {
+			if cw := cfg.Model.ContextWindow; cw > 0 {
+				prog.Send(tui.ContextWindow(cw))
+				return
+			}
+			mctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			defer cancel()
+			if w, err := backend.ContextWindow(mctx); err == nil && w > 0 {
+				prog.Send(tui.ContextWindow(w))
+			}
+		}()
 		_, err := prog.Run()
 		return err
 	}
@@ -341,6 +362,21 @@ func buildExecFn(sandboxOn bool, projectDir string) (tools.ExecFunc, error) {
 		argv := sandbox.Wrap(profile, shell, command)
 		return exec.CommandContext(ctx, argv[0], argv[1:]...)
 	}, nil
+}
+
+// abbreviateHome shortens the home-directory prefix to "~" for display.
+func abbreviateHome(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if path == home {
+		return "~"
+	}
+	if strings.HasPrefix(path, home+string(os.PathSeparator)) {
+		return "~" + path[len(home):]
+	}
+	return path
 }
 
 // resolveTheme maps [tui].theme to the TUI's theme value. "auto" runs
