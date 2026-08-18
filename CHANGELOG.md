@@ -2,6 +2,15 @@
 
 ## [0.1.0] - Unreleased
 
+### Added — IME-safe approval dialog (operator feedback)
+
+- The approval dialog is now selectable: ←→/Tab move, Enter confirms,
+  Esc denies, and the `y`/`n`/`a` shortcuts still work. A Japanese IME
+  swallows those letters into composition, so an IME-free route was
+  required; arrows, Tab, and Enter reach the app untouched. The
+  highlight (marked `▶`, not color-only) starts on *allow*, or on *deny*
+  when auto-approve escalated the call
+
 ### Changed — escalation reasons are shown (operator feedback)
 
 - When auto-approve asks instead of running, the approval dialog now

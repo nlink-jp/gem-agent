@@ -589,6 +589,128 @@ func TestResizeNeverQueriesTerminal(t *testing.T) {
 	}
 }
 
+func approvalReq(reason string) (ApprovalRequest, chan byte) {
+	resp := make(chan byte, 1)
+	return ApprovalRequest{Tool: "shell_exec", Detail: "make build", Reason: reason, Resp: resp}, resp
+}
+
+func openApproval(t *testing.T, m Model, reason string) (Model, chan byte) {
+	t.Helper()
+	req, resp := approvalReq(reason)
+	next, _ := m.Update(req)
+	return next.(Model), resp
+}
+
+// TestApprovalSelectionKeys is the IME-safety contract: y/n/a are
+// swallowed by a Japanese IME's composition, so the dialog must also be
+// operable with arrows/Tab + Enter, which reach the app untouched.
+func TestApprovalSelectionKeys(t *testing.T) {
+	c := &capture{}
+	m, resp := openApproval(t, newTestModel(c), "")
+
+	if m.choice != choiceAllow {
+		t.Fatalf("ordinary prompt should start on 許可, got %d", m.choice)
+	}
+	// Right/Tab move forward, Left/Up back, and it wraps.
+	m = press(m, tea.KeyMsg{Type: tea.KeyRight})
+	if m.choice != choiceDeny {
+		t.Errorf("Right should move to 拒否, got %d", m.choice)
+	}
+	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.choice != 2 {
+		t.Errorf("Tab should move to 常に許可, got %d", m.choice)
+	}
+	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.choice != choiceAllow {
+		t.Errorf("Tab should wrap to 許可, got %d", m.choice)
+	}
+	m = press(m, tea.KeyMsg{Type: tea.KeyLeft})
+	if m.choice != 2 {
+		t.Errorf("Left should wrap backwards to 常に許可, got %d", m.choice)
+	}
+
+	// Enter confirms the highlighted option — no letter typed.
+	m = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	select {
+	case got := <-resp:
+		if got != 'a' {
+			t.Errorf("Enter confirmed %c, want a", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Enter did not answer the gate")
+	}
+	if m.phase != phaseRunning {
+		t.Error("answering should leave the approval phase")
+	}
+}
+
+// TestApprovalEscalationDefaultsToDeny: a reflexive Enter must not
+// approve what the risk ladder objected to.
+func TestApprovalEscalationDefaultsToDeny(t *testing.T) {
+	c := &capture{}
+	m, resp := openApproval(t, newTestModel(c), "auto-approve blocked by rule (always asks): recursive force delete")
+	if m.choice != choiceDeny {
+		t.Fatalf("escalated prompt should start on 拒否, got %d", m.choice)
+	}
+	m = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if got := <-resp; got != 'n' {
+		t.Errorf("Enter on an escalation answered %c, want n", got)
+	}
+}
+
+func TestApprovalLetterShortcutsStillWork(t *testing.T) {
+	c := &capture{}
+	for _, tc := range []struct {
+		key  string
+		want byte
+	}{{"y", 'y'}, {"n", 'n'}, {"a", 'a'}} {
+		m, resp := openApproval(t, newTestModel(c), "")
+		m = press(m, runeMsg(tc.key))
+		select {
+		case got := <-resp:
+			if got != tc.want {
+				t.Errorf("%q answered %c, want %c", tc.key, got, tc.want)
+			}
+		case <-time.After(time.Second):
+			t.Errorf("%q did not answer the gate", tc.key)
+		}
+		_ = m
+	}
+}
+
+func TestApprovalEscDenies(t *testing.T) {
+	c := &capture{}
+	m, resp := openApproval(t, newTestModel(c), "")
+	m = press(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if got := <-resp; got != 'n' {
+		t.Errorf("Esc answered %c, want n", got)
+	}
+	_ = m
+}
+
+// TestApprovalSelectionVisible: the highlighted option carries a marker
+// as well as styling, so it is identifiable under theme = plain too.
+func TestApprovalSelectionVisible(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = next.(Model)
+	m, _ = openApproval(t, m, "")
+
+	v := m.View()
+	if !strings.Contains(v, "▶") {
+		t.Error("selection marker missing")
+	}
+	for _, opt := range approvalOptions {
+		if !strings.Contains(v, opt.label) {
+			t.Errorf("option %q not rendered", opt.label)
+		}
+	}
+	if !strings.Contains(v, "Enter") {
+		t.Error("dialog should teach the Enter/selection route")
+	}
+}
+
 // TestApprovalShowsEscalationReason: in auto mode the operator's first
 // question is "why is this asking at all?" — the reason gets its own
 // marked line in the dialog, not a dim suffix on the arguments.

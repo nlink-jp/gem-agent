@@ -73,6 +73,11 @@ docs/en/, docs/ja/ RFP, ADRs (en: no suffix; ja: .ja.md)
 - **Never write from the MCP read loop** — a blocking write while the peer
   is not reading deadlocks both directions (internal/mcp refuses server
   requests from a goroutine; caught by the pipe-based tests).
+- **Every interactive answer needs an IME-free route** — with a Japanese
+  IME on, letter keys are swallowed by composition; arrows, Tab, Enter,
+  and Esc are not. Any new prompt must be answerable without typing
+  letters (the approval dialog's selection model), and the selection must
+  be marked with a glyph, not color alone.
 - **Auto-approve fails closed, and Block is a floor** (ADR-0004) — when
   changing the ladder, keep: Block never consults the model, model errors
   and malformed verdicts escalate, and confidence alone never approves.

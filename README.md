@@ -66,8 +66,13 @@ gem-agent -p "summarize this repository"   # one-shot, pipe-friendly
 
 The current directory becomes the project: file tools cannot leave it, and
 sandboxed shell commands cannot write outside it. Mutating tool calls show
-an approval dialog before running (`y` once / `n` deny / `a` always this
-session). `--no-sandbox` disables the Seatbelt wrapper (debugging only),
+an approval dialog before running. Answer it either by selection — ←→ or
+Tab to move, Enter to confirm — or with the `y` / `n` / `a` shortcuts
+(allow once / deny / always this session); Esc denies. The selection route
+exists because those letters cannot be typed with a Japanese IME switched
+on. The highlight starts on *allow*, except for a call auto-approve
+escalated, where it starts on *deny* so a reflexive Enter cannot approve
+it. `--no-sandbox` disables the Seatbelt wrapper (debugging only),
 `--model` overrides the configured model.
 
 TUI keys (also listed in `/help`): Enter sends, Ctrl+J inserts a newline,

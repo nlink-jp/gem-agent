@@ -28,6 +28,22 @@ const (
 	maxMDWidth     = 100
 )
 
+// approvalOptions are the approval dialog's selectable answers, in
+// display order. The index is the model's `choice`.
+var approvalOptions = []struct {
+	label  string
+	answer byte
+}{
+	{"許可 (y)", 'y'},
+	{"拒否 (n)", 'n'},
+	{"常に許可 (a)", 'a'},
+}
+
+const (
+	choiceAllow = 0
+	choiceDeny  = 1
+)
+
 // styleSet holds the chrome styles. Accent colors use the ANSI-16
 // palette (they follow the terminal theme). Dim text is harder:
 // the Faint attribute and ANSI color 8 both render near-invisible on
@@ -37,13 +53,14 @@ const (
 // background. Never lipgloss.AdaptiveColor here: it lazily queries the
 // terminal at render time (the OSC leak).
 type styleSet struct {
-	user   lipgloss.Style
-	tool   lipgloss.Style
-	warn   lipgloss.Style
-	errS   lipgloss.Style
-	hint   lipgloss.Style
-	status lipgloss.Style
-	box    lipgloss.Style
+	user     lipgloss.Style
+	tool     lipgloss.Style
+	warn     lipgloss.Style
+	errS     lipgloss.Style
+	hint     lipgloss.Style
+	status   lipgloss.Style
+	selected lipgloss.Style
+	box      lipgloss.Style
 }
 
 func defaultStyles(darkBackground bool) styleSet {
@@ -52,12 +69,13 @@ func defaultStyles(darkBackground bool) styleSet {
 		dim = lipgloss.Color("245") // readable light gray on dark backgrounds
 	}
 	return styleSet{
-		user:   lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true),
-		tool:   lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
-		warn:   lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true),
-		errS:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
-		hint:   lipgloss.NewStyle().Foreground(dim),
-		status: lipgloss.NewStyle().Foreground(dim).Italic(true),
+		user:     lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true),
+		tool:     lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+		warn:     lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true),
+		errS:     lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true),
+		hint:     lipgloss.NewStyle().Foreground(dim),
+		status:   lipgloss.NewStyle().Foreground(dim).Italic(true),
+		selected: lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true),
 		box: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("3")).Padding(0, 1),
 	}
@@ -71,7 +89,8 @@ func plainStyles() styleSet {
 	plain := lipgloss.NewStyle()
 	return styleSet{
 		user: plain, tool: plain, warn: plain, errS: plain, hint: plain, status: plain,
-		box: lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1),
+		selected: lipgloss.NewStyle().Bold(true),
+		box:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1),
 	}
 }
 
@@ -139,6 +158,11 @@ type Model struct {
 	live     *strings.Builder
 	status   string
 	approval *ApprovalRequest
+	// choice indexes approvalOptions. Selection + Enter exists because
+	// typing y/n/a is impossible with a Japanese IME switched on — the
+	// letters are swallowed by composition — while arrows, Tab, and
+	// Enter reach the app untouched when nothing is being composed.
+	choice int
 
 	startTurn  TurnStarter
 	shell      ShellStarter
@@ -318,6 +342,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		req := msg
 		m.approval = &req
 		m.phase = phaseApproval
+		// An escalated call starts on 拒否 so a reflexive Enter cannot
+		// approve what the risk ladder objected to; an ordinary prompt
+		// starts on 許可, which is what the operator is there to do.
+		m.choice = choiceAllow
+		if req.Reason != "" {
+			m.choice = choiceDeny
+		}
 		return m, nil
 
 	case AutoApproved:
@@ -413,17 +444,30 @@ func (m *Model) flushLive() []tea.Cmd {
 
 func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	answer := byte(0)
-	switch strings.ToLower(msg.String()) {
-	case "y":
-		answer = 'y'
-	case "n", "esc":
-		answer = 'n'
-	case "a":
-		answer = 'a'
-	case "ctrl+c":
-		answer = 'n'
-	default:
+	switch msg.Type {
+	case tea.KeyLeft, tea.KeyUp, tea.KeyShiftTab:
+		m.choice = (m.choice - 1 + len(approvalOptions)) % len(approvalOptions)
 		return m, nil
+	case tea.KeyRight, tea.KeyDown, tea.KeyTab:
+		m.choice = (m.choice + 1) % len(approvalOptions)
+		return m, nil
+	case tea.KeyEnter:
+		answer = approvalOptions[m.choice].answer
+	case tea.KeyEsc, tea.KeyCtrlC:
+		answer = 'n'
+	}
+	if answer == 0 {
+		// Letter shortcuts still work when the IME is off.
+		switch strings.ToLower(msg.String()) {
+		case "y":
+			answer = 'y'
+		case "n":
+			answer = 'n'
+		case "a":
+			answer = 'a'
+		default:
+			return m, nil
+		}
 	}
 	req := m.approval
 	m.approval = nil
@@ -649,7 +693,8 @@ func (m Model) viewContent() string {
 			// answer it.
 			body += "\n" + m.st.warn.Render("⚠ "+clip(req.Reason, 200))
 		}
-		body += "\n" + "[y] 許可   [n] 拒否   [a] このセッションでは常に許可"
+		body += "\n" + m.optionsLine() + "\n" +
+			m.st.hint.Render("←→/Tab 選択 · Enter 決定 · y/n/a 直接指定 · Esc 拒否")
 		return m.liveView() + "\n" + m.st.box.Render(body) + "\n" + m.footer() + "\n"
 	default:
 		// One status line only — the key bindings live in /help. Two
@@ -657,6 +702,21 @@ func (m Model) viewContent() string {
 		// a status bar (operator feedback).
 		return m.ta.View() + "\n" + m.footer() + "\n"
 	}
+}
+
+// optionsLine renders the selectable answers. The selection is marked
+// with "▶" as well as styled, so it stays visible under theme = plain
+// (nothing here may depend on color alone).
+func (m Model) optionsLine() string {
+	parts := make([]string, 0, len(approvalOptions))
+	for i, opt := range approvalOptions {
+		if i == m.choice {
+			parts = append(parts, m.st.selected.Render("▶ "+opt.label))
+			continue
+		}
+		parts = append(parts, "  "+opt.label)
+	}
+	return strings.Join(parts, "   ")
 }
 
 // footer is the persistent status line: model, context occupancy vs the
