@@ -43,6 +43,7 @@ type Agent struct {
 	onUsage    func(promptTokens, outputTokens int)
 	onAuto     func(tc llm.ToolCall, d AutoDecision)
 	onAttach   func(atts []mention.Attachment, problems []mention.Problem)
+	onNotice   func(msg string)
 
 	mu   sync.Mutex // guards autoApprove (toggled from the UI goroutine)
 	auto bool
@@ -76,6 +77,9 @@ type Options struct {
 	// OnAttach, when set, reports what an @-reference pulled in (and
 	// what it could not) so the operator sees it landed.
 	OnAttach func(atts []mention.Attachment, problems []mention.Problem)
+	// OnNotice, when set, receives in-turn notices (a retry after a
+	// content-filter block) so the operator sees what happened.
+	OnNotice func(msg string)
 }
 
 // New creates an agent.
@@ -99,6 +103,7 @@ func New(opts Options) *Agent {
 		onUsage:    opts.OnUsage,
 		onAuto:     opts.OnAutoDecision,
 		onAttach:   opts.OnAttach,
+		onNotice:   opts.OnNotice,
 		auto:       opts.AutoApprove,
 		toolDefs:   defs,
 	}
@@ -151,6 +156,8 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 	a.history = append(a.history, msg)
 	a.logRecord("user", map[string]any{"content": input, "attachments": attachRefs(atts)})
 
+	filterRetries := 0
+
 	for round := 0; round < a.maxTurns; round++ {
 		// Fresh nonce tag per LLM call (nlk/guard contract: a previous
 		// response may echo the tag name, so reuse across calls is
@@ -176,6 +183,16 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 				"block_reason": resp.BlockReason, "thought_tokens": resp.ThoughtTokens,
 				"output_tokens": resp.OutputTokens, "prompt_tokens": resp.PromptTokens,
 			})
+			// A content-filter block is not deterministic: the same
+			// request, re-sent, usually goes through, because what gets
+			// rated is the text this attempt happened to generate.
+			// Retrying once beats handing the operator a dead turn — but
+			// only once, so a genuinely refused request still surfaces.
+			if resp.BlockReason != "" && filterRetries < maxFilterRetries {
+				filterRetries++
+				a.notify(fmt.Sprintf("content filter blocked the response (%s) — retrying once", resp.BlockReason))
+				continue
+			}
 			return "", emptyResponseError(resp)
 		}
 
@@ -221,11 +238,12 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 func emptyResponseError(resp *llm.Response) error {
 	switch {
 	case resp.BlockReason != "":
-		// Naming the escape hatch matters: security material (an
-		// incident runbook, a phishing analysis) trips the configurable
-		// dangerous-content filter routinely, and without this the
-		// operator has no way to tell a policy block from a bug.
-		return fmt.Errorf("the model provider blocked this request (%s) — the conversation content tripped a content filter; set [model].safety = \"relaxed\" or \"off\" in ~/.config/gem-agent/config.toml if this is legitimate work, or /clear and rephrase",
+		// Measured: this fires intermittently on the same request, at
+		// every [model].safety setting — the generated text differs per
+		// attempt, and PROHIBITED_CONTENT comes from a filter the
+		// configurable categories do not cover. So the honest advice is
+		// "retry", not "change a setting".
+		return fmt.Errorf("the model provider's content filter blocked this exchange (%s). It fires intermittently on the same request, so sending it again often works; narrowing the request, or /clear to drop large documents from the context, helps too. [model].safety adjusts the configurable categories but does not cover this one",
 			resp.BlockReason)
 	case resp.FinishReason == "MAX_TOKENS":
 		return fmt.Errorf("the model hit its output limit before answering (%d reasoning tokens spent); raise [model].max_output_tokens or ask for something narrower",
@@ -364,6 +382,20 @@ func assistantRecord(resp *llm.Response) map[string]any {
 		rec["tokens"] = map[string]int{"prompt": resp.PromptTokens, "output": resp.OutputTokens}
 	}
 	return rec
+}
+
+// maxFilterRetries bounds automatic retries of a content-filter block.
+// One is enough for an intermittent filter; more would look like an
+// attempt to wear the filter down.
+const maxFilterRetries = 1
+
+// notify reports an in-turn event the operator should see (a retry, a
+// degraded path) without failing the turn.
+func (a *Agent) notify(msg string) {
+	a.logRecord("notice", map[string]any{"message": msg})
+	if a.onNotice != nil {
+		a.onNotice(msg)
+	}
 }
 
 func (a *Agent) logRecord(kind string, data any) {

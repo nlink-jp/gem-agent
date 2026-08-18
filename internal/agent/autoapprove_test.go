@@ -295,3 +295,47 @@ func TestEmptyResponseErrorNamesTheCause(t *testing.T) {
 		}
 	}
 }
+
+// TestContentFilterBlockRetriesOnce: the filter fires intermittently on
+// the same request (measured: five identical runs, one blocked), so one
+// automatic retry turns a dead turn into a completed one — but only one,
+// so a request the provider genuinely refuses still surfaces.
+func TestContentFilterBlockRetriesOnce(t *testing.T) {
+	b := &autoBackend{responses: []*llm.Response{
+		{BlockReason: "PROHIBITED_CONTENT"},
+		{Content: "went through on the retry"},
+	}}
+	var notices []string
+	reg, err := tools.New(t.TempDir(),
+		func(ctx context.Context, c string) *exec.Cmd { return exec.CommandContext(ctx, "/bin/true") },
+		time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(Options{
+		Backend: b, Registry: reg, Gate: &recordingGate{}, System: "s", MaxTurns: 5,
+		OnNotice: func(m string) { notices = append(notices, m) },
+	})
+
+	out, err := a.Run(context.Background(), "write the runbook", nil)
+	if err != nil {
+		t.Fatalf("a retryable filter block should not fail the turn: %v", err)
+	}
+	if out != "went through on the retry" {
+		t.Errorf("out = %q", out)
+	}
+	if len(notices) != 1 || !strings.Contains(notices[0], "PROHIBITED_CONTENT") {
+		t.Errorf("the retry must be visible: %v", notices)
+	}
+
+	// Blocked twice: report it, with advice that matches what was measured.
+	b2 := &autoBackend{responses: []*llm.Response{
+		{BlockReason: "PROHIBITED_CONTENT"},
+		{BlockReason: "PROHIBITED_CONTENT"},
+	}}
+	a2 := New(Options{Backend: b2, Registry: reg, Gate: &recordingGate{}, System: "s", MaxTurns: 5})
+	_, err = a2.Run(context.Background(), "write the runbook", nil)
+	if err == nil || !strings.Contains(err.Error(), "sending it again often works") {
+		t.Errorf("second block should report with retry advice: %v", err)
+	}
+}

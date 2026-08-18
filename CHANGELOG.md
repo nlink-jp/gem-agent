@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.3] - 2026-08-19
+
+### Fixed
+
+- A content-filter block now retries once instead of ending the turn.
+  Measured after a report that v0.1.2 still failed with
+  `safety = "relaxed"` set: the same request, re-sent, was blocked on
+  some attempts and passed on others at **every** safety setting — the
+  filter rates the text each attempt happens to generate, so it is not
+  deterministic. One retry (never more) turns the common case into a
+  completed turn; the retry is announced, and a second block is reported
+- v0.1.2's advice was wrong and is corrected: `PROHIBITED_CONTENT` comes
+  from a filter that `[model].safety` does not cover, so the message no
+  longer tells the operator to change a setting that cannot help. It now
+  says what actually works — re-send, narrow the request, or `/clear` to
+  drop large documents from the context
+
 ## [0.1.2] - 2026-08-19
 
 ### Fixed

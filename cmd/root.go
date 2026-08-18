@@ -216,6 +216,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				fmt.Fprintln(stderr, "[⚠ "+n+"]")
 			}
 		},
+		OnNotice: func(msg string) {
+			if prog != nil {
+				prog.Send(tui.Attached{Notes: []string{msg}})
+				return
+			}
+			fmt.Fprintf(stderr, "[⚠ %s]\n", msg)
+		},
 		OnUsage: func(promptTokens, outputTokens int) {
 			if prog != nil {
 				prog.Send(tui.Usage{Prompt: promptTokens, Output: outputTokens})

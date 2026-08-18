@@ -265,11 +265,19 @@ Precedence: flags (`--model`) > `GEMAGENT_*` > `GOOGLE_CLOUD_*` > config file
 
 Vertex applies content filters to both the request and the response. When
 one fires, gem-agent says so explicitly — naming the reason the API
-reported — rather than showing an empty answer.
+reported — rather than showing an empty answer, and **retries once**,
+because the filter is not deterministic: what gets rated is the text that
+attempt happened to generate, so the same request usually goes through on
+the next try. Measured on ordinary security material (an incident-response
+runbook in context): identical requests were blocked on some attempts and
+passed on others, at every `[model].safety` setting.
 
-Security work trips the configurable *dangerous content* filter on
-ordinary material (an incident-response runbook, a phishing analysis).
-`[model].safety` adjusts the four configurable categories:
+If the retry is blocked too, the error says so; narrowing the request, or
+`/clear` to drop large documents from the context, is what helps.
+
+`[model].safety` adjusts the four configurable harm categories — useful
+for `SAFETY`-category blocks, but note that `PROHIBITED_CONTENT` comes
+from a filter these settings do not cover:
 
 | Value | Effect |
 |---|---|
@@ -277,9 +285,7 @@ ordinary material (an incident-response runbook, a phishing analysis).
 | `relaxed` | block only high-confidence hits |
 | `off` | do not block on those categories |
 
-Loosening it is a deliberate choice, so the default is left alone. Some
-Vertex filters cannot be turned off at any setting; a block from those is
-reported the same way, and the remedy is to rephrase or `/clear`.
+Loosening it is a deliberate choice, so the default is left alone.
 
 Note: as of 2026-08, the Gemini 3 family (verified with gemini-3.7-flash and
 gemini-3-flash-preview) is served only from the global endpoint — regional
