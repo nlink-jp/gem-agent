@@ -2,6 +2,19 @@
 
 ## [0.1.0] - Unreleased
 
+### Added — persistent footer (operator feedback)
+
+- Footer line across all TUI phases: model name, context occupancy vs
+  the model's input token limit (auto-detected via model metadata,
+  overridable with `[model].context_window`), cumulative token
+  consumption, and the ~-abbreviated project directory
+
+### Fixed
+
+- MCP kill-and-respawn race: a stale read loop no longer closes the
+  successor incarnation's pending calls ("server exited during
+  initialize" right after a timeout)
+
 ### Changed — TUI readability (operator feedback)
 
 - Errors stand out: unknown /commands and turn failures render bold red

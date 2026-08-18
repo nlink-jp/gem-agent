@@ -253,14 +253,21 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// startup; the footer shows "–" until known).
 		go func() {
 			if cw := cfg.Model.ContextWindow; cw > 0 {
-				prog.Send(tui.ContextWindow(cw))
+				prog.Send(tui.ContextWindow{Tokens: cw})
 				return
 			}
 			mctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 			defer cancel()
 			if w, err := backend.ContextWindow(mctx); err == nil && w > 0 {
-				prog.Send(tui.ContextWindow(w))
+				prog.Send(tui.ContextWindow{Tokens: w})
+				return
 			}
+			// Vertex publisher metadata omits inputTokenLimit (measured
+			// 2026-08: Models.Get succeeds with 0). The Gemini 2.5/3
+			// family is uniformly 1M input tokens, so show that as an
+			// explicit estimate (~) rather than a permanent unknown;
+			// [model].context_window overrides with a firm value.
+			prog.Send(tui.ContextWindow{Tokens: 1_048_576, Assumed: true})
 		}()
 		_, err := prog.Run()
 		return err

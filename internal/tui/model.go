@@ -130,11 +130,12 @@ type Model struct {
 	println  func(...any) tea.Cmd
 
 	// Footer state.
-	modelName  string
-	projectDir string
-	ctxTokens  int // last round's prompt+output ≈ current context size
-	usedTokens int // cumulative prompt+output across the session
-	window     int // model input token limit, 0 = unknown
+	modelName     string
+	projectDir    string
+	ctxTokens     int // last round's prompt+output ≈ current context size
+	usedTokens    int // cumulative prompt+output across the session
+	window        int // model input token limit, 0 = unknown
+	windowAssumed bool
 }
 
 // New creates the model.
@@ -252,7 +253,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ContextWindow:
-		m.window = int(msg)
+		m.window = msg.Tokens
+		m.windowAssumed = msg.Assumed
 		return m, nil
 
 	case ToolCall:
@@ -528,6 +530,9 @@ func (m Model) footer() string {
 	window := "–"
 	if m.window > 0 {
 		window = humanTokens(m.window)
+		if m.windowAssumed {
+			window = "~" + window
+		}
 	}
 	occupancy := "ctx " + ctx + "/" + window
 	if m.ctxTokens > 0 && m.window > 0 {

@@ -282,7 +282,7 @@ func TestFooterShowsModelUsageAndProject(t *testing.T) {
 	m = next.(Model)
 	next, _ = m.Update(Usage{Prompt: 11800, Output: 500})
 	m = next.(Model)
-	next, _ = m.Update(ContextWindow(1_048_576))
+	next, _ = m.Update(ContextWindow{Tokens: 1_048_576})
 	m = next.(Model)
 
 	v = m.View()
@@ -291,6 +291,14 @@ func TestFooterShowsModelUsageAndProject(t *testing.T) {
 	}
 	if !strings.Contains(v, "total 13.5k") {
 		t.Errorf("footer total wrong: %q", v)
+	}
+
+	// A family-default guess renders with "~" — an estimate must never
+	// masquerade as a measured value.
+	next, _ = m.Update(ContextWindow{Tokens: 1_048_576, Assumed: true})
+	m = next.(Model)
+	if !strings.Contains(m.View(), "ctx 12.3k/~1.0M") {
+		t.Errorf("assumed window should carry ~: %q", m.View())
 	}
 }
 

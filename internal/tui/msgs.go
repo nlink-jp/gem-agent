@@ -32,9 +32,14 @@ type Usage struct {
 	Output int
 }
 
-// ContextWindow reports the model's input token limit once known
-// (config override or async model-metadata fetch).
-type ContextWindow int
+// ContextWindow reports the model's input token limit once known.
+// Assumed marks a family-default guess (Vertex publisher metadata omits
+// inputTokenLimit) — the footer renders it with a "~" so an estimate
+// never masquerades as a measured value.
+type ContextWindow struct {
+	Tokens  int
+	Assumed bool
+}
 
 // ApprovalRequest asks the operator to approve a mutating tool call.
 // The gate goroutine blocks on Resp until the UI answers 'y', 'n' or 'a'.

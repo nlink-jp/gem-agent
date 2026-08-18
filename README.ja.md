@@ -71,6 +71,10 @@ TUI キー操作: Enter 送信、Ctrl+J 改行挿入、↑/↓ 入力履歴、Ct
 中断（入力中はクリア）、Ctrl+D 終了。複数行ペーストは 1 つのメッセージとして
 入力ボックスに入ります。
 
+常設フッターに、使用モデル・コンテキスト使用量とウィンドウサイズ（モデル
+メタデータから自動検出、`[model].context_window` で上書き可）・累計消費
+トークン・プロジェクトディレクトリを表示します。
+
 ## MCP サーバー
 
 gem-agent はプロジェクトの `.mcp.json`（Claude Code 形式; stdio トランスポート、
@@ -122,6 +126,7 @@ location = "global"        # デフォルト; Gemini 3 系は global エンド�
 
 [model]
 name = "<gemini model id>"
+# context_window = 1048576  # 任意; フッター表示の上書き（デフォルト: 自動検出）
 
 [sandbox]
 enabled = true             # デフォルト

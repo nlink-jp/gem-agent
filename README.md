@@ -69,6 +69,11 @@ TUI keys: Enter sends, Ctrl+J inserts a newline, ↑/↓ navigate input
 history, Ctrl+C interrupts a running turn (or clears the input), Ctrl+D
 quits. Multi-line pastes land in the input box as one message.
 
+A persistent footer shows the model, current context occupancy against
+the model's window (auto-detected from model metadata, or
+`[model].context_window`), cumulative token consumption, and the project
+directory.
+
 ## MCP servers
 
 gem-agent reads the project's `.mcp.json` (Claude Code format; stdio
@@ -119,6 +124,7 @@ location = "global"        # default; Gemini 3 models are global-endpoint-only
 
 [model]
 name = "<gemini model id>"
+# context_window = 1048576  # optional; footer display override (default: auto-detect)
 
 [sandbox]
 enabled = true             # default
