@@ -145,6 +145,8 @@ reasoning; both are recorded rather than quietly added):
 - Context compaction — [ADR-0006](adr/0006-context-compaction.md). A
   session that dies at the context window, with `/clear` as the only
   recovery, is not much of a fallback.
+- file_info — [ADR-0016](adr/0016-file-info.md). Type judgement,
+  metadata, and the hash trio the org's lookup MCPs consume.
 - edit_file v2 — [ADR-0015](adr/0015-edit-file-v2.md). Batched atomic
   edits with diagnosed misses and evidence on success: the write half of
   the same waste.

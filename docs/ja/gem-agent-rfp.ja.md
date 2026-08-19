@@ -140,6 +140,8 @@ max_turns = 50
 - コンテキスト圧縮 — [ADR-0006](adr/0006-context-compaction.ja.md)。
   コンテキストウィンドウで死に、復旧手段が `/clear` だけのセッションは
   フォールバックとして頼りにならない。
+- file_info — [ADR-0016](adr/0016-file-info.ja.md)。種別判定・メタデータ・
+  組織の lookup MCP が食べるハッシュ三点セット。
 - edit_file v2 — [ADR-0015](adr/0015-edit-file-v2.ja.md)。診断つき不一致と
   成功時証拠を備えた一括アトミック編集。同じ無駄の書き込み側。
 - コンテキスト経済 — [ADR-0014](adr/0014-context-economy-tools.ja.md)。

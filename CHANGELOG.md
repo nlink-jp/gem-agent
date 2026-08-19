@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.12.0] - 2026-08-19
+
+### Added — file_info (ADR-0016, operator request)
+
+- What a file *is*, without reading it into context: content-judged
+  type (Mach-O incl. fat/64-bit, ELF, PE, zip, gzip, PDF, SQLite,
+  shebang scripts, text/binary with a line count — the extension is
+  shown but never trusted, and a mismatch is called out), size, mode
+  with the executable bit named, modified time, and **birth time** —
+  macOS-only by design, so the Darwin field costs nothing promised
+- **MD5, SHA1, SHA256 in one streaming pass** — precisely the trio the
+  org's malware-lookup MCP consumes, so identify → date → hash → look
+  up runs in one agent loop with no approval-gated shell round.
+  Oversized files (>512MB) skip hashing with a note
+- `paths` array for a batch (one bad path is an in-batch error, never a
+  hidden one); directories get entry counts, no hashes; an in-project
+  symlink that escapes is a *reported fact* — target shown, nothing
+  inspected — rather than a bare refusal
+- The magic table is finite and test-first, not libmagic: it names what
+  it knows and says `data` honestly otherwise
+
 ## [0.11.0] - 2026-08-19
 
 ### Added — edit_file v2 (ADR-0015, operator request)

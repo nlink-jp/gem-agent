@@ -59,6 +59,8 @@ supersede する（typo とリンク修正は例外）。
   summarize_file と、read_file の行窓読み
 - [`ADR-0015`](adr/0015-edit-file-v2.ja.md) — edit_file v2: 一括アトミック
   編集・診断つき不一致・成功時の証拠
+- [`ADR-0016`](adr/0016-file-info.ja.md) — file_info: 内容判定の種別・
+  メタデータ・MD5/SHA1/SHA256 三点セット
 
 ## History（履歴）
 

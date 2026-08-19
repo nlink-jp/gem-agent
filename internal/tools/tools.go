@@ -69,7 +69,7 @@ func New(projectDir string, execFn ExecFunc, shellTimeout time.Duration) (*Regis
 		shellTimeout: shellTimeout,
 		tools:        map[string]*Tool{},
 	}
-	for _, t := range []*Tool{r.listFiles(), r.listTree(), r.searchFiles(), r.readFile(), r.viewImage(), r.writeFile(), r.editFile(), r.shellExec()} {
+	for _, t := range []*Tool{r.listFiles(), r.listTree(), r.searchFiles(), r.readFile(), r.fileInfo(), r.viewImage(), r.writeFile(), r.editFile(), r.shellExec()} {
 		r.tools[t.Name] = t
 		r.order = append(r.order, t.Name)
 	}

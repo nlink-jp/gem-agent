@@ -63,6 +63,8 @@ excepted).
   lightweight model, and line-window reads for read_file
 - [`ADR-0015`](adr/0015-edit-file-v2.md) — edit_file v2: batched atomic
   edits, diagnosed misses, evidence on success
+- [`ADR-0016`](adr/0016-file-info.md) — file_info: content-judged type,
+  metadata, and the MD5/SHA1/SHA256 trio
 
 ## History
 

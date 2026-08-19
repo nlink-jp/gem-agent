@@ -37,6 +37,13 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   fast dependency-free grep (regex or literal, binaries and `.git`
   skipped, caps reported) — so orientation costs one call, not one round
   per directory
+- **`file_info`** (ADR-0016): what a file *is* without reading it into
+  context — content-judged type (`file`-command style: Mach-O/ELF/PE,
+  archives, scripts; the extension is shown but never trusted), size,
+  mode, modified and **created** times (macOS-only by design, so the
+  Darwin field is free), and the MD5/SHA1/SHA256 trio that hash-lookup
+  tools consume — the IR opening moves in one read-only call. Batch via
+  `paths`; symlinks reported, never silently followed
 - **Editing without the round-trips** (ADR-0015): `edit_file` keeps its
   exact-unique-string contract — line numbers write to the wrong place
   *silently* when stale; a string anchor fails loudly or works — and

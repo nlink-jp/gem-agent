@@ -86,8 +86,8 @@ func TestPlainAnswer(t *testing.T) {
 	if mb.systems[0] != "test system" {
 		t.Error("system prompt not passed through")
 	}
-	if len(mb.toolDefs[0]) != 8 {
-		t.Errorf("tool defs = %d, want 8 built-ins", len(mb.toolDefs[0]))
+	if len(mb.toolDefs[0]) != 9 {
+		t.Errorf("tool defs = %d, want 9 built-ins", len(mb.toolDefs[0]))
 	}
 }
 
