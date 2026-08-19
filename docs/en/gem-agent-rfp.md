@@ -145,6 +145,9 @@ reasoning; both are recorded rather than quietly added):
 - Context compaction — [ADR-0006](adr/0006-context-compaction.md). A
   session that dies at the context window, with `/clear` as the only
   recovery, is not much of a fallback.
+- Image input — [ADR-0012](adr/0012-image-input.md). The work most
+  often starts from a screenshot, and MCP servers produce images the
+  model itself must look at.
 - Skills — [ADR-0010](adr/0010-skills.md). Claude Code's skill format
   read as-is: the operator's skills-series encodes procedures that a
   fallback session otherwise loses, which is the same gap this tool

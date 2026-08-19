@@ -302,13 +302,37 @@ func buildContents(messages []Message) []*genai.Content {
 			}
 			contents = append(contents, &genai.Content{Role: genai.RoleModel, Parts: parts})
 		case RoleTool:
-			pendingToolParts = append(pendingToolParts,
-				genai.NewPartFromFunctionResponse(m.ToolName, map[string]any{"result": m.Content}))
+			fr := &genai.FunctionResponse{
+				Name:     m.ToolName,
+				Response: map[string]any{"result": m.Content},
+			}
+			// Multimodal function responses (ADR-0012): view_image's
+			// pixels ride inside the response. A separate user message
+			// after the tool round was measured to 400 on the following
+			// round, so this SDK mechanism is the one that works.
+			for _, att := range m.Attachments {
+				if len(att.Data) > 0 && att.MIME != "" {
+					fr.Parts = append(fr.Parts, genai.NewFunctionResponsePartFromBytes(att.Data, att.MIME))
+				}
+			}
+			pendingToolParts = append(pendingToolParts, &genai.Part{FunctionResponse: fr})
 		default: // RoleUser
-			if m.Content == "" {
+			var parts []*genai.Part
+			if m.Content != "" {
+				parts = append(parts, genai.NewPartFromText(m.Content))
+			}
+			// Image attachments become inline-data parts after the text
+			// (ADR-0012). Text attachments never reach this point — the
+			// agent flattens them into Content at send time.
+			for _, att := range m.Attachments {
+				if len(att.Data) > 0 && att.MIME != "" {
+					parts = append(parts, genai.NewPartFromBytes(att.Data, att.MIME))
+				}
+			}
+			if len(parts) == 0 {
 				continue // see above: an empty part fails the request
 			}
-			contents = append(contents, genai.NewContentFromText(m.Content, genai.RoleUser))
+			contents = append(contents, &genai.Content{Role: genai.RoleUser, Parts: parts})
 		}
 	}
 	flush()

@@ -89,6 +89,15 @@ Per-round details that matter:
   content-filter block retries once, then reports the reason.
 - **Round cap**: `[agent].max_turns` bounds a runaway loop.
 
+Images (ADR-0012) enter as attachments: `@` routes for the operator
+(project paths; absolute/~ paths for image extensions only, because `@`
+is parsed from typed input alone; `@clipboard` via osascript) and the
+project-confined `view_image` tool for the model — a Gemini function
+response cannot carry pixels, so the agent follows the tool result with
+a user-role message bearing the image part. Bytes are MIME-sniffed,
+capped, stored in the transcript, and shown to the compaction summariser
+only as placeholders.
+
 ## Approval
 
 Mutating tools (`write_file`, `edit_file`, `shell_exec`, and every MCP

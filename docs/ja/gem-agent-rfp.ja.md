@@ -140,6 +140,9 @@ max_turns = 50
 - コンテキスト圧縮 — [ADR-0006](adr/0006-context-compaction.ja.md)。
   コンテキストウィンドウで死に、復旧手段が `/clear` だけのセッションは
   フォールバックとして頼りにならない。
+- 画像入力 — [ADR-0012](adr/0012-image-input.ja.md)。業務はスクリーン
+  ショットから始まることが多く、MCP サーバーはモデル自身が見るべき画像を
+  生成する。
 - Skills — [ADR-0010](adr/0010-skills.ja.md)。Claude Code の skill 形式を
   そのまま読む。skills-series に書き溜めた手順は Claude Code 停止時に
   そのまま失われるが、それはこのツールが埋めるべき穴と同じものである。

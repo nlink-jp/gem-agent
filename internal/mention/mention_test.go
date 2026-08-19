@@ -1,6 +1,7 @@
 package mention
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -174,4 +175,126 @@ func contains(xs []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// --- images (ADR-0012) ---
+
+// realTempDir resolves the macOS /var → /private/var symlink, as the
+// production caller does for the project dir (registry.ProjectDir()).
+func realTempDir(t *testing.T) string {
+	t.Helper()
+	real, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return real
+}
+
+// tinyPNG is a valid 1x1 PNG (pre-encoded); DetectContentType must see
+// image/png in its magic bytes.
+var tinyPNG = []byte{
+	0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+	0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+	0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00,
+	0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+	0x00, 0x00, 0x03, 0x00, 0x01, 0xCE, 0xFC, 0x53, 0x00, 0x00, 0x00, 0x00,
+	0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+}
+
+func TestExpandAttachesProjectImages(t *testing.T) {
+	dir := realTempDir(t)
+	if err := os.WriteFile(filepath.Join(dir, "shot.png"), tinyPNG, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	atts, problems := Expand("@shot.png what is this", dir, DefaultLimits())
+	if len(problems) != 0 || len(atts) != 1 {
+		t.Fatalf("atts=%v problems=%v", atts, problems)
+	}
+	a := atts[0]
+	if a.Kind != "image" || a.MIME != "image/png" || len(a.Data) != len(tinyPNG) {
+		t.Errorf("attachment = kind=%q mime=%q %d bytes", a.Kind, a.MIME, len(a.Data))
+	}
+}
+
+// The screenshot-on-Desktop workflow: images — and only images — may be
+// referenced from outside the project, because @ is operator-typed.
+func TestExpandImageOutsideProjectAllowedTextRefused(t *testing.T) {
+	project, outside := realTempDir(t), realTempDir(t)
+	img := filepath.Join(outside, "screen.png")
+	if err := os.WriteFile(img, tinyPNG, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "notes.txt"), []byte("text"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	atts, problems := Expand("@"+img+" describe", project, DefaultLimits())
+	if len(problems) != 0 || len(atts) != 1 || atts[0].Kind != "image" {
+		t.Fatalf("out-of-project image refused: atts=%v problems=%v", atts, problems)
+	}
+
+	// A text file outside the project stays refused.
+	_, problems = Expand("@"+filepath.Join(outside, "notes.txt")+" read", project, DefaultLimits())
+	if len(problems) != 1 {
+		t.Fatalf("out-of-project text was attached: %v", problems)
+	}
+}
+
+// The extension gates the route; the bytes decide the claim. A text
+// file renamed .png must not ride the image exception out of the tree.
+func TestExpandRejectsFakeImages(t *testing.T) {
+	project, outside := realTempDir(t), realTempDir(t)
+	fake := filepath.Join(outside, "fake.png")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho secrets\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	atts, problems := Expand("@"+fake, project, DefaultLimits())
+	if len(atts) != 0 || len(problems) != 1 || !strings.Contains(problems[0].Reason, "not an image") {
+		t.Fatalf("fake image accepted: atts=%v problems=%v", atts, problems)
+	}
+}
+
+func TestExpandClipboardRoute(t *testing.T) {
+	lim := DefaultLimits()
+	lim.Clipboard = func() ([]byte, error) { return tinyPNG, nil }
+	atts, problems := Expand("@clipboard ここがおかしい", t.TempDir(), lim)
+	if len(problems) != 0 || len(atts) != 1 || atts[0].Kind != "image" || atts[0].Ref != "clipboard" {
+		t.Fatalf("atts=%v problems=%v", atts, problems)
+	}
+
+	// No clipboard hook: a reported problem, never a silent no-op.
+	_, problems = Expand("@clipboard x", t.TempDir(), DefaultLimits())
+	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "unavailable") {
+		t.Fatalf("problems = %v", problems)
+	}
+
+	// Clipboard errors surface as-is ("no image on the clipboard").
+	lim.Clipboard = func() ([]byte, error) { return nil, fmt.Errorf("no image on the clipboard") }
+	_, problems = Expand("@clipboard x", t.TempDir(), lim)
+	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "no image") {
+		t.Fatalf("problems = %v", problems)
+	}
+}
+
+func TestExpandImageLimits(t *testing.T) {
+	dir := realTempDir(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.png"), tinyPNG, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lim := DefaultLimits()
+	lim.ImageBytes = 8 // smaller than tinyPNG: refused whole, never truncated
+	_, problems := Expand("@a.png", dir, lim)
+	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "limit") {
+		t.Fatalf("oversized image: %v", problems)
+	}
+
+	lim = DefaultLimits()
+	lim.MaxImages = 1
+	if err := os.WriteFile(filepath.Join(dir, "b.png"), tinyPNG, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	atts, problems := Expand("@a.png @b.png", dir, lim)
+	if len(atts) != 1 || len(problems) != 1 {
+		t.Fatalf("image count cap: atts=%d problems=%v", len(atts), problems)
+	}
 }

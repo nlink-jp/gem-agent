@@ -8,6 +8,7 @@ package mention
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -21,20 +22,53 @@ type Limits struct {
 	PerFileBytes int
 	TotalBytes   int
 	DirEntries   int
+	// Image budgets are separate from the text budget (ADR-0012): one
+	// screenshot must not evict the source files attached beside it.
+	ImageBytes int // per image
+	MaxImages  int // per message
+	// Clipboard captures the clipboard image as PNG bytes — the
+	// @clipboard route. nil reports the reference as unavailable.
+	Clipboard func() ([]byte, error)
 }
 
 // DefaultLimits are sized so a handful of source files fit comfortably
 // while a stray @ on a huge tree cannot blow up the context.
 func DefaultLimits() Limits {
-	return Limits{PerFileBytes: 64 * 1024, TotalBytes: 256 * 1024, DirEntries: 200}
+	return Limits{
+		PerFileBytes: 64 * 1024, TotalBytes: 256 * 1024, DirEntries: 200,
+		ImageBytes: 8 * 1024 * 1024, MaxImages: 4,
+	}
 }
 
 // Attachment is one resolved reference.
 type Attachment struct {
 	Ref     string // as typed, without the @
-	Kind    string // "file" or "directory"
+	Kind    string // "file", "directory" or "image"
 	Content string
 	Bytes   int
+	// Data and MIME are set for images (ADR-0012).
+	Data []byte
+	MIME string
+}
+
+// ClipboardRef is the pseudo-reference that attaches the clipboard
+// image — the fastest screenshot route on macOS (Cmd+Ctrl+Shift+4,
+// then "@clipboard ここがおかしい").
+const ClipboardRef = "clipboard"
+
+// imageMIME maps recognised image extensions. Recognition gates the
+// out-of-project exception: only files that look like images by name
+// AND sniff as images by content may come from outside the project.
+var imageMIME = map[string]string{
+	".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+	".webp": "image/webp", ".gif": "image/gif",
+	".heic": "image/heic", ".heif": "image/heif",
+}
+
+// IsImagePath reports whether a reference names an image by extension.
+func IsImagePath(ref string) bool {
+	_, ok := imageMIME[strings.ToLower(filepath.Ext(ref))]
+	return ok
 }
 
 // Problem is a reference that could not be attached, with the reason to
@@ -102,7 +136,21 @@ func Expand(text, projectDir string, lim Limits) ([]Attachment, []Problem) {
 	var problems []Problem
 	total := 0
 
+	images := 0
 	for _, ref := range Refs(text) {
+		// Images ride the same syntax but their own rules: a separate
+		// byte budget, a per-message count, and — because an @ is
+		// always operator-typed, never model-triggered — permission to
+		// come from outside the project (ADR-0012).
+		if ref == ClipboardRef || IsImagePath(ref) {
+			att, err := attachImage(ref, projectDir, lim, &images)
+			if err != nil {
+				problems = append(problems, Problem{ref, err.Error()})
+				continue
+			}
+			atts = append(atts, att)
+			continue
+		}
 		abs, err := resolve(projectDir, ref)
 		if err != nil {
 			problems = append(problems, Problem{ref, err.Error()})
@@ -142,6 +190,79 @@ func Expand(text, projectDir string, lim Limits) ([]Attachment, []Problem) {
 // minUsefulBytes is the floor below which a remaining budget buys
 // nothing worth attaching.
 const minUsefulBytes = 512
+
+// attachImage loads one image reference: the clipboard, a project
+// path, or — image extensions only — an absolute or ~ path anywhere.
+func attachImage(ref, projectDir string, lim Limits, images *int) (Attachment, error) {
+	if *images >= lim.MaxImages {
+		return Attachment{}, fmt.Errorf("skipped: at most %d images per message", lim.MaxImages)
+	}
+	var data []byte
+	var err error
+	switch {
+	case ref == ClipboardRef:
+		if lim.Clipboard == nil {
+			return Attachment{}, fmt.Errorf("clipboard capture is unavailable here")
+		}
+		data, err = lim.Clipboard()
+		if err != nil {
+			return Attachment{}, err
+		}
+	default:
+		abs, rerr := resolveImagePath(projectDir, ref)
+		if rerr != nil {
+			return Attachment{}, rerr
+		}
+		data, err = os.ReadFile(abs)
+		if err != nil {
+			return Attachment{}, fmt.Errorf("unreadable")
+		}
+	}
+	if len(data) == 0 {
+		return Attachment{}, fmt.Errorf("empty image")
+	}
+	if len(data) > lim.ImageBytes {
+		// Images cannot be truncated like text — a clipped PNG is not a
+		// smaller picture, it is a broken file.
+		return Attachment{}, fmt.Errorf("image is %d bytes; the limit is %d", len(data), lim.ImageBytes)
+	}
+	// Sniff the real type: the extension gated the route, the bytes
+	// decide the claim. http.DetectContentType knows the image magics.
+	mime := http.DetectContentType(data)
+	if !strings.HasPrefix(mime, "image/") {
+		return Attachment{}, fmt.Errorf("not an image (detected %s)", mime)
+	}
+	*images++
+	return Attachment{Ref: ref, Kind: "image", Bytes: len(data), Data: data, MIME: mime}, nil
+}
+
+// resolveImagePath resolves an image reference. In-project paths go
+// through the same confinement as everything else; absolute and ~
+// paths are allowed for images because the reference is operator-typed
+// (ADR-0012 — revisit if @ ever parses anything but typed input).
+func resolveImagePath(projectDir, ref string) (string, error) {
+	p := ref
+	if strings.HasPrefix(p, "~/") || p == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve ~")
+		}
+		p = filepath.Join(home, strings.TrimPrefix(p, "~"))
+	}
+	if !filepath.IsAbs(p) {
+		return resolve(projectDir, ref)
+	}
+	p = filepath.Clean(p)
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return "", fmt.Errorf("not found")
+	}
+	info, err := os.Stat(real)
+	if err != nil || info.IsDir() {
+		return "", fmt.Errorf("not a file")
+	}
+	return real, nil
+}
 
 func attachFile(ref, abs string, cap int) (Attachment, error) {
 	data, err := os.ReadFile(abs)

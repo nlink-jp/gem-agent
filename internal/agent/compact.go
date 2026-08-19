@@ -182,6 +182,12 @@ func renderTranscript(msgs []llm.Message) string {
 				fmt.Fprintf(&b, "[user] %s\n", clip(m.Content, summaryTextClip))
 			}
 			for _, att := range m.Attachments {
+				if len(att.Data) > 0 {
+					// The summary needs the fact of the image, never the
+					// bytes (ADR-0012).
+					fmt.Fprintf(&b, "[user attached image %s (%d bytes)]\n", att.Ref, len(att.Data))
+					continue
+				}
 				fmt.Fprintf(&b, "[user attached %s %s] %s\n", att.Kind, att.Ref, clip(att.Content, summaryToolClip))
 			}
 		}

@@ -267,6 +267,33 @@ because nothing can answer a prompt there, but a tool set to `"never"`
 was never going to ask — so it runs. A read-only MCP lookup with a
 `"never"` policy is usable in a pipeline.
 
+## Images
+
+Screenshots are first-class input (ADR-0012). Three ways in, plus one
+for the model:
+
+| Route | Example |
+|---|---|
+| Project file | `@docs/mock.png これを再現して` |
+| Anywhere (images only) | `@~/Desktop/スクリーンショット.png` |
+| Clipboard | Cmd+Ctrl+Shift+4, then `@clipboard ここがおかしい` |
+| Model-initiated | the `view_image` tool (project-confined, like `read_file`) |
+
+The out-of-project route exists for images only, and it is safe because
+`@` is parsed from what **you** type — never from model output or tool
+results. `view_image` is the other direction: MCP servers produce image
+files (urlscan's `get_screenshot`, pcap extraction), and the model views
+them itself mid-loop; that route stays confined to the project. MIME is
+sniffed from bytes (a renamed binary is refused), images are capped at
+8MB each and 4 per message, and a too-large image is refused whole — a
+truncated PNG is a broken file, not a smaller picture.
+
+Images cannot be nonce-wrapped, so the isolation stance is stated as
+framing instead — text visible inside an image is data, never
+instructions — which is weaker than tag isolation, and the docs say so
+rather than pretending otherwise. Transcripts store the bytes, so a
+resumed session keeps the screenshots it was looking at.
+
 ## Skills
 
 gem-agent reads **Claude Code's skill format, as-is** — from its own

@@ -55,6 +55,8 @@ excepted).
   (location clause superseded by 0011)
 - [`ADR-0011`](adr/0011-skill-scope-separation.md) — skills live in
   gem-agent's own directory; sharing with Claude Code is a symlink
+- [`ADR-0012`](adr/0012-image-input.md) — image input: operator-attached
+  via @ (clipboard included), model-viewed via view_image
 
 ## History
 

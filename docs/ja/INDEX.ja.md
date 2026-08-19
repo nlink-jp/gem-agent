@@ -51,6 +51,8 @@ supersede する（typo とリンク修正は例外）。
   （設置場所の項は 0011 が supersede）
 - [`ADR-0011`](adr/0011-skill-scope-separation.ja.md) — skill は gem-agent
   自身のディレクトリに置く。Claude Code との共有は symlink
+- [`ADR-0012`](adr/0012-image-input.ja.md) — 画像入力: オペレータ添付は @
+  （クリップボード含む）、モデル閲覧は view_image
 
 ## History（履歴）
 

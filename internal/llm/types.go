@@ -39,7 +39,12 @@ type ToolCall struct {
 type Attachment struct {
 	Ref     string `json:"ref"`
 	Kind    string `json:"kind"`
-	Content string `json:"content"`
+	Content string `json:"content,omitempty"`
+	// Data and MIME carry binary content — images (ADR-0012). []byte
+	// round-trips as base64 through the transcript, so a resumed
+	// session keeps the screenshots it was looking at.
+	Data []byte `json:"data,omitempty"`
+	MIME string `json:"mime,omitempty"`
 }
 
 // Message is one turn in the conversation history.

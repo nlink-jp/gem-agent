@@ -35,7 +35,7 @@ func run(t *testing.T, r *Registry, name string, args map[string]any) (string, e
 func TestRegistryShape(t *testing.T) {
 	r := newRegistry(t)
 	want := map[string]bool{ // name → Mutating
-		"list_files": false, "read_file": false,
+		"list_files": false, "read_file": false, "view_image": false,
 		"write_file": true, "edit_file": true, "shell_exec": true,
 	}
 	if len(r.List()) != len(want) {
@@ -222,5 +222,79 @@ func TestShellExecTimeout(t *testing.T) {
 	}
 	if !strings.Contains(out, "timed out") {
 		t.Errorf("timeout should be reported in the result: %q", out)
+	}
+}
+
+// --- images (ADR-0012) ---
+
+var tinyPNG = []byte{
+	0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+	0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+	0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00,
+	0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+	0x00, 0x00, 0x03, 0x00, 0x01, 0xCE, 0xFC, 0x53, 0x00, 0x00, 0x00, 0x00,
+	0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+}
+
+func TestReadImageConfinedAndSniffed(t *testing.T) {
+	r := newRegistry(t)
+	dir := r.ProjectDir()
+	if err := os.WriteFile(filepath.Join(dir, "shot.png"), tinyPNG, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "fake.png"), []byte("not a picture"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	data, mime, err := r.ReadImage("shot.png")
+	if err != nil || mime != "image/png" || len(data) != len(tinyPNG) {
+		t.Fatalf("ReadImage: %v %q %d", err, mime, len(data))
+	}
+	// Outside the project: same refusal as every file tool — the
+	// model-triggered route gets no out-of-tree exception (ADR-0012).
+	if _, _, err := r.ReadImage("../outside.png"); err == nil {
+		t.Fatal("ReadImage escaped the project")
+	}
+	if _, _, err := r.ReadImage("/etc/hosts"); err == nil {
+		t.Fatal("ReadImage read an absolute path")
+	}
+	// A renamed non-image is refused by the sniff.
+	if _, _, err := r.ReadImage("fake.png"); err == nil {
+		t.Fatal("ReadImage accepted a renamed text file")
+	}
+}
+
+func TestViewImageToolReturnsMetadataNotBytes(t *testing.T) {
+	r := newRegistry(t)
+	if err := os.WriteFile(filepath.Join(r.ProjectDir(), "s.png"), tinyPNG, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tool, ok := r.Get(ViewImageName)
+	if !ok {
+		t.Fatal("view_image not registered")
+	}
+	if tool.Mutating {
+		t.Error("view_image must be read-only (usable in one-shot mode)")
+	}
+	out, err := tool.Run(context.Background(), map[string]any{"path": "s.png"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "image attached: s.png") || strings.Contains(out, "\x89PNG") {
+		t.Errorf("tool result should be metadata, got %.60q", out)
+	}
+}
+
+// Feeding a PNG through read_file yields mojibake that helps nobody —
+// refuse and point at the tool that works.
+func TestReadFileRefusesImages(t *testing.T) {
+	r := newRegistry(t)
+	if err := os.WriteFile(filepath.Join(r.ProjectDir(), "s.png"), tinyPNG, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tool, _ := r.Get("read_file")
+	_, err := tool.Run(context.Background(), map[string]any{"path": "s.png"})
+	if err == nil || !strings.Contains(err.Error(), "view_image") {
+		t.Fatalf("read_file on an image: %v", err)
 	}
 }

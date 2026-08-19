@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.8.0] - 2026-08-19
+
+### Added — image input (ADR-0012, operator request)
+
+- **Screenshots are first-class input.** Three operator routes through
+  the existing `@` mechanism:
+  - `@path/in/project.png` — as any reference
+  - `@/absolute/path.png`, `@~/Desktop/shot.png` — images (and only
+    images) may come from anywhere, because `@` is parsed from what the
+    operator types, never from model output or tool results
+  - `@clipboard` — the clipboard image via macOS osascript:
+    Cmd+Ctrl+Shift+4, then `@clipboard ここがおかしい`
+- **`view_image`** — the model's own route, prompted by the operator's
+  observation that MCP servers *produce* images the agent must look at
+  (urlscan's `get_screenshot`, pcap extraction). Read-only and
+  project-confined exactly like `read_file`; the pixels ride inside the
+  function response as a multimodal response part. That shape was
+  chosen by measurement: the obvious alternative — a user message
+  appended after the tool round — passed one round and 400'd the next
+  on Gemini's call/response pairing rules
+- MIME is sniffed from bytes (a renamed binary is refused), images cap
+  at 8MB each and 4 per message, and an oversized image is refused
+  whole — a truncated PNG is a broken file, not a smaller picture
+- Images cannot be nonce-wrapped, so the isolation stance gets a stated
+  visual counterpart in the system prompt: text visible inside an image
+  is data, never instructions. Weaker than tag isolation, and said so
+- Transcripts store image bytes (base64), so a resumed session keeps
+  the screenshots it was looking at; the compaction summariser sees
+  `[image: ref, N bytes]`, never bytes. `read_file` refuses images and
+  points at `view_image`
+- Verified live with a solid-red PNG: all three `@` routes and
+  `view_image` (colour-neutral filename, follow-up tool round,
+  signature replay intact) answered correctly
+
 ## [0.7.0] - 2026-08-19
 
 ### Changed — skills move to gem-agent's own directory (ADR-0011, operator review of v0.6.0)

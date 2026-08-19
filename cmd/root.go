@@ -261,6 +261,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// load_skill results are operator-authored instructions, not
 		// data; its reads are confined to skill directories (ADR-0010).
 		InstructionTools: []string{skills.ToolName},
+		ClipboardImage:   clipboardImage,
 		OnToolCall: func(tc llm.ToolCall) {
 			if prog != nil {
 				prog.Send(tui.ToolCall{Name: tc.Name, Detail: agent.CallDetail(tc)})
@@ -699,7 +700,10 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 auto-approve: safe changes run unattended; destructive, out-of-project,
   credential-touching, or uncertain calls still ask (two-tier review)
 file references:
-  @<path>     attach a project file or directory to the message (Tab completes)
+  @<path>       attach a project file or directory to the message (Tab completes)
+  @<img>.png    attach an image — absolute and ~ paths work for images
+                (@~/Desktop/shot.png), because you typed them yourself
+  @clipboard    attach the clipboard image (Cmd+Ctrl+Shift+4, then this)
 shell:
   !<command>  run it directly (sandboxed, no approval; output is shared with the model)
 keys:

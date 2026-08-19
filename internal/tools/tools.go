@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,7 +69,7 @@ func New(projectDir string, execFn ExecFunc, shellTimeout time.Duration) (*Regis
 		shellTimeout: shellTimeout,
 		tools:        map[string]*Tool{},
 	}
-	for _, t := range []*Tool{r.listFiles(), r.readFile(), r.writeFile(), r.editFile(), r.shellExec()} {
+	for _, t := range []*Tool{r.listFiles(), r.readFile(), r.viewImage(), r.writeFile(), r.editFile(), r.shellExec()} {
 		r.tools[t.Name] = t
 		r.order = append(r.order, t.Name)
 	}
@@ -102,6 +103,78 @@ func (r *Registry) List() []*Tool {
 		out = append(out, r.tools[n])
 	}
 	return out
+}
+
+// ViewImageName is the tool that attaches an in-project image to the
+// conversation as visual input (ADR-0012). The agent special-cases it:
+// a Gemini function response cannot carry an image part, so the tool
+// result is metadata and the agent follows it with a user-role message
+// carrying the actual image (loaded via ReadImage).
+const ViewImageName = "view_image"
+
+// imageExts gates ReadImage and read_file's refusal. The bytes are
+// sniffed separately; the extension only routes.
+var imageExts = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true, ".webp": true,
+	".gif": true, ".heic": true, ".heif": true,
+}
+
+func isImageExt(p string) bool { return imageExts[strings.ToLower(filepath.Ext(p))] }
+
+// maxImageBytes bounds one attached image. An oversized image is
+// refused whole — a truncated PNG is not a smaller picture, it is a
+// broken file.
+const maxImageBytes = 8 * 1024 * 1024
+
+// ReadImage loads an in-project image for attachment: same confinement
+// as every other file tool, plus a content sniff so a renamed binary
+// cannot masquerade as a picture.
+func (r *Registry) ReadImage(p string) (data []byte, mime string, err error) {
+	abs, err := r.resolvePath(p)
+	if err != nil {
+		return nil, "", err
+	}
+	if !isImageExt(abs) {
+		return nil, "", fmt.Errorf("%s does not look like an image file", p)
+	}
+	data, err = os.ReadFile(abs)
+	if err != nil {
+		return nil, "", fmt.Errorf("unreadable: %w", err)
+	}
+	if len(data) > maxImageBytes {
+		return nil, "", fmt.Errorf("image is %d bytes; the limit is %d", len(data), maxImageBytes)
+	}
+	mime = http.DetectContentType(data)
+	if !strings.HasPrefix(mime, "image/") {
+		return nil, "", fmt.Errorf("not an image (detected %s)", mime)
+	}
+	return data, mime, nil
+}
+
+func (r *Registry) viewImage() *Tool {
+	return &Tool{
+		Name: ViewImageName,
+		Description: "Attach an image file from the project to the conversation as visual input " +
+			"(screenshots fetched by tools, extracted images, diagrams). The image itself arrives " +
+			"in the next message; this call returns confirmation. Read-only. " +
+			"PNG, JPEG, WebP, GIF, HEIC.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{"type": "string", "description": "image path relative to the project root"},
+			},
+			"required": []string{"path"},
+		},
+		Mutating: false,
+		Run: func(ctx context.Context, args map[string]any) (string, error) {
+			p, _ := args["path"].(string)
+			data, mime, err := r.ReadImage(p)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("image attached: %s (%s, %d bytes) — it follows in the next message as visual input", p, mime, len(data)), nil
+		},
+	}
 }
 
 // --- path confinement ---
@@ -256,6 +329,9 @@ func (r *Registry) readFile() *Tool {
 			data, err := os.ReadFile(abs)
 			if err != nil {
 				return "", err
+			}
+			if isImageExt(p) {
+				return "", fmt.Errorf("%s is an image — use the view_image tool to look at it (read_file would return unusable binary)", p)
 			}
 			return truncate(string(data), readCap), nil
 		},
