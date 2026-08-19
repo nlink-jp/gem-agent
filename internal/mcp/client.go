@@ -166,7 +166,7 @@ func (c *Client) ensureStarted(ctx context.Context) error {
 	}
 	if err := c.send(map[string]any{
 		"jsonrpc": "2.0", "method": "notifications/initialized", "params": map[string]any{},
-	}); err != nil {
+	}, -1); err != nil {
 		c.shutdown()
 		return fmt.Errorf("mcp %s: initialized notification: %w", c.name, err)
 	}
@@ -195,10 +195,12 @@ func (c *Client) readLoop(stdout io.ReadCloser, gen int) {
 			// not reading deadlocks both directions.
 			id := *msg.ID
 			go func() {
+				// gen-pinned: after a kill-and-respawn this refusal
+				// belongs to the dead incarnation and is dropped.
 				_ = c.send(map[string]any{
 					"jsonrpc": "2.0", "id": id,
 					"error": map[string]any{"code": -32601, "message": "method not supported by gem-agent"},
-				})
+				}, gen)
 			}()
 		case msg.Method != "":
 			// notification — nothing to route
@@ -236,14 +238,32 @@ func (c *Client) readLoop(stdout io.ReadCloser, gen int) {
 	c.pmu.Unlock()
 }
 
-func (c *Client) send(v any) error {
+// send writes one frame to the current incarnation's stdin. gen pins
+// the frame to the incarnation that produced it: a stale read loop's
+// refusal must be dropped, not injected into a successor's stdin
+// mid-handshake (a response with an id the fresh server never issued).
+// gen < 0 means "whatever is current". The stdin snapshot is taken
+// under mu — reading the field under wmu alone raced ensureStarted's
+// write of it (ADR-0021).
+func (c *Client) send(v any, gen int) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
+	c.mu.Lock()
+	stdin, cur, alive := c.stdin, c.gen, c.alive
+	c.mu.Unlock()
+	if gen >= 0 && gen != cur {
+		return nil // stale incarnation's frame: drop
+	}
+	if stdin == nil || !alive {
+		return fmt.Errorf("mcp %s: server not running", c.name)
+	}
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
-	_, err = c.stdin.Write(append(data, '\n'))
+	// Writing through the snapshot: if a respawn swapped stdin after it
+	// was taken, this hits the dead pipe and fails — the safe direction.
+	_, err = stdin.Write(append(data, '\n'))
 	return err
 }
 
@@ -261,7 +281,7 @@ func (c *Client) rawCall(ctx context.Context, method string, params any) (json.R
 	c.pending[id] = ch
 	c.pmu.Unlock()
 
-	if err := c.send(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}); err != nil {
+	if err := c.send(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}, -1); err != nil {
 		c.pmu.Lock()
 		delete(c.pending, id)
 		c.pmu.Unlock()
