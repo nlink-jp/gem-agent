@@ -185,7 +185,6 @@ func TestFrontmatterOddShapes(t *testing.T) {
 	}
 }
 
-
 // ADR-0011: sharing with Claude Code is an operator-made symlink, so a
 // linked skill directory must be discovered like a real one — and its
 // confinement boundary is the resolved directory.

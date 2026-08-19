@@ -20,7 +20,7 @@ type usageTally struct {
 }
 
 type tallyEntry struct {
-	model                  string
+	model                 string
 	calls, prompt, output int
 }
 

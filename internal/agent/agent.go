@@ -24,10 +24,10 @@ import (
 // that must NOT touch the footer's context gauge — a risk check stomping
 // "ctx" with its own prompt size was the bug that shaped this split.
 type UsageStats struct {
-	Rounds                            int
-	Prompt, Output, Thoughts, Cached  int
-	LastPrompt, Window                int
-	RiskCalls, RiskPrompt, RiskOutput int
+	Rounds                                     int
+	Prompt, Output, Thoughts, Cached           int
+	LastPrompt, Window                         int
+	RiskCalls, RiskPrompt, RiskOutput          int
 	CompactCalls, CompactPrompt, CompactOutput int
 }
 
