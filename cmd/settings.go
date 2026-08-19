@@ -71,6 +71,7 @@ func (s *settingsStore) data() tui.SettingsData {
 	ro("backend", "gcp.location", s.cfg.GCP.Location, "gcp.location", needsRestart)
 	ro("backend", "model.name", s.cfg.Model.Name, "model.name", needsRestart)
 	ro("backend", "model.safety", s.cfg.Model.Safety, "model.safety", needsRestart)
+	ro("backend", "model.summary", summaryLabel(s.cfg.Model.Summary), "model.summary", needsRestart)
 	ro("backend", "model.context_window", contextWindowLabel(s.cfg.Model.ContextWindow),
 		"model.context_window", "auto-detected when unset")
 	ro("safety", "sandbox.enabled", strconv.FormatBool(s.cfg.Sandbox.Enabled), "sandbox.enabled",
@@ -190,6 +191,14 @@ func writeSettingsTable(out io.Writer, d tui.SettingsData) {
 	}
 	tw.Flush()
 	fmt.Fprintln(out, "\nrun gem-agent in a terminal for the interactive panel")
+}
+
+// summaryLabel renders "" as what it means.
+func summaryLabel(s string) string {
+	if s == "" {
+		return "(main model)"
+	}
+	return s
 }
 
 // contextWindowLabel renders 0 as what it means.

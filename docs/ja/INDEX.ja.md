@@ -55,6 +55,8 @@ supersede する（typo とリンク修正は例外）。
   （クリップボード含む）、モデル閲覧は view_image
 - [`ADR-0013`](adr/0013-navigation-tools.ja.md) — list_tree と
   search_files: 方向づけと高速 grep。索引なし・依存なし
+- [`ADR-0014`](adr/0014-context-economy-tools.ja.md) — 軽量モデルの
+  summarize_file と、read_file の行窓読み
 
 ## History（履歴）
 

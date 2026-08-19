@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"fmt"
 	"context"
 	"os"
 	"os/exec"
@@ -297,5 +298,71 @@ func TestReadFileRefusesImages(t *testing.T) {
 	_, err := tool.Run(context.Background(), map[string]any{"path": "s.png"})
 	if err == nil || !strings.Contains(err.Error(), "view_image") {
 		t.Fatalf("read_file on an image: %v", err)
+	}
+}
+
+// --- partial reads (ADR-0014) ---
+
+func TestReadFileLineWindows(t *testing.T) {
+	r := newRegistry(t)
+	var lines []string
+	for i := 1; i <= 40; i++ {
+		lines = append(lines, fmt.Sprintf("line %d", i))
+	}
+	if err := os.WriteFile(filepath.Join(r.ProjectDir(), "f.txt"),
+		[]byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A window, annotated so it can never masquerade as the whole file.
+	out, err := run(t, r, "read_file", map[string]any{"path": "f.txt", "start_line": float64(10), "end_line": float64(12)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, "line 10\nline 11\nline 12") {
+		t.Errorf("window content = %q", out)
+	}
+	if !strings.Contains(out, "[showing lines 10–12 of 40]") {
+		t.Errorf("window note missing: %q", out)
+	}
+	// No line-number prefixes: numbered output would poison edit_file's
+	// exact-match contract the moment the model copies what it read.
+	if strings.Contains(out, "10:") || strings.Contains(out, "10\t") {
+		t.Errorf("line numbers leaked into content: %q", out)
+	}
+
+	// Open-ended tail; clamped end.
+	out, err = run(t, r, "read_file", map[string]any{"path": "f.txt", "start_line": float64(39)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, "line 39\nline 40") || !strings.Contains(out, "39–40 of 40") {
+		t.Errorf("tail window = %q", out)
+	}
+	out, err = run(t, r, "read_file", map[string]any{"path": "f.txt", "end_line": float64(2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, "line 1\nline 2") || !strings.Contains(out, "1–2 of 40") {
+		t.Errorf("head window = %q", out)
+	}
+
+	// Beyond EOF: an error naming the real length, not empty output.
+	_, err = run(t, r, "read_file", map[string]any{"path": "f.txt", "start_line": float64(99)})
+	if err == nil || !strings.Contains(err.Error(), "40 lines") {
+		t.Fatalf("beyond-EOF error = %v", err)
+	}
+	// Inverted range.
+	if _, err := run(t, r, "read_file", map[string]any{"path": "f.txt", "start_line": float64(5), "end_line": float64(3)}); err == nil {
+		t.Fatal("inverted range accepted")
+	}
+
+	// No params: exactly the old behaviour, no note.
+	out, err = run(t, r, "read_file", map[string]any{"path": "f.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "[showing lines") || !strings.HasSuffix(out, "line 40") {
+		t.Errorf("full read changed: %q", out)
 	}
 }

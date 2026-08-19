@@ -211,6 +211,18 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// --- summarize_file: the summary model shares the client (ADR-0014) ---
+	summaryModel := cfg.Model.Summary
+	summaryBackend := backend
+	if summaryModel == "" {
+		summaryModel = cfg.Model.Name
+	} else {
+		summaryBackend = backend.WithModel(summaryModel)
+	}
+	if err := registerSummarizeTool(registry, summaryBackend, summaryModel, sessionLog); err != nil {
+		return err
+	}
+
 	// --- project instruction files (drop-in: AGENTS.md and friends,
 	// including ancestor directories, exactly as other agents read them)
 	projectContext, contextLabels, contextNotes := loadInstructions(projectDir)

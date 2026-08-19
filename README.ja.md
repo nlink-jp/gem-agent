@@ -30,11 +30,18 @@ Claude Code が使えない状況（プロバイダ側障害・契約やネッ�
 - Gemini エージェントループ — Gemini 3 thought signature の capture/replay
   （実機検証済み）
 - 組み込みツール: `list_files` / `list_tree` / `search_files` / `read_file` /
-  `view_image` / `write_file` / `edit_file` / `shell_exec`
+  `summarize_file` / `view_image` / `write_file` / `edit_file` / `shell_exec`
   （すべてプロジェクトディレクトリに封じ込め。シンボリックリンク経由の脱出も検査）。
   `list_tree` はプロジェクトをツリー表示、`search_files` は依存ゼロの高速 grep
   （regex / literal、バイナリと `.git` はスキップ、上限は報告）— 方向づけが
   「ディレクトリごとに 1 ラウンド」から 1 コールになります
+- **コンテキスト経済**（ADR-0014）: `read_file` は `start_line`/`end_line` で
+  全文ではなく窓を読めます（注記付きで、部分が全体のふりをしない — 行番号
+  プレフィックスは付けません。`edit_file` の完全一致契約を毒するので）。
+  `summarize_file` はバイト列の代わりに短い要約を返します — 書くのは
+  `[model].summary` の軽量モデル（メインモデルとクライアント共有）、未設定なら
+  メインモデル。ファイル内容は圧縮と同じく nonce ラップ + ツール無しで要約器に
+  渡り、ブロックされた要約は報告されるエラーであって無言の空要約にはなりません
 - 変更系ツールの都度承認ゲート（MITL）+ セッション内 allowlist
   （`y` = 1回、`a` = このセッションでは常に許可。拒否側に倒れる設計）
 - **自動承認モード**（opt-in、shift+tab または `/auto`）: 変更系コールごとに

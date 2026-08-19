@@ -177,6 +177,40 @@ func (r *Registry) viewImage() *Tool {
 	}
 }
 
+// intArg reads an integer tool argument (JSON numbers arrive as
+// float64). 0 means absent — line numbers here are 1-based.
+func intArg(args map[string]any, key string) int {
+	if f, ok := args[key].(float64); ok && f > 0 {
+		return int(f)
+	}
+	return 0
+}
+
+// sliceLines applies an optional 1-based inclusive line window (ADR-0014).
+// A partial view must never masquerade as the whole file, so any window
+// gets a trailing note in the established truncation style.
+func sliceLines(content string, start, end int) (string, string, error) {
+	if start == 0 && end == 0 {
+		return content, "", nil
+	}
+	lines := strings.Split(content, "\n")
+	total := len(lines)
+	if start == 0 {
+		start = 1
+	}
+	if start > total {
+		return "", "", fmt.Errorf("start_line %d is beyond the end of the file (%d lines)", start, total)
+	}
+	if end == 0 || end > total {
+		end = total
+	}
+	if end < start {
+		return "", "", fmt.Errorf("end_line %d is before start_line %d", end, start)
+	}
+	note := fmt.Sprintf("\n[showing lines %d–%d of %d]", start, end, total)
+	return strings.Join(lines[start-1:end], "\n"), note, nil
+}
+
 // --- path confinement ---
 
 func within(base, p string) bool {
@@ -306,13 +340,23 @@ func (r *Registry) readFile() *Tool {
 	return &Tool{
 		Name: "read_file",
 		Description: "Read a file inside the project and return its content. " +
-			"Large files are truncated; read specific files rather than everything.",
+			"Pass start_line/end_line (1-based, inclusive) to read a window instead of the whole " +
+			"file — pair with search_files results (path:line) and prefer windows for large files: " +
+			"everything read here is replayed on every later round. Large reads are truncated.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"path": map[string]any{
 					"type":        "string",
 					"description": "File path relative to the project root.",
+				},
+				"start_line": map[string]any{
+					"type":        "integer",
+					"description": "First line to read (1-based). Omit to read from the top.",
+				},
+				"end_line": map[string]any{
+					"type":        "integer",
+					"description": "Last line to read (inclusive). Omit to read to the end.",
 				},
 			},
 			"required": []string{"path"},
@@ -333,7 +377,16 @@ func (r *Registry) readFile() *Tool {
 			if isImageExt(p) {
 				return "", fmt.Errorf("%s is an image — use the view_image tool to look at it (read_file would return unusable binary)", p)
 			}
-			return truncate(string(data), readCap), nil
+			content, note, err := sliceLines(string(data), intArg(args, "start_line"), intArg(args, "end_line"))
+			if err != nil {
+				return "", err
+			}
+			out := truncate(content, readCap)
+			// The window note goes AFTER any truncation note, and the
+			// content itself stays raw (no line-number prefixes): numbered
+			// output would poison edit_file's exact-match contract the
+			// moment the model copies what it read.
+			return out + note, nil
 		},
 	}
 }

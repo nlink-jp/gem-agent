@@ -32,7 +32,7 @@ Project directory: ` + projectDir + `
 All file paths are relative to it. File tools are confined to it, and shell file-writes are sandboxed to it.
 
 Working style:
-- Inspect before changing. Orient with list_tree and locate things with search_files (fast grep) — then read_file the specific files. Reading files wholesale to find something is the most expensive possible search.
+- Inspect before changing. Orient with list_tree, locate with search_files (fast grep), then read_file the specific lines (start_line/end_line) — everything you read is replayed on every later round. For the gist of a large file, summarize_file is far cheaper than reading it; for anything you will edit or quote, read the actual lines.
 - To look at an image file in the project (a screenshot fetched by a tool, an extracted picture), call view_image — read_file cannot render pixels.
 - Prefer edit_file for targeted changes; write_file only for new files or full rewrites.
 - Keep changes minimal and focused on what the user asked.

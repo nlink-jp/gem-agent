@@ -31,11 +31,21 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
 - Gemini agent loop with Gemini 3 thought-signature capture/replay
   (verified live)
 - Built-in tools: `list_files` / `list_tree` / `search_files` / `read_file` /
-  `view_image` / `write_file` / `edit_file` / `shell_exec`, all confined to
-  the project directory (symlink escapes included). `list_tree` shows the
-  project as a tree; `search_files` is a fast dependency-free grep
-  (regex or literal, binaries and `.git` skipped, caps reported) — so
-  orientation costs one call, not one round per directory
+  `summarize_file` / `view_image` / `write_file` / `edit_file` /
+  `shell_exec`, all confined to the project directory (symlink escapes
+  included). `list_tree` shows the project as a tree; `search_files` is a
+  fast dependency-free grep (regex or literal, binaries and `.git`
+  skipped, caps reported) — so orientation costs one call, not one round
+  per directory
+- **Context economy** (ADR-0014): `read_file` takes `start_line`/`end_line`
+  to read a window instead of the whole file (annotated, never
+  masquerading as the full text — and no line-number prefixes, which
+  would poison `edit_file`'s exact-match contract). `summarize_file`
+  returns a short summary instead of the bytes, produced by
+  `[model].summary` — a lightweight model sharing the main model's
+  client — or the main model when unset. File content reaches the
+  summariser nonce-wrapped with no tools, exactly like compaction; a
+  blocked summary is a reported error, never a silent empty one
 - Per-call approval gates (MITL) for mutating tools, with a session-scoped
   allowlist (`y` = once, `a` = always this session; deny fails closed)
 - **Auto-approve mode** (opt-in, shift+tab or `/auto`): each mutating call

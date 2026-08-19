@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.10.0] - 2026-08-19
+
+### Added — context economy (ADR-0014, operator request)
+
+- **`read_file` line windows** — `start_line`/`end_line` (1-based,
+  inclusive) read a slice instead of the whole file, annotated
+  `[showing lines A–B of N]` so a partial view never masquerades as the
+  full text. Content stays raw — no line-number prefixes, which would
+  poison `edit_file`'s exact-match contract the moment the model copies
+  what it read. Pairs with `search_files` output (`path:line`)
+- **`summarize_file(path, focus?)`** — returns a short summary instead
+  of the bytes; the history then carries the summary, and the saving
+  repeats on every later round. The summariser model is
+  `[model].summary` — the operator's requested lightweight slot,
+  sharing the main model's client — defaulting to the main model, since
+  the context saving does not depend on the model being cheaper
+- The summariser is the compaction pattern applied to one file: content
+  nonce-wrapped, defensive framing first, no tools offered; a blocked
+  or empty summary is a reported error naming the reason and the
+  fallback (read the file directly). The result names itself a lossy
+  summary and names the model that wrote it. Summariser tokens go to
+  the session log, not the footer — the context gauge tracks the main
+  conversation
+- The system prompt steers the read economy: windows for precision,
+  summaries for gist, whole files only when the whole file is the point
+
 ## [0.9.0] - 2026-08-19
 
 ### Added — navigation tools (ADR-0013, operator request)

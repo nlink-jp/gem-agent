@@ -145,6 +145,10 @@ reasoning; both are recorded rather than quietly added):
 - Context compaction — [ADR-0006](adr/0006-context-compaction.md). A
   session that dies at the context window, with `/clear` as the only
   recovery, is not much of a fallback.
+- Context economy — [ADR-0014](adr/0014-context-economy-tools.md).
+  Line-window reads and a summarize_file tool on a configurable
+  lightweight model: finding became cheap (ADR-0013); reading was the
+  cost left.
 - Navigation tools — [ADR-0013](adr/0013-navigation-tools.md). A tree
   listing and a fast dependency-free grep: orientation cost one round
   per directory, and finding things cost reading files wholesale.

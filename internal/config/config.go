@@ -149,6 +149,10 @@ type ModelConfig struct {
 	// ContextWindow overrides the context window size shown in the TUI
 	// footer. 0 (default) auto-detects from the model metadata.
 	ContextWindow int `toml:"context_window"`
+	// Summary names the lightweight model used by the summarize_file
+	// tool (ADR-0014). Empty means the main model: the context saving
+	// does not depend on the model being cheaper.
+	Summary string `toml:"summary"`
 	// Safety selects the configurable content-filter thresholds:
 	// "default" (the provider's own), "relaxed" (block only high-
 	// confidence hits), or "off". Security work trips the dangerous-
@@ -282,7 +286,7 @@ func applyEnv(cfg *Config) {
 // trackedKeys are the settings /settings displays with provenance.
 var trackedKeys = []string{
 	"gcp.project", "gcp.location",
-	"model.name", "model.context_window", "model.safety",
+	"model.name", "model.context_window", "model.safety", "model.summary",
 	"sandbox.enabled",
 	"agent.max_turns", "agent.shell_timeout_sec", "agent.auto_approve",
 	"agent.auto_compact", "agent.compact_at_pct",

@@ -25,6 +25,11 @@ name = "gemini-3.7-flash"
 # 1M estimate (displayed as "~1.0M"). Set this for an exact figure.
 #context_window = 1048576
 
+# Lightweight model for the summarize_file tool (ADR-0014). Unset means
+# the main model — the context saving does not depend on the model being
+# cheaper. Shares the main model's client, project, and credentials.
+#summary = "<a lighter gemini model id>"
+
 # Content-filter policy for the four configurable harm categories:
 #   default — the provider's own thresholds
 #   relaxed — block only high-confidence hits

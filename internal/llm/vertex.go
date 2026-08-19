@@ -70,6 +70,14 @@ func SafetySettings(policy string) []*genai.SafetySetting {
 // Model returns the configured model name.
 func (v *Vertex) Model() string { return v.model }
 
+// WithModel returns a backend on the same client (same project,
+// location, credentials, safety policy) addressing a different model —
+// the [model].summary slot (ADR-0014). Model choice is per-call in the
+// API, so this is a name, not a second connection.
+func (v *Vertex) WithModel(name string) *Vertex {
+	return &Vertex{client: v.client, model: name, safety: v.safety}
+}
+
 // ContextWindow fetches the model's input token limit from the model
 // metadata. Callers treat failures as "unknown", never fatal — the
 // footer display must not block a backup tool.

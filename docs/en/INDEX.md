@@ -59,6 +59,8 @@ excepted).
   via @ (clipboard included), model-viewed via view_image
 - [`ADR-0013`](adr/0013-navigation-tools.md) — list_tree and
   search_files: orientation and fast grep, no index, no dependencies
+- [`ADR-0014`](adr/0014-context-economy-tools.md) — summarize_file on a
+  lightweight model, and line-window reads for read_file
 
 ## History
 
