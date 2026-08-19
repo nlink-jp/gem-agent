@@ -145,6 +145,9 @@ reasoning; both are recorded rather than quietly added):
 - Context compaction — [ADR-0006](adr/0006-context-compaction.md). A
   session that dies at the context window, with `/clear` as the only
   recovery, is not much of a fallback.
+- Navigation tools — [ADR-0013](adr/0013-navigation-tools.md). A tree
+  listing and a fast dependency-free grep: orientation cost one round
+  per directory, and finding things cost reading files wholesale.
 - Image input — [ADR-0012](adr/0012-image-input.md). The work most
   often starts from a screenshot, and MCP servers produce images the
   model itself must look at.

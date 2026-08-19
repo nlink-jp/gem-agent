@@ -30,8 +30,12 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   Piped/scripted use falls back to a plain line REPL automatically
 - Gemini agent loop with Gemini 3 thought-signature capture/replay
   (verified live)
-- Built-in tools: `list_files` / `read_file` / `write_file` / `edit_file` / `shell_exec`,
-  all confined to the project directory (symlink escapes included)
+- Built-in tools: `list_files` / `list_tree` / `search_files` / `read_file` /
+  `view_image` / `write_file` / `edit_file` / `shell_exec`, all confined to
+  the project directory (symlink escapes included). `list_tree` shows the
+  project as a tree; `search_files` is a fast dependency-free grep
+  (regex or literal, binaries and `.git` skipped, caps reported) — so
+  orientation costs one call, not one round per directory
 - Per-call approval gates (MITL) for mutating tools, with a session-scoped
   allowlist (`y` = once, `a` = always this session; deny fails closed)
 - **Auto-approve mode** (opt-in, shift+tab or `/auto`): each mutating call

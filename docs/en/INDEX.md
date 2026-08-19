@@ -57,6 +57,8 @@ excepted).
   gem-agent's own directory; sharing with Claude Code is a symlink
 - [`ADR-0012`](adr/0012-image-input.md) — image input: operator-attached
   via @ (clipboard included), model-viewed via view_image
+- [`ADR-0013`](adr/0013-navigation-tools.md) — list_tree and
+  search_files: orientation and fast grep, no index, no dependencies
 
 ## History
 

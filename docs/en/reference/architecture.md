@@ -48,7 +48,7 @@ purpose:
   the second check is what stops a symlink inside the project pointing
   out of it. For a path that does not exist yet, symlinks are resolved on
   the deepest existing ancestor before the remaining tail is re-attached.
-  Four of the five built-ins take a path and all four route through it.
+  Every path-taking built-in routes through it (the navigation tools' tree walks additionally refuse to follow symlinks — a walk that follows links can leave the project through a link the per-path checks never see).
 - **Process-level containment** (`internal/sandbox`). `shell_exec` takes
   no path — it takes a command — so it is wrapped in `sandbox-exec` with
   a generated SBPL profile that denies `file-write*` outside the project

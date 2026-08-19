@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.9.0] - 2026-08-19
+
+### Added — navigation tools (ADR-0013, operator request)
+
+- **`list_tree`** — the project as an indented tree, recursive from an
+  optional subdirectory. Orientation used to cost one round per
+  directory (`list_files` only), and every round replays the whole
+  history — fewer, smaller rounds is the cheapest optimisation this
+  tool has. VCS internals are skipped (stated in the description);
+  entry and depth caps are reported with the way to see more, never
+  silent
+- **`search_files`** — fast grep across the project: Go regex or
+  `literal=true` for the exact string, results as `path:line: text`.
+  Pure Go, no index, no ripgrep dependency — a backup tool must not
+  acquire a prerequisite on the day it is needed, and "not RAG, fast
+  grep" was the operator's own ceiling. Binaries are skipped by content
+  sniff, oversized files and `.git` likewise; the match cap is reported
+  when hit
+- Neither tool follows symlinks: a walk that follows links can leave
+  the project through a link the per-path checks never see (the
+  out-of-project-symlink case is covered by a test that plants one)
+- The system prompt steers: orient with `list_tree`, locate with
+  `search_files`, then `read_file` the specific files — reading files
+  wholesale to find something is the most expensive possible search
+
 ## [0.8.0] - 2026-08-19
 
 ### Added — image input (ADR-0012, operator request)

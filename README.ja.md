@@ -29,8 +29,12 @@ Claude Code が使えない状況（プロバイダ側障害・契約やネッ�
   自動的に素の行 REPL にフォールバック
 - Gemini エージェントループ — Gemini 3 thought signature の capture/replay
   （実機検証済み）
-- 組み込みツール: `list_files` / `read_file` / `write_file` / `edit_file` / `shell_exec`
-  （すべてプロジェクトディレクトリに封じ込め。シンボリックリンク経由の脱出も検査）
+- 組み込みツール: `list_files` / `list_tree` / `search_files` / `read_file` /
+  `view_image` / `write_file` / `edit_file` / `shell_exec`
+  （すべてプロジェクトディレクトリに封じ込め。シンボリックリンク経由の脱出も検査）。
+  `list_tree` はプロジェクトをツリー表示、`search_files` は依存ゼロの高速 grep
+  （regex / literal、バイナリと `.git` はスキップ、上限は報告）— 方向づけが
+  「ディレクトリごとに 1 ラウンド」から 1 コールになります
 - 変更系ツールの都度承認ゲート（MITL）+ セッション内 allowlist
   （`y` = 1回、`a` = このセッションでは常に許可。拒否側に倒れる設計）
 - **自動承認モード**（opt-in、shift+tab または `/auto`）: 変更系コールごとに
