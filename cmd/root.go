@@ -484,7 +484,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			Shell: func(shellCtx context.Context, command string) {
 				go func() {
 					out := runDirectShell(shellCtx, registry, ag, command)
-					prog.Send(tui.ShellDone{Output: out})
+					// Interrupted runs hand a queued message back instead
+					// of auto-sending it (ADR-0007 via ADR-0021).
+					prog.Send(tui.ShellDone{Output: out, Interrupted: shellCtx.Err() != nil})
 				}()
 			},
 			Compact: func(compactCtx context.Context) {
@@ -492,6 +494,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 					note, err := compactNow(compactCtx, ag)
 					if err == nil {
 						prog.Send(tui.Attached{Notes: []string{note}})
+					}
+					if err != nil && compactCtx.Err() != nil {
+						// Mirror StartTurn's mapping: a cancellation-caused
+						// failure is an interrupt, not a backend error.
+						err = context.Canceled
 					}
 					prog.Send(tui.TurnDone{Err: err})
 				}()
@@ -545,7 +552,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			if command == "" {
 				continue
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), runDirectShell(ctx, registry, ag, command))
+			// runTurn's signal handling: Ctrl+C interrupts the command,
+			// not the process (ADR-0021 — outside it, the default action
+			// killed the whole session).
+			_ = runTurn(ctx, func(shellCtx context.Context) error {
+				fmt.Fprintln(cmd.OutOrStdout(), runDirectShell(shellCtx, registry, ag, command))
+				return nil
+			})
 			continue
 		}
 		if input == "/settings" {
@@ -570,11 +583,19 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		if input == "/compact" {
 			// Synchronous here: the plain REPL has no phase machine, and
 			// nothing else can be happening while it waits for a line.
-			note, err := compactNow(ctx, ag)
-			if err != nil {
-				fmt.Fprintf(stderr, "error: %v\n", err)
-			} else {
-				fmt.Fprintln(stderr, note)
+			// runTurn makes Ctrl+C interrupt the summariser call rather
+			// than kill the process (ADR-0021).
+			runErr := runTurn(ctx, func(compactCtx context.Context) error {
+				note, err := compactNow(compactCtx, ag)
+				if err == nil {
+					fmt.Fprintln(stderr, note)
+				}
+				return err
+			})
+			if errors.Is(runErr, errInterrupted) {
+				fmt.Fprintln(stderr, "(interrupted)")
+			} else if runErr != nil {
+				fmt.Fprintf(stderr, "error: %v\n", runErr)
 			}
 			continue
 		}
@@ -766,6 +787,7 @@ keys:
   Enter 送信 · ↑↓ 履歴 · Ctrl+C 中断/クリア · Ctrl+D 終了
   実行中も入力できます: Enter で次のメッセージとして予約され、ターンが正常に
     終わった時点で送信されます（失敗・中断時は未送信のまま入力欄へ戻ります）
+    ※ ! と / のコマンドは予約できません — Ctrl+C で中断してから実行します
   改行（複数行入力）: Ctrl+J もしくは 行末に \ を置いて Enter
     ※ Option+Enter は「Option を Meta として送る」設定の端末でのみ有効
       （既定では通常の Enter と同じバイトになり送信されます）

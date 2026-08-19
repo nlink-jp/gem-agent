@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -189,6 +190,12 @@ type Model struct {
 	// back to the input box unsent when it does not.
 	pending  string
 	approval *ApprovalRequest
+	// approvalAt is when the dialog appeared. Keys arriving within the
+	// grace window are dropped: the operator types during runs
+	// (ADR-0007), so an Enter or a letter aimed at the input box can
+	// land one message behind the dialog and answer it — 'a' would even
+	// session-allowlist the tool (ADR-0021).
+	approvalAt time.Time
 
 	// Settings panel (ADR-0009). settingsData is the caller-supplied
 	// snapshot used to open the panel; settings is the live copy.
@@ -409,6 +416,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ApprovalRequest:
 		req := msg
 		m.approval = &req
+		m.approvalAt = time.Now()
 		m.phase = phaseApproval
 		// An escalated call starts on 拒否 so a reflexive Enter cannot
 		// approve what the risk ladder objected to; an ordinary prompt
@@ -443,11 +451,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Raw terminal output — never through the Markdown renderer.
 		cmds := []tea.Cmd{m.emit(strings.TrimRight(out, "\n"))}
+		if msg.Interrupted {
+			cmds = append(cmds, m.emit(m.st.status.Render("(interrupted)")))
+		}
 		m.phase = phaseInput
 		m.status = ""
 		m.cancelTurn = nil
 		m.ta.Focus()
-		return m.resumeAfterTurn(cmds, true)
+		return m.resumeAfterTurn(cmds, !msg.Interrupted)
 
 	case TurnDone:
 		var cmds []tea.Cmd
@@ -530,7 +541,15 @@ func (m *Model) flushLive() []tea.Cmd {
 	return []tea.Cmd{m.emit(m.render(text))}
 }
 
+// approvalGrace is how long after the dialog appears keys are ignored —
+// long enough to swallow a keystroke that was already in flight for the
+// input box, short enough to be imperceptible when answering for real.
+const approvalGrace = 300 * time.Millisecond
+
 func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if time.Since(m.approvalAt) < approvalGrace {
+		return m, nil // typed-ahead key aimed at the input box (ADR-0021)
+	}
 	answer := byte(0)
 	switch msg.Type {
 	case tea.KeyLeft, tea.KeyUp, tea.KeyShiftTab:
@@ -621,6 +640,14 @@ func (m Model) updateRunningInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if text == "" {
 			return m, nil
 		}
+		// Commands cannot be queued (ADR-0021 §7): queued messages merge
+		// into ONE input, and prefix-routing the merged block would run
+		// queued prose as shell after a queued `!`, or silently discard
+		// everything after a queued `/command`. The text stays in the
+		// box; Ctrl+C interrupts the turn if it cannot wait.
+		if strings.HasPrefix(text, "!") || strings.HasPrefix(text, "/") {
+			return m, m.emit(m.st.warn.Render("⚠ ! と / のコマンドは実行中には送れません — Ctrl+C で中断してから実行してください（入力は残っています）"))
+		}
 		m.ta.Reset()
 		m.ta.SetHeight(1)
 		// A second Enter appends rather than replacing: nothing the
@@ -659,19 +686,35 @@ func (m *Model) takePending() string {
 // world that no longer exists, so it is handed back instead.
 func (m Model) resumeAfterTurn(cmds []tea.Cmd, clean bool) (tea.Model, tea.Cmd) {
 	pending := m.takePending()
+	// A half-typed draft (written after the queued Enter, not yet
+	// entered) must survive: overwriting the box with pending erased it
+	// without a trace (ADR-0021).
+	draft := strings.TrimSpace(m.ta.Value())
 	if pending == "" {
 		return m, tea.Sequence(append(cmds, textarea.Blink)...)
 	}
-	m.ta.SetValue(pending)
-	m.ta.CursorEnd()
-	m.syncHeight()
 	if !clean {
+		// Hand back everything, in the order it was written.
+		if draft != "" {
+			pending += "\n" + draft
+		}
+		m.ta.SetValue(pending)
+		m.ta.CursorEnd()
+		m.syncHeight()
 		cmds = append(cmds,
 			m.emit(m.st.warn.Render("⚠ the queued message was not sent — the turn did not finish. It is back in the input box")),
 			textarea.Blink)
 		return m, tea.Sequence(cmds...)
 	}
+	m.ta.SetValue(pending)
 	next, cmd := m.submit()
+	if nm, ok := next.(Model); ok && draft != "" {
+		// The queued message went out; the draft goes back to the box.
+		nm.ta.SetValue(draft)
+		nm.ta.CursorEnd()
+		nm.syncHeight()
+		next = nm
+	}
 	return next, tea.Sequence(append(cmds, cmd)...)
 }
 

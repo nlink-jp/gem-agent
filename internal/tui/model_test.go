@@ -612,6 +612,7 @@ func TestApprovalFlow(t *testing.T) {
 	resp := make(chan byte, 1)
 	next, _ := m.Update(ApprovalRequest{Tool: "shell_exec", Detail: "make build", Resp: resp})
 	m = next.(Model)
+	m = dialogSeen(m)
 	if m.phase != phaseApproval {
 		t.Fatal("approval request should switch phase")
 	}
@@ -801,7 +802,15 @@ func openApproval(t *testing.T, m Model, reason string) (Model, chan byte) {
 	t.Helper()
 	req, resp := approvalReq(reason)
 	next, _ := m.Update(req)
-	return next.(Model), resp
+	return dialogSeen(next.(Model)), resp
+}
+
+// dialogSeen rewinds the type-ahead grace window (ADR-0021): these
+// tests press keys as an operator who has read the dialog, not as a
+// keystroke that was already in flight when it appeared.
+func dialogSeen(m Model) Model {
+	m.approvalAt = m.approvalAt.Add(-2 * approvalGrace)
+	return m
 }
 
 // TestApprovalSelectionKeys is the IME-safety contract: y/n/a are
@@ -1154,6 +1163,7 @@ func TestApprovalDialogStillOwnsTheKeysWhileOpen(t *testing.T) {
 	resp := make(chan byte, 1)
 	next, _ := m.Update(ApprovalRequest{Tool: "write_file", Detail: "x", Resp: resp})
 	m = next.(Model)
+	m = dialogSeen(m)
 
 	m = press(m, runeMsg("y"))
 	if got := <-resp; got != 'y' {
@@ -1185,6 +1195,7 @@ func TestApprovalPersistAnswerWritesPolicyAndAllows(t *testing.T) {
 	resp := make(chan byte, 1)
 	next, _ := m.Update(ApprovalRequest{Tool: "mcp__x__y", Detail: "d", Resp: resp})
 	m = next.(Model)
+	m = dialogSeen(m)
 
 	m = press(m, runeMsg("p"))
 	if got.Tool != "mcp__x__y" || got.Value != "never" || got.Scope != ScopeGlobal {

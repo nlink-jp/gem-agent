@@ -44,8 +44,12 @@ type Attached struct {
 }
 
 // ShellDone signals completion of a direct (!-prefixed) shell command.
+// Interrupted marks a Ctrl+C'd run: a message queued during it is
+// handed back rather than auto-sent (ADR-0007's rule, which the shell
+// path previously ignored — ADR-0021).
 type ShellDone struct {
-	Output string
+	Output      string
+	Interrupted bool
 }
 
 // Usage carries one LLM round's token counts. Prompt tokens approximate
