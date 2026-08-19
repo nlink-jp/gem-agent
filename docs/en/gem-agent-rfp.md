@@ -145,6 +145,9 @@ reasoning; both are recorded rather than quietly added):
 - Context compaction — [ADR-0006](adr/0006-context-compaction.md). A
   session that dies at the context window, with `/clear` as the only
   recovery, is not much of a fallback.
+- Web access — [ADR-0017](adr/0017-web-tools.md). Grounded search
+  (first-party; the agentic-web-search freeze is the history) and
+  URL-context fetch digested by the lightweight model.
 - file_info — [ADR-0016](adr/0016-file-info.md). Type judgement,
   metadata, and the hash trio the org's lookup MCPs consume.
 - edit_file v2 — [ADR-0015](adr/0015-edit-file-v2.md). Batched atomic

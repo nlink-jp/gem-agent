@@ -222,6 +222,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if err := registerSummarizeTool(registry, summaryBackend, summaryModel, sessionLog); err != nil {
 		return err
 	}
+	// Web access (ADR-0017): grounded search on the main model, digested
+	// fetch on the lightweight one. Both egress-gated by default.
+	if err := registerWebTools(registry, backend, summaryBackend, summaryModel, sessionLog); err != nil {
+		return err
+	}
 
 	// --- project instruction files (drop-in: AGENTS.md and friends,
 	// including ancestor directories, exactly as other agents read them)

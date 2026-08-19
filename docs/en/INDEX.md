@@ -65,6 +65,8 @@ excepted).
   edits, diagnosed misses, evidence on success
 - [`ADR-0016`](adr/0016-file-info.md) — file_info: content-judged type,
   metadata, and the MD5/SHA1/SHA256 trio
+- [`ADR-0017`](adr/0017-web-tools.md) — grounded search and digested
+  fetch; egress-gated by default, SSRF dead by construction
 
 ## History
 

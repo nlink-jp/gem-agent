@@ -140,6 +140,9 @@ max_turns = 50
 - コンテキスト圧縮 — [ADR-0006](adr/0006-context-compaction.ja.md)。
   コンテキストウィンドウで死に、復旧手段が `/clear` だけのセッションは
   フォールバックとして頼りにならない。
+- Web アクセス — [ADR-0017](adr/0017-web-tools.ja.md)。グラウンディング検索
+  （first-party。agentic-web-search の凍結がその歴史）と、軽量モデルが要約する
+  URL Context フェッチ。
 - file_info — [ADR-0016](adr/0016-file-info.ja.md)。種別判定・メタデータ・
   組織の lookup MCP が食べるハッシュ三点セット。
 - edit_file v2 — [ADR-0015](adr/0015-edit-file-v2.ja.md)。診断つき不一致と

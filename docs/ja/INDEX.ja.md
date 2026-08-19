@@ -61,6 +61,8 @@ supersede する（typo とリンク修正は例外）。
   編集・診断つき不一致・成功時の証拠
 - [`ADR-0016`](adr/0016-file-info.ja.md) — file_info: 内容判定の種別・
   メタデータ・MD5/SHA1/SHA256 三点セット
+- [`ADR-0017`](adr/0017-web-tools.ja.md) — グラウンディング検索と要約
+  フェッチ。既定でエグレスゲート、SSRF は構造的に死ぬ
 
 ## History（履歴）
 

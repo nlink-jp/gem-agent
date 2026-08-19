@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.13.0] - 2026-08-19
+
+### Added — web access (ADR-0017, operator request)
+
+- **`web_search(query)`** — Grounding with Google Search on the main
+  model, per the operator's own call: plain search APIs barely exist and
+  their terms froze the org's agentic-web-search project once already;
+  grounding is first-party and ToS-clean. Answers return **with their
+  sources** (title/domain/URI from the grounding metadata) so claims can
+  be checked; a sourceless answer is flagged, not dressed up
+- **`web_fetch(url, focus?)`** — the URL Context tool on the lightweight
+  digest model, implementing the operator's suggestion exactly: fetched
+  content goes through extraction and organisation, never raw into the
+  main model. Three savings stack: the page bytes never enter the local
+  process, never the digest model's output, never the main conversation.
+  **Server-side fetching kills SSRF by construction** — localhost and
+  the LAN are structurally unreachable; the mirror cost (no intranet or
+  authenticated pages) is reported per URL with its retrieval status
+- **Both tools are egress-gated by default** (`Mutating: true`): a query
+  or URL is a channel where injected instructions could exfiltrate what
+  the model can read. The ADR-0008 policy (`"web_search" = "never"`) is
+  the deliberate per-operator relaxation — and it makes the tools usable
+  in one-shot mode
+- Digests and answers return as ordinarily nonce-wrapped tool results
+  (no ADR-0010 exemption); the layer that cannot be wrapped — the
+  server-side page — gets the defensive framing in the fetch prompt,
+  stated as the weaker layer it is (ADR-0012's position)
+
 ## [0.12.1] - 2026-08-19
 
 ### Fixed

@@ -299,6 +299,31 @@ because nothing can answer a prompt there, but a tool set to `"never"`
 was never going to ask — so it runs. A read-only MCP lookup with a
 `"never"` policy is usable in a pipeline.
 
+## Web access
+
+Two egress tools (ADR-0017), both **approval-gated by default** — the
+query or URL itself is a channel where injected instructions could
+exfiltrate what the model can read — and both relaxable per tool with the
+[approval policy](#per-tool-approval-policy) (`"web_search" = "never"`),
+which also makes them usable in `-p` one-shot mode:
+
+- **`web_search(query)`** — Grounding with Google Search on the main
+  model: a grounded answer **with its sources** (title, domain, URI), so
+  claims can be checked rather than believed. First-party and ToS-clean —
+  the reason plain search APIs were not used.
+- **`web_fetch(url, focus?)`** — the URL Context tool on the lightweight
+  digest model: the page is fetched by the provider's infrastructure and
+  read in the digest model's own context; only an **organized
+  extraction** (key points with exact names/numbers/dates, caveats)
+  enters this conversation. Server-side fetching kills the SSRF class by
+  construction — localhost and your LAN are structurally unreachable —
+  at the mirror cost that intranet/authenticated pages cannot be fetched
+  (failures are reported with their retrieval status)
+
+Web content is untrusted: digests return as ordinarily nonce-wrapped
+tool results, and the fetch prompt carries the defensive framing for the
+layer that cannot be wrapped.
+
 ## Images
 
 Screenshots are first-class input (ADR-0012). Three ways in, plus one
