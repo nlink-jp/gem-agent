@@ -50,8 +50,11 @@ excepted).
   policy; a project may tighten freely and loosen only where trusted
 - [`ADR-0009`](adr/0009-settings-panel.md) — a settings panel showing
   provenance, and a machine-owned policy file so comments survive
-- [`ADR-0010`](adr/0010-skills.md) — Claude Code's skills read as-is;
-  skill content is instructions, bounded by confined reads
+- [`ADR-0010`](adr/0010-skills.md) — Claude Code's skill format read
+  as-is; skill content is instructions, bounded by confined reads
+  (location clause superseded by 0011)
+- [`ADR-0011`](adr/0011-skill-scope-separation.md) — skills live in
+  gem-agent's own directory; sharing with Claude Code is a symlink
 
 ## History
 

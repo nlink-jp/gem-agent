@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** |
+| Status | **Accepted** — 個人スコープの設置場所は [ADR-0011](0011-skill-scope-separation.ja.md) が supersede |
 | Date | 2026-08-19 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

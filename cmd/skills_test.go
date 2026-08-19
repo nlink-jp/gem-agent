@@ -76,14 +76,18 @@ func TestExpandSkillInputErrorsAreHandledNotTurns(t *testing.T) {
 func TestSkillsListingShowsUsageAndInstallPathsWhenEmpty(t *testing.T) {
 	list := testSkillDir(t)
 	out := skillsListing(list)
-	for _, want := range []string{"meeting-notes", "[personal]", "/skill meeting-notes <file> [--lang ja|en]"} {
+	for _, want := range []string{"meeting-notes", "[global]", "/skill meeting-notes <file> [--lang ja|en]"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("listing missing %q:\n%s", want, out)
 		}
 	}
 	empty := skillsListing(nil)
-	if !strings.Contains(empty, "~/.claude/skills") {
-		t.Errorf("empty listing must say where skills install:\n%s", empty)
+	// The empty state must teach both the install location and the
+	// sharing recipe — the knowledge is needed exactly when it is missing.
+	for _, want := range []string{"~/.config/gem-agent/skills", "ln -s ~/.claude/skills"} {
+		if !strings.Contains(empty, want) {
+			t.Errorf("empty listing missing %q:\n%s", want, empty)
+		}
 	}
 }
 
@@ -91,7 +95,7 @@ func TestSkillBannerLine(t *testing.T) {
 	if skillBannerLine(nil) != "" {
 		t.Error("no skills must add no banner line")
 	}
-	list := []skills.Skill{{Name: "a", Scope: "personal"}, {Name: "b", Scope: "project"}}
+	list := []skills.Skill{{Name: "a", Scope: "global"}, {Name: "b", Scope: "project"}}
 	line := skillBannerLine(list)
 	if !strings.Contains(line, "a") || !strings.Contains(line, "b [project]") {
 		t.Errorf("banner = %q", line)

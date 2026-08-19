@@ -1,9 +1,13 @@
-// Package skills discovers and loads Claude Code skills (ADR-0010):
-// directories carrying a SKILL.md with YAML frontmatter, installed under
-// ~/.claude/skills/ or <project>/.claude/skills/. The format and the
-// locations are Claude Code's, read as-is — the same drop-in rule as
-// AGENTS.md and .mcp.json, and the reason the operator's existing skill
-// library works here unmodified.
+// Package skills discovers and loads Claude Code skills (ADR-0010/0011):
+// directories carrying a SKILL.md with YAML frontmatter. The format is
+// Claude Code's, read as-is; the global location is gem-agent's own
+// (~/.config/gem-agent/skills/), because format compatibility is
+// drop-in while location sharing is coupling — reading another tool's
+// live environment means the fallback's behaviour changes whenever the
+// primary's does. Sharing with Claude Code is an operator-made symlink,
+// which discovery follows. The project scope
+// (<project>/.claude/skills/) is shared on purpose: a repository is the
+// project's environment, not either tool's.
 //
 // Skills are progressive disclosure: one description line per skill sits
 // in the system prompt, and the body loads only when used. Loaded
@@ -49,7 +53,8 @@ type Skill struct {
 	// Dir is the skill's own directory, symlink-resolved — the boundary
 	// Body and File confine reads to.
 	Dir string
-	// Scope is "personal" (~/.claude/skills) or "project".
+	// Scope is "global" (~/.config/gem-agent/skills) or "project" —
+	// MCP's vocabulary (ADR-0011).
 	Scope string
 }
 
@@ -58,11 +63,15 @@ type Skill struct {
 // will be mistyped, and path separators in a name would be a traversal.
 var namePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 
-// Discover scans the personal and project skill directories. The project
+// Discover scans the global and project skill directories. The project
 // wins a name collision (announced in notes), matching how .mcp.json
 // scopes merge. Either directory may be absent — skills are optional
 // everywhere.
-func Discover(personalDir, projectDir string, lim Limits) ([]Skill, []string) {
+//
+// Symlinked entries are followed: a skill shared from Claude Code's
+// directory by `ln -s` is discovered like a real one, and the read
+// confinement downstream applies to the resolved directory (ADR-0011).
+func Discover(globalDir, projectDir string, lim Limits) ([]Skill, []string) {
 	var notes []string
 	byName := map[string]Skill{}
 	order := []string{}
@@ -73,10 +82,14 @@ func Discover(personalDir, projectDir string, lim Limits) ([]Skill, []string) {
 			return // absent is the normal case, not an error
 		}
 		for _, e := range entries {
-			if !e.IsDir() {
+			dir := filepath.Join(root, e.Name())
+			// os.Stat, not e.IsDir(): a symlinked skill directory reports
+			// IsDir()=false on the DirEntry, and symlinks are exactly how
+			// sharing with Claude Code works (ADR-0011 §3).
+			info, err := os.Stat(dir)
+			if err != nil || !info.IsDir() {
 				continue
 			}
-			dir := filepath.Join(root, e.Name())
 			s, err := readSkill(dir, scope, lim)
 			if err != nil {
 				notes = append(notes, fmt.Sprintf("skill %s skipped: %v", e.Name(), err))
@@ -93,8 +106,8 @@ func Discover(personalDir, projectDir string, lim Limits) ([]Skill, []string) {
 			byName[s.Name] = *s
 		}
 	}
-	// Personal first so a project skill of the same name overrides it.
-	scan(personalDir, "personal")
+	// Global first so a project skill of the same name overrides it.
+	scan(globalDir, "global")
 	if projectDir != "" {
 		scan(filepath.Join(projectDir, ".claude", "skills"), "project")
 	}

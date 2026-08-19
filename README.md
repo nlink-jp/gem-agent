@@ -269,19 +269,30 @@ was never going to ask — so it runs. A read-only MCP lookup with a
 
 ## Skills
 
-gem-agent reads **Claude Code's skills, as-is** — same format, same
-locations, nothing to migrate:
+gem-agent reads **Claude Code's skill format, as-is** — from its own
+locations, arranged exactly like MCP: format compatibility is drop-in,
+location sharing would be coupling
+([ADR-0011](docs/en/adr/0011-skill-scope-separation.md)):
 
-| Scope | Path |
-|---|---|
-| Personal | `~/.claude/skills/<name>/SKILL.md` |
-| Project | `<project>/.claude/skills/<name>/SKILL.md` |
+| Scope | Path | |
+|---|---|---|
+| Global | `~/.config/gem-agent/skills/<name>/SKILL.md` | gem-agent's own |
+| Project | `<project>/.claude/skills/<name>/SKILL.md` | shared with Claude Code |
 
-A skills-series zip unpacked into the personal directory serves both
-agents. Frontmatter is read minimally (`name`, `description`,
-`argument-hint`); `allowed-tools` is ignored — gem-agent has its own
-approval model, and honouring a foreign permission grant would bypass it.
-The project wins a name collision, announced like an MCP one.
+`~/.claude/` is never read — that is Claude Code's live environment, and
+inheriting it implicitly would change the fallback's behaviour whenever
+the primary's environment changes. **Sharing is a symlink you make**,
+per skill or wholesale (discovery follows links):
+
+```sh
+ln -s ~/.claude/skills/meeting-notes ~/.config/gem-agent/skills/meeting-notes
+ln -s ~/.claude/skills ~/.config/gem-agent/skills   # share everything
+```
+
+Frontmatter is read minimally (`name`, `description`, `argument-hint`);
+`allowed-tools` is ignored — gem-agent has its own approval model, and
+honouring a foreign permission grant would bypass it. The project wins a
+name collision, announced like an MCP one.
 
 Skills are progressive disclosure: each contributes one description line
 to the system prompt, and the body loads only when used —

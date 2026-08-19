@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.7.0] - 2026-08-19
+
+### Changed — skills move to gem-agent's own directory (ADR-0011, operator review of v0.6.0)
+
+- v0.6.0 read `~/.claude/skills/` directly — Claude Code's live
+  environment. The operator caught it within hours: that is environment
+  mixing (skills installed *for Claude Code* may assume its tools and
+  context, and the fallback's behaviour would change whenever the
+  primary's environment does), and it broke the symmetry MCP already
+  settled — Claude Code's *format*, gem-agent's *location*
+- The global scope is now `~/.config/gem-agent/skills/`, exactly the MCP
+  arrangement; `~/.claude/` is no longer read at all. The project scope
+  (`<project>/.claude/skills/`, shared) is unchanged — a repository is
+  the project's environment, not either tool's
+- **Sharing with Claude Code is a symlink the operator makes**, per
+  skill or wholesale — discovery follows links, and the read confinement
+  applies to the resolved directory:
+  `ln -s ~/.claude/skills/<name> ~/.config/gem-agent/skills/<name>`
+- Scope labels now match MCP's: `[global]` / `[project]`. The `/skills`
+  empty state prints both paths and the sharing recipe
+
 ## [0.6.0] - 2026-08-19
 
 ### Added — skills (ADR-0010, operator request)

@@ -11,14 +11,18 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
-// discoverSkills finds the operator's Claude Code skills (ADR-0010):
-// ~/.claude/skills plus <project>/.claude/skills, read as-is.
+// discoverSkills finds the operator's skills (ADR-0010/0011): Claude
+// Code's format from gem-agent's own global directory plus the shared
+// project one. ~/.claude is never read — that is Claude Code's live
+// environment, and inheriting it implicitly would couple the fallback's
+// behaviour to the primary's (the operator shares individual skills, or
+// everything, with a symlink instead).
 func discoverSkills(projectDir string) ([]skills.Skill, []string) {
-	personal := ""
+	global := ""
 	if home, err := os.UserHomeDir(); err == nil {
-		personal = filepath.Join(home, ".claude", "skills")
+		global = filepath.Join(home, ".config", "gem-agent", "skills")
 	}
-	return skills.Discover(personal, projectDir, skills.DefaultLimits())
+	return skills.Discover(global, projectDir, skills.DefaultLimits())
 }
 
 // registerSkillTool adds load_skill to the registry. Read-only and
@@ -103,10 +107,13 @@ Follow the skill's instructions below for this task. Supporting files under the 
 // skillsListing renders /skills output.
 func skillsListing(list []skills.Skill) string {
 	if len(list) == 0 {
-		return "no skills installed — gem-agent reads Claude Code's skills as-is:\n" +
-			"  ~/.claude/skills/<name>/SKILL.md          (personal, every project)\n" +
-			"  <project>/.claude/skills/<name>/SKILL.md  (this project)\n" +
-			"skills-series zips unpack straight into the personal directory\n"
+		return "no skills installed — gem-agent reads Claude Code's skill format from:\n" +
+			"  ~/.config/gem-agent/skills/<name>/SKILL.md  (global: gem-agent's own, every project)\n" +
+			"  <project>/.claude/skills/<name>/SKILL.md    (project: shared with Claude Code)\n" +
+			"skills-series zips unpack straight into the global directory. To share\n" +
+			"skills already installed for Claude Code, link them in — per skill or all:\n" +
+			"  ln -s ~/.claude/skills/<name> ~/.config/gem-agent/skills/<name>\n" +
+			"  ln -s ~/.claude/skills ~/.config/gem-agent/skills\n"
 	}
 	var b strings.Builder
 	for _, s := range list {

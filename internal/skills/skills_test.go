@@ -39,7 +39,7 @@ allowed-tools: Read Write Bash(python3 *)`,
 		t.Fatalf("found %d skills", len(list))
 	}
 	s := list[0]
-	if s.Name != "meeting-notes" || s.Scope != "personal" {
+	if s.Name != "meeting-notes" || s.Scope != "global" {
 		t.Errorf("skill = %+v", s)
 	}
 	if !strings.Contains(s.Description, "議事録") {
@@ -60,7 +60,7 @@ allowed-tools: Read Write Bash(python3 *)`,
 
 func TestDiscoverProjectWinsCollisions(t *testing.T) {
 	personal, project := t.TempDir(), t.TempDir()
-	writeSkill(t, personal, "deploy", "name: deploy\ndescription: personal version", "P")
+	writeSkill(t, personal, "deploy", "name: deploy\ndescription: global version", "P")
 	writeSkill(t, filepath.Join(project, ".claude", "skills"), "deploy",
 		"name: deploy\ndescription: project version", "Q")
 
@@ -182,5 +182,58 @@ func TestFrontmatterOddShapes(t *testing.T) {
 	meta := parseFrontmatter("description: use for: everything, https://example.com")
 	if meta["description"] != "use for: everything, https://example.com" {
 		t.Errorf("description = %q", meta["description"])
+	}
+}
+
+
+// ADR-0011: sharing with Claude Code is an operator-made symlink, so a
+// linked skill directory must be discovered like a real one — and its
+// confinement boundary is the resolved directory.
+func TestDiscoverFollowsSymlinkedSkills(t *testing.T) {
+	claudeSide := t.TempDir() // stands in for ~/.claude/skills
+	dir := writeSkill(t, claudeSide, "shared", "name: shared\ndescription: linked in", "SHARED BODY")
+	if err := os.MkdirAll(filepath.Join(dir, "references"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "references", "r.md"), []byte("REF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	gemSide := t.TempDir() // stands in for ~/.config/gem-agent/skills
+	if err := os.Symlink(dir, filepath.Join(gemSide, "shared")); err != nil {
+		t.Fatal(err)
+	}
+
+	list, notes := Discover(gemSide, "", DefaultLimits())
+	if len(list) != 1 || list[0].Name != "shared" {
+		t.Fatalf("symlinked skill not discovered: %+v %v", list, notes)
+	}
+	body, err := list[0].Body(DefaultLimits())
+	if err != nil || !strings.Contains(body, "SHARED BODY") {
+		t.Errorf("body through the link: %q %v", body, err)
+	}
+	if got, err := list[0].File("references/r.md", DefaultLimits()); err != nil || got != "REF" {
+		t.Errorf("supporting file through the link: %q %v", got, err)
+	}
+	// The boundary is the resolved directory — escapes still refused.
+	if _, err := list[0].File("../../etc/hosts", DefaultLimits()); err == nil {
+		t.Error("a linked skill escaped its resolved directory")
+	}
+}
+
+// Linking the whole directory is the "share everything" recipe.
+func TestDiscoverFollowsAFullySymlinkedRoot(t *testing.T) {
+	claudeSide := t.TempDir()
+	writeSkill(t, claudeSide, "one", "name: one\ndescription: d1", "b")
+	writeSkill(t, claudeSide, "two", "name: two\ndescription: d2", "b")
+
+	parent := t.TempDir()
+	root := filepath.Join(parent, "skills")
+	if err := os.Symlink(claudeSide, root); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := Discover(root, "", DefaultLimits())
+	if len(list) != 2 {
+		t.Fatalf("linked root found %d skills, want 2", len(list))
 	}
 }

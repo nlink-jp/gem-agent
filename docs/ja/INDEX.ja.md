@@ -46,8 +46,11 @@ supersede する（typo とリンク修正は例外）。
   承認ポリシー。プロジェクトは自由に締められ、緩められるのは信頼した場合だけ
 - [`ADR-0009`](adr/0009-settings-panel.ja.md) — 出所を見せる設定パネルと、
   コメントを守るための機械所有ポリシーファイル
-- [`ADR-0010`](adr/0010-skills.ja.md) — Claude Code の skill をそのまま読む。
-  skill の内容は指示であり、封じ込めた読み取りで境界づける
+- [`ADR-0010`](adr/0010-skills.ja.md) — Claude Code の skill 形式をそのまま
+  読む。skill の内容は指示であり、封じ込めた読み取りで境界づける
+  （設置場所の項は 0011 が supersede）
+- [`ADR-0011`](adr/0011-skill-scope-separation.ja.md) — skill は gem-agent
+  自身のディレクトリに置く。Claude Code との共有は symlink
 
 ## History（履歴）
 

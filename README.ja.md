@@ -251,15 +251,24 @@ MCP lookup に `"never"` を付ければ、パイプラインで使えます。
 
 ## Skills
 
-gem-agent は **Claude Code の skill をそのまま読みます** — 同じ形式・同じ
-設置場所で、移行作業はありません:
+gem-agent は **Claude Code の skill 形式をそのまま読みます** — ただし
+自前の設置場所から。MCP とまったく同じ配置です（形式互換は drop-in、
+場所の共有は結合 — [ADR-0011](docs/ja/adr/0011-skill-scope-separation.ja.md)）:
 
-| スコープ | パス |
-|---|---|
-| 個人 | `~/.claude/skills/<name>/SKILL.md` |
-| プロジェクト | `<project>/.claude/skills/<name>/SKILL.md` |
+| スコープ | パス | |
+|---|---|---|
+| グローバル | `~/.config/gem-agent/skills/<name>/SKILL.md` | gem-agent 自身の置き場 |
+| プロジェクト | `<project>/.claude/skills/<name>/SKILL.md` | Claude Code と共有 |
 
-skills-series の zip を個人ディレクトリに unzip すれば両エージェントで使えます。
+`~/.claude/` は読みません — あれは Claude Code の生きた環境であり、暗黙に
+相続すると主系の環境が変わるたびに副系の挙動が変わります。**共有は自分で張る
+symlink** で、skill 単位でも丸ごとでも可能です（探索はリンクを辿ります）:
+
+```sh
+ln -s ~/.claude/skills/meeting-notes ~/.config/gem-agent/skills/meeting-notes
+ln -s ~/.claude/skills ~/.config/gem-agent/skills   # 全部共有
+```
+
 frontmatter は最小限（`name` / `description` / `argument-hint`）だけ読み、
 `allowed-tools` は無視します — gem-agent には自前の承認モデルがあり、他所の
 権限付与を黙って尊重するとそれをバイパスするからです。名前衝突は MCP と同じく
