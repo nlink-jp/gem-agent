@@ -294,10 +294,13 @@ know what a server's tool does. You do — so you can say so:
 ```
 
 `"never"` skips the gate in every mode, `"always"` gates in every mode
-(auto-approve cannot lift it), and an unset tool keeps today's behaviour.
-A trailing `*` matches a whole MCP server; exact names win over
-wildcards, and a bare `"*"` is rejected — switching off every gate at
-once should not be reachable by a one-character entry.
+(auto-approve cannot lift it, and neither can a session `a` answer), and
+an unset tool keeps today's behaviour. A trailing `*` matches a whole
+MCP server. Resolution is **scope first, then specificity** (ADR-0021):
+a project rule beats any global rule for the tools it matches; within
+one scope, exact names win over wildcards. A bare `"*"` is rejected —
+switching off every gate at once should not be reachable by a
+one-character entry.
 
 **`"never"` is not "run anything."** For a tool whose effect varies per
 call — `shell_exec` — the rule tier's blocked patterns (`rm -rf`,

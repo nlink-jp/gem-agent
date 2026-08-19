@@ -163,3 +163,52 @@ func TestEmptyPolicyIsDefaultEverywhere(t *testing.T) {
 		t.Error("empty policy changed a decision")
 	}
 }
+
+// ADR-0021 §6: scope beats pattern specificity. A project may tighten
+// past a more-specific global rule, and a trusted project's loosening
+// beats a global exact rule — the nearest scope wins.
+func TestScopeBeatsSpecificity(t *testing.T) {
+	// Untrusted project tightens with a wildcard over a global exact
+	// "never": the tighten must be honoured (ADR-0008's core promise).
+	p, notes, err := Build(
+		map[string]string{"web_search": "never"},
+		map[string]string{"web_*": "always"},
+		false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 0 {
+		t.Errorf("a tighten produced notes: %v", notes)
+	}
+	if got := p.For("web_search"); got != AlwaysAsk {
+		t.Errorf("For(web_search) = %v — the project wildcard tighten lost to the global exact rule", got)
+	}
+	// Unrelated tools still see the global rule.
+	if got := p.For("web_search_v2"); got != AlwaysAsk {
+		t.Errorf("For(web_search_v2) = %v, want the project wildcard", got)
+	}
+
+	// Trusted project loosens with a wildcard over a global exact
+	// "always": nearest scope wins there too.
+	p, _, err = Build(
+		map[string]string{"mcp__lookup__check": "always"},
+		map[string]string{"mcp__lookup__*": "never"},
+		true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.For("mcp__lookup__check"); got != NeverAsk {
+		t.Errorf("For(trusted loosen) = %v — the trusted project's rule must win", got)
+	}
+
+	// Within one scope, specificity still decides.
+	p, _, err = Build(
+		map[string]string{"mcp__x__*": "never", "mcp__x__post": "always"},
+		nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.For("mcp__x__post"); got != AlwaysAsk {
+		t.Errorf("in-scope exact vs wildcard = %v, want exact to win", got)
+	}
+}

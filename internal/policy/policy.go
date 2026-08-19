@@ -85,56 +85,60 @@ type Note string
 // otherwise dropped with a Note naming it.
 func Build(globalTools, projectTools map[string]string, trusted bool) (Policy, []Note, error) {
 	var (
-		p        Policy
-		notes    []Note
-		ignored  []string
-		patterns = map[string]Decision{}
+		p       Policy
+		notes   []Note
+		ignored []string
 	)
 
-	for _, pattern := range sortedKeys(globalTools) {
-		d, err := Parse(globalTools[pattern])
-		if err != nil {
-			return Policy{}, nil, fmt.Errorf("[approval.tools] %q: %w", pattern, err)
+	// buildScope parses and sorts one scope's rules: exact matches
+	// first, then longer wildcards before shorter ones, so For can
+	// return the first match it finds.
+	buildScope := func(tools map[string]string, label string, project bool) ([]rule, error) {
+		var rules []rule
+		for _, pattern := range sortedKeys(tools) {
+			d, err := Parse(tools[pattern])
+			if err != nil {
+				return nil, fmt.Errorf("%s %q: %w", label, pattern, err)
+			}
+			if err := validPattern(pattern); err != nil {
+				return nil, err
+			}
+			if project && d == NeverAsk && !trusted {
+				// The one rule that matters: a directory whose contents
+				// the operator may not have written cannot switch the
+				// gate off.
+				ignored = append(ignored, pattern)
+				continue
+			}
+			r := rule{pattern: pattern, d: d}
+			if strings.HasSuffix(pattern, "*") {
+				r.prefix = strings.TrimSuffix(pattern, "*")
+			}
+			rules = append(rules, r)
 		}
-		if err := validPattern(pattern); err != nil {
-			return Policy{}, nil, err
-		}
-		patterns[pattern] = d
+		sort.SliceStable(rules, func(i, j int) bool {
+			a, b := rules[i], rules[j]
+			if (a.prefix == "") != (b.prefix == "") {
+				return a.prefix == "" // exact beats wildcard
+			}
+			return len(a.pattern) > len(b.pattern)
+		})
+		return rules, nil
 	}
 
-	for _, pattern := range sortedKeys(projectTools) {
-		d, err := Parse(projectTools[pattern])
-		if err != nil {
-			return Policy{}, nil, fmt.Errorf("project [approval.tools] %q: %w", pattern, err)
-		}
-		if err := validPattern(pattern); err != nil {
-			return Policy{}, nil, err
-		}
-		if d == NeverAsk && !trusted {
-			// The one rule that matters: a directory whose contents the
-			// operator may not have written cannot switch the gate off.
-			ignored = append(ignored, pattern)
-			continue
-		}
-		patterns[pattern] = d
+	globalRules, err := buildScope(globalTools, "[approval.tools]", false)
+	if err != nil {
+		return Policy{}, nil, err
 	}
-
-	for _, pattern := range sortedKeys2(patterns) {
-		r := rule{pattern: pattern, d: patterns[pattern]}
-		if strings.HasSuffix(pattern, "*") {
-			r.prefix = strings.TrimSuffix(pattern, "*")
-		}
-		p.rules = append(p.rules, r)
+	projectRules, err := buildScope(projectTools, "project [approval.tools]", true)
+	if err != nil {
+		return Policy{}, nil, err
 	}
-	// Exact matches first, then longer wildcards before shorter ones, so
-	// For can return the first match it finds.
-	sort.SliceStable(p.rules, func(i, j int) bool {
-		a, b := p.rules[i], p.rules[j]
-		if (a.prefix == "") != (b.prefix == "") {
-			return a.prefix == "" // exact beats wildcard
-		}
-		return len(a.pattern) > len(b.pattern)
-	})
+	// Scope before specificity (ADR-0021 §6): the nearest scope wins,
+	// whatever the pattern shapes. A single cross-scope list sorted by
+	// specificity let a global exact rule beat a project wildcard
+	// TIGHTEN — breaking ADR-0008's "a project may tighten freely".
+	p.rules = append(projectRules, globalRules...)
 
 	if len(ignored) > 0 {
 		notes = append(notes, Note(fmt.Sprintf(
@@ -188,15 +192,6 @@ func (p Policy) Describe() []string {
 }
 
 func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedKeys2(m map[string]Decision) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
