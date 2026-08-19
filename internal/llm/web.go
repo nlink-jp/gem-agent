@@ -107,10 +107,16 @@ func retrievalStatus(resp *genai.GenerateContentResponse) string {
 	}
 	out := ""
 	for i, m := range metas {
+		if m == nil {
+			continue // defensive: a null element must not crash the turn
+		}
 		if i > 0 {
 			out += "; "
 		}
 		out += fmt.Sprintf("%s → %s", m.RetrievedURL, m.URLRetrievalStatus)
+	}
+	if out == "" {
+		return "no retrieval metadata"
 	}
 	return out
 }

@@ -130,8 +130,13 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 				streamErr = err
 				break
 			}
-			chunks++
-			accumulateChunk(chunk, resp, &text, onText)
+			// Only content-bearing chunks disarm the retry: a chunk
+			// carrying nothing but usage metadata consumed nothing the
+			// operator saw, and refusing to retry after one needlessly
+			// fails the turn (ADR-0021).
+			if accumulateChunk(chunk, resp, &text, onText) {
+				chunks++
+			}
 		}
 		if streamErr == nil {
 			resp.Content = text.String()
@@ -167,10 +172,12 @@ func shouldRetryStream(err error, chunksSeen int) bool {
 
 // accumulateChunk folds one stream chunk into the response accumulator.
 // Package-level and side-effect-free beyond its parameters so tests can
-// drive it with fabricated chunks.
-func accumulateChunk(chunk *genai.GenerateContentResponse, resp *Response, text *strings.Builder, onText func(string)) {
+// drive it with fabricated chunks. It reports whether the chunk carried
+// content (text or a function call) — metadata-only chunks must not
+// disarm the transient-error retry.
+func accumulateChunk(chunk *genai.GenerateContentResponse, resp *Response, text *strings.Builder, onText func(string)) bool {
 	if chunk == nil {
-		return
+		return false
 	}
 	if chunk.UsageMetadata != nil {
 		resp.PromptTokens = int(chunk.UsageMetadata.PromptTokenCount)
@@ -181,16 +188,20 @@ func accumulateChunk(chunk *genai.GenerateContentResponse, resp *Response, text 
 	if chunk.PromptFeedback != nil && chunk.PromptFeedback.BlockReason != "" {
 		resp.BlockReason = string(chunk.PromptFeedback.BlockReason)
 	}
-	if len(chunk.Candidates) == 0 {
-		return
+	if len(chunk.Candidates) == 0 || chunk.Candidates[0] == nil {
+		return false
 	}
 	if r := chunk.Candidates[0].FinishReason; r != "" {
 		resp.FinishReason = string(r)
 	}
 	if chunk.Candidates[0].Content == nil {
-		return
+		return false
 	}
+	consumed := false
 	for _, part := range chunk.Candidates[0].Content.Parts {
+		if part == nil {
+			continue
+		}
 		if part.Thought {
 			// Thought text stays internal, but the Gemini 3 signature
 			// must survive for replay — dropping it fails the next
@@ -201,6 +212,7 @@ func accumulateChunk(chunk *genai.GenerateContentResponse, resp *Response, text 
 			continue
 		}
 		if part.Text != "" {
+			consumed = true
 			text.WriteString(part.Text)
 			if onText != nil {
 				onText(part.Text)
@@ -210,6 +222,7 @@ func accumulateChunk(chunk *genai.GenerateContentResponse, resp *Response, text 
 			}
 		}
 		if part.FunctionCall != nil {
+			consumed = true
 			id := part.FunctionCall.ID
 			if id == "" {
 				// Vertex Gemini function calls carry no first-class id;
@@ -231,6 +244,7 @@ func accumulateChunk(chunk *genai.GenerateContentResponse, resp *Response, text 
 			})
 		}
 	}
+	return consumed
 }
 
 func convertTools(tools []ToolDef) []*genai.Tool {

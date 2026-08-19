@@ -230,10 +230,28 @@ func (a *Agent) SetHistory(history []llm.Message) {
 	// Not len(history): compactedAt exists to stop a compaction from
 	// firing twice at the same size, and a restore is not a compaction.
 	// A resumed session that is already near the window must be free to
-	// compact on its first round.
+	// compact on its first round — which needs a size estimate, because
+	// maybeAutoCompact measures lastPrompt and zero means "never fires
+	// before one round has succeeded" (ADR-0021). The estimate is rough
+	// (bytes/4); the first real round replaces it with the measurement.
 	a.compactedAt = 0
-	a.lastPrompt = 0
+	a.lastPrompt = estimateTokens(history)
 	a.tag = guard.NewTagWithPrefix("tool_output")
+}
+
+// estimateTokens roughly sizes a restored history: text bytes / 4, the
+// standing char-based heuristic. Only used to arm first-round
+// auto-compaction after a resume; real usage numbers take over from the
+// first response.
+func estimateTokens(history []llm.Message) int {
+	total := 0
+	for _, m := range history {
+		total += len(m.Content)
+		for _, att := range m.Attachments {
+			total += len(att.Content)
+		}
+	}
+	return total / 4
 }
 
 // SetContextWindow records the model's input token limit, which
@@ -318,6 +336,12 @@ func (a *Agent) HistoryLen() int { return len(a.history) }
 // Run executes one user turn to completion. onText receives streamed
 // model text as it arrives. Returns the model's final text.
 func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (string, error) {
+	// An empty user message would be appended to the transcript but
+	// silently dropped from the request (buildContents skips it) — a
+	// history the model never saw. Refuse it at the door (ADR-0021).
+	if strings.TrimSpace(input) == "" {
+		return "", fmt.Errorf("empty input")
+	}
 	// @-references become attachments carried beside the text; the text
 	// the operator typed is left exactly as written.
 	lim := mention.DefaultLimits()
@@ -395,6 +419,18 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 				continue
 			}
 			return "", emptyResponseError(resp)
+		}
+
+		// A cut-off response with partial content is kept — what
+		// happened, happened — but presenting it silently as a complete
+		// answer misleads (ADR-0021 §8): the guard above only catches
+		// fully empty turns.
+		if (resp.FinishReason != "" && resp.FinishReason != "STOP") || resp.BlockReason != "" {
+			why := resp.FinishReason
+			if resp.BlockReason != "" {
+				why = resp.BlockReason
+			}
+			a.notify("the response was cut off mid-generation (" + why + ") — the answer may be incomplete")
 		}
 
 		// The assistant turn is appended verbatim — including thought
