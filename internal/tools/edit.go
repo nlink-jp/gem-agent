@@ -222,8 +222,16 @@ func nearMiss(content, needle string) (line int, snippet string, ok bool) {
 	if len(needleLines) == 0 {
 		return 0, "", false
 	}
+	// The content's normalized lines must stay 1:1 with the raw lines:
+	// normalizeLines drops leading blank lines, and on a file starting
+	// with blanks that shifted every reported line number and made the
+	// quoted "use this exact text" snippet come from the wrong region —
+	// real file text, so the follow-up edit landed there (ADR-0021).
 	contentRaw := strings.Split(content, "\n")
-	contentNorm := normalizeLines(content)
+	contentNorm := make([]string, len(contentRaw))
+	for i, l := range contentRaw {
+		contentNorm[i] = strings.Join(strings.Fields(l), " ")
+	}
 	for i := 0; i+len(needleLines) <= len(contentNorm); i++ {
 		match := true
 		for j := range needleLines {
@@ -288,8 +296,14 @@ func occurrenceLines(content, needle string) string {
 // content poisons the exact-match contract the moment it is copied).
 func editReport(n int, content string, offset, newLen int) string {
 	lines := strings.Split(content, "\n")
-	startLine := strings.Count(content[:offset], "\n")      // 0-based
-	endLine := strings.Count(content[:offset+newLen], "\n") // 0-based, inclusive
+	startLine := strings.Count(content[:offset], "\n") // 0-based
+	end := offset + newLen
+	// A replacement ending in '\n' terminates its own last line; that
+	// newline must not count as reaching the next line (ADR-0021).
+	if newLen > 0 && content[end-1] == '\n' {
+		end--
+	}
+	endLine := strings.Count(content[:end], "\n") // 0-based, inclusive
 	from := max(0, startLine-editSnippetContext)
 	to := min(len(lines), endLine+editSnippetContext+1)
 	snippet := strings.Join(lines[from:to], "\n")

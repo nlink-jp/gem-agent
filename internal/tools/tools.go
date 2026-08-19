@@ -194,6 +194,12 @@ func sliceLines(content string, start, end int) (string, string, error) {
 		return content, "", nil
 	}
 	lines := strings.Split(content, "\n")
+	// A newline-terminated file splits into a phantom empty final
+	// element; counting it reported N one high and accepted a window on
+	// a line that does not exist (ADR-0021).
+	if n := len(lines); n > 0 && lines[n-1] == "" {
+		lines = lines[:n-1]
+	}
 	total := len(lines)
 	if start == 0 {
 		start = 1
