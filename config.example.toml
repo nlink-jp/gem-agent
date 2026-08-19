@@ -28,7 +28,9 @@ name = "gemini-3.7-flash"
 # Lightweight model for the summarize_file tool (ADR-0014). Unset means
 # the main model — the context saving does not depend on the model being
 # cheaper. Shares the main model's client, project, and credentials.
-#summary = "<a lighter gemini model id>"
+# Prefer a GA model over a preview here: a fallback tool's parts should
+# not disappear on a preview's schedule.
+#summary = "gemini-3.5-flash-lite"
 
 # Content-filter policy for the four configurable harm categories:
 #   default — the provider's own thresholds

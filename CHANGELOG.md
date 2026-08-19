@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- The example config's `[model].summary` suggestion is now a concrete GA
+  model (`gemini-3.5-flash-lite`) instead of a placeholder — operator
+  review: a fallback tool's parts should not depend on a preview model's
+  schedule. Measured working on the global endpoint, with and without
+  the `google/` publisher prefix
+
 ## [0.10.0] - 2026-08-19
 
 ### Added — context economy (ADR-0014, operator request)
