@@ -19,9 +19,9 @@ type fakeSearcher struct {
 	query   string
 }
 
-func (f *fakeSearcher) SearchWeb(ctx context.Context, q string) (string, []llm.WebSource, error) {
+func (f *fakeSearcher) SearchWeb(ctx context.Context, q string) (string, []llm.WebSource, llm.SideUsage, error) {
 	f.query = q
-	return f.answer, f.sources, f.err
+	return f.answer, f.sources, llm.SideUsage{Prompt: 100, Output: 10}, f.err
 }
 
 type fakeFetcher struct {
@@ -30,9 +30,9 @@ type fakeFetcher struct {
 	prompt         string
 }
 
-func (f *fakeFetcher) FetchURL(ctx context.Context, prompt string) (string, string, error) {
+func (f *fakeFetcher) FetchURL(ctx context.Context, prompt string) (string, string, llm.SideUsage, error) {
 	f.prompt = prompt
-	return f.digest, f.status, f.err
+	return f.digest, f.status, llm.SideUsage{Prompt: 200, Output: 20}, f.err
 }
 
 func webSetup(t *testing.T, s *fakeSearcher, f *fakeFetcher) *tools.Registry {
@@ -43,7 +43,7 @@ func webSetup(t *testing.T, s *fakeSearcher, f *fakeFetcher) *tools.Registry {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := registerWebTools(reg, s, f, "light-model", nil); err != nil {
+	if err := registerWebTools(reg, s, f, "main-model", "light-model", nil, newUsageTally()); err != nil {
 		t.Fatal(err)
 	}
 	return reg

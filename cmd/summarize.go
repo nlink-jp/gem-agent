@@ -23,7 +23,7 @@ Write a dense summary in at most 25 lines: what the file is, its main structures
 // registerSummarizeTool adds summarize_file. backend addresses the
 // summary model ([model].summary, defaulting to the main model);
 // modelName is shown in the result so the operator knows who wrote it.
-func registerSummarizeTool(registry *tools.Registry, backend llm.Backend, modelName string, log agent.SessionLog) error {
+func registerSummarizeTool(registry *tools.Registry, backend llm.Backend, modelName string, log agent.SessionLog, tally *usageTally) error {
 	return registry.Register(&tools.Tool{
 		Name: "summarize_file",
 		Description: "Summarise a project file with a lightweight model and return the summary " +
@@ -67,6 +67,9 @@ func registerSummarizeTool(registry *tools.Registry, backend llm.Backend, modelN
 				[]llm.Message{{Role: llm.RoleUser, Content: ask + "\n\n" + wrapped}}, nil, nil)
 			if err != nil {
 				return "", fmt.Errorf("summariser (%s): %w", modelName, err)
+			}
+			if tally != nil {
+				tally.add("summarize_file", modelName, resp.PromptTokens, resp.OutputTokens)
 			}
 			if log != nil {
 				// Not in the footer counters: the context gauge tracks the

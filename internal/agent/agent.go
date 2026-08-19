@@ -19,6 +19,18 @@ import (
 	"github.com/nlink-jp/nlk/guard"
 )
 
+// UsageStats is the session's per-category token accounting (ADR-0019).
+// Main-loop numbers feed the footer; risk and compaction are side-calls
+// that must NOT touch the footer's context gauge — a risk check stomping
+// "ctx" with its own prompt size was the bug that shaped this split.
+type UsageStats struct {
+	Rounds                            int
+	Prompt, Output, Thoughts, Cached  int
+	LastPrompt, Window                int
+	RiskCalls, RiskPrompt, RiskOutput int
+	CompactCalls, CompactPrompt, CompactOutput int
+}
+
 // Approver gates mutating tool calls (see internal/approve for the
 // interactive implementation). reason is empty for an ordinary prompt
 // and carries the escalation cause when auto-approve declined to run
@@ -72,6 +84,10 @@ type Agent struct {
 
 	// clipboard captures the clipboard image (ADR-0012). May be nil.
 	clipboard func() ([]byte, error)
+
+	// stats is the per-category usage accounting (ADR-0019), guarded by
+	// mu with everything else the UI goroutine reads.
+	stats UsageStats
 
 	// tag is the session-scoped isolation tag (ADR-0018). Stable across
 	// rounds and turns so the request prefix stays byte-identical and
@@ -220,6 +236,15 @@ func (a *Agent) contextWindow() int {
 	return a.window
 }
 
+// Usage returns a snapshot of the session's accounting (ADR-0019).
+func (a *Agent) Usage() UsageStats {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	s := a.stats
+	s.Window = a.window
+	return s
+}
+
 // SetPolicy replaces the per-tool approval policy (ADR-0008), which the
 // settings panel edits mid-session. Guarded because the UI goroutine
 // sets it while the agent goroutine reads it per tool call.
@@ -314,8 +339,18 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 		if resp.PromptTokens > 0 {
 			a.lastPrompt = resp.PromptTokens
 		}
-		if a.onUsage != nil && (resp.PromptTokens > 0 || resp.OutputTokens > 0) {
-			a.onUsage(resp.PromptTokens, resp.OutputTokens, resp.CachedTokens)
+		if resp.PromptTokens > 0 || resp.OutputTokens > 0 {
+			a.mu.Lock()
+			a.stats.Rounds++
+			a.stats.Prompt += resp.PromptTokens
+			a.stats.Output += resp.OutputTokens
+			a.stats.Thoughts += resp.ThoughtTokens
+			a.stats.Cached += resp.CachedTokens
+			a.stats.LastPrompt = resp.PromptTokens
+			a.mu.Unlock()
+			if a.onUsage != nil {
+				a.onUsage(resp.PromptTokens, resp.OutputTokens, resp.CachedTokens)
+			}
 			a.logRecord("usage", map[string]int{
 				"prompt": resp.PromptTokens, "output": resp.OutputTokens,
 				"thoughts": resp.ThoughtTokens, "cached": resp.CachedTokens,

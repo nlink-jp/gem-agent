@@ -549,3 +549,47 @@ func TestUsageCarriesCachedTokens(t *testing.T) {
 		t.Error("the usage record does not carry cached tokens")
 	}
 }
+
+// ADR-0019: side-calls (risk eval here) must accumulate into their own
+// bucket and must NOT feed the footer callback — a risk check stomping
+// the ctx gauge with its own prompt size was the bug.
+func TestSideCallUsageStaysOutOfTheFooter(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{
+		// Round 1: the model calls a mutating MCP tool — Review tier, so
+		// auto mode consults the model (an in-project write_file would
+		// classify Safe and skip the side-call entirely).
+		{ToolCalls: []llm.ToolCall{{ID: "c", Name: "mcp__x__post", Args: map[string]any{"data": "hi"}}},
+			PromptTokens: 3000, OutputTokens: 20},
+		// The risk evaluation response (a side-call).
+		{Content: `{"approve": true, "confidence": 0.95, "reason": "benign"}`,
+			PromptTokens: 777, OutputTokens: 30},
+		// Round 2: the final answer.
+		{Content: "done", PromptTokens: 5000, OutputTokens: 100},
+	}}
+	_, reg := newAgent(t, mb, &approveAll{}, 5)
+	if err := reg.Register(&tools.Tool{Name: "mcp__x__post", Description: "d",
+		Parameters: map[string]any{}, Mutating: true,
+		Run: func(ctx context.Context, args map[string]any) (string, error) { return "posted", nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var footerCalls []int
+	a := New(Options{Backend: mb, Registry: reg, Gate: &approveAll{}, System: "s",
+		MaxTurns: 5, AutoApprove: true,
+		OnUsage: func(p, o, c int) { footerCalls = append(footerCalls, p) }})
+	if _, err := a.Run(context.Background(), "write", nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range footerCalls {
+		if p == 777 {
+			t.Fatal("a risk evaluation's prompt tokens reached the footer callback")
+		}
+	}
+	s := a.Usage()
+	if s.RiskCalls != 1 || s.RiskPrompt != 777 {
+		t.Errorf("risk bucket = %+v", s)
+	}
+	if s.Rounds != 2 || s.Prompt != 8000 {
+		t.Errorf("main bucket = %+v", s)
+	}
+}

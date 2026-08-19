@@ -147,9 +147,12 @@ func (a *Agent) summarize(ctx context.Context, msgs []llm.Message) (string, erro
 	if err != nil {
 		return "", err
 	}
-	if a.onUsage != nil && (resp.PromptTokens > 0 || resp.OutputTokens > 0) {
-		a.onUsage(resp.PromptTokens, resp.OutputTokens, resp.CachedTokens)
-	}
+	// Side-call accounting only (ADR-0019) — never the footer's gauge.
+	a.mu.Lock()
+	a.stats.CompactCalls++
+	a.stats.CompactPrompt += resp.PromptTokens
+	a.stats.CompactOutput += resp.OutputTokens
+	a.mu.Unlock()
 	summary := strings.TrimSpace(resp.Content)
 	if summary == "" {
 		// A blocked or empty summary must not become the conversation.

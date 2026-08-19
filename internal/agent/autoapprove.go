@@ -128,9 +128,14 @@ func (a *Agent) evaluateRisk(ctx context.Context, tc llm.ToolCall) (riskVerdict,
 	if err != nil {
 		return riskVerdict{}, err
 	}
-	if a.onUsage != nil && (resp.PromptTokens > 0 || resp.OutputTokens > 0) {
-		a.onUsage(resp.PromptTokens, resp.OutputTokens, resp.CachedTokens)
-	}
+	// Side-call accounting only (ADR-0019): feeding the footer callback
+	// here made a risk check stomp the context gauge with its own
+	// prompt size.
+	a.mu.Lock()
+	a.stats.RiskCalls++
+	a.stats.RiskPrompt += resp.PromptTokens
+	a.stats.RiskOutput += resp.OutputTokens
+	a.mu.Unlock()
 
 	var verdict riskVerdict
 	// Models wrap JSON in prose or fences often enough that a plain

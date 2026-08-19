@@ -35,7 +35,7 @@ func summarizeSetup(t *testing.T, resp *llm.Response) (*tools.Registry, *fakeBac
 		t.Fatal(err)
 	}
 	fb := &fakeBackend{resp: resp}
-	if err := registerSummarizeTool(reg, fb, "light-model", nil); err != nil {
+	if err := registerSummarizeTool(reg, fb, "light-model", nil, newUsageTally()); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(reg.ProjectDir(), "doc.md"),

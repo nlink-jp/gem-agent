@@ -13,10 +13,10 @@ import (
 // webSearcher and urlFetcher are the slices of *llm.Vertex the web tools
 // need — interfaces so tests drive them with fakes (ADR-0017).
 type webSearcher interface {
-	SearchWeb(ctx context.Context, query string) (string, []llm.WebSource, error)
+	SearchWeb(ctx context.Context, query string) (string, []llm.WebSource, llm.SideUsage, error)
 }
 type urlFetcher interface {
-	FetchURL(ctx context.Context, prompt string) (string, string, error)
+	FetchURL(ctx context.Context, prompt string) (string, string, llm.SideUsage, error)
 }
 
 const webSourcesCap = 8
@@ -39,7 +39,7 @@ Answer in the language of the request when evident, else the page's language. At
 // an egress channel: a query or URL is where injected instructions could
 // exfiltrate whatever the model can read. The ADR-0008 policy
 // ("web_search" = "never") is the deliberate, per-operator relaxation.
-func registerWebTools(registry *tools.Registry, searcher webSearcher, fetcher urlFetcher, fetchModel string, log agent.SessionLog) error {
+func registerWebTools(registry *tools.Registry, searcher webSearcher, fetcher urlFetcher, mainModel, fetchModel string, log agent.SessionLog, tally *usageTally) error {
 	if err := registry.Register(&tools.Tool{
 		Name: "web_search",
 		Description: "Search the web (Grounding with Google Search) and return a grounded answer " +
@@ -59,12 +59,16 @@ func registerWebTools(registry *tools.Registry, searcher webSearcher, fetcher ur
 			if strings.TrimSpace(query) == "" {
 				return "", fmt.Errorf("query is required")
 			}
-			answer, sources, err := searcher.SearchWeb(ctx, query)
+			answer, sources, usage, err := searcher.SearchWeb(ctx, query)
+			if tally != nil {
+				tally.add("web_search", mainModel, usage.Prompt, usage.Output)
+			}
 			if err != nil {
 				return "", err
 			}
 			if log != nil {
-				_ = log.Log("web_search", map[string]any{"query": query, "sources": len(sources)})
+				_ = log.Log("web_search", map[string]any{"query": query, "sources": len(sources),
+					"prompt": usage.Prompt, "output": usage.Output})
 			}
 			var b strings.Builder
 			b.WriteString(answer)
@@ -111,12 +115,16 @@ func registerWebTools(registry *tools.Registry, searcher webSearcher, fetcher ur
 			if focus, _ := args["focus"].(string); strings.TrimSpace(focus) != "" {
 				focusLine = "Focus especially on: " + strings.TrimSpace(focus)
 			}
-			digest, status, err := fetcher.FetchURL(ctx, fmt.Sprintf(fetchPromptTemplate, url, focusLine))
+			digest, status, usage, err := fetcher.FetchURL(ctx, fmt.Sprintf(fetchPromptTemplate, url, focusLine))
+			if tally != nil {
+				tally.add("web_fetch", fetchModel, usage.Prompt, usage.Output)
+			}
 			if err != nil {
 				return "", err
 			}
 			if log != nil {
-				_ = log.Log("web_fetch", map[string]any{"url": url, "status": status, "model": fetchModel})
+				_ = log.Log("web_fetch", map[string]any{"url": url, "status": status, "model": fetchModel,
+					"prompt": usage.Prompt, "output": usage.Output})
 			}
 			return fmt.Sprintf("Digest of %s (by %s — untrusted web content; retrieval: %s):\n\n%s",
 				url, fetchModel, status, digest), nil

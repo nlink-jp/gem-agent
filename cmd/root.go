@@ -211,6 +211,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Per-category token accounting for /usage (ADR-0019).
+	tally := newUsageTally()
+
 	// --- summarize_file: the summary model shares the client (ADR-0014) ---
 	summaryModel := cfg.Model.Summary
 	summaryBackend := backend
@@ -219,12 +222,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	} else {
 		summaryBackend = backend.WithModel(summaryModel)
 	}
-	if err := registerSummarizeTool(registry, summaryBackend, summaryModel, sessionLog); err != nil {
+	if err := registerSummarizeTool(registry, summaryBackend, summaryModel, sessionLog, tally); err != nil {
 		return err
 	}
 	// Web access (ADR-0017): grounded search on the main model, digested
 	// fetch on the lightweight one. Both egress-gated by default.
-	if err := registerWebTools(registry, backend, summaryBackend, summaryModel, sessionLog); err != nil {
+	if err := registerWebTools(registry, backend, summaryBackend, cfg.Model.Name, summaryModel, sessionLog, tally); err != nil {
 		return err
 	}
 
@@ -475,7 +478,8 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				}()
 			},
 			Slash: func(in string) (string, bool, bool) {
-				return slashOutput(in, ag, registry, mcpSummary, approvalPolicy, skillsList)
+				return slashOutput(in, ag, registry, mcpSummary, approvalPolicy, skillsList,
+					func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) })
 			},
 		})
 		prog = tea.NewProgram(model)
@@ -544,7 +548,8 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		if strings.HasPrefix(input, "/") {
-			out, _, quit := slashOutput(input, ag, registry, mcpSummary, approvalPolicy, skillsList)
+			out, _, quit := slashOutput(input, ag, registry, mcpSummary, approvalPolicy, skillsList,
+				func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) })
 			fmt.Fprint(stderr, out)
 			if quit {
 				return nil
@@ -699,7 +704,7 @@ func resolveTheme(configured string) string {
 // slashOutput executes a /command and returns its output text — shared
 // by the TUI (which prints it into scrollback, errors highlighted) and
 // the plain REPL (which writes it to stderr).
-func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, pol policy.Policy, skillsList []skills.Skill) (output string, isErr bool, quit bool) {
+func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, pol policy.Policy, skillsList []skills.Skill, usage func() string) (output string, isErr bool, quit bool) {
 	var b strings.Builder
 	switch strings.Fields(input)[0] {
 	case "/help":
@@ -710,6 +715,7 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
   /auto    toggle auto-approve (shift+tab does the same, and works mid-run)
   /compact summarise the older half of the conversation to free context
   /settings show every setting with where it came from; edit policy + toggles
+  /usage   token accounting: main loop, cache hit rate, side-calls, web tools
   /skills  list installed skills (Claude Code format, read as-is)
   /skill <name> [args]  invoke a skill directly
   /clear   reset the conversation history
@@ -760,6 +766,8 @@ mutating tools prompt for approval: y = once, a = always this session
 		} else {
 			b.WriteString("auto-approve: OFF — every change asks\n")
 		}
+	case "/usage":
+		b.WriteString(usage())
 	case "/skills":
 		b.WriteString(skillsListing(skillsList))
 	case "/clear":

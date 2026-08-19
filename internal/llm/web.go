@@ -13,6 +13,21 @@ import (
 	"google.golang.org/genai"
 )
 
+// SideUsage is one side-call's token spend (ADR-0019).
+type SideUsage struct {
+	Prompt, Output int
+}
+
+func sideUsage(resp *genai.GenerateContentResponse) SideUsage {
+	if resp == nil || resp.UsageMetadata == nil {
+		return SideUsage{}
+	}
+	return SideUsage{
+		Prompt: int(resp.UsageMetadata.PromptTokenCount),
+		Output: int(resp.UsageMetadata.CandidatesTokenCount),
+	}
+}
+
 // WebSource is one grounding citation.
 type WebSource struct {
 	Title  string
@@ -23,7 +38,7 @@ type WebSource struct {
 // SearchWeb answers a query with Grounding with Google Search and
 // returns the sources the answer rests on, so a claim can be checked
 // rather than believed.
-func (v *Vertex) SearchWeb(ctx context.Context, query string) (string, []WebSource, error) {
+func (v *Vertex) SearchWeb(ctx context.Context, query string) (string, []WebSource, SideUsage, error) {
 	cfg := &genai.GenerateContentConfig{
 		Tools:          []*genai.Tool{{GoogleSearch: &genai.GoogleSearch{}}},
 		SafetySettings: v.safety,
@@ -31,20 +46,20 @@ func (v *Vertex) SearchWeb(ctx context.Context, query string) (string, []WebSour
 	resp, err := v.client.Models.GenerateContent(ctx, v.model,
 		[]*genai.Content{genai.NewContentFromText(query, genai.RoleUser)}, cfg)
 	if err != nil {
-		return "", nil, fmt.Errorf("grounded search: %w", err)
+		return "", nil, SideUsage{}, fmt.Errorf("grounded search: %w", err)
 	}
 	text := resp.Text()
 	if text == "" {
-		return "", nil, fmt.Errorf("grounded search returned nothing (%s)", emptyReason(resp))
+		return "", nil, sideUsage(resp), fmt.Errorf("grounded search returned nothing (%s)", emptyReason(resp))
 	}
-	return text, groundingSources(resp), nil
+	return text, groundingSources(resp), sideUsage(resp), nil
 }
 
 // FetchURL reads a URL through the URL Context tool — fetched by
 // Google's infrastructure, never from this machine, which is what makes
 // the SSRF class structurally unreachable (ADR-0017 §5) — and returns
 // the model's digest plus the retrieval status.
-func (v *Vertex) FetchURL(ctx context.Context, prompt string) (string, string, error) {
+func (v *Vertex) FetchURL(ctx context.Context, prompt string) (string, string, SideUsage, error) {
 	cfg := &genai.GenerateContentConfig{
 		Tools:          []*genai.Tool{{URLContext: &genai.URLContext{}}},
 		SafetySettings: v.safety,
@@ -52,14 +67,14 @@ func (v *Vertex) FetchURL(ctx context.Context, prompt string) (string, string, e
 	resp, err := v.client.Models.GenerateContent(ctx, v.model,
 		[]*genai.Content{genai.NewContentFromText(prompt, genai.RoleUser)}, cfg)
 	if err != nil {
-		return "", "", fmt.Errorf("url fetch: %w", err)
+		return "", "", SideUsage{}, fmt.Errorf("url fetch: %w", err)
 	}
 	status := retrievalStatus(resp)
 	text := resp.Text()
 	if text == "" {
-		return "", status, fmt.Errorf("fetch returned nothing (%s; retrieval: %s)", emptyReason(resp), status)
+		return "", status, sideUsage(resp), fmt.Errorf("fetch returned nothing (%s; retrieval: %s)", emptyReason(resp), status)
 	}
-	return text, status, nil
+	return text, status, sideUsage(resp), nil
 }
 
 // groundingSources extracts the web citations from a grounded response.
