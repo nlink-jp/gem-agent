@@ -57,6 +57,8 @@ supersede する（typo とリンク修正は例外）。
   search_files: 方向づけと高速 grep。索引なし・依存なし
 - [`ADR-0014`](adr/0014-context-economy-tools.ja.md) — 軽量モデルの
   summarize_file と、read_file の行窓読み
+- [`ADR-0015`](adr/0015-edit-file-v2.ja.md) — edit_file v2: 一括アトミック
+  編集・診断つき不一致・成功時の証拠
 
 ## History（履歴）
 

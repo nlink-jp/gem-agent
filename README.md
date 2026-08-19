@@ -37,6 +37,17 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   fast dependency-free grep (regex or literal, binaries and `.git`
   skipped, caps reported) — so orientation costs one call, not one round
   per directory
+- **Editing without the round-trips** (ADR-0015): `edit_file` keeps its
+  exact-unique-string contract — line numbers write to the wrong place
+  *silently* when stale; a string anchor fails loudly or works — and
+  gains what makes it cheap: an `edits` array applied in order and
+  **atomically** (any failure writes nothing and names the failing
+  edit), `replace_all` for renames, **diagnosed misses** (a whitespace
+  near-match is quoted with the file's real text and line, so the fix is
+  a copy-paste, not a re-read), and **evidence on success** — the
+  changed region with its line span, so verification needs no read-back.
+  The intended loop: windowed read → one batched edit → verify from the
+  result
 - **Context economy** (ADR-0014): `read_file` takes `start_line`/`end_line`
   to read a window instead of the whole file (annotated, never
   masquerading as the full text — and no line-number prefixes, which

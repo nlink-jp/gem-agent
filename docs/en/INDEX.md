@@ -61,6 +61,8 @@ excepted).
   search_files: orientation and fast grep, no index, no dependencies
 - [`ADR-0014`](adr/0014-context-economy-tools.md) — summarize_file on a
   lightweight model, and line-window reads for read_file
+- [`ADR-0015`](adr/0015-edit-file-v2.md) — edit_file v2: batched atomic
+  edits, diagnosed misses, evidence on success
 
 ## History
 

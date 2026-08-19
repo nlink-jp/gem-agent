@@ -1,6 +1,30 @@
 # Changelog
 
-## [Unreleased]
+## [0.11.0] - 2026-08-19
+
+### Added — edit_file v2 (ADR-0015, operator request)
+
+- The anchor stays an exact unique string — the operator's instinct
+  against line-number editing is right: a stale number writes to the
+  wrong place *silently*, a string anchor fails loudly or works — and
+  the tool gains what makes it cheap in rounds:
+  - **`edits` array**, applied in order (each edit sees its
+    predecessors' output) and **atomically**: any failure writes
+    nothing and names the failing edit. Five changes are one call, not
+    five history replays
+  - **`replace_all`** per edit for renames, with the count reported;
+    the uniqueness error now lists the occurrences' line numbers
+  - **Diagnosed misses**: a whitespace-insensitive near-match is quoted
+    with the file's *real* text and line — the way models actually miss
+    is a tab — so the fix is a copy-paste instead of a re-read. In a
+    batch, the diagnosis also reminds that earlier edits have already
+    been applied
+  - **Evidence on success**: the changed region with its line span (in
+    the header, never as per-line prefixes — ADR-0014's rule), so
+    verification needs no read-back round
+- The intended loop end to end: windowed read → one batched edit →
+  verify from the result. Nothing reads or writes the whole file unless
+  the whole file is the point
 
 ### Changed
 

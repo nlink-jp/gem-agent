@@ -140,6 +140,8 @@ max_turns = 50
 - コンテキスト圧縮 — [ADR-0006](adr/0006-context-compaction.ja.md)。
   コンテキストウィンドウで死に、復旧手段が `/clear` だけのセッションは
   フォールバックとして頼りにならない。
+- edit_file v2 — [ADR-0015](adr/0015-edit-file-v2.ja.md)。診断つき不一致と
+  成功時証拠を備えた一括アトミック編集。同じ無駄の書き込み側。
 - コンテキスト経済 — [ADR-0014](adr/0014-context-economy-tools.ja.md)。
   行窓読みと、設定可能な軽量モデルによる summarize_file。「探す」は
   ADR-0013 で安くなった。残った費目が「読む」だった。
