@@ -612,7 +612,7 @@ var errInterrupted = errors.New("interrupted")
 // nothing will answer.
 type denyGate struct{ out io.Writer }
 
-func (d denyGate) Approve(toolName, detail, reason string) bool {
+func (d denyGate) Approve(toolName, detail, reason string, mustPrompt bool) bool {
 	fmt.Fprintf(d.out, "[denied: %s %s — mutating tools are disabled in one-shot mode; run interactively to approve]\n", toolName, detail)
 	return false
 }
@@ -772,6 +772,8 @@ keys:
   複数行ペーストはそのまま 1 メッセージになります
   承認ダイアログ: ←→/Tab で選択 · Enter 決定（y/n/a も可）
 mutating tools prompt for approval: y = once, a = always this session
+  (Block-tier calls and always-policy tools keep asking — 'a' never
+   covers the dangerous cases, only the routine ones)
 `)
 	case "/tools":
 		for _, t := range registry.List() {

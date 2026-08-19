@@ -37,7 +37,12 @@ type UsageStats struct {
 // the call unattended — the operator must be able to see why they are
 // being asked.
 type Approver interface {
-	Approve(toolName, detail, reason string) bool
+	// Approve asks the operator about one call. mustPrompt says the
+	// session allowlist ('a') may not answer this one (ADR-0021 §5): the
+	// call is Block-tier, or the operator's policy pins the tool to
+	// "always". Without it, one 'a' on a benign call waved every later
+	// Block-tier call of that tool through unprompted — measured.
+	Approve(toolName, detail, reason string, mustPrompt bool) bool
 }
 
 // SessionLog receives session records. May be nil.
@@ -546,6 +551,20 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
 	}
 	if a.gated(tool.Mutating, tc) {
 		approved, reason := false, ""
+		// The floor (ADR-0021 §5): a Block-tier call, or a tool whose
+		// policy is "always", may not be answered by the gates' session
+		// allowlist. Decided here — where policy and the risk verdict
+		// live — not inside the gates.
+		mustPrompt := a.toolPolicy(tc.Name) == policy.AlwaysAsk
+		if !mustPrompt && tool.Mutating {
+			if v := risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir()); v.Tier == risk.Block {
+				mustPrompt = true
+				// Shown on the prompt, so the operator sees why an
+				// earlier 'a' did not stick — and the deny-default that
+				// a reason triggers is exactly right for Block.
+				reason = v.Reason
+			}
+		}
 		// A tool the operator marked "always" skips the ladder: the
 		// question is settled, and spending a model round on it would
 		// both cost a request and risk answering it differently.
@@ -563,7 +582,7 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
 				reason = EscalationReason(d)
 			}
 		}
-		if !approved && !a.gate.Approve(tc.Name, CallDetail(tc), reason) {
+		if !approved && !a.gate.Approve(tc.Name, CallDetail(tc), reason, mustPrompt) {
 			return "Tool execution denied by the user. Do not retry the same call; ask the user how to proceed instead."
 		}
 	}

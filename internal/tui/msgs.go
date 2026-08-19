@@ -108,10 +108,12 @@ func (g *Gate) SetProgram(p sender) {
 }
 
 // Approve implements agent.Approver. Fails closed when no program is
-// bound.
-func (g *Gate) Approve(toolName, detail, reason string) bool {
+// bound. mustPrompt says the session allowlist may not answer this call
+// (Block-tier, or an "always" policy — ADR-0021 §5); an 'a' answered on
+// such a prompt still registers, for future non-Block calls.
+func (g *Gate) Approve(toolName, detail, reason string, mustPrompt bool) bool {
 	g.mu.Lock()
-	if g.always[toolName] {
+	if !mustPrompt && g.always[toolName] {
 		g.mu.Unlock()
 		return true
 	}

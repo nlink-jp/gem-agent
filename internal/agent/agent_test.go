@@ -41,14 +41,14 @@ func (m *mockBackend) ChatStream(ctx context.Context, system string, messages []
 
 type approveAll struct{ asked []string }
 
-func (a *approveAll) Approve(name, detail, reason string) bool {
+func (a *approveAll) Approve(name, detail, reason string, mustPrompt bool) bool {
 	a.asked = append(a.asked, name+": "+detail)
 	return true
 }
 
 type denyAll struct{ asked []string }
 
-func (d *denyAll) Approve(name, detail, reason string) bool {
+func (d *denyAll) Approve(name, detail, reason string, mustPrompt bool) bool {
 	d.asked = append(d.asked, name+": "+detail)
 	return false
 }

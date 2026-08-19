@@ -42,10 +42,13 @@ func New(in io.Reader, out io.Writer) *Gate {
 // Approve asks the user whether the named tool may run. detail is a short
 // human-readable summary of what the call will do (command line, file
 // path); reason, when non-empty, says why auto-approve escalated instead
-// of running it. EOF or read errors deny — failing closed is the only
-// safe default for an approval gate.
-func (g *Gate) Approve(toolName, detail, reason string) bool {
-	if g.always[toolName] {
+// of running it. mustPrompt says the session allowlist may not answer
+// this call (Block-tier, or an "always" policy — ADR-0021 §5); answering
+// 'a' on such a prompt still registers the allowlist, which future
+// non-Block calls use. EOF or read errors deny — failing closed is the
+// only safe default for an approval gate.
+func (g *Gate) Approve(toolName, detail, reason string, mustPrompt bool) bool {
+	if !mustPrompt && g.always[toolName] {
 		return true
 	}
 	fmt.Fprintf(g.out, "\n[approval] %s\n  %s\n", toolName, detail)

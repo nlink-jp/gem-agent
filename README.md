@@ -65,7 +65,10 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   summariser nonce-wrapped with no tools, exactly like compaction; a
   blocked summary is a reported error, never a silent empty one
 - Per-call approval gates (MITL) for mutating tools, with a session-scoped
-  allowlist (`y` = once, `a` = always this session; deny fails closed)
+  allowlist (`y` = once, `a` = always this session; deny fails closed).
+  `a` never covers the dangerous cases: Block-tier calls (sudo,
+  recursive deletes, credential paths, …) and tools pinned to "always"
+  by policy keep asking regardless (ADR-0021)
 - **Auto-approve mode** (opt-in, shift+tab or `/auto`): each mutating call
   passes a two-tier review — a rule-based classifier first, then a model
   risk evaluation for anything uncertain. Safe calls run unattended;
