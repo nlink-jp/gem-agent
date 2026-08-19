@@ -99,6 +99,14 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
 - One-shot mode `-p "<prompt>"`: single turn, answer on stdout, mutating
   tools denied (pipe-friendly)
 - Transient Vertex failures (429/5xx) retry with exponential backoff
+- **Implicit context caching** (ADR-0018): the isolation tag is
+  session-scoped, so the request prefix stays byte-identical across
+  rounds and turns and Vertex's implicit caching prices the replayed
+  history at the cached rate. Measured on an identical 4-round task:
+  0% cached with the old per-call tag, **81–95% cached** with the
+  session tag. The footer shows the live share (`cache NN%`). Sound
+  because nlk/guard refuses content containing the tag name — a leaked
+  tag can only get its carrier withheld, never escape the wrapper
 
 Out of scope by design: memory subsystems, data analysis, GUI, non-macOS
 platforms.

@@ -148,7 +148,7 @@ func (a *Agent) summarize(ctx context.Context, msgs []llm.Message) (string, erro
 		return "", err
 	}
 	if a.onUsage != nil && (resp.PromptTokens > 0 || resp.OutputTokens > 0) {
-		a.onUsage(resp.PromptTokens, resp.OutputTokens)
+		a.onUsage(resp.PromptTokens, resp.OutputTokens, resp.CachedTokens)
 	}
 	summary := strings.TrimSpace(resp.Content)
 	if summary == "" {

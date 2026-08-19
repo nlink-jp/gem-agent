@@ -140,6 +140,9 @@ max_turns = 50
 - コンテキスト圧縮 — [ADR-0006](adr/0006-context-compaction.ja.md)。
   コンテキストウィンドウで死に、復旧手段が `/clear` だけのセッションは
   フォールバックとして頼りにならない。
+- コンテキストキャッシュ — [ADR-0018](adr/0018-context-caching.ja.md)。
+  セッションスコープの隔離タグでプレフィックスがキャッシュ可能に。同一
+  タスク実測 0% → 81〜95%。
 - Web アクセス — [ADR-0017](adr/0017-web-tools.ja.md)。グラウンディング検索
   （first-party。agentic-web-search の凍結がその歴史）と、軽量モデルが要約する
   URL Context フェッチ。

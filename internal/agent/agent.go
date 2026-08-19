@@ -43,7 +43,7 @@ type Agent struct {
 	maxTurns int
 
 	onToolCall func(tc llm.ToolCall)
-	onUsage    func(promptTokens, outputTokens int)
+	onUsage    func(promptTokens, outputTokens, cachedTokens int)
 	onAuto     func(tc llm.ToolCall, d AutoDecision)
 	onAttach   func(atts []mention.Attachment, problems []mention.Problem)
 	onNotice   func(msg string)
@@ -73,6 +73,15 @@ type Agent struct {
 	// clipboard captures the clipboard image (ADR-0012). May be nil.
 	clipboard func() ([]byte, error)
 
+	// tag is the session-scoped isolation tag (ADR-0018). Stable across
+	// rounds and turns so the request prefix stays byte-identical and
+	// implicit caching can hit; regenerated on Reset and SetHistory.
+	// Session scope is sound because guard.Wrap refuses content that
+	// contains the tag name — knowing the tag is useless for escaping
+	// it. Side-calls (risk eval, compaction, summaries) keep per-call
+	// tags: one-shot calls have no prefix to reuse.
+	tag guard.Tag
+
 	history  []llm.Message
 	toolDefs []llm.ToolDef
 }
@@ -92,8 +101,9 @@ type Options struct {
 	OnToolCall func(tc llm.ToolCall)
 	// OnUsage, when set, receives per-round token usage (prompt tokens
 	// approximate the current context size; output tokens the round's
-	// generation) — the TUI footer consumes it.
-	OnUsage func(promptTokens, outputTokens int)
+	// generation; cached tokens the share of the prompt served from the
+	// implicit cache, ADR-0018) — the TUI footer consumes it.
+	OnUsage func(promptTokens, outputTokens, cachedTokens int)
 	// AutoApprove starts the session in auto-approve mode (ADR-0004).
 	AutoApprove bool
 	// OnAutoDecision, when set, observes each auto-mode verdict so the
@@ -155,6 +165,7 @@ func New(opts Options) *Agent {
 
 		instructionTools: toSet(opts.InstructionTools),
 		clipboard:        opts.ClipboardImage,
+		tag:              guard.NewTagWithPrefix("tool_output"),
 	}
 }
 
@@ -169,11 +180,14 @@ func toSet(names []string) map[string]bool {
 	return set
 }
 
-// Reset clears the conversation history (REPL /clear).
+// Reset clears the conversation history (REPL /clear). The isolation
+// tag rotates with it — a fresh conversation gets a fresh nonce, and the
+// cache prefix restarts anyway.
 func (a *Agent) Reset() {
 	a.history = nil
 	a.compactedAt = 0
 	a.lastPrompt = 0
+	a.tag = guard.NewTagWithPrefix("tool_output")
 }
 
 // SetHistory replaces the conversation with a restored transcript
@@ -187,6 +201,7 @@ func (a *Agent) SetHistory(history []llm.Message) {
 	// compact on its first round.
 	a.compactedAt = 0
 	a.lastPrompt = 0
+	a.tag = guard.NewTagWithPrefix("tool_output")
 }
 
 // SetContextWindow records the model's input token limit, which
@@ -287,12 +302,12 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 		// runs out (ADR-0006).
 		a.maybeAutoCompact(ctx)
 
-		// Fresh nonce tag per LLM call (nlk/guard contract: a previous
-		// response may echo the tag name, so reuse across calls is
-		// unsafe). The system prompt's {{DATA_TAG}} placeholder and the
-		// tool results in the history view are bound to this turn's tag.
-		tag := guard.NewTagWithPrefix("tool_output")
-		resp, err := a.backend.ChatStream(ctx, tag.Expand(a.system), wrapToolMessages(a.history, tag, a.instructionTools), a.toolDefs, onText)
+		// The session-scoped tag (ADR-0018): stable across rounds and
+		// turns so the request prefix stays byte-identical and implicit
+		// caching can hit. Reuse is sound because guard.Wrap refuses
+		// content containing the tag name — a leaked tag cannot escape
+		// the wrapper, only get its carrier withheld.
+		resp, err := a.backend.ChatStream(ctx, a.tag.Expand(a.system), wrapToolMessages(a.history, a.tag, a.instructionTools), a.toolDefs, onText)
 		if err != nil {
 			return "", err
 		}
@@ -300,9 +315,10 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 			a.lastPrompt = resp.PromptTokens
 		}
 		if a.onUsage != nil && (resp.PromptTokens > 0 || resp.OutputTokens > 0) {
-			a.onUsage(resp.PromptTokens, resp.OutputTokens)
+			a.onUsage(resp.PromptTokens, resp.OutputTokens, resp.CachedTokens)
 			a.logRecord("usage", map[string]int{
-				"prompt": resp.PromptTokens, "output": resp.OutputTokens, "thoughts": resp.ThoughtTokens,
+				"prompt": resp.PromptTokens, "output": resp.OutputTokens,
+				"thoughts": resp.ThoughtTokens, "cached": resp.CachedTokens,
 			})
 		}
 

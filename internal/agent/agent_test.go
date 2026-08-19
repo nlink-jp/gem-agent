@@ -344,10 +344,13 @@ func TestToolResultsNonceWrapped(t *testing.T) {
 	if strings.Contains(mb.systems[1], "{{DATA_TAG}}") {
 		t.Error("placeholder not expanded")
 	}
-	// Fresh tag per LLM call: round 1 and round 2 system prompts must
-	// carry different tag names.
-	if mb.systems[0] == mb.systems[1] {
-		t.Error("tag must be regenerated for every LLM call")
+	// ADR-0018 inverted the per-call rule for the MAIN loop: the tag is
+	// session-scoped so the request prefix stays byte-identical and
+	// implicit caching can hit (guard.Wrap's collision refusal is what
+	// makes reuse sound). Stability is pinned by
+	// TestIsolationTagIsStableAcrossRoundsAndTurns.
+	if mb.systems[0] != mb.systems[1] {
+		t.Error("main-loop tag must be session-scoped (ADR-0018)")
 	}
 }
 
@@ -392,7 +395,7 @@ func TestOnUsageReportsEachRound(t *testing.T) {
 	a := New(Options{
 		Backend: mb, Registry: reg, Gate: &approveAll{},
 		System: "s", MaxTurns: 5,
-		OnUsage: func(p, o int) { got = append(got, [2]int{p, o}) },
+		OnUsage: func(p, o, c int) { got = append(got, [2]int{p, o}) },
 	})
 	if _, err := a.Run(context.Background(), "go", nil); err != nil {
 		t.Fatal(err)
@@ -463,4 +466,86 @@ func TestInstructionToolResultsAreNotWrapped(t *testing.T) {
 	}
 	// The stored history keeps the raw content either way (wrapping is
 	// send-time), so resume fidelity is unaffected.
+}
+
+// ADR-0018: the isolation tag is session-scoped so the request prefix
+// stays byte-identical across rounds AND turns — the shape implicit
+// caching rewards. Reset rotates it.
+func TestIsolationTagIsStableAcrossRoundsAndTurns(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c", Name: "list_files", Args: map[string]any{}}}},
+		{Content: "turn one done"},
+		{Content: "turn two done"},
+	}}
+	_, reg := newAgent(t, mb, &approveAll{}, 5)
+	// The system prompt must carry the placeholder, or tag expansion is
+	// a no-op and every assertion below passes vacuously.
+	a := New(Options{Backend: mb, Registry: reg, Gate: &approveAll{},
+		System: "sys <{{DATA_TAG}}>", MaxTurns: 5})
+	if _, err := a.Run(context.Background(), "one", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Run(context.Background(), "two", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(mb.systems) != 3 {
+		t.Fatalf("%d calls", len(mb.systems))
+	}
+	// System instruction byte-identical across rounds and turns.
+	if mb.systems[0] != mb.systems[1] || mb.systems[1] != mb.systems[2] {
+		t.Error("system instruction changed between calls — the cache prefix is broken")
+	}
+	// The wrapped tool result is byte-identical when replayed.
+	var wrapped []string
+	for _, call := range mb.calls[1:] {
+		for _, m := range call {
+			if m.Role == llm.RoleTool {
+				wrapped = append(wrapped, m.Content)
+			}
+		}
+	}
+	if len(wrapped) != 2 || wrapped[0] != wrapped[1] {
+		t.Errorf("wrapped tool results differ across calls:\n%q\n%q", wrapped[0], wrapped[1])
+	}
+
+	// Reset rotates the tag: a fresh conversation, a fresh nonce.
+	a.Reset()
+	mb.responses = []*llm.Response{{Content: "after reset"}}
+	if _, err := a.Run(context.Background(), "three", nil); err != nil {
+		t.Fatal(err)
+	}
+	if mb.systems[3] == mb.systems[0] {
+		t.Error("Reset did not rotate the isolation tag")
+	}
+}
+
+// Cached tokens flow through the usage pipeline (ADR-0018) — the
+// measured answer to "is caching actually firing".
+func TestUsageCarriesCachedTokens(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{
+		{Content: "hi", PromptTokens: 1000, OutputTokens: 20, CachedTokens: 800},
+	}}
+	_, reg := newAgent(t, mb, &approveAll{}, 5)
+	log := &capturingLog{}
+	var gotCached int
+	a := New(Options{Backend: mb, Registry: reg, Gate: &approveAll{}, Log: log,
+		System: "s", MaxTurns: 5,
+		OnUsage: func(p, o, c int) { gotCached = c }})
+	if _, err := a.Run(context.Background(), "q", nil); err != nil {
+		t.Fatal(err)
+	}
+	if gotCached != 800 {
+		t.Errorf("OnUsage cached = %d", gotCached)
+	}
+	found := false
+	for i, kind := range log.kinds {
+		if kind == "usage" {
+			if m, ok := log.data[i].(map[string]int); ok && m["cached"] == 800 {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("the usage record does not carry cached tokens")
+	}
 }

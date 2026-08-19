@@ -81,9 +81,12 @@ Per-round details that matter:
 - **Function responses are coalesced**: when one assistant turn issued
   several calls, all their responses travel in a single user Content.
 - **Untrusted content is wrapped at send time**, not at store time. Tool
-  results and `@`-attachments are stored raw and enclosed in a fresh
-  nonce tag (nlk/guard) on every request, because the tag must change per
-  call. The system prompt carries the matching `{{DATA_TAG}}`.
+  results and `@`-attachments are stored raw and enclosed in the
+  **session-scoped** nonce tag (nlk/guard) on each request; the system
+  prompt carries the matching `{{DATA_TAG}}`. Session scope keeps the
+  request prefix byte-identical so implicit caching fires (ADR-0018) —
+  sound because Wrap refuses content containing the tag name. Side-calls
+  (risk eval, compaction, summaries) keep fresh per-call tags.
 - **A response with neither text nor tool calls is never stored.** An
   empty part in the history makes every later request fail with 400. A
   content-filter block retries once, then reports the reason.

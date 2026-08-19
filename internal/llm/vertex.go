@@ -176,6 +176,7 @@ func accumulateChunk(chunk *genai.GenerateContentResponse, resp *Response, text 
 		resp.PromptTokens = int(chunk.UsageMetadata.PromptTokenCount)
 		resp.OutputTokens = int(chunk.UsageMetadata.CandidatesTokenCount)
 		resp.ThoughtTokens = int(chunk.UsageMetadata.ThoughtsTokenCount)
+		resp.CachedTokens = int(chunk.UsageMetadata.CachedContentTokenCount)
 	}
 	if chunk.PromptFeedback != nil && chunk.PromptFeedback.BlockReason != "" {
 		resp.BlockReason = string(chunk.PromptFeedback.BlockReason)

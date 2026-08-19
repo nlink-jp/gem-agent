@@ -129,7 +129,7 @@ func (a *Agent) evaluateRisk(ctx context.Context, tc llm.ToolCall) (riskVerdict,
 		return riskVerdict{}, err
 	}
 	if a.onUsage != nil && (resp.PromptTokens > 0 || resp.OutputTokens > 0) {
-		a.onUsage(resp.PromptTokens, resp.OutputTokens)
+		a.onUsage(resp.PromptTokens, resp.OutputTokens, resp.CachedTokens)
 	}
 
 	var verdict riskVerdict

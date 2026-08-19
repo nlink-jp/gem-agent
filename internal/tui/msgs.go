@@ -53,6 +53,10 @@ type ShellDone struct {
 type Usage struct {
 	Prompt int
 	Output int
+	// Cached is the share of Prompt served from the implicit cache
+	// (ADR-0018) — the footer shows it so "is caching firing" is a
+	// glance, not an investigation.
+	Cached int
 }
 
 // ContextWindow reports the model's input token limit once known.

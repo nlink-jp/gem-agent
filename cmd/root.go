@@ -313,9 +313,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Fprintf(stderr, "[⚠ %s]\n", msg)
 		},
-		OnUsage: func(promptTokens, outputTokens int) {
+		OnUsage: func(promptTokens, outputTokens, cachedTokens int) {
 			if prog != nil {
-				prog.Send(tui.Usage{Prompt: promptTokens, Output: outputTokens})
+				prog.Send(tui.Usage{Prompt: promptTokens, Output: outputTokens, Cached: cachedTokens})
 			}
 		},
 		AutoCompact:  cfg.Agent.AutoCompact,

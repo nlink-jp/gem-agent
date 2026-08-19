@@ -63,6 +63,8 @@ supersede する（typo とリンク修正は例外）。
   メタデータ・MD5/SHA1/SHA256 三点セット
 - [`ADR-0017`](adr/0017-web-tools.ja.md) — グラウンディング検索と要約
   フェッチ。既定でエグレスゲート、SSRF は構造的に死ぬ
+- [`ADR-0018`](adr/0018-context-caching.ja.md) — セッションスコープの隔離
+  タグで implicit caching が効く。実測 0% → 81〜95%
 
 ## History（履歴）
 

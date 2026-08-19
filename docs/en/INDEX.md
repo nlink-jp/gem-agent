@@ -67,6 +67,8 @@ excepted).
   metadata, and the MD5/SHA1/SHA256 trio
 - [`ADR-0017`](adr/0017-web-tools.md) — grounded search and digested
   fetch; egress-gated by default, SSRF dead by construction
+- [`ADR-0018`](adr/0018-context-caching.md) — a session-scoped isolation
+  tag makes implicit caching fire; measured 0% → 81–95%
 
 ## History
 

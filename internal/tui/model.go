@@ -229,6 +229,8 @@ type Model struct {
 	projectDir    string
 	ctxTokens     int // last round's prompt+output ≈ current context size
 	usedTokens    int // cumulative prompt+output across the session
+	promptTokens  int // last round's prompt alone (cache-share denominator)
+	cachedTokens  int // last round's cached prompt tokens (ADR-0018)
 	window        int // model input token limit, 0 = unknown
 	windowAssumed bool
 }
@@ -383,6 +385,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		round := msg.Prompt + msg.Output
 		m.ctxTokens = round
 		m.usedTokens += round
+		m.cachedTokens = msg.Cached
+		m.promptTokens = msg.Prompt
 		return m, nil
 
 	case ContextWindow:
@@ -1048,6 +1052,10 @@ func (m Model) footer() string {
 	occupancy := "ctx " + ctx + "/" + window
 	if m.ctxTokens > 0 && m.window > 0 {
 		occupancy += fmt.Sprintf(" (%.0f%%)", float64(m.ctxTokens)/float64(m.window)*100)
+	}
+	if m.cachedTokens > 0 && m.promptTokens > 0 {
+		// The measured answer to "is implicit caching firing" (ADR-0018).
+		occupancy += fmt.Sprintf(" · cache %.0f%%", float64(m.cachedTokens)/float64(m.promptTokens)*100)
 	}
 	parts := []string{m.modelName, occupancy, "total " + humanTokens(m.usedTokens)}
 	if m.projectDir != "" {

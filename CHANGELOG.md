@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.14.0] - 2026-08-20
+
+### Added — implicit context caching (ADR-0018, operator request)
+
+- Honest scoping first: caching economises **cost and latency**, not
+  window occupancy (that stays compaction's job). What it discounts is
+  the agent loop's defining expense — every round re-sends the whole
+  history
+- The blocker was our own injection defense: the isolation tag was
+  regenerated **per LLM call**, landing in the system instruction and
+  every wrapped tool result, so consecutive requests differed from the
+  first byte — implicit caching could never match a prefix
+- **The main loop's tag is now session-scoped** (rotated on `/clear` and
+  resume). Sound because nlk/guard's `Wrap` refuses content containing
+  the tag name: a leaked tag cannot escape the wrapper, only get its
+  carrier withheld — an availability nuisance, not an integrity break.
+  Side-calls (risk eval, compaction, summaries) keep per-call tags:
+  one-shot calls have no prefix to reuse
+- **Measured, not assumed** — the same 4-round task on the old and new
+  binary: per-call tag cached **0 / 0 / 0 / 0** tokens; session tag
+  cached **0 / 35k (81%) / 42k (95%) / 42k (93%)**. The
+  `cachedContentTokenCount` now flows API → usage records → footer
+  (`cache NN%`), so whether caching fires stays a glance, not a claim
+- Explicit CachedContent objects deliberately not built: hourly storage
+  fees and TTLs fit a fixed prefix reused across sessions, while ours
+  grows every round — implicit caching is designed for exactly this
+  shape. Revisit only if the counter disappoints
+
 ## [0.13.0] - 2026-08-19
 
 ### Added — web access (ADR-0017, operator request)

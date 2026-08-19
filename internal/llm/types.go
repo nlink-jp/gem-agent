@@ -82,6 +82,9 @@ type Response struct {
 	TextPartSig     []byte
 	PromptTokens    int
 	OutputTokens    int
+	// CachedTokens counts prompt tokens served from the implicit cache
+	// (ADR-0018) — the measured answer to "is caching actually firing".
+	CachedTokens int
 	// FinishReason and BlockReason explain a response that carries no
 	// text — without them, "the model returned nothing" is untriageable
 	// (MAX_TOKENS spent on thinking reads exactly like a safety block).

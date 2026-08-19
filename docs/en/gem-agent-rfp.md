@@ -145,6 +145,9 @@ reasoning; both are recorded rather than quietly added):
 - Context compaction — [ADR-0006](adr/0006-context-compaction.md). A
   session that dies at the context window, with `/clear` as the only
   recovery, is not much of a fallback.
+- Context caching — [ADR-0018](adr/0018-context-caching.md). A
+  session-scoped isolation tag makes the request prefix cacheable;
+  measured 0% → 81–95% cached on an identical task.
 - Web access — [ADR-0017](adr/0017-web-tools.md). Grounded search
   (first-party; the agentic-web-search freeze is the history) and
   URL-context fetch digested by the lightweight model.
