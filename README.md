@@ -85,7 +85,11 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   becomes one summary, the recent half stays verbatim. Automatic at 80%
   (`[agent].compact_at_pct`), or `/compact` at any time. See
   [ADR-0006](docs/en/adr/0006-context-compaction.md)
-- Slash commands: `/help` `/tools` `/mcp` `/compact` `/clear` `/quit`
+- Slash commands: `/help` `/tools` `/mcp` `/usage` `/compact` `/clear`
+  `/quit` — `/usage` is the session's token statement (ADR-0019):
+  main-loop rounds with the cache hit rate, risk-check and compaction
+  side-calls, and per-tool lines (summarize/web) naming the model that
+  spent the tokens
 - **Drop-in project compatibility**: the project's agent-instruction files
   are injected into the system prompt — `AGENTS.md`, `AGENT.md`,
   `CLAUDE.md`, `GEMINI.md`, searched up through ancestor directories the

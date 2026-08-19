@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.15.1] - 2026-08-20
+
+### Added — /usage (ADR-0019, operator request)
+
+- The session's token statement: main-loop rounds, prompt/output/
+  thoughts, cached share (with ADR-0018's honest line printed — cache
+  saves cost/latency, not window space), current context against the
+  window, and per-category side-calls — auto-approve risk checks,
+  compaction, and the tools that spend on their own backends
+  (summarize_file, web_search, web_fetch), each naming the model that
+  spent the tokens. Empty categories stay silent: a statement, not a
+  form
+- In-memory accounting, not log-parsing: a display command must not
+  reread a transcript that may hold megabytes of base64 images to add
+  integers
+
+### Fixed
+
+- **Side-call usage no longer stomps the footer.** Risk evaluations and
+  compaction fed the same callback as the main loop, so a risk check
+  momentarily replaced the footer's "ctx" gauge with its own prompt
+  size. Side-calls now accumulate into their own buckets and the ctx
+  gauge always means the main conversation
+- Web tools' LLM calls now report token usage at all (previously
+  untracked anywhere)
+
+Note: tag v0.15.0 carries this release's code but not its docs — a
+compound-command failure applied the code commit and the tag while the
+doc edits silently did not run (the same guard-and-heredoc trap as
+before, caught by the CHANGELOG assertion). Released tags are never
+moved in this org, so v0.15.0 stays unpublished and v0.15.1 is the
+release.
+
 ## [0.14.0] - 2026-08-20
 
 ### Added — implicit context caching (ADR-0018, operator request)

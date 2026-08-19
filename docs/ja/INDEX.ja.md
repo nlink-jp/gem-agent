@@ -65,6 +65,8 @@ supersede する（typo とリンク修正は例外）。
   フェッチ。既定でエグレスゲート、SSRF は構造的に死ぬ
 - [`ADR-0018`](adr/0018-context-caching.ja.md) — セッションスコープの隔離
   タグで implicit caching が効く。実測 0% → 81〜95%
+- [`ADR-0019`](adr/0019-usage-accounting.ja.md) — カテゴリ別の利用会計と
+  /usage。側呼び出しがフッターを踏み潰さなくなる
 
 ## History（履歴）
 

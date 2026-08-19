@@ -69,6 +69,8 @@ excepted).
   fetch; egress-gated by default, SSRF dead by construction
 - [`ADR-0018`](adr/0018-context-caching.md) — a session-scoped isolation
   tag makes implicit caching fire; measured 0% → 81–95%
+- [`ADR-0019`](adr/0019-usage-accounting.md) — per-category usage
+  accounting and /usage; side-calls stop stomping the footer
 
 ## History
 

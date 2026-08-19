@@ -78,7 +78,10 @@ Claude Code が使えない状況（プロバイダ側障害・契約やネッ�
   代わりに要約します — 古い側は 1 件の要約になり、直近はそのまま残ります。
   既定は 80%（`[agent].compact_at_pct`）で自動、`/compact` で任意のタイミングに
   手動実行。詳細は [ADR-0006](docs/ja/adr/0006-context-compaction.ja.md)
-- スラッシュコマンド: `/help` `/tools` `/mcp` `/compact` `/clear` `/quit`
+- スラッシュコマンド: `/help` `/tools` `/mcp` `/usage` `/compact` `/clear`
+  `/quit` — `/usage` はセッションのトークン明細書（ADR-0019）: メイン
+  ループのラウンド数とキャッシュ率、リスク評価・圧縮の側呼び出し、
+  トークンを使ったモデル名つきのツール別行（summarize/web）
 - **drop-in プロジェクト互換**: プロジェクトが既に持つエージェント指示ファイル
   （`AGENTS.md` / `AGENT.md` / `CLAUDE.md` / `GEMINI.md`）を、他のエージェントと
   同様に**親ディレクトリまで遡って**探索しシステムプロンプトへ注入。ワーク
