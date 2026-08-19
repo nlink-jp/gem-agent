@@ -12,13 +12,13 @@ func navProject(t *testing.T) *Registry {
 	r := newRegistry(t)
 	dir := r.ProjectDir()
 	for path, content := range map[string]string{
-		"main.go":              "package main\n\nfunc main() { start() }\n",
-		"internal/agent/a.go":  "package agent\n\nconst maxRetries = 3\n",
-		"internal/agent/b.go":  "package agent\n\nfunc start() { _ = maxRetries }\n",
-		"docs/readme.md":       "# docs\nmaxRetries is documented here\n",
-		".git/config":          "[core]\n",
-		".git/objects/junk":    strings.Repeat("x", 100),
-		"assets/logo.png":      string(tinyPNG),
+		"main.go":             "package main\n\nfunc main() { start() }\n",
+		"internal/agent/a.go": "package agent\n\nconst maxRetries = 3\n",
+		"internal/agent/b.go": "package agent\n\nfunc start() { _ = maxRetries }\n",
+		"docs/readme.md":      "# docs\nmaxRetries is documented here\n",
+		".git/config":         "[core]\n",
+		".git/objects/junk":   strings.Repeat("x", 100),
+		"assets/logo.png":     string(tinyPNG),
 	} {
 		full := filepath.Join(dir, path)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {

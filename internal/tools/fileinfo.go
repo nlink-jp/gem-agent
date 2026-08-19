@@ -220,26 +220,139 @@ func appendTimes(b *strings.Builder, fi os.FileInfo) {
 	}
 }
 
-// magic is one content signature. Offset 0 unless noted.
+// magic is one content signature: a prefix at an offset, optionally
+// refined by a closer look at the head bytes (format families, and the
+// famous 0xCAFEBABE collision between Java class files and fat Mach-O
+// — file(1) distinguishes them by the architecture count, and so do we).
 type magic struct {
+	offset int
 	prefix []byte
 	kind   string
+	refine func(head []byte) string
+	// valid, when set, must confirm the match — short ASCII magics
+	// ("BM", "ID3", "BZh") collide with ordinary text beginnings, and a
+	// text file misread as an image is exactly the mistake a type
+	// judgement exists to prevent.
+	valid func(head []byte) bool
 }
 
-// magics covers what IR work actually meets. Finite and test-first by
-// design — extending it is an edit, not a libmagic dependency.
+// magics covers the majors plus what IR work actually meets. Finite and
+// test-first by design — extending it is an edit, not a libmagic
+// dependency. Order matters where prefixes overlap: first match wins.
 var magics = []magic{
-	{[]byte{0xcf, 0xfa, 0xed, 0xfe}, "Mach-O 64-bit executable"},
-	{[]byte{0xce, 0xfa, 0xed, 0xfe}, "Mach-O 32-bit executable"},
-	{[]byte{0xfe, 0xed, 0xfa, 0xcf}, "Mach-O 64-bit executable (big-endian)"},
-	{[]byte{0xfe, 0xed, 0xfa, 0xce}, "Mach-O 32-bit executable (big-endian)"},
-	{[]byte{0xca, 0xfe, 0xba, 0xbe}, "Mach-O universal (fat) binary"},
-	{[]byte{0x7f, 'E', 'L', 'F'}, "ELF executable"},
-	{[]byte("MZ"), "PE/DOS executable (Windows)"},
-	{[]byte("PK\x03\x04"), "zip archive (also jar/docx/xlsx family)"},
-	{[]byte{0x1f, 0x8b}, "gzip compressed data"},
-	{[]byte("%PDF"), "PDF document"},
-	{[]byte("SQLite format 3\x00"), "SQLite database"},
+	// Executables and libraries.
+	{0, []byte{0xcf, 0xfa, 0xed, 0xfe}, "Mach-O 64-bit executable", refineMachO, nil},
+	{0, []byte{0xce, 0xfa, 0xed, 0xfe}, "Mach-O 32-bit executable", nil, nil},
+	{0, []byte{0xfe, 0xed, 0xfa, 0xcf}, "Mach-O 64-bit executable (big-endian)", nil, nil},
+	{0, []byte{0xfe, 0xed, 0xfa, 0xce}, "Mach-O 32-bit executable (big-endian)", nil, nil},
+	{0, []byte{0xca, 0xfe, 0xba, 0xbe}, "Mach-O universal (fat) binary", refineCafebabe, nil},
+	{0, []byte{0x7f, 'E', 'L', 'F'}, "ELF executable", nil, nil},
+	{0, []byte("MZ"), "PE/DOS executable (Windows)", nil, nil},
+	{0, []byte("\x00asm"), "WebAssembly binary", nil, nil},
+	// Images.
+	{0, []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}, "PNG image", nil, nil},
+	{0, []byte{0xff, 0xd8, 0xff}, "JPEG image", nil, nil},
+	{0, []byte("GIF87a"), "GIF image", nil, nil},
+	{0, []byte("GIF89a"), "GIF image", nil, nil},
+	{0, []byte("II*\x00"), "TIFF image (little-endian)", nil, nil},
+	{0, []byte("MM\x00*"), "TIFF image (big-endian)", nil, nil},
+	{0, []byte("BM"), "BMP image", nil, func(h []byte) bool {
+		// Reserved words at 6–9 are zero in every real BMP.
+		return len(h) >= 10 && h[6] == 0 && h[7] == 0 && h[8] == 0 && h[9] == 0
+	}},
+	// Container formats branded at offset 4 (MP4/MOV/HEIC family) and
+	// RIFF at 0 (WebP/WAV/AVI).
+	{4, []byte("ftyp"), "ISO media (MP4 family)", refineFtyp, nil},
+	{0, []byte("RIFF"), "RIFF container", refineRIFF, nil},
+	// Audio.
+	{0, []byte("ID3"), "MP3 audio (ID3 tagged)", nil, func(h []byte) bool {
+		return len(h) >= 7 && h[3] <= 10 && h[6]&0x80 == 0 // sane version + syncsafe size
+	}},
+	{0, []byte("OggS"), "Ogg container", nil, func(h []byte) bool { return len(h) >= 5 && h[4] == 0 }},
+	{0, []byte("fLaC"), "FLAC audio", nil, nil},
+	// Archives and compression.
+	{0, []byte("PK\x03\x04"), "zip archive (also jar/docx/xlsx family)", nil, nil},
+	{0, []byte{0x1f, 0x8b}, "gzip compressed data", nil, nil},
+	{257, []byte("ustar"), "tar archive", nil, nil},
+	{0, []byte("7z\xbc\xaf\x27\x1c"), "7-zip archive", nil, nil},
+	{0, []byte{0xfd, '7', 'z', 'X', 'Z', 0x00}, "xz compressed data", nil, nil},
+	{0, []byte("BZh"), "bzip2 compressed data", nil, func(h []byte) bool {
+		return len(h) >= 4 && h[3] >= '1' && h[3] <= '9' // block-size digit
+	}},
+	{0, []byte{0x28, 0xb5, 0x2f, 0xfd}, "zstd compressed data", nil, nil},
+	{0, []byte("Rar!\x1a\x07"), "RAR archive", nil, nil},
+	// Documents and data.
+	{0, []byte("%PDF"), "PDF document", nil, nil},
+	{0, []byte("SQLite format 3\x00"), "SQLite database", nil, nil},
+	{0, []byte("bplist00"), "binary property list (plist)", nil, nil},
+	{0, []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}, "OLE compound document (legacy Office / msi)", nil, nil},
+}
+
+// refineCafebabe settles 0xCAFEBABE: a fat Mach-O header follows the
+// magic with the architecture count — a small number — while a Java
+// class file follows it with minor/major version, which reads as a much
+// larger big-endian value. file(1) draws the same line.
+func refineCafebabe(head []byte) string {
+	if len(head) < 8 {
+		return ""
+	}
+	v := uint32(head[4])<<24 | uint32(head[5])<<16 | uint32(head[6])<<8 | uint32(head[7])
+	if v >= 0x14 { // 20 — no real fat binary carries this many architectures
+		return "Java class file"
+	}
+	return ""
+}
+
+// refineMachO names the common non-executable filetypes (little-endian
+// 64-bit header: filetype at offset 12).
+func refineMachO(head []byte) string {
+	if len(head) < 16 {
+		return ""
+	}
+	v := uint32(head[12]) | uint32(head[13])<<8 | uint32(head[14])<<16 | uint32(head[15])<<24
+	switch v {
+	case 1:
+		return "Mach-O 64-bit object file"
+	case 6:
+		return "Mach-O 64-bit dynamic library"
+	case 8:
+		return "Mach-O 64-bit bundle"
+	case 10:
+		return "Mach-O 64-bit dSYM companion"
+	}
+	return ""
+}
+
+func refineFtyp(head []byte) string {
+	if len(head) < 12 {
+		return ""
+	}
+	switch brand := string(head[8:12]); {
+	case strings.HasPrefix(brand, "hei"), strings.HasPrefix(brand, "hev"), brand == "mif1":
+		return "HEIC/HEIF image"
+	case brand == "avif":
+		return "AVIF image"
+	case brand == "qt  ":
+		return "QuickTime movie (MOV)"
+	case brand == "M4A ":
+		return "M4A audio"
+	}
+	return "MP4 media"
+}
+
+func refineRIFF(head []byte) string {
+	if len(head) < 12 {
+		return ""
+	}
+	switch string(head[8:12]) {
+	case "WEBP":
+		return "WebP image"
+	case "WAVE":
+		return "WAV audio"
+	case "AVI ":
+		return "AVI video"
+	}
+	return ""
 }
 
 // detectType judges a file from its head bytes — never the extension.
@@ -248,9 +361,19 @@ func detectType(head []byte, name string) (kind string, isText bool) {
 		return "empty file", false
 	}
 	for _, m := range magics {
-		if bytes.HasPrefix(head, m.prefix) {
-			return m.kind, false
+		if len(head) < m.offset+len(m.prefix) ||
+			!bytes.Equal(head[m.offset:m.offset+len(m.prefix)], m.prefix) {
+			continue
 		}
+		if m.valid != nil && !m.valid(head) {
+			continue
+		}
+		if m.refine != nil {
+			if refined := m.refine(head); refined != "" {
+				return refined, false
+			}
+		}
+		return m.kind, false
 	}
 	if bytes.HasPrefix(head, []byte("#!")) {
 		line := head
@@ -260,14 +383,17 @@ func detectType(head []byte, name string) (kind string, isText bool) {
 		return fmt.Sprintf("script (%s)", strings.TrimSpace(string(line))), true
 	}
 	if bytes.IndexByte(head, 0) >= 0 {
-		// Binary but unrecognised: fall back to the stdlib sniffer for
-		// media types, else be honest.
+		// Binary but unrecognised: fall back to the stdlib sniffer, else
+		// be honest.
 		if mime := http.DetectContentType(head); mime != "application/octet-stream" {
 			return mime, false
 		}
 		return "data (binary, unrecognised)", false
 	}
 	if utf8.Valid(head) {
+		if bytes.HasPrefix(head, []byte("-----BEGIN ")) {
+			return "PEM encoded data (text)", true
+		}
 		return "text (UTF-8)", true
 	}
 	return "text (non-UTF-8 encoding)", true

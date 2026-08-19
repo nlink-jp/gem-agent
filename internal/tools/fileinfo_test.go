@@ -169,3 +169,73 @@ func TestFileInfoBatch(t *testing.T) {
 		}
 	}
 }
+
+// The majors, plus the collisions that make a magic table earn its keep.
+func TestDetectTypeMajorsAndCollisions(t *testing.T) {
+	cases := map[string]struct {
+		head []byte
+		want string
+	}{
+		"png":  {[]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0}, "PNG image"},
+		"jpeg": {[]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F'}, "JPEG image"},
+		"gif":  {[]byte("GIF89a\x01\x00"), "GIF image"},
+		"webp": {[]byte("RIFF\x24\x00\x00\x00WEBPVP8 "), "WebP image"},
+		"wav":  {[]byte("RIFF\x24\x00\x00\x00WAVEfmt "), "WAV audio"},
+		"tiff": {[]byte("II*\x00\x08\x00"), "TIFF image (little-endian)"},
+		"heic": {append([]byte{0, 0, 0, 0x18}, []byte("ftypheic")...), "HEIC/HEIF image"},
+		"mp4":  {append([]byte{0, 0, 0, 0x18}, []byte("ftypisom")...), "MP4 media"},
+		"mov":  {append([]byte{0, 0, 0, 0x14}, []byte("ftypqt  ")...), "QuickTime movie (MOV)"},
+		"xz":   {[]byte{0xfd, '7', 'z', 'X', 'Z', 0x00}, "xz compressed data"},
+		"7z":   {[]byte("7z\xbc\xaf\x27\x1c\x00"), "7-zip archive"},
+		"zstd": {[]byte{0x28, 0xb5, 0x2f, 0xfd, 0x01}, "zstd compressed data"},
+		"bz2":  {[]byte("BZh9\x31\x41"), "bzip2 compressed data"},
+		"wasm": {[]byte("\x00asm\x01\x00\x00\x00"), "WebAssembly binary"},
+		"ole":  {[]byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}, "OLE compound document (legacy Office / msi)"},
+		"pem":  {[]byte("-----BEGIN CERTIFICATE-----\nMIIB"), "PEM encoded data (text)"},
+
+		// The famous 0xCAFEBABE collision: a fat Mach-O carries a small
+		// architecture count; a Java class carries a version word there.
+		"fat-macho":  {[]byte{0xca, 0xfe, 0xba, 0xbe, 0x00, 0x00, 0x00, 0x02}, "Mach-O universal (fat) binary"},
+		"java-class": {[]byte{0xca, 0xfe, 0xba, 0xbe, 0x00, 0x00, 0x00, 0x43}, "Java class file"},
+
+		// Mach-O filetype refinement: 6 = dylib.
+		"dylib": {[]byte{0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0, 0, 0, 0, 0, 0, 0, 0x06, 0, 0, 0}, "Mach-O 64-bit dynamic library"},
+	}
+	for name, tc := range cases {
+		kind, _ := detectType(tc.head, name)
+		if kind != tc.want {
+			t.Errorf("%s: detectType = %q, want %q", name, kind, tc.want)
+		}
+	}
+}
+
+// tar's magic sits at offset 257 — the one offset-based entry.
+func TestDetectTypeTarAtOffset(t *testing.T) {
+	head := make([]byte, 512)
+	copy(head, "somefile.txt")
+	copy(head[257:], "ustar\x00")
+	if kind, _ := detectType(head, "a.tar"); kind != "tar archive" {
+		t.Errorf("tar = %q", kind)
+	}
+}
+
+// Short ASCII magics collide with ordinary text; the valid checks keep
+// prose from being misread as media — the exact mistake a type
+// judgement exists to prevent.
+func TestDetectTypeTextCollisionsStayText(t *testing.T) {
+	for name, content := range map[string]string{
+		"bm":  "BMW is a car maker.\nSecond line.\n",
+		"id3": "ID3 tags are metadata containers used in MP3.\n",
+		"bzh": "BZh is how bzip2 streams begin.\n",
+	} {
+		kind, isText := detectType([]byte(content), name)
+		if !isText || kind != "text (UTF-8)" {
+			t.Errorf("%s: detectType = %q (isText=%v), want text", name, kind, isText)
+		}
+	}
+	// And a real BMP still detects: reserved words zero.
+	bmp := []byte{'B', 'M', 0x46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00}
+	if kind, _ := detectType(bmp, "x.bmp"); kind != "BMP image" {
+		t.Errorf("real BMP = %q", kind)
+	}
+}

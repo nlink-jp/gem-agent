@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.12.1] - 2026-08-19
+
+### Fixed
+
+- file_info's magic table skipped the majors — operator review: "JPEG,
+  PNG… quite a few big ones look unsupported". They were only caught by
+  a fragile fallback (NUL-byte heuristic → stdlib sniffer). Now explicit:
+  PNG, JPEG, GIF, WebP, TIFF, BMP, HEIC/AVIF/MP4/MOV (ftyp brands at
+  offset 4), WAV/AVI (RIFF forms), MP3/Ogg/FLAC, tar (magic at offset
+  257), 7z, xz, bzip2, zstd, RAR, WebAssembly, OLE compound documents,
+  binary plists, and PEM text
+- **The 0xCAFEBABE collision was a real bug**: every Java class file was
+  reported as a Mach-O universal (fat) binary. Distinguished the way
+  file(1) does — a fat header carries a small architecture count where a
+  class file carries its version word
+- Mach-O filetypes refined: dylibs, bundles, object files and dSYM
+  companions are named instead of everything being "executable"
+- Short ASCII magics ("BM", "ID3", "BZh", "OggS") now carry structural
+  validity checks, so prose beginning with those letters stays text —
+  misreading text as media is the exact mistake a type judgement exists
+  to prevent
+
 ## [0.12.0] - 2026-08-19
 
 ### Added — file_info (ADR-0016, operator request)

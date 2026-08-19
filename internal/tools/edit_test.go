@@ -124,7 +124,7 @@ func TestEditFileMissDiagnosisQuotesTheRealText(t *testing.T) {
 	r, _ := editProject(t, editSrc)
 	_, err := run(t, r, "edit_file", map[string]any{
 		"path":       "f.go",
-		"old_string": "func start() {\n    retries := 3\n    launch(retries)",  // spaces, file has tabs
+		"old_string": "func start() {\n    retries := 3\n    launch(retries)", // spaces, file has tabs
 		"new_string": "x",
 	})
 	if err == nil {
@@ -150,11 +150,11 @@ func TestEditFileMissDiagnosisQuotesTheRealText(t *testing.T) {
 func TestEditFileArgValidation(t *testing.T) {
 	r, _ := editProject(t, editSrc)
 	cases := []map[string]any{
-		{"path": "f.go", "old_string": "x", "new_string": "x"},                       // no-op
-		{"path": "f.go", "old_string": "", "new_string": "x"},                        // empty anchor
-		{"path": "f.go"},                                                             // nothing
-		{"path": "f.go", "old_string": "a", "new_string": "b", "edits": []any{}},     // both forms
-		{"path": "f.go", "edits": []any{}},                                           // empty batch
+		{"path": "f.go", "old_string": "x", "new_string": "x"}, // no-op
+		{"path": "f.go", "old_string": "", "new_string": "x"},  // empty anchor
+		{"path": "f.go"}, // nothing
+		{"path": "f.go", "old_string": "a", "new_string": "b", "edits": []any{}}, // both forms
+		{"path": "f.go", "edits": []any{}},                                       // empty batch
 		{"path": "f.go", "edits": []any{map[string]any{"old_string": "same", "new_string": "same"}}},
 	}
 	for i, args := range cases {

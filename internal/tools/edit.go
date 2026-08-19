@@ -288,8 +288,8 @@ func occurrenceLines(content, needle string) string {
 // content poisons the exact-match contract the moment it is copied).
 func editReport(n int, content string, offset, newLen int) string {
 	lines := strings.Split(content, "\n")
-	startLine := strings.Count(content[:offset], "\n")           // 0-based
-	endLine := strings.Count(content[:offset+newLen], "\n")      // 0-based, inclusive
+	startLine := strings.Count(content[:offset], "\n")      // 0-based
+	endLine := strings.Count(content[:offset+newLen], "\n") // 0-based, inclusive
 	from := max(0, startLine-editSnippetContext)
 	to := min(len(lines), endLine+editSnippetContext+1)
 	snippet := strings.Join(lines[from:to], "\n")
