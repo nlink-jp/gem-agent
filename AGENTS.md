@@ -232,6 +232,21 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   we use, ignore the rest (`allowed-tools` deliberately so: honouring a
   foreign permission grant would bypass ADR-0004/0008). Never write to
   skill directories.
+- **The session allowlist sits below the Block floor (ADR-0021)** —
+  `Approver.Approve` carries `mustPrompt`, set by the agent for
+  Block-tier calls and always-policy tools; both gates skip their
+  allowlist when it is set. Removing that flag, or consulting the
+  allowlist before the risk verdict, reopens the measured hole where
+  one 'a' on a benign call waved every later `sudo`/`rm -rf` through.
+- **The transcript loader is line-based and tolerant (ADR-0021)** —
+  corrupt lines are skipped with a reported count, never treated as
+  EOF; a compaction record after skipped lines refuses; `/clear` is a
+  recorded event replayed on load. Every history mutation needs a
+  matching record kind — Reset was the one that did not, and cleared
+  conversations resurrected.
+- **Policy resolves scope before specificity (ADR-0021)** — project
+  rules beat global rules for the tools they match; sorting one merged
+  list by specificity broke "a project may tighten freely".
 - **Memory writes are the trust boundary (ADR-0020)** — `save_memory` /
   `delete_memory` stay Mutating and `risk.Classify` keeps them at
   Review, never Safe: a persisted memory reappears in every later

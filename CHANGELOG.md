@@ -1,5 +1,77 @@
 # Changelog
 
+## [0.17.0] - 2026-08-20
+
+### Fixed — whole-code review batch (ADR-0021, operator request)
+
+A six-lens parallel review plus static analysis and live API
+measurement. Two findings independent reviewers marked certain
+("dangling function call 400s on resume", "interrupted tool round
+poisons history") were refuted by measurement and needed no fix.
+
+Session integrity:
+
+- `/clear` is recorded in the transcript; a cleared conversation no
+  longer resurrects on resume, and post-clear compaction replays
+  against the right list. Transcript schema is now 2 (older builds
+  refuse newer files instead of misreading them; schema-1 files load
+  unchanged)
+- A crash's torn last line now costs exactly one line: Reopen repairs
+  the missing newline and the loader skips corrupt lines with a
+  reported count (measured before: one glued tear silently dropped
+  everything after it — 1 of 6 turns survived)
+- The session file takes a flock: a second `--resume` of a live session
+  is refused instead of interleaving two processes' appends
+- A failed conversation-bearing transcript write stops recording at a
+  consistent prefix and says the session can no longer be fully resumed
+
+Approval:
+
+- **The session allowlist (`a`) no longer lifts the Block floor or an
+  explicit "always" policy**: one 'a' on a benign shell_exec used to
+  wave every later `sudo`/`rm -rf`/credential-path command through
+  unprompted, in every mode. Block prompts now show the rule tier's
+  reason and default to 拒否
+- Policy resolves scope before pattern specificity: a project wildcard
+  tighten now beats a global exact rule (ADR-0008's promise restored)
+- Keys arriving within 300ms of the approval dialog opening are
+  dropped — mid-run typing could answer (or session-allowlist) a
+  dialog the operator never saw
+- Multi-line shell approval details are budgeted with an explicit
+  "+N lines hidden" warning instead of scrolling out of sight
+
+TUI:
+
+- `!` and `/` cannot be queued mid-run (queued prose merged after a
+  queued `!` executed as shell; text after a queued `/command` was
+  silently dropped); a half-typed draft survives a queued send; an
+  interrupted `!` command hands the queued message back
+- Tab-bearing output (`!git diff`) no longer drifts the pinned input
+  line; the managed view is clamped on short terminals; startup
+  warnings survive the first clear by riding the banner; clipping is
+  rune-safe (no more U+FFFD mid-word in Japanese)
+- Plain REPL: Ctrl+C during `!` or /compact interrupts the operation
+  instead of killing the process
+
+Tools and LLM layer:
+
+- edit_file's near-miss diagnosis quotes the right region on files
+  starting with blank lines; read_file's window note reports the real
+  line count; edit reports no longer count a trailing newline
+- A response cut off mid-generation (SAFETY / MAX_TOKENS) with partial
+  text is reported instead of silently presented as complete;
+  metadata-only stream chunks no longer disarm the transient retry;
+  URL-metadata nil elements no longer panic
+- A resumed over-threshold session can auto-compact on its first round
+- file_info no longer leaks out-of-project link targets through
+  intermediate symlinks, and resolve errors no longer name
+  out-of-project paths
+- /tools shows the live policy after mid-session edits;
+  trusted_projects entries match as resolved paths with ~ expansion;
+  over-long MCP tool names get a deterministic hash suffix instead of
+  colliding; MCP stdin writes are generation-guarded (data race fixed)
+- Dependencies bumped: govulncheck 5 reachable vulnerabilities → 0
+
 ## [0.16.0] - 2026-08-20
 
 ### Added — agent memory (ADR-0020, operator request)

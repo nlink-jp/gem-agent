@@ -74,6 +74,9 @@ excepted).
 - [`ADR-0020`](adr/0020-agent-memory.md) — agent memory across sessions:
   two scopes, machine-owned outside the repo, writes are the trust
   boundary
+- [`ADR-0021`](adr/0021-review-fixes.md) — whole-code review fixes:
+  transcript clear/tear/lock, the allowlist floor, scope-first policy,
+  and two refuted-by-measurement findings
 
 ## History
 

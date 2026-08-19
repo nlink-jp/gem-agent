@@ -69,6 +69,9 @@ supersede する（typo とリンク修正は例外）。
   /usage。側呼び出しがフッターを踏み潰さなくなる
 - [`ADR-0020`](adr/0020-agent-memory.ja.md) — セッションをまたぐエージェント
   メモリ: 2 スコープ、リポ外の機械所有、信頼境界は書き込み
+- [`ADR-0021`](adr/0021-review-fixes.ja.md) — 全体コードレビューの修正一括:
+  トランスクリプトの clear/tear/lock、allowlist の床、スコープ優先
+  ポリシー、実測で反証された 2 所見
 
 ## History（履歴）
 
