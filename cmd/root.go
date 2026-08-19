@@ -21,6 +21,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/repl"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/session"
+	"github.com/nlink-jp/gem-agent/internal/skills"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/tui"
 
@@ -155,6 +156,15 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
+	// --- skills: Claude Code's skill library, read as-is (ADR-0010) ---
+	skillsList, skillNotes := discoverSkills(projectDir)
+	for _, n := range skillNotes {
+		fmt.Fprintf(stderr, "warning: %s\n", n)
+	}
+	if err := registerSkillTool(registry, skillsList); err != nil {
+		return err
+	}
+
 	// --- session transcript: the log, and the resume source (ADR-0005) ---
 	if flagContinue && flagResume != "" {
 		return fmt.Errorf("--continue and --resume name different sessions; use one")
@@ -245,9 +255,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		Registry: registry,
 		Gate:     gate,
 		Log:      sessionLog,
-		System:   buildSystemPrompt(projectDir, projectContext),
+		System:   buildSystemPrompt(projectDir, projectContext) + skills.PromptSection(skillsList),
 		MaxTurns: cfg.Agent.MaxTurns,
 		Policy:   approvalPolicy,
+		// load_skill results are operator-authored instructions, not
+		// data; its reads are confined to skill directories (ADR-0010).
+		InstructionTools: []string{skills.ToolName},
 		OnToolCall: func(tc llm.ToolCall) {
 			if prog != nil {
 				prog.Send(tui.ToolCall{Name: tc.Name, Detail: agent.CallDetail(tc)})
@@ -378,6 +391,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if len(contextLabels) > 0 {
 		bannerLines = append(bannerLines, "instructions: "+strings.Join(contextLabels, ", "))
 	}
+	if line := skillBannerLine(skillsList); line != "" {
+		bannerLines = append(bannerLines, line)
+	}
 	if resumedID != "" {
 		bannerLines = append(bannerLines,
 			fmt.Sprintf("resumed: session %s (%d messages restored)", resumedID, len(restored)))
@@ -411,6 +427,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			},
 			Settings:     &settingsData,
 			ApplySetting: settings.Apply,
+			ExpandInput: func(in string) (string, bool, string) {
+				return expandSkillInput(in, skillsList)
+			},
 			Shell: func(shellCtx context.Context, command string) {
 				go func() {
 					out := runDirectShell(shellCtx, registry, ag, command)
@@ -438,7 +457,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				}()
 			},
 			Slash: func(in string) (string, bool, bool) {
-				return slashOutput(in, ag, registry, mcpSummary, approvalPolicy)
+				return slashOutput(in, ag, registry, mcpSummary, approvalPolicy, skillsList)
 			},
 		})
 		prog = tea.NewProgram(model)
@@ -480,6 +499,21 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			writeSettingsTable(stderr, settings.data())
 			continue
 		}
+		if turn, handled, errMsg := expandSkillInput(input, skillsList); handled {
+			if errMsg != "" {
+				fmt.Fprintln(stderr, errMsg)
+				continue
+			}
+			runErr := runTurn(ctx, func(turnCtx context.Context) error {
+				_, err := ag.Run(turnCtx, turn, func(s string) { fmt.Fprint(cmd.OutOrStdout(), s) })
+				return err
+			})
+			fmt.Fprintln(cmd.OutOrStdout())
+			if runErr != nil && !errors.Is(runErr, errInterrupted) {
+				fmt.Fprintf(stderr, "error: %v\n", runErr)
+			}
+			continue
+		}
 		if input == "/compact" {
 			// Synchronous here: the plain REPL has no phase machine, and
 			// nothing else can be happening while it waits for a line.
@@ -492,7 +526,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		if strings.HasPrefix(input, "/") {
-			out, _, quit := slashOutput(input, ag, registry, mcpSummary, approvalPolicy)
+			out, _, quit := slashOutput(input, ag, registry, mcpSummary, approvalPolicy, skillsList)
 			fmt.Fprint(stderr, out)
 			if quit {
 				return nil
@@ -647,7 +681,7 @@ func resolveTheme(configured string) string {
 // slashOutput executes a /command and returns its output text — shared
 // by the TUI (which prints it into scrollback, errors highlighted) and
 // the plain REPL (which writes it to stderr).
-func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, pol policy.Policy) (output string, isErr bool, quit bool) {
+func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, pol policy.Policy, skillsList []skills.Skill) (output string, isErr bool, quit bool) {
 	var b strings.Builder
 	switch strings.Fields(input)[0] {
 	case "/help":
@@ -658,6 +692,8 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
   /auto    toggle auto-approve (shift+tab does the same, and works mid-run)
   /compact summarise the older half of the conversation to free context
   /settings show every setting with where it came from; edit policy + toggles
+  /skills  list installed skills (Claude Code format, read as-is)
+  /skill <name> [args]  invoke a skill directly
   /clear   reset the conversation history
   /quit    exit (Ctrl+D also works)
 auto-approve: safe changes run unattended; destructive, out-of-project,
@@ -703,6 +739,8 @@ mutating tools prompt for approval: y = once, a = always this session
 		} else {
 			b.WriteString("auto-approve: OFF — every change asks\n")
 		}
+	case "/skills":
+		b.WriteString(skillsListing(skillsList))
 	case "/clear":
 		ag.Reset()
 		b.WriteString("history cleared — the next message starts a fresh conversation\n")

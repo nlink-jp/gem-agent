@@ -267,6 +267,38 @@ because nothing can answer a prompt there, but a tool set to `"never"`
 was never going to ask — so it runs. A read-only MCP lookup with a
 `"never"` policy is usable in a pipeline.
 
+## Skills
+
+gem-agent reads **Claude Code's skills, as-is** — same format, same
+locations, nothing to migrate:
+
+| Scope | Path |
+|---|---|
+| Personal | `~/.claude/skills/<name>/SKILL.md` |
+| Project | `<project>/.claude/skills/<name>/SKILL.md` |
+
+A skills-series zip unpacked into the personal directory serves both
+agents. Frontmatter is read minimally (`name`, `description`,
+`argument-hint`); `allowed-tools` is ignored — gem-agent has its own
+approval model, and honouring a foreign permission grant would bypass it.
+The project wins a name collision, announced like an MCP one.
+
+Skills are progressive disclosure: each contributes one description line
+to the system prompt, and the body loads only when used —
+
+- **the model** calls `load_skill(name)` when the task matches a
+  description, and `load_skill(name, file)` for the skill's own
+  `references/` and `scripts/` files;
+- **you** type `/skill <name> [args]` (the body is injected directly, no
+  extra model round). `/skills` lists what was found.
+
+Skill content is treated as *instructions*, not wrapped as untrusted
+data — it is a file you installed, the same trust tier as `AGENTS.md`.
+That exemption is bounded: `load_skill` can only read inside a discovered
+skill's directory, symlinks resolved and checked. Skill `scripts/` run
+through `shell_exec` stay under the sandbox and the approval gate like
+everything else. See [ADR-0010](docs/en/adr/0010-skills.md).
+
 ## Project instructions
 
 gem-agent reads the instruction files a repository already carries, in

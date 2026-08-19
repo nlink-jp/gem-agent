@@ -414,3 +414,53 @@ func TestCallDetail(t *testing.T) {
 		t.Errorf("write detail = %q", got)
 	}
 }
+
+// ADR-0010: a skill body is an instruction file the operator installed —
+// wrapping it as data while the system prompt forbids following data
+// would leave every skill half-inert. Everything else stays wrapped.
+func TestInstructionToolResultsAreNotWrapped(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{
+			{ID: "c1", Name: "load_skill", Args: map[string]any{"name": "s"}},
+			{ID: "c2", Name: "read_file", Args: map[string]any{"path": "x.txt"}},
+		}},
+		{Content: "done"},
+	}}
+	_, reg := newAgent(t, mb, &approveAll{}, 5)
+	if err := os.WriteFile(filepath.Join(reg.ProjectDir(), "x.txt"), []byte("FILE DATA"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Register(&tools.Tool{
+		Name: "load_skill", Description: "d", Parameters: map[string]any{},
+		Run: func(ctx context.Context, args map[string]any) (string, error) {
+			return "SKILL INSTRUCTIONS", nil
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	a := New(Options{Backend: mb, Registry: reg, Gate: &approveAll{}, System: "s",
+		MaxTurns: 5, InstructionTools: []string{"load_skill"}})
+
+	if _, err := a.Run(context.Background(), "go", nil); err != nil {
+		t.Fatal(err)
+	}
+	// The second request carries both tool results.
+	last := mb.calls[len(mb.calls)-1]
+	var skillMsg, fileMsg string
+	for _, m := range last {
+		switch m.ToolName {
+		case "load_skill":
+			skillMsg = m.Content
+		case "read_file":
+			fileMsg = m.Content
+		}
+	}
+	if skillMsg != "SKILL INSTRUCTIONS" {
+		t.Errorf("skill result was wrapped or altered: %q", skillMsg)
+	}
+	if !strings.Contains(fileMsg, "FILE DATA") || fileMsg == "FILE DATA" {
+		t.Errorf("read_file result must stay nonce-wrapped: %q", fileMsg)
+	}
+	// The stored history keeps the raw content either way (wrapping is
+	// send-time), so resume fidelity is unaffected.
+}

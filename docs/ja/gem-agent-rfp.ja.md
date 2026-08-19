@@ -140,6 +140,9 @@ max_turns = 50
 - コンテキスト圧縮 — [ADR-0006](adr/0006-context-compaction.ja.md)。
   コンテキストウィンドウで死に、復旧手段が `/clear` だけのセッションは
   フォールバックとして頼りにならない。
+- Skills — [ADR-0010](adr/0010-skills.ja.md)。Claude Code の skill 形式を
+  そのまま読む。skills-series に書き溜めた手順は Claude Code 停止時に
+  そのまま失われるが、それはこのツールが埋めるべき穴と同じものである。
 
 スコープ最小化は shell-agent v1 の「盛りすぎによる複雑化 → 作り直し」の教訓に
 基づく。バックアップ用途に必要なのは Claude Code の日常機能の中核 2 割である。

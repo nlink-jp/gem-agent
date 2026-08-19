@@ -46,6 +46,7 @@ internal/tools/    built-in tools, path confinement, ExecFunc injection, Registe
 internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
 internal/risk/     rule tier of the auto-approve ladder (pure, no model)
 internal/policy/   per-tool approval policy (ADR-0008), pure resolver
+internal/skills/   Claude Code skill discovery/loading (ADR-0010)
 cmd/settings.go    /settings panel content + edits (ADR-0009)
 internal/mention/  @-reference parsing, project-confined resolution, completion
 internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery
@@ -219,3 +220,14 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 - **Anything the agent reads per tool call and the UI writes needs the
   mutex** — policy, auto-approve, auto-compact all crossed that line when
   the panel arrived (`go test -race` covers it).
+- **`load_skill` is the only tool whose results skip the nonce wrap**
+  (ADR-0010) — skill bodies are operator-installed instructions, same
+  trust tier as AGENTS.md. The exemption is safe only because
+  `Skill.Body`/`Skill.File` confine reads to discovered skill
+  directories (symlinks resolved and re-checked). Any change that widens
+  where `load_skill` can read, or adds another tool to
+  `agent.Options.InstructionTools`, must revisit ADR-0010 first.
+- **`SKILL.md` frontmatter is someone else's schema** — parse the keys
+  we use, ignore the rest (`allowed-tools` deliberately so: honouring a
+  foreign permission grant would bypass ADR-0004/0008). Never write to
+  skill directories.

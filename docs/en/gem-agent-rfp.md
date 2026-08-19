@@ -145,6 +145,10 @@ reasoning; both are recorded rather than quietly added):
 - Context compaction — [ADR-0006](adr/0006-context-compaction.md). A
   session that dies at the context window, with `/clear` as the only
   recovery, is not much of a fallback.
+- Skills — [ADR-0010](adr/0010-skills.md). Claude Code's skill format
+  read as-is: the operator's skills-series encodes procedures that a
+  fallback session otherwise loses, which is the same gap this tool
+  exists to cover.
 
 Scope minimization follows the shell-agent v1 lesson (feature accumulation → complexity
 → rewrite). A backup tool needs the core 20% of Claude Code's daily features.

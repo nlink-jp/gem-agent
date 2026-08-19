@@ -1322,3 +1322,60 @@ func TestClosingSettingsRestoresTheInputPhase(t *testing.T) {
 		t.Errorf("printed = %d, was %d: opening the panel moved the pinning counter", m.printed, before)
 	}
 }
+
+// ADR-0010: /skill expands into a turn — the operator's line is echoed,
+// the expanded body is what runs, and the synchronous slash handler
+// never sees it.
+func TestExpandInputRoutesSkillInvocationsToATurn(t *testing.T) {
+	c := &capture{}
+	m := New(Options{
+		StartTurn: func(ctx context.Context, input string) { c.turns = append(c.turns, input) },
+		Slash:     slashStub,
+		Printer:   c.printer,
+		ExpandInput: func(in string) (string, bool, string) {
+			switch {
+			case in == "/skill x do it":
+				return "EXPANDED BODY + do it", true, ""
+			case strings.HasPrefix(in, "/skill"):
+				return "", true, "unknown skill"
+			}
+			return "", false, ""
+		},
+		RenderFactory: func(width int) func(string) string {
+			return func(s string) string { return s }
+		},
+	})
+
+	m.ta.SetValue("/skill x do it")
+	m = press(m, enter())
+	if len(c.turns) != 1 || c.turns[0] != "EXPANDED BODY + do it" {
+		t.Fatalf("turns = %v", c.turns)
+	}
+	if m.phase != phaseRunning {
+		t.Errorf("phase = %v", m.phase)
+	}
+	if !strings.Contains(c.all(), "> /skill x do it") {
+		t.Errorf("the operator's own line was not echoed:\n%s", c.all())
+	}
+	if strings.Contains(c.all(), "slash:") {
+		t.Error("the slash handler saw a skill invocation")
+	}
+
+	// An error from expansion is a message, not a turn.
+	next, _ := m.Update(TurnDone{})
+	m = next.(Model)
+	m.ta.SetValue("/skill nope")
+	m = press(m, enter())
+	if len(c.turns) != 1 {
+		t.Fatalf("an unknown skill started a turn: %v", c.turns)
+	}
+	if !strings.Contains(c.all(), "unknown skill") {
+		t.Errorf("the error was silent:\n%s", c.all())
+	}
+	// And unrelated slash commands still reach the handler.
+	m.ta.SetValue("/help")
+	m = press(m, enter())
+	if !strings.Contains(c.all(), "slash:/help") {
+		t.Errorf("/help no longer reaches the slash handler:\n%s", c.all())
+	}
+}

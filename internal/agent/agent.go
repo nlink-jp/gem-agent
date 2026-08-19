@@ -66,6 +66,10 @@ type Agent struct {
 	// zero value leaves every tool at the default behaviour.
 	policy policy.Policy
 
+	// instructionTools: results of these tools bypass the nonce wrap
+	// (ADR-0010). Set at construction, read-only afterwards.
+	instructionTools map[string]bool
+
 	history  []llm.Message
 	toolDefs []llm.ToolDef
 }
@@ -101,6 +105,12 @@ type Options struct {
 	OnNotice func(msg string)
 	// Policy is the per-tool approval policy (ADR-0008).
 	Policy policy.Policy
+	// InstructionTools names tools whose results are instruction-grade
+	// rather than untrusted data, exempting them from the nonce wrap
+	// (ADR-0010: load_skill, whose reads are confined to operator-
+	// installed skill directories). Widen this list only with an ADR —
+	// it is a hole in ADR-0001 unless the tool's reads are bounded.
+	InstructionTools []string
 	// AutoCompact enables automatic history compaction (ADR-0006), and
 	// CompactAtPct is the share of the model's input window at which it
 	// fires. Compaction still needs a known window; see SetContextWindow.
@@ -136,7 +146,20 @@ func New(opts Options) *Agent {
 		policy:       opts.Policy,
 		autoCompact:  opts.AutoCompact,
 		compactAtPct: opts.CompactAtPct,
+
+		instructionTools: toSet(opts.InstructionTools),
 	}
+}
+
+func toSet(names []string) map[string]bool {
+	if len(names) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(names))
+	for _, n := range names {
+		set[n] = true
+	}
+	return set
 }
 
 // Reset clears the conversation history (REPL /clear).
@@ -259,7 +282,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 		// unsafe). The system prompt's {{DATA_TAG}} placeholder and the
 		// tool results in the history view are bound to this turn's tag.
 		tag := guard.NewTagWithPrefix("tool_output")
-		resp, err := a.backend.ChatStream(ctx, tag.Expand(a.system), wrapToolMessages(a.history, tag), a.toolDefs, onText)
+		resp, err := a.backend.ChatStream(ctx, tag.Expand(a.system), wrapToolMessages(a.history, tag, a.instructionTools), a.toolDefs, onText)
 		if err != nil {
 			return "", err
 		}
@@ -375,11 +398,21 @@ func (a *Agent) appendMessage(m llm.Message) {
 //
 // Attachments are wrapped for the same reason tool output is: the
 // operator chose the file, but not what is inside it.
-func wrapToolMessages(history []llm.Message, tag guard.Tag) []llm.Message {
+//
+// instructionTools are the exception (ADR-0010): a skill body is an
+// instruction file the operator installed, same trust tier as the
+// AGENTS.md already injected unwrapped — and wrapping it as data while
+// the system prompt forbids following data would leave every skill
+// half-inert. The exemption is safe only because that tool's reads are
+// confined to discovered skill directories.
+func wrapToolMessages(history []llm.Message, tag guard.Tag, instructionTools map[string]bool) []llm.Message {
 	out := make([]llm.Message, len(history))
 	copy(out, history)
 	for i := range out {
 		if out[i].Role == llm.RoleTool {
+			if instructionTools[out[i].ToolName] {
+				continue
+			}
 			out[i].Content = wrapUntrusted(out[i].Content, tag)
 			continue
 		}

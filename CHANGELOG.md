@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.6.0] - 2026-08-19
+
+### Added — skills (ADR-0010, operator request)
+
+- gem-agent now reads **Claude Code's skills, as-is**:
+  `~/.claude/skills/<name>/SKILL.md` and
+  `<project>/.claude/skills/<name>/SKILL.md`, same format, same
+  locations, nothing to migrate. A skills-series zip unpacked into the
+  personal directory serves both agents — the procedures the operator
+  wrote down stop being unavailable exactly when the fallback is in use
+- Progressive disclosure: each skill contributes one description line to
+  the system prompt; bodies load only when used. The model calls
+  `load_skill(name)` when the task matches a description — and
+  `load_skill(name, file)` for the skill's own `references/` and
+  `scripts/` — or the operator types `/skill <name> [args]`, which
+  injects the body directly with no extra model round. `/skills` lists
+  what was found, with argument hints
+- **Skill content is instructions, not data**: `load_skill` is the one
+  tool whose results skip the nonce wrap. A skill body is a file the
+  operator installed — the same trust tier as the `AGENTS.md` already
+  injected unwrapped — and wrapping it while the system prompt forbids
+  following wrapped content would leave every skill half-inert. The
+  exemption is bounded: reads are confined to discovered skill
+  directories, symlinks resolved and re-checked
+- Frontmatter is parsed minimally; `allowed-tools` is deliberately
+  ignored — gem-agent has its own approval model (ADR-0004/0008), and
+  honouring a foreign permission grant would bypass it. The project wins
+  a name collision, announced like an MCP one; a skill without a
+  description is skipped with a note
+- Verified live with a project-scoped skill: both invocation paths ran
+  the procedure — including the supporting-file fetch — and produced the
+  exact prescribed output
+
 ## [0.5.1] - 2026-08-19
 
 ### Fixed

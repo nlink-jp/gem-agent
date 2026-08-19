@@ -249,6 +249,37 @@ MCP サーバー全体にマッチし、完全一致が wildcard より優先さ
 拒否しますが、`"never"` のツールはもともと聞かないので実行されます。読み取り専用の
 MCP lookup に `"never"` を付ければ、パイプラインで使えます。
 
+## Skills
+
+gem-agent は **Claude Code の skill をそのまま読みます** — 同じ形式・同じ
+設置場所で、移行作業はありません:
+
+| スコープ | パス |
+|---|---|
+| 個人 | `~/.claude/skills/<name>/SKILL.md` |
+| プロジェクト | `<project>/.claude/skills/<name>/SKILL.md` |
+
+skills-series の zip を個人ディレクトリに unzip すれば両エージェントで使えます。
+frontmatter は最小限（`name` / `description` / `argument-hint`）だけ読み、
+`allowed-tools` は無視します — gem-agent には自前の承認モデルがあり、他所の
+権限付与を黙って尊重するとそれをバイパスするからです。名前衝突は MCP と同じく
+プロジェクト側が勝ち、そう告げます。
+
+skill は progressive disclosure です: 各 skill はシステムプロンプトに説明 1 行を
+載せるだけで、本文は使うときに読み込まれます —
+
+- **モデル**がタスクと説明の合致を見て `load_skill(name)` を呼ぶ。skill 自身の
+  `references/`・`scripts/` は `load_skill(name, file)` で読める
+- **利用者**は `/skill <name> [args]` で直接起動（本文はターンに直接注入 —
+  余分なモデル往復なし）。`/skills` が一覧
+
+skill の内容は非信頼データとしてラップせず、**指示として**扱います —
+利用者自身が導入したファイルであり、`AGENTS.md` と同じ信頼階層だからです。
+この例外には境界があります: `load_skill` は発見済み skill のディレクトリ内
+しか読めません（シンボリックリンクも解決して検査）。`scripts/` を
+`shell_exec` で走らせる場合も sandbox と承認ゲートは他と同様に掛かります。
+詳細は [ADR-0010](docs/ja/adr/0010-skills.ja.md)。
+
 ## プロジェクト指示ファイル
 
 リポジトリが既に持っている指示ファイルを、各ディレクトリで次の順に読みます:

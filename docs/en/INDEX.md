@@ -50,6 +50,8 @@ excepted).
   policy; a project may tighten freely and loosen only where trusted
 - [`ADR-0009`](adr/0009-settings-panel.md) — a settings panel showing
   provenance, and a machine-owned policy file so comments survive
+- [`ADR-0010`](adr/0010-skills.md) — Claude Code's skills read as-is;
+  skill content is instructions, bounded by confined reads
 
 ## History
 

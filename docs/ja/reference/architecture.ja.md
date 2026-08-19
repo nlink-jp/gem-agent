@@ -149,6 +149,13 @@ flags > `GEMAGENT_*` > `GOOGLE_CLOUD_*` > file > defaults。モデル名は常�
 MCP にキャンセルは無いので、タイムアウトした呼び出しはサーバー子プロセスを kill し、
 次回呼び出しで再起動する。
 
+skill（ADR-0010）も同じ規則に従う: `~/.claude/skills` と
+`<project>/.claude/skills` を Claude Code の形式で読み、システムプロンプトには
+1 件 1 行、 本文は読み取り専用ツール `load_skill` で必要時に読むか
+`/skill <name>` で直接注入する。`load_skill` の結果は nonce ラップされない
+唯一のツール出力である — skill 本文はオペレータが導入した指示であり、この例外は
+「発見済み skill ディレクトリ内に限る読み取り封じ込め」で境界づけられている。
+
 ## 失敗時の挙動（一覧）
 
 | 状況 | 挙動 |

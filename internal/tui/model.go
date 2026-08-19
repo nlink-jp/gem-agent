@@ -153,6 +153,12 @@ type Options struct {
 	// Both nil disables /settings (the plain REPL prints a table).
 	Settings     *SettingsData
 	ApplySetting SettingsApplier
+	// ExpandInput rewrites an input line into the text of a turn before
+	// it is sent — the /skill route (ADR-0010): the operator's line is
+	// echoed, the expanded text is what actually runs. handled=false
+	// leaves the input to the normal paths; a non-empty errMsg means
+	// handled but nothing to run.
+	ExpandInput func(input string) (turn string, handled bool, errMsg string)
 	// Printer overrides tea.Println for tests.
 	Printer func(...any) tea.Cmd
 	// RenderFactory overrides the Markdown renderer factory for tests.
@@ -191,6 +197,7 @@ type Model struct {
 	settingsCursor int
 	settingsScope  string
 	applySetting   SettingsApplier
+	expandInput    func(input string) (string, bool, string)
 	// choice indexes approvalOptions. Selection + Enter exists because
 	// typing y/n/a is impossible with a Japanese IME switched on — the
 	// letters are swallowed by composition — while arrows, Tab, and
@@ -255,6 +262,7 @@ func New(opts Options) Model {
 		completePath: opts.CompletePath,
 		settingsData: opts.Settings,
 		applySetting: opts.ApplySetting,
+		expandInput:  opts.ExpandInput,
 		baseCtx:      opts.BaseCtx,
 		println:      opts.Printer,
 		mkRender:     opts.RenderFactory,
@@ -802,6 +810,26 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 
 	if input == "/settings" && m.settingsData != nil && m.applySetting != nil {
 		return m.openSettings()
+	}
+
+	// /skill expands into a turn (ADR-0010): echo what the operator
+	// typed, run the expanded text. Checked before the slash handler so
+	// a synchronous handler never sees it.
+	if m.expandInput != nil {
+		if turn, handled, errMsg := m.expandInput(input); handled {
+			if errMsg != "" {
+				return m, m.emit(m.st.errS.Render("✗ " + errMsg))
+			}
+			m.phase = phaseRunning
+			m.status = "thinking…"
+			m.live.Reset()
+			ctx, cancel := context.WithCancel(m.baseCtx)
+			m.cancelTurn = cancel
+			if m.startTurn != nil {
+				m.startTurn(ctx, turn)
+			}
+			return m, tea.Batch(m.emit("\n"+m.st.user.Render("> ")+input), m.spin.Tick)
+		}
 	}
 
 	// /compact makes an LLM call, so it runs like a turn rather than
