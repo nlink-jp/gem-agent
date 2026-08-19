@@ -107,6 +107,12 @@ func Classify(toolName string, mutating bool, args map[string]any, projectDir st
 	case "shell_exec":
 		command, _ := args["command"].(string)
 		return classifyCommand(command, projectDir)
+
+	case "save_memory", "delete_memory":
+		// Never Safe: a persisted memory reappears in every later
+		// session's prompt, so memory is a persistence vector for
+		// injected instructions (ADR-0020 §4).
+		return Verdict{Review, "changes what the agent remembers across sessions"}
 	}
 
 	if strings.HasPrefix(toolName, "mcp__") {

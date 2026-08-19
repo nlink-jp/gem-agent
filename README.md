@@ -85,8 +85,15 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   becomes one summary, the recent half stays verbatim. Automatic at 80%
   (`[agent].compact_at_pct`), or `/compact` at any time. See
   [ADR-0006](docs/en/adr/0006-context-compaction.md)
-- Slash commands: `/help` `/tools` `/mcp` `/usage` `/compact` `/clear`
-  `/quit` — `/usage` is the session's token statement (ADR-0019):
+- **Agent memory**: short facts persisted across sessions with
+  `save_memory` / `delete_memory` — global scope (about you or this
+  machine, recalled everywhere) and project scope (this project only).
+  Plain markdown under `~/.local/state/gem-agent/memory/`, never inside
+  the repository; loaded into the system prompt at session start.
+  Writes are approval-gated. See [Memory](#memory) and
+  [ADR-0020](docs/en/adr/0020-agent-memory.md)
+- Slash commands: `/help` `/tools` `/mcp` `/usage` `/memory` `/compact`
+  `/clear` `/quit` — `/usage` is the session's token statement (ADR-0019):
   main-loop rounds with the cache hit rate, risk-check and compaction
   side-calls, and per-tool lines (summarize/web) naming the model that
   spent the tokens
@@ -98,7 +105,8 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   is connected as-is. Zero per-project setup
 - MCP client: tools appear as `mcp__<server>__<tool>`, always approval-gated;
   timed-out calls kill the server child (MCP has no cancel) and it respawns lazily
-- Tool output is isolated with per-call nonce XML tags (nlk/guard) — content
+- Tool output is isolated with nonce XML tags (nlk/guard; session-scoped
+  in the main loop, per-call in side-calls — ADR-0018) — content
   returned by tools is framed as data, never instructions
 - One-shot mode `-p "<prompt>"`: single turn, answer on stdout, mutating
   tools denied (pipe-friendly)
@@ -112,8 +120,8 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   because nlk/guard refuses content containing the tag name — a leaked
   tag can only get its carrier withheld, never escape the wrapper
 
-Out of scope by design: memory subsystems, data analysis, GUI, non-macOS
-platforms.
+Out of scope by design: RAG or vector memory, data analysis, GUI,
+non-macOS platforms.
 
 ## Usage
 
@@ -405,6 +413,37 @@ That exemption is bounded: `load_skill` can only read inside a discovered
 skill's directory, symlinks resolved and checked. Skill `scripts/` run
 through `shell_exec` stay under the sandbox and the approval gate like
 everything else. See [ADR-0010](docs/en/adr/0010-skills.md).
+
+## Memory
+
+The agent persists short facts across sessions (ADR-0020): decisions,
+preferences, environment quirks — things worth knowing next time that no
+project file states.
+
+| Scope | Recalled in | Stored at |
+|---|---|---|
+| `global` | every project | `~/.local/state/gem-agent/memory/global/<name>.md` |
+| `project` | that project only | `~/.local/state/gem-agent/memory/projects/<escaped path>/<name>.md` |
+
+- One memory = one small markdown file; saving an existing name updates
+  it. Everything is loaded into the system prompt at session start
+  (global first, then project) under a fixed budget, with any clipping
+  reported rather than silent.
+- **Writes are approval-gated** (`save_memory` / `delete_memory`): a
+  persisted memory reappears in every later session's prompt, so memory
+  is a persistence vector for injected instructions — the human reviews
+  each write. The [per-tool policy](#per-tool-approval-policy) relaxes
+  that per tool if you accept the trade.
+- The injected section is framed as background knowledge the agent
+  recorded — explicitly below the standing of your own instruction
+  files, and possibly stale.
+- Nothing is ever written into the repository, and `~/.claude` is never
+  read. The files are plain markdown: audit, edit, or delete them by
+  hand whenever you like.
+- `/memory` lists what is stored right now; a new save takes effect from
+  the next session.
+
+See [ADR-0020](docs/en/adr/0020-agent-memory.md).
 
 ## Project instructions
 

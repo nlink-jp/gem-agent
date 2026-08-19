@@ -71,6 +71,9 @@ excepted).
   tag makes implicit caching fire; measured 0% → 81–95%
 - [`ADR-0019`](adr/0019-usage-accounting.md) — per-category usage
   accounting and /usage; side-calls stop stomping the footer
+- [`ADR-0020`](adr/0020-agent-memory.md) — agent memory across sessions:
+  two scopes, machine-owned outside the repo, writes are the trust
+  boundary
 
 ## History
 

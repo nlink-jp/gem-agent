@@ -16,6 +16,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/approve"
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/memory"
 	"github.com/nlink-jp/gem-agent/internal/mention"
 	"github.com/nlink-jp/gem-agent/internal/policy"
 	"github.com/nlink-jp/gem-agent/internal/repl"
@@ -165,6 +166,29 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// --- agent memory: facts persisted across sessions (ADR-0020) ---
+	// A missing home disables memory with a warning; a backup tool must
+	// not refuse to start over its least essential feature.
+	memBase := ""
+	var memories []memory.Memory
+	if base, err := memory.DefaultDir(); err == nil {
+		memBase = base
+		var memNotes []string
+		memories, memNotes = memory.Load(memBase, projectDir, memory.DefaultLimits())
+		for _, n := range memNotes {
+			fmt.Fprintf(stderr, "warning: %s\n", n)
+		}
+		if err := registerMemoryTools(registry, memBase, projectDir); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintf(stderr, "warning: memory disabled: %v\n", err)
+	}
+	memorySection := ""
+	if memBase != "" {
+		memorySection = memory.PromptSection(memories)
+	}
+
 	// --- session transcript: the log, and the resume source (ADR-0005) ---
 	if flagContinue && flagResume != "" {
 		return fmt.Errorf("--continue and --resume name different sessions; use one")
@@ -275,7 +299,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		Registry: registry,
 		Gate:     gate,
 		Log:      sessionLog,
-		System:   buildSystemPrompt(projectDir, projectContext) + skills.PromptSection(skillsList),
+		System:   buildSystemPrompt(projectDir, projectContext) + skills.PromptSection(skillsList) + memorySection,
 		MaxTurns: cfg.Agent.MaxTurns,
 		Policy:   approvalPolicy,
 		// load_skill results are operator-authored instructions, not
@@ -415,6 +439,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if line := skillBannerLine(skillsList); line != "" {
 		bannerLines = append(bannerLines, line)
 	}
+	if line := memory.BannerLine(memories); line != "" {
+		bannerLines = append(bannerLines, line)
+	}
 	if resumedID != "" {
 		bannerLines = append(bannerLines,
 			fmt.Sprintf("resumed: session %s (%d messages restored)", resumedID, len(restored)))
@@ -479,7 +506,8 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			},
 			Slash: func(in string) (string, bool, bool) {
 				return slashOutput(in, ag, registry, mcpSummary, approvalPolicy, skillsList,
-					func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) })
+					func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
+					func() string { return memoryListing(memBase, projectDir) })
 			},
 		})
 		prog = tea.NewProgram(model)
@@ -549,7 +577,8 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		if strings.HasPrefix(input, "/") {
 			out, _, quit := slashOutput(input, ag, registry, mcpSummary, approvalPolicy, skillsList,
-				func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) })
+				func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
+				func() string { return memoryListing(memBase, projectDir) })
 			fmt.Fprint(stderr, out)
 			if quit {
 				return nil
@@ -704,7 +733,7 @@ func resolveTheme(configured string) string {
 // slashOutput executes a /command and returns its output text — shared
 // by the TUI (which prints it into scrollback, errors highlighted) and
 // the plain REPL (which writes it to stderr).
-func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, pol policy.Policy, skillsList []skills.Skill, usage func() string) (output string, isErr bool, quit bool) {
+func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, pol policy.Policy, skillsList []skills.Skill, usage func() string, memoryInfo func() string) (output string, isErr bool, quit bool) {
 	var b strings.Builder
 	switch strings.Fields(input)[0] {
 	case "/help":
@@ -716,6 +745,7 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
   /compact summarise the older half of the conversation to free context
   /settings show every setting with where it came from; edit policy + toggles
   /usage   token accounting: main loop, cache hit rate, side-calls, web tools
+  /memory  list persisted memories (global + this project); saves are approval-gated
   /skills  list installed skills (Claude Code format, read as-is)
   /skill <name> [args]  invoke a skill directly
   /clear   reset the conversation history
@@ -768,6 +798,8 @@ mutating tools prompt for approval: y = once, a = always this session
 		}
 	case "/usage":
 		b.WriteString(usage())
+	case "/memory":
+		b.WriteString(memoryInfo())
 	case "/skills":
 		b.WriteString(skillsListing(skillsList))
 	case "/clear":

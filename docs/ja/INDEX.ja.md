@@ -67,6 +67,8 @@ supersede する（typo とリンク修正は例外）。
   タグで implicit caching が効く。実測 0% → 81〜95%
 - [`ADR-0019`](adr/0019-usage-accounting.ja.md) — カテゴリ別の利用会計と
   /usage。側呼び出しがフッターを踏み潰さなくなる
+- [`ADR-0020`](adr/0020-agent-memory.ja.md) — セッションをまたぐエージェント
+  メモリ: 2 スコープ、リポ外の機械所有、信頼境界は書き込み
 
 ## History（履歴）
 

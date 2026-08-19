@@ -145,6 +145,15 @@ function response は生じない。要約器にツールは渡さず、トラ�
 `--resume <id>` は明示指定。resume は別プロジェクトディレクトリ・別モデルを
 警告ではなく拒否する。ID は ID として検証し、パスとして解釈しない。
 
+メモリ（ADR-0020）はセッションの隣に住む:
+`~/.local/state/gem-agent/memory/global/` と
+`memory/projects/<エスケープ済パス>/`（非可逆エスケープは `.project`
+マーカーで防護）、1 事実 = 1 markdown ファイル。全件がセッション開始時に
+予算付きでシステムプロンプトへ注入され、「エージェントが記録した背景知識」
+として枠書きされる。`save_memory` / `delete_memory` は承認ゲート付きで
+Review 分類（決して Safe にしない）— メモリは注入された指示の永続化経路で
+あり、人間がレビューするのは書き込みの瞬間である。
+
 ## 設定と drop-in
 
 `~/.config/gem-agent/config.toml`、strict decode（未知キーはエラー）、優先順位は

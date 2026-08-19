@@ -159,6 +159,15 @@ conversation in it**; `--resume <id>` names one. Resume refuses a
 different project directory or a different model rather than warning.
 Ids are validated as ids and never interpreted as paths.
 
+Memory (ADR-0020) lives beside the sessions:
+`~/.local/state/gem-agent/memory/global/` plus
+`memory/projects/<escaped path>/` (a `.project` marker guards the lossy
+escaping), one markdown file per fact. Everything is injected into the
+system prompt at session start under a budget, framed as agent-recorded
+background knowledge; `save_memory`/`delete_memory` are approval-gated
+and classified Review, never Safe — memory is a persistence vector for
+injected instructions, so the write is where the human reviews.
+
 ## Configuration and drop-in behaviour
 
 `~/.config/gem-agent/config.toml`, strict decode (unknown keys are

@@ -133,6 +133,17 @@ func TestMCPToolsGoToReview(t *testing.T) {
 	}
 }
 
+func TestMemoryToolsGoToReview(t *testing.T) {
+	// Never Safe: memory persists into every later session's prompt
+	// (ADR-0020) — the write must at least reach the model tier.
+	for _, name := range []string{"save_memory", "delete_memory"} {
+		v := Classify(name, true, map[string]any{"scope": "project", "name": "x"}, proj)
+		if v.Tier != Review {
+			t.Errorf("%s = %v, want review", name, v.Tier)
+		}
+	}
+}
+
 func TestUnknownToolGoesToReview(t *testing.T) {
 	if v := Classify("something_new", true, nil, proj); v.Tier != Review {
 		t.Errorf("unknown tool = %v, want review", v.Tier)

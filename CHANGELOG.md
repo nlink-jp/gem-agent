@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.16.0] - 2026-08-20
+
+### Added — agent memory (ADR-0020, operator request)
+
+- `save_memory` / `delete_memory`: the agent persists short facts across
+  sessions — global scope (about the operator or this machine, recalled
+  in every project) and project scope (one project only). One memory =
+  one small markdown file; saving an existing name updates it
+- Stored machine-owned outside the repository
+  (`~/.local/state/gem-agent/memory/`), beside the session transcripts;
+  nothing is written into the project tree and `~/.claude` is never
+  read. The lossy path-escaping is guarded by a `.project` marker —
+  a collision skips that directory with a note instead of misattributing
+  another project's memories
+- All memories are injected into the system prompt at session start
+  (global first, then project, alphabetical — a deterministic order
+  that keeps the ADR-0018 cache prefix stable) under a fixed budget,
+  clipping reported. The section is framed as agent-recorded background
+  knowledge, explicitly below the operator's instruction files
+- **Writes are approval-gated and classified Review, never Safe**:
+  memory is a persistence vector for injected instructions, so the
+  human reviews each write; the ADR-0008 policy is the deliberate
+  relaxation
+- `/memory` lists what is stored right now; a banner line
+  (`memory: N global, M project`) shows what this session loaded
+
 ## [0.15.1] - 2026-08-20
 
 ### Added — /usage (ADR-0019, operator request)

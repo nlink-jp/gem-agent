@@ -47,6 +47,7 @@ internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
 internal/risk/     rule tier of the auto-approve ladder (pure, no model)
 internal/policy/   per-tool approval policy (ADR-0008), pure resolver
 internal/skills/   Claude Code skill discovery/loading (ADR-0010)
+internal/memory/   agent memory across sessions (ADR-0020): two scopes, budgeted injection
 cmd/settings.go    /settings panel content + edits (ADR-0009)
 internal/mention/  @-reference parsing, project-confined resolution, completion
 internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery
@@ -231,3 +232,13 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   we use, ignore the rest (`allowed-tools` deliberately so: honouring a
   foreign permission grant would bypass ADR-0004/0008). Never write to
   skill directories.
+- **Memory writes are the trust boundary (ADR-0020)** — `save_memory` /
+  `delete_memory` stay Mutating and `risk.Classify` keeps them at
+  Review, never Safe: a persisted memory reappears in every later
+  session's prompt, so it is a persistence vector for injected
+  instructions. The injected section is framed as agent-recorded
+  background, not instructions; do not promote it to the AGENTS.md trust
+  tier. Memory lives under `~/.local/state/gem-agent/memory/` — never in
+  the project tree, and the lossy path-escape is guarded by the
+  `.project` marker (a mismatch skips the directory; misattribution
+  would be worse than not loading).
