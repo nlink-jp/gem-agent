@@ -110,9 +110,17 @@ func (r *Registry) describeFile(p string) (string, error) {
 			lex = filepath.Clean(filepath.Join(r.projectDir, p))
 		}
 		if within(r.projectDir, lex) {
-			if lst, lerr := os.Lstat(lex); lerr == nil && lst.Mode()&os.ModeSymlink != 0 {
-				target, _ := os.Readlink(lex)
-				return fmt.Sprintf("%s:\n  symlink → %s\n  target: outside the project — not inspected", p, target), nil
+			// The PARENT must genuinely resolve inside the project:
+			// Lstat follows intermediate symlinks, so a lexically
+			// in-project path under a model-planted escaping link would
+			// report link targets of files wholly outside (ADR-0021).
+			parent, perr := filepath.EvalSymlinks(filepath.Dir(lex))
+			if perr == nil && within(r.projectDir, parent) {
+				entry := filepath.Join(parent, filepath.Base(lex))
+				if lst, lerr := os.Lstat(entry); lerr == nil && lst.Mode()&os.ModeSymlink != 0 {
+					target, _ := os.Readlink(entry)
+					return fmt.Sprintf("%s:\n  symlink → %s\n  target: outside the project — not inspected", p, target), nil
+				}
 			}
 		}
 		return "", err

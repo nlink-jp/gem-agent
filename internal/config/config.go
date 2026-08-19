@@ -109,14 +109,40 @@ func LoadProject(dir string) (*ProjectConfig, error) {
 }
 
 // TrustsProject reports whether the operator listed dir as a project
-// whose own policy file may remove approvals.
+// whose own policy file may remove approvals. Both sides are compared
+// as resolved paths (ADR-0021): dir arrives symlink-resolved (/tmp is
+// /private/tmp on macOS), so raw string equality made a trust entry
+// under a symlinked path silently never match — and the startup note
+// told the operator to add exactly the path that would not work.
 func (c *Config) TrustsProject(dir string) bool {
+	canon := canonicalPath(dir)
 	for _, p := range c.Approval.TrustedProjects {
-		if p == dir {
+		if canonicalPath(expandHome(p)) == canon {
 			return true
 		}
 	}
 	return false
+}
+
+// canonicalPath cleans and symlink-resolves; a path that does not
+// resolve (not yet existing) falls back to the cleaned form.
+func canonicalPath(p string) string {
+	p = filepath.Clean(p)
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
+}
+
+// expandHome resolves a leading ~ so trusted_projects entries may be
+// written the way operators write paths.
+func expandHome(p string) string {
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, strings.TrimPrefix(p, "~"))
+		}
+	}
+	return p
 }
 
 // TUIConfig controls the interactive UI appearance.

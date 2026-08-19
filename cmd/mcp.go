@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -28,11 +30,16 @@ const (
 )
 
 // mcpToolName builds the registry name for an MCP tool, Claude Code
-// style: mcp__<server>__<tool>, sanitized to Gemini's charset.
+// style: mcp__<server>__<tool>, sanitized to Gemini's charset. An
+// over-long name is truncated with a deterministic hash suffix: a bare
+// cut collided two long remote names into one registry entry, silently
+// dropping the second tool (ADR-0021). The hash is stable across runs,
+// so an exact [approval.tools] entry can still target it.
 func mcpToolName(server, tool string) string {
 	name := "mcp__" + sanitizeToolName(server) + "__" + sanitizeToolName(tool)
 	if len(name) > maxToolNameLen {
-		name = name[:maxToolNameLen]
+		sum := sha256.Sum256([]byte(name))
+		name = name[:maxToolNameLen-8] + "-" + hex.EncodeToString(sum[:4])[:7]
 	}
 	return name
 }

@@ -267,7 +267,11 @@ func (r *Registry) resolvePath(p string) (string, error) {
 	}
 	real, err := resolveExisting(abs)
 	if err != nil {
-		return "", fmt.Errorf("resolve %s: %w", p, err)
+		// Deliberately not %w: the OS error names the path where
+		// resolution stumbled, which for an escaping link chain lies
+		// OUTSIDE the project — an error message must not leak
+		// out-of-project path fragments to the model (ADR-0021).
+		return "", fmt.Errorf("resolve %s: a link in the path is broken or its target is not accessible", p)
 	}
 	if !within(r.projectDir, real) {
 		return "", fmt.Errorf("path escapes the project directory via symlink: %s", p)

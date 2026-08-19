@@ -523,7 +523,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				}()
 			},
 			Slash: func(in string) (string, bool, bool) {
-				return slashOutput(in, ag, registry, mcpSummary, approvalPolicy, skillsList,
+				return slashOutput(in, ag, registry, mcpSummary, skillsList,
 					func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
 					func() string { return memoryListing(memBase, projectDir) })
 			},
@@ -608,7 +608,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		if strings.HasPrefix(input, "/") {
-			out, _, quit := slashOutput(input, ag, registry, mcpSummary, approvalPolicy, skillsList,
+			out, _, quit := slashOutput(input, ag, registry, mcpSummary, skillsList,
 				func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
 				func() string { return memoryListing(memBase, projectDir) })
 			fmt.Fprint(stderr, out)
@@ -781,7 +781,7 @@ func resolveTheme(configured string) string {
 // slashOutput executes a /command and returns its output text — shared
 // by the TUI (which prints it into scrollback, errors highlighted) and
 // the plain REPL (which writes it to stderr).
-func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, pol policy.Policy, skillsList []skills.Skill, usage func() string, memoryInfo func() string) (output string, isErr bool, quit bool) {
+func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, usage func() string, memoryInfo func() string) (output string, isErr bool, quit bool) {
 	var b strings.Builder
 	switch strings.Fields(input)[0] {
 	case "/help":
@@ -822,6 +822,10 @@ mutating tools prompt for approval: y = once, a = always this session
    covers the dangerous cases, only the routine ones)
 `)
 	case "/tools":
+		// The LIVE policy: a /settings edit or a 'p' answer mid-session
+		// must show here, or the display the operator audits gating with
+		// no longer reflects the gate (ADR-0021).
+		pol := ag.Policy()
 		for _, t := range registry.List() {
 			marker := "read-only"
 			if t.Mutating {

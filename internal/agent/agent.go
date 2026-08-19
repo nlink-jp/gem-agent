@@ -288,6 +288,15 @@ func (a *Agent) SetPolicy(p policy.Policy) {
 	a.mu.Unlock()
 }
 
+// Policy returns the approval policy currently in force — the live
+// value, so displays follow mid-session /settings edits instead of the
+// startup snapshot (ADR-0021).
+func (a *Agent) Policy() policy.Policy {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.policy
+}
+
 func (a *Agent) toolPolicy(tool string) policy.Decision {
 	a.mu.Lock()
 	defer a.mu.Unlock()
