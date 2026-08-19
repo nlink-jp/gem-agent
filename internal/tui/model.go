@@ -351,7 +351,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if height < minHeight {
 			height = minHeight
 		}
-		shrank := m.sized && width < m.width
+		// Deliberately shrink-only (ADR-0021 §9): growth also reflows in
+		// some terminals (the counter then over-states and the input
+		// block floats until the next shrink), but clearing on every
+		// grow would erase visible content repeatedly during a drag
+		// resize — a worse trade than the graceful drift.
+		resized := m.sized && width < m.width
 		first := !m.sized
 		m.sized = true
 		m.width = width
@@ -370,7 +375,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, m.emit(line))
 			}
 			return m, tea.Sequence(cmds...)
-		case shrank:
+		case resized:
 			m.printed = 0 // the clear empties the viewport
 			return m, tea.ClearScreen
 		}
@@ -515,6 +520,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // on (ADR-0003). Every print of the model must go through here, never
 // through m.println directly.
 func (m *Model) emit(s string) tea.Cmd {
+	// Tabs are expanded before counting AND printing: the width counter
+	// sees "\t" as zero cells while the terminal advances to the next
+	// 8-column stop, and every mismatch shifts the pinned input line —
+	// `!git diff` output drifted it one row per wrapped tab line
+	// (ADR-0021). Printing the expansion keeps count and drawing equal.
+	s = expandTabs(s)
 	w := m.width
 	if w <= 0 {
 		w = 80
@@ -527,6 +538,35 @@ func (m *Model) emit(s string) tea.Cmd {
 		m.printed += phys
 	}
 	return m.println(s)
+}
+
+// expandTabs replaces each tab with spaces to the next 8-column stop,
+// tracking the column ANSI-aware so color codes do not skew it.
+func expandTabs(s string) string {
+	if !strings.Contains(s, "\t") {
+		return s
+	}
+	var out strings.Builder
+	for i, line := range strings.Split(s, "\n") {
+		if i > 0 {
+			out.WriteByte('\n')
+		}
+		col, start := 0, 0
+		for j := 0; j < len(line); j++ {
+			if line[j] != '\t' {
+				continue
+			}
+			seg := line[start:j]
+			out.WriteString(seg)
+			col += ansi.StringWidth(seg)
+			pad := 8 - col%8
+			out.WriteString(strings.Repeat(" ", pad))
+			col += pad
+			start = j + 1
+		}
+		out.WriteString(line[start:])
+	}
+	return out.String()
 }
 
 // flushLive renders accumulated streamed text as Markdown and emits it
@@ -936,12 +976,36 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	content := clipLines(m.viewContent(), m.width)
 	if m.height > 0 {
+		// The managed view must never exceed height-1 lines: an
+		// over-tall frame scrolls the terminal and permanently desyncs
+		// the printed-line counter (the settings-panel lesson, ADR-0021
+		// generalises it). Drop from the top — the input box and footer
+		// at the bottom are what the operator must always see.
+		if lines := strings.Split(content, "\n"); len(lines) > m.height-1 {
+			lines = lines[len(lines)-(m.height-1):]
+			content = strings.Join(lines, "\n")
+		}
 		core := strings.Count(content, "\n") + 1
 		if pad := m.height - m.printed - core - 1; pad > 0 {
 			content = strings.Repeat("\n", pad) + content
 		}
 	}
 	return content
+}
+
+// maxApprovalDetailLines bounds the approval box's detail body; hidden
+// lines are counted on a marker line, never dropped silently.
+const maxApprovalDetailLines = 8
+
+// clipDetail clips a call detail for the approval box: at most maxLines
+// lines, each rune-safely shortened. hidden reports what was cut.
+func clipDetail(detail string, maxLines int) (string, int) {
+	detail = clip(detail, 600)
+	lines := strings.Split(detail, "\n")
+	if len(lines) <= maxLines {
+		return detail, 0
+	}
+	return strings.Join(lines[:maxLines], "\n"), len(lines) - maxLines
 }
 
 // clipLines truncates each line to width-1 display cells (ANSI-aware).
@@ -970,8 +1034,16 @@ func (m Model) viewContent() string {
 		if req == nil {
 			return ""
 		}
+		// A multi-line shell command (heredoc, script) must not blow the
+		// box past the view budget — but hiding lines silently would let
+		// the operator approve a command they have not seen, so the
+		// count of hidden lines is shown (ADR-0021).
+		detail, hidden := clipDetail(req.Detail, maxApprovalDetailLines)
 		body := "approval required: " + req.Tool + "\n" +
-			m.st.hint.Render(clip(req.Detail, 300))
+			m.st.hint.Render(detail)
+		if hidden > 0 {
+			body += "\n" + m.st.warn.Render(fmt.Sprintf("⚠ +%d 行が省略されています — 全体を見るまで承認しないでください（拒否して確認できます）", hidden))
+		}
 		if req.Reason != "" {
 			// The escalation cause gets its own accented line: in auto
 			// mode the operator's first question is "why is this asking
@@ -1139,9 +1211,13 @@ func (m Model) liveView() string {
 	return strings.Join(lines, "\n")
 }
 
+// clip truncates for display, by runes — a byte cut splits a UTF-8
+// sequence two times out of three on Japanese text and prints U+FFFD
+// mid-word (ADR-0021).
 func clip(s string, limit int) string {
-	if len(s) <= limit {
+	r := []rune(s)
+	if len(r) <= limit {
 		return s
 	}
-	return s[:limit] + "…"
+	return string(r[:limit]) + "…"
 }

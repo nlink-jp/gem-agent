@@ -89,18 +89,22 @@ plausible mechanism.
    was stored and returned as a normal answer. The turn still proceeds
    (what happened, happened) but the operator is told the answer was
    cut off and why.
-9. **Rejected as speculative, on the record:** capturing thought
-   signatures from empty non-thought parts (could change replay shape
-   for a pattern never observed), memory `.project` marker absence
-   (unreachable within the threat model, documented in ADR-0020), and
-   case-normalising project paths (macOS case-insensitivity splitting
-   memory scope needs a deliberately weird cd).
+9. **Rejected, on the record:** capturing thought signatures from empty
+   non-thought parts (could change replay shape for a pattern never
+   observed), memory `.project` marker absence (unreachable within the
+   threat model, documented in ADR-0020), case-normalising project
+   paths (macOS case-insensitivity splitting memory scope needs a
+   deliberately weird cd), and clearing the screen on width *growth*
+   (growth reflow does drift the pin in some terminals, but clearing on
+   every grow erases visible content repeatedly during a drag resize —
+   the existing shrink-only reset with graceful drift is the better
+   trade, and its test says so deliberately).
 
 The remaining fixes ride along without decision weight: approval-dialog
 type-ahead grace, draft preservation across queued sends, shell
-interrupt handback, tab expansion and width-change reset in the pinned
-renderer, view clamping on short terminals, banner-borne startup
-warnings, rune-safe clipping, live policy in /tools, resolved-path
+interrupt handback, tab expansion in the pinned renderer, view clamping
+on short terminals, banner-borne startup warnings, rune-safe clipping,
+live policy in /tools, resolved-path
 trusted_projects matching, file_info parent resolution, MCP stdin
 generation guard and name-collision disambiguation, retry chunk
 counting, web metadata nil guards, restored-history compaction

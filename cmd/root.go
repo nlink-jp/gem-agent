@@ -83,7 +83,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	stderr := cmd.ErrOrStderr()
+	// Startup warnings are teed: they hit stderr immediately (plain
+	// REPL, one-shot, early failures), but the TUI's first ClearScreen
+	// wipes that copy — a broken skill or unreadable memory flashed for
+	// milliseconds and vanished (ADR-0021) — so the recorded lines ride
+	// the banner too.
+	notes := &startupNotes{w: cmd.ErrOrStderr()}
+	var stderr io.Writer = notes
 
 	// --- config ---
 	cfgPath := flagConfig
@@ -461,7 +467,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if useTUI {
 		// The banner goes through the TUI (not stderr): bottom pinning
 		// counts every printed line, and the startup clear would wipe a
-		// pre-printed banner anyway.
+		// pre-printed banner anyway. Startup warnings join it for the
+		// same reason (ADR-0021).
+		bannerLines = append(bannerLines, notes.lines...)
 		model := tui.New(tui.Options{
 			BaseCtx:    ctx,
 			Theme:      resolveTheme(cfg.TUI.Theme),
@@ -627,6 +635,22 @@ func runREPL(cmd *cobra.Command, args []string) error {
 }
 
 var errInterrupted = errors.New("interrupted")
+
+// startupNotes tees startup-time stderr lines so the TUI can replay
+// them in the banner after its first ClearScreen (ADR-0021).
+type startupNotes struct {
+	w     io.Writer
+	lines []string
+}
+
+func (s *startupNotes) Write(p []byte) (int, error) {
+	for _, line := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
+		if strings.TrimSpace(line) != "" {
+			s.lines = append(s.lines, line)
+		}
+	}
+	return s.w.Write(p)
+}
 
 // denyGate is the one-shot approver: it denies every mutating call with
 // a visible reason instead of blocking on an approval prompt that
