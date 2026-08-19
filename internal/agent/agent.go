@@ -89,6 +89,11 @@ type Agent struct {
 	// mu with everything else the UI goroutine reads.
 	stats UsageStats
 
+	// logDead marks the transcript as stopped after a conversation-
+	// bearing write failed (ADR-0021): the file keeps a consistent
+	// prefix instead of drifting from the live history. Guarded by mu.
+	logDead bool
+
 	// tag is the session-scoped isolation tag (ADR-0018). Stable across
 	// rounds and turns so the request prefix stays byte-identical and
 	// implicit caching can hit; regenerated on Reset and SetHistory.
@@ -198,12 +203,18 @@ func toSet(names []string) map[string]bool {
 
 // Reset clears the conversation history (REPL /clear). The isolation
 // tag rotates with it — a fresh conversation gets a fresh nonce, and the
-// cache prefix restarts anyway.
+// cache prefix restarts anyway. The clear is recorded in the transcript
+// (ADR-0021): it is a history mutation like any other, and without the
+// record a resumed session resurrected everything the operator
+// discarded — with post-clear compaction indices applied to the wrong
+// list on replay.
 func (a *Agent) Reset() {
+	cleared := len(a.history)
 	a.history = nil
 	a.compactedAt = 0
 	a.lastPrompt = 0
 	a.tag = guard.NewTagWithPrefix("tool_output")
+	a.logRecord(session.KindClear, map[string]any{"messages": cleared})
 }
 
 // SetHistory replaces the conversation with a restored transcript
@@ -632,13 +643,36 @@ func (a *Agent) logRecord(kind string, data any) {
 	if a.log == nil {
 		return
 	}
-	// A broken session log must not kill a working session.
-	_ = a.log.Log(kind, data)
+	a.mu.Lock()
+	dead := a.logDead
+	a.mu.Unlock()
+	if dead {
+		return
+	}
+	// A broken session log must not kill a working session — but a
+	// conversation-bearing record that failed to land breaks the file's
+	// second job as the resume source of truth: the live history and the
+	// transcript would drift, and every later compaction index would be
+	// computed against a list the replay does not have (ADR-0021). So a
+	// failed conversation write stops the transcript at a consistent
+	// prefix, loudly; diagnostics-only failures stay best-effort.
+	if err := a.log.Log(kind, data); err != nil {
+		switch kind {
+		case session.KindMessage, session.KindCompaction, session.KindClear:
+			a.mu.Lock()
+			a.logDead = true
+			a.mu.Unlock()
+			a.notify("session transcript write failed (" + err.Error() + ") — recording stopped; this session can no longer be fully resumed")
+		}
+	}
 }
 
+// clip truncates for display, by runes: a byte cut can split a UTF-8
+// sequence and print U+FFFD mid-word (ADR-0021).
 func clip(s string, limit int) string {
-	if len(s) <= limit {
+	r := []rune(s)
+	if len(r) <= limit {
 		return s
 	}
-	return s[:limit] + "…"
+	return string(r[:limit]) + "…"
 }

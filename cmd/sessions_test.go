@@ -30,7 +30,7 @@ func TestResolveResumeLoadsTheMostRecentSessionOfThisProject(t *testing.T) {
 		llm.Message{Role: llm.RoleUser, Content: "where were we"},
 		llm.Message{Role: llm.RoleAssistant, Content: "here"})
 
-	meta, history, err := resolveResume(dir, "/proj", "gemini-x", "")
+	meta, history, _, err := resolveResume(dir, "/proj", "gemini-x", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestResolveResumeRefusesAnotherProject(t *testing.T) {
 	dir := t.TempDir()
 	id := seed(t, dir, "/elsewhere", "gemini-x", llm.Message{Role: llm.RoleUser, Content: "hi"})
 
-	_, _, err := resolveResume(dir, "/proj", "gemini-x", id)
+	_, _, _, err := resolveResume(dir, "/proj", "gemini-x", id)
 	if err == nil {
 		t.Fatal("resumed a session recorded in a different project")
 	}
@@ -57,7 +57,7 @@ func TestResolveResumeRefusesAnotherProject(t *testing.T) {
 	}
 
 	// --continue must not even see it.
-	if _, _, err := resolveResume(dir, "/proj", "gemini-x", ""); err == nil ||
+	if _, _, _, err := resolveResume(dir, "/proj", "gemini-x", ""); err == nil ||
 		!strings.Contains(err.Error(), "no previous session") {
 		t.Errorf("--continue error = %v", err)
 	}
@@ -70,7 +70,7 @@ func TestResolveResumeRefusesADifferentModel(t *testing.T) {
 	dir := t.TempDir()
 	id := seed(t, dir, "/proj", "gemini-recorded", llm.Message{Role: llm.RoleUser, Content: "hi"})
 
-	_, _, err := resolveResume(dir, "/proj", "gemini-other", id)
+	_, _, _, err := resolveResume(dir, "/proj", "gemini-other", id)
 	if err == nil {
 		t.Fatal("resumed a session recorded with a different model")
 	}
@@ -84,11 +84,11 @@ func TestResolveResumeRejectsPathsAndUnknownIDs(t *testing.T) {
 	seed(t, dir, "/proj", "m", llm.Message{Role: llm.RoleUser, Content: "hi"})
 
 	for _, id := range []string{"../../../etc/passwd", "/etc/passwd", "notanid"} {
-		if _, _, err := resolveResume(dir, "/proj", "m", id); err == nil {
+		if _, _, _, err := resolveResume(dir, "/proj", "m", id); err == nil {
 			t.Errorf("resolveResume accepted %q as a session id", id)
 		}
 	}
-	if _, _, err := resolveResume(dir, "/proj", "m", "20200101-000000"); err == nil {
+	if _, _, _, err := resolveResume(dir, "/proj", "m", "20200101-000000"); err == nil {
 		t.Error("resolveResume accepted an id with no session behind it")
 	}
 }
@@ -96,7 +96,7 @@ func TestResolveResumeRejectsPathsAndUnknownIDs(t *testing.T) {
 func TestResolveResumeRejectsAnEmptyTranscript(t *testing.T) {
 	dir := t.TempDir()
 	id := seed(t, dir, "/proj", "m")
-	if _, _, err := resolveResume(dir, "/proj", "m", id); err == nil {
+	if _, _, _, err := resolveResume(dir, "/proj", "m", id); err == nil {
 		t.Error("resumed a session with no conversation in it")
 	}
 }
@@ -115,7 +115,7 @@ func TestOpenSessionLogWritesAHeaderAndResumeAppends(t *testing.T) {
 	path := lg.Path()
 	lg.Close()
 
-	history, header, err := session.Load(path)
+	history, header, _, err := session.Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestContinueSkipsConversationlessSessions(t *testing.T) {
 	// A later run that only used slash commands: header, no conversation.
 	empty := seed(t, dir, "/proj", "m")
 
-	meta, history, err := resolveResume(dir, "/proj", "m", "")
+	meta, history, _, err := resolveResume(dir, "/proj", "m", "")
 	if err != nil {
 		t.Fatalf("--continue failed with an empty session present: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestContinueSkipsConversationlessSessions(t *testing.T) {
 		t.Errorf("history = %+v", history)
 	}
 	// Named explicitly, the empty one still reports what is actually wrong.
-	if _, _, err := resolveResume(dir, "/proj", "m", empty); err == nil ||
+	if _, _, _, err := resolveResume(dir, "/proj", "m", empty); err == nil ||
 		!strings.Contains(err.Error(), "no conversation") {
 		t.Errorf("explicit --resume of an empty session: %v", err)
 	}

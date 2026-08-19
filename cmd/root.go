@@ -201,9 +201,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		if sessionDirErr != nil {
 			return fmt.Errorf("cannot resume: %w", sessionDirErr)
 		}
-		meta, history, err := resolveResume(sessionDir, projectDir, cfg.Model.Name, flagResume)
+		meta, history, resumeNotes, err := resolveResume(sessionDir, projectDir, cfg.Model.Name, flagResume)
 		if err != nil {
 			return err
+		}
+		for _, n := range resumeNotes {
+			fmt.Fprintf(stderr, "warning: %s\n", n)
 		}
 		restored, resumedID = history, meta.ID
 	}

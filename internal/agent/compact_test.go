@@ -340,7 +340,7 @@ func TestCompactedSessionRoundTripsThroughTheTranscript(t *testing.T) {
 	}
 	lg.Close()
 
-	restored, _, err := session.Load(lg.Path())
+	restored, _, _, err := session.Load(lg.Path())
 	if err != nil {
 		t.Fatal(err)
 	}

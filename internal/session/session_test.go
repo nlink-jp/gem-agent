@@ -96,7 +96,7 @@ func TestLoadRestoresFullFidelityHistory(t *testing.T) {
 	}
 	l.Close()
 
-	got, header, err := Load(l.Path())
+	got, header, _, err := Load(l.Path())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestLoadAppliesCompaction(t *testing.T) {
 	}
 	l.Close()
 
-	got, _, err := Load(l.Path())
+	got, _, _, err := Load(l.Path())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestLoadRejectsNewerSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.Close()
-	if _, _, err := Load(l.Path()); err == nil {
+	if _, _, _, err := Load(l.Path()); err == nil {
 		t.Fatal("a transcript from a newer build loaded silently")
 	}
 }
@@ -193,7 +193,7 @@ func TestLoadToleratesTruncatedFinalLine(t *testing.T) {
 	if err := os.WriteFile(path, append(append(good, '\n'), []byte(`{"kind":"message","data":{"role":"us`)...), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, _, err := Load(path)
+	got, _, _, err := Load(path)
 	if err != nil {
 		t.Fatalf("a torn final line made the whole transcript unresumable: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestReopenAppendsToTheSameTranscript(t *testing.T) {
 		t.Errorf("resume wrote to %s, want %s", l2.Path(), l.Path())
 	}
 
-	got, _, err := Load(l.Path())
+	got, _, _, err := Load(l.Path())
 	if err != nil {
 		t.Fatal(err)
 	}

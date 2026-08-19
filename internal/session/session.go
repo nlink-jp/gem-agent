@@ -9,6 +9,8 @@
 package session
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
@@ -26,8 +29,10 @@ import (
 
 // SchemaVersion is the transcript format version. It is written into
 // every session header so a file this build cannot replay is reported as
-// such rather than half-loaded.
-const SchemaVersion = 1
+// such rather than half-loaded. Version 2 added the "clear" record
+// (ADR-0021): an older build reading a cleared session would silently
+// resurrect the discarded conversation, so it must refuse instead.
+const SchemaVersion = 2
 
 // Record kinds that carry conversation state. Everything else in the
 // file is diagnostic and skipped by Load.
@@ -35,6 +40,7 @@ const (
 	KindHeader     = "session"
 	KindMessage    = "message"
 	KindCompaction = "compaction"
+	KindClear      = "clear"
 	KindResumed    = "resumed"
 )
 
@@ -127,6 +133,9 @@ func Open(dir string) (*Logger, error) {
 		}
 		f, err := os.OpenFile(filepath.Join(dir, id+".jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_EXCL, 0o600)
 		if err == nil {
+			if err := lockSession(f, id); err != nil {
+				return nil, err
+			}
 			return &Logger{f: f, id: id}, nil
 		}
 		if !os.IsExist(err) {
@@ -143,11 +152,43 @@ func Reopen(dir, id string) (*Logger, error) {
 	if !ValidID(id) {
 		return nil, fmt.Errorf("invalid session id %q", id)
 	}
-	f, err := os.OpenFile(filepath.Join(dir, id+".jsonl"), os.O_WRONLY|os.O_APPEND, 0o600)
+	// O_RDWR, not O_WRONLY: the tail repair below needs to read the last
+	// byte. Appends still go to the end (O_APPEND).
+	f, err := os.OpenFile(filepath.Join(dir, id+".jsonl"), os.O_RDWR|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, err
 	}
+	if err := lockSession(f, id); err != nil {
+		return nil, err
+	}
+	// Tail repair (ADR-0021): a crash's torn last line must cost one
+	// line, never the records appended after it. Without the newline,
+	// the first append glues onto the tear and the merged line — torn
+	// prefix plus valid record — is one invalid line, and everything
+	// after it was silently dropped on the next load (measured: 1 of 6
+	// turns survived).
+	if st, err := f.Stat(); err == nil && st.Size() > 0 {
+		buf := make([]byte, 1)
+		if _, err := f.ReadAt(buf, st.Size()-1); err == nil && buf[0] != '\n' {
+			if _, err := f.Write([]byte("\n")); err != nil {
+				f.Close()
+				return nil, fmt.Errorf("repairing session tail: %w", err)
+			}
+		}
+	}
 	return &Logger{f: f, id: id}, nil
+}
+
+// lockSession takes a non-blocking exclusive advisory lock for the
+// logger's lifetime (released when the file closes). Two processes
+// appending to one transcript interleave into a conversation neither of
+// them had — refusing the second is the only honest answer (ADR-0021).
+func lockSession(f *os.File, id string) error {
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		return fmt.Errorf("session %s is already in use by another gem-agent process", id)
+	}
+	return nil
 }
 
 // Path returns the session file path.
@@ -178,70 +219,121 @@ func (l *Logger) Close() error {
 	return l.f.Close()
 }
 
+// rawRecord is one parsed JSONL line.
+type rawRecord struct {
+	Time time.Time       `json:"ts"`
+	Kind string          `json:"kind"`
+	Data json.RawMessage `json:"data"`
+}
+
+// forEachLine reads JSONL records line by line — bufio.Reader, not
+// bufio.Scanner (a single read_file result can exceed Scanner's 64KB
+// token limit) and not json.Decoder (which cannot resynchronise after a
+// corrupt line). fn receives nil for a line that does not parse — a
+// torn write must cost at most itself, never the records after it
+// (ADR-0021; measured: the old decoder dropped everything after a glued
+// tear). fn returning false stops the scan early.
+func forEachLine(f io.Reader, fn func(rec *rawRecord) (bool, error)) error {
+	r := bufio.NewReader(f)
+	for {
+		line, readErr := r.ReadBytes('\n')
+		if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 {
+			var rec rawRecord
+			p := &rec
+			if json.Unmarshal(trimmed, &rec) != nil || rec.Kind == "" {
+				p = nil
+			}
+			cont, err := fn(p)
+			if err != nil {
+				return err
+			}
+			if !cont {
+				return nil
+			}
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				return nil
+			}
+			return readErr
+		}
+	}
+}
+
 // Load reads a session file back into a conversation history, applying
-// recorded compactions on the way (ADR-0006): a session that was
-// compacted resumes compacted, not re-inflated.
+// recorded compactions and clears on the way (ADR-0006/0021): a session
+// that was compacted resumes compacted, and one that was cleared
+// resumes cleared.
 //
 // A record this build does not understand is skipped, not fatal — a
 // diagnostic line must never make a conversation unresumable — but a
 // newer schema version is refused outright, because then the message
 // records themselves may not mean what this build thinks they do.
-func Load(path string) ([]llm.Message, Header, error) {
+// skipped counts unreadable lines so the caller can say "N lines lost"
+// instead of presenting a shorter conversation as complete.
+func Load(path string) ([]llm.Message, Header, int, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, Header{}, err
+		return nil, Header{}, 0, err
 	}
 	defer f.Close()
 
-	// json.Decoder rather than bufio.Scanner: a single read_file result
-	// can exceed Scanner's 64KB token limit, which would truncate the
-	// conversation silently.
-	dec := json.NewDecoder(f)
 	var (
 		header  Header
 		history []llm.Message
+		skipped int
+		// skippedSinceAnchor guards compaction indices: an unreadable
+		// message line shifts every later index, so a compaction record
+		// after one cannot be trusted. A clear record resets the frame
+		// (indices after it are relative to the fresh history).
+		skippedSinceAnchor int
 	)
-	for {
-		var rec struct {
-			Kind string          `json:"kind"`
-			Data json.RawMessage `json:"data"`
-		}
-		if err := dec.Decode(&rec); err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			// A session killed mid-write leaves a partial last line. The
-			// conversation up to it is still good; refusing to resume
-			// because of a torn byte would waste the whole transcript.
-			break
+	err = forEachLine(f, func(rec *rawRecord) (bool, error) {
+		if rec == nil {
+			skipped++
+			skippedSinceAnchor++
+			return true, nil
 		}
 		switch rec.Kind {
 		case KindHeader:
 			if err := json.Unmarshal(rec.Data, &header); err != nil {
-				return nil, Header{}, fmt.Errorf("%s: unreadable session header: %w", path, err)
+				return false, fmt.Errorf("%s: unreadable session header: %w", path, err)
 			}
 			if header.Schema > SchemaVersion {
-				return nil, header, fmt.Errorf("%s was written by a newer gem-agent (transcript schema %d, this build reads %d)",
+				return false, fmt.Errorf("%s was written by a newer gem-agent (transcript schema %d, this build reads %d)",
 					filepath.Base(path), header.Schema, SchemaVersion)
 			}
 		case KindMessage:
 			var m llm.Message
 			if err := json.Unmarshal(rec.Data, &m); err != nil {
-				return nil, header, fmt.Errorf("%s: unreadable message record: %w", path, err)
+				skipped++
+				skippedSinceAnchor++
+				return true, nil
 			}
 			history = append(history, m)
+		case KindClear:
+			history = nil
+			skippedSinceAnchor = 0
 		case KindCompaction:
+			if skippedSinceAnchor > 0 {
+				return false, fmt.Errorf("%s: %d unreadable lines precede a compaction record, so its index cannot be trusted — resume refused rather than replaying the wrong messages",
+					filepath.Base(path), skippedSinceAnchor)
+			}
 			var c Compaction
 			if err := json.Unmarshal(rec.Data, &c); err != nil {
-				return nil, header, fmt.Errorf("%s: unreadable compaction record: %w", path, err)
+				return false, fmt.Errorf("%s: unreadable compaction record: %w", path, err)
 			}
 			if c.Replaced < 0 || c.Replaced > len(history) {
-				return nil, header, fmt.Errorf("%s: compaction record replaces %d of %d messages", path, c.Replaced, len(history))
+				return false, fmt.Errorf("%s: compaction record replaces %d of %d messages", path, c.Replaced, len(history))
 			}
 			history = append([]llm.Message{c.Message}, history[c.Replaced:]...)
 		}
+		return true, nil
+	})
+	if err != nil {
+		return nil, header, skipped, err
 	}
-	return history, header, nil
+	return history, header, skipped, nil
 }
 
 // List returns the resumable sessions in dir, newest first. When
@@ -321,15 +413,14 @@ func describe(path, id string) (Meta, error) {
 		meta.Size = st.Size()
 		meta.LastActive = st.ModTime()
 	}
-	dec := json.NewDecoder(f)
-	for i := 0; i < previewScanLimit; i++ {
-		var rec struct {
-			Time time.Time       `json:"ts"`
-			Kind string          `json:"kind"`
-			Data json.RawMessage `json:"data"`
+	scanned := 0
+	_ = forEachLine(f, func(rec *rawRecord) (bool, error) {
+		scanned++
+		if scanned > previewScanLimit {
+			return false, nil
 		}
-		if err := dec.Decode(&rec); err != nil {
-			break
+		if rec == nil {
+			return true, nil // corrupt line: a listing tolerates it
 		}
 		switch rec.Kind {
 		case KindHeader:
@@ -338,23 +429,22 @@ func describe(path, id string) (Meta, error) {
 		case KindMessage, KindCompaction:
 			meta.HasConversation = true
 			if rec.Kind != KindMessage {
-				continue
+				break
 			}
 			var m llm.Message
 			if err := json.Unmarshal(rec.Data, &m); err != nil {
-				continue
+				break
 			}
 			if m.Role != llm.RoleUser || strings.TrimSpace(m.Content) == "" {
-				continue
+				break
 			}
 			if p := previewOf(m.Content); p != "" && betterPreview(meta.Preview, p) {
 				meta.Preview = p
 			}
 		}
-		if meta.Preview != "" && !strings.HasPrefix(meta.Preview, "!") && !meta.Started.IsZero() {
-			break
-		}
-	}
+		done := meta.Preview != "" && !strings.HasPrefix(meta.Preview, "!") && !meta.Started.IsZero()
+		return !done, nil
+	})
 	if meta.Started.IsZero() {
 		meta.Started = meta.LastActive
 	}
