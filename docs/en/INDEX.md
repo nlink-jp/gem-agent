@@ -83,6 +83,9 @@ excepted).
 - [`ADR-0023`](adr/0023-startup-safety.md) — startup safety: broad
   roots confirm, and one first-run trust question covers a project's
   instructions, .mcp.json, and skills
+- [`ADR-0024`](adr/0024-bottom-hold.md) — bottom-hold: the frame's total
+  height is held once the screen is full, so the footer stops bouncing
+  (supersedes ADR-0003's full-screen clause)
 
 ## History
 

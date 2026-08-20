@@ -78,6 +78,9 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0023`](adr/0023-startup-safety.ja.md) — 起動時の安全機構: 広すぎる
   ルートは確認、初回信用の質問 1 つがプロジェクトの指示・.mcp.json・skills
   を覆う
+- [`ADR-0024`](adr/0024-bottom-hold.ja.md) — bottom-hold: 画面が埋まったら
+  フレーム合計高を保持し、フッターの弾みを止める（ADR-0003 の満杯時条項を
+  supersede）
 
 ## History（履歴）
 

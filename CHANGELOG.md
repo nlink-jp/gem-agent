@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.19.1] - 2026-08-20
+
+### Fixed — footer bounce once the screen is full (ADR-0024, operator report)
+
+- Once printed history filled the screen, the bottom padding clamped to
+  zero and the frame's bottom edge — the footer — moved with the view's
+  own height: every MCP-call flush (live tail resetting from up to 12
+  lines to none) and every closing approval dialog bounced it by up to
+  a dozen rows. The frame's total height is now held steady in the
+  full-screen regime: vacated rows render blank inside the frame, and
+  each later scrollback line consumes one blank row, so history flows
+  into the gap and the footer stays glued to the bottom. Supersedes
+  ADR-0003's "degrades to plain inline" clause
+
 ## [0.19.0] - 2026-08-20
 
 ### Added — startup safety (ADR-0023, operator request)

@@ -190,6 +190,12 @@ type Model struct {
 	// back to the input box unsent when it does not.
 	pending  string
 	approval *ApprovalRequest
+	// hold is the bottom-hold render state (ADR-0024): once the screen
+	// is full, the frame's total height is held steady so the footer
+	// stops moving when the view shrinks (flush resets, dialog closes).
+	// A pointer, like live: View runs on a copy of the model, and this
+	// bookkeeping must survive it.
+	hold *bottomHold
 	// approvalAt is when the dialog appeared. Keys arriving within the
 	// grace window are dropped: the operator types during runs
 	// (ADR-0007), so an Enter or a letter aimed at the input box can
@@ -262,6 +268,7 @@ func New(opts Options) Model {
 		spin:         sp,
 		histIdx:      -1,
 		live:         &strings.Builder{},
+		hold:         &bottomHold{},
 		startTurn:    opts.StartTurn,
 		shell:        opts.Shell,
 		compact:      opts.Compact,
@@ -370,6 +377,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// first frame. Deferred to the first size report because
 			// counting needs the real width.
 			m.printed = 0
+			m.hold.lastTotal = 0
 			cmds := []tea.Cmd{tea.ClearScreen}
 			for _, line := range m.banner {
 				cmds = append(cmds, m.emit(line))
@@ -377,6 +385,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Sequence(cmds...)
 		case resized:
 			m.printed = 0 // the clear empties the viewport
+			m.hold.lastTotal = 0
 			return m, tea.ClearScreen
 		}
 		return m, nil
@@ -530,12 +539,22 @@ func (m *Model) emit(s string) tea.Cmd {
 	if w <= 0 {
 		w = 80
 	}
+	total := 0
 	for _, line := range strings.Split(s, "\n") {
 		phys := 1
 		if lw := ansi.StringWidth(line); lw > w {
 			phys = (lw + w - 1) / w
 		}
-		m.printed += phys
+		total += phys
+	}
+	m.printed += total
+	// Each printed line scrolls history up one row; hand those rows back
+	// to the bottom-hold gap so history flows into it (ADR-0024 §3).
+	if m.hold != nil && m.hold.lastTotal > 0 {
+		m.hold.lastTotal -= total
+		if m.hold.lastTotal < 0 {
+			m.hold.lastTotal = 0
+		}
 	}
 	return m.println(s)
 }
@@ -973,6 +992,11 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 // bottom (ADR-0003): height − printed lines − view height − 1. Once the
 // conversation fills the screen the padding floors at zero and the
 // layout degrades to plain inline following.
+// bottomHold carries the ADR-0024 render state across View calls.
+type bottomHold struct {
+	lastTotal int // frame height being held; 0 = disarmed (screen not full)
+}
+
 func (m Model) View() string {
 	content := clipLines(m.viewContent(), m.width)
 	if m.height > 0 {
@@ -987,7 +1011,31 @@ func (m Model) View() string {
 		}
 		core := strings.Count(content, "\n") + 1
 		if pad := m.height - m.printed - core - 1; pad > 0 {
+			// Screen not full: the pad is the absorber (ADR-0003).
+			if m.hold != nil {
+				m.hold.lastTotal = 0
+			}
 			content = strings.Repeat("\n", pad) + content
+		} else if m.hold != nil {
+			// Bottom-hold (ADR-0024): the pad has clamped to zero, so a
+			// shrinking view would lift the frame bottom — the footer —
+			// by the difference. Hold the frame's total height instead:
+			// vacated rows render blank at the frame top, and every
+			// later scrollback line gives one row back (see emit), so
+			// history flows into the gap. Without this, every MCP-call
+			// flush (live tail reset) and every closing approval dialog
+			// bounced the footer by up to a dozen rows.
+			total := m.hold.lastTotal
+			if total < core {
+				total = core
+			}
+			if max := m.height - 1; total > max {
+				total = max
+			}
+			m.hold.lastTotal = total
+			if gap := total - core; gap > 0 {
+				content = strings.Repeat("\n", gap) + content
+			}
 		}
 	}
 	return content
