@@ -86,6 +86,9 @@ excepted).
 - [`ADR-0024`](adr/0024-bottom-hold.md) — bottom-hold: the frame's total
   height is held once the screen is full, so the footer stops bouncing
   (supersedes ADR-0003's full-screen clause)
+- [`ADR-0025`](adr/0025-thinking-level.md) — configurable Gemini 3
+  thinking level for main-model calls; summary model unaffected,
+  supported levels model-dependent (measured)
 
 ## History
 

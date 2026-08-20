@@ -43,6 +43,17 @@ name = "gemini-3.7-flash"
 # filters cannot be turned off at any setting.
 #safety = "default"
 
+# Gemini 3 thinking level for main-model calls (ADR-0025):
+#   minimal | low | medium | high
+# Unset means the model's own default. Thought tokens are billed and
+# shown in the footer and /usage; lower levels answer faster and
+# cheaper, higher levels reason more (measured on one arithmetic prompt:
+# low 93 / medium 170 / high 222 thought tokens). Which levels a model
+# accepts is model-dependent — gemini-3.7-flash rejects "minimal" with a
+# clear 400 on the first turn (measured). The summarize_file model is
+# not affected.
+#thinking = "high"
+
 [sandbox]
 # Wrap shell_exec in macOS sandbox-exec, confining file writes to the
 # project directory (ADR-0001 defense-in-depth). Leave enabled unless

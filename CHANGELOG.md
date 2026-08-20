@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.20.0] - 2026-08-20
+
+### Added — thinking level (ADR-0025, operator request)
+
+- `[model] thinking = "minimal" | "low" | "medium" | "high"` sets the
+  Gemini 3 thinking level for main-model calls; unset keeps the model's
+  default, and an unknown value is a startup error. Measured on one
+  arithmetic prompt (gemini-3.7-flash): 93 / 170 / 222 thought tokens
+  at low / medium / high; "minimal" is rejected by that model with a
+  clear 400 on the first turn — supported levels are model-dependent,
+  and the API stays the authority
+- The summarize_file model deliberately keeps its own default;
+  /settings shows the value read-only with its source
+
 ## [0.19.2] - 2026-08-20
 
 ### Fixed — scrollback bursts write once (operator report)

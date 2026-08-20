@@ -259,7 +259,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- LLM backend ---
-	backend, err := llm.NewVertex(ctx, cfg.GCP.Project, cfg.GCP.Location, cfg.Model.Name, cfg.Model.Safety)
+	backend, err := llm.NewVertex(ctx, cfg.GCP.Project, cfg.GCP.Location, cfg.Model.Name, cfg.Model.Safety, cfg.Model.Thinking)
 	if err != nil {
 		return err
 	}

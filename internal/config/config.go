@@ -186,6 +186,19 @@ type ModelConfig struct {
 	// explicit rather than silent — and some filters cannot be turned
 	// off at any setting.
 	Safety string `toml:"safety"`
+	// Thinking sets the Gemini 3 thinking level for main-model calls
+	// (ADR-0025): "minimal", "low", "medium", or "high". Empty means
+	// the model's own default. The summary model is unaffected.
+	Thinking string `toml:"thinking"`
+}
+
+// ValidThinking reports whether s is an accepted [model].thinking value.
+func ValidThinking(s string) bool {
+	switch s {
+	case "", "minimal", "low", "medium", "high":
+		return true
+	}
+	return false
 }
 
 // SandboxConfig controls the sandbox-exec wrapper for shell_exec.
@@ -313,6 +326,7 @@ func applyEnv(cfg *Config) {
 var trackedKeys = []string{
 	"gcp.project", "gcp.location",
 	"model.name", "model.context_window", "model.safety", "model.summary",
+	"model.thinking",
 	"sandbox.enabled",
 	"agent.max_turns", "agent.shell_timeout_sec", "agent.auto_approve",
 	"agent.auto_compact", "agent.compact_at_pct",
@@ -345,6 +359,9 @@ func (c *Config) validate() error {
 	// failed, which is too late to help.
 	if c.Agent.CompactAtPct < 10 || c.Agent.CompactAtPct > 99 {
 		return fmt.Errorf("[agent].compact_at_pct must be between 10 and 99 (got %d)", c.Agent.CompactAtPct)
+	}
+	if !ValidThinking(c.Model.Thinking) {
+		return fmt.Errorf("[model].thinking must be minimal, low, medium, or high (got %q; empty means the model default)", c.Model.Thinking)
 	}
 	switch c.Model.Safety {
 	case "default", "relaxed", "off":

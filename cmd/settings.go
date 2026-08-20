@@ -72,6 +72,7 @@ func (s *settingsStore) data() tui.SettingsData {
 	ro("backend", "model.name", s.cfg.Model.Name, "model.name", needsRestart)
 	ro("backend", "model.safety", s.cfg.Model.Safety, "model.safety", needsRestart)
 	ro("backend", "model.summary", summaryLabel(s.cfg.Model.Summary), "model.summary", needsRestart)
+	ro("backend", "model.thinking", thinkingLabel(s.cfg.Model.Thinking), "model.thinking", needsRestart)
 	ro("backend", "model.context_window", contextWindowLabel(s.cfg.Model.ContextWindow),
 		"model.context_window", "auto-detected when unset")
 	ro("safety", "sandbox.enabled", strconv.FormatBool(s.cfg.Sandbox.Enabled), "sandbox.enabled",
@@ -197,6 +198,13 @@ func writeSettingsTable(out io.Writer, d tui.SettingsData) {
 func summaryLabel(s string) string {
 	if s == "" {
 		return "(main model)"
+	}
+	return s
+}
+
+func thinkingLabel(s string) string {
+	if s == "" {
+		return "(model default)"
 	}
 	return s
 }

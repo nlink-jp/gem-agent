@@ -20,12 +20,16 @@ type Vertex struct {
 	client *genai.Client
 	model  string
 	safety []*genai.SafetySetting
+	// thinking is the Gemini 3 thinking level for ChatStream calls
+	// (ADR-0025); empty means the model's own default. Set once at
+	// construction — deliberately immutable (no live edit, no mutex).
+	thinking genai.ThinkingLevel
 }
 
 // NewVertex creates the backend. The client is created once and reused.
 // safety selects the configurable content-filter thresholds — see
 // SafetySettings.
-func NewVertex(ctx context.Context, project, location, model, safety string) (*Vertex, error) {
+func NewVertex(ctx context.Context, project, location, model, safety, thinking string) (*Vertex, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		Project:  project,
 		Location: location,
@@ -34,7 +38,24 @@ func NewVertex(ctx context.Context, project, location, model, safety string) (*V
 	if err != nil {
 		return nil, fmt.Errorf("vertex AI client: %w", err)
 	}
-	return &Vertex{client: client, model: model, safety: SafetySettings(safety)}, nil
+	return &Vertex{client: client, model: model, safety: SafetySettings(safety), thinking: ThinkingLevel(thinking)}, nil
+}
+
+// ThinkingLevel maps a config value ("minimal".."high") to the SDK
+// enum; "" stays "" (the model's own default). Validation happens at
+// config load — an unknown value never reaches here.
+func ThinkingLevel(s string) genai.ThinkingLevel {
+	switch s {
+	case "minimal":
+		return genai.ThinkingLevelMinimal
+	case "low":
+		return genai.ThinkingLevelLow
+	case "medium":
+		return genai.ThinkingLevelMedium
+	case "high":
+		return genai.ThinkingLevelHigh
+	}
+	return ""
 }
 
 // SafetySettings maps a policy name to per-category thresholds.
@@ -75,6 +96,9 @@ func (v *Vertex) Model() string { return v.model }
 // the [model].summary slot (ADR-0014). Model choice is per-call in the
 // API, so this is a name, not a second connection.
 func (v *Vertex) WithModel(name string) *Vertex {
+	// The thinking level is deliberately NOT inherited (ADR-0025 §2):
+	// the summary model runs at its own default — the operator's dial
+	// is for the main model.
 	return &Vertex{client: v.client, model: name, safety: v.safety}
 }
 
@@ -94,7 +118,9 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 	cfg := &genai.GenerateContentConfig{
 		// Keep chain-of-thought text out of responses; Gemini 3 still
 		// attaches thought signatures, which we capture regardless.
-		ThinkingConfig: &genai.ThinkingConfig{IncludeThoughts: false},
+		// ThinkingLevel "" leaves the model at its own default
+		// (ADR-0025).
+		ThinkingConfig: &genai.ThinkingConfig{IncludeThoughts: false, ThinkingLevel: v.thinking},
 		SafetySettings: v.safety,
 	}
 	if system != "" {

@@ -81,6 +81,8 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0024`](adr/0024-bottom-hold.ja.md) — bottom-hold: 画面が埋まったら
   フレーム合計高を保持し、フッターの弾みを止める（ADR-0003 の満杯時条項を
   supersede）
+- [`ADR-0025`](adr/0025-thinking-level.ja.md) — メインモデルの Gemini 3
+  思考レベル設定。要約モデルは対象外、対応レベルはモデル依存（実測）
 
 ## History（履歴）
 

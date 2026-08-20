@@ -575,6 +575,9 @@ location = "global"        # default; Gemini 3 models are global-endpoint-only
 [model]
 name = "<gemini model id>"
 # context_window = 1048576  # optional; exact window for the footer and compaction
+# thinking = "high"         # optional; Gemini 3 thinking level: minimal|low|medium|high
+#                           # (unset = model default; supported levels are model-dependent;
+#                           #  summarize model unaffected — ADR-0025)
 
 [sandbox]
 enabled = true             # default

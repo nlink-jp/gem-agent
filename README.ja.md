@@ -538,6 +538,9 @@ location = "global"        # デフォルト; Gemini 3 系は global エンド�
 [model]
 name = "<gemini model id>"
 # context_window = 1048576  # 任意; フッター表示と圧縮判定に使う厳密値
+# thinking = "high"         # 任意; Gemini 3 の思考レベル: minimal|low|medium|high
+#                           # (未設定 = モデル既定。対応レベルはモデル依存。
+#                           #  要約モデルには効かない — ADR-0025)
 
 [sandbox]
 enabled = true             # デフォルト
