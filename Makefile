@@ -11,7 +11,7 @@ DIST_DIR := dist
 CODESIGN_IDENTITY ?= Developer ID Application
 NOTARY_PROFILE    ?= nlink-jp-notary
 
-.PHONY: build build-all package test vet docs-check check clean
+.PHONY: build build-all package verify-release test vet docs-check check clean
 
 build:
 	@mkdir -p $(DIST_DIR)
@@ -36,6 +36,17 @@ package: build-all
 		( cd $$stage && zip -q "../$(BINARY)-$(VERSION)-darwin-arm64.zip" * ); \
 		rm -rf $$stage
 	@scripts/notarize-darwin.sh $(DIST_DIR)/$(BINARY)-$(VERSION)-darwin-arm64.zip "$(NOTARY_PROFILE)"
+
+# verify-release inspects the packaged zip from INSIDE the repo: the
+# ad-hoc "cd scratch && unzip && gh release ..." chain stranded gh in a
+# non-repo cwd three releases in a row. Run this, then gh from here.
+verify-release:
+	@tmp=$$(mktemp -d) && \
+		unzip -oq "$(DIST_DIR)/$(BINARY)-$(VERSION)-darwin-arm64.zip" -d "$$tmp" && \
+		"$$tmp/$(BINARY)" --version && \
+		spctl -a -vv -t install "$$tmp/$(BINARY)" 2>&1 | head -2 && \
+		rm -rf "$$tmp" && \
+		echo "verify-release: OK ($(VERSION))"
 
 test:
 	go test ./...
