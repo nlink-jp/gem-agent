@@ -841,7 +841,7 @@ func TestApprovalSelectionKeys(t *testing.T) {
 		t.Errorf("Tab should wrap to 許可, got %d", m.choice)
 	}
 	m = press(m, tea.KeyMsg{Type: tea.KeyLeft})
-	if m.choice != len(approvalOptions)-1 {
+	if m.choice != len(approvalAnswers)-1 {
 		t.Errorf("Left should wrap backwards to the last option, got %d", m.choice)
 	}
 	m = press(m, tea.KeyMsg{Type: tea.KeyLeft})
@@ -921,9 +921,9 @@ func TestApprovalSelectionVisible(t *testing.T) {
 	if !strings.Contains(v, "▶") {
 		t.Error("selection marker missing")
 	}
-	for _, opt := range approvalOptions {
-		if !strings.Contains(v, opt.label) {
-			t.Errorf("option %q not rendered", opt.label)
+	for _, label := range m.approvalLabels() {
+		if !strings.Contains(v, label) {
+			t.Errorf("option %q not rendered", label)
 		}
 	}
 	if !strings.Contains(v, "Enter") {

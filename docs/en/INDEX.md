@@ -98,6 +98,10 @@ excepted).
 - [`ADR-0028`](adr/0028-self-healing-line-counter.md) — the printed-line
   counter follows reality: over-tall frames scroll the terminal, and
   the counter self-heals by the overflow (amends ADR-0003's definition)
+- [`ADR-0029`](adr/0029-ui-language.md) — UI language mode:
+  `[tui].language` auto/ja/en, one catalog struct with two complete
+  literals, completeness enforced by test; log-shaped and model-facing
+  text stays English
 
 ## History
 

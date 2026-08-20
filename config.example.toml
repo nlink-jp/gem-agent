@@ -131,3 +131,9 @@ call_timeout_sec = 60
 # startup, "dark"/"light" force it when detection guesses wrong, and
 # "plain" disables all styling for terminal themes that fight colors.
 theme = "auto"
+
+# UI language for help, hints, prompts, and the approval dialog:
+# "auto" follows LC_ALL / LC_MESSAGES / LANG (a "ja" prefix selects
+# Japanese, anything else English); "ja" and "en" force it.
+# Applies at the next start.
+language = "auto"

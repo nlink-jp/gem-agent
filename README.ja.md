@@ -576,6 +576,7 @@ compact_at_pct = 80        # デフォルト; 発動するウィンドウ占有�
 
 [tui]
 theme = "auto"             # auto | dark | light | plain
+language = "auto"          # auto | ja | en
 ```
 
 TUI のアクセント色は ANSI 16 色パレット（ターミナルテーマに追従）、フッターや
@@ -584,6 +585,12 @@ TUI のアクセント色は ANSI 16 色パレット（ターミナルテーマ�
 判定が合わない場合は `dark`/`light` を明示、どうしても合わないテーマでは
 `plain` で全装飾を無効化できます（エラーは `✗` マーカー付きなので色に
 依存しません）。
+
+`language` は対話 UI（`/help`・ヒント・プロンプト・承認ダイアログ）の言語です。
+`auto` は `LC_ALL`/`LC_MESSAGES`/`LANG` に従い（接頭辞 `ja` なら日本語、それ
+以外は英語）、`ja`/`en` で強制できます。起動時に一度だけ解決されます。ログ
+体裁の行（バナーラベル・`warning:`）、`--help`、モデル向けテキストは設計上
+英語のままです。
 
 優先順位: フラグ（`--model`）> `GEMAGENT_*` > `GOOGLE_CLOUD_*` > config file
 > defaults。設定ファイル内の未知キーはエラーになります（strict decode）。

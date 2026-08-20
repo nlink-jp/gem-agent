@@ -7,14 +7,16 @@ import (
 	"testing"
 
 	"github.com/nlink-jp/gem-agent/internal/config"
+	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
 func TestBroadRoot(t *testing.T) {
 	home := "/Users/op"
+	// broadRoot returns stable keys; uitext localizes them (ADR-0029).
 	broad := map[string]string{
-		"/":         "the filesystem root",
-		"/Users/op": "your home directory",
-		"/Users":    "an ancestor of your home directory",
+		"/":         "root",
+		"/Users/op": "home",
+		"/Users":    "home-ancestor",
 	}
 	for dir, wantSub := range broad {
 		if got := broadRoot(dir, home); !strings.Contains(got, wantSub) {
@@ -29,14 +31,15 @@ func TestBroadRoot(t *testing.T) {
 }
 
 func TestConfirmBroadRootNonInteractiveRefuses(t *testing.T) {
-	err := confirmBroadRoot("your home directory", "/Users/op", false, strings.NewReader(""), &strings.Builder{})
+	msgs := uitext.For(uitext.EN)
+	err := confirmBroadRoot("home", "/Users/op", false, strings.NewReader(""), &strings.Builder{}, msgs)
 	if err == nil || !strings.Contains(err.Error(), "interactively") {
 		t.Errorf("non-interactive broad root = %v, want a refusal naming the interactive path", err)
 	}
-	if err := confirmBroadRoot("x", "/", true, strings.NewReader("y\n"), &strings.Builder{}); err != nil {
+	if err := confirmBroadRoot("root", "/", true, strings.NewReader("y\n"), &strings.Builder{}, msgs); err != nil {
 		t.Errorf("confirmed start refused: %v", err)
 	}
-	if err := confirmBroadRoot("x", "/", true, strings.NewReader("\n"), &strings.Builder{}); err == nil {
+	if err := confirmBroadRoot("root", "/", true, strings.NewReader("\n"), &strings.Builder{}, msgs); err == nil {
 		t.Error("bare Enter must default to NO")
 	}
 }
@@ -59,8 +62,8 @@ func TestProbeProject(t *testing.T) {
 	if o.Skills != 1 {
 		t.Errorf("skills = %d", o.Skills)
 	}
-	if len(o.describe()) != 3 {
-		t.Errorf("describe = %v", o.describe())
+	if len(o.describe(uitext.For(uitext.EN))) != 3 {
+		t.Errorf("describe = %v", o.describe(uitext.For(uitext.EN)))
 	}
 }
 
@@ -80,7 +83,7 @@ func TestResolveProjectTrustPersists(t *testing.T) {
 	cfg, pf, policyPath, project := trustFixture(t)
 
 	var out strings.Builder
-	trusted, note := resolveProjectTrust(cfg, pf, policyPath, project, true, strings.NewReader("y\n"), &out)
+	trusted, note := resolveProjectTrust(cfg, pf, policyPath, project, true, strings.NewReader("y\n"), &out, uitext.For(uitext.EN))
 	if !trusted || note != "" {
 		t.Fatalf("granted run: trusted=%v note=%q", trusted, note)
 	}
@@ -97,7 +100,7 @@ func TestResolveProjectTrustPersists(t *testing.T) {
 		t.Fatalf("persisted trust = %q", pf2.TrustFor(project))
 	}
 	trusted, _ = resolveProjectTrust(cfg, pf2, policyPath, project, true,
-		strings.NewReader(""), &strings.Builder{}) // no input available: must not prompt
+		strings.NewReader(""), &strings.Builder{}, uitext.For(uitext.EN)) // no input available: must not prompt
 	if !trusted {
 		t.Error("second run re-asked or forgot the decision")
 	}
@@ -106,7 +109,7 @@ func TestResolveProjectTrustPersists(t *testing.T) {
 // Declining starts bare and says so; bare Enter means decline.
 func TestResolveProjectTrustDecline(t *testing.T) {
 	cfg, pf, policyPath, project := trustFixture(t)
-	trusted, note := resolveProjectTrust(cfg, pf, policyPath, project, true, strings.NewReader("\n"), &strings.Builder{})
+	trusted, note := resolveProjectTrust(cfg, pf, policyPath, project, true, strings.NewReader("\n"), &strings.Builder{}, uitext.For(uitext.EN))
 	if trusted {
 		t.Fatal("bare Enter granted trust — the default must be NO")
 	}
@@ -122,7 +125,7 @@ func TestResolveProjectTrustDecline(t *testing.T) {
 // ADR-0023 §5: non-interactive + undecided = bare run, nothing recorded.
 func TestResolveProjectTrustNonInteractiveBare(t *testing.T) {
 	cfg, pf, policyPath, project := trustFixture(t)
-	trusted, note := resolveProjectTrust(cfg, pf, policyPath, project, false, strings.NewReader(""), &strings.Builder{})
+	trusted, note := resolveProjectTrust(cfg, pf, policyPath, project, false, strings.NewReader(""), &strings.Builder{}, uitext.For(uitext.EN))
 	if trusted {
 		t.Fatal("undecided non-interactive run loaded the project's files")
 	}
@@ -139,7 +142,7 @@ func TestResolveProjectTrustNonInteractiveBare(t *testing.T) {
 func TestResolveProjectTrustShortcuts(t *testing.T) {
 	cfg, pf, policyPath, project := trustFixture(t)
 	cfg.Approval.TrustedProjects = []string{project}
-	trusted, _ := resolveProjectTrust(cfg, pf, policyPath, project, true, strings.NewReader(""), &strings.Builder{})
+	trusted, _ := resolveProjectTrust(cfg, pf, policyPath, project, true, strings.NewReader(""), &strings.Builder{}, uitext.For(uitext.EN))
 	if !trusted {
 		t.Error("trusted_projects entry did not auto-trust")
 	}
@@ -147,7 +150,7 @@ func TestResolveProjectTrustShortcuts(t *testing.T) {
 	cfg2 := &config.Config{}
 	emptyProject := t.TempDir()
 	var out strings.Builder
-	trusted, note := resolveProjectTrust(cfg2, pf, policyPath, emptyProject, true, strings.NewReader(""), &out)
+	trusted, note := resolveProjectTrust(cfg2, pf, policyPath, emptyProject, true, strings.NewReader(""), &out, uitext.For(uitext.EN))
 	if !trusted || note != "" || out.Len() != 0 {
 		t.Errorf("empty project: trusted=%v note=%q prompt=%q — nothing to ask", trusted, note, out.String())
 	}

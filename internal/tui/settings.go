@@ -175,7 +175,7 @@ func (m Model) settingsView() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(m.st.user.Render("settings") + m.st.hint.Render("  ↑↓ 選択 · ←→/Enter 変更 · s 保存先 · Esc 閉じる"))
+	b.WriteString(m.st.user.Render("settings") + m.st.hint.Render(m.msgs.SettingsHint))
 	if start > 0 {
 		b.WriteString("\n" + m.st.hint.Render(fmt.Sprintf("  … %d more above", start)))
 	}

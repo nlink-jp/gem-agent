@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.24.0] - 2026-08-20
+
+### Added — UI language mode (ADR-0029, operator request)
+
+- `[tui].language = "auto" | "ja" | "en"` (default auto: first
+  non-empty of LC_ALL/LC_MESSAGES/LANG; "ja" prefix selects Japanese).
+  The interactive chrome — /help, hints, the approval dialog and its
+  verdicts, queue notices, /auto//clear//compact feedback, and the
+  startup-safety prompts — now renders entirely in one language
+  instead of the historical EN/JA mix
+- The strings live in one catalog struct with two complete literals
+  (internal/uitext); a completeness test fails on any string missing
+  from either language, so the mix cannot silently return
+- Deliberately still English: banner labels and warning: lines
+  (grep-stable log output), cobra --help, model-facing text, error
+  chains
+
 ## [0.23.0] - 2026-08-20
 
 ### Added — Tab completion for /commands (operator request)

@@ -27,6 +27,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/skills"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/tui"
+	"github.com/nlink-jp/gem-agent/internal/uitext"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -106,6 +107,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	// UI language, resolved once (ADR-0029): the chrome that follows —
+	// prompts, TUI, slash output — is built with it.
+	msgs := uitext.For(uitext.Resolve(cfg.TUI.Language, os.Getenv))
 
 	// --- project directory ---
 	cwd, err := os.Getwd()
@@ -124,7 +128,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	interactive := flagPrompt == "" && term.IsTerminal(int(os.Stdin.Fd()))
 	home, _ := os.UserHomeDir()
 	if reason := broadRoot(projectDir, home); reason != "" {
-		if err := confirmBroadRoot(reason, projectDir, interactive, os.Stdin, cmd.ErrOrStderr()); err != nil {
+		if err := confirmBroadRoot(reason, projectDir, interactive, os.Stdin, cmd.ErrOrStderr(), msgs); err != nil {
 			return err
 		}
 	}
@@ -160,7 +164,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// --- first-run project trust (ADR-0023): does this project's own
 	// instruction files / .mcp.json / skills get loaded at all? ---
 	projectTrusted, trustNote := resolveProjectTrust(
-		cfg, policyFile, policyPath, projectDir, interactive, os.Stdin, cmd.ErrOrStderr())
+		cfg, policyFile, policyPath, projectDir, interactive, os.Stdin, cmd.ErrOrStderr(), msgs)
 	if trustNote != "" {
 		fmt.Fprintf(stderr, "%s\n", trustNote)
 	}
@@ -542,7 +546,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			},
 			Compact: func(compactCtx context.Context) {
 				go func() {
-					note, err := compactNow(compactCtx, ag)
+					note, err := compactNow(compactCtx, ag, msgs)
 					if err == nil {
 						prog.Send(tui.Attached{Notes: []string{note}})
 					}
@@ -568,7 +572,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			Slash: func(in string) (string, bool, bool) {
 				return slashOutput(in, ag, registry, mcpSummary, skillsList,
 					func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
-					func() string { return memoryListing(memBase, projectDir) })
+					func() string { return memoryListing(memBase, projectDir) }, msgs)
 			},
 		})
 		prog = tea.NewProgram(model)
@@ -637,7 +641,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// runTurn makes Ctrl+C interrupt the summariser call rather
 			// than kill the process (ADR-0021).
 			runErr := runTurn(ctx, func(compactCtx context.Context) error {
-				note, err := compactNow(compactCtx, ag)
+				note, err := compactNow(compactCtx, ag, msgs)
 				if err == nil {
 					fmt.Fprintln(stderr, note)
 				}
@@ -653,7 +657,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		if strings.HasPrefix(input, "/") {
 			out, _, quit := slashOutput(input, ag, registry, mcpSummary, skillsList,
 				func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
-				func() string { return memoryListing(memBase, projectDir) })
+				func() string { return memoryListing(memBase, projectDir) }, msgs)
 			fmt.Fprint(stderr, out)
 			if quit {
 				return nil
@@ -753,16 +757,15 @@ func buildExecFn(sandboxOn bool, projectDir string) (tools.ExecFunc, error) {
 // compactNow runs a manual /compact and renders the outcome. "Nothing
 // to compact" is a normal answer, not an error: the operator asked a
 // reasonable question and the answer is no.
-func compactNow(ctx context.Context, ag *agent.Agent) (string, error) {
+func compactNow(ctx context.Context, ag *agent.Agent, msgs *uitext.Messages) (string, error) {
 	res, err := ag.Compact(ctx)
 	switch {
 	case errors.Is(err, agent.ErrNothingToCompact):
-		return "nothing to compact yet — the conversation is short enough that a summary would lose more than it saves", nil
+		return msgs.NothingToCompact, nil
 	case err != nil:
 		return "", err
 	}
-	return fmt.Sprintf("compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
-		res.Replaced, res.After-1), nil
+	return fmt.Sprintf(msgs.CompactedFmt, res.Replaced, res.After-1), nil
 }
 
 // runDirectShell executes a !-prefixed command through the same
@@ -865,49 +868,13 @@ func resolveTheme(configured string) string {
 // slashOutput executes a /command and returns its output text — shared
 // by the TUI (which prints it into scrollback, errors highlighted) and
 // the plain REPL (which writes it to stderr).
-func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, usage func() string, memoryInfo func() string) (output string, isErr bool, quit bool) {
+func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, usage func() string, memoryInfo func() string, msgs *uitext.Messages) (output string, isErr bool, quit bool) {
 	var b strings.Builder
 	switch strings.Fields(input)[0] {
 	case "/help":
-		b.WriteString(`commands:
-  /help    show this help
-  /tools   list available tools
-  /mcp     show connected MCP servers
-  /auto    toggle auto-approve (shift+tab does the same, and works mid-run)
-  /compact summarise the older half of the conversation to free context
-  /settings show every setting with where it came from; edit policy + toggles
-  /usage   token accounting: main loop, cache hit rate, side-calls, web tools
-  /memory  list persisted memories (global + this project); saves are approval-gated
-  /skills  list installed skills (Claude Code format, read as-is)
-  /skill <name> [args]  invoke a skill directly
-  /clear   reset the conversation history
-  /quit    exit (Ctrl+D also works)
-auto-approve: safe changes run unattended; destructive, out-of-project,
-  credential-touching, or uncertain calls still ask (two-tier review)
-completion:
-  Tab completes /commands (and skill names after "/skill "), and
-  @-references below
-file references:
-  @<path>       attach a project file or directory to the message (Tab completes)
-  @<img>.png    attach an image — absolute and ~ paths work for images
-                (@~/Desktop/shot.png), because you typed them yourself
-  @clipboard    attach the clipboard image (Cmd+Ctrl+Shift+4, then this)
-shell:
-  !<command>  run it directly (sandboxed, no approval; output is shared with the model)
-keys:
-  Enter 送信 · ↑↓ 履歴 · Ctrl+C 中断/クリア · Ctrl+D 終了
-  実行中も入力できます: Enter で次のメッセージとして予約され、ターンが正常に
-    終わった時点で送信されます（失敗・中断時は未送信のまま入力欄へ戻ります）
-    ※ ! と / のコマンドは予約できません — Ctrl+C で中断してから実行します
-  改行（複数行入力）: Ctrl+J もしくは 行末に \ を置いて Enter
-    ※ Option+Enter は「Option を Meta として送る」設定の端末でのみ有効
-      （既定では通常の Enter と同じバイトになり送信されます）
-  複数行ペーストはそのまま 1 メッセージになります
-  承認ダイアログ: ←→/Tab で選択 · Enter 決定（y/n/a も可）
-mutating tools prompt for approval: y = once, a = always this session
-  (Block-tier calls and always-policy tools keep asking — 'a' never
-   covers the dangerous cases, only the routine ones)
-`)
+		// The text lives in uitext (ADR-0029) — both languages in full,
+		// pinned to the command set by TestHelpListsEveryCommand.
+		b.WriteString(msgs.Help)
 	case "/tools":
 		// The LIVE policy: a /settings edit or a 'p' answer mid-session
 		// must show here, or the display the operator audits gating with
@@ -934,9 +901,9 @@ mutating tools prompt for approval: y = once, a = always this session
 	case "/auto":
 		ag.SetAutoApprove(!ag.AutoApprove())
 		if ag.AutoApprove() {
-			b.WriteString("auto-approve: ON — safe changes run unattended; risky ones still ask\n")
+			b.WriteString(msgs.AutoOn)
 		} else {
-			b.WriteString("auto-approve: OFF — every change asks\n")
+			b.WriteString(msgs.AutoOff)
 		}
 	case "/usage":
 		b.WriteString(usage())
@@ -946,7 +913,7 @@ mutating tools prompt for approval: y = once, a = always this session
 		b.WriteString(skillsListing(skillsList))
 	case "/clear":
 		ag.Reset()
-		b.WriteString("history cleared — the next message starts a fresh conversation\n")
+		b.WriteString(msgs.HistoryCleared)
 	case "/quit", "/exit":
 		return "bye\n", false, true
 	case "/mcp":

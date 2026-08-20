@@ -92,6 +92,9 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0028`](adr/0028-self-healing-line-counter.ja.md) — 印字行カウンタは
   現実に追従: 高すぎるフレームは端末をスクロールさせ、カウンタは溢れ分を
   自己修復する（ADR-0003 の定義を修正）
+- [`ADR-0029`](adr/0029-ui-language.ja.md) — UI 言語モード:
+  `[tui].language` auto/ja/en、カタログ構造体 1 つに完全なリテラル 2 面、
+  完全性はテストで強制。ログ体裁とモデル向けテキストは英語のまま
 
 ## History（履歴）
 

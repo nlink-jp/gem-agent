@@ -13,6 +13,8 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
 type phase int
@@ -32,18 +34,15 @@ const (
 	minHeight = 4
 )
 
-// approvalOptions are the approval dialog's selectable answers, in
-// display order. The index is the model's `choice`.
-var approvalOptions = []struct {
-	label  string
-	answer byte
-}{
-	{"許可 (y)", 'y'},
-	{"拒否 (n)", 'n'},
-	{"常に許可 (a)", 'a'},
-	// Persisting is deliberately a separate answer from "a": one is a
-	// session convenience, the other edits a file on disk (ADR-0009 §5).
-	{"今後聞かない (p)", 'p'},
+// approvalAnswers are the approval dialog's selectable answers, in
+// display order. The index is the model's `choice`; the labels come
+// from the language catalog (ADR-0029). Persisting ('p') is
+// deliberately a separate answer from 'a': one is a session
+// convenience, the other edits a file on disk (ADR-0009 §5).
+var approvalAnswers = []byte{'y', 'n', 'a', 'p'}
+
+func (m Model) approvalLabels() []string {
+	return []string{m.msgs.ApproveAllow, m.msgs.ApproveDeny, m.msgs.ApproveAlways, m.msgs.ApprovePersist}
 }
 
 const (
@@ -128,6 +127,9 @@ type Options struct {
 	Compact   CompactStarter
 	Slash     SlashHandler
 	BaseCtx   context.Context
+	// Msgs is the resolved language catalog (ADR-0029); nil means
+	// English.
+	Msgs *uitext.Messages
 	// Theme is "dark", "light", or "notty" (plain: no colors anywhere).
 	// It MUST be decided by the caller BEFORE the Bubble Tea program
 	// starts: background detection sends an OSC query, and once raw
@@ -174,6 +176,8 @@ type Options struct {
 type Model struct {
 	ta   textarea.Model
 	spin spinner.Model
+	// msgs is the resolved language catalog (ADR-0029); never nil.
+	msgs *uitext.Messages
 
 	phase   phase
 	history []string
@@ -252,11 +256,15 @@ type Model struct {
 
 // New creates the model.
 func New(opts Options) Model {
+	msgs := opts.Msgs
+	if msgs == nil {
+		msgs = uitext.For(uitext.EN)
+	}
 	ta := textarea.New()
 	// The placeholder is where key discovery lives now that the
 	// always-on hint line is gone (it only shows while the input is
 	// empty, so it costs nothing during a conversation).
-	ta.Placeholder = "message…  Enter 送信 · Ctrl+J 改行 · /help · !shell"
+	ta.Placeholder = msgs.Placeholder
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 0
 	ta.SetHeight(1)
@@ -268,6 +276,7 @@ func New(opts Options) Model {
 	m := Model{
 		ta:              ta,
 		spin:            sp,
+		msgs:            msgs,
 		histIdx:         -1,
 		live:            &strings.Builder{},
 		hold:            &bottomHold{},
@@ -444,7 +453,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case AutoApproved:
-		return m, m.emit(m.st.tool.Render("  ↳ auto-approved (" + msg.Tier + "): " + msg.Reason))
+		return m, m.emit(m.st.tool.Render(fmt.Sprintf(m.msgs.AutoApprovedFmt, msg.Tier, msg.Reason)))
 
 	case AutoMode:
 		m.autoMode = bool(msg)
@@ -467,7 +476,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		interrupted := ""
 		if msg.Interrupted {
-			interrupted = m.st.status.Render("(interrupted)")
+			interrupted = m.st.status.Render(m.msgs.Interrupted)
 		}
 		// Raw terminal output — never through the Markdown renderer —
 		// and the outcome line in the same single write.
@@ -484,9 +493,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		tail := ""
 		if msg.Err != nil {
 			if errors.Is(msg.Err, context.Canceled) {
-				tail = m.st.status.Render("(interrupted)")
+				tail = m.st.status.Render(m.msgs.Interrupted)
 			} else {
-				tail = m.st.errS.Render("✗ error: " + msg.Err.Error())
+				tail = m.st.errS.Render(m.msgs.ErrorPrefix + msg.Err.Error())
 			}
 		}
 		var cmds []tea.Cmd
@@ -644,13 +653,13 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	answer := byte(0)
 	switch msg.Type {
 	case tea.KeyLeft, tea.KeyUp, tea.KeyShiftTab:
-		m.choice = (m.choice - 1 + len(approvalOptions)) % len(approvalOptions)
+		m.choice = (m.choice - 1 + len(approvalAnswers)) % len(approvalAnswers)
 		return m, nil
 	case tea.KeyRight, tea.KeyDown, tea.KeyTab:
-		m.choice = (m.choice + 1) % len(approvalOptions)
+		m.choice = (m.choice + 1) % len(approvalAnswers)
 		return m, nil
 	case tea.KeyEnter:
-		answer = approvalOptions[m.choice].answer
+		answer = approvalAnswers[m.choice]
 	case tea.KeyEsc, tea.KeyCtrlC:
 		answer = 'n'
 	}
@@ -698,10 +707,10 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	verdict := map[byte]string{
-		'y': "approved",
-		'n': "denied",
-		'a': "approved (always this session)",
-		'p': "approved (and this tool will not ask again)",
+		'y': m.msgs.VerdictApproved,
+		'n': m.msgs.VerdictDenied,
+		'a': m.msgs.VerdictAlways,
+		'p': m.msgs.VerdictPersist,
 	}[answer]
 	cmds = append([]tea.Cmd{m.emit(m.st.tool.Render("  ↳ " + verdict))}, cmds...)
 	return m, tea.Sequence(cmds...)
@@ -737,7 +746,7 @@ func (m Model) updateRunningInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// everything after a queued `/command`. The text stays in the
 		// box; Ctrl+C interrupts the turn if it cannot wait.
 		if strings.HasPrefix(text, "!") || strings.HasPrefix(text, "/") {
-			return m, m.emit(m.st.warn.Render("⚠ ! と / のコマンドは実行中には送れません — Ctrl+C で中断してから実行してください（入力は残っています）"))
+			return m, m.emit(m.st.warn.Render(m.msgs.QueueRefused))
 		}
 		m.ta.Reset()
 		m.ta.SetHeight(1)
@@ -749,7 +758,7 @@ func (m Model) updateRunningInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.pending = text
 		}
-		return m, m.emit(m.st.hint.Render("⏎ queued: " + clip(text, 100)))
+		return m, m.emit(m.st.hint.Render(m.msgs.QueuedPrefix + clip(text, 100)))
 
 	case msg.Type == tea.KeyCtrlD, msg.Type == tea.KeyUp, msg.Type == tea.KeyDown:
 		// Quitting and history navigation stay prompt-only: both would
@@ -793,7 +802,7 @@ func (m Model) resumeAfterTurn(cmds []tea.Cmd, clean bool) (tea.Model, tea.Cmd) 
 		m.ta.CursorEnd()
 		m.syncHeight()
 		cmds = append(cmds,
-			m.emit(m.st.warn.Render("⚠ the queued message was not sent — the turn did not finish. It is back in the input box")),
+			m.emit(m.st.warn.Render(m.msgs.QueueHandback)),
 			textarea.Blink)
 		return m, tea.Sequence(cmds...)
 	}
@@ -817,11 +826,11 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.histIdx = -1
 			return m, nil
 		}
-		return m, tea.Sequence(m.emit(m.st.hint.Render("bye")), tea.Quit)
+		return m, tea.Sequence(m.emit(m.st.hint.Render(m.msgs.Bye)), tea.Quit)
 
 	case msg.Type == tea.KeyCtrlD:
 		if strings.TrimSpace(m.ta.Value()) == "" {
-			return m, tea.Sequence(m.emit(m.st.hint.Render("bye")), tea.Quit)
+			return m, tea.Sequence(m.emit(m.st.hint.Render(m.msgs.Bye)), tea.Quit)
 		}
 		return m, nil
 
@@ -1134,7 +1143,7 @@ func (m Model) viewContent() string {
 		return m.settingsView() + "\n" + m.footer() + "\n"
 	case phaseRunning:
 		return m.liveView() + "\n" + m.spin.View() + " " + m.st.status.Render(m.status) +
-			m.st.hint.Render("  (Ctrl+C で中断)") + "\n" + m.footer() + "\n"
+			m.st.hint.Render(m.msgs.CtrlCHint) + "\n" + m.footer() + "\n"
 	case phaseApproval:
 		req := m.approval
 		if req == nil {
@@ -1145,10 +1154,10 @@ func (m Model) viewContent() string {
 		// the operator approve a command they have not seen, so the
 		// count of hidden lines is shown (ADR-0021).
 		detail, hidden := clipDetail(req.Detail, maxApprovalDetailLines)
-		body := "approval required: " + req.Tool + "\n" +
+		body := fmt.Sprintf(m.msgs.ApprovalTitleFmt, req.Tool) + "\n" +
 			m.st.hint.Render(detail)
 		if hidden > 0 {
-			body += "\n" + m.st.warn.Render(fmt.Sprintf("⚠ +%d 行が省略されています — 全体を見るまで承認しないでください（拒否して確認できます）", hidden))
+			body += "\n" + m.st.warn.Render(fmt.Sprintf(m.msgs.ApprovalHiddenFmt, hidden))
 		}
 		if req.Reason != "" {
 			// The escalation cause gets its own accented line: in auto
@@ -1158,7 +1167,7 @@ func (m Model) viewContent() string {
 			body += "\n" + m.st.warn.Render("⚠ "+clip(req.Reason, 200))
 		}
 		body += "\n" + m.optionsLine() + "\n" +
-			m.st.hint.Render("←→/Tab 選択 · Enter 決定 · y/n/a 直接指定 · Esc 拒否")
+			m.st.hint.Render(m.msgs.ApprovalHint)
 		return m.liveView() + "\n" + m.st.box.Render(body) + "\n" + m.footer() + "\n"
 	default:
 		// One status line only — the key bindings live in /help. Two
@@ -1273,13 +1282,14 @@ func (m Model) toggleAutoMode() (tea.Model, tea.Cmd) {
 // with "▶" as well as styled, so it stays visible under theme = plain
 // (nothing here may depend on color alone).
 func (m Model) optionsLine() string {
-	parts := make([]string, 0, len(approvalOptions))
-	for i, opt := range approvalOptions {
+	labels := m.approvalLabels()
+	parts := make([]string, 0, len(labels))
+	for i, label := range labels {
 		if i == m.choice {
-			parts = append(parts, m.st.selected.Render("▶ "+opt.label))
+			parts = append(parts, m.st.selected.Render("▶ "+label))
 			continue
 		}
-		parts = append(parts, "  "+opt.label)
+		parts = append(parts, "  "+label)
 	}
 	return strings.Join(parts, "   ")
 }

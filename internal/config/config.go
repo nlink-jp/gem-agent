@@ -151,6 +151,10 @@ type TUIConfig struct {
 	// or "plain" (no colors at all — the escape hatch for terminal
 	// themes that fight any styling).
 	Theme string `toml:"theme"`
+	// Language: "auto" (LC_ALL → LC_MESSAGES → LANG, POSIX-style),
+	// "ja", or "en" — the language of the interactive chrome
+	// (ADR-0029). Resolved once at startup.
+	Language string `toml:"language"`
 }
 
 // MCPConfig controls the MCP client. Server definitions live in the
@@ -246,7 +250,7 @@ func defaults() Config {
 		Sandbox: SandboxConfig{Enabled: true},
 		Agent:   AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120, AutoCompact: true, CompactAtPct: 80},
 		MCP:     MCPConfig{Enabled: true, CallTimeoutSec: 60},
-		TUI:     TUIConfig{Theme: "auto"},
+		TUI:     TUIConfig{Theme: "auto", Language: "auto"},
 	}
 }
 
@@ -335,7 +339,7 @@ var trackedKeys = []string{
 	"agent.max_turns", "agent.shell_timeout_sec", "agent.auto_approve",
 	"agent.auto_compact", "agent.compact_at_pct",
 	"mcp.enabled", "mcp.call_timeout_sec",
-	"tui.theme",
+	"tui.theme", "tui.language",
 }
 
 func (c *Config) validate() error {
@@ -376,6 +380,11 @@ func (c *Config) validate() error {
 	case "auto", "dark", "light", "plain":
 	default:
 		return fmt.Errorf("[tui].theme must be auto, dark, light, or plain (got %q)", c.TUI.Theme)
+	}
+	switch c.TUI.Language {
+	case "auto", "ja", "en":
+	default:
+		return fmt.Errorf("[tui].language must be auto, ja, or en (got %q)", c.TUI.Language)
 	}
 	if c.Model.ContextWindow < 0 {
 		return fmt.Errorf("[model].context_window must not be negative")

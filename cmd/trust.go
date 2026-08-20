@@ -10,26 +10,28 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/instructions"
 	"github.com/nlink-jp/gem-agent/internal/mcp"
+	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
 // broadRoot names why projectDir is too broad to confine anything
 // (ADR-0023 §1), or "" when it is an ordinary project directory. Broad
 // means: the filesystem root, the home directory, or an ancestor of
 // home — "confined to the project" would quietly mean the operator's
-// entire tree.
+// entire tree. The return value is a stable key ("root", "home",
+// "home-ancestor") that uitext localizes for display (ADR-0029).
 func broadRoot(projectDir, home string) string {
 	if projectDir == string(filepath.Separator) {
-		return "the filesystem root"
+		return "root"
 	}
 	if home == "" {
 		return ""
 	}
 	home = filepath.Clean(home)
 	if projectDir == home {
-		return "your home directory"
+		return "home"
 	}
 	if strings.HasPrefix(home, projectDir+string(filepath.Separator)) {
-		return "an ancestor of your home directory"
+		return "home-ancestor"
 	}
 	return ""
 }
@@ -49,16 +51,16 @@ func (o projectOffering) empty() bool {
 
 // describe renders the offering for the trust prompt, naming what each
 // item implies — a server entry is a child process, not a config line.
-func (o projectOffering) describe() []string {
+func (o projectOffering) describe(msgs *uitext.Messages) []string {
 	var lines []string
 	if len(o.Instructions) > 0 {
-		lines = append(lines, strings.Join(o.Instructions, ", ")+" (injected as instructions)")
+		lines = append(lines, fmt.Sprintf(msgs.TrustItemInstructionsFmt, strings.Join(o.Instructions, ", ")))
 	}
 	if o.HasMCP {
-		lines = append(lines, fmt.Sprintf(".mcp.json (%d server(s) — each starts a child process)", o.MCPServers))
+		lines = append(lines, fmt.Sprintf(msgs.TrustItemMCPFmt, o.MCPServers))
 	}
 	if o.Skills > 0 {
-		lines = append(lines, fmt.Sprintf(".claude/skills/ (%d entr(y/ies) — loaded as your instructions)", o.Skills))
+		lines = append(lines, fmt.Sprintf(msgs.TrustItemSkillsFmt, o.Skills))
 	}
 	return lines
 }
@@ -92,7 +94,7 @@ func probeProject(projectDir string) projectOffering {
 // files may load (ADR-0023). It may prompt (interactive, undecided,
 // offering non-empty) and may persist the answer. The returned note,
 // when non-empty, belongs in the banner.
-func resolveProjectTrust(cfg *config.Config, policyFile *config.PolicyFile, policyPath, projectDir string, interactive bool, in io.Reader, out io.Writer) (trusted bool, note string) {
+func resolveProjectTrust(cfg *config.Config, policyFile *config.PolicyFile, policyPath, projectDir string, interactive bool, in io.Reader, out io.Writer, msgs *uitext.Messages) (trusted bool, note string) {
 	switch {
 	case cfg.TrustsProject(projectDir):
 		// Hand-declared in [approval].trusted_projects — the stronger
@@ -102,7 +104,7 @@ func resolveProjectTrust(cfg *config.Config, policyFile *config.PolicyFile, poli
 	case policyFile.TrustFor(projectDir) == config.TrustGranted:
 		return true, ""
 	case policyFile.TrustFor(projectDir) == config.TrustDeclined:
-		return false, "project trust: declined — the project's instruction files, .mcp.json, and skills are not loaded (edit " + policyPath + " to re-ask)"
+		return false, fmt.Sprintf(msgs.TrustDeclinedFmt, policyPath)
 	}
 
 	offering := probeProject(projectDir)
@@ -113,14 +115,14 @@ func resolveProjectTrust(cfg *config.Config, policyFile *config.PolicyFile, poli
 		// Undecided and nobody to ask: run bare, decide nothing
 		// (ADR-0023 §5) — refusing would break read-only -p pipelines
 		// over fresh clones, the legitimate inspection workflow.
-		return false, "project trust: undecided (non-interactive) — the project's instruction files, .mcp.json, and skills are not loaded; run interactively once to decide"
+		return false, msgs.TrustUndecided
 	}
 
-	fmt.Fprintf(out, "\nnew project: %s\nthis project provides:\n", projectDir)
-	for _, line := range offering.describe() {
+	fmt.Fprintf(out, msgs.TrustHeaderFmt, projectDir)
+	for _, line := range offering.describe(msgs) {
 		fmt.Fprintf(out, "  %s\n", line)
 	}
-	fmt.Fprint(out, "trust this project? These files will be treated as YOUR instructions and its MCP servers will run. [y/N]: ")
+	fmt.Fprint(out, msgs.TrustQuestion)
 	answer := readLineUnbuffered(in)
 	if strings.EqualFold(strings.TrimSpace(answer), "y") || strings.EqualFold(strings.TrimSpace(answer), "yes") {
 		policyFile.SetTrust(projectDir, config.TrustGranted)
@@ -133,21 +135,23 @@ func resolveProjectTrust(cfg *config.Config, policyFile *config.PolicyFile, poli
 	if err := policyFile.Save(policyPath); err != nil {
 		fmt.Fprintf(out, "warning: could not record the decision: %v\n", err)
 	}
-	return false, "project trust: declined — the project's instruction files, .mcp.json, and skills are not loaded (edit " + policyPath + " to re-ask)"
+	return false, fmt.Sprintf(msgs.TrustDeclinedFmt, policyPath)
 }
 
 // confirmBroadRoot asks the ADR-0023 §1 question. Non-interactive runs
-// are refused outright: a prompt nobody answers is a hang.
-func confirmBroadRoot(reason, projectDir string, interactive bool, in io.Reader, out io.Writer) error {
+// are refused outright: a prompt nobody answers is a hang. reason is a
+// broadRoot key.
+func confirmBroadRoot(reason, projectDir string, interactive bool, in io.Reader, out io.Writer, msgs *uitext.Messages) error {
+	localized := msgs.BroadReason(reason)
 	if !interactive {
-		return fmt.Errorf("refusing to start in %s (%s): file tools and shell writes would span this entire tree; run interactively to confirm, or start in a project directory", projectDir, reason)
+		return fmt.Errorf(msgs.BroadRootRefusedFmt, projectDir, localized)
 	}
-	fmt.Fprintf(out, "\n⚠ %s is %s.\nFile tools and sandboxed shell writes would span this ENTIRE tree.\nstart anyway? [y/N]: ", projectDir, reason)
+	fmt.Fprintf(out, msgs.BroadRootPromptFmt, projectDir, localized)
 	answer := strings.TrimSpace(readLineUnbuffered(in))
 	if strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes") {
 		return nil
 	}
-	return fmt.Errorf("not starting in %s — cd into a project directory first", projectDir)
+	return fmt.Errorf(msgs.BroadRootAbortFmt, projectDir)
 }
 
 // readLineUnbuffered reads one line byte-by-byte, deliberately without

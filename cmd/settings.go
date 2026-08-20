@@ -81,6 +81,11 @@ func (s *settingsStore) data() tui.SettingsData {
 	ro("limits", "agent.max_turns", strconv.Itoa(s.cfg.Agent.MaxTurns), "agent.max_turns", "")
 	ro("limits", "agent.shell_timeout_sec", strconv.Itoa(s.cfg.Agent.ShellTimeoutSec), "agent.shell_timeout_sec", "")
 	ro("limits", "mcp.call_timeout_sec", strconv.Itoa(s.cfg.MCP.CallTimeoutSec), "mcp.call_timeout_sec", "")
+	// Read-only by design (ADR-0029 §1): the chrome is built with the
+	// resolved language at startup; a live switch would bisect the
+	// scrollback into two languages.
+	ro("session", "tui.language", s.cfg.TUI.Language, "tui.language",
+		"UI language: auto (from LC_ALL/LC_MESSAGES/LANG), ja, or en — applies at next start")
 
 	// Editable: what can take effect without rebuilding anything.
 	d.Rows = append(d.Rows,

@@ -616,6 +616,7 @@ compact_at_pct = 80        # default; share of the window that triggers it
 
 [tui]
 theme = "auto"             # auto | dark | light | plain
+language = "auto"          # auto | ja | en
 ```
 
 TUI accent colors use the ANSI-16 palette (they follow your terminal
@@ -624,6 +625,13 @@ detected background, keeping a real luminance gap on any theme.
 `theme = "auto"` detects dark/light at startup; set `dark`/`light` if
 detection picks wrong, or `plain` to disable all styling (errors keep
 their `✗` marker, so nothing depends on color alone).
+
+`language` selects the language of the interactive chrome — `/help`,
+hints, prompts, and the approval dialog. `auto` follows
+`LC_ALL`/`LC_MESSAGES`/`LANG` (a `ja` prefix means Japanese, anything
+else English); `ja`/`en` force it. Resolved once at startup. Log-shaped
+lines (banner labels, `warning:`), `--help`, and model-facing text stay
+English by design.
 
 Precedence: flags (`--model`) > `GEMAGENT_*` > `GOOGLE_CLOUD_*` > config file
 > defaults. Unknown keys in the file are rejected (strict decode).
