@@ -50,6 +50,8 @@ internal/skills/   Claude Code skill discovery/loading (ADR-0010)
 internal/memory/   agent memory across sessions (ADR-0020): two scopes, budgeted injection
 internal/docext/   stdlib-only Office XML text extraction (ADR-0026): docx/xlsx/pptx
 internal/mediastore/ GCS media uploads (ADR-0027): content-addressed, quota project pinned
+internal/uitext/   ja/en UI string catalogs (ADR-0029): completeness enforced by test —
+                   new operator-facing strings go in BOTH catalogs or make check fails
 internal/statedir/ shared per-project state convention (ADR-0022): root+env override, escape, .project marker
 cmd/settings.go    /settings panel content + edits (ADR-0009)
 internal/mention/  @-reference parsing, project-confined resolution, completion

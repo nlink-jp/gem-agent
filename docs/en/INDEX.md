@@ -102,6 +102,10 @@ excepted).
   `[tui].language` auto/ja/en, one catalog struct with two complete
   literals, completeness enforced by test; log-shaped and model-facing
   text stays English
+- [`ADR-0030`](adr/0030-agent-self-info.md) — `agent_info`: a read-only
+  self-information tool (model, context occupancy, usage, limits,
+  platform); fields earn their place by changing model behavior — GCP
+  identifiers and hostname withheld
 
 ## History
 

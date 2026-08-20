@@ -248,6 +248,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// and continuing without it silently would be worse than stopping.
 	var sessionLog agent.SessionLog
 	sessionPath := "(disabled)"
+	sessionID := ""
 	if sessionDirErr != nil {
 		fmt.Fprintf(stderr, "warning: session log disabled: %v\n", sessionDirErr)
 	} else {
@@ -261,6 +262,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			defer lg.Close()
 			sessionLog = lg
 			sessionPath = lg.Path()
+			sessionID = lg.ID()
 		}
 	}
 
@@ -349,7 +351,37 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// inside prog.Run, so the callbacks below never see it half-set.
 	var prog *tea.Program
 
-	ag := agent.New(agent.Options{
+	// --- agent_info: the model's view of its own runtime (ADR-0030) ---
+	// Registered before agent.New (which caches the declarations); the
+	// snapshot closure reads `ag` lazily — the tool can only run inside
+	// ag.Run, so the pointer is always set by then.
+	var ag *agent.Agent
+	if err := registerInfoTool(registry, func() infoSnapshot {
+		return infoSnapshot{
+			Version:      cmd.Root().Version,
+			OSVersion:    macOSVersion(),
+			Model:        cfg.Model.Name,
+			SummaryModel: summaryModel,
+			Thinking:     cfg.Model.Thinking,
+			Usage:        ag.Usage(),
+			MaxTurns:     cfg.Agent.MaxTurns,
+			ShellTimeout: cfg.Agent.ShellTimeoutSec,
+			AutoApprove:  ag.AutoApprove(),
+			AutoCompact:  ag.AutoCompact(),
+			CompactAtPct: cfg.Agent.CompactAtPct,
+			SandboxOn:    sandboxOn,
+			ProjectDir:   projectDir,
+			SessionID:    sessionID,
+			MCPServers:   mcpSummary,
+			SkillCount:   len(skillsList),
+			MemoryOn:     memBase != "",
+			MediaBucket:  cfg.GCP.Bucket != "",
+		}
+	}); err != nil {
+		return err
+	}
+
+	ag = agent.New(agent.Options{
 		Backend:  backend,
 		Registry: registry,
 		Gate:     gate,

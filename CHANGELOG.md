@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.25.0] - 2026-08-21
+
+### Added — agent_info self-information tool (ADR-0030, operator request)
+
+- New read-only `agent_info` tool: the model can now report its own
+  runtime — version, host platform (macOS version/arch/CPUs), the model
+  it runs as and its thinking level, context-window occupancy,
+  cumulative token usage (same accounting source as /usage), limits,
+  approval/sandbox state, project directory, session id, connected MCP
+  servers, skills, memory and media-bucket availability
+- No approval prompt (read-only tier); "which model are you" and "how
+  much context is left" become one cheap call instead of a guess or a
+  shell_exec approval round
+- Deliberately withheld: GCP project id, bucket name, hostname —
+  environment identifiers with no behavioral value to the model (the
+  bucket appears only as configured/none)
+
 ## [0.24.0] - 2026-08-20
 
 ### Added — UI language mode (ADR-0029, operator request)

@@ -95,6 +95,10 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0029`](adr/0029-ui-language.ja.md) — UI 言語モード:
   `[tui].language` auto/ja/en、カタログ構造体 1 つに完全なリテラル 2 面、
   完全性はテストで強制。ログ体裁とモデル向けテキストは英語のまま
+- [`ADR-0030`](adr/0030-agent-self-info.ja.md) — `agent_info`: read-only
+  自己情報ツール（モデル・コンテキスト占有・使用量・制限・プラット
+  フォーム）。フィールドは「モデルの行動を変えるか」で選別 — GCP
+  識別子とホスト名は非開示
 
 ## History（履歴）
 

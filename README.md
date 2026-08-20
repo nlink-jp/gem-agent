@@ -37,6 +37,12 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   fast dependency-free grep (regex or literal, binaries and `.git`
   skipped, caps reported) — so orientation costs one call, not one round
   per directory
+- **`agent_info`** (ADR-0030): the model's view of its own runtime —
+  version, platform, the model it runs as, thinking level, context
+  occupancy, cumulative token usage, limits, approval/sandbox state,
+  connected MCP servers and skills. Read-only, no approval; the numbers
+  are the `/usage` numbers. GCP identifiers and hostname deliberately
+  excluded (the bucket appears only as configured/none)
 - **`file_info`** (ADR-0016): what a file *is* without reading it into
   context — content-judged type (`file`-command style: Mach-O/ELF/PE,
   archives, scripts; the extension is shown but never trusted), size,
