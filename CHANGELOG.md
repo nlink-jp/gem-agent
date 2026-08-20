@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.19.2] - 2026-08-20
+
+### Fixed — scrollback bursts write once (operator report)
+
+- Consecutive scrollback lines around one event — streamed text + the
+  tool event, streamed text + "(interrupted)" / the error line, shell
+  output + its outcome, attachment reports — now ride a single Println
+  write. Each write is a separate clear-insert-repaint cycle on the
+  inline renderer, and over a slow terminal (SSH) the intermediate
+  frames were visible as content flashing through the output area —
+  the Ctrl+C "(interrupted)" line most prominently. One write, one
+  repaint, no window
+
 ## [0.19.1] - 2026-08-20
 
 ### Fixed — footer bounce once the screen is full (ADR-0024, operator report)

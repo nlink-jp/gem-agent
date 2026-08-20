@@ -416,16 +416,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ToolCall:
-		// Flush accumulated text first so scrollback keeps the true
-		// order: text → tool event → next text. tea.Sequence, never
-		// tea.Batch: Batch runs commands concurrently, and two Println
-		// commands then land in arbitrary order (measured — a note
-		// printed before the line it followed).
-		var cmds []tea.Cmd
-		cmds = append(cmds, m.flushLive()...)
+		// Flushed text and the tool event ride ONE write, keeping the
+		// true order (text → tool event) with a single repaint.
 		m.status = "running " + msg.Name
-		cmds = append(cmds, m.emit(m.st.tool.Render("⚙ "+msg.Name+" "+msg.Detail)))
-		return m, tea.Sequence(cmds...)
+		return m, m.emitJoined(m.takeLive(), m.st.tool.Render("⚙ "+msg.Name+" "+msg.Detail))
 
 	case ApprovalRequest:
 		req := msg
@@ -449,25 +443,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case Attached:
-		var cmds []tea.Cmd
+		var parts []string
 		for _, line := range msg.Lines {
-			cmds = append(cmds, m.emit(m.st.tool.Render("📎 "+line)))
+			parts = append(parts, m.st.tool.Render("📎 "+line))
 		}
 		for _, note := range msg.Notes {
-			cmds = append(cmds, m.emit(m.st.warn.Render("⚠ "+note)))
+			parts = append(parts, m.st.warn.Render("⚠ "+note))
 		}
-		return m, tea.Sequence(cmds...)
+		return m, m.emitJoined(parts...)
 
 	case ShellDone:
 		out := msg.Output
 		if strings.TrimSpace(out) == "" {
 			out = "(no output)"
 		}
-		// Raw terminal output — never through the Markdown renderer.
-		cmds := []tea.Cmd{m.emit(strings.TrimRight(out, "\n"))}
+		interrupted := ""
 		if msg.Interrupted {
-			cmds = append(cmds, m.emit(m.st.status.Render("(interrupted)")))
+			interrupted = m.st.status.Render("(interrupted)")
 		}
+		// Raw terminal output — never through the Markdown renderer —
+		// and the outcome line in the same single write.
+		cmds := []tea.Cmd{m.emitJoined(strings.TrimRight(out, "\n"), interrupted)}
 		m.phase = phaseInput
 		m.status = ""
 		m.cancelTurn = nil
@@ -475,14 +471,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.resumeAfterTurn(cmds, !msg.Interrupted)
 
 	case TurnDone:
-		var cmds []tea.Cmd
-		cmds = append(cmds, m.flushLive()...)
+		// Flushed text and the outcome line ride ONE write: separate
+		// Printlns gave the slow-terminal flash the operator reported.
+		tail := ""
 		if msg.Err != nil {
 			if errors.Is(msg.Err, context.Canceled) {
-				cmds = append(cmds, m.emit(m.st.status.Render("(interrupted)")))
+				tail = m.st.status.Render("(interrupted)")
 			} else {
-				cmds = append(cmds, m.emit(m.st.errS.Render("✗ error: "+msg.Err.Error())))
+				tail = m.st.errS.Render("✗ error: " + msg.Err.Error())
 			}
+		}
+		var cmds []tea.Cmd
+		if c := m.emitJoined(m.takeLive(), tail); c != nil {
+			cmds = append(cmds, c)
 		}
 		m.phase = phaseInput
 		m.status = ""
@@ -588,16 +589,36 @@ func expandTabs(s string) string {
 	return out.String()
 }
 
-// flushLive renders accumulated streamed text as Markdown and emits it
-// to scrollback. Rendering happens exactly once per segment — the live
-// region shows raw text, the flush shows the pretty version.
-func (m *Model) flushLive() []tea.Cmd {
+// takeLive renders the accumulated streamed text as Markdown and
+// returns it for scrollback (empty when nothing streamed). Rendering
+// happens exactly once per segment — the live region shows raw text,
+// the flush shows the pretty version.
+func (m *Model) takeLive() string {
 	text := strings.TrimSpace(m.live.String())
 	m.live.Reset()
 	if text == "" {
+		return ""
+	}
+	return m.render(text)
+}
+
+// emitJoined prints consecutive scrollback lines as ONE write. Every
+// tea.Println is a separate clear-insert-repaint cycle on the inline
+// renderer; over a slow terminal (SSH to the test machine) the
+// intermediate frames are visible as content flashing through the
+// output area — the operator saw the Ctrl+C "(interrupted)" line do
+// exactly that. One write, one repaint, no window (ADR-0003 note).
+func (m *Model) emitJoined(parts ...string) tea.Cmd {
+	kept := parts[:0]
+	for _, p := range parts {
+		if p != "" {
+			kept = append(kept, p)
+		}
+	}
+	if len(kept) == 0 {
 		return nil
 	}
-	return []tea.Cmd{m.emit(m.render(text))}
+	return m.emit(strings.Join(kept, "\n"))
 }
 
 // approvalGrace is how long after the dialog appears keys are ignored —
@@ -1176,11 +1197,9 @@ func (m Model) toggleAutoMode() (tea.Model, tea.Cmd) {
 	if m.autoMode {
 		state = "auto-approve: ON (risky actions still ask)"
 	}
-	// Flush streamed text first so the notice lands after the output it
-	// followed, not before it.
-	cmds := m.flushLive()
-	cmds = append(cmds, m.emit(m.st.tool.Render(state)))
-	return m, tea.Sequence(cmds...)
+	// One write: the notice lands after the output it followed, with a
+	// single repaint.
+	return m, m.emitJoined(m.takeLive(), m.st.tool.Render(state))
 }
 
 // optionsLine renders the selectable answers. The selection is marked
