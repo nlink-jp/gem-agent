@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.26.0] - 2026-08-21
+
+### Fixed — whole-code review round 2 (ADR-0031, operator request)
+
+Five parallel review lenses over the ~4,200 lines added since ADR-0021;
+every accepted finding verified against the code, measured where
+measurable. Highlights (the ADR carries the full list):
+
+- **ja language mode reached the TUI at last**: the resolved catalog
+  was never passed into tui.Options, so the whole chrome fell back to
+  English; a new AST-level wiring test pins the handoff
+- **Denied view_image/read_document no longer attach their bytes**:
+  the attach guard screened only the "error:" prefix, which the
+  denial string does not carry — the operator's refusal was silently
+  ineffective for the largest payloads
+- **Media store can no longer be silently poisoned**: single-fd
+  hash+upload, a verifying reader that fails the stream if the file
+  changed mid-upload, and an abortable writer context so failed
+  copies commit nothing to the permanent content-addressed store
+- **Resume loads under the flock** it appends under; lockSession
+  distinguishes errnos and removes its just-created file on failure
+- **Tab completion is rune-safe**: 資料/説明-style Japanese names
+  drove the byte-wise common-prefix to a lone invalid UTF-8 byte
+  (measured)
+- **The input box renders while a turn runs** (ADR-0007's promise —
+  keys were routed, the box never drawn)
+- Approval dialog adapts its detail budget to short terminals (the
+  clamp was silently cutting the TITLE first); interrupted turns
+  auto-deny in-flight approval requests; per-turn contexts released;
+  policy.toml mutations are flocked read-modify-write; docext gains
+  an aggregate decompression budget; /settings shows the two tracked
+  rows it never rendered and stops offering a theme edit that applied
+  nothing; wide-rune wrap accounting; ~15 further honesty fixes
+- Refuted by measurement (no code change): a transcript ending in an
+  unanswered FunctionCall resumes cleanly against the live API
+
 ## [0.25.1] - 2026-08-21
 
 ### Fixed — parallel same-project launches (operator question)

@@ -1,9 +1,11 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -115,5 +117,64 @@ func TestLoadPolicyFileRejectsUnknownKeys(t *testing.T) {
 func TestPolicyPathSitsBesideTheConfig(t *testing.T) {
 	if got := PolicyPath("/home/me/.config/gem-agent/config.toml"); got != "/home/me/.config/gem-agent/policy.toml" {
 		t.Errorf("PolicyPath = %q", got)
+	}
+}
+
+// MutatePolicyFile is a flocked read-modify-write: a second instance's
+// stale in-memory snapshot must not clobber decisions persisted since
+// it loaded — the measured hazard was a whole-file Save resurrecting a
+// project trust the operator had just declined (review round 2).
+func TestMutatePolicyFileDoesNotClobberConcurrentDecisions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "policy.toml")
+
+	// Instance A declines project X (persisted through Mutate).
+	if _, err := MutatePolicyFile(path, func(pf *PolicyFile) {
+		pf.SetTrust("/x", TrustDeclined)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Instance B — which loaded BEFORE A's decline — edits a tool
+	// policy. Through Mutate it operates on a fresh load, so A's
+	// decline survives.
+	if _, err := MutatePolicyFile(path, func(pf *PolicyFile) {
+		pf.Set("", "write_file", "always")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pf, err := LoadPolicyFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pf.TrustFor("/x") != TrustDeclined {
+		t.Errorf("trust for /x = %q — the concurrent edit clobbered the decline", pf.TrustFor("/x"))
+	}
+	if pf.Tools["write_file"] != "always" {
+		t.Errorf("tool policy lost: %v", pf.Tools)
+	}
+}
+
+// Concurrent mutators must serialize, not lose updates.
+func TestMutatePolicyFileParallel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "policy.toml")
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, err := MutatePolicyFile(path, func(pf *PolicyFile) {
+				pf.Set("", fmt.Sprintf("tool_%d", i), "always")
+			})
+			if err != nil {
+				t.Error(err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	pf, err := LoadPolicyFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pf.Tools) != 8 {
+		t.Errorf("tools = %d, want 8 (lost updates)", len(pf.Tools))
 	}
 }

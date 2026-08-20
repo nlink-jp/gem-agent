@@ -138,6 +138,15 @@ func extractXlsx(data []byte, lim Limits) (string, string, error) {
 	names := xlsxSheetNames(data, lim)
 	var b strings.Builder
 	for i := 1; ; i++ {
+		// Aggregate budget: the per-member cap bounds ONE member, but
+		// many under-cap members accumulated unbounded text before the
+		// final clip ever ran — a crafted workbook was a model-
+		// reachable OOM, read_document being ungated (review round 2).
+		// One member past the budget is fine; clipText trims and
+		// reports.
+		if b.Len() > lim.TextBytes {
+			break
+		}
 		raw, err := readMember(data, fmt.Sprintf("xl/worksheets/sheet%d.xml", i), lim.MemberBytes)
 		if err != nil {
 			break // sheets are numbered contiguously
@@ -279,6 +288,12 @@ func extractPptx(data []byte, lim Limits) (string, string, error) {
 	sort.Ints(nums)
 	var b strings.Builder
 	for _, n := range nums {
+		// Same aggregate budget as xlsx (review round 2): slides that
+		// individually fit the member cap must not accumulate past the
+		// text budget.
+		if b.Len() > lim.TextBytes {
+			break
+		}
 		raw, err := readMember(data, fmt.Sprintf("ppt/slides/slide%d.xml", n), lim.MemberBytes)
 		if err != nil {
 			continue

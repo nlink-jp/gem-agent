@@ -85,3 +85,60 @@ func TestUploadContentAddressedAndDeduped(t *testing.T) {
 		t.Errorf("object prefix wrong: %s", uri3)
 	}
 }
+
+// hookStore lets a test mutate the world between Exists and the
+// upload read — the review-round-2 window.
+type hookStore struct {
+	*fakeStore
+	onWrite func()
+}
+
+func (s *hookStore) Write(ctx context.Context, object, contentType string, r io.Reader) error {
+	if s.onWrite != nil {
+		s.onWrite()
+	}
+	return s.fakeStore.Write(ctx, object, contentType, r)
+}
+
+// A file still being written (a recorder appending) between the hash
+// pass and the upload pass must NOT be committed under the stale hash:
+// the store is permanent and dedupe would serve the wrong bytes
+// forever (review round 2).
+func TestUploadRefusesFileChangedDuringUpload(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rec.m4a")
+	if err := os.WriteFile(path, []byte("original-bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fake := newFakeStore()
+	u := newWithStore("b", &hookStore{fakeStore: fake, onWrite: func() {
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.WriteString("-appended-while-uploading")
+		f.Close()
+	}})
+	_, err := u.Upload(context.Background(), path, "audio/mp4")
+	if err == nil || !strings.Contains(err.Error(), "changed while uploading") {
+		t.Fatalf("changed file uploaded without error: %v", err)
+	}
+	if len(fake.objects) != 0 {
+		t.Errorf("mismatched content committed to the store: %v", len(fake.objects))
+	}
+}
+
+func TestVerifyReaderPassesUnchangedContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ok.m4a")
+	os.WriteFile(path, []byte("stable"), 0o600)
+	fake := newFakeStore()
+	u := newWithStore("b", fake)
+	uri, err := u.Upload(context.Background(), path, "audio/mp4")
+	if err != nil || uri == "" {
+		t.Fatalf("clean upload failed: %v", err)
+	}
+	if fake.writes != 1 {
+		t.Errorf("writes = %d", fake.writes)
+	}
+}

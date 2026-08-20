@@ -263,9 +263,12 @@ func (m Model) settingsWindow(budget int) (int, int) {
 }
 
 // minSettingsHeight is the shortest terminal the panel can render on
-// without overflowing: header + one row (with its section heading) +
+// without overflowing: header + one row WITH its section heading (2
+// lines — the window can never be smaller) + both "… more" markers +
 // scope + footer + trailing newline + the row the pinning reserves.
-const minSettingsHeight = 8
+// At 8 the marker-reserved budget (1) could not hold the 2-line
+// minimum window and the header scrolled off (review round 2).
+const minSettingsHeight = 9
 
 // labelWidth is the value column's start. Long MCP tool names
 // (mcp__urlscan-lookup__get_screenshot) set the floor.

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"text/tabwriter"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/policy"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/tui"
+	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
 // settingsStore builds the panel's rows and applies its edits (ADR-0009).
@@ -27,6 +29,19 @@ type settingsStore struct {
 	ag         *agent.Agent
 	// current is the resolved policy the agent is using.
 	current policy.Policy
+	// sessionEdits marks keys the panel changed this session: their
+	// provenance is "session", not whatever startup layer set the
+	// value the panel just replaced — the display claimed config.toml
+	// authored values it never held (review round 2).
+	sessionEdits map[string]bool
+}
+
+// settingSource is Config.Source with the session-edit override.
+func (s *settingsStore) settingSource(key string) string {
+	if s.sessionEdits[key] {
+		return "session"
+	}
+	return s.cfg.Source(key)
 }
 
 // policyValues are the choices a policy row cycles through. "default"
@@ -80,25 +95,40 @@ func (s *settingsStore) data() tui.SettingsData {
 		"the sandbox is not a menu item — restart with --no-sandbox if you must")
 	ro("limits", "agent.max_turns", strconv.Itoa(s.cfg.Agent.MaxTurns), "agent.max_turns", "")
 	ro("limits", "agent.shell_timeout_sec", strconv.Itoa(s.cfg.Agent.ShellTimeoutSec), "agent.shell_timeout_sec", "")
+	ro("limits", "agent.compact_at_pct", strconv.Itoa(s.cfg.Agent.CompactAtPct)+"%", "agent.compact_at_pct", "")
 	ro("limits", "mcp.call_timeout_sec", strconv.Itoa(s.cfg.MCP.CallTimeoutSec), "mcp.call_timeout_sec", "")
+	// mcp.enabled was tracked but never shown: an operator whose file
+	// disabled MCP was sent to debug mcp.json by /mcp's "no servers"
+	// message instead of seeing the real cause here (review round 2).
+	ro("limits", "mcp.enabled", strconv.FormatBool(s.cfg.MCP.Enabled), "mcp.enabled",
+		"false disables ALL MCP servers, global and project")
 	// Read-only by design (ADR-0029 §1): the chrome is built with the
 	// resolved language at startup; a live switch would bisect the
-	// scrollback into two languages.
-	ro("session", "tui.language", s.cfg.TUI.Language, "tui.language",
+	// scrollback into two languages. "auto" shows what it resolved TO
+	// — the one row whose purpose is display gave the least display
+	// (review round 2).
+	langValue := s.cfg.TUI.Language
+	if langValue == "auto" {
+		langValue = fmt.Sprintf("auto (→ %s)", uitext.Resolve(langValue, os.Getenv))
+	}
+	ro("session", "tui.language", langValue, "tui.language",
 		"UI language: auto (from LC_ALL/LC_MESSAGES/LANG), ja, or en — applies at next start")
 
 	// Editable: what can take effect without rebuilding anything.
 	d.Rows = append(d.Rows,
 		tui.SettingRow{Section: "session", Label: "agent.auto_approve",
-			Value: strconv.FormatBool(s.ag.AutoApprove()), Source: s.cfg.Source("agent.auto_approve"),
+			Value: strconv.FormatBool(s.ag.AutoApprove()), Source: s.settingSource("agent.auto_approve"),
 			Values: []string{"false", "true"}},
 		tui.SettingRow{Section: "session", Label: "agent.auto_compact",
-			Value: strconv.FormatBool(s.ag.AutoCompact()), Source: s.cfg.Source("agent.auto_compact"),
+			Value: strconv.FormatBool(s.ag.AutoCompact()), Source: s.settingSource("agent.auto_compact"),
 			Values: []string{"false", "true"}},
-		tui.SettingRow{Section: "session", Label: "tui.theme",
-			Value: s.cfg.TUI.Theme, Source: s.cfg.Source("tui.theme"),
-			Values: []string{"auto", "dark", "light", "plain"}},
 	)
+	// Read-only by design (review round 2): the row was editable but
+	// applied NOTHING — styles and the glamour renderer are built once
+	// at startup, and "auto" cannot re-detect mid-session (the OSC
+	// query would leak into the input box). An honest restart note
+	// beats a menu that lies, per this panel's own design rule.
+	ro("session", "tui.theme", s.cfg.TUI.Theme, "tui.theme", "applies at next start")
 
 	for _, t := range s.registry.List() {
 		d.Rows = append(d.Rows, tui.SettingRow{
@@ -144,15 +174,21 @@ func (s *settingsStore) Apply(ch tui.SettingChange) (tui.SettingsData, string) {
 	switch ch.Label {
 	case "agent.auto_approve":
 		s.ag.SetAutoApprove(ch.Value == "true")
+		s.markSessionEdit("agent.auto_approve")
 		return s.data(), "auto-approve: " + ch.Value + " (this session)"
 	case "agent.auto_compact":
 		s.ag.SetAutoCompact(ch.Value == "true")
+		s.markSessionEdit("agent.auto_compact")
 		return s.data(), "auto-compact: " + ch.Value + " (this session)"
-	case "tui.theme":
-		s.cfg.TUI.Theme = ch.Value
-		return s.data(), "theme: " + ch.Value + " (this session; set [tui].theme to keep it)"
 	}
 	return s.data(), ""
+}
+
+func (s *settingsStore) markSessionEdit(key string) {
+	if s.sessionEdits == nil {
+		s.sessionEdits = map[string]bool{}
+	}
+	s.sessionEdits[key] = true
 }
 
 func (s *settingsStore) applyPolicy(ch tui.SettingChange) (tui.SettingsData, string) {
@@ -166,10 +202,16 @@ func (s *settingsStore) applyPolicy(ch tui.SettingChange) (tui.SettingsData, str
 		scopeDir = s.projectDir
 		scopeLabel = "in " + abbreviateHome(s.projectDir)
 	}
-	s.policyFile.Set(scopeDir, ch.Tool, value)
-	if err := s.policyFile.Save(s.policyPath); err != nil {
+	// Flocked read-modify-write: rewriting this process's startup
+	// snapshot whole clobbered any decision a concurrent instance had
+	// persisted meanwhile (review round 2).
+	fresh, err := config.MutatePolicyFile(s.policyPath, func(pf *config.PolicyFile) {
+		pf.Set(scopeDir, ch.Tool, value)
+	})
+	if err != nil {
 		return s.data(), "could not save the policy: " + err.Error()
 	}
+	s.policyFile = fresh
 	data, err := s.Rebuild()
 	if err != nil {
 		return s.data(), "policy saved but not applied: " + err.Error()

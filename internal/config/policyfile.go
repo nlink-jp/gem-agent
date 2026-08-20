@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/BurntSushi/toml"
 )
@@ -156,6 +157,37 @@ func setOrDelete(m map[string]string, key, value string) {
 // Atomically because this file is rewritten from a UI keypress: a
 // half-written policy file would fail to parse at the next startup, and
 // the failure would arrive long after the keypress that caused it.
+// MutatePolicyFile applies fn to a FRESH load of the policy file and
+// saves the result, under an exclusive flock on a sibling .lock file.
+// Mutating a startup-time in-memory snapshot and rewriting the whole
+// file let a second instance's stale snapshot clobber concurrent
+// decisions — including resurrecting a project trust the operator had
+// just declined in the other instance (review round 2). The returned
+// PolicyFile is the post-mutation state, so the caller can refresh its
+// in-memory view. Blocking lock: mutations are rare and milliseconds.
+func MutatePolicyFile(path string, fn func(*PolicyFile)) (*PolicyFile, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Close() // Close releases the flock
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return nil, fmt.Errorf("lock %s: %v", path+".lock", err)
+	}
+	pf, err := LoadPolicyFile(path)
+	if err != nil {
+		return nil, err
+	}
+	fn(pf)
+	if err := pf.Save(path); err != nil {
+		return nil, err
+	}
+	return pf, nil
+}
+
 func (pf *PolicyFile) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err

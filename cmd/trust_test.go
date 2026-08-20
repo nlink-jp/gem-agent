@@ -51,7 +51,13 @@ func TestProbeProject(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("do things"), 0o644)
 	os.WriteFile(filepath.Join(dir, ".mcp.json"), []byte(`{"mcpServers":{"a":{"command":"/bin/true"},"b":{"command":"/bin/true"}}}`), 0o644)
+	// Only entries that look like skills count (review round 2): a
+	// real skill dir, plus decoys — a stray file and a dir without
+	// SKILL.md — that must NOT inflate the trust prompt's number.
 	os.MkdirAll(filepath.Join(dir, ".claude", "skills", "s1"), 0o755)
+	os.WriteFile(filepath.Join(dir, ".claude", "skills", "s1", "SKILL.md"), []byte("# s1"), 0o644)
+	os.WriteFile(filepath.Join(dir, ".claude", "skills", ".DS_Store"), []byte{0}, 0o644)
+	os.MkdirAll(filepath.Join(dir, ".claude", "skills", "not-a-skill"), 0o755)
 	o := probeProject(dir)
 	if len(o.Instructions) != 1 || o.Instructions[0] != "AGENTS.md" {
 		t.Errorf("instructions = %v", o.Instructions)

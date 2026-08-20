@@ -144,9 +144,15 @@ func Open(dir, projectDir string) (*Logger, error) {
 		if i > 0 {
 			id = fmt.Sprintf("%s-%d", base, i+1)
 		}
-		f, err := os.OpenFile(filepath.Join(dir, id+".jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_EXCL, 0o600)
+		path := filepath.Join(dir, id+".jsonl")
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_EXCL, 0o600)
 		if err == nil {
 			if err := lockSession(f, id); err != nil {
+				// We JUST created this exact file (O_EXCL) and wrote
+				// nothing; removing it by its full literal path is the
+				// error-path cleanup, not data deletion — leaving it
+				// littered zero-byte orphans (review round 2).
+				os.Remove(path)
 				return nil, err
 			}
 			return &Logger{f: f, id: id}, nil
@@ -206,7 +212,14 @@ func Reopen(dir, projectDir, id string) (*Logger, error) {
 func lockSession(f *os.File, id string) error {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		f.Close()
-		return fmt.Errorf("session %s is already in use by another gem-agent process", id)
+		// Only EWOULDBLOCK means another process holds the lock; a
+		// filesystem without flock (a network-mounted state root)
+		// failed with the same false "already in use" diagnosis
+		// (review round 2).
+		if err == syscall.EWOULDBLOCK {
+			return fmt.Errorf("session %s is already in use by another gem-agent process", id)
+		}
+		return fmt.Errorf("cannot lock session %s: %v (a state dir on a filesystem without flock support cannot hold transcripts safely)", id, err)
 	}
 	return nil
 }

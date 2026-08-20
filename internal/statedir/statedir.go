@@ -80,8 +80,18 @@ func EnsureProjectDir(dir, projectDir string) error {
 		return fmt.Errorf("%s", note)
 	}
 	marker := filepath.Join(dir, Marker)
-	if data, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(data)) != "" {
-		return nil // present and owned (by us — MarkerMatches passed)
+	if data, err := os.ReadFile(marker); err == nil {
+		if recorded := strings.TrimSpace(string(data)); recorded != "" {
+			// Re-VERIFY, never assume: between the MarkerMatches read
+			// above and this one, a colliding project's first launch
+			// can have renamed ITS marker in — "non-empty therefore
+			// ours" concluded ownership from a marker never compared
+			// (review round 2).
+			if recorded != filepath.Clean(projectDir) {
+				return fmt.Errorf("state dir %s belongs to %s (path-escape collision)", dir, recorded)
+			}
+			return nil
+		}
 	}
 	tmp, err := os.CreateTemp(dir, Marker+".tmp-")
 	if err != nil {

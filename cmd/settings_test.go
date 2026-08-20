@@ -68,8 +68,13 @@ func TestSettingsRowsCarryProvenance(t *testing.T) {
 	if sandbox, _ := rowFor(d, "sandbox.enabled"); len(sandbox.Values) != 0 {
 		t.Error("the sandbox switch must not be a menu item")
 	}
-	if theme, _ := rowFor(d, "tui.theme"); len(theme.Values) == 0 {
-		t.Error("tui.theme should be editable")
+	// Review round 2: the theme row was editable but applied NOTHING
+	// (styles are built once at startup) — read-only with a restart
+	// note is the honest shape, like tui.language.
+	if theme, _ := rowFor(d, "tui.theme"); len(theme.Values) != 0 {
+		t.Error("tui.theme must be read-only — the panel cannot restyle a running session")
+	} else if theme.Detail == "" {
+		t.Error("the read-only theme row must say when it applies")
 	}
 }
 

@@ -77,3 +77,21 @@ func TestEnsureProjectDirRepairsEmptyMarker(t *testing.T) {
 		t.Errorf("empty marker not repaired: %q", data)
 	}
 }
+
+// The read-read gap (review round 2): between EnsureProjectDir's first
+// marker read (absent) and its second, a COLLIDING project's marker
+// can land. "Non-empty therefore ours" concluded ownership from a
+// marker never compared — the second read must re-verify and refuse.
+func TestEnsureProjectDirReVerifiesTheSecondRead(t *testing.T) {
+	dir := t.TempDir()
+	// Simulate the interleaving's end state: our first read saw no
+	// marker; the other project's marker is on disk by the time we
+	// decide. The re-verify makes this equivalent to a plain mismatch.
+	if err := EnsureProjectDir(dir, "/a/x/y"); err != nil {
+		t.Fatal(err)
+	}
+	err := EnsureProjectDir(dir, "/a/x-y") // same escaped name, different project
+	if err == nil || !strings.Contains(err.Error(), "path-escape collision") {
+		t.Errorf("colliding project accepted: %v", err)
+	}
+}

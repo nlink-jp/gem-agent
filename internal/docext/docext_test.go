@@ -3,6 +3,7 @@ package docext
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -176,5 +177,32 @@ func TestExtractRejectsUnknownAndCaps(t *testing.T) {
 	text, note, err := Extract(data, Limits{TextBytes: 100, MemberBytes: 1 << 20})
 	if err != nil || len(text) != 100 || !strings.Contains(note, "truncated") {
 		t.Errorf("text cap: len=%d note=%q err=%v", len(text), note, err)
+	}
+}
+
+// Aggregate budget (review round 2): the per-member cap bounds one
+// member, but many under-cap members must not accumulate unbounded
+// text before the final clip — read_document is ungated, so a crafted
+// workbook was a model-reachable memory exhaustion.
+func TestExtractStopsAccumulatingPastTheTextBudget(t *testing.T) {
+	cell := `<row><c t="inlineStr"><is><t>` + strings.Repeat("x", 1000) + `</t></is></c></row>`
+	members := map[string]string{}
+	for i := 1; i <= 50; i++ {
+		members[fmt.Sprintf("xl/worksheets/sheet%d.xml", i)] =
+			`<worksheet><sheetData>` + cell + `</sheetData></worksheet>`
+	}
+	data := makeZip(t, members)
+	lim := Limits{TextBytes: 4 * 1024, MemberBytes: 1 << 20}
+	text, note, err := extractXlsx(data, lim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Bounded by the budget plus at most one member's text — never the
+	// 50-member total (~50KB).
+	if len(text) > lim.TextBytes+2048 {
+		t.Errorf("extracted %d bytes; budget %d — aggregation unbounded", len(text), lim.TextBytes)
+	}
+	if note == "" {
+		t.Error("truncation must be reported, not silent")
 	}
 }

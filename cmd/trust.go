@@ -85,7 +85,19 @@ func probeProject(projectDir string) projectOffering {
 		o.HasMCP = true
 	}
 	if entries, err := os.ReadDir(filepath.Join(projectDir, ".claude", "skills")); err == nil {
-		o.Skills = len(entries)
+		// Count entries that look like skills (a dir with SKILL.md),
+		// not raw directory entries — .DS_Store and stray files
+		// inflated the number shown in a security prompt (review
+		// round 2; over-reporting was the safe direction, but a wrong
+		// count in a trust prompt invites doubt about the rest of it).
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			if st, err := os.Stat(filepath.Join(projectDir, ".claude", "skills", e.Name(), "SKILL.md")); err == nil && !st.IsDir() {
+				o.Skills++
+			}
+		}
 	}
 	return o
 }
@@ -124,16 +136,25 @@ func resolveProjectTrust(cfg *config.Config, policyFile *config.PolicyFile, poli
 	}
 	fmt.Fprint(out, msgs.TrustQuestion)
 	answer := readLineUnbuffered(in)
-	if strings.EqualFold(strings.TrimSpace(answer), "y") || strings.EqualFold(strings.TrimSpace(answer), "yes") {
-		policyFile.SetTrust(projectDir, config.TrustGranted)
-		if err := policyFile.Save(policyPath); err != nil {
-			fmt.Fprintf(out, "warning: could not record the decision: %v\n", err)
-		}
-		return true, ""
+	granted := strings.EqualFold(strings.TrimSpace(answer), "y") || strings.EqualFold(strings.TrimSpace(answer), "yes")
+	trust := config.TrustDeclined
+	if granted {
+		trust = config.TrustGranted
 	}
-	policyFile.SetTrust(projectDir, config.TrustDeclined)
-	if err := policyFile.Save(policyPath); err != nil {
+	// Persist through the flocked read-modify-write, not this process's
+	// startup snapshot: a concurrent instance's whole-file Save from a
+	// stale snapshot could resurrect a trust the operator just revoked
+	// (review round 2).
+	if fresh, err := config.MutatePolicyFile(policyPath, func(pf *config.PolicyFile) {
+		pf.SetTrust(projectDir, trust)
+	}); err != nil {
 		fmt.Fprintf(out, "warning: could not record the decision: %v\n", err)
+		policyFile.SetTrust(projectDir, trust) // keep the session consistent anyway
+	} else {
+		*policyFile = *fresh
+	}
+	if granted {
+		return true, ""
 	}
 	return false, fmt.Sprintf(msgs.TrustDeclinedFmt, policyPath)
 }

@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"path/filepath"
@@ -46,8 +47,16 @@ const objectPrefix = "gem-agent/media/"
 // conflicts with the storage client's own transport options in this
 // version (measured) — and an operator-set value is respected.
 func New(ctx context.Context, project, bucket string) (*Uploader, error) {
+	// The override is scoped to client construction and restored: it
+	// used to stay in the process env for the rest of the session, so
+	// every later shell_exec child (gcloud/gsutil run by the model)
+	// silently inherited a different quota project (review round 2).
+	// The auth library captures the quota project into the credentials
+	// at NewClient; token refreshes reuse them (verified by a live
+	// upload after the restore).
 	if os.Getenv("GOOGLE_CLOUD_QUOTA_PROJECT") == "" {
 		os.Setenv("GOOGLE_CLOUD_QUOTA_PROJECT", project)
+		defer os.Unsetenv("GOOGLE_CLOUD_QUOTA_PROJECT")
 	}
 	client, err := storage.NewClient(ctx)
 	if err != nil {
@@ -63,11 +72,27 @@ func newWithStore(bucket string, store objectStore) *Uploader {
 
 // Upload streams the file into the bucket (content-addressed; an
 // existing object is not re-uploaded) and returns its gs:// URI.
+//
+// The store is permanent (nothing here deletes), so a wrong object
+// under a content hash would be served forever — two review-round-2
+// defenses guard the naming invariant:
+//   - ONE file descriptor: hash pass, seek, upload pass. The original
+//     re-opened by path, so a rename-replace between passes uploaded
+//     different bytes under the old hash.
+//   - verifyReader re-hashes DURING the upload pass and fails the
+//     stream on mismatch (a recorder still appending to the file), so
+//     the store never commits bytes that don't match their name.
 func (u *Uploader) Upload(ctx context.Context, path, contentType string) (string, error) {
-	sum, err := hashFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	sum := hex.EncodeToString(h.Sum(nil))
 	object := objectPrefix + sum + strings.ToLower(filepath.Ext(path))
 	uri := "gs://" + u.bucket + "/" + object
 
@@ -78,31 +103,35 @@ func (u *Uploader) Upload(ctx context.Context, path, contentType string) (string
 	if exists {
 		return uri, nil // same content, same object: re-attachment is free
 	}
-	f, err := os.Open(path)
-	if err != nil {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return "", err
 	}
-	defer f.Close()
-	if err := u.store.Write(ctx, object, contentType, f); err != nil {
+	vr := &verifyReader{r: f, h: sha256.New(), want: sum}
+	if err := u.store.Write(ctx, object, contentType, vr); err != nil {
 		return "", fmt.Errorf("upload to %s: %w", uri, err)
 	}
 	return uri, nil
 }
 
-// hashFile streams the file through sha256 — media files are large by
-// nature, and reading them whole into memory to name an object would
-// be the exact cost this package exists to avoid.
-func hashFile(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
+// verifyReader re-hashes the upload stream and refuses to reach a
+// clean EOF if the content no longer matches the name it is being
+// stored under. The error propagates out of io.Copy inside the store's
+// Write, which aborts the upload before it can commit.
+type verifyReader struct {
+	r    io.Reader
+	h    hash.Hash
+	want string
+}
+
+func (v *verifyReader) Read(p []byte) (int, error) {
+	n, err := v.r.Read(p)
+	v.h.Write(p[:n])
+	if err == io.EOF {
+		if hex.EncodeToString(v.h.Sum(nil)) != v.want {
+			return n, fmt.Errorf("file changed while uploading — content no longer matches %s", v.want)
+		}
 	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return n, err
 }
 
 // gcsStore is the real GCS-backed objectStore.
@@ -122,9 +151,18 @@ func (s *gcsStore) Exists(ctx context.Context, object string) (bool, error) {
 }
 
 func (s *gcsStore) Write(ctx context.Context, object, contentType string, r io.Reader) error {
+	// The writer rides its own cancelable context: storage.Writer
+	// FINALIZES buffered data on Close, so the old error path
+	// (copy fails → Close) committed a partial object under the
+	// full-content hash — permanent, because nothing here deletes
+	// (review round 2). Cancelling the context is the library's
+	// documented abort.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	w := s.bucket.Object(object).NewWriter(ctx)
 	w.ContentType = contentType
 	if _, err := io.Copy(w, r); err != nil {
+		cancel()
 		w.Close()
 		return err
 	}

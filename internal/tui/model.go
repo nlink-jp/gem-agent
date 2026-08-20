@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -13,6 +14,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/rivo/uniseg"
 
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
@@ -233,6 +235,9 @@ type Model struct {
 	completeSlashFn func(prefix string) []string
 	baseCtx         context.Context
 	cancelTurn      context.CancelFunc
+	// interruptSent: Ctrl+C fired for the running turn; gate requests
+	// arriving before TurnDone are auto-denied (review round 2).
+	interruptSent bool
 
 	width    int
 	height   int
@@ -439,6 +444,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.emitJoined(m.takeLive(), m.st.tool.Render("⚙ "+msg.Name+" "+msg.Detail))
 
 	case ApprovalRequest:
+		if m.interruptSent {
+			// The turn is already cancelled; the dialog would demand
+			// an answer on behalf of a dead call. Deny silently — the
+			// TurnDone (interrupted) line is the visible outcome.
+			msg.Resp <- 'n'
+			return m, nil
+		}
 		req := msg
 		m.approval = &req
 		m.approvalAt = time.Now()
@@ -483,7 +495,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds := []tea.Cmd{m.emitJoined(strings.TrimRight(out, "\n"), interrupted)}
 		m.phase = phaseInput
 		m.status = ""
-		m.cancelTurn = nil
+		m.releaseTurn()
 		m.ta.Focus()
 		return m.resumeAfterTurn(cmds, !msg.Interrupted)
 
@@ -504,7 +516,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.phase = phaseInput
 		m.status = ""
-		m.cancelTurn = nil
+		m.releaseTurn()
 		m.ta.Focus()
 		return m.resumeAfterTurn(cmds, msg.Err == nil)
 
@@ -523,6 +535,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cancelTurn != nil {
 					m.cancelTurn()
 					m.status = "interrupting…"
+					// A gate request already in flight would open a
+					// dialog for a turn the operator just killed —
+					// and an 'a' answer would allowlist on its behalf.
+					// Auto-deny anything that arrives until TurnDone
+					// (review round 2).
+					m.interruptSent = true
 				}
 				return m, nil
 			case tea.KeyShiftTab:
@@ -559,11 +577,7 @@ func (m *Model) emit(s string) tea.Cmd {
 	}
 	total := 0
 	for _, line := range strings.Split(s, "\n") {
-		phys := 1
-		if lw := ansi.StringWidth(line); lw > w {
-			phys = (lw + w - 1) / w
-		}
-		total += phys
+		total += physicalRows(line, w)
 	}
 	if m.hold != nil {
 		m.hold.printed += total
@@ -578,6 +592,45 @@ func (m *Model) emit(s string) tea.Cmd {
 		}
 	}
 	return m.println(s)
+}
+
+// releaseTurn ends the per-turn context lifecycle. The cancel func was
+// only ever invoked on Ctrl+C; clean finishes discarded it un-called,
+// leaking one child context per turn on the process-lifetime BaseCtx
+// (review round 2). Cancelling a finished context is a no-op, so this
+// is safe on every completion path.
+func (m *Model) releaseTurn() {
+	if m.cancelTurn != nil {
+		m.cancelTurn()
+	}
+	m.cancelTurn = nil
+	m.interruptSent = false
+}
+
+// physicalRows models the terminal's greedy wrap for one logical line:
+// a double-width rune that does not fit in the last column wraps WHOLE
+// to the next row, wasting a cell. ceil(cells/width) assumed perfect
+// packing and under-counted those rows, so the bottom pin drifted one
+// row per straddling CJK line (review round 2 — the ADR-0028 heal
+// trusts this count and cannot see the drift).
+func physicalRows(line string, width int) int {
+	if width <= 0 {
+		return 1
+	}
+	rows, cells := 1, 0
+	g := uniseg.NewGraphemes(ansi.Strip(line))
+	for g.Next() {
+		w := g.Width()
+		if w <= 0 {
+			continue
+		}
+		if cells+w > width {
+			rows++
+			cells = 0
+		}
+		cells += w
+	}
+	return rows
 }
 
 // expandTabs replaces each tab with spaces to the next 8-column stop,
@@ -684,6 +737,7 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.status = "waiting for the tool…"
 
 	var cmds []tea.Cmd
+	applyLine := ""
 	if answer == 'p' && req != nil {
 		// Persist first, so the line printed below reports what was
 		// actually written rather than what was asked for.
@@ -695,7 +749,7 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			})
 			m.settingsData = &data
 			if line != "" {
-				cmds = append(cmds, m.emit(m.st.warn.Render("  ⚠ "+line)))
+				applyLine = m.st.warn.Render("  ⚠ " + line)
 			}
 		}
 	}
@@ -712,7 +766,11 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		'a': m.msgs.VerdictAlways,
 		'p': m.msgs.VerdictPersist,
 	}[answer]
-	cmds = append([]tea.Cmd{m.emit(m.st.tool.Render("  ↳ " + verdict))}, cmds...)
+	// One write for verdict + applier note: the 'p' path was the last
+	// two-Println event left after the single-write convergence, and
+	// separate writes are exactly the slow-terminal flash the rule
+	// exists for (review round 2).
+	cmds = append([]tea.Cmd{m.emitJoined(m.st.tool.Render("  ↳ "+verdict), applyLine)}, cmds...)
 	return m, tea.Sequence(cmds...)
 }
 
@@ -1115,12 +1173,17 @@ const maxApprovalDetailLines = 8
 // clipDetail clips a call detail for the approval box: at most maxLines
 // lines, each rune-safely shortened. hidden reports what was cut.
 func clipDetail(detail string, maxLines int) (string, int) {
-	detail = clip(detail, 600)
+	// Count lines BEFORE the rune clip: clipping a 200-line heredoc to
+	// 600 runes first left only the surviving lines to count, so the
+	// disclosure whose whole job is honesty under-reported the hidden
+	// count (review round 2).
 	lines := strings.Split(detail, "\n")
-	if len(lines) <= maxLines {
-		return detail, 0
+	hidden := 0
+	if len(lines) > maxLines {
+		hidden = len(lines) - maxLines
+		lines = lines[:maxLines]
 	}
-	return strings.Join(lines[:maxLines], "\n"), len(lines) - maxLines
+	return clip(strings.Join(lines, "\n"), 600), hidden
 }
 
 // clipLines truncates each line to width-1 display cells (ANSI-aware).
@@ -1142,8 +1205,12 @@ func (m Model) viewContent() string {
 	case phaseSettings:
 		return m.settingsView() + "\n" + m.footer() + "\n"
 	case phaseRunning:
+		// The input box renders here too: ADR-0007 promises "the
+		// operator sees what they are writing" while a turn runs, and
+		// the keys were routed (updateRunningInput) without the box
+		// ever being drawn (review round 2).
 		return m.liveView() + "\n" + m.spin.View() + " " + m.st.status.Render(m.status) +
-			m.st.hint.Render(m.msgs.CtrlCHint) + "\n" + m.footer() + "\n"
+			m.st.hint.Render(m.msgs.CtrlCHint) + "\n" + m.ta.View() + "\n" + m.footer() + "\n"
 	case phaseApproval:
 		req := m.approval
 		if req == nil {
@@ -1153,9 +1220,27 @@ func (m Model) viewContent() string {
 		// box past the view budget — but hiding lines silently would let
 		// the operator approve a command they have not seen, so the
 		// count of hidden lines is shown (ADR-0021).
-		detail, hidden := clipDetail(req.Detail, maxApprovalDetailLines)
-		body := fmt.Sprintf(m.msgs.ApprovalTitleFmt, req.Tool) + "\n" +
-			m.st.hint.Render(detail)
+		// The detail budget adapts to the terminal: on a short screen
+		// the fixed 8-line budget overflowed the frame, and the View
+		// clamp then cut rows FROM THE TOP with no disclosure — the
+		// title (the tool being approved!) vanished first, the exact
+		// silent hiding clipDetail exists to prevent (review round 2).
+		// ~12 rows of fixed chrome: box borders, title, hidden marker,
+		// reason, options, hint, live line, footer, clamp margin.
+		budget := maxApprovalDetailLines
+		if m.height > 0 { // 0 = size not yet reported; keep the full budget
+			if avail := m.height - 12; avail < budget {
+				budget = avail
+				if budget < 0 {
+					budget = 0
+				}
+			}
+		}
+		detail, hidden := clipDetail(req.Detail, budget)
+		body := fmt.Sprintf(m.msgs.ApprovalTitleFmt, req.Tool)
+		if detail != "" {
+			body += "\n" + m.st.hint.Render(detail)
+		}
 		if hidden > 0 {
 			body += "\n" + m.st.warn.Render(fmt.Sprintf(m.msgs.ApprovalHiddenFmt, hidden))
 		}
@@ -1251,7 +1336,12 @@ func longestCommonPrefix(candidates []string) string {
 	prefix := candidates[0]
 	for _, c := range candidates[1:] {
 		for !strings.HasPrefix(c, prefix) {
-			prefix = prefix[:len(prefix)-1]
+			// Trim a RUNE, not a byte: 資料/説明 share the lead byte of
+			// their first kanji, and a byte-wise trim converged to that
+			// lone 0xE8 — invalid UTF-8 written into the input box
+			// (measured; review round 2).
+			_, size := utf8.DecodeLastRuneInString(prefix)
+			prefix = prefix[:len(prefix)-size]
 			if prefix == "" {
 				return ""
 			}
@@ -1269,9 +1359,12 @@ func (m Model) toggleAutoMode() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.autoMode = m.toggleAuto()
-	state := "auto-approve: OFF (every change asks)"
+	// The same catalog strings /auto prints: shift+tab and /auto are
+	// documented as the same toggle, and the two paths announced it in
+	// different words — one of them never localized (review round 2).
+	state := strings.TrimSpace(m.msgs.AutoOff)
 	if m.autoMode {
-		state = "auto-approve: ON (risky actions still ask)"
+		state = strings.TrimSpace(m.msgs.AutoOn)
 	}
 	// One write: the notice lands after the output it followed, with a
 	// single repaint.

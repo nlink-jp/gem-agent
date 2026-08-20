@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/policy"
 )
 
 var tinyPNG = []byte{
@@ -114,5 +115,42 @@ func TestCompactionTranscriptShowsImagePlaceholders(t *testing.T) {
 	}
 	if strings.Contains(got, string(tinyPNG[1:4])) { // "PNG"
 		t.Errorf("image bytes reached the summariser: %q", got)
+	}
+}
+
+// Review round 2: a DENIED view_image must not attach the pixels
+// anyway. The old guard screened only the "error:" prefix, and the
+// denial string does not carry it — the operator's refusal was
+// silently ineffective for exactly the largest, least reviewable
+// payloads.
+func TestDeniedViewImageAttachesNothing(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c", Name: "view_image", Args: map[string]any{"path": "shot.png"}}}},
+		{Content: "done"},
+	}}
+	a, reg := newAgent(t, mb, &denyAll{}, 5)
+	pol, _, err := policy.Build(map[string]string{"view_image": "always"}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetPolicy(pol)
+	if err := os.WriteFile(filepath.Join(reg.ProjectDir(), "shot.png"), tinyPNG, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Run(context.Background(), "look", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(mb.calls) < 2 {
+		t.Fatal("no second round")
+	}
+	for _, m := range mb.calls[1] {
+		if m.Role == llm.RoleTool {
+			if len(m.Attachments) > 0 {
+				t.Fatalf("denied view_image still attached bytes: %d attachment(s)", len(m.Attachments))
+			}
+			if !strings.Contains(m.Content, "denied") {
+				t.Errorf("denial not recorded in the tool result: %q", m.Content)
+			}
+		}
 	}
 }

@@ -386,6 +386,13 @@ func (c *Config) validate() error {
 	default:
 		return fmt.Errorf("[tui].language must be auto, ja, or en (got %q)", c.TUI.Language)
 	}
+	// An explicit `location = ""` in the file overwrites the default
+	// and used to surface as a backend-shaped error far from its cause
+	// (review round 2) — the exact failure the strict decode exists to
+	// prevent.
+	if c.GCP.Location == "" {
+		return fmt.Errorf("[gcp].location must not be empty — \"global\" is the default; delete the key to use it")
+	}
 	if c.Model.ContextWindow < 0 {
 		return fmt.Errorf("[model].context_window must not be negative")
 	}

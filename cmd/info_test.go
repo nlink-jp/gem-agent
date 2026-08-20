@@ -5,8 +5,14 @@ import (
 	"strings"
 	"testing"
 
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strconv"
+
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/tools"
+	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
 func infoFixture() infoSnapshot {
@@ -27,7 +33,99 @@ func infoFixture() infoSnapshot {
 		SessionID:  "2026-08-21-abcdef",
 		MCPServers: []string{"toolbox [project] (4 tools)"},
 		SkillCount: 3, MemoryOn: true, MediaBucket: true,
+		ProjectTrusted: true,
 	}
+}
+
+// An untrusted project must say so (review round 2): without the line
+// the model misdiagnosed the ADR-0023 gate as missing configuration.
+func TestRenderInfoNamesDeclinedTrust(t *testing.T) {
+	s := infoFixture()
+	if strings.Contains(renderInfo(s), "project trust") {
+		t.Error("trusted project must not render a trust warning")
+	}
+	s.ProjectTrusted = false
+	if !strings.Contains(renderInfo(s), "project trust: declined/undecided") {
+		t.Error("untrusted project must explain why project tools are missing")
+	}
+}
+
+// The three slash-command surfaces (completions, the slashOutput
+// switch, help) are hand-maintained lists; this pins them together so
+// a command added to one cannot silently miss the others (review
+// round 2 — /exit lived only in the switch).
+func TestSlashSurfacesAgree(t *testing.T) {
+	comps := slashCompletions(nil)("/")
+	if len(comps) == 0 {
+		t.Fatal("no completions")
+	}
+	handled := slashOutputCases(t)
+	for _, c := range comps {
+		switch c {
+		case "/settings", "/compact", "/skill":
+			continue // intercepted upstream of slashOutput in both UIs
+		}
+		if !handled[c] {
+			t.Errorf("completion %s has no case in slashOutput", c)
+		}
+	}
+	help := uitext.For(uitext.EN).Help
+	for _, c := range comps {
+		if c == "/exit" {
+			continue // alias; documented on the /quit line
+		}
+		if !strings.Contains(help, c) {
+			t.Errorf("completion %s missing from help", c)
+		}
+	}
+	// The reverse direction: every handled command is completable.
+	compSet := map[string]bool{}
+	for _, c := range comps {
+		compSet[c] = true
+	}
+	for cmd := range handled {
+		if !compSet[cmd] {
+			t.Errorf("slashOutput handles %s but Tab cannot complete it", cmd)
+		}
+	}
+}
+
+// slashOutputCases extracts the string case labels of slashOutput's
+// switch from the AST — the function needs a live agent to call, and a
+// wiring test must not depend on one.
+func slashOutputCases(t *testing.T) map[string]bool {
+	t.Helper()
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "root.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]bool{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		fn, ok := n.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "slashOutput" {
+			return true
+		}
+		ast.Inspect(fn, func(n ast.Node) bool {
+			cc, ok := n.(*ast.CaseClause)
+			if !ok {
+				return true
+			}
+			for _, e := range cc.List {
+				if lit, ok := e.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					if s, err := strconv.Unquote(lit.Value); err == nil && strings.HasPrefix(s, "/") {
+						cases[s] = true
+					}
+				}
+			}
+			return true
+		})
+		return false
+	})
+	if len(cases) == 0 {
+		t.Fatal("no slashOutput switch cases found")
+	}
+	return cases
 }
 
 // TestRenderInfoFields pins every behavioral field of ADR-0030 into

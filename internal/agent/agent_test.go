@@ -593,3 +593,33 @@ func TestSideCallUsageStaysOutOfTheFooter(t *testing.T) {
 		t.Errorf("main bucket = %+v", s)
 	}
 }
+
+// Review round 2: tool-call args (whole write_file bodies) and inline
+// attachment bytes were zero-weighted, under-arming resume-time
+// compaction.
+func TestEstimateTokensCountsArgsAndData(t *testing.T) {
+	h := []llm.Message{
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{
+			{Name: "write_file", Args: map[string]any{"content": strings.Repeat("x", 4000)}}}},
+		{Role: llm.RoleUser, Attachments: []llm.Attachment{{Data: make([]byte, 8000)}}},
+	}
+	if got := estimateTokens(h); got < (4000+8000)/4 {
+		t.Errorf("estimate = %d, want at least %d (args+data counted)", got, (4000+8000)/4)
+	}
+}
+
+// Review round 2: a tool call reached after the turn's context is
+// cancelled must not open an approval prompt on behalf of a dead turn.
+func TestExecCallRefusesAfterCancel(t *testing.T) {
+	gate := &approveAll{}
+	a, _ := newAgent(t, &mockBackend{}, gate, 5)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	out := a.execCall(ctx, llm.ToolCall{Name: "write_file", Args: map[string]any{"path": "x", "content": "y"}})
+	if !strings.HasPrefix(out, "error:") {
+		t.Errorf("cancelled call ran: %q", out)
+	}
+	if len(gate.asked) != 0 {
+		t.Errorf("gate prompted for a cancelled turn: %v", gate.asked)
+	}
+}

@@ -8,6 +8,7 @@ package mention
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -41,7 +42,10 @@ type Limits struct {
 	// bucket and returns its gs:// URI. A configured bucket always
 	// wins over inline: the history replays every round, and inline
 	// media bytes would be re-sent with each one. nil = no bucket.
-	UploadMedia func(path, mime string) (string, error)
+	// The ctx is the TURN's context: a multi-minute upload the
+	// operator's Ctrl+C could not reach looked like a hang (review
+	// round 2).
+	UploadMedia func(ctx context.Context, path, mime string) (string, error)
 }
 
 // DefaultLimits are sized so a handful of source files fit comfortably
@@ -182,7 +186,7 @@ func Refs(text string) []string {
 // the attachments plus the references that failed. Text itself is not
 // modified: what the operator typed stays what the model sees as the
 // instruction, with the contents delivered alongside.
-func Expand(text, projectDir string, lim Limits) ([]Attachment, []Problem) {
+func Expand(ctx context.Context, text, projectDir string, lim Limits) ([]Attachment, []Problem) {
 	var atts []Attachment
 	var problems []Problem
 	total := 0
@@ -217,7 +221,7 @@ func Expand(text, projectDir string, lim Limits) ([]Attachment, []Problem) {
 		// Audio and video (ADR-0027): via the operator's bucket when
 		// configured, inline under the media cap otherwise.
 		if IsMediaPath(ref) {
-			att, err := attachMedia(ref, projectDir, lim)
+			att, err := attachMedia(ctx, ref, projectDir, lim)
 			if err != nil {
 				problems = append(problems, Problem{ref, err.Error()})
 				continue
@@ -319,6 +323,12 @@ func attachDocument(ref, projectDir string, lim Limits) (Attachment, error) {
 	if err != nil {
 		return Attachment{}, err
 	}
+	// The Office branch read the file with NO size cap while the PDF
+	// branch capped — an inconsistent missing guard on the same path
+	// (review round 2). 32MiB mirrors read_document's file cap.
+	if info, err := os.Stat(abs); err == nil && info.Size() > 32*1024*1024 {
+		return Attachment{}, fmt.Errorf("document is %d bytes; the limit is %d", info.Size(), 32*1024*1024)
+	}
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		return Attachment{}, fmt.Errorf("unreadable")
@@ -348,7 +358,7 @@ func attachDocument(ref, projectDir string, lim Limits) (Attachment, error) {
 // attachMedia attaches one audio/video file (ADR-0027). A configured
 // bucket always wins over inline — inline media bytes are re-sent with
 // every round's history replay; a gs:// URI is a few dozen bytes.
-func attachMedia(ref, projectDir string, lim Limits) (Attachment, error) {
+func attachMedia(ctx context.Context, ref, projectDir string, lim Limits) (Attachment, error) {
 	abs, err := resolveImagePath(projectDir, ref) // operator-typed path resolution
 	if err != nil {
 		return Attachment{}, err
@@ -359,7 +369,7 @@ func attachMedia(ref, projectDir string, lim Limits) (Attachment, error) {
 		return Attachment{}, fmt.Errorf("not found")
 	}
 	if lim.UploadMedia != nil {
-		uri, err := lim.UploadMedia(abs, mime)
+		uri, err := lim.UploadMedia(ctx, abs, mime)
 		if err != nil {
 			return Attachment{}, fmt.Errorf("upload: %v", err)
 		}

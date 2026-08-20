@@ -169,6 +169,14 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 			return resp, nil
 		}
 		if !shouldRetryStream(streamErr, chunks) || ctx.Err() != nil {
+			// A 400 with a configured thinking level is, in practice,
+			// often the level itself: supported levels are
+			// model-dependent (minimal → 400 on some models, measured
+			// in ADR-0025) and the raw API error never names the knob
+			// (review round 2).
+			if v.thinking != "" && strings.Contains(streamErr.Error(), "400") {
+				return nil, fmt.Errorf("vertex AI stream: %w (note: [model].thinking = %q — this model may not support that level; unset it or pick another)", streamErr, v.thinking)
+			}
 			return nil, fmt.Errorf("vertex AI stream: %w", streamErr)
 		}
 		lastErr = streamErr

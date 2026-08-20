@@ -90,51 +90,63 @@ func writeSessions(out io.Writer, metas []session.Meta, showProject bool) {
 // wrong tree describes files that are not there, and thought signatures
 // are model-bound opaque tokens with no basis for cross-model replay.
 // Each message names what to do instead.
-func resolveResume(dir, projectDir, model, id string) (session.Meta, []llm.Message, []string, error) {
+func resolveResume(dir, projectDir, model, id string) (session.Meta, error) {
 	var meta session.Meta
 	if id == "" {
 		latest, ok, err := session.Latest(dir, projectDir)
 		if err != nil {
-			return meta, nil, nil, err
+			return meta, err
 		}
 		if !ok {
-			return meta, nil, nil, fmt.Errorf("no previous session recorded for %s — start one without --continue", projectDir)
+			return meta, fmt.Errorf("no previous session recorded for %s — start one without --continue", projectDir)
 		}
 		meta = latest
 	} else {
 		if !session.ValidID(id) {
-			return meta, nil, nil, fmt.Errorf("%q is not a session id; `gem-agent sessions` lists them (ids look like 20260819-150102)", id)
+			return meta, fmt.Errorf("%q is not a session id; `gem-agent sessions` lists them (ids look like 20260819-150102)", id)
 		}
 		found, err := session.Find(dir, projectDir, id)
 		if err != nil {
-			return meta, nil, nil, fmt.Errorf("no session %s in %s — `gem-agent sessions` lists what is there", id, dir)
+			return meta, fmt.Errorf("no session %s in %s — `gem-agent sessions` lists what is there", id, dir)
 		}
 		meta = found
 	}
 
 	if meta.Header.Project != "" && meta.Header.Project != projectDir {
-		return meta, nil, nil, fmt.Errorf("session %s was recorded in %s, not %s — its history describes that project's files; run gem-agent there to resume it",
+		return meta, fmt.Errorf("session %s was recorded in %s, not %s — its history describes that project's files; run gem-agent there to resume it",
 			meta.ID, meta.Header.Project, projectDir)
 	}
 	if meta.Header.Model != "" && meta.Header.Model != model {
-		return meta, nil, nil, fmt.Errorf("session %s was recorded with %s and this run uses %s — a conversation cannot move between models (the replayed reasoning tokens are model-bound); resume it with --model %s",
+		return meta, fmt.Errorf("session %s was recorded with %s and this run uses %s — a conversation cannot move between models (the replayed reasoning tokens are model-bound); resume it with --model %s",
 			meta.ID, meta.Header.Model, model, meta.Header.Model)
 	}
 
-	history, _, skipped, err := session.Load(meta.Path)
+	// The history itself is NOT loaded here: loading before Reopen's
+	// flock left a window where another process's final appends landed
+	// between our read and our lock — we then appended after records
+	// we never replayed (review round 2). loadResumedHistory runs
+	// under the lock.
+	return meta, nil
+}
+
+// loadResumedHistory reads the resumed transcript UNDER the flock that
+// Reopen already holds — path comes from the open Logger, so the file
+// read is exactly the file being appended to.
+func loadResumedHistory(lg *session.Logger, id string) ([]llm.Message, []string, error) {
+	history, _, skipped, err := session.Load(lg.Path())
 	if err != nil {
-		return meta, nil, nil, err
+		return nil, nil, err
 	}
 	if len(history) == 0 {
-		return meta, nil, nil, fmt.Errorf("session %s has no conversation to resume", meta.ID)
+		return nil, nil, fmt.Errorf("session %s has no conversation to resume", id)
 	}
 	var notes []string
 	if skipped > 0 {
 		// A shorter conversation that says nothing looks complete; the
 		// count is the honest version (ADR-0021).
-		notes = append(notes, fmt.Sprintf("session %s: %d unreadable line(s) skipped — likely a torn write from a crash; the rest of the conversation is intact", meta.ID, skipped))
+		notes = append(notes, fmt.Sprintf("session %s: %d unreadable line(s) skipped — likely a torn write from a crash; the rest of the conversation is intact", id, skipped))
 	}
-	return meta, history, notes, nil
+	return history, notes, nil
 }
 
 // openSessionLog starts a new transcript, or reopens the one being

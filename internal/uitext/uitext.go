@@ -97,6 +97,13 @@ type Messages struct {
 	NothingToCompact string
 	// CompactedFmt reports a /compact: messages summarised, kept.
 	CompactedFmt string
+	// UnknownCommandFmt: %s = the input that matched no command.
+	UnknownCommandFmt string
+	MCPNone           string // /mcp with nothing connected
+	// MCPToolsNote states the real gate honestly: MCP tools ARE
+	// approval-gated, and in auto mode the risk review may pass
+	// routine calls (review round 2 — the old text overstated).
+	MCPToolsNote string
 
 	// --- startup safety (ADR-0023, cmd) ---
 	// TrustHeaderFmt opens the first-run prompt: project dir.
@@ -170,7 +177,7 @@ var en = Messages{
   /skills  list installed skills (Claude Code format, read as-is)
   /skill <name> [args]  invoke a skill directly
   /clear   reset the conversation history
-  /quit    exit (Ctrl+D also works)
+  /quit    exit (Ctrl+D also works; /exit is an alias)
 auto-approve: safe changes run unattended; destructive, out-of-project,
   credential-touching, or uncertain calls still ask (two-tier review)
 completion:
@@ -198,11 +205,14 @@ mutating tools prompt for approval: y = once, a = always this session
   (Block-tier calls and always-policy tools keep asking — 'a' never
    covers the dangerous cases, only the routine ones)
 `,
-	AutoOn:           "auto-approve: ON — safe changes run unattended; risky ones still ask\n",
-	AutoOff:          "auto-approve: OFF — every change asks\n",
-	HistoryCleared:   "history cleared — the next message starts a fresh conversation\n",
-	NothingToCompact: "nothing to compact yet — the conversation is short enough that a summary would lose more than it saves",
-	CompactedFmt:     "compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
+	AutoOn:            "auto-approve: ON — safe changes run unattended; risky ones still ask\n",
+	AutoOff:           "auto-approve: OFF — every change asks\n",
+	HistoryCleared:    "history cleared — the next message starts a fresh conversation\n",
+	NothingToCompact:  "nothing to compact yet — the conversation is short enough that a summary would lose more than it saves",
+	CompactedFmt:      "compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
+	UnknownCommandFmt: "unknown command %q — /help lists commands\n",
+	MCPNone:           "no MCP servers connected — define them in ~/.config/gem-agent/mcp.json (global) or the project's .mcp.json (project; wins name collisions)\n",
+	MCPToolsNote:      "MCP tools appear in /tools as mcp__<server>__<tool>; they are approval-gated (in auto-approve mode, the risk review may run routine calls unattended, and 'a' covers a tool for the session)\n",
 
 	TrustHeaderFmt:           "\nnew project: %s\nthis project provides:\n",
 	TrustItemInstructionsFmt: "%s (injected as instructions)",
@@ -256,7 +266,7 @@ var ja = Messages{
   /skills  インストール済みスキルの一覧（Claude Code 形式をそのまま読む）
   /skill <name> [args]  スキルを直接起動
   /clear   会話履歴をリセット
-  /quit    終了（Ctrl+D でも可）
+  /quit    終了（Ctrl+D でも可・/exit も同じ）
 auto-approve: 安全な変更は無人で実行します。破壊的・プロジェクト外・
   認証情報に触れる・判定不能の呼び出しは引き続き確認します（二段レビュー）
 補完:
@@ -283,11 +293,14 @@ auto-approve: 安全な変更は無人で実行します。破壊的・プロジ
   （Block 段の呼び出しと always ポリシーのツールは常に確認します — 'a' が
    カバーするのは日常的な操作だけで、危険な操作には効きません）
 `,
-	AutoOn:           "auto-approve: ON — 安全な変更は無人で実行します。危険なものは引き続き確認します\n",
-	AutoOff:          "auto-approve: OFF — すべての変更で確認します\n",
-	HistoryCleared:   "履歴をクリアしました — 次のメッセージから新しい会話が始まります\n",
-	NothingToCompact: "まだ /compact の対象がありません — 会話が短く、要約すると失う情報のほうが多くなります",
-	CompactedFmt:     "古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",
+	AutoOn:            "auto-approve: ON — 安全な変更は無人で実行します。危険なものは引き続き確認します\n",
+	AutoOff:           "auto-approve: OFF — すべての変更で確認します\n",
+	HistoryCleared:    "履歴をクリアしました — 次のメッセージから新しい会話が始まります\n",
+	NothingToCompact:  "まだ /compact の対象がありません — 会話が短く、要約すると失う情報のほうが多くなります",
+	CompactedFmt:      "古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",
+	UnknownCommandFmt: "未知のコマンド %q — /help に一覧があります\n",
+	MCPNone:           "MCP サーバー未接続 — ~/.config/gem-agent/mcp.json（グローバル）またはプロジェクトの .mcp.json（プロジェクト側が名前衝突で優先）で定義します\n",
+	MCPToolsNote:      "MCP ツールは /tools に mcp__<server>__<tool> として表示され、承認ゲートの対象です（auto-approve モードではリスクレビューが日常的な呼び出しを無人実行することがあり、'a' はそのツールをセッション中カバーします）\n",
 
 	TrustHeaderFmt:           "\n新しいプロジェクト: %s\nこのプロジェクトの提供物:\n",
 	TrustItemInstructionsFmt: "%s（instructions として注入されます）",

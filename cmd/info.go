@@ -34,6 +34,11 @@ type infoSnapshot struct {
 	SkillCount   int
 	MemoryOn     bool
 	MediaBucket  bool
+	// ProjectTrusted: false means the project's OWN instruction files,
+	// .mcp.json, and skills were not loaded (ADR-0023). Without this
+	// line the model misdiagnosed missing tools as missing
+	// configuration (review round 2).
+	ProjectTrusted bool
 }
 
 // macOSVersion asks the kernel; an error just blanks the field — a
@@ -94,10 +99,17 @@ func renderInfo(s infoSnapshot) string {
 		fmt.Fprintf(&b, "session: %s\n", s.SessionID)
 	}
 
+	// "at startup": the summary is the connection-time snapshot — a
+	// server whose child process died later is still listed (review
+	// round 2; honest labeling over a liveness system this tool does
+	// not have).
 	if len(s.MCPServers) == 0 {
 		b.WriteString("mcp servers: none\n")
 	} else {
-		fmt.Fprintf(&b, "mcp servers: %s\n", strings.Join(s.MCPServers, "; "))
+		fmt.Fprintf(&b, "mcp servers (as connected at startup): %s\n", strings.Join(s.MCPServers, "; "))
+	}
+	if !s.ProjectTrusted {
+		b.WriteString("project trust: declined/undecided — the project's own instruction files, .mcp.json, and skills are NOT loaded (ADR-0023); missing tools may be this, not missing configuration\n")
 	}
 	bucket := "none (media attaches inline, small files only)"
 	if s.MediaBucket {

@@ -233,14 +233,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		if sessionDirErr != nil {
 			return fmt.Errorf("cannot resume: %w", sessionDirErr)
 		}
-		meta, history, resumeNotes, err := resolveResume(sessionDir, projectDir, cfg.Model.Name, flagResume)
+		meta, err := resolveResume(sessionDir, projectDir, cfg.Model.Name, flagResume)
 		if err != nil {
 			return err
 		}
-		for _, n := range resumeNotes {
-			fmt.Fprintf(stderr, "warning: %s\n", n)
-		}
-		restored, resumedID = history, meta.ID
+		resumedID = meta.ID
+		// restored is loaded below, AFTER Reopen holds the flock.
 	}
 
 	// A broken log warns; it must not block a backup tool. A broken
@@ -263,6 +261,19 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			sessionLog = lg
 			sessionPath = lg.Path()
 			sessionID = lg.ID()
+			if resumedID != "" {
+				// Under the flock (Reopen holds it): the file we read
+				// is exactly the file we will append to, with no
+				// window for another process's tail (review round 2).
+				history, resumeNotes, err := loadResumedHistory(lg, resumedID)
+				if err != nil {
+					return err
+				}
+				for _, n := range resumeNotes {
+					fmt.Fprintf(stderr, "warning: %s\n", n)
+				}
+				restored = history
+			}
 		}
 	}
 
@@ -279,19 +290,30 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// attachments route through the operator's bucket as gs:// URIs.
 	// The client is created lazily on first use — most sessions attach
 	// no media.
-	var mediaUpload func(path, mime string) (string, error)
+	var mediaUpload func(callCtx context.Context, path, mime string) (string, error)
 	if cfg.GCP.Bucket != "" {
+		// Lazy, but retryable: sync.Once pinned the FIRST construction
+		// error (a transient DNS/ADC hiccup) for the whole session
+		// (review round 2). Only success is cached. The client rides
+		// the session context; each upload rides the TURN context so
+		// Ctrl+C reaches it.
 		var (
-			upOnce sync.Once
-			up     *mediastore.Uploader
-			upErr  error
+			upMu sync.Mutex
+			up   *mediastore.Uploader
 		)
-		mediaUpload = func(path, mime string) (string, error) {
-			upOnce.Do(func() { up, upErr = mediastore.New(ctx, cfg.GCP.Project, cfg.GCP.Bucket) })
-			if upErr != nil {
-				return "", upErr
+		mediaUpload = func(callCtx context.Context, path, mime string) (string, error) {
+			upMu.Lock()
+			if up == nil {
+				u, err := mediastore.New(ctx, cfg.GCP.Project, cfg.GCP.Bucket)
+				if err != nil {
+					upMu.Unlock()
+					return "", err
+				}
+				up = u
 			}
-			return up.Upload(ctx, path, mime)
+			u := up
+			upMu.Unlock()
+			return u.Upload(callCtx, path, mime)
 		}
 	}
 
@@ -358,24 +380,25 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	var ag *agent.Agent
 	if err := registerInfoTool(registry, func() infoSnapshot {
 		return infoSnapshot{
-			Version:      cmd.Root().Version,
-			OSVersion:    macOSVersion(),
-			Model:        cfg.Model.Name,
-			SummaryModel: summaryModel,
-			Thinking:     cfg.Model.Thinking,
-			Usage:        ag.Usage(),
-			MaxTurns:     cfg.Agent.MaxTurns,
-			ShellTimeout: cfg.Agent.ShellTimeoutSec,
-			AutoApprove:  ag.AutoApprove(),
-			AutoCompact:  ag.AutoCompact(),
-			CompactAtPct: cfg.Agent.CompactAtPct,
-			SandboxOn:    sandboxOn,
-			ProjectDir:   projectDir,
-			SessionID:    sessionID,
-			MCPServers:   mcpSummary,
-			SkillCount:   len(skillsList),
-			MemoryOn:     memBase != "",
-			MediaBucket:  cfg.GCP.Bucket != "",
+			Version:        cmd.Root().Version,
+			OSVersion:      macOSVersion(),
+			Model:          cfg.Model.Name,
+			SummaryModel:   summaryModel,
+			Thinking:       cfg.Model.Thinking,
+			Usage:          ag.Usage(),
+			MaxTurns:       cfg.Agent.MaxTurns,
+			ShellTimeout:   cfg.Agent.ShellTimeoutSec,
+			AutoApprove:    ag.AutoApprove(),
+			AutoCompact:    ag.AutoCompact(),
+			CompactAtPct:   cfg.Agent.CompactAtPct,
+			SandboxOn:      sandboxOn,
+			ProjectDir:     projectDir,
+			SessionID:      sessionID,
+			MCPServers:     mcpSummary,
+			SkillCount:     len(skillsList),
+			MemoryOn:       memBase != "",
+			MediaBucket:    cfg.GCP.Bucket != "",
+			ProjectTrusted: projectTrusted,
 		}
 	}); err != nil {
 		return err
@@ -444,7 +467,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				prog.Send(tui.AutoApproved{Tool: tc.Name, Reason: d.Reason, Tier: d.Tier.String()})
 				return
 			}
-			fmt.Fprintf(stderr, "[auto-approved: %s (%s) — %s]\n", tc.Name, d.Tier, d.Reason)
+			fmt.Fprintf(stderr, "[%s]\n", fmt.Sprintf(strings.TrimSpace(msgs.AutoApprovedFmt), d.Tier, tc.Name+": "+d.Reason))
 		},
 	})
 	if len(restored) > 0 {
@@ -549,7 +572,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// same reason (ADR-0021).
 		bannerLines = append(bannerLines, notes.lines...)
 		model := tui.New(tui.Options{
-			BaseCtx:    ctx,
+			BaseCtx: ctx,
+			// Msgs is the wiring ADR-0029 shipped without: the catalog
+			// was resolved here but never handed to the TUI, so the
+			// whole chrome fell back to English (review round 2).
+			Msgs:       msgs,
 			Theme:      resolveTheme(cfg.TUI.Theme),
 			ModelName:  cfg.Model.Name,
 			ProjectDir: abbreviateHome(projectDir),
@@ -624,7 +651,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	for {
 		input, err := reader.Read("\n> ")
 		if errors.Is(err, io.EOF) {
-			fmt.Fprintln(stderr, "bye")
+			fmt.Fprintln(stderr, msgs.Bye)
 			return nil
 		}
 		if err != nil {
@@ -663,7 +690,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			})
 			fmt.Fprintln(cmd.OutOrStdout())
 			if runErr != nil && !errors.Is(runErr, errInterrupted) {
-				fmt.Fprintf(stderr, "error: %v\n", runErr)
+				fmt.Fprintf(stderr, "%s%v\n", msgs.ErrorPrefix, runErr)
 			}
 			continue
 		}
@@ -680,9 +707,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				return err
 			})
 			if errors.Is(runErr, errInterrupted) {
-				fmt.Fprintln(stderr, "(interrupted)")
+				fmt.Fprintln(stderr, msgs.Interrupted)
 			} else if runErr != nil {
-				fmt.Fprintf(stderr, "error: %v\n", runErr)
+				fmt.Fprintf(stderr, "%s%v\n", msgs.ErrorPrefix, runErr)
 			}
 			continue
 		}
@@ -705,10 +732,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(cmd.OutOrStdout())
 		if runErr != nil {
 			if errors.Is(runErr, errInterrupted) {
-				fmt.Fprintln(stderr, "(interrupted)")
+				fmt.Fprintln(stderr, msgs.Interrupted)
 				continue
 			}
-			fmt.Fprintf(stderr, "error: %v\n", runErr)
+			fmt.Fprintf(stderr, "%s%v\n", msgs.ErrorPrefix, runErr)
 		}
 	}
 }
@@ -828,7 +855,7 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 // list mirrors what slashOutput and the REPL loop actually accept.
 func slashCompletions(skillsList []skills.Skill) func(string) []string {
 	commands := []string{
-		"/auto", "/clear", "/compact", "/help", "/mcp", "/memory",
+		"/auto", "/clear", "/compact", "/exit", "/help", "/mcp", "/memory",
 		"/quit", "/settings", "/skill", "/skills", "/tools", "/usage",
 	}
 	return func(prefix string) []string {
@@ -950,15 +977,15 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 		return "bye\n", false, true
 	case "/mcp":
 		if len(mcpSummary) == 0 {
-			b.WriteString("no MCP servers connected — define them in ~/.config/gem-agent/mcp.json (global) or the project's .mcp.json (project; wins name collisions)\n")
+			b.WriteString(msgs.MCPNone)
 		} else {
 			for _, s := range mcpSummary {
 				b.WriteString("  " + s + "\n")
 			}
-			b.WriteString("MCP tools appear in /tools as mcp__<server>__<tool> and always require approval\n")
+			b.WriteString(msgs.MCPToolsNote)
 		}
 	default:
-		fmt.Fprintf(&b, "unknown command %q — /help lists commands\n", input)
+		fmt.Fprintf(&b, msgs.UnknownCommandFmt, input)
 		return b.String(), true, false
 	}
 	return b.String(), false, false

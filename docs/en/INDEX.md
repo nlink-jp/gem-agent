@@ -106,6 +106,11 @@ excepted).
   self-information tool (model, context occupancy, usage, limits,
   platform); fields earn their place by changing model behavior — GCP
   identifiers and hostname withheld
+- [`ADR-0031`](adr/0031-review-fixes-round-2.md) — review round 2:
+  ~30 fixes (Msgs wiring, denial bypass, media-store poisoning,
+  resume-under-flock, rune-safe completion, adaptive approval budget,
+  flocked policy mutations, docext aggregate cap); one 400 claim
+  refuted by measurement; four non-changes recorded
 
 ## History
 
