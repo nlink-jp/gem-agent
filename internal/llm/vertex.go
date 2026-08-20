@@ -370,11 +370,16 @@ func buildContents(messages []Message) []*genai.Content {
 			if m.Content != "" {
 				parts = append(parts, genai.NewPartFromText(m.Content))
 			}
-			// Image attachments become inline-data parts after the text
-			// (ADR-0012). Text attachments never reach this point — the
-			// agent flattens them into Content at send time.
+			// Image/document/media attachments become inline-data parts
+			// after the text (ADR-0012/0026/0027); bucket-routed media
+			// becomes a file-data part Vertex reads from GCS. Text
+			// attachments never reach this point — the agent flattens
+			// them into Content at send time.
 			for _, att := range m.Attachments {
-				if len(att.Data) > 0 && att.MIME != "" {
+				switch {
+				case att.URI != "" && att.MIME != "":
+					parts = append(parts, genai.NewPartFromURI(att.URI, att.MIME))
+				case len(att.Data) > 0 && att.MIME != "":
 					parts = append(parts, genai.NewPartFromBytes(att.Data, att.MIME))
 				}
 			}

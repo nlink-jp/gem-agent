@@ -86,6 +86,9 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0026`](adr/0026-document-reading.ja.md) — 文書の読解: PDF は実測済み
   multimodal パートでネイティブ、Office XML はローカル抽出、レガシー
   バイナリは対象外
+- [`ADR-0027`](adr/0027-audio-video.ja.md) — 音声・動画入力: バケット設定が
+  常にインラインに勝つ（ラウンド再送の経済）、content-addressed
+  アップロード、何も削除しない
 
 ## History（履歴）
 

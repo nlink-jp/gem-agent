@@ -15,6 +15,15 @@ project = "your-project-id"
 # models. Use a region (e.g. "us-central1") only for Gemini 2.5 models.
 location = "global"
 
+# GCS bucket for audio/video attachments (ADR-0027). When set, attached
+# media ALWAYS routes through this bucket as gs:// URIs (Vertex reads
+# them natively) — inline media bytes would be re-sent with every round's
+# history replay, so one upload beats many resends. Uploads are
+# content-addressed under gem-agent/media/ and never deleted by
+# gem-agent; set a bucket lifecycle rule (e.g. delete after 7 days) for
+# retention. When unset, media attaches inline up to 15MB.
+#bucket = "your-bucket-name"
+
 [model]
 # Gemini model ID. Required, and deliberately without a built-in
 # default: model IDs churn, and a stale hardcoded one fails at runtime.

@@ -10,12 +10,14 @@ import (
 	"os/exec"
 	"os/signal"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/approve"
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/mediastore"
 	"github.com/nlink-jp/gem-agent/internal/memory"
 	"github.com/nlink-jp/gem-agent/internal/mention"
 	"github.com/nlink-jp/gem-agent/internal/policy"
@@ -267,6 +269,26 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// Per-category token accounting for /usage (ADR-0019).
 	tally := newUsageTally()
 
+	// Media uploads (ADR-0027): with [gcp].bucket set, audio/video
+	// attachments route through the operator's bucket as gs:// URIs.
+	// The client is created lazily on first use — most sessions attach
+	// no media.
+	var mediaUpload func(path, mime string) (string, error)
+	if cfg.GCP.Bucket != "" {
+		var (
+			upOnce sync.Once
+			up     *mediastore.Uploader
+			upErr  error
+		)
+		mediaUpload = func(path, mime string) (string, error) {
+			upOnce.Do(func() { up, upErr = mediastore.New(ctx, cfg.GCP.Project, cfg.GCP.Bucket) })
+			if upErr != nil {
+				return "", upErr
+			}
+			return up.Upload(ctx, path, mime)
+		}
+	}
+
 	// --- summarize_file: the summary model shares the client (ADR-0014) ---
 	summaryModel := cfg.Model.Summary
 	summaryBackend := backend
@@ -335,6 +357,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// data; its reads are confined to skill directories (ADR-0010).
 		InstructionTools: []string{skills.ToolName},
 		ClipboardImage:   clipboardImage,
+		MediaUpload:      mediaUpload,
 		OnToolCall: func(tc llm.ToolCall) {
 			if prog != nil {
 				prog.Send(tui.ToolCall{Name: tc.Name, Detail: agent.CallDetail(tc)})

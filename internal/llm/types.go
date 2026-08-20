@@ -40,11 +40,17 @@ type Attachment struct {
 	Ref     string `json:"ref"`
 	Kind    string `json:"kind"`
 	Content string `json:"content,omitempty"`
-	// Data and MIME carry binary content — images (ADR-0012). []byte
-	// round-trips as base64 through the transcript, so a resumed
-	// session keeps the screenshots it was looking at.
+	// Data and MIME carry binary content — images (ADR-0012),
+	// documents (ADR-0026), inline media (ADR-0027). []byte round-trips
+	// as base64 through the transcript, so a resumed session keeps the
+	// screenshots it was looking at.
 	Data []byte `json:"data,omitempty"`
 	MIME string `json:"mime,omitempty"`
+	// URI references bucket-routed media (ADR-0027): the transcript
+	// stores the gs:// URI, not the bytes — resume stays cheap, and
+	// re-reading the media works while the object exists (retention is
+	// the operator's bucket lifecycle).
+	URI string `json:"uri,omitempty"`
 }
 
 // Message is one turn in the conversation history.

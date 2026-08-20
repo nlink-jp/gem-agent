@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.22.0] - 2026-08-20
+
+### Added — audio and video input (ADR-0027, operator request)
+
+- `@memo.m4a` / `@clip.mp4` attachments (in-project, absolute, or ~
+  paths): the model transcribes and understands media natively. With
+  `[gcp] bucket` set, media ALWAYS routes through the operator's GCS
+  bucket as gs:// URIs — inline bytes would be re-sent with every
+  round's history replay, so one upload beats many resends. Without a
+  bucket, inline up to 15MB; larger files are refused naming both
+  remedies. Media files are never truncated (a clipped mp4 is a broken
+  file) and never deleted by gem-agent (bucket lifecycle rules own
+  retention)
+- Uploads are content-addressed (`gem-agent/media/<sha256><ext>`) and
+  deduplicated: re-attaching the same recording is free. The transcript
+  stores the gs:// URI, not the bytes — resume stays cheap while the
+  object exists
+- The uploader pins its quota project to the configured `[gcp].project`
+  (a stale `quota_project_id` in ADC 404s every storage call while
+  Vertex keeps working — measured; the fix rides the auth library's
+  env override because `option.WithQuotaProject` conflicts with the
+  storage client's transport options in this version)
+- Verified live: an inline voice memo transcribed exactly; a
+  bucket-routed video answered from both its audio track and frames;
+  dedupe confirmed on re-attachment. One new dependency:
+  cloud.google.com/go/storage
+
 ## [0.21.0] - 2026-08-20
 
 ### Added — document reading (ADR-0026, operator request)

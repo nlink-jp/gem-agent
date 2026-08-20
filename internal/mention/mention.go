@@ -35,6 +35,13 @@ type Limits struct {
 	// DocumentBytes caps one attached PDF (ADR-0026); extracted Office
 	// text rides the ordinary per-file budget.
 	DocumentBytes int
+	// MediaBytes caps one INLINE audio/video attachment (ADR-0027).
+	MediaBytes int
+	// UploadMedia, when set, stores a media file in the operator's GCS
+	// bucket and returns its gs:// URI. A configured bucket always
+	// wins over inline: the history replays every round, and inline
+	// media bytes would be re-sent with each one. nil = no bucket.
+	UploadMedia func(path, mime string) (string, error)
 }
 
 // DefaultLimits are sized so a handful of source files fit comfortably
@@ -44,6 +51,7 @@ func DefaultLimits() Limits {
 		PerFileBytes: 64 * 1024, TotalBytes: 256 * 1024, DirEntries: 200,
 		ImageBytes: 8 * 1024 * 1024, MaxImages: 4,
 		DocumentBytes: 12 * 1024 * 1024,
+		MediaBytes:    15 * 1024 * 1024,
 	}
 }
 
@@ -53,9 +61,13 @@ type Attachment struct {
 	Kind    string // "file", "directory" or "image"
 	Content string
 	Bytes   int
-	// Data and MIME are set for images (ADR-0012).
+	// Data and MIME are set for images (ADR-0012), inline documents
+	// (ADR-0026), and inline media (ADR-0027).
 	Data []byte
 	MIME string
+	// URI is set instead of Data for bucket-routed media (ADR-0027):
+	// a gs:// object Vertex reads natively.
+	URI string
 }
 
 // ClipboardRef is the pseudo-reference that attaches the clipboard
@@ -88,6 +100,26 @@ var documentExts = map[string]bool{
 // extension.
 func IsDocumentPath(ref string) bool {
 	return documentExts[strings.ToLower(filepath.Ext(ref))]
+}
+
+// mediaMIME maps the common audio/video containers (ADR-0027). MIME is
+// extension-declared: sniffing media containers properly means a
+// parser per format, and a wrong MIME fails loudly at the API — the
+// same failure one step later. The obvious mistake (plain text under a
+// media extension) is screened here.
+var mediaMIME = map[string]string{
+	".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4",
+	".aac": "audio/aac", ".flac": "audio/flac", ".ogg": "audio/ogg",
+	".aiff": "audio/aiff", ".aif": "audio/aiff",
+	".mp4": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm",
+	".mpeg": "video/mpeg", ".mpg": "video/mpeg", ".avi": "video/x-msvideo",
+}
+
+// IsMediaPath reports whether a reference names audio or video by
+// extension.
+func IsMediaPath(ref string) bool {
+	_, ok := mediaMIME[strings.ToLower(filepath.Ext(ref))]
+	return ok
 }
 
 // Problem is a reference that could not be attached, with the reason to
@@ -175,6 +207,17 @@ func Expand(text, projectDir string, lim Limits) ([]Attachment, []Problem) {
 		// Office XML formats attach as locally extracted text.
 		if IsDocumentPath(ref) {
 			att, err := attachDocument(ref, projectDir, lim)
+			if err != nil {
+				problems = append(problems, Problem{ref, err.Error()})
+				continue
+			}
+			atts = append(atts, att)
+			continue
+		}
+		// Audio and video (ADR-0027): via the operator's bucket when
+		// configured, inline under the media cap otherwise.
+		if IsMediaPath(ref) {
+			att, err := attachMedia(ref, projectDir, lim)
 			if err != nil {
 				problems = append(problems, Problem{ref, err.Error()})
 				continue
@@ -300,6 +343,45 @@ func attachDocument(ref, projectDir string, lim Limits) (Attachment, error) {
 		text += "\n[" + note + "]"
 	}
 	return Attachment{Ref: ref, Kind: "document", Bytes: len(text), Content: text}, nil
+}
+
+// attachMedia attaches one audio/video file (ADR-0027). A configured
+// bucket always wins over inline — inline media bytes are re-sent with
+// every round's history replay; a gs:// URI is a few dozen bytes.
+func attachMedia(ref, projectDir string, lim Limits) (Attachment, error) {
+	abs, err := resolveImagePath(projectDir, ref) // operator-typed path resolution
+	if err != nil {
+		return Attachment{}, err
+	}
+	mime := mediaMIME[strings.ToLower(filepath.Ext(ref))]
+	info, err := os.Stat(abs)
+	if err != nil {
+		return Attachment{}, fmt.Errorf("not found")
+	}
+	if lim.UploadMedia != nil {
+		uri, err := lim.UploadMedia(abs, mime)
+		if err != nil {
+			return Attachment{}, fmt.Errorf("upload: %v", err)
+		}
+		return Attachment{Ref: ref, Kind: "media", Bytes: int(info.Size()), URI: uri, MIME: mime}, nil
+	}
+	cap := lim.MediaBytes
+	if cap <= 0 {
+		cap = 15 * 1024 * 1024
+	}
+	if info.Size() > int64(cap) {
+		// A media file cannot be truncated — a clipped mp4 is a broken
+		// file. Name both remedies.
+		return Attachment{}, fmt.Errorf("media is %d bytes; the inline limit is %d — split the file, or set [gcp].bucket to route media through your GCS bucket", info.Size(), cap)
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return Attachment{}, fmt.Errorf("unreadable")
+	}
+	if strings.HasPrefix(http.DetectContentType(data), "text/") {
+		return Attachment{}, fmt.Errorf("not a media file (plain text under a media extension)")
+	}
+	return Attachment{Ref: ref, Kind: "media", Bytes: len(data), Data: data, MIME: mime}, nil
 }
 
 // resolveImagePath resolves an image reference. In-project paths go

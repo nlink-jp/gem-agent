@@ -165,6 +165,10 @@ type MCPConfig struct {
 type GCPConfig struct {
 	Project  string `toml:"project"`
 	Location string `toml:"location"`
+	// Bucket, when set, routes audio/video attachments through this
+	// GCS bucket as gs:// URIs (ADR-0027). Empty = inline media only,
+	// under the inline size cap.
+	Bucket string `toml:"bucket"`
 }
 
 // ModelConfig selects the Gemini model. The name is always config-driven —
@@ -326,7 +330,7 @@ func applyEnv(cfg *Config) {
 var trackedKeys = []string{
 	"gcp.project", "gcp.location",
 	"model.name", "model.context_window", "model.safety", "model.summary",
-	"model.thinking",
+	"model.thinking", "gcp.bucket",
 	"sandbox.enabled",
 	"agent.max_turns", "agent.shell_timeout_sec", "agent.auto_approve",
 	"agent.auto_compact", "agent.compact_at_pct",

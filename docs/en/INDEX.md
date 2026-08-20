@@ -92,6 +92,9 @@ excepted).
 - [`ADR-0026`](adr/0026-document-reading.md) — document reading: PDF
   native as measured multimodal parts, Office XML extracted locally,
   legacy binaries out of scope
+- [`ADR-0027`](adr/0027-audio-video.md) — audio/video input: a
+  configured bucket always wins over inline (round-replay economics),
+  content-addressed uploads, nothing deleted
 
 ## History
 

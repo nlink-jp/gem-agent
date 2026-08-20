@@ -98,6 +98,17 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   (absolute and ~ paths allowed — you typed them), the `read_document`
   tool when the model does (project-confined). Legacy .doc/.xls/.ppt
   are out of scope, stated loudly
+- **Audio and video input** (ADR-0027): attach recordings and clips
+  with `@memo.m4a` / `@clip.mp4` (in-project, absolute, or ~ paths) —
+  the model transcribes and understands them natively. With
+  `[gcp] bucket` set, media ALWAYS routes through your GCS bucket as a
+  `gs://` URI (content-addressed, deduplicated, never deleted by
+  gem-agent — set a bucket lifecycle rule): inline bytes would be
+  re-sent with every round's history replay. Without a bucket, media
+  attaches inline up to 15MB and larger files are refused naming both
+  remedies. Verified live: an inline voice memo transcribed exactly,
+  and a bucket-routed video answered from both its audio track and its
+  frames
 - **Agent memory**: short facts persisted across sessions with
   `save_memory` / `delete_memory` — global scope (about you or this
   machine, recalled everywhere) and project scope (this project only).

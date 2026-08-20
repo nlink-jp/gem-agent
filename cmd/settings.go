@@ -69,6 +69,7 @@ func (s *settingsStore) data() tui.SettingsData {
 	const needsRestart = "changing this needs a new backend client — edit the config file and restart"
 	ro("backend", "gcp.project", s.cfg.GCP.Project, "gcp.project", needsRestart)
 	ro("backend", "gcp.location", s.cfg.GCP.Location, "gcp.location", needsRestart)
+	ro("backend", "gcp.bucket", bucketLabel(s.cfg.GCP.Bucket), "gcp.bucket", needsRestart)
 	ro("backend", "model.name", s.cfg.Model.Name, "model.name", needsRestart)
 	ro("backend", "model.safety", s.cfg.Model.Safety, "model.safety", needsRestart)
 	ro("backend", "model.summary", summaryLabel(s.cfg.Model.Summary), "model.summary", needsRestart)
@@ -205,6 +206,13 @@ func summaryLabel(s string) string {
 func thinkingLabel(s string) string {
 	if s == "" {
 		return "(model default)"
+	}
+	return s
+}
+
+func bucketLabel(s string) string {
+	if s == "" {
+		return "(unset — media attaches inline up to the cap)"
 	}
 	return s
 }
