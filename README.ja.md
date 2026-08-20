@@ -30,7 +30,8 @@ Claude Code が使えない状況（プロバイダ側障害・契約やネッ�
 - Gemini エージェントループ — Gemini 3 thought signature の capture/replay
   （実機検証済み）
 - 組み込みツール: `list_files` / `list_tree` / `search_files` / `read_file` /
-  `summarize_file` / `view_image` / `write_file` / `edit_file` / `shell_exec`
+  `summarize_file` / `view_image` / `read_document` / `write_file` /
+  `edit_file` / `shell_exec`
   （すべてプロジェクトディレクトリに封じ込め。シンボリックリンク経由の脱出も検査）。
   `list_tree` はプロジェクトをツリー表示、`search_files` は依存ゼロの高速 grep
   （regex / literal、バイナリと `.git` はスキップ、上限は報告）— 方向づけが
@@ -81,6 +82,15 @@ Claude Code が使えない状況（プロバイダ側障害・契約やネッ�
   代わりに要約します — 古い側は 1 件の要約になり、直近はそのまま残ります。
   既定は 80%（`[agent].compact_at_pct`）で自動、`/compact` で任意のタイミングに
   手動実行。詳細は [ADR-0006](docs/ja/adr/0006-context-compaction.ja.md)
+- **文書の読解**（ADR-0026）: PDF はそのままモデルへ — レイアウト・表・
+  スキャンをネイティブに読みます（実測: オペレータ添付とツール応答内の
+  両方で受理、後続ラウンドもクリーン）。Word/Excel/PowerPoint
+  （.docx/.xlsx/.pptx）は標準ライブラリだけでローカルにテキスト抽出:
+  段落、タブ区切りのシート行、番号付きスライド。経路は ADR-0012 の
+  分割どおり 2 つ — ファイルを選ぶのがあなたなら `@report.pdf` /
+  `@data.xlsx`（絶対・~ パス可 — 打ったのはあなた自身）、モデルなら
+  `read_document` ツール（プロジェクト封じ込め）。レガシー
+  .doc/.xls/.ppt は対象外と明言します
 - **エージェントメモリ**: `save_memory` / `delete_memory` で短い事実を
   セッションを跨いで永続化 — グローバルスコープ（利用者やこのマシンの
   こと、どこでも想起）とプロジェクトスコープ（そのプロジェクトのみ）。

@@ -7,6 +7,7 @@
 package mention
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"os"
@@ -15,6 +16,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/nlink-jp/gem-agent/internal/docext"
 )
 
 // Limits bound how much an expansion may add to the prompt.
@@ -29,6 +32,9 @@ type Limits struct {
 	// Clipboard captures the clipboard image as PNG bytes — the
 	// @clipboard route. nil reports the reference as unavailable.
 	Clipboard func() ([]byte, error)
+	// DocumentBytes caps one attached PDF (ADR-0026); extracted Office
+	// text rides the ordinary per-file budget.
+	DocumentBytes int
 }
 
 // DefaultLimits are sized so a handful of source files fit comfortably
@@ -37,6 +43,7 @@ func DefaultLimits() Limits {
 	return Limits{
 		PerFileBytes: 64 * 1024, TotalBytes: 256 * 1024, DirEntries: 200,
 		ImageBytes: 8 * 1024 * 1024, MaxImages: 4,
+		DocumentBytes: 12 * 1024 * 1024,
 	}
 }
 
@@ -69,6 +76,18 @@ var imageMIME = map[string]string{
 func IsImagePath(ref string) bool {
 	_, ok := imageMIME[strings.ToLower(filepath.Ext(ref))]
 	return ok
+}
+
+// documentExts gates the document route (ADR-0026). Like images, the
+// extension only routes; the bytes decide the claim.
+var documentExts = map[string]bool{
+	".pdf": true, ".docx": true, ".xlsx": true, ".pptx": true,
+}
+
+// IsDocumentPath reports whether a reference names a document by
+// extension.
+func IsDocumentPath(ref string) bool {
+	return documentExts[strings.ToLower(filepath.Ext(ref))]
 }
 
 // Problem is a reference that could not be attached, with the reason to
@@ -144,6 +163,18 @@ func Expand(text, projectDir string, lim Limits) ([]Attachment, []Problem) {
 		// come from outside the project (ADR-0012).
 		if ref == ClipboardRef || IsImagePath(ref) {
 			att, err := attachImage(ref, projectDir, lim, &images)
+			if err != nil {
+				problems = append(problems, Problem{ref, err.Error()})
+				continue
+			}
+			atts = append(atts, att)
+			continue
+		}
+		// Documents share the operator-typed exception (ADR-0026): a
+		// PDF attaches as bytes for the model to read natively, the
+		// Office XML formats attach as locally extracted text.
+		if IsDocumentPath(ref) {
+			att, err := attachDocument(ref, projectDir, lim)
 			if err != nil {
 				problems = append(problems, Problem{ref, err.Error()})
 				continue
@@ -234,6 +265,41 @@ func attachImage(ref, projectDir string, lim Limits, images *int) (Attachment, e
 	}
 	*images++
 	return Attachment{Ref: ref, Kind: "image", Bytes: len(data), Data: data, MIME: mime}, nil
+}
+
+// attachDocument attaches one document (ADR-0026): a PDF as bytes the
+// model reads natively; the Office XML formats as locally extracted
+// text. Absolute and ~ paths are allowed on the same rationale as
+// images — the reference is operator-typed, never model-triggered.
+func attachDocument(ref, projectDir string, lim Limits) (Attachment, error) {
+	abs, err := resolveImagePath(projectDir, ref) // operator-typed path resolution, shared with images
+	if err != nil {
+		return Attachment{}, err
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return Attachment{}, fmt.Errorf("unreadable")
+	}
+	if bytes.HasPrefix(data, []byte("%PDF-")) {
+		cap := lim.DocumentBytes
+		if cap <= 0 {
+			cap = 12 * 1024 * 1024
+		}
+		if len(data) > cap {
+			// A PDF cannot be truncated like text — a clipped file is a
+			// broken file.
+			return Attachment{}, fmt.Errorf("PDF is %d bytes; the limit is %d", len(data), cap)
+		}
+		return Attachment{Ref: ref, Kind: "document", Bytes: len(data), Data: data, MIME: "application/pdf"}, nil
+	}
+	text, note, err := docext.Extract(data, docext.DefaultLimits())
+	if err != nil {
+		return Attachment{}, err
+	}
+	if note != "" {
+		text += "\n[" + note + "]"
+	}
+	return Attachment{Ref: ref, Kind: "document", Bytes: len(text), Content: text}, nil
 }
 
 // resolveImagePath resolves an image reference. In-project paths go

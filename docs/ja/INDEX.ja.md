@@ -83,6 +83,9 @@ supersede する（typo とリンク修正は例外）。
   supersede）
 - [`ADR-0025`](adr/0025-thinking-level.ja.md) — メインモデルの Gemini 3
   思考レベル設定。要約モデルは対象外、対応レベルはモデル依存（実測）
+- [`ADR-0026`](adr/0026-document-reading.ja.md) — 文書の読解: PDF は実測済み
+  multimodal パートでネイティブ、Office XML はローカル抽出、レガシー
+  バイナリは対象外
 
 ## History（履歴）
 

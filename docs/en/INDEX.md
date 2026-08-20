@@ -89,6 +89,9 @@ excepted).
 - [`ADR-0025`](adr/0025-thinking-level.md) — configurable Gemini 3
   thinking level for main-model calls; summary model unaffected,
   supported levels model-dependent (measured)
+- [`ADR-0026`](adr/0026-document-reading.md) — document reading: PDF
+  native as measured multimodal parts, Office XML extracted locally,
+  legacy binaries out of scope
 
 ## History
 

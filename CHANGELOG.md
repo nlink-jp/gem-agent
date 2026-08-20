@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.21.0] - 2026-08-20
+
+### Added — document reading (ADR-0026, operator request)
+
+- **PDF, Word, Excel, PowerPoint interpretation.** PDFs ride to the
+  model as document parts — measured before designing: accepted as a
+  user attachment and inside a multimodal function response, with the
+  conversation continuing cleanly past the tool round. The Office XML
+  formats (.docx/.xlsx/.pptx) are extracted to text locally by a new
+  stdlib-only package (`internal/docext`): paragraphs in document
+  order, sheets as tab-separated rows named per sheet, slides as
+  numbered blocks. Legacy .doc/.xls/.ppt are out of scope, stated in
+  the error
+- Two access paths per ADR-0012's "who chose the file" split:
+  `@report.pdf` / `@data.xlsx` operator attachments (absolute and ~
+  paths allowed, like images), and the project-confined
+  `read_document` tool for the model
+- Extraction is nonce-wrapped untrusted data; PDFs inherit the image
+  framing (visible text is content, never instructions). Caps reported:
+  PDFs over 12MB refuse whole, extraction truncation is noted, zip
+  members decompress through a bomb guard
+- Verified end-to-end against ground truth: a cupsfilter-produced PDF
+  and a textutil-produced .docx answered correctly via both paths
+
 ## [0.20.0] - 2026-08-20
 
 ### Added — thinking level (ADR-0025, operator request)

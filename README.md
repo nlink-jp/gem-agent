@@ -31,7 +31,7 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
 - Gemini agent loop with Gemini 3 thought-signature capture/replay
   (verified live)
 - Built-in tools: `list_files` / `list_tree` / `search_files` / `read_file` /
-  `summarize_file` / `view_image` / `write_file` / `edit_file` /
+  `summarize_file` / `view_image` / `read_document` / `write_file` / `edit_file` /
   `shell_exec`, all confined to the project directory (symlink escapes
   included). `list_tree` shows the project as a tree; `search_files` is a
   fast dependency-free grep (regex or literal, binaries and `.git`
@@ -88,6 +88,16 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   becomes one summary, the recent half stays verbatim. Automatic at 80%
   (`[agent].compact_at_pct`), or `/compact` at any time. See
   [ADR-0006](docs/en/adr/0006-context-compaction.md)
+- **Document reading** (ADR-0026): PDFs go to the model as-is — it
+  reads layout, tables, and scans natively (measured: accepted both as
+  an operator attachment and inside a tool response, with clean
+  continuation) — and Word/Excel/PowerPoint (.docx/.xlsx/.pptx) are
+  extracted to text locally with the standard library: paragraphs,
+  tab-separated sheet rows, numbered slides. Two paths per ADR-0012's
+  split: `@report.pdf` / `@data.xlsx` when you choose the file
+  (absolute and ~ paths allowed — you typed them), the `read_document`
+  tool when the model does (project-confined). Legacy .doc/.xls/.ppt
+  are out of scope, stated loudly
 - **Agent memory**: short facts persisted across sessions with
   `save_memory` / `delete_memory` — global scope (about you or this
   machine, recalled everywhere) and project scope (this project only).

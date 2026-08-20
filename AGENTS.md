@@ -48,6 +48,7 @@ internal/risk/     rule tier of the auto-approve ladder (pure, no model)
 internal/policy/   per-tool approval policy (ADR-0008), pure resolver
 internal/skills/   Claude Code skill discovery/loading (ADR-0010)
 internal/memory/   agent memory across sessions (ADR-0020): two scopes, budgeted injection
+internal/docext/   stdlib-only Office XML text extraction (ADR-0026): docx/xlsx/pptx
 internal/statedir/ shared per-project state convention (ADR-0022): root+env override, escape, .project marker
 cmd/settings.go    /settings panel content + edits (ADR-0009)
 internal/mention/  @-reference parsing, project-confined resolution, completion
