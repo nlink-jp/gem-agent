@@ -95,6 +95,9 @@ excepted).
 - [`ADR-0027`](adr/0027-audio-video.md) — audio/video input: a
   configured bucket always wins over inline (round-replay economics),
   content-addressed uploads, nothing deleted
+- [`ADR-0028`](adr/0028-self-healing-line-counter.md) — the printed-line
+  counter follows reality: over-tall frames scroll the terminal, and
+  the counter self-heals by the overflow (amends ADR-0003's definition)
 
 ## History
 

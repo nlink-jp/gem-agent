@@ -34,7 +34,7 @@ func TestBottomHoldKeepsFrameHeightThroughFlushAndDialog(t *testing.T) {
 	m := newTestModel(c)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
 	m = next.(Model)
-	m.printed = 500 // the screen filled long ago
+	m.hold.printed = 500 // the screen filled long ago
 
 	// A streaming turn with a tall live region.
 	m.ta.SetValue("go")
@@ -49,10 +49,10 @@ func TestBottomHoldKeepsFrameHeightThroughFlushAndDialog(t *testing.T) {
 	// MCP-call boundary: flushLive empties the live region (the view
 	// core shrinks by ~10 lines). The frame must hold, minus exactly
 	// what the flush printed to scrollback.
-	printedBefore := m.printed
+	printedBefore := m.hold.printed
 	next, _ = m.Update(ToolCall{Name: "mcp__x__y", Detail: "args"})
 	m = next.(Model)
-	consumed := m.printed - printedBefore
+	consumed := m.hold.printed - printedBefore
 	if got, want := frameLines(m), heldWant(&m, tall-consumed); got != want {
 		t.Errorf("after flush: frame %d lines, want %d (%d printed) — the footer bounced", got, want, consumed)
 	}
@@ -63,9 +63,9 @@ func TestBottomHoldKeepsFrameHeightThroughFlushAndDialog(t *testing.T) {
 	m = next.(Model)
 	m = dialogSeen(m)
 	open := frameLines(m)
-	printedBefore = m.printed
+	printedBefore = m.hold.printed
 	m = press(m, runeMsg("y")) // answer: dialog closes, back to running
-	consumed = m.printed - printedBefore
+	consumed = m.hold.printed - printedBefore
 	if got, want := frameLines(m), heldWant(&m, open-consumed); got != want {
 		t.Errorf("after dialog close: frame %d lines, want %d — the footer bounced", got, want)
 	}
@@ -85,21 +85,21 @@ func TestBottomHoldDisarmedWhileScreenNotFull(t *testing.T) {
 	m := newTestModel(c)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
 	m = next.(Model)
-	m.printed = 3
+	m.hold.printed = 3
 
 	m.ta.SetValue("go")
 	m = press(m, enter())
 	next, _ = m.Update(TextDelta(strings.Repeat("x\n", 8)))
 	m = next.(Model)
-	if got := frameLines(m); got != 29-m.printed {
-		t.Errorf("padded frame = %d lines, want %d (pad absorbs)", got, 29-m.printed)
+	if got := frameLines(m); got != 29-m.hold.printed {
+		t.Errorf("padded frame = %d lines, want %d (pad absorbs)", got, 29-m.hold.printed)
 	}
 	if m.hold.lastTotal != 0 {
 		t.Errorf("hold armed below the fold: %d", m.hold.lastTotal)
 	}
 
 	// The frame never exceeds height-1 even when the hold would ask.
-	m.printed = 500
+	m.hold.printed = 500
 	_ = m.View()
 	if m.hold.lastTotal > 29 {
 		t.Errorf("hold exceeds height-1: %d", m.hold.lastTotal)
@@ -112,7 +112,7 @@ func TestBottomHoldResetsOnResize(t *testing.T) {
 	m := newTestModel(c)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
 	m = next.(Model)
-	m.printed = 500
+	m.hold.printed = 500
 	m.ta.SetValue("go")
 	m = press(m, enter())
 	next, _ = m.Update(TextDelta(strings.Repeat("x\n", 10)))

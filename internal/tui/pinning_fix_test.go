@@ -35,13 +35,13 @@ func TestEmitCountsTabExpandedWidth(t *testing.T) {
 	m := newTestModel(c)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 20, Height: 40})
 	m = next.(Model)
-	before := m.printed
+	before := m.hold.printed
 
 	// 3 tabs → 24 printed cells minimum: wraps on a 20-col terminal.
 	m.emit("\t\t\tend")
 	printed := c.printed[len(c.printed)-1]
 	wantPhys := (ansi.StringWidth(printed) + 19) / 20
-	if got := m.printed - before; got != wantPhys {
+	if got := m.hold.printed - before; got != wantPhys {
 		t.Errorf("counted %d physical lines, printed string occupies %d", got, wantPhys)
 	}
 	if strings.Contains(printed, "\t") {

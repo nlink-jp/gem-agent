@@ -89,6 +89,9 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0027`](adr/0027-audio-video.ja.md) — 音声・動画入力: バケット設定が
   常にインラインに勝つ（ラウンド再送の経済）、content-addressed
   アップロード、何も削除しない
+- [`ADR-0028`](adr/0028-self-healing-line-counter.ja.md) — 印字行カウンタは
+  現実に追従: 高すぎるフレームは端末をスクロールさせ、カウンタは溢れ分を
+  自己修復する（ADR-0003 の定義を修正）
 
 ## History（履歴）
 

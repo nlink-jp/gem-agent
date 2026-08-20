@@ -27,7 +27,6 @@ const (
 const (
 	maxInputHeight = 6
 	liveTailLines  = 12
-	maxMDWidth     = 100
 	// Floors for a terminal that reports a bogus size.
 	minWidth  = 20
 	minHeight = 4
@@ -231,7 +230,6 @@ type Model struct {
 	height   int
 	sized    bool // first WindowSizeMsg received
 	banner   []string
-	printed  int // physical lines emitted since the last screen clear (ADR-0003)
 	st       styleSet
 	render   func(string) string
 	mkRender func(width int) func(string) string
@@ -314,8 +312,13 @@ func New(opts Options) Model {
 // newGlamourRenderer builds a fixed-style renderer. WithAutoStyle is
 // deliberately absent: it queries the terminal (OSC), and once Bubble
 // Tea owns stdin the reply arrives as phantom user input.
+//
+// The wrap width is the terminal's, full stop. An aesthetic cap (100
+// cols) was tried and removed: glamour hard-wraps by inserting real
+// newlines, so on a wide terminal every copied line broke far short of
+// the console edge (operator report).
 func newGlamourRenderer(width int, style string) func(string) string {
-	w := min(width-2, maxMDWidth)
+	w := width - 2
 	if w < 20 {
 		w = 20
 	}
@@ -376,7 +379,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// banner through the counter so pinning is exact from the
 			// first frame. Deferred to the first size report because
 			// counting needs the real width.
-			m.printed = 0
+			m.hold.printed = 0
 			m.hold.lastTotal = 0
 			cmds := []tea.Cmd{tea.ClearScreen}
 			for _, line := range m.banner {
@@ -384,7 +387,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Sequence(cmds...)
 		case resized:
-			m.printed = 0 // the clear empties the viewport
+			m.hold.printed = 0 // the clear empties the viewport
 			m.hold.lastTotal = 0
 			return m, tea.ClearScreen
 		}
@@ -548,13 +551,16 @@ func (m *Model) emit(s string) tea.Cmd {
 		}
 		total += phys
 	}
-	m.printed += total
-	// Each printed line scrolls history up one row; hand those rows back
-	// to the bottom-hold gap so history flows into it (ADR-0024 §3).
-	if m.hold != nil && m.hold.lastTotal > 0 {
-		m.hold.lastTotal -= total
-		if m.hold.lastTotal < 0 {
-			m.hold.lastTotal = 0
+	if m.hold != nil {
+		m.hold.printed += total
+		// Each printed line scrolls history up one row; hand those rows
+		// back to the bottom-hold gap so history flows into it
+		// (ADR-0024 §3).
+		if m.hold.lastTotal > 0 {
+			m.hold.lastTotal -= total
+			if m.hold.lastTotal < 0 {
+				m.hold.lastTotal = 0
+			}
 		}
 	}
 	return m.println(s)
@@ -1013,8 +1019,19 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 // bottom (ADR-0003): height − printed lines − view height − 1. Once the
 // conversation fills the screen the padding floors at zero and the
 // layout degrades to plain inline following.
-// bottomHold carries the ADR-0024 render state across View calls.
+// bottomHold carries the pinning render state across View calls
+// (ADR-0024, extended by ADR-0028): the printed-line counter and the
+// held frame height live behind a pointer because View runs on a copy
+// of the model, and both must survive it.
 type bottomHold struct {
+	// printed counts the physical rows above the frame top. It is
+	// self-healing (ADR-0028): a frame taller than the rows left below
+	// the printed content scrolls the terminal as it renders, moving
+	// the anchor up — printed follows, or the next smaller frame is
+	// positioned against rows that scrolled away (the /settings-ESC
+	// bug: the panel filled the screen and the input view then floated
+	// mid-screen).
+	printed   int
 	lastTotal int // frame height being held; 0 = disarmed (screen not full)
 }
 
@@ -1031,11 +1048,21 @@ func (m Model) View() string {
 			content = strings.Join(lines, "\n")
 		}
 		core := strings.Count(content, "\n") + 1
-		if pad := m.height - m.printed - core - 1; pad > 0 {
-			// Screen not full: the pad is the absorber (ADR-0003).
-			if m.hold != nil {
-				m.hold.lastTotal = 0
+		if m.hold == nil {
+			return content
+		}
+		// Scroll accounting (ADR-0028): rendering past the available
+		// rows scrolls the terminal and moves the frame anchor up by
+		// the overflow; the counter must follow reality.
+		if avail := m.height - 1 - m.hold.printed; core > avail {
+			m.hold.printed = m.height - 1 - core
+			if m.hold.printed < 0 {
+				m.hold.printed = 0
 			}
+		}
+		if pad := m.height - m.hold.printed - core - 1; pad > 0 {
+			// Screen not full: the pad is the absorber (ADR-0003).
+			m.hold.lastTotal = 0
 			content = strings.Repeat("\n", pad) + content
 		} else if m.hold != nil {
 			// Bottom-hold (ADR-0024): the pad has clamped to zero, so a

@@ -687,14 +687,14 @@ func TestShrinkClearsScreenOnce(t *testing.T) {
 	if cmd != nil {
 		t.Error("growth must not clear the screen")
 	}
-	m.printed = 7
+	m.hold.printed = 7
 	next, cmd = m.Update(tea.WindowSizeMsg{Width: 50, Height: 40})
 	m = next.(Model)
 	if cmd == nil {
 		t.Error("shrink must trigger a screen clear")
 	}
-	if m.printed != 0 {
-		t.Errorf("shrink clear must reset the line counter, got %d", m.printed)
+	if m.hold.printed != 0 {
+		t.Errorf("shrink clear must reset the line counter, got %d", m.hold.printed)
 	}
 }
 
@@ -715,8 +715,8 @@ func TestBottomPinning(t *testing.T) {
 
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = next.(Model)
-	if m.printed != 2 {
-		t.Fatalf("banner should be counted: printed = %d", m.printed)
+	if m.hold.printed != 2 {
+		t.Fatalf("banner should be counted: printed = %d", m.hold.printed)
 	}
 	if !strings.Contains(c.all(), "banner line 1") {
 		t.Fatal("banner not emitted through the TUI")
@@ -739,18 +739,18 @@ func TestBottomPinning(t *testing.T) {
 	// A wide line counts its wrapped physical lines.
 	next, _ = m.Update(tea.WindowSizeMsg{Width: 20, Height: 24}) // no shrink reset on first... width shrinks: clear resets
 	m = next.(Model)
-	if m.printed != 0 {
-		t.Fatalf("shrink clear should reset the counter: %d", m.printed)
+	if m.hold.printed != 0 {
+		t.Fatalf("shrink clear should reset the counter: %d", m.hold.printed)
 	}
-	before := m.printed
+	before := m.hold.printed
 	cmd := m.emit(strings.Repeat("x", 45)) // 45 cells / 20 wide = 3 physical lines
 	_ = cmd
-	if m.printed-before != 3 {
-		t.Errorf("wrapped emit counted %d physical lines, want 3", m.printed-before)
+	if m.hold.printed-before != 3 {
+		t.Errorf("wrapped emit counted %d physical lines, want 3", m.hold.printed-before)
 	}
 
 	// Fill beyond the screen: padding floors at zero.
-	m.printed = 1000
+	m.hold.printed = 1000
 	v = m.View()
 	if strings.HasPrefix(v, "\n\n") {
 		t.Error("padding must floor at zero when the screen is full")
@@ -1318,7 +1318,7 @@ func TestClosingSettingsRestoresTheInputPhase(t *testing.T) {
 	c := &capture{}
 	m := settingsModel(t, c, settingsRows(20))
 	m.height, m.width = 40, 120
-	before := m.printed
+	before := m.hold.printed
 
 	m = press(m, tea.KeyMsg{Type: tea.KeyEsc})
 	if m.phase != phaseInput {
@@ -1329,8 +1329,8 @@ func TestClosingSettingsRestoresTheInputPhase(t *testing.T) {
 	}
 	// Opening and closing prints nothing, so the pinning counter — which
 	// decides where the input block sits — must be untouched.
-	if m.printed != before {
-		t.Errorf("printed = %d, was %d: opening the panel moved the pinning counter", m.printed, before)
+	if m.hold.printed != before {
+		t.Errorf("printed = %d, was %d: opening the panel moved the pinning counter", m.hold.printed, before)
 	}
 }
 

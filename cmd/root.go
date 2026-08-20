@@ -499,8 +499,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			fmt.Sprintf("resumed: session %s (%d messages restored)", resumedID, len(restored)))
 	}
 	if approvalPolicy.Configured() {
-		bannerLines = append(bannerLines,
-			"approval policy: "+strings.Join(approvalPolicy.Describe(), ", "))
+		bannerLines = append(bannerLines, policyBannerLine(approvalPolicy.Describe()))
 	}
 	for _, n := range policyNotes {
 		bannerLines = append(bannerLines, "warning: "+string(n))
@@ -786,6 +785,19 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 	// tell an injected message from one the operator typed.
 	ag.AddContext(session.ShellContextPrefix + "\n$ " + command + "\n\nOutput:\n" + out)
 	return out
+}
+
+// policyBannerLine summarises the approval policy for the banner. A
+// full dump grows one entry per 'p' answer and MCP wildcard until the
+// line is a wall of rules nobody reads (operator report) — the banner
+// is a glance; /tools and /settings hold the statement.
+func policyBannerLine(rules []string) string {
+	const show = 3
+	if len(rules) <= show {
+		return "approval policy: " + strings.Join(rules, ", ")
+	}
+	return fmt.Sprintf("approval policy: %s, … %d rules total (/tools shows each tool's effective gate)",
+		strings.Join(rules[:show], ", "), len(rules))
 }
 
 // abbreviateHome shortens the home-directory prefix to "~" for display.

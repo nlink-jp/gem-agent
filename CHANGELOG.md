@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.22.1] - 2026-08-20
+
+### Fixed (operator reports)
+
+- **Footer floating mid-screen after closing /settings** (ADR-0028):
+  the panel budgets itself to height−1 rows — taller than the rows left
+  below already-printed content — so rendering it scrolled the terminal
+  and left the printed-line counter pointing at rows that had scrolled
+  away; the next frame was then padded against them. The counter now
+  lives in the render state and self-heals on overflow, so any
+  over-tall frame closes back to a bottom-pinned footer
+- **Markdown wrapped far narrower than the console**: an aesthetic
+  100-column cap made glamour hard-wrap (real newlines) on wide
+  terminals, so copied lines broke mid-sentence. The cap is removed —
+  the wrap width is the terminal's
+- **Policy dump flooding the startup banner**: with a policy grown by
+  'p' answers and MCP wildcards, the banner listed every rule. It now
+  shows the first three plus a count, pointing at /tools for the
+  per-tool effective gates
+
 ## [0.22.0] - 2026-08-20
 
 ### Added — audio and video input (ADR-0027, operator request)
