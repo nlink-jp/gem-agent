@@ -38,8 +38,8 @@ func TestRegistryShape(t *testing.T) {
 	want := map[string]bool{ // name → Mutating
 		"list_files": false, "list_tree": false, "search_files": false,
 		"read_file": false, "file_info": false, "view_image": false,
-		"read_document": false,
-		"write_file":    true, "edit_file": true, "shell_exec": true,
+		"read_document": false, "datetime": false,
+		"write_file": true, "edit_file": true, "shell_exec": true,
 	}
 	if len(r.List()) != len(want) {
 		t.Fatalf("registered %d tools, want %d", len(r.List()), len(want))

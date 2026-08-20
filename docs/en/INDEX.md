@@ -106,6 +106,10 @@ excepted).
   self-information tool (model, context occupancy, usage, limits,
   platform); fields earn their place by changing model behavior — GCP
   identifiers and hostname withheld
+- [`ADR-0032`](adr/0032-datetime-tool.md) — `datetime`: one read-only
+  tool for the clock and calendar arithmetic (now/info/add/diff/
+  convert); month-end normalization disclosed, business days refused;
+  session-start date rides the system prompt cache-stably
 - [`ADR-0031`](adr/0031-review-fixes-round-2.md) — review round 2:
   ~30 fixes (Msgs wiring, denial bypass, media-store poisoning,
   resume-under-flock, rune-safe completion, adaptive approval budget,

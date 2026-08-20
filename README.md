@@ -37,6 +37,15 @@ minimal fallback agent on an independent backend (Vertex AI), designed to be
   fast dependency-free grep (regex or literal, binaries and `.git`
   skipped, caps reported) — so orientation costs one call, not one round
   per directory
+- **`datetime`** (ADR-0032): a clock and a deterministic calendar for
+  the model — current time (local/UTC/unix/weekday/ISO week), date
+  facts, add/subtract, differences, and IANA timezone conversion.
+  LLMs guess confidently at exactly this arithmetic; the tool computes
+  it, disclosing Go's month-end normalization when it fires and
+  refusing business-day counts (no holiday calendar — a wrong number
+  with an authoritative shape is worse than none). The session-start
+  date also rides the system prompt (cache-stable), pointing here for
+  the live moment
 - **`agent_info`** (ADR-0030): the model's view of its own runtime —
   version, platform, the model it runs as, thinking level, context
   occupancy, cumulative token usage, limits, approval/sandbox state,

@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.27.0] - 2026-08-21
+
+### Added — datetime tool (ADR-0032, operator request)
+
+- New read-only `datetime` tool: op now (current local/UTC/unix/
+  weekday/ISO week), info (weekday, day-of-year, ISO week, days in
+  month, leap year), add (signed calendar shifts; Go's month-end
+  normalization is disclosed in the output when it fires), diff
+  (calendar breakdown + total days/hours/minutes + both weekdays),
+  convert (IANA timezone conversion; explicit offsets win over
+  `from`). Naive inputs are read in `tz` (default local); errors
+  teach the accepted forms
+- No business-day counts by design: weekday arithmetic without a
+  holiday calendar is wrong exactly where it would be used (Japanese
+  national holidays)
+- The system prompt now carries the session-start date + weekday +
+  timezone (cache-stable, ADR-0018) and directs the model to the tool
+  for the live moment and ALL calendar arithmetic
+
 ## [0.26.0] - 2026-08-21
 
 ### Fixed — whole-code review round 2 (ADR-0031, operator request)
