@@ -307,7 +307,7 @@ func TestAutoCompactGivesUpAfterRepeatedFailures(t *testing.T) {
 // back compacted, not re-inflated (ADR-0005 §4).
 func TestCompactedSessionRoundTripsThroughTheTranscript(t *testing.T) {
 	dir := t.TempDir()
-	lg, err := session.Open(dir)
+	lg, err := session.Open(dir, "/p")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -242,7 +242,16 @@ resumes compacted, rather than re-inflating to the size it was shrunk
 from.
 
 The transcript therefore holds the full text of every file the agent
-read. It lives under `~/.local/state/gem-agent/sessions/`, mode `0600`.
+read. It lives under
+`~/.local/state/gem-agent/sessions/projects/<escaped path>/`, mode
+`0600` — one subdirectory per project, the same convention as memory
+(ADR-0022), so a listing reads one directory and a cleanup in one
+project's directory cannot touch another's. Transcripts recorded by
+older versions in the flat `sessions/` directory keep working in place:
+they are listed and resumed where they are, never moved. The
+`GEMAGENT_STATE_DIR` environment variable relocates the whole state
+root (sessions and memory) — its purpose is isolation for tests and
+drills.
 
 ### Compacting the conversation
 

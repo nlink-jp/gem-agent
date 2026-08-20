@@ -2,7 +2,6 @@ package session
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,7 +10,7 @@ import (
 
 func openWithHeader(t *testing.T, dir string) *Logger {
 	t.Helper()
-	lg, err := Open(dir)
+	lg, err := Open(dir, "/p")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,15 +27,15 @@ func TestTornLineCostsOnlyItself(t *testing.T) {
 	dir := t.TempDir()
 	lg := openWithHeader(t, dir)
 	id := lg.ID()
+	path := lg.Path()
 	_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "turn one"})
 	lg.Close()
 
-	path := filepath.Join(dir, id+".jsonl")
 	f, _ := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
 	f.WriteString(`{"ts":"2026-01-01T00:00:00Z","kind":"message","da`) // torn, no newline
 	f.Close()
 
-	lg2, err := Reopen(dir, id)
+	lg2, err := Reopen(dir, "/p", id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,13 +61,13 @@ func TestCorruptMiddleLineIsSkippedNotFatal(t *testing.T) {
 	dir := t.TempDir()
 	lg := openWithHeader(t, dir)
 	id := lg.ID()
+	path := lg.Path()
 	_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "before"})
 	lg.Close()
-	path := filepath.Join(dir, id+".jsonl")
 	f, _ := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
 	f.WriteString("this is not json\n")
 	f.Close()
-	lg2, _ := Reopen(dir, id)
+	lg2, _ := Reopen(dir, "/p", id)
 	_ = lg2.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "after"})
 	lg2.Close()
 
@@ -85,15 +84,15 @@ func TestCompactionAfterSkippedLinesRefused(t *testing.T) {
 	dir := t.TempDir()
 	lg := openWithHeader(t, dir)
 	id := lg.ID()
+	path := lg.Path()
 	for i := 0; i < 4; i++ {
 		_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "m"})
 	}
 	lg.Close()
-	path := filepath.Join(dir, id+".jsonl")
 	f, _ := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
 	f.WriteString("corrupt\n")
 	f.Close()
-	lg2, _ := Reopen(dir, id)
+	lg2, _ := Reopen(dir, "/p", id)
 	_ = lg2.Log(KindCompaction, Compaction{Replaced: 2, Message: llm.Message{Role: llm.RoleUser, Content: "summary"}})
 	lg2.Close()
 
@@ -114,7 +113,7 @@ func TestClearRecordReplays(t *testing.T) {
 	_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "kept"})
 	lg.Close()
 
-	history, _, skipped, err := Load(filepath.Join(dir, lg.ID()+".jsonl"))
+	history, _, skipped, err := Load(lg.Path())
 	if err != nil || skipped != 0 {
 		t.Fatalf("Load: skipped=%d err=%v", skipped, err)
 	}
@@ -127,13 +126,13 @@ func TestClearResetsCompactionSkipGuard(t *testing.T) {
 	dir := t.TempDir()
 	lg := openWithHeader(t, dir)
 	id := lg.ID()
+	path := lg.Path()
 	_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "old"})
 	lg.Close()
-	path := filepath.Join(dir, id+".jsonl")
 	f, _ := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
 	f.WriteString("corrupt line before clear\n")
 	f.Close()
-	lg2, _ := Reopen(dir, id)
+	lg2, _ := Reopen(dir, "/p", id)
 	_ = lg2.Log(KindClear, nil)
 	for i := 0; i < 3; i++ {
 		_ = lg2.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "fresh"})
@@ -157,11 +156,11 @@ func TestConcurrentReopenRefused(t *testing.T) {
 	id := lg.ID()
 	defer lg.Close()
 
-	if _, err := Reopen(dir, id); err == nil || !strings.Contains(err.Error(), "in use") {
+	if _, err := Reopen(dir, "/p", id); err == nil || !strings.Contains(err.Error(), "in use") {
 		t.Errorf("Reopen while the session is open = %v, want an in-use refusal", err)
 	}
 	lg.Close()
-	lg2, err := Reopen(dir, id)
+	lg2, err := Reopen(dir, "/p", id)
 	if err != nil {
 		t.Errorf("Reopen after close: %v — the lock must die with the file", err)
 	} else {
@@ -173,14 +172,14 @@ func TestConcurrentReopenRefused(t *testing.T) {
 // off files that contain records they would misread.
 func TestSchemaOneFileStillLoads(t *testing.T) {
 	dir := t.TempDir()
-	lg, err := Open(dir)
+	lg, err := Open(dir, "/p")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = lg.Log(KindHeader, Header{Schema: 1, Project: "/p", Model: "m"})
 	_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "old but fine"})
 	lg.Close()
-	history, header, _, err := Load(filepath.Join(dir, lg.ID()+".jsonl"))
+	history, header, _, err := Load(lg.Path())
 	if err != nil || len(history) != 1 || header.Schema != 1 {
 		t.Errorf("schema-1 load: history=%d header=%+v err=%v", len(history), header, err)
 	}

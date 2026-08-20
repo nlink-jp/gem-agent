@@ -105,7 +105,7 @@ func resolveResume(dir, projectDir, model, id string) (session.Meta, []llm.Messa
 		if !session.ValidID(id) {
 			return meta, nil, nil, fmt.Errorf("%q is not a session id; `gem-agent sessions` lists them (ids look like 20260819-150102)", id)
 		}
-		found, err := session.Find(dir, id)
+		found, err := session.Find(dir, projectDir, id)
 		if err != nil {
 			return meta, nil, nil, fmt.Errorf("no session %s in %s — `gem-agent sessions` lists what is there", id, dir)
 		}
@@ -142,7 +142,7 @@ func resolveResume(dir, projectDir, model, id string) (session.Meta, []llm.Messa
 // conversation, however many processes it took (ADR-0005).
 func openSessionLog(dir, resumeID, projectDir, model, version string) (*session.Logger, error) {
 	if resumeID != "" {
-		lg, err := session.Reopen(dir, resumeID)
+		lg, err := session.Reopen(dir, projectDir, resumeID)
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +151,7 @@ func openSessionLog(dir, resumeID, projectDir, model, version string) (*session.
 		_ = lg.Log(session.KindResumed, map[string]string{"version": version})
 		return lg, nil
 	}
-	lg, err := session.Open(dir)
+	lg, err := session.Open(dir, projectDir)
 	if err != nil {
 		return nil, err
 	}

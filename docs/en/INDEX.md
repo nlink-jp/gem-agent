@@ -77,6 +77,9 @@ excepted).
 - [`ADR-0021`](adr/0021-review-fixes.md) — whole-code review fixes:
   transcript clear/tear/lock, the allowlist floor, scope-first policy,
   and two refuted-by-measurement findings
+- [`ADR-0022`](adr/0022-per-project-session-layout.md) — per-project
+  session subdirectories (memory's convention), legacy read in place,
+  and GEMAGENT_STATE_DIR isolation
 
 ## History
 

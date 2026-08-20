@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/nlink-jp/gem-agent/internal/statedir"
 )
 
 // Scope values.
@@ -40,13 +42,15 @@ func DefaultLimits() Limits {
 	return Limits{PerMemoryBytes: 4 * 1024, TotalBytes: 24 * 1024}
 }
 
-// DefaultDir returns the memory root, beside the session transcripts.
+// DefaultDir returns the memory root, beside the session transcripts —
+// under the shared state root, so GEMAGENT_STATE_DIR isolates it too
+// (ADR-0022).
 func DefaultDir() (string, error) {
-	home, err := os.UserHomeDir()
+	root, err := statedir.Root()
 	if err != nil {
-		return "", fmt.Errorf("cannot locate home directory: %w", err)
+		return "", err
 	}
-	return filepath.Join(home, ".local", "state", "gem-agent", "memory"), nil
+	return filepath.Join(root, "memory"), nil
 }
 
 // nameRe is strict because the name becomes a file name: it must not
@@ -58,39 +62,28 @@ func ValidName(name string) bool {
 	return len(name) <= 64 && nameRe.MatchString(name)
 }
 
-// Dir returns the directory holding one scope's memories.
+// Dir returns the directory holding one scope's memories. The escaping
+// and marker convention is shared with session transcripts
+// (internal/statedir, ADR-0022).
 func Dir(baseDir, projectDir, scope string) (string, error) {
 	switch scope {
 	case ScopeGlobal:
 		return filepath.Join(baseDir, "global"), nil
 	case ScopeProject:
-		return filepath.Join(baseDir, "projects", escapeProject(projectDir)), nil
+		return filepath.Join(baseDir, "projects", statedir.EscapeProject(projectDir)), nil
 	}
 	return "", fmt.Errorf("unknown scope %q — valid scopes are %q and %q", scope, ScopeGlobal, ScopeProject)
 }
 
-// escapeProject flattens an absolute project path into one directory
-// name. Lossy — the .project marker disambiguates collisions.
-func escapeProject(projectDir string) string {
-	return strings.ReplaceAll(filepath.Clean(projectDir), string(filepath.Separator), "-")
-}
-
-const projectMarker = ".project"
-
-// projectDirMatches verifies the .project marker: the path escaping is
-// lossy, so two projects can share a directory name. Misattributing one
-// project's memories to another would be worse than not loading them.
-// A missing marker counts as a match (Save writes it).
+// projectDirMatches verifies the .project marker; a mismatch means an
+// escape collision, and misattributing one project's memories to
+// another would be worse than not loading them.
 func projectDirMatches(dir, projectDir string) (bool, string) {
-	data, err := os.ReadFile(filepath.Join(dir, projectMarker))
-	if err != nil {
-		return true, ""
+	ok, note := statedir.MarkerMatches(dir, projectDir)
+	if !ok {
+		note += " — its memories are not loaded"
 	}
-	recorded := strings.TrimSpace(string(data))
-	if recorded == filepath.Clean(projectDir) {
-		return true, ""
-	}
-	return false, fmt.Sprintf("project memory dir %s belongs to %s (path-escape collision) — its memories are not loaded", dir, recorded)
+	return ok, note
 }
 
 // Load reads both scopes' memories for projectDir: global first, then
@@ -178,20 +171,11 @@ func Save(baseDir, projectDir, scope, name, content string, lim Limits) (Memory,
 		return Memory{}, false, err
 	}
 	if scope == ScopeProject {
-		if ok, note := projectDirMatches(dir, projectDir); !ok {
-			return Memory{}, false, fmt.Errorf("%s", note)
+		if err := statedir.EnsureProjectDir(dir, projectDir); err != nil {
+			return Memory{}, false, err
 		}
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	} else if err := os.MkdirAll(dir, 0o755); err != nil {
 		return Memory{}, false, err
-	}
-	if scope == ScopeProject {
-		marker := filepath.Join(dir, projectMarker)
-		if _, err := os.Stat(marker); err != nil {
-			if err := os.WriteFile(marker, []byte(filepath.Clean(projectDir)+"\n"), 0o644); err != nil {
-				return Memory{}, false, err
-			}
-		}
 	}
 	path := filepath.Join(dir, name+".md")
 	_, statErr := os.Stat(path)

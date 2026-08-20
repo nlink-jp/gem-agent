@@ -12,7 +12,7 @@ import (
 )
 
 func TestLogAppendsJSONL(t *testing.T) {
-	l, err := Open(t.TempDir())
+	l, err := Open(t.TempDir(), "/p")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,14 +50,14 @@ func TestLogAppendsJSONL(t *testing.T) {
 
 func TestOpenCreatesUniqueFilePerSession(t *testing.T) {
 	dir := t.TempDir()
-	l1, err := Open(dir)
+	l1, err := Open(dir, "/p")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer l1.Close()
 	// A second session in the same second gets a suffixed file (O_EXCL +
 	// retry) — never silent reuse of the same file.
-	l2, err := Open(dir)
+	l2, err := Open(dir, "/p")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestOpenCreatesUniqueFilePerSession(t *testing.T) {
 // do without: Gemini rejects a function-call part replayed without one.
 func TestLoadRestoresFullFidelityHistory(t *testing.T) {
 	dir := t.TempDir()
-	l, err := Open(dir)
+	l, err := Open(dir, "/p")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestLoadRestoresFullFidelityHistory(t *testing.T) {
 
 func TestLoadAppliesCompaction(t *testing.T) {
 	dir := t.TempDir()
-	l, err := Open(dir)
+	l, err := Open(dir, "/p")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestLoadAppliesCompaction(t *testing.T) {
 
 func TestLoadRejectsNewerSchema(t *testing.T) {
 	dir := t.TempDir()
-	l, err := Open(dir)
+	l, err := Open(dir, "/p")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestValidIDRejectsPaths(t *testing.T) {
 
 func TestReopenAppendsToTheSameTranscript(t *testing.T) {
 	dir := t.TempDir()
-	l, err := Open(dir)
+	l, err := Open(dir, "/p")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestReopenAppendsToTheSameTranscript(t *testing.T) {
 	}
 	l.Close()
 
-	l2, err := Reopen(dir, l.ID())
+	l2, err := Reopen(dir, "/p", l.ID())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func TestReopenAppendsToTheSameTranscript(t *testing.T) {
 }
 
 func TestReopenRefusesInvalidID(t *testing.T) {
-	if _, err := Reopen(t.TempDir(), "../escape"); err == nil {
+	if _, err := Reopen(t.TempDir(), "/p", "../escape"); err == nil {
 		t.Fatal("Reopen accepted a path as an id")
 	}
 }
@@ -256,7 +256,7 @@ func TestReopenRefusesInvalidID(t *testing.T) {
 func TestListFiltersByProjectAndSortsNewestFirst(t *testing.T) {
 	dir := t.TempDir()
 	write := func(project, preview string) string {
-		l, err := Open(dir)
+		l, err := Open(dir, project)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -333,7 +333,7 @@ func TestListOnMissingDirIsEmptyNotAnError(t *testing.T) {
 // --continue is meant to find and turn a resume into an error.
 func TestListSkipsSessionsWithNoConversation(t *testing.T) {
 	dir := t.TempDir()
-	real, err := Open(dir)
+	real, err := Open(dir, "/proj")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +345,7 @@ func TestListSkipsSessionsWithNoConversation(t *testing.T) {
 	}
 	real.Close()
 
-	empty, err := Open(dir)
+	empty, err := Open(dir, "/proj")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +368,7 @@ func TestListSkipsSessionsWithNoConversation(t *testing.T) {
 	}
 	// Find still reaches it, so an id the operator typed gets the
 	// accurate answer rather than "no such session".
-	found, err := Find(dir, empty.ID())
+	found, err := Find(dir, "/proj", empty.ID())
 	if err != nil {
 		t.Fatalf("Find on an empty session: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestListSkipsSessionsWithNoConversation(t *testing.T) {
 }
 
 func TestFindRejectsAnIDShapedLikeAPath(t *testing.T) {
-	if _, err := Find(t.TempDir(), "../../etc/passwd"); err == nil {
+	if _, err := Find(t.TempDir(), "/p", "../../etc/passwd"); err == nil {
 		t.Fatal("Find accepted a path as an id")
 	}
 }
@@ -404,7 +404,7 @@ func TestPreviewPrefersTypedMessagesAndRendersShellCommands(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			l, err := Open(dir)
+			l, err := Open(dir, "/proj")
 			if err != nil {
 				t.Fatal(err)
 			}

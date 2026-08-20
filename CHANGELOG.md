@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.18.0] - 2026-08-20
+
+### Changed — per-project session layout (ADR-0022, operator request)
+
+- New session transcripts live under
+  `sessions/projects/<escaped path>/` — one subdirectory per project,
+  the same escaped-path + `.project`-marker convention as memory
+  (shared implementation, `internal/statedir`). A cleanup in one
+  project's directory structurally cannot touch another's transcripts,
+  the listing reads one directory instead of header-filtering every
+  file, and the project binding is visible in the filesystem
+- **Legacy flat transcripts keep working in place**: listed, found, and
+  resumed where they are — nothing is moved (the operator chose
+  zero-file-motion over migration)
+- An id typed in the wrong project still resolves across projects so
+  the informative refusal ("recorded in X — run gem-agent there")
+  survives the layout change
+- `GEMAGENT_STATE_DIR` relocates the whole state root (sessions and
+  memory): tests and drills run against an isolated tree and
+  structurally cannot see — or delete — real state
+
 ## [0.17.0] - 2026-08-20
 
 ### Fixed — whole-code review batch (ADR-0021, operator request)

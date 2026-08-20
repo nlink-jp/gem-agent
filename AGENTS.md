@@ -48,6 +48,7 @@ internal/risk/     rule tier of the auto-approve ladder (pure, no model)
 internal/policy/   per-tool approval policy (ADR-0008), pure resolver
 internal/skills/   Claude Code skill discovery/loading (ADR-0010)
 internal/memory/   agent memory across sessions (ADR-0020): two scopes, budgeted injection
+internal/statedir/ shared per-project state convention (ADR-0022): root+env override, escape, .project marker
 cmd/settings.go    /settings panel content + edits (ADR-0009)
 internal/mention/  @-reference parsing, project-confined resolution, completion
 internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery
@@ -247,6 +248,14 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 - **Policy resolves scope before specificity (ADR-0021)** — project
   rules beat global rules for the tools they match; sorting one merged
   list by specificity broke "a project may tighten freely".
+- **Sessions are per-project; legacy flat files are read in place
+  (ADR-0022)** — Open/Reopen/Find take projectDir, new transcripts go
+  under `sessions/projects/<escaped>/`, and flat pre-0.18 files must
+  keep listing and resuming where they are. Do not add migration code
+  that moves them without revisiting ADR-0022 (the operator explicitly
+  chose zero file motion). E2E and drills set `GEMAGENT_STATE_DIR` to a
+  scratch tree — never run destructive tests against the real state
+  root.
 - **Memory writes are the trust boundary (ADR-0020)** — `save_memory` /
   `delete_memory` stay Mutating and `risk.Classify` keeps them at
   Review, never Safe: a persisted memory reappears in every later

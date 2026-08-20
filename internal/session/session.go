@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/statedir"
 )
 
 // SchemaVersion is the transcript format version. It is written into
@@ -99,13 +100,21 @@ type Logger struct {
 	id string
 }
 
-// DefaultDir returns the org-standard state location for session logs.
+// DefaultDir returns the state location for session logs — under the
+// shared state root, so GEMAGENT_STATE_DIR isolates it (ADR-0022).
 func DefaultDir() (string, error) {
-	home, err := os.UserHomeDir()
+	root, err := statedir.Root()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".local", "state", "gem-agent", "sessions"), nil
+	return filepath.Join(root, "sessions"), nil
+}
+
+// projectSubdir is where projectDir's sessions live (ADR-0022): the
+// same escaped-path + .project-marker convention as memory. Legacy
+// flat files directly under dir stay readable in place.
+func projectSubdir(dir, projectDir string) string {
+	return filepath.Join(dir, "projects", statedir.EscapeProject(projectDir))
 }
 
 // idPattern matches the ids Open generates and nothing else. Resume
@@ -117,12 +126,16 @@ var idPattern = regexp.MustCompile(`^\d{8}-\d{6}(-\d+)?$`)
 // ValidID reports whether s is a well-formed session id.
 func ValidID(s string) bool { return idPattern.MatchString(s) }
 
-// Open creates dir if needed and starts a new session file named by
-// timestamp.
-func Open(dir string) (*Logger, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+// Open starts a new session file named by timestamp, inside the
+// project's own subdirectory (ADR-0022). A .project marker collision —
+// two projects escaping to the same name — refuses loudly rather than
+// mixing their transcripts.
+func Open(dir, projectDir string) (*Logger, error) {
+	sub := projectSubdir(dir, projectDir)
+	if err := statedir.EnsureProjectDir(sub, projectDir); err != nil {
 		return nil, err
 	}
+	dir = sub
 	base := time.Now().Format("20060102-150405")
 	// O_EXCL prevents two same-second sessions from silently sharing one
 	// file; on collision, retry with a numeric suffix.
@@ -147,14 +160,21 @@ func Open(dir string) (*Logger, error) {
 
 // Reopen appends to an existing session (resume). One file is one
 // conversation however many processes it took, so a resumed session
-// continues its own transcript rather than starting a second one.
-func Reopen(dir, id string) (*Logger, error) {
+// continues its own transcript rather than starting a second one — in
+// whichever location it lives: the project subdirectory, or the legacy
+// flat layout (ADR-0022 §3: legacy files are read in place, never
+// moved).
+func Reopen(dir, projectDir, id string) (*Logger, error) {
 	if !ValidID(id) {
 		return nil, fmt.Errorf("invalid session id %q", id)
 	}
+	path, err := findSessionFile(dir, projectDir, id)
+	if err != nil {
+		return nil, err
+	}
 	// O_RDWR, not O_WRONLY: the tail repair below needs to read the last
 	// byte. Appends still go to the end (O_APPEND).
-	f, err := os.OpenFile(filepath.Join(dir, id+".jsonl"), os.O_RDWR|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -346,12 +366,40 @@ func Load(path string) ([]llm.Message, Header, int, error) {
 // the newest file they would shadow the real session that --continue is
 // meant to find, turning a resume into an error message.
 func List(dir, projectDir string) ([]Meta, error) {
+	var metas []Meta
+
+	// Project subdirectories (ADR-0022): one project's own subdir, or —
+	// for the all-projects listing — every subdir under projects/. A
+	// marker mismatch (escape collision) skips the directory: those
+	// files belong to another project, which lists them itself.
+	if projectDir != "" {
+		sub := projectSubdir(dir, projectDir)
+		if ok, _ := statedir.MarkerMatches(sub, projectDir); ok {
+			metas = append(metas, listDir(sub, projectDir)...)
+		}
+	} else if entries, err := os.ReadDir(filepath.Join(dir, "projects")); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				metas = append(metas, listDir(filepath.Join(dir, "projects", e.Name()), "")...)
+			}
+		}
+	}
+
+	// Legacy flat files, read in place (ADR-0022 §3), header-filtered
+	// exactly as before the layout change.
+	metas = append(metas, listDir(dir, projectDir)...)
+
+	sort.Slice(metas, func(i, j int) bool { return metas[i].LastActive.After(metas[j].LastActive) })
+	return metas, nil
+}
+
+// listDir describes the resumable sessions in one directory. Unreadable
+// files and (when projectDir is non-empty) foreign-project headers are
+// skipped — never fatal to a listing.
+func listDir(dir, projectDir string) []Meta {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
+		return nil
 	}
 	var metas []Meta
 	for _, e := range entries {
@@ -364,7 +412,7 @@ func List(dir, projectDir string) ([]Meta, error) {
 		}
 		meta, err := describe(filepath.Join(dir, e.Name()), id)
 		if err != nil {
-			continue // an unreadable file is skipped, never fatal to a listing
+			continue
 		}
 		if projectDir != "" && meta.Header.Project != projectDir {
 			continue
@@ -374,19 +422,51 @@ func List(dir, projectDir string) ([]Meta, error) {
 		}
 		metas = append(metas, meta)
 	}
-	sort.Slice(metas, func(i, j int) bool { return metas[i].LastActive.After(metas[j].LastActive) })
-	return metas, nil
+	return metas
 }
 
 // Find describes one session by id, whether or not it holds a
 // conversation. Resume by explicit id goes through here rather than
 // List: an id the operator typed deserves the accurate answer ("that
 // session has nothing in it") over List's "no such session".
-func Find(dir, id string) (Meta, error) {
+func Find(dir, projectDir, id string) (Meta, error) {
 	if !ValidID(id) {
 		return Meta{}, fmt.Errorf("invalid session id %q", id)
 	}
-	return describe(filepath.Join(dir, id+".jsonl"), id)
+	path, err := findSessionFile(dir, projectDir, id)
+	if err != nil {
+		return Meta{}, err
+	}
+	return describe(path, id)
+}
+
+// findSessionFile locates one session by id: the project subdirectory
+// first, then the legacy flat layout, then every other project's
+// subdirectory — the last so that an id typed in the wrong project
+// still resolves and gets the informative refusal ("recorded in X, run
+// gem-agent there") instead of "no such session".
+func findSessionFile(dir, projectDir, id string) (string, error) {
+	candidates := []string{
+		filepath.Join(projectSubdir(dir, projectDir), id+".jsonl"),
+		filepath.Join(dir, id+".jsonl"), // legacy flat (ADR-0022 §3)
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+	}
+	if entries, err := os.ReadDir(filepath.Join(dir, "projects")); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			p := filepath.Join(dir, "projects", e.Name(), id+".jsonl")
+			if _, err := os.Stat(p); err == nil {
+				return p, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no session %s", id)
 }
 
 // Latest returns the most recent session for a project, if any.

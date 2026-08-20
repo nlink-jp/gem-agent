@@ -147,8 +147,12 @@ data. Any failure leaves history untouched.
 
 ## Persistence
 
-One JSONL file per session under `~/.local/state/gem-agent/sessions/`,
-mode `0600`, named by timestamp. It is both the diagnostic log and the
+One JSONL file per session under
+`~/.local/state/gem-agent/sessions/projects/<escaped path>/` (per
+project, the memory convention — ADR-0022; legacy flat files under
+`sessions/` are read in place, never moved), mode `0600`, named by
+timestamp. `GEMAGENT_STATE_DIR` relocates the whole state root for
+test/drill isolation. It is both the diagnostic log and the
 resume source, so records that carry conversation state are complete —
 tool-call arguments, attachments, thought signatures — while diagnostic
 records stay summarised and are skipped on load. Compactions are recorded

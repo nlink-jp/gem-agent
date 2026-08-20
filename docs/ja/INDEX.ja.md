@@ -72,6 +72,9 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0021`](adr/0021-review-fixes.ja.md) — 全体コードレビューの修正一括:
   トランスクリプトの clear/tear/lock、allowlist の床、スコープ優先
   ポリシー、実測で反証された 2 所見
+- [`ADR-0022`](adr/0022-per-project-session-layout.ja.md) — セッションの
+  プロジェクト別サブディレクトリ（メモリの規約を採用）、旧配置はその場で
+  読み取り、GEMAGENT_STATE_DIR での隔離
 
 ## History（履歴）
 
