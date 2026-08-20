@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
@@ -67,6 +68,52 @@ func TestOpenCreatesUniqueFilePerSession(t *testing.T) {
 	}
 	if !ValidID(l1.ID()) || !ValidID(l2.ID()) {
 		t.Errorf("generated ids are not accepted by ValidID: %q %q", l1.ID(), l2.ID())
+	}
+}
+
+// TestOpenParallelUniqueIDs is the operator's question measured: N
+// truly simultaneous launches in one project, all inside the same
+// timestamp second, must yield N distinct valid sessions. O_EXCL is
+// the atomic arbiter; the suffix loop absorbs the contention (each
+// retry round crowns exactly one winner per name, so N openers need at
+// most N attempts — far under the loop's cap of 100).
+func TestOpenParallelUniqueIDs(t *testing.T) {
+	dir := t.TempDir()
+	const n = 16
+	var wg sync.WaitGroup
+	paths := make([]string, n)
+	ids := make([]string, n)
+	errs := make([]error, n)
+	start := make(chan struct{})
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start // maximize same-second contention
+			l, err := Open(dir, "/p")
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			defer l.Close()
+			paths[i] = l.Path()
+			ids[i] = l.ID()
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	seen := map[string]bool{}
+	for i := 0; i < n; i++ {
+		if errs[i] != nil {
+			t.Fatalf("open %d: %v", i, errs[i])
+		}
+		if seen[paths[i]] {
+			t.Errorf("two sessions share %s", paths[i])
+		}
+		seen[paths[i]] = true
+		if !ValidID(ids[i]) {
+			t.Errorf("id %q not resumable (ValidID rejects it)", ids[i])
+		}
 	}
 }
 

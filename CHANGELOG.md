@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.25.1] - 2026-08-21
+
+### Fixed — parallel same-project launches (operator question)
+
+- The operator asked whether timestamp session ids collide under
+  parallel execution. The ids themselves were already safe (O_EXCL +
+  numeric suffix since the first logger, flock since ADR-0021) — but
+  writing the concurrent test found a real race one layer down: the
+  `.project` marker was written with os.WriteFile (create-empty, then
+  write), so a simultaneous launch of the SAME project could read the
+  empty marker between those steps and refuse startup as a
+  "path-escape collision" (measured: roughly half of 16-way
+  simultaneous starts tripped it)
+- Markers now land by temp-file + rename (atomic: readers see no
+  marker or the whole marker), an empty marker counts as unowned and
+  is repaired, and the genuine different-project refusal is unchanged
+- New regression tests: 16-way concurrent Open (session) and 20×16
+  concurrent EnsureProjectDir (statedir), both under -race; verified
+  with 6 simultaneous real processes — 6 distinct sessions, same-second
+  ids suffixed -2/-3
+
 ## [0.25.0] - 2026-08-21
 
 ### Added — agent_info self-information tool (ADR-0030, operator request)

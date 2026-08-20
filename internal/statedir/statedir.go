@@ -45,15 +45,16 @@ const Marker = ".project"
 // MarkerMatches verifies dir's marker against projectDir: the path
 // escaping is lossy, so two projects can share a directory name, and
 // misattributing one project's state to another would be worse than
-// not loading it. A missing marker counts as a match (writers create
-// it; a hand-made directory has no better claim to check).
+// not loading it. A missing OR empty marker counts as a match (writers
+// create it; a hand-made directory — or one left by a crashed pre-fix
+// writer — has no better claim to check).
 func MarkerMatches(dir, projectDir string) (bool, string) {
 	data, err := os.ReadFile(filepath.Join(dir, Marker))
 	if err != nil {
 		return true, ""
 	}
 	recorded := strings.TrimSpace(string(data))
-	if recorded == filepath.Clean(projectDir) {
+	if recorded == "" || recorded == filepath.Clean(projectDir) {
 		return true, ""
 	}
 	return false, fmt.Sprintf("state dir %s belongs to %s (path-escape collision)", dir, recorded)
@@ -61,18 +62,43 @@ func MarkerMatches(dir, projectDir string) (bool, string) {
 
 // EnsureProjectDir creates dir (a per-project state directory) and its
 // marker, refusing on a marker collision.
+//
+// The marker lands by temp-file + rename, never os.WriteFile: WriteFile
+// is create-empty-then-write, and a parallel launch reading between
+// those two steps saw an empty marker and refused the SAME project as a
+// path-escape collision (measured: ~half of 16-way simultaneous starts
+// tripped it). Rename is atomic — a reader sees no marker or the whole
+// marker, both of which mean "proceed". Two genuinely different
+// projects racing to claim a fresh dir at once can still both pass the
+// pre-write check; the marker is a best-effort disambiguator for the
+// lossy escape, not a lock, and the second rename simply wins.
 func EnsureProjectDir(dir, projectDir string) error {
-	if ok, note := MarkerMatches(dir, projectDir); !ok {
-		return fmt.Errorf("%s", note)
-	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+	if ok, note := MarkerMatches(dir, projectDir); !ok {
+		return fmt.Errorf("%s", note)
+	}
 	marker := filepath.Join(dir, Marker)
-	if _, err := os.Stat(marker); err != nil {
-		if err := os.WriteFile(marker, []byte(filepath.Clean(projectDir)+"\n"), 0o644); err != nil {
-			return err
-		}
+	if data, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(data)) != "" {
+		return nil // present and owned (by us — MarkerMatches passed)
+	}
+	tmp, err := os.CreateTemp(dir, Marker+".tmp-")
+	if err != nil {
+		return err
+	}
+	if _, err := tmp.WriteString(filepath.Clean(projectDir) + "\n"); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return err
+	}
+	if err := os.Rename(tmp.Name(), marker); err != nil {
+		os.Remove(tmp.Name())
+		return err
 	}
 	return nil
 }
