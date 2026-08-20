@@ -115,6 +115,18 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// --- startup safety (ADR-0023) ---
+	// Both gates read one unbuffered line from stdin before the REPL/TUI
+	// takes over. One-shot mode counts as non-interactive even on a TTY:
+	// a scripted -p must behave deterministically.
+	interactive := flagPrompt == "" && term.IsTerminal(int(os.Stdin.Fd()))
+	home, _ := os.UserHomeDir()
+	if reason := broadRoot(projectDir, home); reason != "" {
+		if err := confirmBroadRoot(reason, projectDir, interactive, os.Stdin, cmd.ErrOrStderr()); err != nil {
+			return err
+		}
+	}
+
 	// --- per-tool approval policy (ADR-0008) ---
 	// The project half may tighten freely and may only loosen where the
 	// operator trusted this directory: a checked-out repository must not
@@ -143,6 +155,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// --- first-run project trust (ADR-0023): does this project's own
+	// instruction files / .mcp.json / skills get loaded at all? ---
+	projectTrusted, trustNote := resolveProjectTrust(
+		cfg, policyFile, policyPath, projectDir, interactive, os.Stdin, cmd.ErrOrStderr())
+	if trustNote != "" {
+		fmt.Fprintf(stderr, "%s\n", trustNote)
+	}
+
 	// --- shell execution strategy (ADR-0001 defense-in-depth) ---
 	sandboxOn := cfg.Sandbox.Enabled && !flagNoSandbox
 	execFn, err := buildExecFn(sandboxOn, projectDir)
@@ -156,7 +176,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- MCP servers from the project's .mcp.json (drop-in) ---
-	mcpClients, mcpSummary := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr)
+	mcpClients, mcpSummary := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, projectTrusted)
 	defer func() {
 		for _, c := range mcpClients {
 			c.Close()
@@ -164,7 +184,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}()
 
 	// --- skills: Claude Code's skill library, read as-is (ADR-0010) ---
-	skillsList, skillNotes := discoverSkills(projectDir)
+	skillsList, skillNotes := discoverSkills(projectDir, projectTrusted)
 	for _, n := range skillNotes {
 		fmt.Fprintf(stderr, "warning: %s\n", n)
 	}
@@ -266,7 +286,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 
 	// --- project instruction files (drop-in: AGENTS.md and friends,
 	// including ancestor directories, exactly as other agents read them)
-	projectContext, contextLabels, contextNotes := loadInstructions(projectDir)
+	projectContext, contextLabels, contextNotes := loadInstructions(projectDir, projectTrusted)
 	for _, n := range contextNotes {
 		fmt.Fprintf(stderr, "warning: instructions %s\n", n)
 	}

@@ -460,6 +460,30 @@ project file states.
 
 See [ADR-0020](docs/en/adr/0020-agent-memory.md).
 
+## Startup safety
+
+Two gates run before anything loads (ADR-0023):
+
+- **Broad roots ask first.** Launched in `/`, your home directory, or an
+  ancestor of it, gem-agent explains that file tools and sandboxed
+  shell writes would span that entire tree and asks before starting
+  (default: no). Non-interactive runs (`-p`, pipes) are refused there
+  outright.
+- **A new project must be trusted once.** The first launch in a project
+  that provides agent-facing files lists what it provides — instruction
+  files (injected as *your* instructions), `.mcp.json` (each server
+  entry starts a child process), `.claude/skills` — and asks whether to
+  trust it (default: no). The answer persists per project in the
+  machine-owned `policy.toml` (`trust = "granted" | "declined"`; delete
+  the key to be asked again). Declining still starts the session: the
+  project's own files are simply not loaded, and the banner says so.
+  Ancestor instruction files and all global configuration are outside
+  the gate — a clone cannot plant files in directories you own above
+  it. Projects listed in `[approval].trusted_projects` are trusted
+  without asking. Non-interactive runs in an undecided project run
+  bare (nothing of the project's loaded, note on stderr, nothing
+  recorded) so read-only `-p` pipelines over fresh clones keep working.
+
 ## Project instructions
 
 gem-agent reads the instruction files a repository already carries, in

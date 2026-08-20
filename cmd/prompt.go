@@ -9,14 +9,26 @@ import (
 
 // loadInstructions collects the project's agent-instruction files (the
 // vendor conventions, walked up through ancestor directories) and
-// returns the prompt section plus the labels for the banner.
-func loadInstructions(projectDir string) (section string, labels []string, notes []string) {
+// returns the prompt section plus the labels for the banner. When the
+// project is untrusted (ADR-0023), its OWN files are excluded — the
+// ancestor and global files stay: a clone cannot plant those.
+func loadInstructions(projectDir string, projectTrusted bool) (section string, labels []string, notes []string) {
 	home, _ := os.UserHomeDir()
 	globalDir := ""
 	if home != "" {
 		globalDir = filepath.Join(home, ".config", "gem-agent")
 	}
 	files, notes := instructions.Load(projectDir, home, globalDir, instructions.DefaultLimits())
+	if !projectTrusted {
+		kept := files[:0]
+		for _, f := range files {
+			if filepath.Dir(f.Path) == filepath.Clean(projectDir) {
+				continue
+			}
+			kept = append(kept, f)
+		}
+		files = kept
+	}
 	return instructions.Render(files), instructions.Labels(files), notes
 }
 

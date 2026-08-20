@@ -40,8 +40,18 @@ type PolicyFile struct {
 	Projects map[string]ProjectPolicy `toml:"projects"`
 }
 
+// Trust values for ProjectPolicy.Trust (ADR-0023).
+const (
+	TrustGranted  = "granted"
+	TrustDeclined = "declined"
+)
+
 // ProjectPolicy is one entry of the [projects] table.
 type ProjectPolicy struct {
+	// Trust records the first-run answer to "trust this project's
+	// agent-facing files?" (ADR-0023): TrustGranted, TrustDeclined, or
+	// "" while unasked. Deleting the key re-asks on the next start.
+	Trust string            `toml:"trust,omitempty"`
 	Tools map[string]string `toml:"tools"`
 }
 
@@ -107,7 +117,27 @@ func (pf *PolicyFile) Set(projectDir, tool, decision string) {
 		entry.Tools = map[string]string{}
 	}
 	setOrDelete(entry.Tools, tool, decision)
-	if len(entry.Tools) == 0 {
+	// The entry survives with no tools when it still carries a trust
+	// decision (ADR-0023).
+	if len(entry.Tools) == 0 && entry.Trust == "" {
+		delete(pf.Projects, projectDir)
+		return
+	}
+	pf.Projects[projectDir] = entry
+}
+
+// TrustFor returns the recorded first-run trust decision for projectDir
+// ("" while unasked).
+func (pf *PolicyFile) TrustFor(projectDir string) string {
+	return pf.Projects[projectDir].Trust
+}
+
+// SetTrust records the first-run trust decision (ADR-0023). An empty
+// value removes it, which re-asks on the next start.
+func (pf *PolicyFile) SetTrust(projectDir, trust string) {
+	entry := pf.Projects[projectDir]
+	entry.Trust = trust
+	if entry.Trust == "" && len(entry.Tools) == 0 {
 		delete(pf.Projects, projectDir)
 		return
 	}
@@ -137,8 +167,15 @@ func (pf *PolicyFile) Save(path string) error {
 		writeTools(&b, pf.Tools)
 	}
 	for _, dir := range sortedProjects(pf.Projects) {
-		fmt.Fprintf(&b, "\n[projects.%s.tools]\n", quoteKey(dir))
-		writeTools(&b, pf.Projects[dir].Tools)
+		entry := pf.Projects[dir]
+		if entry.Trust != "" {
+			fmt.Fprintf(&b, "\n[projects.%s]\n", quoteKey(dir))
+			fmt.Fprintf(&b, "trust = %s\n", quoteKey(entry.Trust))
+		}
+		if len(entry.Tools) > 0 {
+			fmt.Fprintf(&b, "\n[projects.%s.tools]\n", quoteKey(dir))
+			writeTools(&b, entry.Tools)
+		}
 	}
 
 	tmp := path + ".tmp"

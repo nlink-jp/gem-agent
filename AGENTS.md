@@ -248,6 +248,13 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 - **Policy resolves scope before specificity (ADR-0021)** — project
   rules beat global rules for the tools they match; sorting one merged
   list by specificity broke "a project may tighten freely".
+- **The first-run trust gate covers everything a project provides
+  (ADR-0023)** — instruction files, `.mcp.json`, and `.claude/skills`
+  load only for trusted projects (persisted in policy.toml `trust`).
+  Adding a new project-provided input channel means adding it to
+  `probeProject` and gating its load — a channel outside the gate is
+  the false-comfort hole the ADR exists to close. Broad roots (/, home,
+  ancestors of home) confirm interactively and refuse non-interactively.
 - **Sessions are per-project; legacy flat files are read in place
   (ADR-0022)** — Open/Reopen/Find take projectDir, new transcripts go
   under `sessions/projects/<escaped>/`, and flat pre-0.18 files must

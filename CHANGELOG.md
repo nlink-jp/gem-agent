@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.19.0] - 2026-08-20
+
+### Added — startup safety (ADR-0023, operator request)
+
+- **Broad-root guard**: launching in `/`, the home directory, or an
+  ancestor of home asks for confirmation (default no) after naming the
+  consequence — file tools and sandboxed shell writes would span that
+  entire tree. Non-interactive runs are refused there
+- **First-run project trust**: the first launch in a project that
+  provides agent-facing files lists them — instruction files (injected
+  as instructions), `.mcp.json` (each server entry starts a child
+  process), `.claude/skills` — and asks once whether to trust the
+  project (default no; persisted per project in the machine-owned
+  policy.toml as `trust = "granted" | "declined"`). Declining still
+  starts the session with none of the project's files loaded, and the
+  banner says so. Hand-listed `[approval].trusted_projects` skip the
+  question; projects providing nothing ask nothing
+- Non-interactive runs in an undecided project run bare (no injection,
+  no project MCP, no project skills; note on stderr; nothing recorded)
+  so read-only `-p` pipelines over fresh clones keep working
+
 ## [0.18.0] - 2026-08-20
 
 ### Changed — per-project session layout (ADR-0022, operator request)

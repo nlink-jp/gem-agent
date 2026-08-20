@@ -75,6 +75,9 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0022`](adr/0022-per-project-session-layout.ja.md) — セッションの
   プロジェクト別サブディレクトリ（メモリの規約を採用）、旧配置はその場で
   読み取り、GEMAGENT_STATE_DIR での隔離
+- [`ADR-0023`](adr/0023-startup-safety.ja.md) — 起動時の安全機構: 広すぎる
+  ルートは確認、初回信用の質問 1 つがプロジェクトの指示・.mcp.json・skills
+  を覆う
 
 ## History（履歴）
 

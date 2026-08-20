@@ -61,7 +61,7 @@ func TestLoadInstructionsReadsVendorFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	section, labels, notes := loadInstructions(proj)
+	section, labels, notes := loadInstructions(proj, true)
 	if len(notes) != 0 {
 		t.Fatalf("notes = %v", notes)
 	}

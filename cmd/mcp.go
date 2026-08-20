@@ -94,7 +94,7 @@ func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Too
 // collision — and registers every reachable server's tools. Failures on
 // either scope are warnings; a broken file or server must not block a
 // backup tool.
-func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, version string, registry *tools.Registry, stderr io.Writer) (clients []*mcp.Client, summary []string) {
+func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, version string, registry *tools.Registry, stderr io.Writer, projectTrusted bool) (clients []*mcp.Client, summary []string) {
 	if !cfg.MCP.Enabled {
 		return nil, nil
 	}
@@ -115,7 +115,12 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 	if gp := mcp.GlobalConfigPath(); gp != "" {
 		global = load(gp, "global")
 	}
-	project := load(filepath.Join(projectDir, ".mcp.json"), "project")
+	// A server entry is a child process, so an untrusted project's
+	// .mcp.json is not read at all (ADR-0023 §2).
+	var project map[string]mcp.ServerConfig
+	if projectTrusted {
+		project = load(filepath.Join(projectDir, ".mcp.json"), "project")
+	}
 
 	servers, scopes, overridden := mcp.Merge(global, project)
 	for _, name := range overridden {

@@ -17,10 +17,15 @@ import (
 // environment, and inheriting it implicitly would couple the fallback's
 // behaviour to the primary's (the operator shares individual skills, or
 // everything, with a symlink instead).
-func discoverSkills(projectDir string) ([]skills.Skill, []string) {
+func discoverSkills(projectDir string, projectTrusted bool) ([]skills.Skill, []string) {
 	global := ""
 	if home, err := os.UserHomeDir(); err == nil {
 		global = filepath.Join(home, ".config", "gem-agent", "skills")
+	}
+	// Skill bodies load as the operator's own instructions (ADR-0010),
+	// so an untrusted project contributes none (ADR-0023 §2).
+	if !projectTrusted {
+		projectDir = ""
 	}
 	return skills.Discover(global, projectDir, skills.DefaultLimits())
 }

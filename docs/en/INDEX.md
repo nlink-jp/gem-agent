@@ -80,6 +80,9 @@ excepted).
 - [`ADR-0022`](adr/0022-per-project-session-layout.md) — per-project
   session subdirectories (memory's convention), legacy read in place,
   and GEMAGENT_STATE_DIR isolation
+- [`ADR-0023`](adr/0023-startup-safety.md) — startup safety: broad
+  roots confirm, and one first-run trust question covers a project's
+  instructions, .mcp.json, and skills
 
 ## History
 
