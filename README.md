@@ -232,6 +232,10 @@ project only, symlinks included; anything that cannot be attached is
 reported rather than silently dropped, and attached content reaches the
 model isolated as untrusted data, exactly like tool output.
 
+Tab also completes `/commands` (and skill names after `/skill `) the
+same way: unique match in place, common prefix otherwise, candidates
+listed when Tab cannot advance.
+
 `!<command>` runs a shell command directly — sandboxed like `shell_exec`
 (same timeout and output cap) but without an approval prompt, since you
 typed it yourself. The command and its output are added to the model's

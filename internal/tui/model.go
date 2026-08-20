@@ -148,6 +148,9 @@ type Options struct {
 	// CompletePath returns candidate project paths for an @-reference
 	// prefix (Tab completion in the input box).
 	CompletePath func(prefix string) []string
+	// CompleteSlash returns candidate completions for an input that
+	// starts with "/" — command names, and skill names after "/skill ".
+	CompleteSlash func(prefix string) []string
 	// Settings supplies the panel's initial content, and ApplySetting
 	// stores one edit and returns the refreshed content (ADR-0009).
 	// Both nil disables /settings (the plain REPL prints a table).
@@ -216,15 +219,16 @@ type Model struct {
 	// Enter reach the app untouched when nothing is being composed.
 	choice int
 
-	startTurn    TurnStarter
-	shell        ShellStarter
-	compact      CompactStarter
-	slash        SlashHandler
-	toggleAuto   func() bool
-	autoMode     bool
-	completePath func(prefix string) []string
-	baseCtx      context.Context
-	cancelTurn   context.CancelFunc
+	startTurn       TurnStarter
+	shell           ShellStarter
+	compact         CompactStarter
+	slash           SlashHandler
+	toggleAuto      func() bool
+	autoMode        bool
+	completePath    func(prefix string) []string
+	completeSlashFn func(prefix string) []string
+	baseCtx         context.Context
+	cancelTurn      context.CancelFunc
 
 	width    int
 	height   int
@@ -262,28 +266,29 @@ func New(opts Options) Model {
 	sp.Spinner = spinner.MiniDot
 
 	m := Model{
-		ta:           ta,
-		spin:         sp,
-		histIdx:      -1,
-		live:         &strings.Builder{},
-		hold:         &bottomHold{},
-		startTurn:    opts.StartTurn,
-		shell:        opts.Shell,
-		compact:      opts.Compact,
-		slash:        opts.Slash,
-		toggleAuto:   opts.ToggleAuto,
-		autoMode:     opts.AutoMode,
-		completePath: opts.CompletePath,
-		settingsData: opts.Settings,
-		applySetting: opts.ApplySetting,
-		expandInput:  opts.ExpandInput,
-		baseCtx:      opts.BaseCtx,
-		println:      opts.Printer,
-		mkRender:     opts.RenderFactory,
-		width:        80,
-		banner:       opts.Banner,
-		modelName:    opts.ModelName,
-		projectDir:   opts.ProjectDir,
+		ta:              ta,
+		spin:            sp,
+		histIdx:         -1,
+		live:            &strings.Builder{},
+		hold:            &bottomHold{},
+		startTurn:       opts.StartTurn,
+		shell:           opts.Shell,
+		compact:         opts.Compact,
+		slash:           opts.Slash,
+		toggleAuto:      opts.ToggleAuto,
+		autoMode:        opts.AutoMode,
+		completePath:    opts.CompletePath,
+		completeSlashFn: opts.CompleteSlash,
+		settingsData:    opts.Settings,
+		applySetting:    opts.ApplySetting,
+		expandInput:     opts.ExpandInput,
+		baseCtx:         opts.BaseCtx,
+		println:         opts.Printer,
+		mkRender:        opts.RenderFactory,
+		width:           80,
+		banner:          opts.Banner,
+		modelName:       opts.ModelName,
+		projectDir:      opts.ProjectDir,
 	}
 	if m.baseCtx == nil {
 		m.baseCtx = context.Background()
@@ -835,6 +840,11 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.toggleAutoMode()
 
 	case msg.Type == tea.KeyTab:
+		// An input that IS a command completes as one; otherwise Tab
+		// serves the @-reference under the cursor.
+		if strings.HasPrefix(m.ta.Value(), "/") {
+			return m.completeSlash()
+		}
 		return m.completeMention()
 
 	case msg.Type == tea.KeyEnter:
@@ -1190,6 +1200,36 @@ func (m Model) completeMention() (tea.Model, tea.Cmd) {
 		}
 	}
 	m.ta.SetValue(value[:at+1] + completed)
+	m.ta.CursorEnd()
+	m.syncHeight()
+	return m, cmd
+}
+
+// completeSlash completes a /command (and, through the injected
+// completer, a /skill name) the same way @-references complete: to the
+// unique match, else to the longest common prefix, listing the
+// candidates when Tab cannot advance.
+func (m Model) completeSlash() (tea.Model, tea.Cmd) {
+	if m.completeSlashFn == nil {
+		return m, nil
+	}
+	value := m.ta.Value()
+	if strings.ContainsAny(value, "\n") {
+		return m, nil // multi-line input is a message, not a command
+	}
+	candidates := m.completeSlashFn(value)
+	if len(candidates) == 0 {
+		return m, nil
+	}
+	completed := candidates[0]
+	var cmd tea.Cmd
+	if len(candidates) > 1 {
+		completed = longestCommonPrefix(candidates)
+		if completed == value {
+			cmd = m.emit(m.st.hint.Render("  " + strings.Join(candidates, "  ")))
+		}
+	}
+	m.ta.SetValue(completed)
 	m.ta.CursorEnd()
 	m.syncHeight()
 	return m, cmd

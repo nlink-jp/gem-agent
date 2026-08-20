@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.23.0] - 2026-08-20
+
+### Added — Tab completion for /commands (operator request)
+
+- Tab on a "/"-prefixed input completes command names the same way
+  @-references complete: unique match in place, longest common prefix
+  otherwise, candidates listed when Tab cannot advance. After
+  "/skill ", skill names complete too
+
 ## [0.22.1] - 2026-08-20
 
 ### Fixed (operator reports)

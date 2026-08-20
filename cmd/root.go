@@ -526,8 +526,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			CompletePath: func(prefix string) []string {
 				return mention.Complete(projectDir, prefix, 24)
 			},
-			Settings:     &settingsData,
-			ApplySetting: settings.Apply,
+			CompleteSlash: slashCompletions(skillsList),
+			Settings:      &settingsData,
+			ApplySetting:  settings.Apply,
 			ExpandInput: func(in string) (string, bool, string) {
 				return expandSkillInput(in, skillsList)
 			},
@@ -787,6 +788,34 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 	return out
 }
 
+// slashCompletions returns the Tab-completion source for "/"-prefixed
+// input: command names, and skill names after "/skill ". The command
+// list mirrors what slashOutput and the REPL loop actually accept.
+func slashCompletions(skillsList []skills.Skill) func(string) []string {
+	commands := []string{
+		"/auto", "/clear", "/compact", "/help", "/mcp", "/memory",
+		"/quit", "/settings", "/skill", "/skills", "/tools", "/usage",
+	}
+	return func(prefix string) []string {
+		if rest, ok := strings.CutPrefix(prefix, "/skill "); ok {
+			var out []string
+			for _, s := range skillsList {
+				if strings.HasPrefix(s.Name, rest) {
+					out = append(out, "/skill "+s.Name)
+				}
+			}
+			return out
+		}
+		var out []string
+		for _, c := range commands {
+			if strings.HasPrefix(c, prefix) {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+}
+
 // policyBannerLine summarises the approval policy for the banner. A
 // full dump grows one entry per 'p' answer and MCP wildcard until the
 // line is a wall of rules nobody reads (operator report) — the banner
@@ -855,6 +884,9 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
   /quit    exit (Ctrl+D also works)
 auto-approve: safe changes run unattended; destructive, out-of-project,
   credential-touching, or uncertain calls still ask (two-tier review)
+completion:
+  Tab completes /commands (and skill names after "/skill "), and
+  @-references below
 file references:
   @<path>       attach a project file or directory to the message (Tab completes)
   @<img>.png    attach an image — absolute and ~ paths work for images
