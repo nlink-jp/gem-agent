@@ -69,6 +69,7 @@ enabled = false            # audit logging (ADR-0035) — see below
 backend = "gcp"            # gcp (Cloud Logging, default) | otlp-grpc | otlp-http
 endpoint = "localhost:4317" # otlp-* only
 insecure = false            # otlp-* only
+# headers_file = "~/.config/gem-agent/auth.json"  # otlp-* auth headers, mode 0600
 
 [approval]
 # trusted_projects = ["/path/to/repo"]  # projects whose .gem-agent.toml may loosen gates
@@ -119,8 +120,12 @@ attributes. **Metadata only**: prompts, responses, file contents and
 thought summaries never leave the machine through this channel; the
 local transcript stays the full record. Only your global config can
 enable telemetry or set the endpoint — a project's `.gem-agent.toml`
-structurally cannot. Auth headers ride the standard
-`OTEL_EXPORTER_OTLP_HEADERS` environment variable. Telemetry never
+structurally cannot. OTLP auth headers come from
+`[telemetry].headers_file` — a mode-0600 JSON file (by convention
+`~/.config/gem-agent/auth.json`) of header name → value; a file
+survives launchd/cron/fresh shells where the environment variable
+does not. Unset falls back to the standard
+`OTEL_EXPORTER_OTLP_HEADERS`. Telemetry never
 blocks the session: export failures warn once on stderr and degrade
 silently; shutdown flushes with a 3s cap.
 

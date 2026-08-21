@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.31.0] - 2026-08-21
+
+### Added — telemetry auth from a credentials file (operator report)
+
+- OTLP auth headers can now come from `[telemetry].headers_file` — a
+  mode-0600 JSON file (by convention ~/.config/gem-agent/auth.json)
+  of header name → value. The operator's point: an environment
+  variable disappears under launchd, cron, and shells that never
+  sourced the profile, and auth that silently vanishes with its
+  environment is not workplace auth
+- Owner-only permissions are enforced (anything else is refused
+  naming `chmod 600`), garbage and empty files fail with the expected
+  shape named, the gcp backend rejects the key (it authenticates via
+  ADC), and unset still falls back to OTEL_EXPORTER_OTLP_HEADERS.
+  Verified on the wire: the file's Authorization header arrives at a
+  real OTLP/HTTP receiver
+
 ## [0.30.0] - 2026-08-21
 
 ### Added — audit logging: Cloud Logging by default, OTLP for collectors (ADR-0035, operator request)

@@ -288,6 +288,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		if s, err := telemetry.New(ctx, telemetry.Config{
 			Enabled: true, Backend: cfg.Telemetry.Backend,
 			Endpoint: cfg.Telemetry.Endpoint, Insecure: cfg.Telemetry.Insecure,
+			HeadersFile: cfg.Telemetry.HeadersFile,
 		}, cfg.GCP.Project, cmd.Root().Version, sessionID, projectDir); err != nil {
 			fmt.Fprintf(stderr, "warning: telemetry disabled: %v\n", err)
 		} else {

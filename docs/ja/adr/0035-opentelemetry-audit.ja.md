@@ -50,8 +50,13 @@ opt-in であり、`[telemetry]` テーブルはオペレーターのグロー�
 config にしか存在しない — プロジェクト側 `.gem-agent.toml` からは
 テレメトリの有効化も宛先変更も**構造的に不可能**: clone した
 リポジトリが exfil シンクを仕込めてはならない。OTLP の認証ヘッダは
-標準の `OTEL_EXPORTER_OTLP_HEADERS` 環境変数で渡す（秘密は config
-ファイルではなく環境変数に属する）。
+`headers_file` — モード 0600 の JSON ファイル（慣例として
+`~/.config/gem-agent/auth.json`、ヘッダ名 → 値）から読む: 環境変数は
+launchd・cron・プロファイルを読んでいないシェルで消え、環境ごと
+静かに消える認証は職場の認証ではない（オペレーターの指摘）。
+所有者専用以外のパーミッションは拒否する — SSH 鍵と同じ規律である。
+ファイル未設定なら標準の `OTEL_EXPORTER_OTLP_HEADERS` も従来どおり
+効く。
 
 ### 2a. 既定バックエンドは GCP — 資格情報は既にそこにある
 

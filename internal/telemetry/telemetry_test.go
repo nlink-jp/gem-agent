@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -176,5 +177,68 @@ func TestEntryFromRecord(t *testing.T) {
 	if payload["event"] != "tool.call" || payload["tool"] != "shell_exec" ||
 		payload["duration_ms"] != int64(1200) || payload["mutating"] != true {
 		t.Errorf("payload = %v", payload)
+	}
+}
+
+// The auth-header file (operator report: env-var-only auth breaks
+// under launchd/cron/fresh shells): 0600 required, flat JSON, and the
+// headers must actually ride the wire.
+func TestHeadersFile(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/auth.json"
+
+	// Group/other-readable credentials are refused, naming the fix.
+	os.WriteFile(path, []byte(`{"Authorization":"Bearer tok"}`), 0o644)
+	if _, err := loadHeaders(path); err == nil || !strings.Contains(err.Error(), "chmod 600") {
+		t.Errorf("world-readable headers file accepted: %v", err)
+	}
+	os.Chmod(path, 0o600)
+	h, err := loadHeaders(path)
+	if err != nil || h["Authorization"] != "Bearer tok" {
+		t.Fatalf("headers = %v, %v", h, err)
+	}
+	// Absent config = nil, no error (env fallback path).
+	if h, err := loadHeaders(""); h != nil || err != nil {
+		t.Errorf("unset headers_file: %v %v", h, err)
+	}
+	// Garbage is named as such.
+	os.WriteFile(path, []byte("not json"), 0o600)
+	if _, err := loadHeaders(path); err == nil || !strings.Contains(err.Error(), "JSON") {
+		t.Errorf("garbage accepted: %v", err)
+	}
+}
+
+func TestHeadersRideTheWire(t *testing.T) {
+	gotAuth := make(chan string, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case gotAuth <- r.Header.Get("Authorization"):
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	path := dir + "/auth.json"
+	os.WriteFile(path, []byte(`{"Authorization":"Bearer file-token"}`), 0o600)
+
+	sink, err := New(context.Background(), Config{
+		Enabled: true, Backend: "otlp-http",
+		Endpoint: strings.TrimPrefix(srv.URL, "http://"), Insecure: true,
+		HeadersFile: path,
+	}, "", "v", "s", "/p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink.SessionStart("m", true, false, 0)
+	sink.Shutdown()
+	select {
+	case auth := <-gotAuth:
+		if auth != "Bearer file-token" {
+			t.Errorf("Authorization = %q, want the file's token", auth)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no export arrived")
 	}
 }

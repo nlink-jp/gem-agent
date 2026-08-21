@@ -109,6 +109,9 @@ func (s *settingsStore) data() tui.SettingsData {
 		if s.cfg.Telemetry.Backend != "gcp" && s.cfg.Telemetry.Backend != "" {
 			ro("telemetry", "telemetry.endpoint", s.cfg.Telemetry.Endpoint, "telemetry.endpoint", "")
 			ro("telemetry", "telemetry.insecure", strconv.FormatBool(s.cfg.Telemetry.Insecure), "telemetry.insecure", "")
+			if s.cfg.Telemetry.HeadersFile != "" {
+				ro("telemetry", "telemetry.headers_file", s.cfg.Telemetry.HeadersFile, "telemetry.headers_file", "")
+			}
 		}
 	}
 	// Read-only by design (ADR-0029 §1): the chrome is built with the

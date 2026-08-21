@@ -49,9 +49,15 @@ The exporter is a NEW egress channel from a security tool, so it is
 opt-in, and the `[telemetry]` table exists only in the operator's
 global config — the project-side `.gem-agent.toml` structurally
 cannot enable telemetry or redirect it: a cloned repository must not
-be able to plant an exfiltration sink. Auth headers for OTLP ride the
-standard `OTEL_EXPORTER_OTLP_HEADERS` environment variable (secrets
-belong in the environment, not the config file).
+be able to plant an exfiltration sink. OTLP auth headers come from
+`headers_file` — a mode-0600 JSON file
+(`~/.config/gem-agent/auth.json` by convention) of header name →
+value: an environment variable disappears under launchd, cron, and
+shells that never sourced the profile, and auth that silently
+vanishes with its environment is not workplace auth (operator
+observation). Anything but owner-only permissions is refused, the
+same discipline as an SSH key. With no file configured, the standard
+`OTEL_EXPORTER_OTLP_HEADERS` still works.
 
 ### 2a. The default backend is GCP — the credentials already exist
 

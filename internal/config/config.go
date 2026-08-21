@@ -171,6 +171,9 @@ type TelemetryConfig struct {
 	Backend  string `toml:"backend"`
 	Endpoint string `toml:"endpoint"` // otlp-* only
 	Insecure bool   `toml:"insecure"` // otlp-* only
+	// HeadersFile: JSON file of OTLP auth headers (mode 0600). A file
+	// survives launchd/cron/fresh shells; the env variable does not.
+	HeadersFile string `toml:"headers_file"`
 }
 
 // MCPConfig controls the MCP client. Server definitions live in the
@@ -371,6 +374,7 @@ var trackedKeys = []string{
 	"mcp.enabled", "mcp.call_timeout_sec",
 	"tui.theme", "tui.language", "tui.show_thoughts",
 	"telemetry.enabled", "telemetry.backend", "telemetry.endpoint", "telemetry.insecure",
+	"telemetry.headers_file",
 }
 
 func (c *Config) validate() error {
@@ -428,6 +432,9 @@ func (c *Config) validate() error {
 		switch c.Telemetry.Backend {
 		case "", "gcp":
 			// Cloud Logging rides [gcp].project, already required.
+			if c.Telemetry.HeadersFile != "" {
+				return fmt.Errorf("[telemetry].headers_file applies to the otlp backends; the gcp backend authenticates via ADC")
+			}
 		case "otlp-grpc", "otlp-http":
 			if c.Telemetry.Endpoint == "" {
 				return fmt.Errorf("[telemetry].endpoint is required for backend %q", c.Telemetry.Backend)

@@ -55,6 +55,10 @@ func TestTelemetryValidation(t *testing.T) {
 	if _, err := LoadWithOverrides(path, Overrides{}); err == nil || !strings.Contains(err.Error(), "backend") {
 		t.Errorf("bad backend accepted: %v", err)
 	}
+	os.WriteFile(path, []byte(base+"[telemetry]\nenabled = true\nheaders_file = \"/x.json\"\n"), 0o644)
+	if _, err := LoadWithOverrides(path, Overrides{}); err == nil || !strings.Contains(err.Error(), "headers_file") {
+		t.Errorf("headers_file with gcp backend accepted: %v", err)
+	}
 	os.WriteFile(path, []byte(base), 0o644)
 	cfg, err := LoadWithOverrides(path, Overrides{})
 	if err != nil || cfg.Telemetry.Enabled {

@@ -68,6 +68,7 @@ enabled = false            # 監査ロギング（ADR-0035）— 後述
 backend = "gcp"            # gcp（Cloud Logging・既定）| otlp-grpc | otlp-http
 endpoint = "localhost:4317" # otlp-* のみ
 insecure = false            # otlp-* のみ
+# headers_file = "~/.config/gem-agent/auth.json"  # otlp-* 認証ヘッダ・mode 0600
 
 [approval]
 # trusted_projects = ["/path/to/repo"]  # .gem-agent.toml の緩和を許すプロジェクト
@@ -117,7 +118,11 @@ Explorer でのログ名は `gem-agent`（`logging.googleapis.com` の有効化
 この経路からマシンを出ません。全文はローカル transcript が正本の
 ままです。テレメトリを有効化・宛先設定できるのはグローバル config
 だけで、プロジェクトの `.gem-agent.toml` からは構造的に不可能です。
-認証ヘッダは標準の `OTEL_EXPORTER_OTLP_HEADERS` 環境変数で。
+OTLP の認証ヘッダは `[telemetry].headers_file` — モード 0600 の JSON
+ファイル（慣例として `~/.config/gem-agent/auth.json`、ヘッダ名 → 値）
+から読みます。ファイルは launchd/cron/新しいシェルでも生きています —
+環境変数は消えます。未設定なら標準の `OTEL_EXPORTER_OTLP_HEADERS` に
+フォールバックします。
 テレメトリは決してセッションをブロックしません: 送信失敗は stderr に
 1 回警告して静かに劣化し、終了時 flush は 3 秒上限です。
 

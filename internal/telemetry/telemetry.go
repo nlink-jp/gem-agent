@@ -8,8 +8,10 @@ package telemetry
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +36,12 @@ type Config struct {
 	Backend  string `toml:"backend"`
 	Endpoint string `toml:"endpoint"` // otlp-* only
 	Insecure bool   `toml:"insecure"` // otlp-* only
+	// HeadersFile names a JSON file of OTLP auth headers
+	// ({"Authorization": "Bearer …"}). A file survives launchd, cron,
+	// and shells that never sourced the profile — the environment
+	// variable does not (operator observation). Must be mode 0600;
+	// unset falls back to the standard OTEL_EXPORTER_OTLP_HEADERS.
+	HeadersFile string `toml:"headers_file"`
 }
 
 // Sink emits audit events. The zero/nil Sink is a no-op.
@@ -55,15 +63,29 @@ func New(ctx context.Context, cfg Config, gcpProject, version, sessionID, projec
 	case "", "gcp":
 		exp, err = newGCPExporter(ctx, gcpProject, version, sessionID, projectDir)
 	case "otlp-grpc":
+		headers, herr := loadHeaders(cfg.HeadersFile)
+		if herr != nil {
+			return nil, herr
+		}
 		opts := []otlploggrpc.Option{otlploggrpc.WithEndpoint(cfg.Endpoint)}
 		if cfg.Insecure {
 			opts = append(opts, otlploggrpc.WithInsecure())
 		}
+		if headers != nil {
+			opts = append(opts, otlploggrpc.WithHeaders(headers))
+		}
 		exp, err = otlploggrpc.New(ctx, opts...)
 	case "otlp-http":
+		headers, herr := loadHeaders(cfg.HeadersFile)
+		if herr != nil {
+			return nil, herr
+		}
 		opts := []otlploghttp.Option{otlploghttp.WithEndpoint(cfg.Endpoint)}
 		if cfg.Insecure {
 			opts = append(opts, otlploghttp.WithInsecure())
+		}
+		if headers != nil {
+			opts = append(opts, otlploghttp.WithHeaders(headers))
 		}
 		exp, err = otlploghttp.New(ctx, opts...)
 	default:
@@ -243,4 +265,41 @@ func NewRecording() (*Sink, *Recording) {
 	rec := &Recording{}
 	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(rec)))
 	return &Sink{logger: provider.Logger("recording"), provider: provider}, rec
+}
+
+// loadHeaders reads the OTLP auth-header file: a flat JSON object of
+// header name → value. nil with no error when no file is configured
+// (the SDK then honors OTEL_EXPORTER_OTLP_HEADERS as usual). The file
+// holds secrets, so anything but owner-only permissions is refused —
+// the same discipline as an SSH key.
+func loadHeaders(path string) (map[string]string, error) {
+	if path == "" {
+		return nil, nil
+	}
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("headers_file: %w", err)
+		}
+		path = home + path[1:]
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("headers_file: %w", err)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("headers_file %s is mode %04o — it holds credentials; chmod 600 it", path, info.Mode().Perm())
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("headers_file: %w", err)
+	}
+	var headers map[string]string
+	if err := json.Unmarshal(data, &headers); err != nil {
+		return nil, fmt.Errorf("headers_file %s: %v (expected a flat JSON object of header name → value)", path, err)
+	}
+	if len(headers) == 0 {
+		return nil, fmt.Errorf("headers_file %s is empty", path)
+	}
+	return headers, nil
 }

@@ -157,8 +157,12 @@ show_thoughts = true
 # "gem-agent" in the Logs Explorer. Needs logging.googleapis.com
 # enabled and roles/logging.logWriter.
 # backends "otlp-grpc" / "otlp-http" send OpenTelemetry log records to
-# the endpoint below (auth headers via OTEL_EXPORTER_OTLP_HEADERS).
+# the endpoint below. Auth headers come from headers_file — a
+# mode-0600 JSON file of header name → value; a file survives
+# launchd/cron/fresh shells where an environment variable does not
+# (OTEL_EXPORTER_OTLP_HEADERS still works when unset).
 enabled = false
 backend = "gcp"            # gcp | otlp-grpc | otlp-http
 endpoint = "localhost:4317" # otlp-* only
 insecure = false            # otlp-* only: plaintext for a local collector
+#headers_file = "~/.config/gem-agent/auth.json"  # otlp-* auth headers, mode 0600
