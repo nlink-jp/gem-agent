@@ -638,6 +638,9 @@ func (m *Model) emit(s string) tea.Cmd {
 	// `!git diff` output drifted it one row per wrapped tab line
 	// (ADR-0021). Printing the expansion keeps count and drawing equal.
 	s = expandTabs(s)
+	// Then every line is hard-wrapped under the terminal width: an
+	// over-wide scrollback line is NOT harmless (see wrapForScrollback).
+	s = wrapForScrollback(s, m.width)
 	w := m.width
 	if w <= 0 {
 		w = 80
@@ -746,6 +749,28 @@ func (m *Model) releaseTurn() {
 	m.turnStart = time.Time{}
 	m.retryLine = ""
 	m.thoughtTail = ""
+}
+
+// wrapForScrollback hard-wraps every line of s to width-1 display
+// cells before it is handed to tea.Println. Bubble Tea's inline
+// renderer (v1.3.10 standard_renderer.flush) prints queued message
+// lines VERBATIM — no truncation, and no EraseLineRight for a line at
+// or beyond the terminal width — so an over-wide line (a ⚙ tool event
+// with a long detail, a wide shell output line) soft-wraps on screen:
+// the renderer's cursor ends up rows lower than its own accounting,
+// the top rows of the previous frame (the thought line, the running
+// status) are never repainted and leak into scrollback, and the old
+// row's tail survives beyond the wrapped line's end on the same row
+// (measured: the footer/thought-leak recurrence fixed in v0.34.1).
+// Wrapping — never truncating, tool details and shell output are
+// evidence — keeps every printed line strictly narrower than the
+// terminal, so the renderer's math is exact and every line gets its
+// EraseLineRight. width-1 matches clipLines' pending-auto-wrap margin.
+func wrapForScrollback(s string, width int) string {
+	if width <= 1 {
+		return s
+	}
+	return ansi.Hardwrap(s, width-1, true)
 }
 
 // physicalRows models the terminal's greedy wrap for one logical line:

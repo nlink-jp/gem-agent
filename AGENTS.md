@@ -162,6 +162,14 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   up (the resize staircase). View() clips every line to width-1; a
   genuine shrink additionally returns tea.ClearScreen once. Keep both
   when touching View().
+- **Scrollback lines have the SAME width rule** — "a wrapped Println is
+  harmless" was wrong: bubbletea prints queued message lines verbatim
+  (no truncation, and no EraseLineRight at or beyond the width), so one
+  over-wide ⚙ tool line desynced the cursor accounting and leaked the
+  frame's thought/status rows into scrollback (v0.34.1). emit()
+  hard-wraps everything through wrapForScrollback (wraps, never
+  truncates — tool details are evidence); every print must keep going
+  through emit.
 - **Never query the terminal after Bubble Tea starts** — OSC queries
   (glamour WithAutoStyle, termenv/lipgloss HasDarkBackground) get their
   "rgb:..." reply delivered as phantom keystrokes once raw mode owns

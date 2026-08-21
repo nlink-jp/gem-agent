@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.34.1] - 2026-08-22
+
+### Fixed — frame rows leaking into scrollback (operator report, recurrence)
+
+- Thought-stream fragments and the running-status heartbeat could leak
+  into the conversation scrollback, glued to tool-event lines. Root
+  cause read straight out of Bubble Tea v1.3.10's renderer: queued
+  tea.Println lines are printed VERBATIM — no truncation, and no
+  end-of-line erase for a line at or beyond the terminal width — so a
+  single over-wide scrollback line (a ⚙ tool event with a long
+  detail, e.g. save_memory content) soft-wraps, the renderer's cursor
+  accounting desyncs by the extra rows, and the previous frame's top
+  rows survive into history with old row tails glued after the
+  wrapped line's end
+- Fix: emit() now hard-wraps every scrollback line to width-1 cells
+  (wrapping, never truncating — tool details and shell output are
+  evidence). Regression-tested: the leak test fails against the old
+  code and the printed-row accounting is asserted exact
+
 ## [0.34.0] - 2026-08-22
 
 ### Added — instruction context in the auto-approve model tier (ADR-0038, operator direction)
