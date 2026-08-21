@@ -147,6 +147,9 @@ each mutating call first passes a pure rule classifier: *safe* runs,
 *blocked* always asks, *uncertain* goes to a model evaluation that must
 both approve and be confident. Every failure path asks. The blocked tier
 is a floor the model cannot lift, and the sandbox applies in all modes.
+For a turn's first rounds the model evaluation also sees the operator's
+typed request as wrapped evidence (ADR-0038) — misalignment escalates;
+later rounds keep the call-only view byte-identically.
 
 `/settings` shows every setting with its provenance and edits what can
 take effect now: the approval policy, auto-approve, auto-compaction, and

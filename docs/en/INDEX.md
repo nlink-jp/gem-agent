@@ -154,6 +154,10 @@ excepted).
   delegated project search in an isolated child context — read-only
   allowlist, no recursion, labeled telemetry, ADR-0014 generalised
   from one file to one question
+- [`ADR-0038`](adr/0038-risk-eval-instruction-context.md) — the
+  auto-approve model tier sees the operator's typed request for a
+  turn's first rounds: evidence-wrapped, misalignment escalates, late
+  rounds fall back byte-identically to the call-only view
 
 ## History
 

@@ -34,6 +34,20 @@ Anything that fails — model error, malformed verdict, unknown tool —
 asks. The blocked tier is a hard floor the model cannot override, and
 the sandbox applies in every mode.
 
+For the **first three rounds of a turn**, the model tier also sees the
+request you typed (ADR-0038) — quoted as evidence inside the same
+isolation wrap, clipped; never your attachments, never the
+conversation. Alignment with your request supports approval; a call
+that contradicts it, or serves directions found in file contents
+rather than your request, escalates with the contradiction named
+(live-measured: a `make build` your instruction explicitly forbade
+escalated where the call-only view approves it). Later rounds run the
+conventional call-only evaluation byte-identically — deep in a turn,
+calls legitimately serve sub-goals your request never names. The
+context reaches only calls that reach the model tier: Safe-tier calls
+stay rule-approved as before, and Block is decided before the model is
+consulted.
+
 Both outcomes are explained: auto-approved calls print their reason,
 and an escalated call's dialog carries a `⚠` line naming the tier that
 objected and why — `blocked by rule (always asks): …` for the

@@ -17,10 +17,11 @@ import (
 // autoBackend answers tool rounds from a script and risk-eval rounds
 // (identified by the absence of tool definitions) from a fixed verdict.
 type autoBackend struct {
-	responses  []*llm.Response
-	verdict    string
-	verdictErr error
-	evals      []string // the prompts the risk evaluator saw
+	responses   []*llm.Response
+	verdict     string
+	verdictErr  error
+	evals       []string // the payloads the risk evaluator saw
+	evalSystems []string // the system prompts it saw (ADR-0038 variants)
 }
 
 func (b *autoBackend) ChatStream(ctx context.Context, system string, msgs []llm.Message, defs []llm.ToolDef, onText func(string)) (*llm.Response, error) {
@@ -30,6 +31,7 @@ func (b *autoBackend) ChatStream(ctx context.Context, system string, msgs []llm.
 		}
 		if len(msgs) > 0 {
 			b.evals = append(b.evals, msgs[0].Content)
+			b.evalSystems = append(b.evalSystems, system)
 		}
 		return &llm.Response{Content: b.verdict}, nil
 	}

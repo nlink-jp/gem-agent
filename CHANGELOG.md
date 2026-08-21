@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.34.0] - 2026-08-22
+
+### Added — instruction context in the auto-approve model tier (ADR-0038, operator direction)
+
+- For a turn's first 3 rounds, the risk evaluation sees the request
+  the operator typed — the one context channel an injection attacker
+  cannot write. Alignment supports approval (fewer needless
+  escalations); a call contradicting the request, or serving
+  directions found in file contents, now escalates with the
+  contradiction named — invisible to the call-only view
+- The instruction rides inside the same nonce wrap as the call
+  (pasted text must not command the reviewer), clipped at 2000 runes;
+  attachments, history, and the model's own intent narration are
+  excluded by design
+- Later rounds fall back to the conventional call-only evaluation
+  byte-identically (operator direction: deep-turn calls legitimately
+  serve sub-goals the instruction never names) — no regression is
+  possible where the context does not apply
+- Invariants unchanged: Block floor decided before the model tier,
+  fail-closed, Safe tier never consults the model. The context
+  reaches Review-tier calls only (shell, memory writes, MCP)
+- Live-measured: an aligned `make build` approves citing the
+  instruction; the same command explicitly forbidden by the
+  instruction escalates ("Operator explicitly requested not to run
+  builds"); at round 5 the conventional approval returns
+
 ## [0.33.0] - 2026-08-21
 
 ### Added — agentic_file_search tool (ADR-0037, operator direction)

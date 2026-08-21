@@ -83,6 +83,12 @@ type Agent struct {
 	compactFailures int  // consecutive failures; two disables auto-compaction
 	warnedNoCut     bool // "nothing safe to compact" is said once, not per round
 
+	// turnInput and turnRound feed the risk evaluator's instruction
+	// context (ADR-0038): the operator's typed request, included for the
+	// first rounds of a turn only. Touched only from the agent goroutine.
+	turnInput string
+	turnRound int
+
 	// policy is the operator's per-tool approval policy (ADR-0008). The
 	// zero value leaves every tool at the default behaviour.
 	policy policy.Policy
@@ -400,6 +406,10 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 		}
 		a.telemetry.TurnEnd(turnRounds, time.Since(turnStart), outcome)
 	}()
+	// The typed input (never attachment content — the string carries
+	// @ref tokens, not bytes) is the risk evaluator's instruction
+	// context for this turn (ADR-0038).
+	a.turnInput = input
 	// @-references become attachments carried beside the text; the text
 	// the operator typed is left exactly as written.
 	lim := mention.DefaultLimits()
@@ -421,6 +431,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 	filterRetries := 0
 
 	for round := 0; round < a.maxTurns; round++ {
+		a.turnRound = round
 		// Compaction happens between rounds, before the request that
 		// would overflow — a long tool loop is where the window actually
 		// runs out (ADR-0006).
