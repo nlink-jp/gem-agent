@@ -10,12 +10,14 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mention"
 	"github.com/nlink-jp/gem-agent/internal/policy"
 	"github.com/nlink-jp/gem-agent/internal/risk"
 	"github.com/nlink-jp/gem-agent/internal/session"
+	"github.com/nlink-jp/gem-agent/internal/telemetry"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/nlk/guard"
 )
@@ -62,6 +64,7 @@ type Agent struct {
 
 	onToolCall func(tc llm.ToolCall)
 	onUsage    func(promptTokens, outputTokens, cachedTokens int)
+	telemetry  *telemetry.Sink
 	onAuto     func(tc llm.ToolCall, d AutoDecision)
 	onAttach   func(atts []mention.Attachment, problems []mention.Problem)
 	onNotice   func(msg string)
@@ -133,6 +136,8 @@ type Options struct {
 	// generation; cached tokens the share of the prompt served from the
 	// implicit cache, ADR-0018) — the TUI footer consumes it.
 	OnUsage func(promptTokens, outputTokens, cachedTokens int)
+	// Telemetry receives audit events (ADR-0035); nil disables.
+	Telemetry *telemetry.Sink
 	// AutoApprove starts the session in auto-approve mode (ADR-0004).
 	AutoApprove bool
 	// OnAutoDecision, when set, observes each auto-mode verdict so the
@@ -198,6 +203,7 @@ func New(opts Options) *Agent {
 		instructionTools: toSet(opts.InstructionTools),
 		clipboard:        opts.ClipboardImage,
 		mediaUpload:      opts.MediaUpload,
+		telemetry:        opts.Telemetry,
 		tag:              guard.NewTagWithPrefix("tool_output"),
 	}
 }
@@ -374,13 +380,26 @@ func (a *Agent) HistoryLen() int { return len(a.history) }
 
 // Run executes one user turn to completion. onText receives streamed
 // model text as it arrives. Returns the model's final text.
-func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (string, error) {
+func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out string, retErr error) {
 	// An empty user message would be appended to the transcript but
 	// silently dropped from the request (buildContents skips it) — a
 	// history the model never saw. Refuse it at the door (ADR-0021).
 	if strings.TrimSpace(input) == "" {
 		return "", fmt.Errorf("empty input")
 	}
+	// turn.end audit event (ADR-0035): rounds, wall time, outcome.
+	turnStart := time.Now()
+	turnRounds := 0
+	defer func() {
+		outcome := "ok"
+		switch {
+		case retErr != nil && ctx.Err() != nil:
+			outcome = "interrupted"
+		case retErr != nil:
+			outcome = "error"
+		}
+		a.telemetry.TurnEnd(turnRounds, time.Since(turnStart), outcome)
+	}()
 	// @-references become attachments carried beside the text; the text
 	// the operator typed is left exactly as written.
 	lim := mention.DefaultLimits()
@@ -413,6 +432,9 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (str
 		// content containing the tag name — a leaked tag cannot escape
 		// the wrapper, only get its carrier withheld.
 		resp, err := a.backend.ChatStream(ctx, a.tag.Expand(a.system), wrapToolMessages(a.history, a.tag, a.instructionTools), a.toolDefs, onText)
+		if err == nil {
+			turnRounds++
+		}
 		if err != nil {
 			// Every round replays the full history, so a gs:// object
 			// deleted by the bucket's lifecycle rules fails EVERY turn
@@ -668,7 +690,27 @@ func wrapUntrusted(content string, tag guard.Tag) string {
 // — the operator's refusal was silently ineffective (review round 2).
 const deniedResult = "Tool execution denied by the user. Do not retry the same call; ask the user how to proceed instead."
 
+// execCall wraps execCallInner with the ADR-0035 tool.call audit
+// event: what ran, for how long, with what outcome.
 func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
+	start := time.Now()
+	result := a.execCallInner(ctx, tc)
+	outcome := "ok"
+	switch {
+	case result == deniedResult:
+		outcome = "denied"
+	case strings.HasPrefix(result, "error:"):
+		outcome = "error"
+	}
+	mutating := false
+	if t, ok := a.registry.Get(tc.Name); ok {
+		mutating = t.Mutating
+	}
+	a.telemetry.ToolCall(tc.Name, mutating, CallDetail(tc), time.Since(start), outcome)
+	return result
+}
+
+func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 	// A cancelled turn must not open an approval dialog: the operator
 	// interrupted, and a prompt (worse, an 'a' answer) on behalf of a
 	// dead call is the last thing they asked for (review round 2).
@@ -708,12 +750,24 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
 				"tier": d.Tier.String(), "reason": d.Reason, "model": d.ModelConsulted,
 			})
 			approved = d.Approved
-			if !approved {
+			if approved {
+				source := "auto_rule"
+				if d.ModelConsulted {
+					source = "auto_model"
+				}
+				a.telemetry.Approval(tc.Name, "approved", source, mustPrompt, d.Reason)
+			} else {
 				reason = EscalationReason(d)
 			}
 		}
-		if !approved && !a.gate.Approve(tc.Name, CallDetail(tc), reason, mustPrompt) {
-			return deniedResult
+		if !approved {
+			// "gate" covers the operator and the session allowlist —
+			// the gates answer as one (ADR-0035 v1 granularity).
+			if !a.gate.Approve(tc.Name, CallDetail(tc), reason, mustPrompt) {
+				a.telemetry.Approval(tc.Name, "denied", "gate", mustPrompt, reason)
+				return deniedResult
+			}
+			a.telemetry.Approval(tc.Name, "approved", "gate", mustPrompt, reason)
 		}
 	}
 	out, err := tool.Run(ctx, tc.Args)

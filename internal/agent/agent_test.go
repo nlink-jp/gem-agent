@@ -13,6 +13,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mention"
+	"github.com/nlink-jp/gem-agent/internal/telemetry"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
@@ -622,4 +623,76 @@ func TestExecCallRefusesAfterCancel(t *testing.T) {
 	if len(gate.asked) != 0 {
 		t.Errorf("gate prompted for a cancelled turn: %v", gate.asked)
 	}
+}
+
+// ADR-0035: the audit stream from a real tool round — tool.call with
+// outcome, the approval decision, and turn.end.
+func TestTelemetryAuditEvents(t *testing.T) {
+	sink, rec := telemetry.NewRecording()
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c", Name: "write_file",
+			Args: map[string]any{"path": "a.txt", "content": "x"}}}},
+		{Content: "done"},
+	}}
+	reg := newAgentRegistry(t)
+	a := New(Options{Backend: mb, Registry: reg, Gate: &approveAll{},
+		System: "s", MaxTurns: 5, Telemetry: sink})
+	if _, err := a.Run(context.Background(), "write it", nil); err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string][]telemetry.RecordedEvent{}
+	for _, ev := range rec.Events() {
+		byName[ev.Name] = append(byName[ev.Name], ev)
+	}
+	if len(byName["tool.call"]) != 1 || byName["tool.call"][0].Attrs["outcome"] != "ok" ||
+		byName["tool.call"][0].Attrs["tool"] != "write_file" {
+		t.Errorf("tool.call = %v", byName["tool.call"])
+	}
+	if len(byName["approval.decision"]) != 1 || byName["approval.decision"][0].Attrs["decision"] != "approved" ||
+		byName["approval.decision"][0].Attrs["source"] != "gate" {
+		t.Errorf("approval = %v", byName["approval.decision"])
+	}
+	if len(byName["turn.end"]) != 1 || byName["turn.end"][0].Attrs["outcome"] != "ok" ||
+		byName["turn.end"][0].Attrs["rounds"] != "2" {
+		t.Errorf("turn.end = %v", byName["turn.end"])
+	}
+}
+
+// A denial is audited as such — on both the approval and the call.
+func TestTelemetryDeniedCall(t *testing.T) {
+	sink, rec := telemetry.NewRecording()
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c", Name: "write_file",
+			Args: map[string]any{"path": "a.txt", "content": "x"}}}},
+		{Content: "ok"},
+	}}
+	a := New(Options{Backend: mb, Registry: newAgentRegistry(t), Gate: &denyAll{},
+		System: "s", MaxTurns: 5, Telemetry: sink})
+	if _, err := a.Run(context.Background(), "write it", nil); err != nil {
+		t.Fatal(err)
+	}
+	var denied, callDenied bool
+	for _, ev := range rec.Events() {
+		if ev.Name == "approval.decision" && ev.Attrs["decision"] == "denied" {
+			denied = true
+		}
+		if ev.Name == "tool.call" && ev.Attrs["outcome"] == "denied" {
+			callDenied = true
+		}
+	}
+	if !denied || !callDenied {
+		t.Errorf("denial not audited: approval=%v call=%v events=%v", denied, callDenied, rec.Events())
+	}
+}
+
+func newAgentRegistry(t *testing.T) *tools.Registry {
+	t.Helper()
+	reg, err := tools.New(t.TempDir(),
+		func(ctx context.Context, command string) *exec.Cmd {
+			return exec.CommandContext(ctx, "/bin/bash", "-c", command)
+		}, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reg
 }

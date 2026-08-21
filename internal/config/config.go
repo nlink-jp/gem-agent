@@ -14,13 +14,14 @@ import (
 
 // Config is the gem-agent configuration.
 type Config struct {
-	GCP      GCPConfig      `toml:"gcp"`
-	Model    ModelConfig    `toml:"model"`
-	Sandbox  SandboxConfig  `toml:"sandbox"`
-	Agent    AgentConfig    `toml:"agent"`
-	MCP      MCPConfig      `toml:"mcp"`
-	TUI      TUIConfig      `toml:"tui"`
-	Approval ApprovalConfig `toml:"approval"`
+	GCP       GCPConfig       `toml:"gcp"`
+	Model     ModelConfig     `toml:"model"`
+	Sandbox   SandboxConfig   `toml:"sandbox"`
+	Agent     AgentConfig     `toml:"agent"`
+	MCP       MCPConfig       `toml:"mcp"`
+	TUI       TUIConfig       `toml:"tui"`
+	Telemetry TelemetryConfig `toml:"telemetry"`
+	Approval  ApprovalConfig  `toml:"approval"`
 
 	// Sources records where each setting's effective value came from,
 	// keyed by its TOML path ("model.name"). Four precedence layers with
@@ -160,6 +161,18 @@ type TUIConfig struct {
 	ShowThoughts bool `toml:"show_thoughts"`
 }
 
+// TelemetryConfig is the audit-log exporter (ADR-0035). Deliberately
+// absent from ProjectConfig: the exporter is an egress channel, and a
+// cloned repository must not be able to enable it or redirect it.
+type TelemetryConfig struct {
+	Enabled bool `toml:"enabled"`
+	// Backend: "gcp" (default — Cloud Logging in the [gcp] project via
+	// the same ADC as Vertex), "otlp-grpc", or "otlp-http".
+	Backend  string `toml:"backend"`
+	Endpoint string `toml:"endpoint"` // otlp-* only
+	Insecure bool   `toml:"insecure"` // otlp-* only
+}
+
 // MCPConfig controls the MCP client. Server definitions live in the
 // project's .mcp.json (Claude Code format), not here — drop-in
 // compatibility is the point.
@@ -248,12 +261,13 @@ func defaults() Config {
 		// target, RFP §3) only from the global endpoint — regional
 		// endpoints 404 them (measured 2026-08 with gemini-3-flash-preview
 		// and gemini-3.7-flash). Gemini 2.5 users set a regional location.
-		GCP:     GCPConfig{Location: "global"},
-		Model:   ModelConfig{Safety: "default"},
-		Sandbox: SandboxConfig{Enabled: true},
-		Agent:   AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120, AutoCompact: true, CompactAtPct: 80},
-		MCP:     MCPConfig{Enabled: true, CallTimeoutSec: 60},
-		TUI:     TUIConfig{Theme: "auto", Language: "auto", ShowThoughts: true},
+		GCP:       GCPConfig{Location: "global"},
+		Model:     ModelConfig{Safety: "default"},
+		Sandbox:   SandboxConfig{Enabled: true},
+		Agent:     AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120, AutoCompact: true, CompactAtPct: 80},
+		MCP:       MCPConfig{Enabled: true, CallTimeoutSec: 60},
+		TUI:       TUIConfig{Theme: "auto", Language: "auto", ShowThoughts: true},
+		Telemetry: TelemetryConfig{Backend: "gcp", Endpoint: "localhost:4317"},
 	}
 }
 
@@ -356,6 +370,7 @@ var trackedKeys = []string{
 	"agent.auto_compact", "agent.compact_at_pct",
 	"mcp.enabled", "mcp.call_timeout_sec",
 	"tui.theme", "tui.language", "tui.show_thoughts",
+	"telemetry.enabled", "telemetry.backend", "telemetry.endpoint", "telemetry.insecure",
 }
 
 func (c *Config) validate() error {
@@ -408,6 +423,18 @@ func (c *Config) validate() error {
 	// prevent.
 	if c.GCP.Location == "" {
 		return fmt.Errorf("[gcp].location must not be empty — \"global\" is the default; delete the key to use it")
+	}
+	if c.Telemetry.Enabled {
+		switch c.Telemetry.Backend {
+		case "", "gcp":
+			// Cloud Logging rides [gcp].project, already required.
+		case "otlp-grpc", "otlp-http":
+			if c.Telemetry.Endpoint == "" {
+				return fmt.Errorf("[telemetry].endpoint is required for backend %q", c.Telemetry.Backend)
+			}
+		default:
+			return fmt.Errorf("[telemetry].backend must be gcp, otlp-grpc, or otlp-http (got %q)", c.Telemetry.Backend)
+		}
 	}
 	if c.Model.ContextWindow < 0 {
 		return fmt.Errorf("[model].context_window must not be negative")

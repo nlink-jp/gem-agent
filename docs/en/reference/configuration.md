@@ -64,6 +64,12 @@ theme = "auto"             # auto | dark | light | plain
 language = "auto"          # auto | ja | en (ADR-0029 — see interface.md)
 show_thoughts = true       # live thought summaries in the TUI (ADR-0033)
 
+[telemetry]
+enabled = false            # audit logging (ADR-0035) — see below
+backend = "gcp"            # gcp (Cloud Logging, default) | otlp-grpc | otlp-http
+endpoint = "localhost:4317" # otlp-* only
+insecure = false            # otlp-* only
+
 [approval]
 # trusted_projects = ["/path/to/repo"]  # projects whose .gem-agent.toml may loosen gates
 [approval.tools]
@@ -96,6 +102,27 @@ The `GEMAGENT_STATE_DIR` environment variable relocates the state root
 | `--config <path>` | use another config file |
 | `--no-sandbox` | disable the Seatbelt wrapper (debugging only) |
 | `sessions` | list resumable sessions |
+
+## Telemetry (ADR-0035)
+
+With `[telemetry].enabled = true`, audit events are exported. The
+default backend `gcp` writes them into **Cloud Logging of your
+[gcp].project** via the same ADC Vertex uses — zero collector
+infrastructure, log name `gem-agent` in the Logs Explorer (needs
+`logging.googleapis.com` enabled and `roles/logging.logWriter`). The
+`otlp-grpc` / `otlp-http` backends send OpenTelemetry log records to
+your own collector instead. Events: `session.start/end`, `tool.call` (name,
+clipped detail, duration, outcome), `approval.decision` (decision and
+which layer made it), `turn.end`, `model.usage`, `compaction`,
+`media.upload` — with service/session/project/host resource
+attributes. **Metadata only**: prompts, responses, file contents and
+thought summaries never leave the machine through this channel; the
+local transcript stays the full record. Only your global config can
+enable telemetry or set the endpoint — a project's `.gem-agent.toml`
+structurally cannot. Auth headers ride the standard
+`OTEL_EXPORTER_OTLP_HEADERS` environment variable. Telemetry never
+blocks the session: export failures warn once on stderr and degrade
+silently; shutdown flushes with a 3s cap.
 
 ## Content filters
 

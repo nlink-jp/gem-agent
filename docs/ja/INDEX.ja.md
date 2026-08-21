@@ -137,6 +137,10 @@ supersede する（typo とリンク修正は例外）。
   呼び出しを終わらせる: プロセスグループ kill + WaitDelay（パイプを
   握る孫がタイムアウトも Ctrl+C もハングさせた）、3 回押しの最終
   脱出口
+- [`ADR-0035`](adr/0035-opentelemetry-audit.ja.md) — OpenTelemetry
+  監査ロギング: OTLP ログイベント・既定 OFF・グローバル config 限定
+  （エクスポーターはエグレス経路）・メタデータのみ・セッションを
+  決して害さないテレメトリ
 
 ## History（履歴）
 

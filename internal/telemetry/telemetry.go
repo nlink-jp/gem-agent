@@ -1,0 +1,246 @@
+// Package telemetry emits gem-agent's audit events as OpenTelemetry
+// log records over OTLP (ADR-0035). Metadata only — prompts, model
+// responses, file contents, and thoughts never travel this channel;
+// the local transcript stays the full record. Disabled is the zero
+// value: every method on a nil or no-op Sink is free, so call sites
+// never branch.
+package telemetry
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"sync"
+	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+)
+
+// Config mirrors the [telemetry] table. It lives ONLY in the
+// operator's global config — a project file cannot enable telemetry or
+// redirect the endpoint (ADR-0035 §2): the exporter is an egress
+// channel.
+type Config struct {
+	Enabled bool `toml:"enabled"`
+	// Backend: "gcp" (default — Cloud Logging in the [gcp] project,
+	// riding the same ADC as Vertex), "otlp-grpc", or "otlp-http".
+	Backend  string `toml:"backend"`
+	Endpoint string `toml:"endpoint"` // otlp-* only
+	Insecure bool   `toml:"insecure"` // otlp-* only
+}
+
+// Sink emits audit events. The zero/nil Sink is a no-op.
+type Sink struct {
+	logger   otellog.Logger
+	provider *sdklog.LoggerProvider
+}
+
+// Nop returns the disabled sink.
+func Nop() *Sink { return nil }
+
+// New builds an OTLP-backed sink. Telemetry must never hurt the
+// session (ADR-0035 §4): export failures reach stderr once via the
+// global error handler and degrade silently after.
+func New(ctx context.Context, cfg Config, gcpProject, version, sessionID, projectDir string) (*Sink, error) {
+	var exp sdklog.Exporter
+	var err error
+	switch cfg.Backend {
+	case "", "gcp":
+		exp, err = newGCPExporter(ctx, gcpProject, version, sessionID, projectDir)
+	case "otlp-grpc":
+		opts := []otlploggrpc.Option{otlploggrpc.WithEndpoint(cfg.Endpoint)}
+		if cfg.Insecure {
+			opts = append(opts, otlploggrpc.WithInsecure())
+		}
+		exp, err = otlploggrpc.New(ctx, opts...)
+	case "otlp-http":
+		opts := []otlploghttp.Option{otlploghttp.WithEndpoint(cfg.Endpoint)}
+		if cfg.Insecure {
+			opts = append(opts, otlploghttp.WithInsecure())
+		}
+		exp, err = otlploghttp.New(ctx, opts...)
+	default:
+		return nil, fmt.Errorf("[telemetry].backend must be gcp, otlp-grpc, or otlp-http (got %q)", cfg.Backend)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("telemetry exporter: %w", err)
+	}
+
+	res, err := resource.New(ctx,
+		resource.WithHost(),
+		resource.WithAttributes(
+			semconv.ServiceName("gem-agent"),
+			semconv.ServiceVersion(version),
+			attribute.String("session.id", sessionID),
+			attribute.String("project.dir", projectDir),
+		))
+	if err != nil {
+		res = resource.Default()
+	}
+	provider := sdklog.NewLoggerProvider(
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(exp)),
+		sdklog.WithResource(res),
+	)
+	otel.SetErrorHandler(warnOnceHandler())
+	return &Sink{logger: provider.Logger("gem-agent"), provider: provider}, nil
+}
+
+// warnOnceHandler prints the first export failure and swallows the
+// rest — an unreachable collector must not spam a working session.
+func warnOnceHandler() otel.ErrorHandlerFunc {
+	var once sync.Once
+	return func(err error) {
+		once.Do(func() {
+			fmt.Fprintf(os.Stderr, "warning: telemetry export failing (reported once): %v\n", err)
+		})
+	}
+}
+
+// Shutdown flushes with a hard cap — exit must not hang on a dead
+// collector.
+func (s *Sink) Shutdown() {
+	if s == nil || s.provider == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_ = s.provider.Shutdown(ctx)
+}
+
+// clip bounds attribute values: audit metadata, not payload transport.
+func clip(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max]) + "…"
+}
+
+func (s *Sink) emit(name string, attrs ...attribute.KeyValue) {
+	if s == nil || s.provider == nil {
+		return
+	}
+	var rec otellog.Record
+	rec.SetTimestamp(time.Now())
+	rec.SetSeverity(otellog.SeverityInfo)
+	rec.SetEventName(name)
+	rec.SetBody(attribute.StringValue(name))
+	rec.AddAttributes(attrs...)
+	s.logger.Emit(context.Background(), rec)
+}
+
+// --- audit events (ADR-0035 §1) ---
+
+func (s *Sink) SessionStart(model string, sandbox, autoApprove bool, mcpServers int) {
+	s.emit("session.start",
+		attribute.String("model", model),
+		attribute.Bool("sandbox", sandbox),
+		attribute.Bool("auto_approve", autoApprove),
+		attribute.Int("mcp_servers", mcpServers))
+}
+
+func (s *Sink) SessionEnd() { s.emit("session.end") }
+
+func (s *Sink) TurnEnd(rounds int, dur time.Duration, errClass string) {
+	s.emit("turn.end",
+		attribute.Int("rounds", rounds),
+		attribute.Int64("duration_ms", dur.Milliseconds()),
+		attribute.String("outcome", errClass))
+}
+
+// ToolCall is the audit core: what ran, for how long, with what
+// outcome. detail is the clipped argument summary — an audit trail of
+// "shell_exec ran" without the command is not an audit trail
+// (ADR-0035 §3).
+func (s *Sink) ToolCall(name string, mutating bool, detail string, dur time.Duration, outcome string) {
+	s.emit("tool.call",
+		attribute.String("tool", name),
+		attribute.Bool("mutating", mutating),
+		attribute.String("detail", clip(detail, 300)),
+		attribute.Int64("duration_ms", dur.Milliseconds()),
+		attribute.String("outcome", outcome))
+}
+
+// Approval records who or what let a call through (or refused it):
+// source is operator / allowlist / policy_never / auto_rule /
+// auto_model.
+func (s *Sink) Approval(tool, decision, source string, mustPrompt bool, reason string) {
+	s.emit("approval.decision",
+		attribute.String("tool", tool),
+		attribute.String("decision", decision),
+		attribute.String("source", source),
+		attribute.Bool("must_prompt", mustPrompt),
+		attribute.String("reason", clip(reason, 200)))
+}
+
+func (s *Sink) Usage(promptTok, outputTok, cachedTok int) {
+	s.emit("model.usage",
+		attribute.Int("prompt_tokens", promptTok),
+		attribute.Int("output_tokens", outputTok),
+		attribute.Int("cached_tokens", cachedTok))
+}
+
+func (s *Sink) Compaction(replaced, kept int) {
+	s.emit("compaction",
+		attribute.Int("messages_summarised", replaced),
+		attribute.Int("messages_kept", kept))
+}
+
+func (s *Sink) MediaUpload(bytes int64, uri string) {
+	s.emit("media.upload",
+		attribute.Int64("bytes", bytes),
+		attribute.String("uri", clip(uri, 200)))
+}
+
+// --- test support ---
+
+// RecordedEvent is one captured audit event (test support).
+type RecordedEvent struct {
+	Name  string
+	Attrs map[string]string
+}
+
+// Recording captures events in memory so other packages can assert on
+// the audit stream without a collector.
+type Recording struct {
+	mu     sync.Mutex
+	events []RecordedEvent
+}
+
+// Events returns a copy of everything captured so far.
+func (r *Recording) Events() []RecordedEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]RecordedEvent(nil), r.events...)
+}
+
+func (r *Recording) Export(_ context.Context, records []sdklog.Record) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, rec := range records {
+		ev := RecordedEvent{Name: rec.EventName(), Attrs: map[string]string{}}
+		rec.WalkAttributes(func(kv attribute.KeyValue) bool {
+			ev.Attrs[string(kv.Key)] = kv.Value.Emit()
+			return true
+		})
+		r.events = append(r.events, ev)
+	}
+	return nil
+}
+func (r *Recording) Shutdown(context.Context) error   { return nil }
+func (r *Recording) ForceFlush(context.Context) error { return nil }
+
+// NewRecording returns a Sink whose events land in the returned
+// Recording, synchronously.
+func NewRecording() (*Sink, *Recording) {
+	rec := &Recording{}
+	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(rec)))
+	return &Sink{logger: provider.Logger("recording"), provider: provider}, rec
+}

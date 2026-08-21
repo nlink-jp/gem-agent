@@ -143,3 +143,22 @@ language = "auto"
 # transcript. false restores the quiet spinner; the stream heartbeat
 # and retry visibility stay either way.
 show_thoughts = true
+
+[telemetry]
+# Audit logging (ADR-0035). Default OFF. When enabled, audit events
+# (sessions, tool calls with outcomes, approval decisions, token
+# usage) are exported — METADATA only: prompts, responses, file
+# contents and thoughts never leave the machine through this channel.
+# Only THIS file can enable telemetry or choose where it goes; a
+# project's .gem-agent.toml cannot.
+#
+# backend "gcp" (default) writes to Cloud Logging of [gcp].project —
+# same ADC as Vertex, zero collector infrastructure, log name
+# "gem-agent" in the Logs Explorer. Needs logging.googleapis.com
+# enabled and roles/logging.logWriter.
+# backends "otlp-grpc" / "otlp-http" send OpenTelemetry log records to
+# the endpoint below (auth headers via OTEL_EXPORTER_OTLP_HEADERS).
+enabled = false
+backend = "gcp"            # gcp | otlp-grpc | otlp-http
+endpoint = "localhost:4317" # otlp-* only
+insecure = false            # otlp-* only: plaintext for a local collector

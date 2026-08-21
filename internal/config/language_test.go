@@ -35,3 +35,29 @@ func TestLanguageValidation(t *testing.T) {
 		t.Errorf("default language: cfg=%v err=%v", cfg.TUI.Language, err)
 	}
 }
+
+// [telemetry] validation (ADR-0035): the gcp default needs nothing,
+// otlp backends need an endpoint, unknown backends fail.
+func TestTelemetryValidation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	base := "[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\n"
+
+	os.WriteFile(path, []byte(base+"[telemetry]\nenabled = true\n"), 0o644)
+	if cfg, err := LoadWithOverrides(path, Overrides{}); err != nil || cfg.Telemetry.Backend != "gcp" {
+		t.Errorf("gcp default: %+v err=%v", cfg.Telemetry, err)
+	}
+	os.WriteFile(path, []byte(base+"[telemetry]\nenabled = true\nbackend = \"otlp-grpc\"\nendpoint = \"\"\n"), 0o644)
+	if _, err := LoadWithOverrides(path, Overrides{}); err == nil || !strings.Contains(err.Error(), "endpoint") {
+		t.Errorf("otlp without endpoint accepted: %v", err)
+	}
+	os.WriteFile(path, []byte(base+"[telemetry]\nenabled = true\nbackend = \"udp\"\n"), 0o644)
+	if _, err := LoadWithOverrides(path, Overrides{}); err == nil || !strings.Contains(err.Error(), "backend") {
+		t.Errorf("bad backend accepted: %v", err)
+	}
+	os.WriteFile(path, []byte(base), 0o644)
+	cfg, err := LoadWithOverrides(path, Overrides{})
+	if err != nil || cfg.Telemetry.Enabled {
+		t.Errorf("defaults: %+v err=%v", cfg.Telemetry, err)
+	}
+}

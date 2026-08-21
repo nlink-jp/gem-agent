@@ -102,6 +102,15 @@ func (s *settingsStore) data() tui.SettingsData {
 	// message instead of seeing the real cause here (review round 2).
 	ro("limits", "mcp.enabled", strconv.FormatBool(s.cfg.MCP.Enabled), "mcp.enabled",
 		"false disables ALL MCP servers, global and project")
+	ro("telemetry", "telemetry.enabled", strconv.FormatBool(s.cfg.Telemetry.Enabled), "telemetry.enabled",
+		"audit events to Cloud Logging or an OTLP collector (ADR-0035); applies at next start")
+	if s.cfg.Telemetry.Enabled {
+		ro("telemetry", "telemetry.backend", s.cfg.Telemetry.Backend, "telemetry.backend", "")
+		if s.cfg.Telemetry.Backend != "gcp" && s.cfg.Telemetry.Backend != "" {
+			ro("telemetry", "telemetry.endpoint", s.cfg.Telemetry.Endpoint, "telemetry.endpoint", "")
+			ro("telemetry", "telemetry.insecure", strconv.FormatBool(s.cfg.Telemetry.Insecure), "telemetry.insecure", "")
+		}
+	}
 	// Read-only by design (ADR-0029 §1): the chrome is built with the
 	// resolved language at startup; a live switch would bisect the
 	// scrollback into two languages. "auto" shows what it resolved TO

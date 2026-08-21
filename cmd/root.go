@@ -25,6 +25,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/skills"
+	"github.com/nlink-jp/gem-agent/internal/telemetry"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/tui"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
@@ -279,6 +280,24 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// --- telemetry: audit events to the operator's collector (ADR-0035) ---
+	// Default off. Failures never hurt the session: creation errors
+	// warn and fall back to the no-op sink.
+	sink := telemetry.Nop()
+	if cfg.Telemetry.Enabled {
+		if s, err := telemetry.New(ctx, telemetry.Config{
+			Enabled: true, Backend: cfg.Telemetry.Backend,
+			Endpoint: cfg.Telemetry.Endpoint, Insecure: cfg.Telemetry.Insecure,
+		}, cfg.GCP.Project, cmd.Root().Version, sessionID, projectDir); err != nil {
+			fmt.Fprintf(stderr, "warning: telemetry disabled: %v\n", err)
+		} else {
+			sink = s
+			defer sink.Shutdown()
+		}
+	}
+	sink.SessionStart(cfg.Model.Name, sandboxOn, cfg.Agent.AutoApprove, len(mcpClients))
+	defer sink.SessionEnd() // LIFO: runs before Shutdown's flush
+
 	// --- LLM backend ---
 	backend, err := llm.NewVertex(ctx, cfg.GCP.Project, cfg.GCP.Location, cfg.Model.Name, cfg.Model.Safety, cfg.Model.Thinking, cfg.TUI.ShowThoughts)
 	if err != nil {
@@ -315,7 +334,15 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			}
 			u := up
 			upMu.Unlock()
-			return u.Upload(callCtx, path, mime)
+			uri, err := u.Upload(callCtx, path, mime)
+			if err == nil {
+				var size int64
+				if fi, statErr := os.Stat(path); statErr == nil {
+					size = fi.Size()
+				}
+				sink.MediaUpload(size, uri)
+			}
+			return uri, err
 		}
 	}
 
@@ -426,6 +453,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// load_skill results are operator-authored instructions, not
 		// data; its reads are confined to skill directories (ADR-0010).
 		InstructionTools: []string{skills.ToolName},
+		Telemetry:        sink,
 		ClipboardImage:   clipboardImage,
 		MediaUpload:      mediaUpload,
 		OnToolCall: func(tc llm.ToolCall) {
@@ -463,6 +491,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(stderr, "[⚠ %s]\n", msg)
 		},
 		OnUsage: func(promptTokens, outputTokens, cachedTokens int) {
+			sink.Usage(promptTokens, outputTokens, cachedTokens)
 			if prog != nil {
 				prog.Send(tui.Usage{Prompt: promptTokens, Output: outputTokens, Cached: cachedTokens})
 			}
@@ -616,7 +645,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			},
 			Compact: func(compactCtx context.Context) {
 				go func() {
-					note, err := compactNow(compactCtx, ag, msgs)
+					note, err := compactNow(compactCtx, ag, msgs, sink)
 					if err == nil {
 						prog.Send(tui.Attached{Notes: []string{note}})
 					}
@@ -711,7 +740,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// runTurn makes Ctrl+C interrupt the summariser call rather
 			// than kill the process (ADR-0021).
 			runErr := runTurn(ctx, func(compactCtx context.Context) error {
-				note, err := compactNow(compactCtx, ag, msgs)
+				note, err := compactNow(compactCtx, ag, msgs, sink)
 				if err == nil {
 					fmt.Fprintln(stderr, note)
 				}
@@ -827,7 +856,7 @@ func buildExecFn(sandboxOn bool, projectDir string) (tools.ExecFunc, error) {
 // compactNow runs a manual /compact and renders the outcome. "Nothing
 // to compact" is a normal answer, not an error: the operator asked a
 // reasonable question and the answer is no.
-func compactNow(ctx context.Context, ag *agent.Agent, msgs *uitext.Messages) (string, error) {
+func compactNow(ctx context.Context, ag *agent.Agent, msgs *uitext.Messages, sink *telemetry.Sink) (string, error) {
 	res, err := ag.Compact(ctx)
 	switch {
 	case errors.Is(err, agent.ErrNothingToCompact):
@@ -835,6 +864,7 @@ func compactNow(ctx context.Context, ag *agent.Agent, msgs *uitext.Messages) (st
 	case err != nil:
 		return "", err
 	}
+	sink.Compaction(res.Replaced, res.After-1)
 	return fmt.Sprintf(msgs.CompactedFmt, res.Replaced, res.After-1), nil
 }
 

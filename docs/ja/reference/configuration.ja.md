@@ -63,6 +63,12 @@ theme = "auto"             # auto | dark | light | plain
 language = "auto"          # auto | ja | en（ADR-0029 — interface.ja.md 参照）
 show_thoughts = true       # TUI に思考サマリをライブ表示（ADR-0033）
 
+[telemetry]
+enabled = false            # 監査ロギング（ADR-0035）— 後述
+backend = "gcp"            # gcp（Cloud Logging・既定）| otlp-grpc | otlp-http
+endpoint = "localhost:4317" # otlp-* のみ
+insecure = false            # otlp-* のみ
+
 [approval]
 # trusted_projects = ["/path/to/repo"]  # .gem-agent.toml の緩和を許すプロジェクト
 [approval.tools]
@@ -94,6 +100,26 @@ config file > defaults。設定ファイル内の未知キーはエラーにな�
 | `--config <path>` | 別の設定ファイルを使う |
 | `--no-sandbox` | Seatbelt ラップの無効化（デバッグ専用） |
 | `sessions` | 再開可能なセッション一覧 |
+
+## テレメトリ（ADR-0035）
+
+`[telemetry].enabled = true` で監査イベントがエクスポートされます。
+既定バックエンド `gcp` は **[gcp].project の Cloud Logging** に、
+Vertex と同じ ADC で直接書き込みます — コレクタ基盤ゼロ、Logs
+Explorer でのログ名は `gem-agent`（`logging.googleapis.com` の有効化
+と `roles/logging.logWriter` が必要）。`otlp-grpc` / `otlp-http`
+バックエンドは代わりに自前のコレクタへ OpenTelemetry ログレコードを
+送ります。イベント: `session.start/end`・`tool.call`
+（名前・切詰め詳細・所要・結果）・`approval.decision`（判定とどの層が
+決めたか）・`turn.end`・`model.usage`・`compaction`・`media.upload` —
+サービス/セッション/プロジェクト/ホストのリソース属性付き。
+**メタデータのみ**: プロンプト・応答・ファイル内容・思考サマリは
+この経路からマシンを出ません。全文はローカル transcript が正本の
+ままです。テレメトリを有効化・宛先設定できるのはグローバル config
+だけで、プロジェクトの `.gem-agent.toml` からは構造的に不可能です。
+認証ヘッダは標準の `OTEL_EXPORTER_OTLP_HEADERS` 環境変数で。
+テレメトリは決してセッションをブロックしません: 送信失敗は stderr に
+1 回警告して静かに劣化し、終了時 flush は 3 秒上限です。
 
 ## コンテンツフィルタ
 

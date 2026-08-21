@@ -98,8 +98,9 @@ tree, Claude Code-format `.mcp.json` MCP servers (global + project),
 and Claude Code-format skills with progressive disclosure.
 
 **[Configuration](docs/en/reference/configuration.md)** — the full
-config reference, precedence, CLI flags, content-filter behaviour, and
-endpoint notes.
+config reference, precedence, CLI flags, content-filter behaviour,
+endpoint notes, and opt-in OpenTelemetry audit logging to your OTLP
+collector (metadata only, never conversation content).
 
 Out of scope by design: RAG or vector memory, data analysis, GUI,
 non-macOS platforms.

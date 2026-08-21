@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.30.0] - 2026-08-21
+
+### Added — audit logging: Cloud Logging by default, OTLP for collectors (ADR-0035, operator request)
+
+- Opt-in `[telemetry]` config exports audit events: session
+  start/end, tool.call with clipped detail/duration/outcome,
+  approval.decision with the deciding layer, turn.end, model.usage,
+  compaction, media.upload — with service/session/project/host
+  attributes
+- The default backend is `gcp` (operator observation: the credentials
+  already exist) — events land in Cloud Logging of the [gcp] project
+  via the same ADC Vertex uses, log name "gem-agent", structured JSON
+  payloads; `enabled = true` is the entire setup. `otlp-grpc` /
+  `otlp-http` send OpenTelemetry log records to an org collector
+  instead; wire format verified against a real OTLP/HTTP receiver
+- Metadata only, by design: prompts, responses, file contents, and
+  thought summaries never travel this channel — the local transcript
+  stays the full record
+- Default off; only the operator's global config can enable telemetry
+  or set the endpoint (a project's .gem-agent.toml structurally
+  cannot — the exporter is an egress channel); headers via the
+  standard OTEL_EXPORTER_OTLP_HEADERS
+- Telemetry never hurts the session: batching, a single stderr
+  warning on export failure, silent degradation, 3s-capped shutdown
+  flush; disabled costs zero (no-op sink, no call-site branches)
+
 ## [0.29.2] - 2026-08-21
 
 ### Fixed — false stall warning during long tool runs (follow-up to 0.29.0)

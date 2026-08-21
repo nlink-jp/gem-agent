@@ -142,6 +142,10 @@ excepted).
 - [`ADR-0034`](adr/0034-cancellation-deadlock.md) — cancellation ends
   the call: process-group kill + WaitDelay (a grandchild holding the
   pipe hung timeout AND Ctrl+C), and a three-press last-resort exit
+- [`ADR-0035`](adr/0035-opentelemetry-audit.md) — OpenTelemetry audit
+  logging: OTLP log events, default off, global-config-only (the
+  exporter is an egress channel), metadata never payloads, and
+  telemetry that never hurts the session
 
 ## History
 
