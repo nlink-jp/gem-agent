@@ -121,15 +121,15 @@ supersede する（typo とリンク修正は例外）。
   自己情報ツール（モデル・コンテキスト占有・使用量・制限・プラット
   フォーム）。フィールドは「モデルの行動を変えるか」で選別 — GCP
   識別子とホスト名は非開示
-- [`ADR-0032`](adr/0032-datetime-tool.ja.md) — `datetime`: 時計と
-  カレンダー算術の read-only ツール 1 本（now/info/add/diff/convert）。
-  月末正規化は明言・営業日は拒否。セッション開始日はキャッシュ安定な
-  形でシステムプロンプトに載る
 - [`ADR-0031`](adr/0031-review-fixes-round-2.ja.md) — レビュー第 2 回:
   修正約 30 件（Msgs 配線・拒否バイパス・メディアストア汚染・
   flock 下 resume・ルーン安全補完・承認バジェット適応・flock 付き
   policy 変更・docext 合計上限）。400 主張 1 件を実測で反証。
   非変更 4 件を記録
+- [`ADR-0032`](adr/0032-datetime-tool.ja.md) — `datetime`: 時計と
+  カレンダー算術の read-only ツール 1 本（now/info/add/diff/convert）。
+  月末正規化は明言・営業日は拒否。セッション開始日はキャッシュ安定な
+  形でシステムプロンプトに載る
 
 ## History（履歴）
 

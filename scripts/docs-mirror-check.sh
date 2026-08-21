@@ -67,3 +67,36 @@ fi
 
 count=$(echo "$en_keys" | wc -l | tr -d ' ')
 echo "OK: docs/en and docs/ja are in mirror sync (${count} files)."
+
+# --- ADR index completeness and order ---------------------------------
+# Every ADR file must be listed in its language's INDEX, and the listed
+# entries must be in ascending order. Both failure modes shipped: an
+# entry inserted above the previous number read as "0032 is missing"
+# to anyone scanning the ascending list.
+adr_errors=0
+for lang in en ja; do
+    index="docs/${lang}/INDEX.md"
+    [ "$lang" = "ja" ] && index="docs/ja/INDEX.ja.md"
+    have=$(ls "docs/${lang}/adr" | grep -o '^[0-9]\{4\}' | sort)
+    listed=$(grep -o '^- \[`ADR-[0-9]\{4\}' "$index" | grep -o '[0-9]\{4\}')
+    for n in $have; do
+        if ! echo "$listed" | grep -q "^${n}$"; then
+            echo "ERROR: docs/${lang}/adr/${n}-*.md is not listed in ${index}" >&2
+            adr_errors=$((adr_errors + 1))
+        fi
+    done
+    if [ "$(echo "$listed" | sort -c 2>&1 | wc -l | tr -d ' ')" != "0" ]; then
+        echo "ERROR: ADR entries in ${index} are not in ascending order:" >&2
+        echo "$listed" | tr '\n' ' ' >&2; echo "" >&2
+        adr_errors=$((adr_errors + 1))
+    fi
+    dup=$(echo "$listed" | sort | uniq -d)
+    if [ -n "$dup" ]; then
+        echo "ERROR: duplicate ADR entries in ${index}: $dup" >&2
+        adr_errors=$((adr_errors + 1))
+    fi
+done
+if [ "$adr_errors" -ne 0 ]; then
+    exit 1
+fi
+echo "OK: ADR index complete and ordered in both languages."
