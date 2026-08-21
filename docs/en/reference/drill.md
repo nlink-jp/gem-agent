@@ -27,6 +27,7 @@ anyone touching gem-agent:
 | An MCP server was renamed, moved, or lost its API key | step 3 |
 | A project's instruction files moved or changed shape | step 1 |
 | Transcript format drift makes older sessions unresumable | step 6 |
+| The architecture overview drifts from the code — it has no per-release update trigger | step 7 |
 | The operator forgets the keys and the approval flow | all of it |
 
 ## Procedure
@@ -167,7 +168,26 @@ message after resume means thought signatures did not replay — report it
 with the session id, because it makes resume unusable rather than
 degraded.
 
-### 7. One real task, gem-agent only (rest of the box)
+### 7. The architecture doc against the code (2 min)
+
+The feature references are protected by the release habit — one README
+line, the matching reference doc, the INDEX — but
+[architecture.md](architecture.md) is cross-cutting and has no
+per-release trigger, so it rots silently as the code moves (measured:
+it went ten releases stale before an audit caught it, still claiming
+"five built-ins" when there were eleven). While the session is open,
+have gem-agent audit its own description:
+
+> read docs/en/reference/architecture.md and compare it against the
+> code: the package list, the tool inventory, the failure-behaviour
+> table. Report only what the document gets wrong or no longer
+> mentions.
+
+**Fails if** the report names a real discrepancy — fix it on the spot
+or file it like any other finding, both languages in the same commit.
+A clean report costs two minutes; ten stale releases cost an afternoon.
+
+### 8. One real task, gem-agent only (rest of the box)
 
 The point of the drill is not the checklist. Pick a piece of work you
 would otherwise do in Claude Code — small enough to finish, real enough
@@ -261,4 +281,6 @@ would have wasted the run):
 Launch and auth first: a failure there invalidates every later step, so
 finding it in minute two saves the other eighteen. Read-only before
 destructive, so the first write happens against a model you have already
-seen answer correctly. Resume last, because it needs a session to resume.
+seen answer correctly. Resume after the interactive steps, because it
+needs a session to resume; the docs audit rides the resumed session; and
+the real task comes last because it gets whatever time remains.
