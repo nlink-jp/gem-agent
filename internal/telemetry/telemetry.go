@@ -48,10 +48,25 @@ type Config struct {
 type Sink struct {
 	logger   otellog.Logger
 	provider *sdklog.LoggerProvider
+	// label, when set, marks every event with agent=<label>: records
+	// emitted on behalf of a delegated child loop (ADR-0037). Empty for
+	// the main loop, so existing queries keep matching unchanged.
+	label string
 }
 
 // Nop returns the disabled sink.
 func Nop() *Sink { return nil }
+
+// Sub returns a sink whose every event carries agent=<label> — the
+// audit attribution for a delegated agent loop (ADR-0037). It shares
+// the parent's provider; call Shutdown only on the parent. Nil-safe
+// like every Sink method.
+func (s *Sink) Sub(label string) *Sink {
+	if s == nil || s.provider == nil {
+		return s
+	}
+	return &Sink{logger: s.logger, provider: s.provider, label: label}
+}
 
 // New builds an OTLP-backed sink. Telemetry must never hurt the
 // session (ADR-0035 §4): export failures reach stderr once via the
@@ -154,6 +169,9 @@ func (s *Sink) emit(name string, attrs ...attribute.KeyValue) {
 	rec.SetSeverity(otellog.SeverityInfo)
 	rec.SetEventName(name)
 	rec.SetBody(attribute.StringValue(name))
+	if s.label != "" {
+		rec.AddAttributes(attribute.String("agent", s.label))
+	}
 	rec.AddAttributes(attrs...)
 	s.logger.Emit(context.Background(), rec)
 }

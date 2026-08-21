@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.33.0] - 2026-08-21
+
+### Added — agentic_file_search tool (ADR-0037, operator direction)
+
+- Delegated project search: a child agent loop (main model) explores
+  the project in its own isolated context and returns only a compact
+  report — the exploration, dead ends included, never enters the
+  conversation. ADR-0014's summarize principle generalised from one
+  file to one question; deliberately narrowed from a general-purpose
+  sub-agent (approval without visible context is not approval)
+- Read-only by construction: a positive allowlist built with the new
+  `Registry.Subset` (unknown names are loud errors) — orientation,
+  windowed reads, summaries; never shell, edits, web, MCP, ask_user,
+  or itself (recursion structurally impossible); deny-all approver as
+  fail-closed insurance; 10-round cap
+- Report contract names its negative space: what was NOT found is
+  stated explicitly; evidence as path:line-range with verbatim
+  quotes, flagged lossy in the result header
+- Delegation is visible and audited: child tool calls render live as
+  "↳ tool" lines, the stream heartbeat keeps ticking, and the new
+  `telemetry.Sink.Sub` labels every child audit event with
+  agent="agentic_file_search"; spend lands in /usage as its own
+  category (the context gauge tracks the main conversation only)
+
 ## [0.32.0] - 2026-08-21
 
 ### Added — ask_user tool (ADR-0036, operator request)

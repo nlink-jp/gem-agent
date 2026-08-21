@@ -466,6 +466,29 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// --- agentic_file_search: delegated project search (ADR-0037) ---
+	// Registered before agent.New (which caches the declarations), and
+	// after summarize_file (the child's tool subset includes it). The
+	// child explores in its own context; only its report enters this
+	// conversation. Its tool calls render as "↳ tool" so the operator
+	// watches the delegation happen instead of a silent pause.
+	if err := registerAgenticSearch(registry, agenticSearchOptions{
+		backend:   backend,
+		modelName: cfg.Model.Name,
+		log:       sessionLog,
+		tally:     tally,
+		sink:      sink,
+		onToolCall: func(tc llm.ToolCall) {
+			if prog != nil {
+				prog.Send(tui.ToolCall{Name: "↳ " + tc.Name, Detail: agent.CallDetail(tc)})
+				return
+			}
+			fmt.Fprintf(stderr, "\n[tool ↳] %s %s\n", tc.Name, agent.CallDetail(tc))
+		},
+	}); err != nil {
+		return err
+	}
+
 	ag = agent.New(agent.Options{
 		Backend:  backend,
 		Registry: registry,

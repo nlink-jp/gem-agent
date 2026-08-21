@@ -91,6 +91,29 @@ func (r *Registry) Register(t *Tool) error {
 	return nil
 }
 
+// Subset returns a registry exposing only the named tools, in the given
+// order, sharing this registry's project confinement (the tool closures
+// keep resolving paths against the same project directory). Unknown
+// names are errors: a security-relevant allowlist that silently drops a
+// typo would hide exactly the mistake it exists to prevent (ADR-0037).
+func (r *Registry) Subset(names ...string) (*Registry, error) {
+	sub := &Registry{
+		projectDir:   r.projectDir,
+		execFn:       r.execFn,
+		shellTimeout: r.shellTimeout,
+		tools:        map[string]*Tool{},
+	}
+	for _, n := range names {
+		t, ok := r.tools[n]
+		if !ok {
+			return nil, fmt.Errorf("subset: unknown tool %q", n)
+		}
+		sub.tools[n] = t
+		sub.order = append(sub.order, n)
+	}
+	return sub, nil
+}
+
 // Get returns a tool by name.
 func (r *Registry) Get(name string) (*Tool, bool) {
 	t, ok := r.tools[name]

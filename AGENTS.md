@@ -115,6 +115,13 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   changing the ladder, keep: Block never consults the model, model errors
   and malformed verdicts escalate, and confidence alone never approves.
   New dangerous patterns go in `internal/risk`, with a corpus test.
+- **The agentic_file_search child loop writes no transcript** (ADR-0037) —
+  replaying child records into a resumed session would corrupt it; only the
+  report enters the main history. The child shares the main backend (so the
+  ADR-0033 heartbeat keeps ticking during delegation) and its tool subset
+  comes from `Registry.Subset`, which errors loudly on unknown names — the
+  allowlist in `cmd/agentsearch.go` must stay read-only, and the tool must
+  never appear in its own subset (recursion).
 - **nlk/guard tags are per-LLM-call** — history stores raw tool results and
   the agent wraps them at send time; storing wrapped results would freeze
   the tag and break the guard contract.

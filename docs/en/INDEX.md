@@ -149,6 +149,10 @@ excepted).
 - [`ADR-0036`](adr/0036-ask-user-tool.md) — `ask_user`: a structured
   mid-turn choice on the approval dialog's grammar; declining is
   information; every mode answers honestly; no free-text by design
+- [`ADR-0037`](adr/0037-agentic-file-search.md) — `agentic_file_search`:
+  delegated project search in an isolated child context — read-only
+  allowlist, no recursion, labeled telemetry, ADR-0014 generalised
+  from one file to one question
 
 ## History
 
