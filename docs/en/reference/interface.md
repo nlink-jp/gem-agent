@@ -110,7 +110,8 @@ in the input box as one message, never one LLM call per line.
 
 `/usage` breaks the session down: main-loop rounds with the cache hit
 rate, risk-check and compaction side-calls, and per-tool lines
-(summarize/web) naming the model that spent the tokens.
+(summaries, web, the file-search agent) naming the model that spent
+the tokens.
 
 ## Completion
 
@@ -151,6 +152,20 @@ it. Long call details are budgeted to the terminal height with the
 hidden-line count disclosed — you are never asked to approve something
 you have not seen. A dialog arriving after you pressed Ctrl+C is denied
 automatically: the turn is already dead.
+
+## The ask dialog (ADR-0036)
+
+When the model calls `ask_user` mid-turn, a question dialog opens on
+the approval dialog's grammar: ←→/Tab move, Enter confirms, **digits
+1–9 select and confirm in one press**, Esc declines. Declining is
+information, not an error — the model is told you chose not to pick,
+and to ask in prose or proceed with stated judgment. The tool is
+read-only and never approval-gated (a gate on a question would be a
+dialog to permit a dialog), and a dialog arriving after Ctrl+C is
+declined automatically, exactly like an approval. In the plain REPL
+the question becomes a numbered stderr prompt; in one-shot `-p` mode
+the tool refuses informatively — there is nobody to ask, and a
+pipeline must not hang.
 
 ## `/settings`
 

@@ -12,21 +12,33 @@ gem-agent の現在の挙動。前提知識を期待せず読めることを目�
 ```
 cmd/            フラグ・設定読込・プロジェクト解決・配線・REPL/TUI
   ├── internal/config      strict decode TOML + env/flag 優先順位
-  ├── internal/llm         Backend interface + Vertex AI Gemini
-  ├── internal/tools       組み込み 5 ツール + MCP 登録
+  ├── internal/llm         Backend interface + Vertex AI Gemini（stream observer）
+  ├── internal/tools       ファイル/シェル/暦の組み込み 11 ツール + Register
   ├── internal/agent       ターンループ・承認ディスパッチ・圧縮
   └── internal/tui         Bubble Tea inline UI（非 TTY は internal/repl）
 ```
 
+tools パッケージが持つのはプロジェクトディレクトリだけで動く組み込み
+11 ツール。残りは `cmd/` が同じ `Register` で登録する — モデルや配線に
+依存するツール（`summarize_file`・`web_search`/`web_fetch`・`ask_user`・
+`agent_info`・`agentic_file_search`・`save_memory`/`delete_memory`・
+`load_skill`）と全 MCP ツールである。
+
 補助パッケージ: `internal/sandbox`（Seatbelt プロファイル生成）、
 `internal/approve`（素 REPL のゲート）、`internal/risk`（自動承認のルール層）、
+`internal/policy`（ツール別承認ポリシー）、
 `internal/mcp`（stdio JSON-RPC クライアント）、`internal/mention`（`@` 参照）、
 `internal/instructions`（`AGENTS.md` 探索）、`internal/session`（トランスクリプト:
-ロガー + resume ローダ）。
+ロガー + resume ローダ）、`internal/statedir`（プロジェクト別 state 配置）、
+`internal/memory`（エージェントメモリ）、`internal/skills`（skill 探索/読込）、
+`internal/docext`（Office テキスト抽出）、`internal/mediastore`（GCS メディア
+アップロード）、`internal/uitext`（ja/en UI 文字列カタログ）、
+`internal/telemetry`（監査イベントのエクスポート）。
 
 **エージェント中核は UI を知らない。** `Approver` インターフェースと一連の
 コールバック（`OnToolCall` / `OnUsage` / `OnNotice` / `OnAutoDecision` /
-`OnAttach`）を受け取るだけで、TUI は Bubble Tea メッセージ送信として、素 REPL は
+`OnAttach`）、そして nil で監査が無効になるテレメトリシンクを受け取るだけで、
+TUI はコールバックを Bubble Tea メッセージ送信として、素 REPL は
 stderr 書き込みとして実装する。同じループが pty・パイプ・`-p` の下で動くのは
 これによる。
 
@@ -84,6 +96,15 @@ stderr 書き込みとして実装する。同じループが pty・パイプ・
   以後の全リクエストが 400 になる。コンテンツフィルタのブロックは 1 回だけ
   リトライし、その後は理由を明示して報告する。
 - **ラウンド上限**: `[agent].max_turns` が暴走ループを止める。
+- **ストリームは自己報告する**（ADR-0033）: バックエンドは chunk の生存・
+  バックオフリトライ・思考要約を observer に流し、TUI がハートビート・
+  停滞警告・思考実況として描画する。表示専用 — 履歴にもトランスクリプト
+  にも一切入らない。
+- **入れ子のターンループを回すツールが 1 つある**: `agentic_file_search`
+  （ADR-0037）はコールごとに新しい子エージェントを構築する — 独自の履歴と
+  nonce タグ・読み取り専用ツールサブセット・全拒否 approver・
+  トランスクリプト無し — その報告は通常の nonce ラップ済みツール結果と
+  してこのループへ戻る。子の監査イベントは `agent` ラベルを運ぶ。
 
 画像（ADR-0012）は添付として入る: オペレータ向けの `@` 経路（プロジェクト
 パス。画像拡張子に限り絶対/~ パスも可 — `@` は打鍵入力からしか解析されない
@@ -95,10 +116,12 @@ stderr 書き込みとして実装する。同じループが pty・パイプ・
 
 ## 承認
 
-変更系ツール（`write_file` / `edit_file` / `shell_exec` と全 MCP ツール）はゲートを
-通る。`y` は 1 回、`a` はそのセッションのそのツール、`n`/Esc は拒否。拒否は
-「沈黙」ではなく結果としてモデルに返す。回答は ←→/Tab + Enter で選択できる —
-日本語 IME が文字キーを吸うためである。
+変更系ツール（`write_file` / `edit_file` / `shell_exec` /
+`save_memory`/`delete_memory` と全 MCP ツール）はゲートを通る。`y` は 1 回、
+`a` はそのセッションのそのツール、`n`/Esc は拒否。拒否は「沈黙」ではなく
+結果としてモデルに返す。回答は ←→/Tab + Enter で選択できる — 日本語 IME が
+文字キーを吸うためである。`ask_user` ダイアログ（ADR-0036）は同じ操作文法を
+共有するが承認ではない: ツールは読み取り専用で、決してゲートされない。
 
 これはツール単位で上書きできる（ADR-0008）。グローバル設定の
 `[approval.tools]` と、プロジェクトの `<project>/.gem-agent.toml` が、ツール名
@@ -158,6 +181,15 @@ function response は生じない。要約器にツールは渡さず、トラ�
 Review 分類（決して Safe にしない）— メモリは注入された指示の永続化経路で
 あり、人間がレビューするのは書き込みの瞬間である。
 
+テレメトリ（ADR-0035）は唯一の外向きチャネルである: `[telemetry].enabled`
+のとき、監査イベント — セッション・結果付きツールコール・承認判定・
+トークン使用 — が `[gcp]` プロジェクトの Cloud Logging（既定）か OTLP
+コレクタへエクスポートされる。メタデータのみで、有効化と宛先の指定は
+オペレータのグローバル設定だけができる — プロジェクトファイルには構造的に
+できない。ファイル検索子エージェントのイベントは `agent` ラベルを運ぶ。
+エクスポート失敗は 1 回だけ警告してセッションを決してブロックせず、終了時
+flush は 3 秒上限。
+
 ## 設定と drop-in
 
 `~/.config/gem-agent/config.toml`、strict decode（未知キーはエラー）、優先順位は
@@ -192,4 +224,8 @@ skill（ADR-0010/0011）は MCP と同じ配置に従う: `~/.config/gem-agent/s
 | chunk 消費前の 429 / 5xx | 指数バックオフでリトライ。出力消費後は絶対にしない |
 | セッションログが書けない | 警告のみで継続（壊れたログでフォールバックを止めない） |
 | resume 対象が読めない | 致命的エラー（利用者はその履歴を求めている） |
-| SIGINT | ターンをキャンセル。プロセスは落とさない |
+| テレメトリのエクスポート失敗 | 警告 1 回、以後は静かに劣化 — セッションを決してブロックしない |
+| ストリームが 20 秒無音 | ステータス行が Ctrl+C を名指しする停滞警告になる。自動タイムアウトは無い — 長い思考は正当 |
+| ツールがキャンセルを無視 | 2 打目の Ctrl+C は警告、3 打目はプロセス終了 — トランスクリプトはイベント毎書き込みなので、詰まったコールまでの全てはディスクにある |
+| ファイル検索子エージェントの失敗 | エラー結果としてモデルへ。消費は失敗でも集計する |
+| SIGINT | ターンをキャンセル。プロセスは落とさない（エスカレーションは上の「キャンセル無視」行） |

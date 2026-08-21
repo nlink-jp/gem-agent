@@ -34,7 +34,8 @@ Feature references (the README links here; one domain per file):
 - [`reference/integration.md`](reference/integration.md) — project
   instruction files, MCP servers, skills
 - [`reference/configuration.md`](reference/configuration.md) — install,
-  the config file, precedence, flags, content filters, endpoints
+  the config file, precedence, flags, telemetry, content filters,
+  endpoints
 
 Project references:
 

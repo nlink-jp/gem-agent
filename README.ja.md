@@ -97,8 +97,8 @@ Claude Code 形式 `.mcp.json` の MCP サーバー（グローバル +
 
 **[設定](docs/ja/reference/configuration.ja.md)** — 設定リファレンス
 全体、優先順位、CLI フラグ、コンテンツフィルタの挙動、エンドポイント
-の注意、そして opt-in の OpenTelemetry 監査ロギング（OTLP コレクタへ
-メタデータのみ・会話内容は送らない）。
+の注意、そして opt-in の監査ロギング — Cloud Logging（既定）または
+OTLP コレクタへ（メタデータのみ・会話内容は送らない）。
 
 設計上のスコープ外: RAG・ベクトルメモリ、データ分析、GUI、macOS 以外の
 プラットフォーム。

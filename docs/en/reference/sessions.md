@@ -64,8 +64,8 @@ context. `auto_compact = false` turns the automatic path off;
 ## The token statement: `/usage` (ADR-0019)
 
 Main-loop rounds with the cache hit rate, risk-check and compaction
-side-calls, and per-tool lines (summarize/web) naming the model that
-spent the tokens. The footer carries the live numbers (context
+side-calls, and per-tool lines (summaries, web, the file-search agent)
+naming the model that spent the tokens. The footer carries the live numbers (context
 occupancy, cumulative consumption, `cache NN%`); the model can read
 the same figures through `agent_info`.
 

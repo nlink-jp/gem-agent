@@ -33,8 +33,8 @@ gem-agent の保守者向けドキュメントの入口。利用者向けは
 - [`reference/integration.ja.md`](reference/integration.ja.md) —
   プロジェクト指示ファイル・MCP サーバー・スキル
 - [`reference/configuration.ja.md`](reference/configuration.ja.md) —
-  導入・設定ファイル・優先順位・フラグ・コンテンツフィルタ・
-  エンドポイント
+  導入・設定ファイル・優先順位・フラグ・テレメトリ・コンテンツ
+  フィルタ・エンドポイント
 
 プロジェクト参照:
 

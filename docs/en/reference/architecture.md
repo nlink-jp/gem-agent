@@ -12,21 +12,33 @@ One binary, one process, one conversation. `main.go` hands off to
 ```
 cmd/            flags, config load, project resolution, wiring, REPL/TUI
   ├── internal/config      strict-decode TOML + env/flag precedence
-  ├── internal/llm         Backend interface + Vertex AI Gemini
-  ├── internal/tools       the five built-ins + MCP registrations
+  ├── internal/llm         Backend interface + Vertex AI Gemini (stream observer)
+  ├── internal/tools       the eleven file/shell/calendar built-ins + Register
   ├── internal/agent       the turn loop, approval dispatch, compaction
   └── internal/tui         Bubble Tea inline UI (or internal/repl, non-TTY)
 ```
 
+The tools package holds the eleven built-ins that need only the project
+directory; `cmd/` registers the rest through the same `Register` —
+model-backed and wiring-dependent tools (`summarize_file`, `web_search`
+/`web_fetch`, `ask_user`, `agent_info`, `agentic_file_search`,
+`save_memory`/`delete_memory`, `load_skill`) plus every MCP tool.
+
 Supporting packages: `internal/sandbox` (Seatbelt profile generation),
 `internal/approve` (plain-REPL gate), `internal/risk` (auto-approve rule
-tier), `internal/mcp` (stdio JSON-RPC client), `internal/mention`
-(`@`-references), `internal/instructions` (`AGENTS.md` discovery),
-`internal/session` (transcript: logger + resume loader).
+tier), `internal/policy` (per-tool approval policy), `internal/mcp`
+(stdio JSON-RPC client), `internal/mention` (`@`-references),
+`internal/instructions` (`AGENTS.md` discovery), `internal/session`
+(transcript: logger + resume loader), `internal/statedir` (per-project
+state layout), `internal/memory` (agent memory), `internal/skills`
+(skill discovery/loading), `internal/docext` (Office text extraction),
+`internal/mediastore` (GCS media uploads), `internal/uitext` (ja/en UI
+string catalogs), `internal/telemetry` (audit-event export).
 
 The agent core knows nothing about the UI. It receives an `Approver`
-interface and a set of callbacks (`OnToolCall`, `OnUsage`, `OnNotice`,
-`OnAutoDecision`, `OnAttach`); the TUI implements them by sending Bubble
+interface, a set of callbacks (`OnToolCall`, `OnUsage`, `OnNotice`,
+`OnAutoDecision`, `OnAttach`), and a telemetry sink whose nil value
+disables auditing; the TUI implements the callbacks by sending Bubble
 Tea messages, and the plain REPL by writing to stderr. That is what lets
 the same loop run under a pty, a pipe, and `-p`.
 
@@ -91,6 +103,16 @@ Per-round details that matter:
   empty part in the history makes every later request fail with 400. A
   content-filter block retries once, then reports the reason.
 - **Round cap**: `[agent].max_turns` bounds a runaway loop.
+- **The stream reports itself** (ADR-0033): the backend feeds an
+  observer with chunk liveness, backoff retries, and thought summaries;
+  the TUI renders them as the heartbeat, the stall warning, and the
+  thought stream. Display-only — none of it enters history or the
+  transcript.
+- **One tool runs a nested turn loop**: `agentic_file_search`
+  (ADR-0037) builds a fresh child agent per call — own history and
+  nonce tag, a read-only tool subset, a deny-all approver, no
+  transcript — and its report re-enters this loop as an ordinary
+  nonce-wrapped tool result. Its audit events carry an `agent` label.
 
 Images (ADR-0012) enter as attachments: `@` routes for the operator
 (project paths; absolute/~ paths for image extensions only, because `@`
@@ -103,11 +125,13 @@ only as placeholders.
 
 ## Approval
 
-Mutating tools (`write_file`, `edit_file`, `shell_exec`, and every MCP
-tool) pass the gate. `y` allows once, `a` allows that tool for the
-session, `n`/Esc denies; a denial is returned to the model as a result,
-never as silence. Answers are selectable with ←→/Tab + Enter because a
-Japanese IME swallows letter keys.
+Mutating tools (`write_file`, `edit_file`, `shell_exec`,
+`save_memory`/`delete_memory`, and every MCP tool) pass the gate. `y`
+allows once, `a` allows that tool for the session, `n`/Esc denies; a
+denial is returned to the model as a result, never as silence. Answers
+are selectable with ←→/Tab + Enter because a Japanese IME swallows
+letter keys. The `ask_user` dialog (ADR-0036) shares this grammar but
+is not an approval: the tool is read-only and never gated.
 
 The operator can override this per tool (ADR-0008). `[approval.tools]`
 in the global config, and `<project>/.gem-agent.toml` for the project,
@@ -172,6 +196,15 @@ background knowledge; `save_memory`/`delete_memory` are approval-gated
 and classified Review, never Safe — memory is a persistence vector for
 injected instructions, so the write is where the human reviews.
 
+Telemetry (ADR-0035) is the one outbound channel: with
+`[telemetry].enabled`, audit events — sessions, tool calls with
+outcomes, approval decisions, token usage — export to Cloud Logging of
+the `[gcp]` project (default) or to an OTLP collector. Metadata only,
+and only the operator's global config can enable it or aim it; a
+project file structurally cannot. Events from the file-search child
+agent carry an `agent` label. Export failures warn once and never
+block the session; shutdown flushes with a 3s cap.
+
 ## Configuration and drop-in behaviour
 
 `~/.config/gem-agent/config.toml`, strict decode (unknown keys are
@@ -208,4 +241,8 @@ confined to discovered skill directories.
 | 429 / 5xx before any chunk | exponential backoff retry; never after output has been consumed |
 | Session log unwritable | warning, session continues (a broken log must not stop a fallback) |
 | Resume target unreadable | fatal — the operator asked for that history |
-| SIGINT | cancels the turn, not the process |
+| Telemetry export fails | one warning, then silent degradation — never blocks the session |
+| Stream silent for 20s | the status line becomes a stall warning naming Ctrl+C; no automatic timeout — long thinking is legitimate |
+| A tool ignores cancellation | second Ctrl+C warns, third quits the process — the transcript is written per event, so everything up to the wedged call is on disk |
+| The file-search child agent fails | error result to the model; the spend is tallied anyway |
+| SIGINT | cancels the turn, not the process (escalation: see the stuck-tool row) |
