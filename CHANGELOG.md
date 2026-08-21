@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Docs — README restructured into an overview + feature references (operator request)
+
+- README.md / README.ja.md are now overviews: why, quickstart (with
+  the brew install that was missing from the body), a one-paragraph
+  map per domain, and pointers — down from ~700 lines to ~120
+- The details moved to seven per-domain references under
+  docs/{en,ja}/reference/: interface, tools, attachments, approval,
+  sessions, integration, configuration — each linked from the README,
+  the INDEX, and each other
+- Features that had never made it into the README are now covered:
+  slash-command Tab completion, the full 12-command table with the
+  /exit alias, the UI language mode as a feature (not only a config
+  key), per-project session layout with GEMAGENT_STATE_DIR, parallel-
+  launch safety, and the GCS-object retention consequence
+
 ## [0.27.0] - 2026-08-21
 
 ### Added — datetime tool (ADR-0032, operator request)

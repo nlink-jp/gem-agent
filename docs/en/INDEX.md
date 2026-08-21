@@ -17,6 +17,27 @@ enforced by `scripts/docs-mirror-check.sh`).
 
 Current behaviour. Evergreen — updated in place as the code changes.
 
+Feature references (the README links here; one domain per file):
+
+- [`reference/interface.md`](reference/interface.md) — TUI, plain REPL,
+  one-shot, keys, slash commands, completion, `/settings`, theme and
+  UI language
+- [`reference/tools.md`](reference/tools.md) — every built-in tool and
+  the design decision behind it
+- [`reference/attachments.md`](reference/attachments.md) —
+  @-references: files, images, documents, audio/video, the GCS route
+- [`reference/approval.md`](reference/approval.md) — MITL gates,
+  auto-approve, the per-tool policy, sandbox, startup safety,
+  untrusted-content isolation
+- [`reference/sessions.md`](reference/sessions.md) — transcripts,
+  resume, state layout, compaction, `/usage`, agent memory
+- [`reference/integration.md`](reference/integration.md) — project
+  instruction files, MCP servers, skills
+- [`reference/configuration.md`](reference/configuration.md) — install,
+  the config file, precedence, flags, content filters, endpoints
+
+Project references:
+
 - [`reference/architecture.md`](reference/architecture.md) — package
   layout, the turn loop, the two confinement boundaries, persistence,
   and failure behaviour in one table

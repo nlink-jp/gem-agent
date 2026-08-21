@@ -1,0 +1,113 @@
+# drop-in 統合: 指示ファイル・MCP・スキル
+
+gem-agent の中核要件は drop-in 互換です: プロジェクトが他の
+エージェントのために既に持っているファイルを、プロジェクト単位の
+追加設定ゼロで読みます。プロジェクトの提供物はすべて 1 回きりの
+信用ゲートの内側です（[承認 — 起動時の安全機構](approval.ja.md)
+参照）。
+
+## プロジェクト指示ファイル
+
+リポジトリが既に持っている指示ファイルを、各ディレクトリで次の順に
+読みます:
+
+| ファイル | 慣例 |
+|---|---|
+| `AGENTS.md` | ベンダー横断の標準 |
+| `AGENT.md` | その単数形 |
+| `CLAUDE.md` | Claude Code |
+| `GEMINI.md` | Gemini CLI |
+
+収集順は `~/.config/gem-agent/`（全プロジェクト共通の自分用ルール）→
+親ディレクトリを外側から → プロジェクト自身。これにより**ワーク
+スペース共通ルールが配下の兄弟リポジトリすべてに効き**、最も近い
+ファイルが最後に読まれる（＝最も具体的なものとして扱われる）形に
+なります。内容が同一のファイルは 1 回だけ注入されます。読み込んだ
+ファイルは起動バナーに一覧表示されます。
+
+親ディレクトリの遡上は**ホームディレクトリで停止**します。指示
+ファイルは「データ」ではなく「指示」として従う対象なので、`/tmp` の
+ような自分の管理外の場所から拾わないためです。
+
+## MCP サーバー
+
+サーバー定義は 2 つのスコープから読み込みます。どちらも Claude Code
+の `.mcp.json` 形式（stdio トランスポート、`${VAR}` 展開対応）なので、
+エントリをそのまま移動できます:
+
+| スコープ | パス | 用途 |
+|---|---|---|
+| グローバル | `~/.config/gem-agent/mcp.json` | 全プロジェクトで使うサーバー |
+| プロジェクト | `<project>/.mcp.json` | そのリポジトリ固有のサーバー |
+
+どちらも任意です。両者はマージされ、**名前が衝突した場合は
+プロジェクト側が優先**されます。`/mcp` で接続中のサーバーがスコープ
+付きで一覧表示されます。
+
+```json
+{
+  "mcpServers": {
+    "tor-exit": { "command": "tor-exit-lookup", "args": ["mcp"] }
+  }
+}
+```
+
+ツールは `mcp__<server>__<tool>` として現れ、承認ゲート付きです
+（ツール別に緩和可 — [承認](approval.ja.md)参照）。タイムアウトした
+呼び出しはサーバー子プロセスを kill（MCP にキャンセルは無い）、次回
+呼び出しで遅延再起動します。
+
+ガバナンスと監査証跡を付けたい場合は
+[mcp-guardian](https://github.com/nlink-jp/mcp-guardian) を経由させ
+ます — guardian 自体が stdio MCP サーバーなので、opt-in は
+`.mcp.json` のエントリ 1 つで済みます:
+
+```json
+{
+  "mcpServers": {
+    "guarded": { "command": "mcp-guardian", "args": ["--profile", "myserver"] }
+  }
+}
+```
+
+## スキル（ADR-0010・ADR-0011）
+
+gem-agent は **Claude Code の skill 形式をそのまま読みます** — ただし
+自前の設置場所から。MCP とまったく同じ配置です（形式互換は drop-in、
+場所の共有は結合）:
+
+| スコープ | パス | |
+|---|---|---|
+| グローバル | `~/.config/gem-agent/skills/<name>/SKILL.md` | gem-agent 自身の置き場 |
+| プロジェクト | `<project>/.claude/skills/<name>/SKILL.md` | Claude Code と共有 |
+
+`~/.claude/` は読みません — あれは Claude Code の生きた環境であり、
+暗黙に相続すると主系の環境が変わるたびに副系の挙動が変わります。
+**共有は自分で張る symlink** で、skill 単位でも丸ごとでも可能です
+（探索はリンクを辿ります）:
+
+```sh
+ln -s ~/.claude/skills/meeting-notes ~/.config/gem-agent/skills/meeting-notes
+ln -s ~/.claude/skills ~/.config/gem-agent/skills   # 全部共有
+```
+
+frontmatter は最小限（`name` / `description` / `argument-hint`）だけ
+読み、`allowed-tools` は無視します — gem-agent には自前の承認モデルが
+あり、他所の権限付与を黙って尊重するとそれをバイパスするからです。
+名前衝突は MCP と同じくプロジェクト側が勝ち、そう告げます。
+
+skill は progressive disclosure です: 各 skill はシステムプロンプトに
+説明 1 行を載せるだけで、本文は使うときに読み込まれます —
+
+- **モデル**がタスクと説明の合致を見て `load_skill(name)` を呼ぶ。
+  skill 自身の `references/`・`scripts/` は `load_skill(name, file)`
+  で読める
+- **利用者**は `/skill <name> [args]` で直接起動（本文はターンに直接
+  注入 — 余分なモデル往復なし。名前は Tab 補完）。`/skills` が一覧
+
+skill の内容は非信頼データとしてラップせず、**指示として**扱います —
+利用者自身が導入したファイルであり、`AGENTS.md` と同じ信頼階層だから
+です。この例外には境界があります: `load_skill` は発見済み skill の
+ディレクトリ内しか読めません（シンボリックリンクも解決して検査）。
+`scripts/` を `shell_exec` で走らせる場合も sandbox と承認ゲートは
+他と同様に掛かります。

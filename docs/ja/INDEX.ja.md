@@ -16,6 +16,28 @@ gem-agent の保守者向けドキュメントの入口。利用者向けは
 
 現在の挙動。evergreen でコードに追随して in-place 更新する。
 
+機能分冊（README はここへリンクする。1 ドメイン 1 ファイル）:
+
+- [`reference/interface.ja.md`](reference/interface.ja.md) — TUI・素の
+  REPL・単発実行・キー・スラッシュコマンド・補完・`/settings`・
+  テーマと UI 言語
+- [`reference/tools.ja.md`](reference/tools.ja.md) — 全組み込みツールと
+  背後の設計判断
+- [`reference/attachments.ja.md`](reference/attachments.ja.md) —
+  @ 参照: ファイル・画像・文書・音声/動画・GCS 経路
+- [`reference/approval.ja.md`](reference/approval.ja.md) — MITL
+  ゲート・自動承認・ツール別ポリシー・sandbox・起動時安全機構・
+  非信頼コンテンツの隔離
+- [`reference/sessions.ja.md`](reference/sessions.ja.md) — トランス
+  クリプト・resume・状態配置・圧縮・`/usage`・エージェントメモリ
+- [`reference/integration.ja.md`](reference/integration.ja.md) —
+  プロジェクト指示ファイル・MCP サーバー・スキル
+- [`reference/configuration.ja.md`](reference/configuration.ja.md) —
+  導入・設定ファイル・優先順位・フラグ・コンテンツフィルタ・
+  エンドポイント
+
+プロジェクト参照:
+
 - [`reference/architecture.ja.md`](reference/architecture.ja.md) —
   パッケージ構成、ターンループ、2 つの封じ込め境界、永続化、失敗時挙動の一覧
 - [`reference/drill.ja.md`](reference/drill.ja.md) — 月次訓練: 勝手に腐るものは

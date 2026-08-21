@@ -1,0 +1,159 @@
+# The interactive interface
+
+The TUI, the plain REPL, one-shot mode, keys, slash commands, and
+completion. What each surface shows and why it behaves the way it does.
+
+## TUI
+
+Bubble Tea in inline mode — native scrollback and copy/paste keep
+working. Streaming output with a spinner/status line, an input box with
+↑↓ history and multi-line editing, styled tool events, an approval
+dialog, and glamour-rendered Markdown responses (wrapped at your
+terminal's width, so copied lines are not broken by an artificial cap).
+
+The input box and its status line pin to the window bottom (like Claude
+Code), while the conversation scrolls above with native terminal
+scrollback intact (ADR-0003; the screen is cleared once at startup). The
+status line shows the model, current context occupancy against the
+model's window (auto-detected from model metadata, or
+`[model].context_window`), cumulative token consumption, the live cache
+hit share (`cache NN%`), and the project directory.
+
+Piped/scripted use falls back to a plain line REPL automatically; the
+plain REPL answers the same slash commands read-only. One-shot mode
+(`-p "<prompt>"`) runs a single turn, answers on stdout, and denies
+mutating tools (pipe-friendly; a tool set to `"never"` in the approval
+policy never asks, so it still runs — see
+[approval](approval.md)).
+
+## Keys
+
+Enter sends, ↑/↓ navigate input history, Ctrl+C interrupts a running
+turn (or clears the input), Ctrl+D quits. All of this is also in
+`/help`.
+
+**You can keep typing while a turn runs.** The input box stays visible
+and live; Enter queues the message instead of sending it — the agent
+loop owns the conversation until it returns — and it goes out as the
+next turn once that one finishes cleanly. If the turn errors or you
+interrupt it, the queued text comes back to the input box **unsent**,
+because a message written against a turn that then failed is rarely
+still the message you want (ADR-0007). `!` and `/` commands cannot be
+queued — interrupt first.
+
+**Multi-line input**:
+
+| Route | Availability |
+|---|---|
+| `Ctrl+J` | always — the reliable one |
+| trailing `\` then `Enter` | always (the shell convention) |
+| `Option`/`Alt` + `Enter` | only if your terminal sends Meta for Option |
+
+Modifier+Enter combinations are a terminal limitation, not an
+application choice: unless the terminal is configured to send an escape
+prefix, `Option+Enter` and `Shift+Enter` arrive as an ordinary carriage
+return, indistinguishable from submit — so they send the message. To
+enable `Option+Enter`:
+
+- **Terminal.app** — Settings → Profiles → Keyboard → *Use Option as Meta key*
+- **iTerm2** — Settings → Profiles → Keys → Left Option key → *Esc+*
+
+Pasting multi-line text always works regardless: the whole paste lands
+in the input box as one message, never one LLM call per line.
+
+## Slash commands
+
+| Command | Does |
+|---|---|
+| `/help` | commands, file references, shell escape, keys |
+| `/tools` | available tools with each one's LIVE approval gate |
+| `/mcp` | connected MCP servers with their scope |
+| `/auto` | toggle auto-approve (shift+tab does the same, and works mid-run) |
+| `/compact` | summarise the older half of the conversation now |
+| `/settings` | every setting with its provenance; edit policy + toggles |
+| `/usage` | the session's token statement (ADR-0019) |
+| `/memory` | persisted memories, global + this project |
+| `/skills` | installed skills |
+| `/skill <name> [args]` | invoke a skill directly, no extra model round |
+| `/clear` | reset the conversation history |
+| `/quit` | exit (`/exit` is an alias; Ctrl+D also works) |
+
+`/usage` breaks the session down: main-loop rounds with the cache hit
+rate, risk-check and compaction side-calls, and per-tool lines
+(summarize/web) naming the model that spent the tokens.
+
+## Completion
+
+**Tab completes three things**, all with the same behaviour — a unique
+match completes in place, multiple matches advance to the common prefix,
+and when Tab cannot advance the candidates are listed:
+
+- `@<path>` project file references (see [attachments](attachments.md))
+- `/commands`
+- skill names after `/skill `
+
+## Shell escape
+
+`!<command>` runs a shell command directly — sandboxed like `shell_exec`
+(same timeout and output cap) but without an approval prompt, since you
+typed it yourself. The command and its output are added to the model's
+context, so `!git status` followed by "fix that" just works.
+
+## The approval dialog
+
+Mutating tool calls show a dialog before running. Answer it either by
+selection — ←→ or Tab to move, Enter to confirm — or with the
+`y` / `n` / `a` / `p` shortcuts; Esc denies. The selection route exists
+because those letters cannot be typed with a Japanese IME switched on.
+
+- `y` — allow this call
+- `n` — deny (fails closed; the model is told to ask you, not retry)
+- `a` — allow this tool for the rest of the session. Never covers the
+  dangerous cases: Block-tier calls and always-policy tools keep asking
+  (ADR-0021)
+- `p` — allow, and never ask about this tool again: writes the policy
+  file and says so. Deliberately separate from `a` — one is a session
+  convenience, the other edits a file on disk
+
+The highlight starts on *allow*, except for a call auto-approve
+escalated, where it starts on *deny* so a reflexive Enter cannot approve
+it. Long call details are budgeted to the terminal height with the
+hidden-line count disclosed — you are never asked to approve something
+you have not seen. A dialog arriving after you pressed Ctrl+C is denied
+automatically: the turn is already dead.
+
+## `/settings`
+
+`/settings` opens a panel showing every setting **with where its value
+came from** — `flag`, `env:VAR`, `config.toml`, `policy.toml`, the
+project file, `session` (changed in this panel), or `default`. Four
+precedence layers with nothing on screen is a design that assumes you
+remember them.
+
+↑↓ moves, ←→/Enter changes a value, `s` switches whether a policy change
+is saved globally or for this project only, Esc closes. Settings that
+cannot change mid-session (the model, the GCP project, the sandbox
+switch, theme, language) are shown read-only and say why.
+
+Persisted changes go to `~/.config/gem-agent/policy.toml`, a file
+gem-agent owns and rewrites. Your hand-written `config.toml` is never
+touched, so its comments survive; entries in `policy.toml` win a
+collision, and the panel shows which file decided each one. In a pipe or
+the plain REPL, `/settings` prints the same rows read-only. See
+ADR-0009.
+
+## Appearance and language
+
+TUI accent colors use the ANSI-16 palette (they follow your terminal
+theme); secondary text uses a mid-gray chosen for the detected
+background. `[tui].theme = "auto"` detects dark/light at startup; set
+`dark`/`light` if detection picks wrong, or `plain` to disable all
+styling (errors keep their `✗` marker, so nothing depends on color
+alone).
+
+`[tui].language` selects the language of the interactive chrome —
+`/help`, hints, prompts, and the approval dialog (ADR-0029). `auto`
+follows `LC_ALL`/`LC_MESSAGES`/`LANG` (a `ja` prefix means Japanese,
+anything else English); `ja`/`en` force it. Resolved once at startup.
+Log-shaped lines (banner labels, `warning:`), `--help`, and
+model-facing text stay English by design.
