@@ -81,6 +81,18 @@ holiday calendar is wrong exactly where it would be used. The
 session-start date also rides the system prompt (cache-stable),
 pointing the model here for the live moment.
 
+## `ask_user` (ADR-0036)
+
+A structured mid-turn choice: the model presents a question and 2–8
+options, the operator picks one (arrows/Tab, digits 1–9 in one press,
+Enter; Esc declines), and the result names the choice — no
+end-the-turn round-trip. Read-only and never approval-gated (a gate
+on a question would be a dialog to permit a dialog). Esc returns a
+distinct "declined" result — information, not an error. One-shot `-p`
+mode refuses informatively (nobody to ask); the plain REPL prompts
+with numbers on stderr. No free-text option by design: ending the
+turn and asking IS the free-text channel.
+
 ## `agent_info` (ADR-0030)
 
 The model's view of its own runtime — version, platform, the model it

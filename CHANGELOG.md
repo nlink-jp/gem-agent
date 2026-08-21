@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.32.0] - 2026-08-21
+
+### Added — ask_user tool (ADR-0036, operator request)
+
+- The model can now present a question with 2-8 options and get the
+  operator's choice without ending its turn — Claude Code's Ask tool,
+  on the approval dialog's interaction grammar: arrows/Tab move,
+  digits 1-9 select-and-confirm in one press, Enter confirms, Esc
+  declines (a distinct result telling the model to ask in prose or
+  proceed with stated judgment — information, not an error)
+- Read-only and never approval-gated; question/options bounded
+  (500/100 runes, at most 8 options); dialogs arriving after Ctrl+C
+  are auto-declined and a pending dialog is drained on turn end, so
+  the blocked tool goroutine is never stranded
+- Every mode answers honestly: TUI dialog, numbered stderr prompt in
+  the plain REPL, and an informative refusal in one-shot -p (a
+  pipeline must not hang on a question). No free-text option by
+  design — ending the turn and asking IS the free-text channel
+
 ## [0.31.0] - 2026-08-21
 
 ### Added — telemetry auth from a credentials file (operator report)

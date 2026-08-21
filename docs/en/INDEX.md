@@ -146,6 +146,9 @@ excepted).
   logging: OTLP log events, default off, global-config-only (the
   exporter is an egress channel), metadata never payloads, and
   telemetry that never hurts the session
+- [`ADR-0036`](adr/0036-ask-user-tool.md) — `ask_user`: a structured
+  mid-turn choice on the approval dialog's grammar; declining is
+  information; every mode answers honestly; no free-text by design
 
 ## History
 

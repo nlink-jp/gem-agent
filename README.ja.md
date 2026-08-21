@@ -67,7 +67,7 @@ gem-agent -p "このリポジトリを要約して"      # 単発実行、パイ
 （`file_info`）、モデルのための画像と文書
 （`view_image`/`read_document`）、サンドボックス化シェル
 （`shell_exec`）、決定的な時計とカレンダー（`datetime`）、モデル自身の
-ランタイム像（`agent_info`）、出典付き Web アクセス
+ランタイム像（`agent_info`）、ターン途中の構造化選択（`ask_user`）、出典付き Web アクセス
 （`web_search`/`web_fetch`）。
 
 **[添付](docs/ja/reference/attachments.ja.md)** — `@file`・`@dir/`・

@@ -26,6 +26,7 @@ const (
 	phaseRunning
 	phaseApproval
 	phaseSettings
+	phaseAsk
 )
 
 const (
@@ -235,6 +236,11 @@ type Model struct {
 	completeSlashFn func(prefix string) []string
 	baseCtx         context.Context
 	cancelTurn      context.CancelFunc
+	// ask is the pending ask_user dialog (ADR-0036).
+	ask       *AskRequest
+	askChoice int
+	askAt     time.Time
+
 	// interruptSent: Ctrl+C fired for the running turn; gate requests
 	// arriving before TurnDone are auto-denied (review round 2).
 	interruptSent bool
@@ -476,6 +482,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.toolRunning = true // stream silence is expected until the tool returns
 		return m, m.emitJoined(m.takeLive(), m.st.tool.Render("⚙ "+msg.Name+" "+msg.Detail))
 
+	case AskRequest:
+		if m.interruptSent {
+			// Same rule as approvals (ADR-0034): no dialogs on behalf
+			// of dead turns — decline silently.
+			msg.Resp <- -1
+			return m, nil
+		}
+		req := msg
+		m.ask = &req
+		m.askChoice = 0
+		m.askAt = time.Now()
+		m.phase = phaseAsk
+		return m, nil
+
 	case ApprovalRequest:
 		if m.interruptSent {
 			// The turn is already cancelled; the dialog would demand
@@ -559,6 +579,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSettings(msg)
 		case phaseApproval:
 			return m.updateApproval(msg)
+		case phaseAsk:
+			return m.updateAsk(msg)
 		case phaseRunning:
 			switch msg.Type {
 			case tea.KeyCtrlC:
@@ -717,6 +739,10 @@ func (m *Model) releaseTurn() {
 	m.cancelTurn = nil
 	m.interruptSent = false
 	m.interruptPresses = 0
+	if m.ask != nil {
+		m.ask.Resp <- -1 // never strand the tool goroutine
+		m.ask = nil
+	}
 	m.turnStart = time.Time{}
 	m.retryLine = ""
 	m.thoughtTail = ""
@@ -1335,6 +1361,8 @@ func (m Model) viewContent() string {
 		return body + "\n" + m.spin.View() + " " + m.st.status.Render(m.status) +
 			m.heartbeatLine() + m.st.hint.Render(m.msgs.CtrlCHint) +
 			"\n" + m.ta.View() + "\n" + m.footer() + "\n"
+	case phaseAsk:
+		return m.askView()
 	case phaseApproval:
 		req := m.approval
 		if req == nil {
@@ -1493,6 +1521,73 @@ func (m Model) toggleAutoMode() (tea.Model, tea.Cmd) {
 	// One write: the notice lands after the output it followed, with a
 	// single repaint.
 	return m, m.emitJoined(m.takeLive(), m.st.tool.Render(state))
+}
+
+// updateAsk handles the ask_user dialog (ADR-0036): the approval
+// dialog's interaction grammar — arrows/Tab move, Enter confirms,
+// digits 1-9 select-and-confirm in one press, Esc declines.
+func (m Model) updateAsk(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if time.Since(m.askAt) < approvalGrace {
+		return m, nil // typed-ahead key aimed at the input box
+	}
+	req := m.ask
+	if req == nil {
+		m.phase = phaseRunning
+		return m, nil
+	}
+	n := len(req.Options)
+	answer := -2 // -2 = no answer yet; -1 = decline
+	switch msg.Type {
+	case tea.KeyLeft, tea.KeyUp, tea.KeyShiftTab:
+		m.askChoice = (m.askChoice - 1 + n) % n
+		return m, nil
+	case tea.KeyRight, tea.KeyDown, tea.KeyTab:
+		m.askChoice = (m.askChoice + 1) % n
+		return m, nil
+	case tea.KeyEnter:
+		answer = m.askChoice
+	case tea.KeyEsc, tea.KeyCtrlC:
+		answer = -1
+	default:
+		if r := msg.String(); len(r) == 1 && r[0] >= '1' && r[0] <= '9' {
+			if i := int(r[0] - '1'); i < n {
+				answer = i
+			}
+		}
+	}
+	if answer == -2 {
+		return m, nil
+	}
+	m.ask = nil
+	m.phase = phaseRunning
+	m.status = m.msgs.StatusToolWait
+	req.Resp <- answer
+	chosen := m.msgs.VerdictDenied
+	if answer >= 0 {
+		chosen = req.Options[answer]
+	}
+	return m, m.emit(m.st.tool.Render("  ↳ " + chosen))
+}
+
+// askView renders the ask_user dialog: the question and a numbered
+// vertical option list.
+func (m Model) askView() string {
+	req := m.ask
+	if req == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf(m.msgs.AskTitleFmt, clip(req.Question, 200)))
+	for i, o := range req.Options {
+		line := fmt.Sprintf("%d) %s", i+1, clip(o, 80))
+		if i == m.askChoice {
+			b.WriteString("\n" + m.st.selected.Render("▶ "+line))
+			continue
+		}
+		b.WriteString("\n  " + line)
+	}
+	b.WriteString("\n" + m.st.hint.Render(m.msgs.AskHint))
+	return m.liveView() + "\n" + m.st.box.Render(b.String()) + "\n" + m.footer() + "\n"
 }
 
 // optionsLine renders the selectable answers. The selection is marked

@@ -412,6 +412,29 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 	})
 
+	// --- ask_user: a structured mid-turn choice (ADR-0036) ---
+	// Registered before agent.New (declarations are cached there). The
+	// asker picks its mode at call time: one-shot has nobody to ask,
+	// the TUI shows a dialog, the plain REPL reads a number.
+	askStdin := bufio.NewReader(os.Stdin)
+	if err := registerAskTool(registry, func(askCtx context.Context, question string, options []string) (int, error) {
+		if flagPrompt != "" {
+			return oneShotAsk(askCtx, question, options)
+		}
+		if prog != nil {
+			resp := make(chan int, 1)
+			prog.Send(tui.AskRequest{Question: question, Options: options, Resp: resp})
+			idx := <-resp
+			if idx < 0 {
+				return 0, errAskDeclined
+			}
+			return idx, nil
+		}
+		return plainAsk(askStdin, cmd.ErrOrStderr())(askCtx, question, options)
+	}); err != nil {
+		return err
+	}
+
 	// --- agent_info: the model's view of its own runtime (ADR-0030) ---
 	// Registered before agent.New (which caches the declarations); the
 	// snapshot closure reads `ag` lazily — the tool can only run inside

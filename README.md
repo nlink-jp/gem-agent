@@ -69,7 +69,7 @@ diagnosed misses (`edit_file`/`write_file`), file identification with
 hashes (`file_info`), images and documents for the model
 (`view_image`/`read_document`), sandboxed shell (`shell_exec`), a
 deterministic clock/calendar (`datetime`), the model's own runtime
-picture (`agent_info`), and grounded web access
+picture (`agent_info`), structured mid-turn choices (`ask_user`), and grounded web access
 (`web_search`/`web_fetch`).
 
 **[Attachments](docs/en/reference/attachments.md)** — `@file`,

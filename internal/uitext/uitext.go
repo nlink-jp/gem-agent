@@ -107,6 +107,9 @@ type Messages struct {
 	// InterruptStuckWarn: the second Ctrl+C while already
 	// interrupting — the next one quits (ADR-0034 §3).
 	InterruptStuckWarn string
+	// AskTitleFmt / AskHint: the ask_user dialog (ADR-0036).
+	AskTitleFmt string // %s = the model's question
+	AskHint     string
 
 	// --- slash command feedback (cmd) ---
 	Help             string // the full /help text
@@ -195,6 +198,8 @@ var en = Messages{
 	RetryFmt:           "retry %d/%d (%s) — waiting %ds",
 	ThoughtPrefix:      "✦ ",
 	InterruptStuckWarn: "⚠ the tool is not responding to cancellation — one more Ctrl+C quits gem-agent (the transcript up to this call is already saved)",
+	AskTitleFmt:        "question: %s",
+	AskHint:            "←→/Tab select · 1-9 pick directly · Enter confirm · Esc declines",
 
 	Help: `commands:
   /help    show this help
@@ -296,6 +301,8 @@ var ja = Messages{
 	RetryFmt:           "リトライ %d/%d (%s) — %d 秒待機",
 	ThoughtPrefix:      "✦ ",
 	InterruptStuckWarn: "⚠ ツールがキャンセルに応答していません — もう一度 Ctrl+C で gem-agent を終了します（この呼び出しまでの transcript は保存済みです）",
+	AskTitleFmt:        "質問: %s",
+	AskHint:            "←→/Tab 選択 · 1-9 で即決定 · Enter 決定 · Esc 回答しない",
 
 	Help: `コマンド:
   /help    このヘルプを表示

@@ -14,6 +14,15 @@ import (
 // TextDelta carries one streamed chunk of model text.
 type TextDelta string
 
+// AskRequest is the ask_user tool's dialog (ADR-0036): the model's
+// question with 2-8 options. Resp receives the chosen index, or -1
+// when the operator declines (Esc).
+type AskRequest struct {
+	Question string
+	Options  []string
+	Resp     chan int
+}
+
 // StreamUpdate is turn observability from the backend (ADR-0033):
 // Kind "chunk" (heartbeat), "thought" (a live thought-summary delta),
 // or "retry" (a scheduled backoff retry).

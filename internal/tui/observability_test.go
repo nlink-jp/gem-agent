@@ -175,3 +175,64 @@ func TestNoStallWarningWhileAToolRuns(t *testing.T) {
 		t.Errorf("real stall after stream resumed not warned:\n%s", m.View())
 	}
 }
+
+// ADR-0036: the ask_user dialog — digits pick in one press, Esc
+// declines, interrupted turns auto-decline, releaseTurn never strands
+// the blocked tool goroutine.
+func TestAskDialog(t *testing.T) {
+	m, _ := runningModel(t)
+	resp := make(chan int, 1)
+	next, _ := m.Update(AskRequest{Question: "どっち？", Options: []string{"A 案", "B 案", "C 案"}, Resp: resp})
+	m = next.(Model)
+	if m.phase != phaseAsk {
+		t.Fatal("ask request should switch phase")
+	}
+	v := m.View()
+	for _, want := range []string{"どっち？", "1) A 案", "2) B 案", "Esc"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("ask view missing %q:\n%s", want, v)
+		}
+	}
+	m.askAt = time.Time{} // skip the typed-ahead grace
+	m = press(m, runeMsg("2"))
+	if got := <-resp; got != 1 {
+		t.Errorf("digit pick = %d, want 1", got)
+	}
+	if m.phase != phaseRunning {
+		t.Error("phase should return to running")
+	}
+
+	// Esc declines.
+	resp2 := make(chan int, 1)
+	next, _ = m.Update(AskRequest{Question: "q", Options: []string{"a", "b"}, Resp: resp2})
+	m = next.(Model)
+	m.askAt = time.Time{}
+	m = press(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if got := <-resp2; got != -1 {
+		t.Errorf("Esc = %d, want -1", got)
+	}
+
+	// After Ctrl+C, an arriving ask is auto-declined.
+	m = press(m, tea.KeyMsg{Type: tea.KeyCtrlC})
+	resp3 := make(chan int, 1)
+	next, _ = m.Update(AskRequest{Question: "q", Options: []string{"a", "b"}, Resp: resp3})
+	m = next.(Model)
+	if m.phase == phaseAsk {
+		t.Error("ask dialog opened for an interrupted turn")
+	}
+	if got := <-resp3; got != -1 {
+		t.Errorf("interrupted ask = %d, want -1", got)
+	}
+
+	// A pending dialog is drained on TurnDone — the tool goroutine
+	// must never be stranded.
+	m2, _ := runningModel(t)
+	resp4 := make(chan int, 1)
+	next, _ = m2.Update(AskRequest{Question: "q", Options: []string{"a", "b"}, Resp: resp4})
+	m2 = next.(Model)
+	next, _ = m2.Update(TurnDone{})
+	_ = next.(Model)
+	if got := <-resp4; got != -1 {
+		t.Errorf("drained ask = %d, want -1", got)
+	}
+}
