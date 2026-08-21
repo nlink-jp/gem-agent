@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -40,6 +41,7 @@ var (
 	flagConfig    string
 	flagModel     string
 	flagThinking  string
+	flagMCP       string
 	flagNoSandbox bool
 	flagPrompt    string
 	flagContinue  bool
@@ -76,6 +78,7 @@ func init() {
 	rootCmd.Flags().StringVar(&flagConfig, "config", "", "config file path (default ~/.config/gem-agent/config.toml)")
 	rootCmd.Flags().StringVar(&flagModel, "model", "", "override the configured model name")
 	rootCmd.Flags().StringVar(&flagThinking, "thinking", "", "override [model].thinking for this run: minimal|low|medium|high, or 'default' to clear a configured level (supported levels are model-dependent — ADR-0025)")
+	rootCmd.Flags().StringVar(&flagMCP, "mcp", "", "override [mcp].enabled for this run: on|off (off skips every MCP server spawn — useful for -p pipelines; ADR-0039)")
 	rootCmd.Flags().BoolVar(&flagNoSandbox, "no-sandbox", false, "disable the sandbox-exec wrapper for shell_exec (debugging only, unsafe)")
 	rootCmd.Flags().StringVarP(&flagPrompt, "prompt", "p", "", "one-shot mode: run this prompt and exit (mutating tools are denied)")
 	rootCmd.Flags().BoolVarP(&flagContinue, "continue", "c", false, "resume this project's most recent session")
@@ -106,7 +109,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		cfgPath = p
 	}
-	cfg, err := config.LoadWithOverrides(cfgPath, config.Overrides{Model: flagModel, Thinking: flagThinking})
+	cfg, err := config.LoadWithOverrides(cfgPath, config.Overrides{Model: flagModel, Thinking: flagThinking, MCP: flagMCP})
 	if err != nil {
 		return err
 	}
@@ -193,11 +196,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}()
 
 	// --- skills: Claude Code's skill library, read as-is (ADR-0010) ---
+	// skillsList and mcpSummary/mcpClients above are reassigned by the
+	// /skills reload and /mcp reload closures (ADR-0039); every consumer
+	// reads the variables through a closure, so updates propagate. The
+	// single-writer discipline holds because a slash command cannot run
+	// while a turn is in flight.
 	skillsList, skillNotes := discoverSkills(projectDir, projectTrusted)
 	for _, n := range skillNotes {
 		fmt.Fprintf(stderr, "warning: %s\n", n)
 	}
-	if err := registerSkillTool(registry, skillsList); err != nil {
+	if err := registerSkillTool(registry, func() []skills.Skill { return skillsList }); err != nil {
 		return err
 	}
 
@@ -568,6 +576,65 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 	settingsData := settings.data()
 
+	// --- in-session integration reload (ADR-0039) ---
+	// Both closures reuse the startup code paths and the startup trust
+	// verdict — a reload can never widen what the trust gate allowed.
+	// They run only between turns (slash commands cannot be queued), so
+	// reassigning the captured variables is single-writer safe.
+	reloadMCP := func() string {
+		if !cfg.MCP.Enabled {
+			return msgs.MCPDisabled
+		}
+		registry.RemoveByPrefix("mcp__")
+		for _, c := range mcpClients {
+			c.Close()
+		}
+		// Warnings go into the command output: under the TUI a stderr
+		// write would corrupt the display.
+		var warn bytes.Buffer
+		mcpClients, mcpSummary = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, projectTrusted)
+		ag.RefreshTools()
+		mcpTools := 0
+		for _, t := range registry.List() {
+			if strings.HasPrefix(t.Name, "mcp__") {
+				mcpTools++
+			}
+		}
+		sink.Reload("mcp", len(mcpClients), mcpTools)
+		if sessionLog != nil {
+			_ = sessionLog.Log("mcp_reload", map[string]any{
+				"servers": len(mcpClients), "tools": mcpTools})
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, msgs.MCPReloadedFmt, len(mcpClients), mcpTools)
+		for _, s := range mcpSummary {
+			b.WriteString("  " + s + "\n")
+		}
+		if warn.Len() > 0 {
+			b.WriteString(warn.String())
+		}
+		return b.String()
+	}
+	reloadSkills := func() string {
+		list, notes := discoverSkills(projectDir, projectTrusted)
+		skillsList = list
+		// The skill descriptions ride the system prompt; rebuild it so
+		// the model sees the new set (the implicit-cache prefix re-warms
+		// — the deliberate cost of a reload).
+		ag.SetSystem(buildSystemPrompt(projectDir, projectContext) + skills.PromptSection(skillsList) + memorySection)
+		sink.Reload("skills", 0, len(skillsList))
+		if sessionLog != nil {
+			_ = sessionLog.Log("skills_reload", map[string]any{"count": len(skillsList)})
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, msgs.SkillsReloadedFmt, len(skillsList))
+		for _, n := range notes {
+			b.WriteString("  ⚠ " + n + "\n")
+		}
+		b.WriteString(skillsListing(skillsList))
+		return b.String()
+	}
+
 	// resolveWindow settles the model's input token limit and hands it to
 	// everyone who needs it: the footer displays it, and auto-compaction
 	// (ADR-0006) measures against it. It runs in the background — a
@@ -676,7 +743,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			CompletePath: func(prefix string) []string {
 				return mention.Complete(projectDir, prefix, 24)
 			},
-			CompleteSlash: slashCompletions(skillsList),
+			CompleteSlash: slashCompletions(func() []skills.Skill { return skillsList }),
 			Settings:      &settingsData,
 			ApplySetting:  settings.Apply,
 			ExpandInput: func(in string) (string, bool, string) {
@@ -717,6 +784,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			},
 			Slash: func(in string) (string, bool, bool) {
 				return slashOutput(in, ag, registry, mcpSummary, skillsList,
+					slashReloads{mcp: reloadMCP, skills: reloadSkills},
 					func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
 					func() string { return memoryListing(memBase, projectDir) }, msgs)
 			},
@@ -802,6 +870,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		if strings.HasPrefix(input, "/") {
 			out, _, quit := slashOutput(input, ag, registry, mcpSummary, skillsList,
+				slashReloads{mcp: reloadMCP, skills: reloadSkills},
 				func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
 				func() string { return memoryListing(memBase, projectDir) }, msgs)
 			fmt.Fprint(stderr, out)
@@ -941,7 +1010,9 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 // slashCompletions returns the Tab-completion source for "/"-prefixed
 // input: command names, and skill names after "/skill ". The command
 // list mirrors what slashOutput and the REPL loop actually accept.
-func slashCompletions(skillsList []skills.Skill) func(string) []string {
+// slashCompletions reads the skill list through the getter on every
+// call: /skills reload swaps the list mid-session (ADR-0039).
+func slashCompletions(getSkills func() []skills.Skill) func(string) []string {
 	commands := []string{
 		"/auto", "/clear", "/compact", "/exit", "/help", "/mcp", "/memory",
 		"/quit", "/settings", "/skill", "/skills", "/tools", "/usage",
@@ -949,7 +1020,7 @@ func slashCompletions(skillsList []skills.Skill) func(string) []string {
 	return func(prefix string) []string {
 		if rest, ok := strings.CutPrefix(prefix, "/skill "); ok {
 			var out []string
-			for _, s := range skillsList {
+			for _, s := range getSkills() {
 				if strings.HasPrefix(s.Name, rest) {
 					out = append(out, "/skill "+s.Name)
 				}
@@ -1015,9 +1086,39 @@ func resolveTheme(configured string) string {
 // slashOutput executes a /command and returns its output text — shared
 // by the TUI (which prints it into scrollback, errors highlighted) and
 // the plain REPL (which writes it to stderr).
-func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, usage func() string, memoryInfo func() string, msgs *uitext.Messages) (output string, isErr bool, quit bool) {
+// slashReloads carries the ADR-0039 reload closures into slashOutput;
+// either may be nil (tests), which reads as "not available here".
+type slashReloads struct {
+	mcp    func() string
+	skills func() string
+}
+
+func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, reload slashReloads, usage func() string, memoryInfo func() string, msgs *uitext.Messages) (output string, isErr bool, quit bool) {
 	var b strings.Builder
-	switch strings.Fields(input)[0] {
+	fields := strings.Fields(input)
+	// The one supported subcommand shape: "/mcp reload" and
+	// "/skills reload" (ADR-0039). Anything else after the command is a
+	// typo and says so, instead of silently showing the listing.
+	sub := ""
+	if len(fields) > 1 {
+		sub = fields[1]
+	}
+	if (fields[0] == "/mcp" || fields[0] == "/skills") && sub != "" {
+		var fn func() string
+		if sub == "reload" {
+			if fields[0] == "/mcp" {
+				fn = reload.mcp
+			} else {
+				fn = reload.skills
+			}
+		}
+		if fn == nil {
+			fmt.Fprintf(&b, msgs.UnknownCommandFmt, input)
+			return b.String(), true, false
+		}
+		return fn(), false, false
+	}
+	switch fields[0] {
 	case "/help":
 		// The text lives in uitext (ADR-0029) — both languages in full,
 		// pinned to the command set by TestHelpListsEveryCommand.

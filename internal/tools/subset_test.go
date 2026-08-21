@@ -37,6 +37,43 @@ func TestSubset(t *testing.T) {
 	}
 }
 
+// ADR-0039: RemoveByPrefix clears exactly the matching tools (the
+// mcp__* adapters on reload) and leaves order and everything else
+// intact.
+func TestRemoveByPrefix(t *testing.T) {
+	reg, err := New(t.TempDir(), nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"mcp__a__x", "mcp__b__y"} {
+		if err := reg.Register(&Tool{Name: n, Parameters: map[string]any{"type": "object"},
+			Run: func(context.Context, map[string]any) (string, error) { return "", nil }}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := len(reg.List())
+	if got := reg.RemoveByPrefix("mcp__"); got != 2 {
+		t.Errorf("removed %d, want 2", got)
+	}
+	if _, ok := reg.Get("mcp__a__x"); ok {
+		t.Error("mcp tool survived removal")
+	}
+	if got := len(reg.List()); got != before-2 {
+		t.Errorf("registry has %d tools, want %d", got, before-2)
+	}
+	if _, ok := reg.Get("read_file"); !ok {
+		t.Error("built-in vanished with the prefix removal")
+	}
+	// Idempotent and re-registerable (the reload cycle).
+	if got := reg.RemoveByPrefix("mcp__"); got != 0 {
+		t.Errorf("second removal removed %d", got)
+	}
+	if err := reg.Register(&Tool{Name: "mcp__a__x", Parameters: map[string]any{"type": "object"},
+		Run: func(context.Context, map[string]any) (string, error) { return "", nil }}); err != nil {
+		t.Errorf("re-register after removal: %v", err)
+	}
+}
+
 // The subset shares the parent's project confinement: its tools keep
 // resolving and refusing paths exactly as the parent's do.
 func TestSubsetKeepsConfinement(t *testing.T) {

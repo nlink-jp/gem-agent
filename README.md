@@ -96,7 +96,9 @@ approval-gated agent memory across sessions.
 **[Integration](docs/en/reference/integration.md)** — drop-in reading
 of `AGENTS.md`/`AGENT.md`/`CLAUDE.md`/`GEMINI.md` up the directory
 tree, Claude Code-format `.mcp.json` MCP servers (global + project),
-and Claude Code-format skills with progressive disclosure.
+and Claude Code-format skills with progressive disclosure — both
+reloadable mid-session (`/mcp reload`, `/skills reload`), with
+`--mcp on|off` to switch MCP per run.
 
 **[Configuration](docs/en/reference/configuration.md)** — the full
 config reference, precedence, CLI flags, content-filter behaviour,

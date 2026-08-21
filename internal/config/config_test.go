@@ -136,6 +136,31 @@ func TestFlagOverrideBeatsEnv(t *testing.T) {
 	}
 }
 
+// ADR-0039 §5: --mcp on|off overrides [mcp].enabled at the top of the
+// precedence, with flag provenance; anything else is a loud error.
+func TestMCPFlagOverride(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("GEMAGENT_PROJECT", "p")
+	t.Setenv("GEMAGENT_MODEL", "m")
+	path := filepath.Join(t.TempDir(), "nonexistent.toml")
+
+	cfg, err := LoadWithOverrides(path, Overrides{MCP: "off"})
+	if err != nil || cfg.MCP.Enabled {
+		t.Errorf("--mcp off: enabled=%v err=%v", cfg != nil && cfg.MCP.Enabled, err)
+	}
+	if cfg.Source("mcp.enabled") != FromFlag {
+		t.Errorf("provenance = %v, want flag", cfg.Source("mcp.enabled"))
+	}
+	cfg, err = LoadWithOverrides(path, Overrides{MCP: "on"})
+	if err != nil || !cfg.MCP.Enabled {
+		t.Errorf("--mcp on: err=%v", err)
+	}
+	if _, err = LoadWithOverrides(path, Overrides{MCP: "maybe"}); err == nil ||
+		!strings.Contains(err.Error(), "--mcp") {
+		t.Errorf("invalid --mcp value: %v", err)
+	}
+}
+
 func TestUnknownKeyIsError(t *testing.T) {
 	clearEnv(t)
 	path := writeConfig(t, `

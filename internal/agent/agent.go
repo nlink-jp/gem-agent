@@ -381,6 +381,30 @@ func (a *Agent) AddContext(text string) {
 	a.appendMessage(llm.Message{Role: llm.RoleUser, Content: text})
 }
 
+// RefreshTools re-caches the tool declarations from the registry
+// (ADR-0039: an MCP reload changed what the registry holds). Called
+// only between turns — a slash command structurally cannot run while
+// a turn is in flight — so it shares AddContext's single-writer
+// discipline.
+func (a *Agent) RefreshTools() {
+	var defs []llm.ToolDef
+	for _, t := range a.registry.List() {
+		defs = append(defs, llm.ToolDef{
+			Name:        t.Name,
+			Description: t.Description,
+			Parameters:  t.Parameters,
+		})
+	}
+	a.toolDefs = defs
+}
+
+// SetSystem replaces the system prompt (ADR-0039: a skills reload
+// rebuilt its skill section). The byte-identical request prefix
+// changes with it, so the implicit cache (ADR-0018) re-warms on the
+// next round — the deliberate cost of an operator-initiated reload.
+// Same between-turns discipline as AddContext.
+func (a *Agent) SetSystem(s string) { a.system = s }
+
 // HistoryLen reports the number of history messages (REPL status display).
 func (a *Agent) HistoryLen() int { return len(a.history) }
 

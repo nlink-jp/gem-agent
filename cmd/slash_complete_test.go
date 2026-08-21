@@ -8,7 +8,7 @@ import (
 )
 
 func TestSlashCompletionsSource(t *testing.T) {
-	complete := slashCompletions([]skills.Skill{{Name: "meeting-notes"}, {Name: "news-digest"}})
+	complete := slashCompletions(func() []skills.Skill { return []skills.Skill{{Name: "meeting-notes"}, {Name: "news-digest"}} })
 
 	if got := complete("/us"); len(got) != 1 || got[0] != "/usage" {
 		t.Errorf("/us → %v", got)

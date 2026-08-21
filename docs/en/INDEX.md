@@ -158,6 +158,10 @@ excepted).
   auto-approve model tier sees the operator's typed request for a
   turn's first rounds: evidence-wrapped, misalignment escalates, late
   rounds fall back byte-identically to the call-only view
+- [`ADR-0039`](adr/0039-integration-reload.md) — `/skills reload` and
+  `/mcp reload` reuse the startup paths and the startup trust verdict;
+  declarations and the system prompt follow; `--mcp on|off` for
+  one-shot pipelines; reloads are audited
 
 ## History
 

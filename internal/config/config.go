@@ -283,6 +283,11 @@ type Overrides struct {
 	// the empty string already means "flag not given", so clearing
 	// needs its own word.
 	Thinking string
+	// MCP overrides [mcp].enabled for this run: "on" or "off"
+	// (ADR-0039). "off" is the one-shot pipeline case — no server
+	// child is spawned; "on" forces MCP against a config that
+	// disables it. Empty means the flag was not given.
+	MCP string
 }
 
 // Load reads the config with no CLI overrides.
@@ -335,6 +340,14 @@ func LoadWithOverrides(path string, ov Overrides) (*Config, error) {
 			cfg.Model.Thinking = ov.Thinking
 		}
 		cfg.note("model.thinking", FromFlag)
+	}
+	switch ov.MCP {
+	case "":
+	case "on", "off":
+		cfg.MCP.Enabled = ov.MCP == "on"
+		cfg.note("mcp.enabled", FromFlag)
+	default:
+		return nil, fmt.Errorf("--mcp must be on or off (got %q)", ov.MCP)
 	}
 
 	if err := cfg.validate(); err != nil {

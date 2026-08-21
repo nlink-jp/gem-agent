@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/nlink-jp/gem-agent/internal/agent"
+	"github.com/nlink-jp/gem-agent/internal/skills"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
@@ -55,7 +56,7 @@ func TestRenderInfoNamesDeclinedTrust(t *testing.T) {
 // a command added to one cannot silently miss the others (review
 // round 2 — /exit lived only in the switch).
 func TestSlashSurfacesAgree(t *testing.T) {
-	comps := slashCompletions(nil)("/")
+	comps := slashCompletions(func() []skills.Skill { return nil })("/")
 	if len(comps) == 0 {
 		t.Fatal("no completions")
 	}

@@ -122,6 +122,10 @@ type Messages struct {
 	// UnknownCommandFmt: %s = the input that matched no command.
 	UnknownCommandFmt string
 	MCPNone           string // /mcp with nothing connected
+	// Integration reload results (ADR-0039).
+	MCPDisabled       string // /mcp reload while [mcp].enabled=false / --mcp off
+	MCPReloadedFmt    string // fmt: servers (int), tools (int)
+	SkillsReloadedFmt string // fmt: skill count (int)
 	// MCPToolsNote states the real gate honestly: MCP tools ARE
 	// approval-gated, and in auto mode the risk review may pass
 	// routine calls (review round 2 — the old text overstated).
@@ -204,13 +208,13 @@ var en = Messages{
 	Help: `commands:
   /help    show this help
   /tools   list available tools
-  /mcp     show connected MCP servers
+  /mcp     show connected MCP servers (/mcp reload reconnects them)
   /auto    toggle auto-approve (shift+tab does the same, and works mid-run)
   /compact summarise the older half of the conversation to free context
   /settings show every setting with where it came from; edit policy + toggles
   /usage   token accounting: main loop, cache hit rate, side-calls, web tools
   /memory  list persisted memories (global + this project); saves are approval-gated
-  /skills  list installed skills (Claude Code format, read as-is)
+  /skills  list installed skills (/skills reload re-discovers them)
   /skill <name> [args]  invoke a skill directly
   /clear   reset the conversation history
   /quit    exit (Ctrl+D also works; /exit is an alias)
@@ -248,6 +252,9 @@ mutating tools prompt for approval: y = once, a = always this session
 	CompactedFmt:      "compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
 	UnknownCommandFmt: "unknown command %q — /help lists commands\n",
 	MCPNone:           "no MCP servers connected — define them in ~/.config/gem-agent/mcp.json (global) or the project's .mcp.json (project; wins name collisions)\n",
+	MCPDisabled:       "MCP is disabled for this session ([mcp].enabled=false or --mcp off) — restart to enable it\n",
+	MCPReloadedFmt:    "mcp reloaded: %d server(s), %d tool(s)\n",
+	SkillsReloadedFmt: "skills reloaded: %d found\n",
 	MCPToolsNote:      "MCP tools appear in /tools as mcp__<server>__<tool>; they are approval-gated (in auto-approve mode, the risk review may run routine calls unattended, and 'a' covers a tool for the session)\n",
 
 	TrustHeaderFmt:           "\nnew project: %s\nthis project provides:\n",
@@ -307,13 +314,13 @@ var ja = Messages{
 	Help: `コマンド:
   /help    このヘルプを表示
   /tools   利用可能なツールの一覧
-  /mcp     接続中の MCP サーバーを表示
+  /mcp     接続中の MCP サーバーを表示（/mcp reload で再接続）
   /auto    auto-approve を切替（shift+tab でも可・実行中も有効）
   /compact 会話の古い半分を要約してコンテキストを空ける
   /settings 全設定を出所つきで表示; ポリシーとトグルを編集
   /usage   トークン集計: メインループ・キャッシュ命中率・サイドコール・Web ツール
   /memory  永続メモリの一覧（グローバル + このプロジェクト）; 保存は承認制
-  /skills  インストール済みスキルの一覧（Claude Code 形式をそのまま読む）
+  /skills  インストール済みスキルの一覧（/skills reload で再探索）
   /skill <name> [args]  スキルを直接起動
   /clear   会話履歴をリセット
   /quit    終了（Ctrl+D でも可・/exit も同じ）
@@ -350,6 +357,9 @@ auto-approve: 安全な変更は無人で実行します。破壊的・プロジ
 	CompactedFmt:      "古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",
 	UnknownCommandFmt: "未知のコマンド %q — /help に一覧があります\n",
 	MCPNone:           "MCP サーバー未接続 — ~/.config/gem-agent/mcp.json（グローバル）またはプロジェクトの .mcp.json（プロジェクト側が名前衝突で優先）で定義します\n",
+	MCPDisabled:       "MCP はこのセッションでは無効です（[mcp].enabled=false または --mcp off）— 有効化するには再起動してください\n",
+	MCPReloadedFmt:    "MCP を再接続しました: %d サーバー・%d ツール\n",
+	SkillsReloadedFmt: "skill を再読込しました: %d 件\n",
 	MCPToolsNote:      "MCP ツールは /tools に mcp__<server>__<tool> として表示され、承認ゲートの対象です（auto-approve モードではリスクレビューが日常的な呼び出しを無人実行することがあり、'a' はそのツールをセッション中カバーします）\n",
 
 	TrustHeaderFmt:           "\n新しいプロジェクト: %s\nこのプロジェクトの提供物:\n",

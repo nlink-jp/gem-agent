@@ -101,6 +101,7 @@ The `GEMAGENT_STATE_DIR` environment variable relocates the state root
 | `--model <id>` | override the configured model |
 | `--thinking <level>` | override `[model].thinking` for this run: `minimal`\|`low`\|`medium`\|`high`, or `default` to clear a configured level (model-dependent — ADR-0025) |
 | `--config <path>` | use another config file |
+| `--mcp <on\|off>` | override `[mcp].enabled` for this run — `off` skips every MCP server spawn, which is what a `-p` pipeline usually wants (ADR-0039) |
 | `--no-sandbox` | disable the Seatbelt wrapper (debugging only) |
 | `sessions` | list resumable sessions |
 
@@ -115,8 +116,9 @@ infrastructure, log name `gem-agent` in the Logs Explorer (needs
 your own collector instead. Events: `session.start/end`, `tool.call` (name,
 clipped detail, duration, outcome), `approval.decision` (decision and
 which layer made it), `turn.end`, `model.usage`, `compaction`,
-`media.upload` — with service/session/project/host resource
-attributes. **Metadata only**: prompts, responses, file contents and
+`media.upload`, `integration.reload` (an in-session `/mcp reload` or
+`/skills reload` changed the tool surface — ADR-0039) — with
+service/session/project/host resource attributes. **Metadata only**: prompts, responses, file contents and
 thought summaries never leave the machine through this channel; the
 local transcript stays the full record. Only your global config can
 enable telemetry or set the endpoint — a project's `.gem-agent.toml`

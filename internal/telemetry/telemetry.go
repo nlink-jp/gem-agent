@@ -227,6 +227,16 @@ func (s *Sink) Usage(promptTok, outputTok, cachedTok int) {
 		attribute.Int("cached_tokens", cachedTok))
 }
 
+// Reload records an in-session integration reload (ADR-0039): a
+// session whose tool surface changed mid-way must not look, in the
+// audit log, like the session that started.
+func (s *Sink) Reload(kind string, servers, tools int) {
+	s.emit("integration.reload",
+		attribute.String("kind", kind),
+		attribute.Int("servers", servers),
+		attribute.Int("tools", tools))
+}
+
 func (s *Sink) Compaction(replaced, kept int) {
 	s.emit("compaction",
 		attribute.Int("messages_summarised", replaced),

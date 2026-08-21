@@ -54,6 +54,15 @@ Tools appear as `mcp__<server>__<tool>`, approval-gated (relaxable per
 tool — see [approval](approval.md)). Timed-out calls kill the server
 child (MCP has no cancel) and it respawns lazily on the next call.
 
+**`/mcp reload`** (ADR-0039) reconnects everything mid-session — full
+restart, config re-read, fresh tool lists — without losing the
+conversation: the recovery for a wedged server, and the way a server
+added to `mcp.json` joins a running session. It reuses the startup
+trust verdict (an untrusted project's `.mcp.json` stays unloaded;
+changing trust still takes a restart), the session approval allowlist
+survives (keyed by tool name), and `--mcp off` on the command line
+skips MCP entirely for one run — what a `-p` pipeline usually wants.
+
 To add governance and an audit trail, route a server through
 [mcp-guardian](https://github.com/nlink-jp/mcp-guardian) — it is itself
 a stdio MCP server, so the opt-in is just a `.mcp.json` entry:
@@ -101,6 +110,11 @@ line to the system prompt, and the body loads only when used —
 - **you** type `/skill <name> [args]` (the body is injected directly,
   no extra model round; Tab completes the name). `/skills` lists what
   was found.
+
+**`/skills reload`** (ADR-0039) re-runs discovery mid-session — a
+skill installed while the session runs becomes available without
+restarting; the system prompt's skill section follows, so the model
+sees the new set from the next round.
 
 Skill content is treated as *instructions*, not wrapped as untrusted
 data — it is a file you installed, the same trust tier as `AGENTS.md`.

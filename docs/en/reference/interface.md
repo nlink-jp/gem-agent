@@ -97,13 +97,13 @@ in the input box as one message, never one LLM call per line.
 |---|---|
 | `/help` | commands, file references, shell escape, keys |
 | `/tools` | available tools with each one's LIVE approval gate |
-| `/mcp` | connected MCP servers with their scope |
+| `/mcp` | connected MCP servers with their scope; `/mcp reload` reconnects them (ADR-0039) |
 | `/auto` | toggle auto-approve (shift+tab does the same, and works mid-run) |
 | `/compact` | summarise the older half of the conversation now |
 | `/settings` | every setting with its provenance; edit policy + toggles |
 | `/usage` | the session's token statement (ADR-0019) |
 | `/memory` | persisted memories, global + this project |
-| `/skills` | installed skills |
+| `/skills` | installed skills; `/skills reload` re-discovers them (ADR-0039) |
 | `/skill <name> [args]` | invoke a skill directly, no extra model round |
 | `/clear` | reset the conversation history |
 | `/quit` | exit (`/exit` is an alias; Ctrl+D also works) |

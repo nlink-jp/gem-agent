@@ -33,10 +33,10 @@ func discoverSkills(projectDir string, projectTrusted bool) ([]skills.Skill, []s
 // registerSkillTool adds load_skill to the registry. Read-only and
 // ungated: it can only read inside discovered skill directories, which
 // is also what bounds the agent's unwrap exemption for its results.
-func registerSkillTool(registry *tools.Registry, list []skills.Skill) error {
-	if len(list) == 0 {
-		return nil
-	}
+// The skill list is read through the getter on every call (ADR-0039):
+// /skills reload swaps the list, and the tool is registered even when
+// the session starts with zero skills, so a reload can populate it.
+func registerSkillTool(registry *tools.Registry, get func() []skills.Skill) error {
 	return registry.Register(&tools.Tool{
 		Name: skills.ToolName,
 		Description: "Load a skill installed by the user. With only `name`, returns the skill's " +
@@ -55,7 +55,7 @@ func registerSkillTool(registry *tools.Registry, list []skills.Skill) error {
 		Mutating: false,
 		Run: func(ctx context.Context, args map[string]any) (string, error) {
 			name, _ := args["name"].(string)
-			s, ok := skills.Find(list, name)
+			s, ok := skills.Find(get(), name)
 			if !ok {
 				return "", fmt.Errorf("unknown skill %q — only the skills listed in the system prompt exist", name)
 			}

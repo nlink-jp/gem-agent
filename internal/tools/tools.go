@@ -114,6 +114,25 @@ func (r *Registry) Subset(names ...string) (*Registry, error) {
 	return sub, nil
 }
 
+// RemoveByPrefix deletes every tool whose name starts with prefix and
+// returns how many were removed — the MCP half of an integration
+// reload (ADR-0039): all mcp__* adapters go before the connect path
+// re-registers the fresh set.
+func (r *Registry) RemoveByPrefix(prefix string) int {
+	removed := 0
+	kept := r.order[:0]
+	for _, n := range r.order {
+		if strings.HasPrefix(n, prefix) {
+			delete(r.tools, n)
+			removed++
+			continue
+		}
+		kept = append(kept, n)
+	}
+	r.order = kept
+	return removed
+}
+
 // Get returns a tool by name.
 func (r *Registry) Get(name string) (*Tool, bool) {
 	t, ok := r.tools[name]

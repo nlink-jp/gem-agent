@@ -99,6 +99,7 @@ config file > defaults。設定ファイル内の未知キーはエラーにな�
 | `--model <id>` | 設定モデルの上書き |
 | `--thinking <level>` | この実行だけ `[model].thinking` を上書き: `minimal`\|`low`\|`medium`\|`high`、または `default` で設定済みレベルをクリア（対応レベルはモデル依存 — ADR-0025） |
 | `--config <path>` | 別の設定ファイルを使う |
+| `--mcp <on\|off>` | この実行だけ `[mcp].enabled` を上書き — `off` は全 MCP サーバー起動をスキップ。`-p` パイプラインが通常求めるもの（ADR-0039） |
 | `--no-sandbox` | Seatbelt ラップの無効化（デバッグ専用） |
 | `sessions` | 再開可能なセッション一覧 |
 
@@ -112,7 +113,9 @@ Explorer でのログ名は `gem-agent`（`logging.googleapis.com` の有効化
 バックエンドは代わりに自前のコレクタへ OpenTelemetry ログレコードを
 送ります。イベント: `session.start/end`・`tool.call`
 （名前・切詰め詳細・所要・結果）・`approval.decision`（判定とどの層が
-決めたか）・`turn.end`・`model.usage`・`compaction`・`media.upload` —
+決めたか）・`turn.end`・`model.usage`・`compaction`・`media.upload`・
+`integration.reload`（セッション中の `/mcp reload` / `/skills reload`
+がツール面を変えた — ADR-0039）—
 サービス/セッション/プロジェクト/ホストのリソース属性付き。
 **メタデータのみ**: プロンプト・応答・ファイル内容・思考サマリは
 この経路からマシンを出ません。全文はローカル transcript が正本の

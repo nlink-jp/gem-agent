@@ -93,7 +93,9 @@ gem-agent -p "このリポジトリを要約して"      # 単発実行、パイ
 **[統合](docs/ja/reference/integration.ja.md)** — ディレクトリツリーを
 遡る `AGENTS.md`/`AGENT.md`/`CLAUDE.md`/`GEMINI.md` の drop-in 読取、
 Claude Code 形式 `.mcp.json` の MCP サーバー（グローバル +
-プロジェクト）、progressive disclosure の Claude Code 形式スキル。
+プロジェクト）、progressive disclosure の Claude Code 形式スキル —
+どちらもセッション中に再読込可能（`/mcp reload`・`/skills reload`）、
+`--mcp on|off` で実行単位の MCP 切替。
 
 **[設定](docs/ja/reference/configuration.ja.md)** — 設定リファレンス
 全体、優先順位、CLI フラグ、コンテンツフィルタの挙動、エンドポイント

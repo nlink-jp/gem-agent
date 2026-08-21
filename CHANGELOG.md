@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.35.0] - 2026-08-22
+
+### Added — in-session reload of skills and MCP, and --mcp (ADR-0039, operator request)
+
+- `/mcp reload` reconnects every MCP server mid-session — full
+  restart, config re-read, fresh tool lists — without losing the
+  conversation: the recovery path for a wedged server, and how a
+  server added to mcp.json joins a running session. `/skills reload`
+  re-runs skill discovery; the system prompt's skill section and the
+  agent's tool declarations follow immediately
+- Both reuse the startup code paths and the startup trust verdict —
+  a reload can never widen what the trust gate allowed; the session
+  approval allowlist survives (keyed by tool name); connection
+  warnings land in the command output (stderr would corrupt the TUI)
+- load_skill is now registered even for zero-skill sessions (reading
+  the live list through a getter), so a reload can populate a session
+  that began empty
+- Reloads are audited: an `integration.reload` telemetry event plus a
+  transcript record — a session whose tool surface grew mid-way must
+  not look like the session that started
+- `--mcp on|off` overrides `[mcp].enabled` per run (flag provenance
+  in /settings): `off` skips every server spawn — what a `-p`
+  pipeline usually wants; `on` forces MCP against a disabling config
+
 ## [0.34.1] - 2026-08-22
 
 ### Fixed — frame rows leaking into scrollback (operator report, recurrence)

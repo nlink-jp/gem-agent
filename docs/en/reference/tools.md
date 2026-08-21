@@ -116,9 +116,10 @@ turn and asking IS the free-text channel.
 The model's view of its own runtime — version, platform, the model it
 runs as, thinking level, context occupancy, cumulative token usage
 (the `/usage` numbers — one accounting source), limits,
-approval/sandbox state, project trust, connected MCP servers (as of
-startup) and skills. Read-only, no approval. GCP identifiers and
-hostname deliberately excluded.
+approval/sandbox state, project trust, connected MCP servers (as last
+connected — startup or the most recent `/mcp reload`) and skills.
+Read-only, no approval. GCP identifiers and hostname deliberately
+excluded.
 
 ## Web access: `web_search`, `web_fetch` (ADR-0017)
 

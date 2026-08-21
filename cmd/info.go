@@ -99,14 +99,15 @@ func renderInfo(s infoSnapshot) string {
 		fmt.Fprintf(&b, "session: %s\n", s.SessionID)
 	}
 
-	// "at startup": the summary is the connection-time snapshot — a
-	// server whose child process died later is still listed (review
+	// "as last connected": the summary is the connection-time snapshot
+	// — startup or the most recent /mcp reload (ADR-0039) — and a
+	// server whose child process died since is still listed (review
 	// round 2; honest labeling over a liveness system this tool does
 	// not have).
 	if len(s.MCPServers) == 0 {
 		b.WriteString("mcp servers: none\n")
 	} else {
-		fmt.Fprintf(&b, "mcp servers (as connected at startup): %s\n", strings.Join(s.MCPServers, "; "))
+		fmt.Fprintf(&b, "mcp servers (as last connected): %s\n", strings.Join(s.MCPServers, "; "))
 	}
 	if !s.ProjectTrusted {
 		b.WriteString("project trust: declined/undecided — the project's own instruction files, .mcp.json, and skills are NOT loaded (ADR-0023); missing tools may be this, not missing configuration\n")
