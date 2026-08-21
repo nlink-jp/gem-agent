@@ -115,6 +115,13 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   changing the ladder, keep: Block never consults the model, model errors
   and malformed verdicts escalate, and confidence alone never approves.
   New dangerous patterns go in `internal/risk`, with a corpus test.
+- **skillsList/mcpSummary/mcpClients are LIVE variables** (ADR-0039) —
+  /skills reload and /mcp reload reassign them mid-session, and every
+  consumer reads them through a closure over the variable. Never bake
+  the value into a constructor (that bug shipped twice pre-reload:
+  slashCompletions and load_skill took the slice by value) — take a
+  getter. After a registry change call ag.RefreshTools(); after a
+  skills change rebuild the prompt via ag.SetSystem().
 - **The agentic_file_search child loop writes no transcript** (ADR-0037) —
   replaying child records into a resumed session would corrupt it; only the
   report enters the main history. The child shares the main backend (so the

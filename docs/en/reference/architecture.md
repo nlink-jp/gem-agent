@@ -221,6 +221,10 @@ because an instruction file is obeyed as instructions. MCP servers come
 from `~/.config/gem-agent/mcp.json` and `<project>/.mcp.json` in Claude
 Code format; the project wins a name collision. MCP has no cancel, so a
 timed-out call kills the server child and the next call respawns it.
+`/mcp reload` and `/skills reload` (ADR-0039) re-run the startup paths
+mid-session under the startup trust verdict — tool declarations and
+the system prompt's skill section follow, and the reload is audited;
+`--mcp on|off` overrides `[mcp].enabled` per run.
 
 Skills (ADR-0010/0011) follow the same arrangement as MCP:
 `~/.config/gem-agent/skills` (gem-agent's own; sharing with Claude Code

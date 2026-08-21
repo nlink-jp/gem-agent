@@ -60,7 +60,7 @@ name = "gemini-3.7-flash"
 # low 93 / medium 170 / high 222 thought tokens). Which levels a model
 # accepts is model-dependent — gemini-3.7-flash rejects "minimal" with a
 # clear 400 on the first turn (measured). The summarize_file model is
-# not affected.
+# not affected. The --thinking flag overrides this per run.
 #thinking = "high"
 
 [sandbox]
@@ -119,7 +119,10 @@ compact_at_pct = 80
 [mcp]
 # Connect MCP servers declared in ~/.config/gem-agent/mcp.json (global)
 # and <project>/.mcp.json (project; wins name collisions). Both files
-# use the Claude Code format — see mcp.example.json.
+# use the Claude Code format — see mcp.example.json. The --mcp flag
+# overrides this per run (on|off — "off" skips every server spawn,
+# what a -p pipeline usually wants); /mcp reload reconnects servers
+# mid-session (ADR-0039).
 enabled = true
 
 # Per-call timeout for MCP tools, in seconds. On timeout the server

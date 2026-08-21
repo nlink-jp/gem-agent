@@ -205,7 +205,10 @@ flags > `GEMAGENT_*` > `GOOGLE_CLOUD_*` > file > defaults。モデル名は常�
 だからである。MCP サーバーは `~/.config/gem-agent/mcp.json` と
 `<project>/.mcp.json`（Claude Code 形式）から読み、名前衝突はプロジェクト側が勝つ。
 MCP にキャンセルは無いので、タイムアウトした呼び出しはサーバー子プロセスを kill し、
-次回呼び出しで再起動する。
+次回呼び出しで再起動する。`/mcp reload` と `/skills reload`（ADR-0039）は
+セッション途中で起動時の経路を、起動時の trust 判定の下で再実行する — ツール宣言と
+システムプロンプトの skill 節が追随し、リロードは監査される。`--mcp on|off` は
+実行単位で `[mcp].enabled` を上書きする。
 
 skill（ADR-0010/0011）は MCP と同じ配置に従う: `~/.config/gem-agent/skills`
 （gem-agent 自身の置き場。Claude Code との共有はオペレータが張る symlink で、
