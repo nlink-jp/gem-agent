@@ -258,6 +258,11 @@ func defaults() Config {
 // precedence order: flags > GEMAGENT_* > GOOGLE_CLOUD_* > file > defaults.
 type Overrides struct {
 	Model string
+	// Thinking overrides [model].thinking for this run. The literal
+	// "default" clears a configured level back to the model default —
+	// the empty string already means "flag not given", so clearing
+	// needs its own word.
+	Thinking string
 }
 
 // Load reads the config with no CLI overrides.
@@ -302,6 +307,14 @@ func LoadWithOverrides(path string, ov Overrides) (*Config, error) {
 	if ov.Model != "" {
 		cfg.Model.Name = ov.Model
 		cfg.note("model.name", FromFlag)
+	}
+	if ov.Thinking != "" {
+		if ov.Thinking == "default" {
+			cfg.Model.Thinking = ""
+		} else {
+			cfg.Model.Thinking = ov.Thinking
+		}
+		cfg.note("model.thinking", FromFlag)
 	}
 
 	if err := cfg.validate(); err != nil {

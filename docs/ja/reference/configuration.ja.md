@@ -89,6 +89,7 @@ config file > defaults。設定ファイル内の未知キーはエラーにな�
 | `-c` / `--continue` | このプロジェクトの最新セッションを再開 |
 | `--resume <id>` | 特定セッションを再開 |
 | `--model <id>` | 設定モデルの上書き |
+| `--thinking <level>` | この実行だけ `[model].thinking` を上書き: `minimal`\|`low`\|`medium`\|`high`、または `default` で設定済みレベルをクリア（対応レベルはモデル依存 — ADR-0025） |
 | `--config <path>` | 別の設定ファイルを使う |
 | `--no-sandbox` | Seatbelt ラップの無効化（デバッグ専用） |
 | `sessions` | 再開可能なセッション一覧 |

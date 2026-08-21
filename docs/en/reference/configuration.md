@@ -91,6 +91,7 @@ The `GEMAGENT_STATE_DIR` environment variable relocates the state root
 | `-c` / `--continue` | resume this project's most recent session |
 | `--resume <id>` | resume a specific session |
 | `--model <id>` | override the configured model |
+| `--thinking <level>` | override `[model].thinking` for this run: `minimal`\|`low`\|`medium`\|`high`, or `default` to clear a configured level (model-dependent — ADR-0025) |
 | `--config <path>` | use another config file |
 | `--no-sandbox` | disable the Seatbelt wrapper (debugging only) |
 | `sessions` | list resumable sessions |

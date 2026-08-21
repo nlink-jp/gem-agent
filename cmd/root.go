@@ -38,6 +38,7 @@ import (
 var (
 	flagConfig    string
 	flagModel     string
+	flagThinking  string
 	flagNoSandbox bool
 	flagPrompt    string
 	flagContinue  bool
@@ -73,6 +74,7 @@ macOS only. See docs/ for the RFP and design records.`,
 func init() {
 	rootCmd.Flags().StringVar(&flagConfig, "config", "", "config file path (default ~/.config/gem-agent/config.toml)")
 	rootCmd.Flags().StringVar(&flagModel, "model", "", "override the configured model name")
+	rootCmd.Flags().StringVar(&flagThinking, "thinking", "", "override [model].thinking for this run: minimal|low|medium|high, or 'default' to clear a configured level (supported levels are model-dependent — ADR-0025)")
 	rootCmd.Flags().BoolVar(&flagNoSandbox, "no-sandbox", false, "disable the sandbox-exec wrapper for shell_exec (debugging only, unsafe)")
 	rootCmd.Flags().StringVarP(&flagPrompt, "prompt", "p", "", "one-shot mode: run this prompt and exit (mutating tools are denied)")
 	rootCmd.Flags().BoolVarP(&flagContinue, "continue", "c", false, "resume this project's most recent session")
@@ -103,7 +105,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		cfgPath = p
 	}
-	cfg, err := config.LoadWithOverrides(cfgPath, config.Overrides{Model: flagModel})
+	cfg, err := config.LoadWithOverrides(cfgPath, config.Overrides{Model: flagModel, Thinking: flagThinking})
 	if err != nil {
 		return err
 	}

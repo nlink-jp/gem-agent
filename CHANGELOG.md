@@ -1,6 +1,15 @@
 # Changelog
 
-## [Unreleased]
+## [0.28.0] - 2026-08-21
+
+### Added — --thinking flag (operator request)
+
+- `--thinking minimal|low|medium|high` overrides `[model].thinking`
+  for one run, mirroring `--model`; the literal `default` clears a
+  configured level back to the model default (the empty string already
+  means "flag not given"). Invalid values fail at startup naming the
+  knob; `/settings` and `agent_info` show the flag-provided value with
+  `flag` provenance
 
 ### Docs — README restructured into an overview + feature references (operator request)
 
