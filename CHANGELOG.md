@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.29.2] - 2026-08-21
+
+### Fixed — false stall warning during long tool runs (follow-up to 0.29.0)
+
+- While a tool executes, the model stream is silent BY DESIGN — but
+  the ADR-0033 stall detector counted that silence and warned
+  "connection may be stalled" ~20s into any long shell command. The
+  warning is now suppressed while a tool call is running and re-arms
+  the moment the stream speaks again (found while confirming the
+  operator's question that the silent tool and the dead Ctrl+C shared
+  one root cause — they did: the defeated timeout)
+
 ## [0.29.1] - 2026-08-21
 
 ### Fixed — cancellation deadlock (ADR-0034, operator report)

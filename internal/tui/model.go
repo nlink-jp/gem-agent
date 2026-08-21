@@ -248,6 +248,10 @@ type Model struct {
 	lastChunk   time.Time
 	retryLine   string
 	thoughtTail string
+	// toolRunning: a tool call is executing, so the stream is silent
+	// BY DESIGN — the stall warning must not cry wolf (ADR-0034
+	// follow-up). Cleared when the stream speaks again.
+	toolRunning bool
 
 	width    int
 	height   int
@@ -441,7 +445,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "chunk":
 			m.chunkCount++
 			m.lastChunk = time.Now()
-			m.retryLine = "" // data is flowing again
+			m.retryLine = ""      // data is flowing again
+			m.toolRunning = false // the stream resumed: stall detection re-arms
 		case "thought":
 			m.thoughtTail += msg.Thought
 		case "retry":
@@ -467,7 +472,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Flushed text and the tool event ride ONE write, keeping the
 		// true order (text → tool event) with a single repaint.
 		m.status = fmt.Sprintf(m.msgs.StatusRunningFmt, msg.Name)
-		m.thoughtTail = "" // the round's thoughts ended in a call
+		m.thoughtTail = ""   // the round's thoughts ended in a call
+		m.toolRunning = true // stream silence is expected until the tool returns
 		return m, m.emitJoined(m.takeLive(), m.st.tool.Render("⚙ "+msg.Name+" "+msg.Detail))
 
 	case ApprovalRequest:
@@ -661,7 +667,7 @@ func (m Model) heartbeatLine() string {
 		last = m.turnStart
 	}
 	age := int(time.Since(last).Seconds())
-	if age >= stallSeconds {
+	if age >= stallSeconds && !m.toolRunning {
 		return m.st.warn.Render("  " + fmt.Sprintf(m.msgs.StallFmt, age))
 	}
 	return m.st.hint.Render("  " + fmt.Sprintf(m.msgs.HeartbeatFmt,

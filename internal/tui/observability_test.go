@@ -152,3 +152,26 @@ func TestTripleCtrlCEscapesAWedgedTool(t *testing.T) {
 		t.Error("interrupt ladder must reset on TurnDone")
 	}
 }
+
+// A long tool execution receives no stream chunks BY DESIGN — the
+// stall warning must not cry wolf there (operator question follow-up:
+// "is the silent tool the same cause?" — during the tool, silence is
+// normal; the warning is for the model stream).
+func TestNoStallWarningWhileAToolRuns(t *testing.T) {
+	m, _ := runningModel(t)
+	next, _ := m.Update(StreamUpdate{Kind: "chunk"})
+	m = next.(Model)
+	next, _ = m.Update(ToolCall{Name: "shell_exec", Detail: "make build"})
+	m = next.(Model)
+	m.lastChunk = time.Now().Add(-25 * time.Second) // long tool, no stream
+	if strings.Contains(m.View(), "stalled") {
+		t.Errorf("false stall warning during tool execution:\n%s", m.View())
+	}
+	// The stream resuming (round 2) re-arms the stall detector.
+	next, _ = m.Update(StreamUpdate{Kind: "chunk"})
+	m = next.(Model)
+	m.lastChunk = time.Now().Add(-25 * time.Second)
+	if !strings.Contains(m.View(), "stalled") {
+		t.Errorf("real stall after stream resumed not warned:\n%s", m.View())
+	}
+}
