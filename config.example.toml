@@ -137,3 +137,9 @@ theme = "auto"
 # Japanese, anything else English); "ja" and "en" force it.
 # Applies at the next start.
 language = "auto"
+
+# Stream the model's thought summaries into the live area while it
+# thinks (ADR-0033). Display-only: thoughts are never written to the
+# transcript. false restores the quiet spinner; the stream heartbeat
+# and retry visibility stay either way.
+show_thoughts = true

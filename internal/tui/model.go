@@ -239,6 +239,13 @@ type Model struct {
 	// arriving before TurnDone are auto-denied (review round 2).
 	interruptSent bool
 
+	// Turn observability (ADR-0033): stream heartbeat + live thoughts.
+	turnStart   time.Time
+	chunkCount  int
+	lastChunk   time.Time
+	retryLine   string
+	thoughtTail string
+
 	width    int
 	height   int
 	sized    bool // first WindowSizeMsg received
@@ -422,6 +429,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case TextDelta:
 		m.live.WriteString(string(msg))
+		// The visible answer supersedes the thought tail (ADR-0033).
+		m.thoughtTail = ""
+		return m, nil
+
+	case StreamUpdate:
+		switch msg.Kind {
+		case "chunk":
+			m.chunkCount++
+			m.lastChunk = time.Now()
+			m.retryLine = "" // data is flowing again
+		case "thought":
+			m.thoughtTail += msg.Thought
+		case "retry":
+			m.retryLine = fmt.Sprintf(m.msgs.RetryFmt,
+				msg.Attempt, msg.Max, msg.Cause, (msg.DelayMS+999)/1000)
+		}
 		return m, nil
 
 	case Usage:
@@ -440,7 +463,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ToolCall:
 		// Flushed text and the tool event ride ONE write, keeping the
 		// true order (text → tool event) with a single repaint.
-		m.status = "running " + msg.Name
+		m.status = fmt.Sprintf(m.msgs.StatusRunningFmt, msg.Name)
+		m.thoughtTail = "" // the round's thoughts ended in a call
 		return m, m.emitJoined(m.takeLive(), m.st.tool.Render("⚙ "+msg.Name+" "+msg.Detail))
 
 	case ApprovalRequest:
@@ -534,7 +558,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// being empty is not an escape hatch (ADR-0007).
 				if m.cancelTurn != nil {
 					m.cancelTurn()
-					m.status = "interrupting…"
+					m.status = m.msgs.StatusInterrupting
 					// A gate request already in flight would open a
 					// dialog for a turn the operator just killed —
 					// and an 'a' answer would allowlist on its behalf.
@@ -594,6 +618,72 @@ func (m *Model) emit(s string) tea.Cmd {
 	return m.println(s)
 }
 
+// beginTurnStats arms the ADR-0033 heartbeat for a fresh turn.
+func (m *Model) beginTurnStats() {
+	m.turnStart = time.Now()
+	m.chunkCount = 0
+	m.lastChunk = time.Time{}
+	m.retryLine = ""
+	m.thoughtTail = ""
+}
+
+// stallSeconds is how long with no data before the heartbeat switches
+// to the warning style (ADR-0033 §1).
+const stallSeconds = 20
+
+// heartbeatLine renders the live stream stats for the running status
+// bar: a scheduled retry wins, then a stall warning, then the normal
+// elapsed/chunks/age line.
+func (m Model) heartbeatLine() string {
+	if m.turnStart.IsZero() {
+		return ""
+	}
+	if m.retryLine != "" {
+		return m.st.warn.Render("  " + m.retryLine)
+	}
+	last := m.lastChunk
+	if last.IsZero() {
+		last = m.turnStart
+	}
+	age := int(time.Since(last).Seconds())
+	if age >= stallSeconds {
+		return m.st.warn.Render("  " + fmt.Sprintf(m.msgs.StallFmt, age))
+	}
+	return m.st.hint.Render("  " + fmt.Sprintf(m.msgs.HeartbeatFmt,
+		fmtElapsed(time.Since(m.turnStart)), m.chunkCount, age))
+}
+
+// fmtElapsed renders a duration as "42s" / "3m07s".
+func fmtElapsed(d time.Duration) string {
+	s := int(d.Seconds())
+	if s < 60 {
+		return fmt.Sprintf("%ds", s)
+	}
+	return fmt.Sprintf("%dm%02ds", s/60, s%60)
+}
+
+// thoughtView renders the live thought tail (ADR-0033 §3), dim, capped
+// to the last two lines at the current width. Empty when there is
+// nothing to show.
+func (m Model) thoughtView() string {
+	if m.thoughtTail == "" {
+		return ""
+	}
+	text := m.msgs.ThoughtPrefix + strings.ReplaceAll(strings.TrimSpace(m.thoughtTail), "\n", " ")
+	w := m.width
+	if w <= 0 {
+		w = 80
+	}
+	// Keep the freshest content: trim from the FRONT to at most two
+	// display lines' worth of runes.
+	max := (w - 2) * 2
+	r := []rune(text)
+	if len(r) > max {
+		r = r[len(r)-max:]
+	}
+	return m.st.status.Render(string(r))
+}
+
 // releaseTurn ends the per-turn context lifecycle. The cancel func was
 // only ever invoked on Ctrl+C; clean finishes discarded it un-called,
 // leaking one child context per turn on the process-lifetime BaseCtx
@@ -605,6 +695,9 @@ func (m *Model) releaseTurn() {
 	}
 	m.cancelTurn = nil
 	m.interruptSent = false
+	m.turnStart = time.Time{}
+	m.retryLine = ""
+	m.thoughtTail = ""
 }
 
 // physicalRows models the terminal's greedy wrap for one logical line:
@@ -734,7 +827,7 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	req := m.approval
 	m.approval = nil
 	m.phase = phaseRunning
-	m.status = "waiting for the tool…"
+	m.status = m.msgs.StatusToolWait
 
 	var cmds []tea.Cmd
 	applyLine := ""
@@ -1009,7 +1102,8 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.phase = phaseRunning
-		m.status = "shell: " + clip(command, 60)
+		m.status = fmt.Sprintf(m.msgs.StatusShellFmt, clip(command, 60))
+		m.beginTurnStats()
 		ctx, cancel := context.WithCancel(m.baseCtx)
 		m.cancelTurn = cancel
 		m.shell(ctx, command)
@@ -1031,7 +1125,8 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 				return m, m.emit(m.st.errS.Render("✗ " + errMsg))
 			}
 			m.phase = phaseRunning
-			m.status = "thinking…"
+			m.status = m.msgs.StatusThinking
+			m.beginTurnStats()
 			m.live.Reset()
 			ctx, cancel := context.WithCancel(m.baseCtx)
 			m.cancelTurn = cancel
@@ -1047,7 +1142,8 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	// arrives as TurnDone.
 	if input == "/compact" && m.compact != nil {
 		m.phase = phaseRunning
-		m.status = "compacting the conversation…"
+		m.status = m.msgs.StatusCompacting
+		m.beginTurnStats()
 		ctx, cancel := context.WithCancel(m.baseCtx)
 		m.cancelTurn = cancel
 		m.compact(ctx)
@@ -1077,7 +1173,8 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	}
 
 	m.phase = phaseRunning
-	m.status = "thinking…"
+	m.status = m.msgs.StatusThinking
+	m.beginTurnStats()
 	m.live.Reset()
 	ctx, cancel := context.WithCancel(m.baseCtx)
 	m.cancelTurn = cancel
@@ -1209,8 +1306,13 @@ func (m Model) viewContent() string {
 		// operator sees what they are writing" while a turn runs, and
 		// the keys were routed (updateRunningInput) without the box
 		// ever being drawn (review round 2).
-		return m.liveView() + "\n" + m.spin.View() + " " + m.st.status.Render(m.status) +
-			m.st.hint.Render(m.msgs.CtrlCHint) + "\n" + m.ta.View() + "\n" + m.footer() + "\n"
+		body := m.liveView()
+		if tv := m.thoughtView(); tv != "" {
+			body += "\n" + tv
+		}
+		return body + "\n" + m.spin.View() + " " + m.st.status.Render(m.status) +
+			m.heartbeatLine() + m.st.hint.Render(m.msgs.CtrlCHint) +
+			"\n" + m.ta.View() + "\n" + m.footer() + "\n"
 	case phaseApproval:
 		req := m.approval
 		if req == nil {

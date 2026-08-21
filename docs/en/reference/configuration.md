@@ -62,6 +62,7 @@ call_timeout_sec = 60      # default
 [tui]
 theme = "auto"             # auto | dark | light | plain
 language = "auto"          # auto | ja | en (ADR-0029 — see interface.md)
+show_thoughts = true       # live thought summaries in the TUI (ADR-0033)
 
 [approval]
 # trusted_projects = ["/path/to/repo"]  # projects whose .gem-agent.toml may loosen gates

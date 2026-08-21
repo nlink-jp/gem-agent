@@ -26,6 +26,29 @@ mutating tools (pipe-friendly; a tool set to `"never"` in the approval
 policy never asks, so it still runs — see
 [approval](approval.md)).
 
+## Watching a turn run (ADR-0033)
+
+While a turn runs, the status line is live, not a static spinner:
+
+    ⠸ thinking… 1m07s · 34 chunks · last 0s  (Ctrl+C interrupts)
+
+— elapsed time, chunks received from the stream, and seconds since the
+last one. Three states that used to look identical are now
+distinguishable: a **thinking model** keeps receiving chunks (thought
+and metadata chunks count — liveness, not visibility); a **stalled
+connection** turns the line into a warning after 20s of silence,
+naming Ctrl+C; a **backoff retry** after a transient error (429/5xx)
+shows `retry 2/3 (429) — waiting 4s` instead of silence. There is no
+automatic timeout: long thinking is legitimate, and the operator
+decides.
+
+With `[tui].show_thoughts = true` (the default) the model's thought
+summaries also stream into the live area in the dim style, replaced as
+the real answer starts — the model narrates its own progress. Thoughts
+are display-only: never written to the transcript, never replayed.
+`false` restores the quiet spinner; the heartbeat and retry visibility
+stay either way.
+
 ## Keys
 
 Enter sends, ↑/↓ navigate input history, Ctrl+C interrupts a running

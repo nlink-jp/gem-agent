@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.29.0] - 2026-08-21
+
+### Added — turn observability (ADR-0033, operator report)
+
+- The operator reported turns sitting on "thinking…" indefinitely with
+  no way to tell what was happening. Three states used to render
+  identically: a healthily thinking model, a stalled connection, and a
+  silent backoff retry (up to 30+ seconds of deliberate silence)
+- The running status is now live: `thinking… 1m07s · 34 chunks ·
+  last 0s` — elapsed, chunks received, seconds since the last one.
+  20s without data switches to a warning naming Ctrl+C; scheduled
+  retries show `retry 2/3 (429) — waiting 4s`
+- `[tui].show_thoughts = true` (default) streams the model's thought
+  summaries into the live area, dim, replaced as the answer starts —
+  display-only: thoughts are never written to the transcript, and the
+  replayed history stays signatures-only (measured: multi-round tool
+  turns and resume run clean with summaries requested)
+- The running-status strings joined the ADR-0029 language catalogs
+- No automatic timeout, by design: long thinking is legitimate; the
+  display plus the operator beats a timer that kills real work
+
 ## [0.28.0] - 2026-08-21
 
 ### Added — --thinking flag (operator request)

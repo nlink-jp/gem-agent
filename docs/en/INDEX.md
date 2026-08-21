@@ -136,6 +136,9 @@ excepted).
   tool for the clock and calendar arithmetic (now/info/add/diff/
   convert); month-end normalization disclosed, business days refused;
   session-start date rides the system prompt cache-stably
+- [`ADR-0033`](adr/0033-turn-observability.md) — turn observability:
+  a stream heartbeat and stall warning, visible backoff retries, and
+  ephemeral live thought summaries (displayed, never stored)
 
 ## History
 

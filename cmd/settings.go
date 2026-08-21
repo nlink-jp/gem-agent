@@ -129,6 +129,8 @@ func (s *settingsStore) data() tui.SettingsData {
 	// query would leak into the input box). An honest restart note
 	// beats a menu that lies, per this panel's own design rule.
 	ro("session", "tui.theme", s.cfg.TUI.Theme, "tui.theme", "applies at next start")
+	ro("session", "tui.show_thoughts", strconv.FormatBool(s.cfg.TUI.ShowThoughts), "tui.show_thoughts",
+		"live thought summaries in the TUI (ADR-0033); applies at next start")
 
 	for _, t := range s.registry.List() {
 		d.Rows = append(d.Rows, tui.SettingRow{

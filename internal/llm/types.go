@@ -106,3 +106,19 @@ type Response struct {
 type Backend interface {
 	ChatStream(ctx context.Context, system string, messages []Message, tools []ToolDef, onText func(string)) (*Response, error)
 }
+
+// StreamEvent is turn observability (ADR-0033): the backend reports
+// stream liveness, retries, and thought summaries to whoever is
+// watching (the TUI). Events are display-only — nothing here enters
+// the history or the transcript.
+type StreamEvent struct {
+	// Kind: "chunk" (any chunk arrived — liveness), "thought" (a
+	// thought-summary delta; Thought carries the text), or "retry"
+	// (a backoff retry was scheduled; Attempt/Max/Cause/DelayMS set).
+	Kind    string
+	Thought string
+	Attempt int
+	Max     int
+	Cause   string
+	DelayMS int
+}

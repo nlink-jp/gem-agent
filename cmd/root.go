@@ -280,7 +280,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- LLM backend ---
-	backend, err := llm.NewVertex(ctx, cfg.GCP.Project, cfg.GCP.Location, cfg.Model.Name, cfg.Model.Safety, cfg.Model.Thinking)
+	backend, err := llm.NewVertex(ctx, cfg.GCP.Project, cfg.GCP.Location, cfg.Model.Name, cfg.Model.Safety, cfg.Model.Thinking, cfg.TUI.ShowThoughts)
 	if err != nil {
 		return err
 	}
@@ -374,6 +374,15 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// prog is assigned before the TUI runs; the agent only executes
 	// inside prog.Run, so the callbacks below never see it half-set.
 	var prog *tea.Program
+	// Turn observability (ADR-0033): stream heartbeat, retries, and
+	// thought summaries reach the TUI when one is running; the plain
+	// REPL and one-shot mode stay quiet — their output goes to pipes.
+	backend.SetObserver(func(ev llm.StreamEvent) {
+		if prog != nil {
+			prog.Send(tui.StreamUpdate{Kind: ev.Kind, Thought: ev.Thought,
+				Attempt: ev.Attempt, Max: ev.Max, Cause: ev.Cause, DelayMS: ev.DelayMS})
+		}
+	})
 
 	// --- agent_info: the model's view of its own runtime (ADR-0030) ---
 	// Registered before agent.New (which caches the declarations); the

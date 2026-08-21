@@ -89,6 +89,22 @@ type Messages struct {
 	// --- settings panel (TUI) ---
 	SettingsHint string // key help in the /settings title row
 
+	// --- running-status chrome (TUI, ADR-0033) ---
+	StatusThinking     string
+	StatusCompacting   string
+	StatusInterrupting string
+	StatusToolWait     string
+	StatusRunningFmt   string // %s = tool name
+	StatusShellFmt     string // %s = command (clipped)
+	// HeartbeatFmt: elapsed, chunk count, seconds since last chunk.
+	HeartbeatFmt string
+	// StallFmt: seconds with no data — the connection may be dead.
+	StallFmt string
+	// RetryFmt: attempt, max, cause token (429/503/error), wait seconds.
+	RetryFmt string
+	// ThoughtPrefix marks a live thought-summary line.
+	ThoughtPrefix string
+
 	// --- slash command feedback (cmd) ---
 	Help             string // the full /help text
 	AutoOn           string
@@ -164,6 +180,17 @@ var en = Messages{
 	Bye:           "bye",
 
 	SettingsHint: "  ↑↓ select · ←→/Enter change · s scope · Esc close",
+
+	StatusThinking:     "thinking…",
+	StatusCompacting:   "compacting the conversation…",
+	StatusInterrupting: "interrupting…",
+	StatusToolWait:     "waiting for the tool…",
+	StatusRunningFmt:   "running %s",
+	StatusShellFmt:     "shell: %s",
+	HeartbeatFmt:       "%s · %d chunks · last %ds",
+	StallFmt:           "no data for %ds — the connection may be stalled (Ctrl+C interrupts)",
+	RetryFmt:           "retry %d/%d (%s) — waiting %ds",
+	ThoughtPrefix:      "✦ ",
 
 	Help: `commands:
   /help    show this help
@@ -253,6 +280,17 @@ var ja = Messages{
 	Bye:           "bye",
 
 	SettingsHint: "  ↑↓ 選択 · ←→/Enter 変更 · s 保存先 · Esc 閉じる",
+
+	StatusThinking:     "thinking…",
+	StatusCompacting:   "会話を圧縮中…",
+	StatusInterrupting: "中断中…",
+	StatusToolWait:     "ツールの完了待ち…",
+	StatusRunningFmt:   "実行中 %s",
+	StatusShellFmt:     "shell: %s",
+	HeartbeatFmt:       "%s · %d chunks · last %ds",
+	StallFmt:           "%d 秒間データなし — 接続が失速している可能性（Ctrl+C で中断できます）",
+	RetryFmt:           "リトライ %d/%d (%s) — %d 秒待機",
+	ThoughtPrefix:      "✦ ",
 
 	Help: `コマンド:
   /help    このヘルプを表示

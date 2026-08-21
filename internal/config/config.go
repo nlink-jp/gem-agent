@@ -155,6 +155,9 @@ type TUIConfig struct {
 	// "ja", or "en" — the language of the interactive chrome
 	// (ADR-0029). Resolved once at startup.
 	Language string `toml:"language"`
+	// ShowThoughts streams the model's thought summaries into the live
+	// area (ADR-0033 §3). Display-only — never stored or replayed.
+	ShowThoughts bool `toml:"show_thoughts"`
 }
 
 // MCPConfig controls the MCP client. Server definitions live in the
@@ -250,7 +253,7 @@ func defaults() Config {
 		Sandbox: SandboxConfig{Enabled: true},
 		Agent:   AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120, AutoCompact: true, CompactAtPct: 80},
 		MCP:     MCPConfig{Enabled: true, CallTimeoutSec: 60},
-		TUI:     TUIConfig{Theme: "auto", Language: "auto"},
+		TUI:     TUIConfig{Theme: "auto", Language: "auto", ShowThoughts: true},
 	}
 }
 
@@ -352,7 +355,7 @@ var trackedKeys = []string{
 	"agent.max_turns", "agent.shell_timeout_sec", "agent.auto_approve",
 	"agent.auto_compact", "agent.compact_at_pct",
 	"mcp.enabled", "mcp.call_timeout_sec",
-	"tui.theme", "tui.language",
+	"tui.theme", "tui.language", "tui.show_thoughts",
 }
 
 func (c *Config) validate() error {

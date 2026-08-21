@@ -24,12 +24,28 @@ type Vertex struct {
 	// (ADR-0025); empty means the model's own default. Set once at
 	// construction — deliberately immutable (no live edit, no mutex).
 	thinking genai.ThinkingLevel
+	// includeThoughts asks the model for thought summaries, streamed
+	// to the observer for display and NEVER stored (ADR-0033 §3).
+	includeThoughts bool
+	// observer receives StreamEvents (ADR-0033); nil = nobody watching.
+	// Set once at startup, before any turn — deliberately immutable.
+	observer func(StreamEvent)
+}
+
+// SetObserver installs the turn-observability sink (ADR-0033). Call
+// before the first turn; events fire from the streaming goroutine.
+func (v *Vertex) SetObserver(fn func(StreamEvent)) { v.observer = fn }
+
+func (v *Vertex) observe(ev StreamEvent) {
+	if v.observer != nil {
+		v.observer(ev)
+	}
 }
 
 // NewVertex creates the backend. The client is created once and reused.
 // safety selects the configurable content-filter thresholds — see
 // SafetySettings.
-func NewVertex(ctx context.Context, project, location, model, safety, thinking string) (*Vertex, error) {
+func NewVertex(ctx context.Context, project, location, model, safety, thinking string, includeThoughts bool) (*Vertex, error) {
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		Project:  project,
 		Location: location,
@@ -38,7 +54,7 @@ func NewVertex(ctx context.Context, project, location, model, safety, thinking s
 	if err != nil {
 		return nil, fmt.Errorf("vertex AI client: %w", err)
 	}
-	return &Vertex{client: client, model: model, safety: SafetySettings(safety), thinking: ThinkingLevel(thinking)}, nil
+	return &Vertex{client: client, model: model, safety: SafetySettings(safety), thinking: ThinkingLevel(thinking), includeThoughts: includeThoughts}, nil
 }
 
 // ThinkingLevel maps a config value ("minimal".."high") to the SDK
@@ -98,7 +114,8 @@ func (v *Vertex) Model() string { return v.model }
 func (v *Vertex) WithModel(name string) *Vertex {
 	// The thinking level is deliberately NOT inherited (ADR-0025 §2):
 	// the summary model runs at its own default — the operator's dial
-	// is for the main model.
+	// is for the main model. Neither are thoughts nor the observer
+	// (ADR-0033 §3): side-call streams have no audience.
 	return &Vertex{client: v.client, model: name, safety: v.safety}
 }
 
@@ -120,7 +137,7 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 		// attaches thought signatures, which we capture regardless.
 		// ThinkingLevel "" leaves the model at its own default
 		// (ADR-0025).
-		ThinkingConfig: &genai.ThinkingConfig{IncludeThoughts: false, ThinkingLevel: v.thinking},
+		ThinkingConfig: &genai.ThinkingConfig{IncludeThoughts: v.includeThoughts, ThinkingLevel: v.thinking},
 		SafetySettings: v.safety,
 	}
 	if system != "" {
@@ -141,8 +158,13 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 	var lastErr error
 	for attempt := 0; attempt < maxStreamAttempts; attempt++ {
 		if attempt > 0 {
+			delay := bo.Duration(attempt - 1)
+			// Deliberate waiting must not look like a hang (ADR-0033
+			// §2): the observer shows the retry and its cause.
+			v.observe(StreamEvent{Kind: "retry", Attempt: attempt + 1, Max: maxStreamAttempts,
+				Cause: retryCause(lastErr), DelayMS: int(delay.Milliseconds())})
 			select {
-			case <-time.After(bo.Duration(attempt - 1)):
+			case <-time.After(delay):
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
@@ -156,11 +178,15 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 				streamErr = err
 				break
 			}
+			// Every chunk is a heartbeat (ADR-0033 §1): thought-only
+			// and metadata-only chunks prove liveness even though they
+			// display nothing.
+			v.observe(StreamEvent{Kind: "chunk"})
 			// Only content-bearing chunks disarm the retry: a chunk
 			// carrying nothing but usage metadata consumed nothing the
 			// operator saw, and refusing to retry after one needlessly
 			// fails the turn (ADR-0021).
-			if accumulateChunk(chunk, resp, &text, onText) {
+			if accumulateChunk(chunk, resp, &text, onText, v.onThought()) {
 				chunks++
 			}
 		}
@@ -209,7 +235,30 @@ func shouldRetryStream(err error, chunksSeen int) bool {
 // drive it with fabricated chunks. It reports whether the chunk carried
 // content (text or a function call) — metadata-only chunks must not
 // disarm the transient-error retry.
-func accumulateChunk(chunk *genai.GenerateContentResponse, resp *Response, text *strings.Builder, onText func(string)) bool {
+// retryCause reduces a stream error to the short token the status
+// line shows ("429", "503", or "error").
+func retryCause(err error) string {
+	if err == nil {
+		return "error"
+	}
+	for _, code := range []string{"429", "500", "502", "503", "504"} {
+		if strings.Contains(err.Error(), code) {
+			return code
+		}
+	}
+	return "error"
+}
+
+// onThought returns the thought-summary sink for accumulateChunk: an
+// observer wrapper when someone is watching, nil otherwise.
+func (v *Vertex) onThought() func(string) {
+	if v.observer == nil {
+		return nil
+	}
+	return func(s string) { v.observe(StreamEvent{Kind: "thought", Thought: s}) }
+}
+
+func accumulateChunk(chunk *genai.GenerateContentResponse, resp *Response, text *strings.Builder, onText, onThought func(string)) bool {
 	if chunk == nil {
 		return false
 	}
@@ -237,9 +286,15 @@ func accumulateChunk(chunk *genai.GenerateContentResponse, resp *Response, text 
 			continue
 		}
 		if part.Thought {
-			// Thought text stays internal, but the Gemini 3 signature
-			// must survive for replay — dropping it fails the next
-			// round with "missing a thought_signature" / 400.
+			// Thought text is DISPLAY-ONLY (ADR-0033 §3): streamed to
+			// the observer, never into resp/history — the stored shape
+			// stays signatures-only, exactly what replay was measured
+			// with. The Gemini 3 signature must survive for replay —
+			// dropping it fails the next round with "missing a
+			// thought_signature" / 400.
+			if part.Text != "" && onThought != nil {
+				onThought(part.Text)
+			}
 			if len(part.ThoughtSignature) > 0 {
 				resp.ThoughtPartSigs = append(resp.ThoughtPartSigs, part.ThoughtSignature)
 			}

@@ -25,7 +25,7 @@ func TestPDFCarriers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := NewVertex(ctx, project, "global", "gemini-3.7-flash", "off", "")
+	v, err := NewVertex(ctx, project, "global", "gemini-3.7-flash", "off", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}

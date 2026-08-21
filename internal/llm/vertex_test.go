@@ -120,20 +120,20 @@ func TestAccumulateChunkStreams(t *testing.T) {
 		}
 	}
 
-	accumulateChunk(chunk(&genai.Part{Text: "Hel"}), resp, &text, onText)
-	accumulateChunk(chunk(&genai.Part{Text: "lo", ThoughtSignature: []byte("sig-text")}), resp, &text, onText)
+	accumulateChunk(chunk(&genai.Part{Text: "Hel"}), resp, &text, onText, nil)
+	accumulateChunk(chunk(&genai.Part{Text: "lo", ThoughtSignature: []byte("sig-text")}), resp, &text, onText, nil)
 	accumulateChunk(chunk(
 		&genai.Part{Thought: true, ThoughtSignature: []byte("sig-thought")},
 		&genai.Part{
 			FunctionCall:     &genai.FunctionCall{Name: "read_file", Args: map[string]any{"path": "a"}},
 			ThoughtSignature: []byte("sig-fc"),
 		},
-	), resp, &text, onText)
+	), resp, &text, onText, nil)
 	// Usage arrives on the last chunk.
 	last := chunk()
 	last.UsageMetadata = &genai.GenerateContentResponseUsageMetadata{PromptTokenCount: 10, CandidatesTokenCount: 5}
-	accumulateChunk(last, resp, &text, onText)
-	accumulateChunk(nil, resp, &text, onText) // nil chunk must be harmless
+	accumulateChunk(last, resp, &text, onText, nil)
+	accumulateChunk(nil, resp, &text, onText, nil) // nil chunk must be harmless
 
 	if text.String() != "Hello" {
 		t.Errorf("text = %q", text.String())

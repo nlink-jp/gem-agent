@@ -14,6 +14,18 @@ import (
 // TextDelta carries one streamed chunk of model text.
 type TextDelta string
 
+// StreamUpdate is turn observability from the backend (ADR-0033):
+// Kind "chunk" (heartbeat), "thought" (a live thought-summary delta),
+// or "retry" (a scheduled backoff retry).
+type StreamUpdate struct {
+	Kind    string
+	Thought string
+	Attempt int
+	Max     int
+	Cause   string
+	DelayMS int
+}
+
 // ToolCall announces a tool invocation (shown as an event line).
 type ToolCall struct {
 	Name   string

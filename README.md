@@ -51,7 +51,9 @@ Each line below is expanded in a focused document under
 
 **[Interface](docs/en/reference/interface.md)** — an inline Bubble Tea
 TUI with native scrollback, a bottom-pinned input box that stays live
-during a running turn (Enter queues the next message), IME-friendly
+during a running turn (Enter queues the next message), a live turn
+status — stream heartbeat, stall warning, visible retries, and the
+model's thought summaries streaming as it thinks — IME-friendly
 approval dialogs, Tab completion for `@`-paths, `/`-commands, and skill
 names, `!command` shell escape, twelve slash commands (`/help`
 `/tools` `/mcp` `/auto` `/compact` `/settings` `/usage` `/memory`
