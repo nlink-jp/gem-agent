@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.29.1] - 2026-08-21
+
+### Fixed — cancellation deadlock (ADR-0034, operator report)
+
+- A skill's python tool call never returned, and Ctrl+C deadlocked on
+  "interrupting…". Root cause: exec.CommandContext kills only the
+  DIRECT child (sandbox-exec/bash); a grandchild (python) survived
+  holding the inherited output pipe, and CombinedOutput's Wait blocked
+  until EOF — the 120s timeout and the operator's Ctrl+C both fell
+  into the same hole (reproduced in a test that hung before the fix)
+- Shell commands now start as process-group leaders and cancellation
+  SIGKILLs the whole group; WaitDelay (2s) backstops a setsid escapee
+  so the session never hangs for an orphan. Measured: the reproduction
+  returns in ~0.3s where it previously hung for the child's lifetime
+- Last-resort exit: if a future tool still ignores cancellation, a
+  second Ctrl+C warns and a third quits gem-agent (the transcript is
+  per-event, so everything up to the wedged call is already saved)
+
 ## [0.29.0] - 2026-08-21
 
 ### Added — turn observability (ADR-0033, operator report)

@@ -133,6 +133,10 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0033`](adr/0033-turn-observability.ja.md) — ターン可観測性:
   ストリーム鼓動と失速警告・バックオフ再試行の可視化・揮発性の
   思考サマリ実況（表示のみ・保存しない）
+- [`ADR-0034`](adr/0034-cancellation-deadlock.ja.md) — キャンセルは
+  呼び出しを終わらせる: プロセスグループ kill + WaitDelay（パイプを
+  握る孫がタイムアウトも Ctrl+C もハングさせた）、3 回押しの最終
+  脱出口
 
 ## History（履歴）
 

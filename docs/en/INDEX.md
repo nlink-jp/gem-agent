@@ -139,6 +139,9 @@ excepted).
 - [`ADR-0033`](adr/0033-turn-observability.md) — turn observability:
   a stream heartbeat and stall warning, visible backoff retries, and
   ephemeral live thought summaries (displayed, never stored)
+- [`ADR-0034`](adr/0034-cancellation-deadlock.md) — cancellation ends
+  the call: process-group kill + WaitDelay (a grandchild holding the
+  pipe hung timeout AND Ctrl+C), and a three-press last-resort exit
 
 ## History
 

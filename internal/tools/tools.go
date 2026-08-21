@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -471,6 +472,7 @@ func (r *Registry) shellExec() *Tool {
 			defer cancel()
 			cmd := r.execFn(cctx, command)
 			cmd.Dir = r.projectDir
+			hardenExec(cmd)
 			out, err := cmd.CombinedOutput()
 			result := truncate(string(out), outputCap)
 			if cctx.Err() == context.DeadlineExceeded {
@@ -489,4 +491,29 @@ func (r *Registry) shellExec() *Tool {
 			return result, nil
 		},
 	}
+}
+
+// hardenExec makes cancellation actually END a shell call (ADR-0034).
+// exec.CommandContext kills only the DIRECT child; a grandchild (a
+// skill's python under sandbox-exec/bash) survived holding the
+// inherited output pipe, and CombinedOutput's Wait blocked until EOF —
+// so both the timeout and the operator's Ctrl+C hung forever.
+//   - Setpgid: the child leads a fresh process group;
+//   - Cancel: SIGKILL the GROUP, so the whole tree dies and the pipes
+//     close immediately;
+//   - WaitDelay: the backstop for a setsid/double-fork escapee — Wait
+//     stops waiting for inherited pipes instead of hanging the session
+//     for an orphan. The kill is best-effort; the return is guaranteed.
+func hardenExec(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setpgid = true
+	cmd.Cancel = func() error {
+		if cmd.Process != nil {
+			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+		return nil
+	}
+	cmd.WaitDelay = 2 * time.Second
 }

@@ -367,3 +367,49 @@ func TestReadFileLineWindows(t *testing.T) {
 		t.Errorf("full read changed: %q", out)
 	}
 }
+
+// ADR-0034: the operator's deadlock. A command whose background child
+// inherits the output pipe used to hang CombinedOutput forever after
+// timeout/cancel — the direct child died, the grandchild held the
+// pipe, Wait waited for EOF. Both paths must return promptly.
+func TestShellExecTimeoutReturnsDespitePipeHoldingChild(t *testing.T) {
+	r, err := New(t.TempDir(), directExec, 500*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan string, 1)
+	go func() {
+		out, _ := run(t, r, "shell_exec", map[string]any{"command": "sleep 30 & sleep 30"})
+		done <- out
+	}()
+	select {
+	case out := <-done:
+		if !strings.Contains(out, "timed out") {
+			t.Errorf("expected timeout report, got %q", out)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("shell_exec hung after timeout — the pipe-holding child deadlock (ADR-0034)")
+	}
+}
+
+func TestShellExecCancelReturnsDespitePipeHoldingChild(t *testing.T) {
+	r, err := New(t.TempDir(), directExec, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, _ := r.Get("shell_exec")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := tool.Run(ctx, map[string]any{"command": "sleep 30 & sleep 30"})
+		done <- err
+	}()
+	time.Sleep(300 * time.Millisecond) // let it start
+	cancel()                           // the operator's Ctrl+C
+	select {
+	case <-done:
+		// returned — content doesn't matter, promptness does
+	case <-time.After(5 * time.Second):
+		t.Fatal("shell_exec hung after cancel — the Ctrl+C deadlock (ADR-0034)")
+	}
+}

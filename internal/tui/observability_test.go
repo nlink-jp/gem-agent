@@ -118,3 +118,37 @@ func TestThoughtsNeverReachScrollback(t *testing.T) {
 		}
 	}
 }
+
+// ADR-0034 §3: the last-resort exit. A wedged tool that ignores
+// cancellation must not trap the operator: second Ctrl+C warns, third
+// quits — and a completed turn resets the ladder.
+func TestTripleCtrlCEscapesAWedgedTool(t *testing.T) {
+	m, c := runningModel(t)
+	m = press(m, tea.KeyMsg{Type: tea.KeyCtrlC}) // 1st: interrupt
+	if !m.interruptSent {
+		t.Fatal("interrupt not sent")
+	}
+	m = press(m, tea.KeyMsg{Type: tea.KeyCtrlC}) // 2nd: warn
+	found := false
+	for _, line := range c.printed {
+		if strings.Contains(line, "Ctrl+C") && strings.Contains(line, "quits") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("second Ctrl+C must warn about the exit: %q", c.printed)
+	}
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}) // 3rd: quit
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("third Ctrl+C returned no command")
+	}
+	// The ladder resets when a turn actually completes.
+	m2, _ := runningModel(t)
+	m2 = press(m2, tea.KeyMsg{Type: tea.KeyCtrlC})
+	next, _ = m2.Update(TurnDone{})
+	m2 = next.(Model)
+	if m2.interruptSent || m2.interruptPresses != 0 {
+		t.Error("interrupt ladder must reset on TurnDone")
+	}
+}

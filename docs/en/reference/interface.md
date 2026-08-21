@@ -42,6 +42,13 @@ shows `retry 2/3 (429) — waiting 4s` instead of silence. There is no
 automatic timeout: long thinking is legitimate, and the operator
 decides.
 
+Ctrl+C cancels the running turn — and the whole process GROUP of a
+shell command dies with it, so a skill's python (or anything else the
+command spawned) cannot keep the call hanging by holding the output
+pipe (ADR-0034). If a tool still ignores cancellation, a second
+Ctrl+C warns and a third quits gem-agent — the transcript is written
+per event, so everything up to the wedged call is already on disk.
+
 With `[tui].show_thoughts = true` (the default) the model's thought
 summaries also stream into the live area in the dim style, replaced as
 the real answer starts — the model narrates its own progress. Thoughts

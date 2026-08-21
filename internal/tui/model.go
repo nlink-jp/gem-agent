@@ -238,6 +238,9 @@ type Model struct {
 	// interruptSent: Ctrl+C fired for the running turn; gate requests
 	// arriving before TurnDone are auto-denied (review round 2).
 	interruptSent bool
+	// interruptPresses counts Ctrl+C AFTER interruptSent: 1 warns
+	// that the next quits, 2 quits (ADR-0034 §3).
+	interruptPresses int
 
 	// Turn observability (ADR-0033): stream heartbeat + live thoughts.
 	turnStart   time.Time
@@ -556,6 +559,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Always the interrupt while running, never a draft
 				// clear: an escape hatch conditional on the input box
 				// being empty is not an escape hatch (ADR-0007).
+				if m.interruptSent {
+					// The last-resort exit (ADR-0034 §3): a wedged
+					// tool that ignores cancellation must not trap
+					// the operator forever. Second press warns, third
+					// quits. Three, not two — a panic double-tap must
+					// not kill a session about to finish cleanly.
+					m.interruptPresses++
+					if m.interruptPresses == 1 {
+						return m, m.emit(m.st.warn.Render(m.msgs.InterruptStuckWarn))
+					}
+					return m, tea.Sequence(m.emit(m.st.hint.Render(m.msgs.Bye)), tea.Quit)
+				}
 				if m.cancelTurn != nil {
 					m.cancelTurn()
 					m.status = m.msgs.StatusInterrupting
@@ -695,6 +710,7 @@ func (m *Model) releaseTurn() {
 	}
 	m.cancelTurn = nil
 	m.interruptSent = false
+	m.interruptPresses = 0
 	m.turnStart = time.Time{}
 	m.retryLine = ""
 	m.thoughtTail = ""

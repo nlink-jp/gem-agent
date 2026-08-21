@@ -104,6 +104,9 @@ type Messages struct {
 	RetryFmt string
 	// ThoughtPrefix marks a live thought-summary line.
 	ThoughtPrefix string
+	// InterruptStuckWarn: the second Ctrl+C while already
+	// interrupting — the next one quits (ADR-0034 §3).
+	InterruptStuckWarn string
 
 	// --- slash command feedback (cmd) ---
 	Help             string // the full /help text
@@ -191,6 +194,7 @@ var en = Messages{
 	StallFmt:           "no data for %ds — the connection may be stalled (Ctrl+C interrupts)",
 	RetryFmt:           "retry %d/%d (%s) — waiting %ds",
 	ThoughtPrefix:      "✦ ",
+	InterruptStuckWarn: "⚠ the tool is not responding to cancellation — one more Ctrl+C quits gem-agent (the transcript up to this call is already saved)",
 
 	Help: `commands:
   /help    show this help
@@ -291,6 +295,7 @@ var ja = Messages{
 	StallFmt:           "%d 秒間データなし — 接続が失速している可能性（Ctrl+C で中断できます）",
 	RetryFmt:           "リトライ %d/%d (%s) — %d 秒待機",
 	ThoughtPrefix:      "✦ ",
+	InterruptStuckWarn: "⚠ ツールがキャンセルに応答していません — もう一度 Ctrl+C で gem-agent を終了します（この呼び出しまでの transcript は保存済みです）",
 
 	Help: `コマンド:
   /help    このヘルプを表示
