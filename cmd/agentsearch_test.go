@@ -20,11 +20,13 @@ type scriptBackend struct {
 	calls     int
 	systems   []string
 	toolDefs  [][]llm.ToolDef
+	messages  [][]llm.Message
 }
 
 func (s *scriptBackend) ChatStream(ctx context.Context, system string, messages []llm.Message, defs []llm.ToolDef, onText func(string)) (*llm.Response, error) {
 	s.systems = append(s.systems, system)
 	s.toolDefs = append(s.toolDefs, defs)
+	s.messages = append(s.messages, messages)
 	i := s.calls
 	if i >= len(s.responses) {
 		i = len(s.responses) - 1

@@ -72,6 +72,7 @@ type agenticSearchOptions struct {
 	tally      *usageTally
 	sink       *telemetry.Sink
 	onToolCall func(tc llm.ToolCall) // child tool activity, for live display
+	onToolDone func(tc llm.ToolCall) // child tool finished (TUI stall detector)
 }
 
 // registerAgenticSearch adds agentic_file_search (ADR-0037): a child
@@ -135,6 +136,12 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 				// records into a resumed session would corrupt it.
 				Telemetry:  subSink,
 				OnToolCall: opts.onToolCall,
+				OnToolDone: opts.onToolDone,
+				// The question is MODEL-authored: the @ grammar's
+				// out-of-project grants (images, documents, media by
+				// absolute/~ path) exist because an @ is operator-typed,
+				// and must not reach the child (review round 3).
+				NoMentions: true,
 				OnUsage: func(p, o, c int) {
 					rounds++
 					promptTok += p
@@ -161,8 +168,9 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 				// its audience is the MAIN model, so the operator-facing
 				// recovery advice ("continue", max_turns) is wrong here —
 				// the right move is a narrower question.
-				if strings.Contains(runErr.Error(), "round limit") {
-					return "", fmt.Errorf("file-search agent hit its round limit (%d rounds) — ask a narrower question", searchAgentMaxTurns)
+				var rle *agent.RoundLimitError
+				if errors.As(runErr, &rle) {
+					return "", fmt.Errorf("file-search agent hit its round limit (%d rounds) — ask a narrower question", rle.Rounds)
 				}
 				return "", fmt.Errorf("file-search agent: %w", runErr)
 			}
@@ -174,7 +182,13 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 				opts.modelName, rounds)
 			out := header + "\n\n" + report
 			if len(out) > searchReportCap {
-				out = out[:searchReportCap] + fmt.Sprintf("\n[report truncated at %d bytes]", searchReportCap)
+				// Rune-safe cut: a byte cut splits a UTF-8 sequence and
+				// prints U+FFFD mid-word on a Japanese report (ADR-0021).
+				cut := searchReportCap
+				for cut > 0 && !utf8.RuneStart(out[cut]) {
+					cut--
+				}
+				out = out[:cut] + fmt.Sprintf("\n[report truncated at %d bytes]", cut)
 			}
 			return out, nil
 		},

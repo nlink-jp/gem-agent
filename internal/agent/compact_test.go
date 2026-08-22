@@ -9,6 +9,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/session"
+	"github.com/nlink-jp/gem-agent/internal/telemetry"
 )
 
 // capturingLog records what the agent writes to the transcript.
@@ -189,10 +190,12 @@ func TestAutoCompactFiresAtTheThresholdAndIsRecorded(t *testing.T) {
 	}}
 	_, reg := newAgent(t, mb, &approveAll{}, 5)
 	var notices []string
+	sink, rec := telemetry.NewRecording()
 	a2 := New(Options{
 		Backend: mb, Registry: reg, Gate: &approveAll{}, Log: log,
 		System: "s", MaxTurns: 5, AutoCompact: true, CompactAtPct: 80,
-		OnNotice: func(msg string) { notices = append(notices, msg) },
+		OnNotice:  func(msg string) { notices = append(notices, msg) },
+		Telemetry: sink,
 	})
 	a2.SetContextWindow(1000)
 	a2.SetHistory([]llm.Message{
@@ -210,6 +213,17 @@ func TestAutoCompactFiresAtTheThresholdAndIsRecorded(t *testing.T) {
 	}
 	if a2.history[0].Attachments == nil || a2.history[0].Attachments[0].Content != "SUMMARY" {
 		t.Errorf("history head = %+v, want the summary", a2.history[0])
+	}
+	// The automatic path must reach the audit stream too (review
+	// round 3: only /compact emitted the event).
+	compacted := false
+	for _, ev := range rec.Events() {
+		if ev.Name == "compaction" {
+			compacted = true
+		}
+	}
+	if !compacted {
+		t.Errorf("auto-compaction emitted no compaction audit event: %v", rec.Events())
 	}
 	if len(notices) == 0 || !strings.Contains(notices[0], "compacted") {
 		t.Errorf("notices = %v — a silent compaction looks like a model that forgot", notices)

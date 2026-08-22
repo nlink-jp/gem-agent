@@ -86,6 +86,10 @@ func (a *Agent) Compact(ctx context.Context) (CompactResult, error) {
 	a.history = append([]llm.Message{msg}, a.history[cut:]...)
 	a.compactedAt = len(a.history)
 	a.logRecord(session.KindCompaction, session.Compaction{Replaced: cut, Message: msg})
+	// The audit event rides here so BOTH paths — /compact and the
+	// automatic one between rounds — record it; the automatic path was
+	// invisible in the audit stream (review round 3).
+	a.telemetry.Compaction(cut, len(a.history)-1)
 	return CompactResult{Before: before, After: len(a.history), Replaced: cut, Summary: summary}, nil
 }
 

@@ -169,6 +169,17 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   up (the resize staircase). View() clips every line to width-1; a
   genuine shrink additionally returns tea.ClearScreen once. Keep both
   when touching View().
+- **The live region expands tabs too** (review round 3) — `ansi.Truncate`
+  counts `\t` as zero cells while the terminal advances to the next stop,
+  so a tab-indented code line passed the width clip and soft-wrapped the
+  managed view. `liveView` runs `expandTabs` before `clipLines`; keep it.
+- **`toolRunning` is bounded by ToolCall…ToolDone, never by chunks** — during
+  a tool the only streams are side-calls (risk/progress review); clearing
+  on a chunk produced false stall warnings and mis-attributed thoughts.
+  The agent emits OnToolDone after every call; the TUI re-arms on that.
+- **A model-authored agent input must set `NoMentions`** — the @ grammar's
+  out-of-project grants assume operator-typed input; the file-search child
+  is the one such input today, and any future delegate must opt out too.
 - **Scrollback lines have the SAME width rule** — "a wrapped Println is
   harmless" was wrong: bubbletea prints queued message lines verbatim
   (no truncation, and no EraseLineRight at or beyond the width), so one

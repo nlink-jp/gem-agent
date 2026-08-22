@@ -66,7 +66,7 @@ func usageReport(ag *agent.Agent, tally *usageTally, mainModel, summaryModel str
 		fmt.Fprintf(&b, "  context now %s of %s\n", humanTok(s.LastPrompt), window)
 	}
 	if s.RiskCalls > 0 {
-		fmt.Fprintf(&b, "auto-approve risk checks (%s): %d calls · prompt %s · output %s\n",
+		fmt.Fprintf(&b, "risk & progress reviews (%s): %d calls · prompt %s · output %s\n",
 			mainModel, s.RiskCalls, humanTok(s.RiskPrompt), humanTok(s.RiskOutput))
 	}
 	if s.CompactCalls > 0 {

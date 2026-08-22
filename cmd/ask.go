@@ -99,7 +99,13 @@ func oneShotAsk(context.Context, string, []string) (int, error) {
 // read from in — the approve.Gate pattern. EOF or a blank line
 // declines.
 func plainAsk(in *bufio.Reader, out io.Writer) askFunc {
-	return func(_ context.Context, question string, options []string) (int, error) {
+	return func(ctx context.Context, question string, options []string) (int, error) {
+		// An interrupted turn asks nothing: the operator just pressed
+		// Ctrl+C, and a prompt that blocks on stdin on behalf of a dead
+		// turn is the last thing they want (review round 3).
+		if ctx.Err() != nil {
+			return 0, errAskDeclined
+		}
 		fmt.Fprintf(out, "\n[question] %s\n", question)
 		for i, o := range options {
 			fmt.Fprintf(out, "  %d) %s\n", i+1, o)

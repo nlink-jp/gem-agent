@@ -110,6 +110,9 @@ type Messages struct {
 	// AskTitleFmt / AskHint: the ask_user dialog (ADR-0036).
 	AskTitleFmt string // %s = the model's question
 	AskHint     string
+	// AskHiddenFmt discloses %d wrapped question lines the box could
+	// not show (review round 3 — never answer what you have not read).
+	AskHiddenFmt string
 	// Round-limit intervention (ADR-0040): the dialog question, the
 	// review verdict shown as evidence, and the two answers.
 	RoundLimitAskFmt        string // %d rounds used, %d hard cap, %s verdict
@@ -213,6 +216,7 @@ var en = Messages{
 	InterruptStuckWarn:      "⚠ the tool is not responding to cancellation — one more Ctrl+C quits gem-agent (the transcript up to this call is already saved)",
 	AskTitleFmt:             "question: %s",
 	AskHint:                 "←→/Tab select · 1-9 pick directly · Enter confirm · Esc declines",
+	AskHiddenFmt:            "⚠ +%d lines of the question hidden — Esc to decline and ask for a shorter question, or enlarge the terminal",
 	RoundLimitAskFmt:        "round limit reached: %d rounds used (hard cap %d) — %s. Continue?",
 	RoundLoopAskFmt:         "possible loop: the same call keeps repeating (%s) — %s. Continue?",
 	RoundVerdictProgressFmt: "progress review: progressing (%s)",
@@ -326,6 +330,7 @@ var ja = Messages{
 	InterruptStuckWarn:      "⚠ ツールがキャンセルに応答していません — もう一度 Ctrl+C で gem-agent を終了します（この呼び出しまでの transcript は保存済みです）",
 	AskTitleFmt:             "質問: %s",
 	AskHint:                 "←→/Tab 選択 · 1-9 で即決定 · Enter 決定 · Esc 回答しない",
+	AskHiddenFmt:            "⚠ 質問の +%d 行が非表示 — Esc で辞退して短い質問を求めるか、端末を広げてください",
 	RoundLimitAskFmt:        "ラウンド上限に到達: %d ラウンド消費（絶対上限 %d）— %s。続行しますか？",
 	RoundLoopAskFmt:         "ループの疑い: 同一コールが反復しています（%s）— %s。続行しますか？",
 	RoundVerdictProgressFmt: "進捗レビュー: 前進中（%s）",

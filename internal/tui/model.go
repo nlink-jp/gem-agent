@@ -451,9 +451,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "chunk":
 			m.chunkCount++
 			m.lastChunk = time.Now()
-			m.retryLine = ""      // data is flowing again
-			m.toolRunning = false // the stream resumed: stall detection re-arms
+			m.retryLine = "" // data is flowing again
+			// toolRunning is NOT cleared here: during a tool the only
+			// streams are side-calls (the risk evaluation, a progress
+			// review), and mistaking them for "the tool returned"
+			// produced false stall warnings (review round 3). ToolDone
+			// is the signal.
 		case "thought":
+			if m.toolRunning {
+				// A side-call's thoughts are not the main model's.
+				break
+			}
 			m.thoughtTail += msg.Thought
 		case "retry":
 			m.retryLine = fmt.Sprintf(m.msgs.RetryFmt,
@@ -481,6 +489,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.thoughtTail = ""   // the round's thoughts ended in a call
 		m.toolRunning = true // stream silence is expected until the tool returns
 		return m, m.emitJoined(m.takeLive(), m.st.tool.Render("⚙ "+msg.Name+" "+msg.Detail))
+
+	case ToolDone:
+		// The tool returned: stall detection re-arms, and the status
+		// stops claiming the tool is running (it used to stick at
+		// "waiting for the tool…" for the rest of the round).
+		m.toolRunning = false
+		m.lastChunk = time.Now() // the silence clock restarts at the return
+		if m.phase == phaseRunning {
+			m.status = m.msgs.StatusThinking
+		}
+		return m, nil
 
 	case AskRequest:
 		if m.interruptSent {
@@ -671,6 +690,7 @@ func (m *Model) beginTurnStats() {
 	m.lastChunk = time.Time{}
 	m.retryLine = ""
 	m.thoughtTail = ""
+	m.toolRunning = false // never inherited from an interrupted turn
 }
 
 // stallSeconds is how long with no data before the heartbeat switches
@@ -720,14 +740,15 @@ func (m Model) thoughtView() string {
 	if w <= 0 {
 		w = 80
 	}
-	// Keep the freshest content: trim from the FRONT to at most two
-	// display lines' worth of runes.
-	max := (w - 2) * 2
-	r := []rune(text)
-	if len(r) > max {
-		r = r[len(r)-max:]
+	// Wrap to the width and keep the LAST two physical lines — the
+	// freshest thought text. The old front-trim-then-clip showed the
+	// oldest part of the kept window, so the newest words were never
+	// visible (review round 3).
+	lines := strings.Split(ansi.Hardwrap(text, w-1, true), "\n")
+	if len(lines) > 2 {
+		lines = lines[len(lines)-2:]
 	}
-	return m.st.status.Render(string(r))
+	return m.st.status.Render(strings.Join(lines, "\n"))
 }
 
 // releaseTurn ends the per-turn context lifecycle. The cancel func was
@@ -746,9 +767,14 @@ func (m *Model) releaseTurn() {
 		m.ask.Resp <- -1 // never strand the tool goroutine
 		m.ask = nil
 	}
+	if m.approval != nil {
+		m.approval.Resp <- 'n' // same rule for the approval gate
+		m.approval = nil
+	}
 	m.turnStart = time.Time{}
 	m.retryLine = ""
 	m.thoughtTail = ""
+	m.toolRunning = false
 }
 
 // wrapForScrollback hard-wraps every line of s to width-1 display
@@ -1177,6 +1203,9 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		m.phase = phaseRunning
 		m.status = fmt.Sprintf(m.msgs.StatusShellFmt, clip(command, 60))
 		m.beginTurnStats()
+		// A shell command has no model stream: the heartbeat shows the
+		// elapsed time, never a "connection stalled" warning.
+		m.toolRunning = true
 		ctx, cancel := context.WithCancel(m.baseCtx)
 		m.cancelTurn = cancel
 		m.shell(ctx, command)
@@ -1561,6 +1590,14 @@ func (m Model) updateAsk(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	n := len(req.Options)
+	if n == 0 {
+		// Unreachable through cmd (2–8 validated), but the exported
+		// message must not be able to panic the UI on `% 0`.
+		m.ask = nil
+		m.phase = phaseRunning
+		req.Resp <- -1
+		return m, nil
+	}
 	answer := -2 // -2 = no answer yet; -1 = decline
 	switch msg.Type {
 	case tea.KeyLeft, tea.KeyUp, tea.KeyShiftTab:
@@ -1601,19 +1638,55 @@ func (m Model) askView() string {
 	if req == nil {
 		return ""
 	}
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf(m.msgs.AskTitleFmt, clip(req.Question, 200)))
-	for i, o := range req.Options {
-		line := fmt.Sprintf("%d) %s", i+1, clip(o, 80))
-		if i == m.askChoice {
-			b.WriteString("\n" + m.st.selected.Render("▶ "+line))
-			continue
+	// The box has no width of its own, and clipLines would truncate
+	// every over-wide line at the terminal edge with no marker — the
+	// operator answered questions they could not fully read (review
+	// round 3). So: wrap to the inner width, budget the height, and
+	// disclose what was hidden, exactly like the approval dialog.
+	inner := m.width - 6
+	if inner < 20 {
+		inner = 20
+	}
+	qLines := strings.Split(ansi.Hardwrap(fmt.Sprintf(m.msgs.AskTitleFmt, req.Question), inner, true), "\n")
+	maxQ := maxAskQuestionLines
+	if m.height > 0 && m.height-12 < maxQ {
+		maxQ = m.height - 12
+		if maxQ < 2 {
+			maxQ = 2
 		}
-		b.WriteString("\n  " + line)
+	}
+	hidden := 0
+	if len(qLines) > maxQ {
+		hidden = len(qLines) - maxQ
+		qLines = qLines[:maxQ]
+	}
+	var b strings.Builder
+	b.WriteString(strings.Join(qLines, "\n"))
+	if hidden > 0 {
+		b.WriteString("\n" + m.st.warn.Render(fmt.Sprintf(m.msgs.AskHiddenFmt, hidden)))
+	}
+	for i, o := range req.Options {
+		text := fmt.Sprintf("%d) %s", i+1, o)
+		oLines := strings.Split(ansi.Hardwrap(text, inner-2, true), "\n")
+		for j, l := range oLines {
+			prefix := "  "
+			if j == 0 && i == m.askChoice {
+				b.WriteString("\n" + m.st.selected.Render("▶ "+l))
+				continue
+			}
+			if j > 0 {
+				prefix = "     "
+			}
+			b.WriteString("\n" + prefix + l)
+		}
 	}
 	b.WriteString("\n" + m.st.hint.Render(m.msgs.AskHint))
 	return m.liveView() + "\n" + m.st.box.Render(b.String()) + "\n" + m.footer() + "\n"
 }
+
+// maxAskQuestionLines bounds the wrapped question body; hidden lines
+// are disclosed on a marker line, never dropped silently.
+const maxAskQuestionLines = 8
 
 // optionsLine renders the selectable answers. The selection is marked
 // with "▶" as well as styled, so it stays visible under theme = plain
@@ -1689,7 +1762,12 @@ func (m Model) liveView() string {
 	if len(lines) > liveTailLines {
 		lines = lines[len(lines)-liveTailLines:]
 	}
-	return strings.Join(lines, "\n")
+	// Tabs are expanded here for the same reason emit() expands them:
+	// the width clip counts "\t" as zero cells while the terminal
+	// advances to the next stop, so a tab-indented code line passed
+	// the clip and soft-wrapped — the renderer-desync class again,
+	// from the managed region this time (review round 3).
+	return expandTabs(strings.Join(lines, "\n"))
 }
 
 // clip truncates for display, by runes — a byte cut splits a UTF-8

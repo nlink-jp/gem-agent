@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.36.1] - 2026-08-22
+
+### Fixed — whole-code review round 3 (ADR-0041, operator request)
+
+- **security**: the agentic_file_search child expanded @-references
+  in its model-authored question — the @ grammar's out-of-project
+  reads (images, documents, media by absolute/~ path) rest on "an @
+  is operator-typed"; the child now runs with mention expansion off
+- **tui**: the live region never expanded tabs, so tab-indented code
+  soft-wrapped the managed view (the v0.34.1 renderer-desync class,
+  from the other side) — expanded before the width clip now
+- **cmd**: the ask/round-limit prompt wrapped os.Stdin in a second
+  bufio.Reader (typed-ahead stranded, piped sessions could hang) —
+  the shared REPL reader is used; pinned by a source-level test
+- **tui**: the ask dialog silently truncated long questions — wraps to
+  the box, budgets the height, discloses hidden lines; thoughtView
+  showed the oldest words — shows the freshest two lines; stall
+  detector re-arms on a new OnToolDone signal (never on side-call
+  chunks), ignores side-call thoughts during a tool, resets at turn
+  boundaries, and `!command` no longer warns about a connection it
+  never had; releaseTurn drains a pending approval; zero-option ask
+  cannot panic
+- **agent**: checkpoints and plainAsk honour a cancelled context;
+  automatic compaction now emits the `compaction` audit event (only
+  /compact did); non-interactive extensions announce themselves;
+  loop-trigger evidence includes the triggering call; loop-guard
+  skipped calls audited as outcome=skipped; typed RoundLimitError
+  (errors.As) replaces wording matching; rune-safe report truncation
+- **misc**: /usage labels "risk & progress reviews"; startup-notes tee
+  freezes after the banner; dialog reason clipped
+
 ## [0.36.0] - 2026-08-22
 
 ### Changed — the round limit is an intervention ladder, not a guillotine (ADR-0040, operator report)

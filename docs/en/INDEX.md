@@ -167,6 +167,10 @@ excepted).
   operator dialog (auto mode continues itself on a confident verdict),
   a 3× cap no verdict can lift, and a stop message that teaches
   "continue" instead of /clear
+- [`ADR-0041`](adr/0041-review-round-3.md) — whole-code review round 3:
+  16 findings, 3 high (the child agent expanded model-authored @refs,
+  the live region's tab width hole, a second stdin reader), plus the
+  stall detector, ask dialog, and audit-gap fixes
 
 ## History
 

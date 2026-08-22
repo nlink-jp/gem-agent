@@ -41,6 +41,13 @@ type ToolCall struct {
 	Detail string
 }
 
+// ToolDone signals that a tool call finished (executed, denied, or
+// skipped) — the stall detector re-arms on this, never on stream
+// chunks, which a side-call (risk/progress review) also produces.
+type ToolDone struct {
+	Name string
+}
+
 // TurnDone signals the end of an agent turn.
 type TurnDone struct {
 	Err error

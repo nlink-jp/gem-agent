@@ -32,6 +32,16 @@ const (
 	reviewTraceCalls = 20
 )
 
+// RoundLimitError is the plain hard stop (RoundReview off): the
+// message teaches recovery (ADR-0040 §4). Wrappers that re-audience
+// the error — the file-search child — detect it with errors.As rather
+// than by matching the wording.
+type RoundLimitError struct{ Rounds int }
+
+func (e *RoundLimitError) Error() string {
+	return fmt.Sprintf("the round limit (%d rounds) stopped this turn — progress so far is saved in the conversation: say \"continue\" to resume where it left off, or raise [agent].max_turns", e.Rounds)
+}
+
 // roundExtension is one extension grant: half of max_turns, at least 1.
 func roundExtension(maxTurns int) int {
 	if e := maxTurns / 2; e > 1 {
@@ -127,6 +137,12 @@ func (a *Agent) evaluateProgress(ctx context.Context) (progressVerdict, error) {
 // the loop detector fired). Returns whether the turn continues.
 // Fail-closed at every uncertain edge, exactly like ADR-0004.
 func (a *Agent) roundIntervention(ctx context.Context, trigger, detail string, round, limit, cap int) bool {
+	// A cancelled turn gets no dialog and no review — the operator
+	// interrupted, and a prompt on behalf of a dead turn is the last
+	// thing they asked for (the execCallInner rule, review round 3).
+	if ctx.Err() != nil {
+		return false
+	}
 	v, err := a.evaluateProgress(ctx)
 	info := RoundLimitInfo{
 		Trigger: trigger, Detail: detail,
@@ -142,8 +158,13 @@ func (a *Agent) roundIntervention(ctx context.Context, trigger, detail string, r
 	decision, source := false, ""
 	switch {
 	case a.onRoundLimit == nil:
-		// Non-interactive: the review is the only voice (ADR-0040 §2).
+		// Non-interactive: the review is the only voice (ADR-0040 §2) —
+		// and a silent extension is not transparent, so it says so.
 		decision, source = confident, "review"
+		if decision {
+			a.notify(fmt.Sprintf("round %d: progress review says progressing (%s) — continuing, hard cap %d rounds",
+				round, info.Reason, cap))
+		}
 	case a.AutoApprove() && confident:
 		// Auto mode exists to reduce interruptions (operator
 		// direction): a confident "progressing" continues with a

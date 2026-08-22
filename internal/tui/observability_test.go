@@ -167,12 +167,21 @@ func TestNoStallWarningWhileAToolRuns(t *testing.T) {
 	if strings.Contains(m.View(), "stalled") {
 		t.Errorf("false stall warning during tool execution:\n%s", m.View())
 	}
-	// The stream resuming (round 2) re-arms the stall detector.
+	// A chunk during the tool is a SIDE-CALL stream (risk/progress
+	// review) and must not re-arm the detector (review round 3).
 	next, _ = m.Update(StreamUpdate{Kind: "chunk"})
 	m = next.(Model)
 	m.lastChunk = time.Now().Add(-25 * time.Second)
+	if strings.Contains(m.View(), "stalled") {
+		t.Errorf("side-call chunk re-armed the stall detector:\n%s", m.View())
+	}
+	// The tool returning (ToolDone) re-arms it: a real stall on the
+	// next model round is warned.
+	next, _ = m.Update(ToolDone{Name: "shell_exec"})
+	m = next.(Model)
+	m.lastChunk = time.Now().Add(-25 * time.Second)
 	if !strings.Contains(m.View(), "stalled") {
-		t.Errorf("real stall after stream resumed not warned:\n%s", m.View())
+		t.Errorf("real stall after the tool returned not warned:\n%s", m.View())
 	}
 }
 

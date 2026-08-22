@@ -95,6 +95,8 @@ type Agent struct {
 	// signatures the intervention already blessed — polling).
 	roundReview  bool
 	onRoundLimit func(ctx context.Context, info RoundLimitInfo) bool
+	noMentions   bool
+	onToolDone   func(tc llm.ToolCall)
 	turnCalls    []string
 	loopPrevSig  string
 	loopStreak   int
@@ -195,6 +197,19 @@ type Options struct {
 	// a checkpoint (the review verdict rides along as evidence). nil
 	// means non-interactive: the review alone decides, fail-closed.
 	OnRoundLimit func(ctx context.Context, info RoundLimitInfo) bool
+	// NoMentions disables @-reference expansion on the turn input.
+	// The @ grammar grants out-of-project reads (images, documents,
+	// media by absolute or ~ path) on the premise that an @ is always
+	// operator-typed; an agent whose input is MODEL-authored — the
+	// agentic_file_search child — must not inherit that grant
+	// (review round 3).
+	NoMentions bool
+	// OnToolDone, when set, fires after every tool call has produced
+	// its result (executed, denied, or skipped) — the UI's signal
+	// that stream silence is no longer the tool's doing. Paired with
+	// OnToolCall; a side-call's stream chunks must not be mistaken
+	// for it (review round 3).
+	OnToolDone func(tc llm.ToolCall)
 }
 
 // New creates an agent.
@@ -232,6 +247,8 @@ func New(opts Options) *Agent {
 		telemetry:        opts.Telemetry,
 		roundReview:      opts.RoundReview,
 		onRoundLimit:     opts.OnRoundLimit,
+		noMentions:       opts.NoMentions,
+		onToolDone:       opts.OnToolDone,
 		tag:              guard.NewTagWithPrefix("tool_output"),
 	}
 }
@@ -458,14 +475,18 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 	a.turnInput = input
 	// @-references become attachments carried beside the text; the text
 	// the operator typed is left exactly as written.
-	lim := mention.DefaultLimits()
-	lim.Clipboard = a.clipboard
-	lim.UploadMedia = a.mediaUpload
-	atts, problems := mention.Expand(ctx, input, a.registry.ProjectDir(), lim)
-	if a.onAttach != nil && (len(atts) > 0 || len(problems) > 0) {
-		a.onAttach(atts, problems)
-	}
 	msg := llm.Message{Role: llm.RoleUser, Content: input}
+	var atts []mention.Attachment
+	if !a.noMentions {
+		lim := mention.DefaultLimits()
+		lim.Clipboard = a.clipboard
+		lim.UploadMedia = a.mediaUpload
+		var problems []mention.Problem
+		atts, problems = mention.Expand(ctx, input, a.registry.ProjectDir(), lim)
+		if a.onAttach != nil && (len(atts) > 0 || len(problems) > 0) {
+			a.onAttach(atts, problems)
+		}
+	}
 	for _, att := range atts {
 		msg.Attachments = append(msg.Attachments, llm.Attachment{
 			Ref: att.Ref, Kind: att.Kind, Content: att.Content,
@@ -487,7 +508,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 	for round := 0; ; round++ {
 		if round >= limit {
 			if !a.roundReview {
-				return "", fmt.Errorf("the round limit (%d rounds) stopped this turn — progress so far is saved in the conversation: say \"continue\" to resume where it left off, or raise [agent].max_turns", limit)
+				return "", &RoundLimitError{Rounds: limit}
 			}
 			if limit >= roundCap {
 				return "", fmt.Errorf("the absolute round cap (%d rounds = %d× [agent].max_turns) stopped this turn — progress so far is saved in the conversation: say \"continue\" to resume where it left off", roundCap, roundCapMultiplier)
@@ -613,6 +634,13 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			// turn (polling asks once, not every three polls); a "stop"
 			// still answers every pending call — a function-call turn
 			// with missing responses would 400 the whole session.
+			// The activity trace includes THIS call before any review
+			// reads it — the loop trigger's evidence must show the
+			// repetition it is escalating (review round 3).
+			a.turnCalls = append(a.turnCalls, tc.Name+" "+CallDetail(tc))
+			if len(a.turnCalls) > turnCallsKept {
+				a.turnCalls = a.turnCalls[len(a.turnCalls)-turnCallsKept:]
+			}
 			detail := ""
 			if a.roundReview && stopAfterRound == "" {
 				sig := canonicalCallSig(tc)
@@ -633,15 +661,21 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 					}
 				}
 			}
-			a.turnCalls = append(a.turnCalls, tc.Name+" "+CallDetail(tc))
-			if len(a.turnCalls) > turnCallsKept {
-				a.turnCalls = a.turnCalls[len(a.turnCalls)-turnCallsKept:]
-			}
 			var result string
 			if stopAfterRound != "" {
 				result = "error: the turn was stopped by the loop guard; not executed"
+				// Shown as proposed, never executed: the audit trail says
+				// so instead of going silent (review round 3).
+				mutating := false
+				if t, ok := a.registry.Get(tc.Name); ok {
+					mutating = t.Mutating
+				}
+				a.telemetry.ToolCall(tc.Name, mutating, CallDetail(tc), 0, "skipped")
 			} else {
 				result = a.execCall(ctx, tc)
+			}
+			if a.onToolDone != nil {
+				a.onToolDone(tc)
 			}
 			msg := llm.Message{
 				Role:       llm.RoleTool,

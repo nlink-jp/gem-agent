@@ -425,7 +425,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// asker picks its mode at call time: one-shot has nobody to ask,
 	// the TUI shows a dialog, the plain REPL reads a number. The same
 	// asker carries the round-limit dialog (ADR-0040).
-	askStdin := bufio.NewReader(os.Stdin)
+	// The plain-REPL asker reads the SHARED stdin reader: a second
+	// bufio.Reader over the same fd strands typed-ahead input in one
+	// buffer while the other blocks (AGENTS.md gotcha; review round 3).
 	askOperator := func(askCtx context.Context, question string, options []string) (int, error) {
 		if flagPrompt != "" {
 			return oneShotAsk(askCtx, question, options)
@@ -439,7 +441,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			}
 			return idx, nil
 		}
-		return plainAsk(askStdin, cmd.ErrOrStderr())(askCtx, question, options)
+		return plainAsk(stdin, cmd.ErrOrStderr())(askCtx, question, options)
 	}
 	if err := registerAskTool(registry, askOperator); err != nil {
 		return err
@@ -456,9 +458,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			case info.ReviewErr != "":
 				verdict = fmt.Sprintf(msgs.RoundVerdictErrFmt, clipRunes(info.ReviewErr, 80))
 			case info.Progressing:
-				verdict = fmt.Sprintf(msgs.RoundVerdictProgressFmt, info.Reason)
+				verdict = fmt.Sprintf(msgs.RoundVerdictProgressFmt, clipRunes(info.Reason, 100))
 			default:
-				verdict = fmt.Sprintf(msgs.RoundVerdictStuckFmt, info.Reason)
+				verdict = fmt.Sprintf(msgs.RoundVerdictStuckFmt, clipRunes(info.Reason, 100))
 			}
 			var q string
 			if info.Trigger == "loop" {
@@ -521,6 +523,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Fprintf(stderr, "\n[tool ↳] %s %s\n", tc.Name, agent.CallDetail(tc))
 		},
+		onToolDone: func(tc llm.ToolCall) {
+			if prog != nil {
+				prog.Send(tui.ToolDone{Name: "↳ " + tc.Name})
+			}
+		},
 	}); err != nil {
 		return err
 	}
@@ -545,6 +552,15 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				return
 			}
 			fmt.Fprintf(stderr, "\n[tool] %s %s\n", tc.Name, agent.CallDetail(tc))
+		},
+		// The tool-finished signal (review round 3): the TUI's stall
+		// detector re-arms on this, never on stream chunks — a risk or
+		// progress review's side-stream used to look like "the tool
+		// returned" and produced false stall warnings.
+		OnToolDone: func(tc llm.ToolCall) {
+			if prog != nil {
+				prog.Send(tui.ToolDone{Name: tc.Name})
+			}
 		},
 		OnAttach: func(atts []mention.Attachment, problems []mention.Problem) {
 			lines := make([]string, 0, len(atts))
@@ -757,6 +773,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// pre-printed banner anyway. Startup warnings join it for the
 		// same reason (ADR-0021).
 		bannerLines = append(bannerLines, notes.lines...)
+		// Nothing reads the tee after the banner; without this the
+		// stderr stream accumulated every line for the whole session
+		// (review round 3).
+		notes.freeze()
 		model := tui.New(tui.Options{
 			BaseCtx: ctx,
 			// Msgs is the wiring ADR-0029 shipped without: the catalog
@@ -829,6 +849,8 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 	go resolveWindow()
 
+	// Plain REPL / one-shot: the banner is printed, the tee is done.
+	notes.freeze()
 	for _, line := range bannerLines {
 		fmt.Fprintln(stderr, line)
 	}
@@ -933,14 +955,21 @@ var errInterrupted = errors.New("interrupted")
 // startupNotes tees startup-time stderr lines so the TUI can replay
 // them in the banner after its first ClearScreen (ADR-0021).
 type startupNotes struct {
-	w     io.Writer
-	lines []string
+	w      io.Writer
+	lines  []string
+	frozen bool
 }
 
+// freeze stops recording: the banner has been built, and a session-long
+// tee would only grow.
+func (s *startupNotes) freeze() { s.frozen = true; s.lines = nil }
+
 func (s *startupNotes) Write(p []byte) (int, error) {
-	for _, line := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
-		if strings.TrimSpace(line) != "" {
-			s.lines = append(s.lines, line)
+	if !s.frozen {
+		for _, line := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
+			if strings.TrimSpace(line) != "" {
+				s.lines = append(s.lines, line)
+			}
 		}
 	}
 	return s.w.Write(p)
@@ -1012,7 +1041,6 @@ func compactNow(ctx context.Context, ag *agent.Agent, msgs *uitext.Messages, sin
 	case err != nil:
 		return "", err
 	}
-	sink.Compaction(res.Replaced, res.After-1)
 	return fmt.Sprintf(msgs.CompactedFmt, res.Replaced, res.After-1), nil
 }
 

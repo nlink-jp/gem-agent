@@ -171,7 +171,9 @@ information, not an error — the model is told you chose not to pick,
 and to ask in prose or proceed with stated judgment. The tool is
 read-only and never approval-gated (a gate on a question would be a
 dialog to permit a dialog), and a dialog arriving after Ctrl+C is
-declined automatically, exactly like an approval. In the plain REPL
+declined automatically, exactly like an approval. Long questions wrap
+to the box and a too-tall one discloses its hidden lines — you never
+answer what you could not read. In the plain REPL
 the question becomes a numbered stderr prompt; in one-shot `-p` mode
 the tool refuses informatively — there is nobody to ask, and a
 pipeline must not hang.
