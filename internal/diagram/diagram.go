@@ -11,6 +11,13 @@
 //     graph: node shapes to boxes, `A -- text --> B` to `-->|text|`,
 //     `&` inside a label to the full-width ＆, presentation-only
 //     statements dropped. No guessing: each entry is a syntax fact.
+//     This table is FROZEN (v0.38.0): the primary mechanism is
+//     teaching the model the dialect (syntaxGuidance, in the system
+//     prompt), and the table is only the backstop for when the model
+//     does not follow it. Measured before freezing: removing it costs
+//     2–3 correct diagrams of 18 and lets one wrong graph through, so
+//     it earns its place — but a NEW construct belongs in the prompt,
+//     not here.
 //  2. FIT — the art must fit the terminal and the height cap, or the
 //     source is shown. One layout; no retry variants.
 //  3. VERIFY — every label the source wrote must appear in the art,
@@ -82,11 +89,24 @@ func Supported() []string { return append([]string(nil), supported...) }
 func PromptSection() string {
 	return "\n\nDiagrams in chat: this terminal renders these mermaid types inline — " +
 		strings.Join(supported, "; ") +
-		". Prefer them when a diagram helps. Any other mermaid type, or a sequence " +
-		"diagram with non-ASCII labels, is shown in the chat as raw source — when you use " +
-		"one anyway, add a one-line caption saying what it shows. Files are unaffected: " +
-		"write any diagram type into files freely."
+		". Prefer them when a diagram helps. " + syntaxGuidance +
+		" Any other mermaid type, or a sequence diagram with non-ASCII labels, is shown " +
+		"in the chat as raw source — when you use one anyway, add a one-line caption " +
+		"saying what it shows. Files are unaffected: write any diagram type into files freely."
 }
+
+// syntaxGuidance teaches the dialect that draws, rather than leaving
+// the code to correct the model afterwards (operator direction,
+// v0.38.0). Each line matches one entry of the translation table
+// below: writing the diagram this way is what makes the table
+// unnecessary, and the table stays only as the backstop for when it is
+// not followed.
+const syntaxGuidance = "Write the subset the terminal draws best: [square-bracket] labels for every node " +
+	"(other shapes are flattened to boxes when drawn anyway), `-->|label|` for edge labels " +
+	"rather than `-- label -->`, no `direction` statements inside subgraphs, no " +
+	"classDef/style/click, and no `&` inside a label (write \"and\" — a bare `&` is the " +
+	"fan-in operator). Keep one diagram to what fits a terminal: a wide or very tall one " +
+	"is shown as source instead."
 
 var (
 	fenceOpen = regexp.MustCompile("^(`{3,}|~{3,})\\s*([A-Za-z0-9_+-]*)")

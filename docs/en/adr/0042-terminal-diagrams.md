@@ -104,6 +104,18 @@ package now runs exactly three rules in order:
    (compared through the renderer's own line-art decoration), and a
    flowchart's edge count must equal the arrowheads drawn.
 
+**Teaching beats correcting (v0.38.0, operator direction).** The
+system prompt now states the dialect that draws — square-bracket
+labels, `-->|label|` edge labels, no `direction`, no styling, no `&`
+inside a label — so the model writes what renders instead of having
+its diagram rewritten underneath it. Rule 1's table is **frozen** at
+that point: it stays as the backstop for a model that does not follow
+the guidance, because removing it was measured to cost 2–3 correct
+diagrams of 18 and to let one wrong graph through, but a NEW construct
+belongs in the prompt, not in the table. Measured after the change:
+the model's next three diagrams used the taught dialect with no
+violations and all three drew.
+
 Rule 3 is what makes per-construct blacklists unnecessary, and both
 blacklists were deleted on that basis: the ER complexity cap judged
 beauty rather than correctness, and the subgraph-endpoint refusal was

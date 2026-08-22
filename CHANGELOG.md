@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.38.0] - 2026-08-22
+
+### Changed — the model is taught the dialect instead of being corrected (operator direction)
+
+- The system prompt now states the mermaid subset the terminal draws
+  best: square-bracket labels for every node, `-->|label|` edge labels
+  rather than `-- label -->`, no `direction` inside subgraphs, no
+  classDef/style/click, no `&` inside a label, and "keep it to what
+  fits a terminal". The model writes what renders instead of having
+  its diagram rewritten underneath it
+- The translation table is **frozen** as the backstop for a model that
+  does not follow the guidance. Measured before freezing: removing it
+  costs 2–3 correct diagrams of 18 and lets one wrong graph through,
+  so it earns its place — but a new construct belongs in the prompt,
+  not in the table
+- Measured after the change: the model's next three diagrams used the
+  taught dialect with no violations, and all three drew
+
 ## [0.37.6] - 2026-08-22
 
 ### Fixed — flowcharts with subgraph-id edges were refused by an assumption

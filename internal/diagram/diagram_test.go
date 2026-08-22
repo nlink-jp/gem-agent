@@ -320,3 +320,19 @@ func TestNoCompactRetryForWideRunes(t *testing.T) {
 		t.Error("wide-rune diagram that fits the default layout was refused")
 	}
 }
+
+// The prompt teaches the dialect that draws (v0.38.0): the translation
+// table is the backstop, not the mechanism. Each construct the table
+// handles must be named in the guidance, or the model is left to
+// discover it by having its diagram silently rewritten.
+func TestPromptTeachesTheDialect(t *testing.T) {
+	p := PromptSection()
+	for _, want := range []string{"[square-bracket]", "-->|label|", "direction", "classDef", "&"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt does not teach %q:\n%s", want, p)
+		}
+	}
+	if !strings.Contains(p, "fits a terminal") {
+		t.Error("prompt does not mention the width bound")
+	}
+}
