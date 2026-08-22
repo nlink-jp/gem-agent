@@ -341,3 +341,29 @@ func TestContentFilterBlockRetriesOnce(t *testing.T) {
 		t.Errorf("second block should report with retry advice: %v", err)
 	}
 }
+
+// ADR-0020 §4 names MITL at write time as the defence for memory, so
+// the model tier must never approve a memory write — it is the same
+// party that proposed it. Measured in v0.39.0: auto mode approved a
+// save with "saving a project-scoped memory note is safe and low-risk"
+// once saves started firing on their own.
+func TestMemoryWritesNeverAutoApproved(t *testing.T) {
+	for _, name := range []string{"save_memory", "delete_memory"} {
+		if !memoryWrite(name) {
+			t.Errorf("%s is not recognised as a memory write", name)
+		}
+	}
+	for _, name := range []string{"write_file", "shell_exec", "read_file"} {
+		if memoryWrite(name) {
+			t.Errorf("%s must not be treated as a memory write", name)
+		}
+	}
+	// The rule tier must keep them off the Safe path, or decideAuto
+	// would return before the exclusion is reached.
+	for _, name := range []string{"save_memory", "delete_memory"} {
+		v := risk.Classify(name, true, map[string]any{"scope": "project", "name": "x", "content": "y"}, t.TempDir())
+		if v.Tier == risk.Safe {
+			t.Errorf("%s classified Safe — it would bypass the memory-write exclusion", name)
+		}
+	}
+}

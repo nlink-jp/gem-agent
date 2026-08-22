@@ -63,7 +63,34 @@ exactly this continuity when it is needed most.
    act on would be self-defeating (the load_skill argument) — but it is
    also not granted the operator-authored standing of AGENTS.md; the
    framing line states the difference.
-5. **Startup snapshot.** Memory is read once when the session starts;
+5. **The prompt states when to save, not only what may be saved**
+   (v0.39.0). Measured over 39 sessions of the original wording, the
+   model never once proposed a memory on its own: every stored memory
+   followed an explicit operator request, so the write gate had never
+   fired unprompted and the feature's precision statistics were
+   measuring the operator's judgement, not the agent's. The wording
+   granted a capability ("you can persist…") and then spent its only
+   concrete sentences on three prohibitions — a vague positive beside
+   concrete negatives reads as *do this rarely*. The prompt now carries
+   the checkpoint the operator had been supplying by hand ("was there
+   anything worth remembering?"): as a piece of work finishes, ask
+   whether you learned something that would have saved work had you
+   known it at the start, and if so save it **without being asked**.
+   The positive test is as concrete as the prohibitions, and a test
+   pins both — including that the trigger outweighs the prohibitions
+   in the text.
+6. **The model tier never approves a memory write** (v0.39.0). §4 names
+   MITL at write time as the defence and the tool policy as the
+   operator's *deliberate* relaxation. A model evaluator is not that
+   deliberation: it is the same party that proposed the write, so the
+   poisoned-tool-result attack §4 describes would clear both steps by
+   itself. With saves finally firing, auto mode was measured approving
+   one — "saving a project-scoped memory note is safe and low-risk" —
+   and the operator never saw it. `save_memory`/`delete_memory` are now
+   excluded from auto-approval and always escalate, whatever the tier
+   evaluation would have said. The operator decides what the agent
+   remembers; the tool policy remains the way to relax that on purpose.
+7. **Startup snapshot.** Memory is read once when the session starts;
    a save is acknowledged as taking effect from the next session (the
    model already knows the fact in the conversation that saved it).
    This also means the system prompt never changes mid-session, which
@@ -72,6 +99,12 @@ exactly this continuity when it is needed most.
 
 ## Consequences
 
+- The trigger was verified live, not assumed: on a task whose only
+  quirk had to be discovered by hitting it (a build target that fails
+  until a cache is warmed), the agent finished the work and then
+  proposed `make warm` before `make check` as a project memory,
+  unprompted — and after the §6 change the same run escalated the save
+  to the operator instead of self-approving it.
 - Continuity across sessions without hand-maintaining instruction
   files; the operator reviews each write instead.
 - Two new gated tools, one slash command, one banner line. No config

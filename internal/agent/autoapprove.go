@@ -102,6 +102,13 @@ type riskVerdict struct {
 // decideAuto runs the ADR-0004 escalation ladder for one tool call.
 // Every uncertain path returns Approved=false: the human gate is the
 // backstop, never bypassed on doubt.
+// memoryWrite reports the tools that change what the agent remembers
+// across sessions. Kept beside decideAuto so the exclusion is read
+// together with the tier it overrides.
+func memoryWrite(name string) bool {
+	return name == "save_memory" || name == "delete_memory"
+}
+
 func (a *Agent) decideAuto(ctx context.Context, tc llm.ToolCall) AutoDecision {
 	tool, ok := a.registry.Get(tc.Name)
 	if !ok {
@@ -115,6 +122,24 @@ func (a *Agent) decideAuto(ctx context.Context, tc llm.ToolCall) AutoDecision {
 	case risk.Block:
 		// The deterministic floor: the model tier is not even consulted.
 		return AutoDecision{Tier: v.Tier, Reason: v.Reason}
+	}
+
+	// The model tier must not approve its own memory writes. ADR-0020 §4
+	// makes save_memory/delete_memory Review — never Safe — because
+	// memory is a persistence vector for prompt injection, and names
+	// MITL at write time as the defence (the tool policy is the
+	// operator's deliberate relaxation, an explicit choice they make).
+	// A model evaluator is not that choice: it is the same party that
+	// proposed the write, so a poisoned tool result that talks the model
+	// into remembering an instruction would also talk it into approving
+	// the save, and the instruction becomes trusted context in every
+	// later session with nobody outside the loop having seen it.
+	// Measured v0.39.0: with saves finally firing on their own, auto
+	// mode approved one with "saving a project-scoped memory note is
+	// safe and low-risk". The operator decides what the agent
+	// remembers.
+	if memoryWrite(tc.Name) {
+		return AutoDecision{Tier: v.Tier, Reason: "memory writes are the operator's call (ADR-0020 §4)"}
 	}
 
 	verdict, err := a.evaluateRisk(ctx, tc)

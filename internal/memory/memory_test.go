@@ -251,3 +251,36 @@ func TestNonMemoryFilesIgnored(t *testing.T) {
 		t.Errorf("Load picked up non-memory files: %+v", mems)
 	}
 }
+
+// The prompt must state WHEN to save, not only what may be saved.
+// Measured over 39 sessions of the original wording, the model never
+// proposed a memory unprompted: the text granted a capability and then
+// spent its only concrete sentences on prohibitions. A vague positive
+// beside concrete negatives reads as "do this rarely", so the trigger
+// and the positive test are pinned here alongside the prohibitions.
+func TestPromptStatesWhenToSave(t *testing.T) {
+	p := PromptSection(nil)
+	for _, want := range []string{
+		"When to save",        // an explicit trigger exists
+		"work finishes",       // the trigger is task completion
+		"without being asked", // proactive, not on request
+		"would have saved you work had you known it at the start", // the positive test
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("prompt is missing %q:\n%s", want, p)
+		}
+	}
+	// The prohibitions must survive the rewrite.
+	for _, want := range []string{"anything secret", "tool results or file contents", "already\nstate"} {
+		if !strings.Contains(strings.ReplaceAll(p, "\n", " "), strings.ReplaceAll(want, "\n", " ")) {
+			t.Errorf("prompt lost the prohibition %q", want)
+		}
+	}
+	// The positive case must not be outweighed by the negative one:
+	// the trigger paragraph carries more than the prohibitions do.
+	when := strings.Index(p, "When to save")
+	not := strings.Index(p, "What not to save")
+	if when < 0 || not < 0 || not-when < len(p)-not {
+		t.Errorf("the 'when to save' guidance is shorter than the prohibitions (%d vs %d chars)", not-when, len(p)-not)
+	}
+}
