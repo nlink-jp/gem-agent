@@ -110,6 +110,15 @@ type Messages struct {
 	// AskTitleFmt / AskHint: the ask_user dialog (ADR-0036).
 	AskTitleFmt string // %s = the model's question
 	AskHint     string
+	// Round-limit intervention (ADR-0040): the dialog question, the
+	// review verdict shown as evidence, and the two answers.
+	RoundLimitAskFmt        string // %d rounds used, %d hard cap, %s verdict
+	RoundLoopAskFmt         string // %s repeated call, %s verdict
+	RoundVerdictProgressFmt string // %s = reviewer's reason
+	RoundVerdictStuckFmt    string // %s = reviewer's reason
+	RoundVerdictErrFmt      string // %s = review error
+	RoundContinue           string
+	RoundStop               string
 
 	// --- slash command feedback (cmd) ---
 	Help             string // the full /help text
@@ -191,19 +200,26 @@ var en = Messages{
 
 	SettingsHint: "  ↑↓ select · ←→/Enter change · s scope · Esc close",
 
-	StatusThinking:     "thinking…",
-	StatusCompacting:   "compacting the conversation…",
-	StatusInterrupting: "interrupting…",
-	StatusToolWait:     "waiting for the tool…",
-	StatusRunningFmt:   "running %s",
-	StatusShellFmt:     "shell: %s",
-	HeartbeatFmt:       "%s · %d chunks · last %ds",
-	StallFmt:           "no data for %ds — the connection may be stalled (Ctrl+C interrupts)",
-	RetryFmt:           "retry %d/%d (%s) — waiting %ds",
-	ThoughtPrefix:      "✦ ",
-	InterruptStuckWarn: "⚠ the tool is not responding to cancellation — one more Ctrl+C quits gem-agent (the transcript up to this call is already saved)",
-	AskTitleFmt:        "question: %s",
-	AskHint:            "←→/Tab select · 1-9 pick directly · Enter confirm · Esc declines",
+	StatusThinking:          "thinking…",
+	StatusCompacting:        "compacting the conversation…",
+	StatusInterrupting:      "interrupting…",
+	StatusToolWait:          "waiting for the tool…",
+	StatusRunningFmt:        "running %s",
+	StatusShellFmt:          "shell: %s",
+	HeartbeatFmt:            "%s · %d chunks · last %ds",
+	StallFmt:                "no data for %ds — the connection may be stalled (Ctrl+C interrupts)",
+	RetryFmt:                "retry %d/%d (%s) — waiting %ds",
+	ThoughtPrefix:           "✦ ",
+	InterruptStuckWarn:      "⚠ the tool is not responding to cancellation — one more Ctrl+C quits gem-agent (the transcript up to this call is already saved)",
+	AskTitleFmt:             "question: %s",
+	AskHint:                 "←→/Tab select · 1-9 pick directly · Enter confirm · Esc declines",
+	RoundLimitAskFmt:        "round limit reached: %d rounds used (hard cap %d) — %s. Continue?",
+	RoundLoopAskFmt:         "possible loop: the same call keeps repeating (%s) — %s. Continue?",
+	RoundVerdictProgressFmt: "progress review: progressing (%s)",
+	RoundVerdictStuckFmt:    "progress review: possibly stuck (%s)",
+	RoundVerdictErrFmt:      "progress review unavailable (%s)",
+	RoundContinue:           "continue",
+	RoundStop:               "stop here",
 
 	Help: `commands:
   /help    show this help
@@ -297,19 +313,26 @@ var ja = Messages{
 
 	SettingsHint: "  ↑↓ 選択 · ←→/Enter 変更 · s 保存先 · Esc 閉じる",
 
-	StatusThinking:     "thinking…",
-	StatusCompacting:   "会話を圧縮中…",
-	StatusInterrupting: "中断中…",
-	StatusToolWait:     "ツールの完了待ち…",
-	StatusRunningFmt:   "実行中 %s",
-	StatusShellFmt:     "shell: %s",
-	HeartbeatFmt:       "%s · %d chunks · last %ds",
-	StallFmt:           "%d 秒間データなし — 接続が失速している可能性（Ctrl+C で中断できます）",
-	RetryFmt:           "リトライ %d/%d (%s) — %d 秒待機",
-	ThoughtPrefix:      "✦ ",
-	InterruptStuckWarn: "⚠ ツールがキャンセルに応答していません — もう一度 Ctrl+C で gem-agent を終了します（この呼び出しまでの transcript は保存済みです）",
-	AskTitleFmt:        "質問: %s",
-	AskHint:            "←→/Tab 選択 · 1-9 で即決定 · Enter 決定 · Esc 回答しない",
+	StatusThinking:          "thinking…",
+	StatusCompacting:        "会話を圧縮中…",
+	StatusInterrupting:      "中断中…",
+	StatusToolWait:          "ツールの完了待ち…",
+	StatusRunningFmt:        "実行中 %s",
+	StatusShellFmt:          "shell: %s",
+	HeartbeatFmt:            "%s · %d chunks · last %ds",
+	StallFmt:                "%d 秒間データなし — 接続が失速している可能性（Ctrl+C で中断できます）",
+	RetryFmt:                "リトライ %d/%d (%s) — %d 秒待機",
+	ThoughtPrefix:           "✦ ",
+	InterruptStuckWarn:      "⚠ ツールがキャンセルに応答していません — もう一度 Ctrl+C で gem-agent を終了します（この呼び出しまでの transcript は保存済みです）",
+	AskTitleFmt:             "質問: %s",
+	AskHint:                 "←→/Tab 選択 · 1-9 で即決定 · Enter 決定 · Esc 回答しない",
+	RoundLimitAskFmt:        "ラウンド上限に到達: %d ラウンド消費（絶対上限 %d）— %s。続行しますか？",
+	RoundLoopAskFmt:         "ループの疑い: 同一コールが反復しています（%s）— %s。続行しますか？",
+	RoundVerdictProgressFmt: "進捗レビュー: 前進中（%s）",
+	RoundVerdictStuckFmt:    "進捗レビュー: 停滞の疑い（%s）",
+	RoundVerdictErrFmt:      "進捗レビュー不能（%s）",
+	RoundContinue:           "続行",
+	RoundStop:               "ここで停止",
 
 	Help: `コマンド:
   /help    このヘルプを表示

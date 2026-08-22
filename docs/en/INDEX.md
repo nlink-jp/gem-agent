@@ -162,6 +162,11 @@ excepted).
   `/mcp reload` reuse the startup paths and the startup trust verdict;
   declarations and the system prompt follow; `--mcp on|off` for
   one-shot pipelines; reloads are audited
+- [`ADR-0040`](adr/0040-round-limit-intervention.md) — the round limit
+  becomes an intervention ladder: loop detector, progress review,
+  operator dialog (auto mode continues itself on a confident verdict),
+  a 3× cap no verdict can lift, and a stop message that teaches
+  "continue" instead of /clear
 
 ## History
 

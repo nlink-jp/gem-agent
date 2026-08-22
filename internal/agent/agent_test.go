@@ -205,8 +205,12 @@ func TestMaxTurnsCap(t *testing.T) {
 	mb := &mockBackend{responses: []*llm.Response{loop, loop, loop, loop, loop}}
 	a, _ := newAgent(t, mb, &approveAll{}, 3)
 	_, err := a.Run(context.Background(), "loop forever", nil)
-	if err == nil || !strings.Contains(err.Error(), "max turns") {
-		t.Fatalf("expected max-turns error, got %v", err)
+	// ADR-0040 §4: the stop message must teach recovery ("continue"),
+	// and must NOT recommend /clear — the one action that destroys the
+	// recoverable state.
+	if err == nil || !strings.Contains(err.Error(), "round limit") ||
+		!strings.Contains(err.Error(), "continue") || strings.Contains(err.Error(), "/clear") {
+		t.Fatalf("expected recovery-teaching round-limit error, got %v", err)
 	}
 	if len(mb.calls) != 3 {
 		t.Errorf("backend called %d times, want 3", len(mb.calls))

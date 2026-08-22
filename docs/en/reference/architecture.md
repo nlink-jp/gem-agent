@@ -102,7 +102,12 @@ Per-round details that matter:
 - **A response with neither text nor tool calls is never stored.** An
   empty part in the history makes every later request fail with 400. A
   content-filter block retries once, then reports the reason.
-- **Round cap**: `[agent].max_turns` bounds a runaway loop.
+- **Round budget**: `[agent].max_turns` is an intervention checkpoint
+  (ADR-0040), not a guillotine — a loop detector escalates three
+  identical consecutive calls immediately; the limit runs a progress
+  review and asks (or, in auto mode with a confident "progressing",
+  continues with a notice); extensions stop at the hard cap of
+  3× max_turns. The file-search child keeps its plain hard bound.
 - **The stream reports itself** (ADR-0033): the backend feeds an
   observer with chunk liveness, backoff retries, and thought summaries;
   the TUI renders them as the heartbeat, the stall warning, and the
@@ -252,4 +257,5 @@ confined to discovered skill directories.
 | Stream silent for 20s | the status line becomes a stall warning naming Ctrl+C; no automatic timeout — long thinking is legitimate |
 | A tool ignores cancellation | second Ctrl+C warns, third quits the process — the transcript is written per event, so everything up to the wedged call is on disk |
 | The file-search child agent fails | error result to the model; the spend is tallied anyway |
+| Round limit reached | progress review + dialog (auto mode may continue itself); extensions up to 3× max_turns; the stop message teaches "continue", never /clear (ADR-0040) |
 | SIGINT | cancels the turn, not the process (escalation: see the stuck-tool row) |

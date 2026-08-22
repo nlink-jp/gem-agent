@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.36.0] - 2026-08-22
+
+### Changed — the round limit is an intervention ladder, not a guillotine (ADR-0040, operator report)
+
+- Triggered by a session log: a healthy 50-round research turn was
+  killed mid-pipeline by max_turns while monotonically progressing,
+  and the error recommended /clear — the one action that would have
+  destroyed the recoverable state
+- A deterministic loop detector escalates three identical consecutive
+  calls immediately (a real runaway no longer gets 40 free rounds);
+  legitimate repetition (polling) is handled by whitelisting the
+  signature after one "continue"
+- Reaching the limit runs a progress review (ADR-0038-style evidence:
+  the operator's instruction + the turn's activity trace, nonce-
+  wrapped, no tools) and then decides per mode: interactive asks via
+  the ask-dialog grammar with the verdict as evidence; auto-approve
+  continues by itself on a confident "progressing" with a visible
+  notice (auto exists to reduce interruptions — operator direction);
+  one-shot lets the review decide, fail-closed
+- The absolute cap is 3× max_turns — the Block-floor principle applied
+  to rounds; the agentic_file_search child keeps its plain hard bound
+  (a child that runs dry needs a narrower question, ADR-0037)
+- Stop messages now teach recovery: progress is saved, "continue"
+  resumes where it left off; /clear is no longer recommended.
+  Interventions are recorded in the transcript (round_intervention)
+
 ## [0.35.0] - 2026-08-22
 
 ### Added — in-session reload of skills and MCP, and --mcp (ADR-0039, operator request)

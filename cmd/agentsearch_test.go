@@ -188,7 +188,7 @@ func TestSearchAgentMaxTurnsSurfaces(t *testing.T) {
 	reg, tally, _, _ := searchSetup(t, sb)
 	_, err := runSearch(t, reg, map[string]any{"question": "q"})
 	if err == nil || !strings.Contains(err.Error(), "file-search agent") ||
-		!strings.Contains(err.Error(), "max turns") {
+		!strings.Contains(err.Error(), "narrower question") {
 		t.Errorf("err = %v", err)
 	}
 	tally.mu.Lock()

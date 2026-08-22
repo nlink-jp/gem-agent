@@ -157,6 +157,13 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 				})
 			}
 			if runErr != nil {
+				// The child's round limit is a design bound (ADR-0037);
+				// its audience is the MAIN model, so the operator-facing
+				// recovery advice ("continue", max_turns) is wrong here —
+				// the right move is a narrower question.
+				if strings.Contains(runErr.Error(), "round limit") {
+					return "", fmt.Errorf("file-search agent hit its round limit (%d rounds) — ask a narrower question", searchAgentMaxTurns)
+				}
 				return "", fmt.Errorf("file-search agent: %w", runErr)
 			}
 			report = strings.TrimSpace(report)

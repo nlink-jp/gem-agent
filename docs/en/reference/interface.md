@@ -56,6 +56,15 @@ are display-only: never written to the transcript, never replayed.
 `false` restores the quiet spinner; the heartbeat and retry visibility
 stay either way.
 
+**The round limit is an intervention, not a guillotine** (ADR-0040).
+At `[agent].max_turns` a progress review runs and a dialog asks
+whether to continue — the verdict shown as evidence, answered like any
+ask dialog (digits, Esc). In auto-approve mode a confident
+"progressing" continues by itself with a visible notice; a suspected
+loop (three identical calls) raises the same dialog immediately. The
+hard cap is 3× `max_turns`, and when a turn does stop, progress is
+saved — saying "continue" resumes where it left off.
+
 ## Keys
 
 Enter sends, ↑/↓ navigate input history, Ctrl+C interrupts a running

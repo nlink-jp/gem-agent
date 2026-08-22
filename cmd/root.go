@@ -423,9 +423,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// --- ask_user: a structured mid-turn choice (ADR-0036) ---
 	// Registered before agent.New (declarations are cached there). The
 	// asker picks its mode at call time: one-shot has nobody to ask,
-	// the TUI shows a dialog, the plain REPL reads a number.
+	// the TUI shows a dialog, the plain REPL reads a number. The same
+	// asker carries the round-limit dialog (ADR-0040).
 	askStdin := bufio.NewReader(os.Stdin)
-	if err := registerAskTool(registry, func(askCtx context.Context, question string, options []string) (int, error) {
+	askOperator := func(askCtx context.Context, question string, options []string) (int, error) {
 		if flagPrompt != "" {
 			return oneShotAsk(askCtx, question, options)
 		}
@@ -439,8 +440,35 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			return idx, nil
 		}
 		return plainAsk(askStdin, cmd.ErrOrStderr())(askCtx, question, options)
-	}); err != nil {
+	}
+	if err := registerAskTool(registry, askOperator); err != nil {
 		return err
+	}
+
+	// --- round-limit intervention dialog (ADR-0040) ---
+	// nil in one-shot mode: nobody to ask, so the progress review alone
+	// decides there (fail-closed inside the agent).
+	var onRoundLimit func(ctx context.Context, info agent.RoundLimitInfo) bool
+	if !oneShot {
+		onRoundLimit = func(rctx context.Context, info agent.RoundLimitInfo) bool {
+			verdict := ""
+			switch {
+			case info.ReviewErr != "":
+				verdict = fmt.Sprintf(msgs.RoundVerdictErrFmt, clipRunes(info.ReviewErr, 80))
+			case info.Progressing:
+				verdict = fmt.Sprintf(msgs.RoundVerdictProgressFmt, info.Reason)
+			default:
+				verdict = fmt.Sprintf(msgs.RoundVerdictStuckFmt, info.Reason)
+			}
+			var q string
+			if info.Trigger == "loop" {
+				q = fmt.Sprintf(msgs.RoundLoopAskFmt, clipRunes(info.Detail, 80), verdict)
+			} else {
+				q = fmt.Sprintf(msgs.RoundLimitAskFmt, info.Rounds, info.Cap, verdict)
+			}
+			idx, err := askOperator(rctx, q, []string{msgs.RoundContinue, msgs.RoundStop})
+			return err == nil && idx == 0
+		}
 	}
 
 	// --- agent_info: the model's view of its own runtime (ADR-0030) ---
@@ -553,6 +581,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		},
 		AutoCompact:  cfg.Agent.AutoCompact,
 		CompactAtPct: cfg.Agent.CompactAtPct,
+		// The round limit is an intervention ladder on the main loop
+		// (ADR-0040); the file-search child keeps its plain hard bound.
+		RoundReview:  true,
+		OnRoundLimit: onRoundLimit,
 		AutoApprove:  cfg.Agent.AutoApprove && !oneShot,
 		OnAutoDecision: func(tc llm.ToolCall, d agent.AutoDecision) {
 			if !d.Approved {

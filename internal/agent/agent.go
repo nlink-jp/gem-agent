@@ -89,6 +89,17 @@ type Agent struct {
 	turnInput string
 	turnRound int
 
+	// ADR-0040 per-turn state, agent goroutine only: the intervention
+	// callback and switch, the activity trace the progress reviewer
+	// reads, and the loop detector (consecutive identical calls;
+	// signatures the intervention already blessed — polling).
+	roundReview  bool
+	onRoundLimit func(ctx context.Context, info RoundLimitInfo) bool
+	turnCalls    []string
+	loopPrevSig  string
+	loopStreak   int
+	loopOK       map[string]bool
+
 	// policy is the operator's per-tool approval policy (ADR-0008). The
 	// zero value leaves every tool at the default behaviour.
 	policy policy.Policy
@@ -175,6 +186,15 @@ type Options struct {
 	// fires. Compaction still needs a known window; see SetContextWindow.
 	AutoCompact  bool
 	CompactAtPct int
+	// RoundReview enables the ADR-0040 intervention ladder: a loop
+	// detector, a progress review at the round limit, extensions up to
+	// an absolute cap. Off, the limit is a plain hard stop (the
+	// agentic_file_search child stays bounded — ADR-0037).
+	RoundReview bool
+	// OnRoundLimit, when set, asks the operator whether to continue at
+	// a checkpoint (the review verdict rides along as evidence). nil
+	// means non-interactive: the review alone decides, fail-closed.
+	OnRoundLimit func(ctx context.Context, info RoundLimitInfo) bool
 }
 
 // New creates an agent.
@@ -210,6 +230,8 @@ func New(opts Options) *Agent {
 		clipboard:        opts.ClipboardImage,
 		mediaUpload:      opts.MediaUpload,
 		telemetry:        opts.Telemetry,
+		roundReview:      opts.RoundReview,
+		onRoundLimit:     opts.OnRoundLimit,
 		tag:              guard.NewTagWithPrefix("tool_output"),
 	}
 }
@@ -454,7 +476,30 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 
 	filterRetries := 0
 
-	for round := 0; round < a.maxTurns; round++ {
+	// ADR-0040 per-turn state: the loop detector and the reviewer's
+	// activity trace start fresh with every turn.
+	a.turnCalls, a.loopPrevSig, a.loopStreak, a.loopOK = nil, "", 0, nil
+	// limit grows by intervention grants; the cap is the ceiling no
+	// verdict can lift (ADR-0040 §3).
+	limit := a.maxTurns
+	roundCap := a.maxTurns * roundCapMultiplier
+
+	for round := 0; ; round++ {
+		if round >= limit {
+			if !a.roundReview {
+				return "", fmt.Errorf("the round limit (%d rounds) stopped this turn — progress so far is saved in the conversation: say \"continue\" to resume where it left off, or raise [agent].max_turns", limit)
+			}
+			if limit >= roundCap {
+				return "", fmt.Errorf("the absolute round cap (%d rounds = %d× [agent].max_turns) stopped this turn — progress so far is saved in the conversation: say \"continue\" to resume where it left off", roundCap, roundCapMultiplier)
+			}
+			if !a.roundIntervention(ctx, "round-limit", "", round, limit, roundCap) {
+				return "", fmt.Errorf("the turn was stopped at the round limit (%d rounds) — progress so far is saved in the conversation: say \"continue\" to resume where it left off, or raise [agent].max_turns", round)
+			}
+			limit += roundExtension(a.maxTurns)
+			if limit > roundCap {
+				limit = roundCap
+			}
+		}
 		a.turnRound = round
 		// Compaction happens between rounds, before the request that
 		// would overflow — a long tool loop is where the window actually
@@ -557,11 +602,47 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			return resp.Content, nil
 		}
 
+		stopAfterRound := ""
 		for _, tc := range resp.ToolCalls {
 			if a.onToolCall != nil {
 				a.onToolCall(tc)
 			}
-			result := a.execCall(ctx, tc)
+			// Loop detector (ADR-0040 §1): three consecutive identical
+			// calls escalate NOW instead of burning rounds to the limit.
+			// A "continue" blesses the signature for the rest of the
+			// turn (polling asks once, not every three polls); a "stop"
+			// still answers every pending call — a function-call turn
+			// with missing responses would 400 the whole session.
+			detail := ""
+			if a.roundReview && stopAfterRound == "" {
+				sig := canonicalCallSig(tc)
+				if sig == a.loopPrevSig {
+					a.loopStreak++
+				} else {
+					a.loopPrevSig, a.loopStreak = sig, 1
+				}
+				if a.loopStreak >= loopThreshold && !a.loopOK[sig] {
+					detail = CallDetail(tc)
+					if a.roundIntervention(ctx, "loop", detail, round, limit, roundCap) {
+						if a.loopOK == nil {
+							a.loopOK = map[string]bool{}
+						}
+						a.loopOK[sig] = true
+					} else {
+						stopAfterRound = detail
+					}
+				}
+			}
+			a.turnCalls = append(a.turnCalls, tc.Name+" "+CallDetail(tc))
+			if len(a.turnCalls) > turnCallsKept {
+				a.turnCalls = a.turnCalls[len(a.turnCalls)-turnCallsKept:]
+			}
+			var result string
+			if stopAfterRound != "" {
+				result = "error: the turn was stopped by the loop guard; not executed"
+			} else {
+				result = a.execCall(ctx, tc)
+			}
 			msg := llm.Message{
 				Role:       llm.RoleTool,
 				ToolName:   tc.Name,
@@ -594,8 +675,10 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			}
 			a.appendMessage(msg)
 		}
+		if stopAfterRound != "" {
+			return "", fmt.Errorf("the turn was stopped by the loop guard (repeated call: %s) — progress so far is saved in the conversation: say \"continue\" to resume, or rephrase the request", clip(stopAfterRound, 120))
+		}
 	}
-	return "", fmt.Errorf("reached max turns (%d) without a final answer — /clear to reset, or raise [agent].max_turns", a.maxTurns)
 }
 
 // emptyResponseError explains a response that carried nothing, naming

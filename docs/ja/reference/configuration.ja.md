@@ -48,7 +48,7 @@ name = "<gemini model id>"
 enabled = true             # デフォルト
 
 [agent]
-max_turns = 50             # デフォルト
+max_turns = 50             # デフォルト。介入チェックポイントで、延長は 3 倍まで（ADR-0040）
 shell_timeout_sec = 120    # デフォルト
 auto_approve = false       # デフォルト; 起動時から自動承認モードにする
 auto_compact = true        # デフォルト; ウィンドウ接近時に古い履歴を要約

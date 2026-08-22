@@ -49,7 +49,7 @@ name = "<gemini model id>"
 enabled = true             # default
 
 [agent]
-max_turns = 50             # default
+max_turns = 50             # default; an intervention checkpoint, extensions up to 3× (ADR-0040)
 shell_timeout_sec = 120    # default
 auto_approve = false       # default; start sessions in auto-approve mode
 auto_compact = true        # default; summarise older history near the window

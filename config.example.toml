@@ -70,8 +70,13 @@ name = "gemini-3.7-flash"
 enabled = true
 
 [agent]
-# Maximum model rounds in one turn before giving up (a runaway
-# tool-calling loop backstop).
+# Round budget for one turn. Reaching it is an intervention, not a
+# guillotine (ADR-0040): a progress review runs, the operator is asked
+# (auto-approve mode continues by itself on a confident "progressing"
+# verdict), and extensions are granted up to a hard cap of 3× this
+# value that no verdict can lift. A loop detector escalates three
+# identical consecutive calls immediately, without waiting for the
+# limit.
 max_turns = 50
 
 # Per-command timeout for shell_exec, in seconds.
