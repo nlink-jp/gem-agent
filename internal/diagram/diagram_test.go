@@ -208,3 +208,35 @@ func TestFlowStructuralGuards(t *testing.T) {
 		t.Errorf("edge to a subgraph id was drawn (phantom node):\n%s", got)
 	}
 }
+
+// `direction` inside a subgraph is a layout hint the renderer draws as a
+// node and which fused adjacent subgraph titles; it is dropped, and the
+// multi-subgraph flowchart draws with its titles intact (v0.37.3).
+func TestSubgraphDirectionDropped(t *testing.T) {
+	md := fence("flowchart LR\n    subgraph A [Client Zone]\n        U[App] --> G[CLI]\n    end\n    subgraph B [MCP Servers]\n        direction TB\n        W[whois]\n    end\n    G --> W\n")
+	out := Rewrite(md, 120)
+	if strings.Contains(out, "flowchart LR") {
+		t.Fatalf("not drawn:\n%s", out)
+	}
+	if strings.Contains(out, "direction TB") {
+		t.Errorf("direction rendered as a node:\n%s", out)
+	}
+	if strings.Contains(out, "ZoneMCP") || !strings.Contains(out, "Client Zone") || !strings.Contains(out, "MCP Servers") {
+		t.Errorf("subgraph titles fused or lost:\n%s", out)
+	}
+}
+
+// A dense ER diagram (an entity at high degree) crosses; it stays source
+// while a simple one draws (v0.37.3).
+func TestERComplexityGuard(t *testing.T) {
+	ents := "\n  DOMAIN {\n    string fqdn PK\n  }\n  IP {\n    string v4 PK\n  }\n  ASN {\n    int asn PK\n  }\n  CERT {\n    string sha PK\n  }\n  ABUSE {\n    string id PK\n  }\n  PULSE {\n    string id PK\n  }\n"
+	dense := "erDiagram\n  DOMAIN ||--o{ IP : a\n  DOMAIN ||--o{ CERT : b\n  DOMAIN ||--|| ASN : c\n  DOMAIN ||--o{ ABUSE : d\n  DOMAIN ||--o{ PULSE : e\n  IP }|--|| ASN : f\n  IP ||--o{ ABUSE : g\n" + ents
+	if got := Rewrite(fence(dense), 200); got != fence(dense) {
+		t.Errorf("dense ER (degree 5) was drawn instead of shown as source")
+	}
+	simple := "erDiagram\n  DOMAIN ||--o{ IP : resolves\n  IP }|--|| ASN : belongs\n\n  DOMAIN {\n    string fqdn PK\n  }\n  IP {\n    string v4 PK\n  }\n  ASN {\n    int asn PK\n  }\n"
+	out := Rewrite(fence(simple), 120)
+	if strings.Contains(out, "erDiagram") {
+		t.Errorf("simple ER not drawn:\n%s", out)
+	}
+}

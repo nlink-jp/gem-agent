@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.37.3] - 2026-08-22
+
+### Fixed — subgraph `direction` drawn as a node; dense ER diagrams cross (operator report)
+
+- A `direction TB` statement inside a subgraph was drawn as a literal
+  node and fused the adjacent subgraph titles ("Client ZoneMCP
+  Servers"); `direction` hints are now dropped before rendering, and
+  the multi-subgraph flowchart draws with its titles and edges intact
+- A dense ER diagram (measured: the field's 7 relationships, one entity
+  at degree 4) has its crow's-foot lines cross and become unreadable —
+  and the lines are all present, so no label or edge guard catches it.
+  ER diagrams beyond 5 relationships or with an entity at degree >3 are
+  now shown as source (2–3 relationships still draw). A layout-quality
+  limit, phrased conservatively
+
 ## [0.37.2] - 2026-08-22
 
 ### Fixed — a flowchart drawn wrong passed the fidelity guard (operator report)

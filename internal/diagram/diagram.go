@@ -24,6 +24,13 @@ const (
 	// maxArtLines bounds the art's height: a taller diagram is shown as
 	// source — a screenful of box art stops being a summary.
 	maxArtLines = 80
+	// ER complexity limits (measured v0.37.3): the renderer draws
+	// crow's-foot lines that cross once an entity gathers several
+	// relationships — 2 relationships are clean, 3 still read, the
+	// field's 7 (one entity at degree 4) were unreadable. Beyond these
+	// the diagram is shown as source.
+	maxERRelationships = 5
+	maxERDegree        = 3
 )
 
 // kind is the renderable family of a mermaid block.
@@ -91,6 +98,10 @@ var (
 	edgeLabelRm = regexp.MustCompile(`\|[^|]*\|`)
 	subgraphRe  = regexp.MustCompile(`^\s*subgraph\s+([A-Za-z0-9_]+)`)
 	nodeIDRe    = regexp.MustCompile(`^\s*([A-Za-z0-9_]+)`)
+	// directionRe matches a `direction XX` statement — a subgraph layout
+	// hint the renderer draws as a literal node (measured v0.37.3: it
+	// also fused adjacent subgraph titles). Dropped before rendering.
+	directionRe = regexp.MustCompile(`(?m)^\s*direction\s+[A-Za-z]{2}\s*$`)
 	// presentational statements carry no graph semantics and the renderer
 	// may reject them.
 	presentationRe = regexp.MustCompile(`^\s*(classDef|class|style|linkStyle|click)\b`)
@@ -155,6 +166,12 @@ func Render(src string, width int) (string, bool) {
 		return "", false
 	}
 	if k == kindSequence && hasWide(body) {
+		return "", false
+	}
+	body = directionRe.ReplaceAllString(body, "")
+	if k == kindER && erTooComplex(body) {
+		// Crow's-foot lines cross once an entity gathers several
+		// relationships; source is the honest display (v0.37.3).
 		return "", false
 	}
 	prepared := prepare(k, body)
@@ -358,6 +375,30 @@ func renderFit(src, dir string, budget int) (string, bool) {
 		return "", false
 	}
 	return try(compact)
+}
+
+// erTooComplex reports an ER diagram whose relationship count or
+// per-entity degree exceeds what the renderer draws without crossings
+// (measured v0.37.3).
+func erTooComplex(src string) bool {
+	deg := map[string]int{}
+	rels := 0
+	for _, line := range strings.Split(src, "\n") {
+		if m := erRelRe.FindStringSubmatch(line); m != nil {
+			rels++
+			deg[m[1]]++
+			deg[m[2]]++
+		}
+	}
+	if rels > maxERRelationships {
+		return true
+	}
+	for _, d := range deg {
+		if d > maxERDegree {
+			return true
+		}
+	}
+	return false
 }
 
 // faithful checks that every label written in the source appears in
