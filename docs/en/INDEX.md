@@ -171,6 +171,10 @@ excepted).
   16 findings, 3 high (the child agent expanded model-authored @refs,
   the live region's tab width hole, a second stdin reader), plus the
   stall detector, ask dialog, and audit-gap fixes
+- [`ADR-0042`](adr/0042-terminal-diagrams.md) — mermaid diagrams
+  draw in the terminal: the measured-faithful types only (flowchart,
+  ASCII sequence, ER), shapes normalized to boxes, a fidelity guard,
+  the rest shown as source; the model is told exactly what renders
 
 ## History
 

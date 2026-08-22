@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.37.0] - 2026-08-22
+
+### Added — mermaid diagrams draw in the terminal (ADR-0042, operator direction)
+
+- A ```` ```mermaid ```` block in the answer becomes Unicode box art at
+  flush time when it is a type the renderer draws faithfully —
+  flowchart/graph (any direction, subgraphs), sequenceDiagram with
+  ASCII labels, erDiagram — and fits the terminal; everything else
+  stays as source. The system prompt (TUI only) tells the model
+  exactly that list and asks for a one-line caption on anything else;
+  files the model writes are untouched
+- Two pure-Go renderers were measured against Japanese diagrams: one
+  mangled UTF-8 and silently dropped edges (worse than source); the
+  adopted one (AlexanderGrooff/mermaid-ascii, MIT) aligns CJK in
+  flowcharts and ER. Node shapes it cannot parse are normalized to
+  boxes before rendering, and a fidelity guard refuses art that lost
+  any label — a diagram is never drawn incompletely
+- Width-budgeted (tight padding retry, then source), height-capped,
+  and the art rides the same scrollback discipline as everything
+  else. Plain REPL and one-shot stay verbatim. Binary grows ~5MB (the
+  renderer's package carries its web-server dependencies)
+
 ## [0.36.1] - 2026-08-22
 
 ### Fixed — whole-code review round 3 (ADR-0041, operator request)

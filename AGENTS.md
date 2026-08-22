@@ -62,6 +62,8 @@ internal/approve/  MITL gate (y/n/a + session allowlist)
 internal/session/  JSONL transcript: logger + resume loader (ADR-0005)
 internal/repl/     paste-safe input reader (plain REPL, non-TTY fallback)
 internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate
+internal/diagram/  mermaid → terminal box art (ADR-0042): supported-type list,
+                   shape normalization, fidelity guard, width budget
 scripts/           codesign-darwin.sh / notarize-darwin.sh (org templates, verbatim)
 docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 ```
@@ -169,6 +171,12 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   up (the resize staircase). View() clips every line to width-1; a
   genuine shrink additionally returns tea.ClearScreen once. Keep both
   when touching View().
+- **internal/diagram draws only what it can prove** (ADR-0042) — the
+  supported list in that package is what the system prompt advertises
+  (pinned by test); a new type joins only after measuring it with Japanese
+  labels, and the fidelity guard (every source label must appear in the
+  art) must keep passing. The rewrite runs inside the TUI renderer only —
+  never in the plain REPL or one-shot, whose stdout is verbatim model text.
 - **The live region expands tabs too** (review round 3) — `ansi.Truncate`
   counts `\t` as zero cells while the terminal advances to the next stop,
   so a tab-indented code line passed the width clip and soft-wrapped the

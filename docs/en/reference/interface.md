@@ -19,6 +19,17 @@ model's window (auto-detected from model metadata, or
 `[model].context_window`), cumulative token consumption, the live cache
 hit share (`cache NN%`), and the project directory.
 
+**Mermaid diagrams draw in the terminal** (ADR-0042): a ```` ```mermaid ````
+block in the answer becomes Unicode box art at flush time when it is a
+type the renderer draws faithfully — flowchart/graph (any direction,
+subgraphs; node shapes are drawn as boxes), sequenceDiagram with ASCII
+labels, erDiagram — and fits the terminal. Anything else stays as
+source, and the model is told so, so it adds a one-line caption when it
+uses such a type in chat; files the model writes are untouched. The
+art is measured before it is accepted and every label in the source
+must appear in it — a diagram the renderer would draw incompletely is
+shown as source rather than drawn wrong.
+
 Piped/scripted use falls back to a plain line REPL automatically; the
 plain REPL answers the same slash commands read-only. One-shot mode
 (`-p "<prompt>"`) runs a single turn, answers on stdout, and denies

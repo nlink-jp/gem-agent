@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/nlink-jp/gem-agent/internal/diagram"
 	"github.com/rivo/uniseg"
 
 	"github.com/nlink-jp/gem-agent/internal/uitext"
@@ -366,6 +367,9 @@ func newGlamourRenderer(width int, style string) func(string) string {
 		return func(s string) string { return s }
 	}
 	return func(s string) string {
+		// Mermaid blocks the terminal can draw faithfully become box art
+		// before glamour sees them (ADR-0042); the rest stay source.
+		s = diagram.Rewrite(s, width)
 		out, err := r.Render(s)
 		if err != nil {
 			return s

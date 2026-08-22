@@ -17,6 +17,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/approve"
 	"github.com/nlink-jp/gem-agent/internal/config"
+	"github.com/nlink-jp/gem-agent/internal/diagram"
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mediastore"
 	"github.com/nlink-jp/gem-agent/internal/memory"
@@ -532,12 +533,24 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// The system prompt is composed in ONE place so a skills reload
+	// rebuilds exactly what startup built (ADR-0039). The terminal
+	// diagram section rides only where the TUI renders it (ADR-0042):
+	// the plain REPL and one-shot show source and must not advertise a
+	// capability they lack.
+	composeSystem := func() string {
+		s := buildSystemPrompt(projectDir, projectContext) + skills.PromptSection(skillsList) + memorySection
+		if useTUI {
+			s += diagram.PromptSection()
+		}
+		return s
+	}
 	ag = agent.New(agent.Options{
 		Backend:  backend,
 		Registry: registry,
 		Gate:     gate,
 		Log:      sessionLog,
-		System:   buildSystemPrompt(projectDir, projectContext) + skills.PromptSection(skillsList) + memorySection,
+		System:   composeSystem(),
 		MaxTurns: cfg.Agent.MaxTurns,
 		Policy:   approvalPolicy,
 		// load_skill results are operator-authored instructions, not
@@ -669,7 +682,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// The skill descriptions ride the system prompt; rebuild it so
 		// the model sees the new set (the implicit-cache prefix re-warms
 		// — the deliberate cost of a reload).
-		ag.SetSystem(buildSystemPrompt(projectDir, projectContext) + skills.PromptSection(skillsList) + memorySection)
+		ag.SetSystem(composeSystem())
 		sink.Reload("skills", 0, len(skillsList))
 		if sessionLog != nil {
 			_ = sessionLog.Log("skills_reload", map[string]any{"count": len(skillsList)})
