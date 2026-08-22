@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.37.1] - 2026-08-22
+
+### Fixed — box art sheared under a Japanese locale (operator report)
+
+- Under LANG=ja_JP.UTF-8 go-runewidth treats East Asian Ambiguous
+  glyphs — box drawing, arrows, "…" — as two cells, while the rest of
+  the width stack (x/ansi, uniseg) and the common terminal setting
+  treat them as one. glamour pads code-block lines with go-runewidth,
+  so box art got per-line padding that depended on how many box
+  characters the line held (measured 176/125/172/125 cells on
+  consecutive lines of one ER diagram) and the scrollback hard-wrap
+  sheared the over-padded tails. The TUI now pins go-runewidth to
+  narrow (unless RUNEWIDTH_EASTASIAN is set explicitly) — one width
+  model everywhere; a test renders box art through glamour under the
+  CJK setting and asserts uniform widths
+- A '&' inside a flowchart node label is read by the renderer as the
+  fan-in operator even when quoted (measured); the fidelity guard
+  correctly refused those diagrams — they now draw, with the label's
+  '&' shown as the full-width ＆
+
 ## [0.37.0] - 2026-08-22
 
 ### Added — mermaid diagrams draw in the terminal (ADR-0042, operator direction)

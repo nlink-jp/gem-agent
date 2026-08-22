@@ -69,6 +69,10 @@ var (
 	// parse; they become boxes (ADR-0042 §3). Group 1 is the id, exactly
 	// one of the later groups the label. Order matters: `((` before `(`.
 	shapeRe = regexp.MustCompile(`\b([A-Za-z0-9_]+)(\{\{([^{}]*)\}\}|\{([^{}]*)\}|\(\(([^()]*)\)\)|\(\[([^\]]*)\]\)|\[\[([^\]]*)\]\]|\[\(([^()]*)\)\]|\[/([^/\]]*)/\]|>([^\]]*)\]|\(([^()]*)\))`)
+	// ampLabelRe finds '&' inside a box label; the renderer reads a bare
+	// '&' as the fan-in operator even inside a label (measured), so it
+	// becomes the full-width ＆ — same meaning to a reader, no operator.
+	ampLabelRe = regexp.MustCompile(`\[([^\]]*)&([^\]]*)\]`)
 	// presentational statements carry no graph semantics and the renderer
 	// may reject them.
 	presentationRe = regexp.MustCompile(`^\s*(classDef|class|style|linkStyle|click)\b`)
@@ -209,6 +213,9 @@ func prepare(k kind, body string) string {
 			}
 			return m
 		})
+		for ampLabelRe.MatchString(line) {
+			line = ampLabelRe.ReplaceAllString(line, "[$1＆$2]")
+		}
 		kept = append(kept, line)
 	}
 	return strings.Join(kept, "\n")

@@ -163,3 +163,17 @@ func TestFaithfulGuard(t *testing.T) {
 		t.Error("art missing a node label accepted")
 	}
 }
+
+// A '&' inside a label is a fan-in operator to the renderer; it is
+// drawn as the full-width ＆ so the graph stays right and the label
+// stays readable (v0.37.1).
+func TestAmpersandInLabel(t *testing.T) {
+	md := fence("graph TD\n  A[開始] --> R([レポート作成 & 確度評価])\n")
+	out := Rewrite(md, 100)
+	if strings.Contains(out, "graph TD") {
+		t.Fatalf("not drawn:\n%s", out)
+	}
+	if !strings.Contains(out, "レポート作成 ＆ 確度評価") {
+		t.Errorf("label not drawn with ＆:\n%s", out)
+	}
+}

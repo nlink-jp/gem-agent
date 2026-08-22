@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -14,6 +15,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/mattn/go-runewidth"
 	"github.com/nlink-jp/gem-agent/internal/diagram"
 	"github.com/rivo/uniseg"
 
@@ -348,6 +350,25 @@ func New(opts Options) Model {
 	m.render = m.mkRender(m.width)
 	return m
 }
+
+// pinWidthModel pins go-runewidth's East Asian Ambiguous handling to
+// "narrow" unless the operator set RUNEWIDTH_EASTASIAN explicitly.
+// Under a CJK locale (LANG=ja_JP.UTF-8) go-runewidth flips Ambiguous
+// glyphs — box drawing ─│┌┐├┤, arrows ►◄, "…" — to two cells, while the
+// rest of this program's width stack (x/ansi, uniseg) and the common
+// terminal setting treat them as one. glamour pads code-block lines
+// with go-runewidth, so box art came out with per-line padding that
+// depended on how many box characters the line held (measured:
+// 176/125/172/125 cells on consecutive lines of one ER diagram), and
+// emit()'s hard-wrap then sheared the over-padded tails. One width
+// model, everywhere (v0.37.1).
+func pinWidthModel() {
+	if os.Getenv("RUNEWIDTH_EASTASIAN") == "" {
+		runewidth.DefaultCondition.EastAsianWidth = false
+	}
+}
+
+func init() { pinWidthModel() }
 
 // newGlamourRenderer builds a fixed-style renderer. WithAutoStyle is
 // deliberately absent: it queries the terminal (OSC), and once Bubble

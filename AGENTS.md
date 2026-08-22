@@ -171,6 +171,13 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   up (the resize staircase). View() clips every line to width-1; a
   genuine shrink additionally returns tea.ClearScreen once. Keep both
   when touching View().
+- **One width model: go-runewidth is pinned to Ambiguous=narrow in the TUI**
+  (v0.37.1) — under a CJK locale it flips box-drawing/arrows/"…" to two
+  cells while x/ansi, uniseg, and the terminal say one, and glamour's
+  code-block padding (go-runewidth) then varies per line; the pin lives in
+  `internal/tui` (`pinWidthModel`, honours an explicit RUNEWIDTH_EASTASIAN).
+  Any new dependency that measures width must agree with x/ansi — test it
+  with `runewidth.DefaultCondition.EastAsianWidth = true` first.
 - **internal/diagram draws only what it can prove** (ADR-0042) — the
   supported list in that package is what the system prompt advertises
   (pinned by test); a new type joins only after measuring it with Japanese
