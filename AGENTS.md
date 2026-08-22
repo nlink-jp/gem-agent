@@ -178,6 +178,16 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   `internal/tui` (`pinWidthModel`, honours an explicit RUNEWIDTH_EASTASIAN).
   Any new dependency that measures width must agree with x/ansi — test it
   with `runewidth.DefaultCondition.EastAsianWidth = true` first.
+- **Memory writes never auto-approve, and the prompt says when to save**
+  (ADR-0020 §5–6) — `save_memory`/`delete_memory` are excluded from the
+  model tier in `decideAuto`: the evaluator is the same party that
+  proposed the write, so it cannot be the defence against a poisoned
+  tool result talking the agent into remembering an instruction. The
+  memory prompt carries an explicit trigger (work finishes → did I learn
+  something that would have saved work at the start → save without being
+  asked); before it existed the model proposed a memory 0 times in 39
+  sessions. When editing that prompt, keep the positive case at least as
+  concrete and as long as the prohibitions — a test enforces it.
 - **internal/diagram is three rules, and nothing else** (ADR-0042 §5) —
   translate (deterministic mapping of constructs the renderer's grammar
   rejects; each entry a syntax fact), fit (one layout: fits or source),

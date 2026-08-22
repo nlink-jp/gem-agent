@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.39.1] - 2026-08-22
+
+### Fixed — `/memory` hid how to delete a memory, exactly when there was one to delete
+
+- The listing printed where memories live and how to remove one only in
+  its **empty** branch: the guidance vanished the moment something was
+  stored, which is the moment it is needed. `/memory` takes no arguments
+  (there is no `/memory delete`), so the omission read as "there is no
+  way to remove one". Both branches now print the storage paths and the
+  two routes — ask the agent (`delete_memory`, approval-gated) or delete
+  the file
+- The scope tag is padded, so `[global]` and `[project]` rows no longer
+  shift every column after them
+
+## [0.39.0] - 2026-08-22
+
+### Fixed — the agent never proposed a memory on its own (measured: 0 in 39 sessions)
+
+- Every memory ever stored followed an explicit operator request; the
+  write gate had never fired unprompted, so the feature's apparent
+  precision was measuring the operator's judgement rather than the
+  agent's. The prompt granted a capability ("you can persist…") and
+  spent its only concrete sentences on three prohibitions — a vague
+  positive beside concrete negatives reads as "do this rarely"
+- The memory prompt now states **when** to save: as a piece of work
+  finishes, ask whether you learned something that would have saved work
+  had you known it at the start, and if so save it without being asked.
+  The positive test is as concrete as the prohibitions, and a test pins
+  both, including that the trigger outweighs them in the text
+- Verified live: on a task whose only quirk had to be discovered by
+  hitting it, the agent finished and then proposed the workaround as a
+  project memory, unprompted
+
+### Security — the model tier can no longer approve its own memory writes
+
+- ADR-0020 §4 names MITL at write time as the defence for memory (a
+  persistence vector for prompt injection) and the tool policy as the
+  operator's *deliberate* relaxation. A model evaluator is not that
+  deliberation — it is the same party that proposed the write, so the
+  poisoned-tool-result attack would clear both steps by itself
+- With saves finally firing, auto mode was measured approving one
+  ("saving a project-scoped memory note is safe and low-risk") without
+  the operator seeing it. `save_memory`/`delete_memory` are now excluded
+  from auto-approval and always escalate, whatever the tier evaluation
+  would have said
+
 ## [0.38.0] - 2026-08-22
 
 ### Changed — the model is taught the dialect instead of being corrected (operator direction)
