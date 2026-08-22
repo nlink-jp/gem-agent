@@ -90,10 +90,8 @@ func memoryListing(baseDir, projectDir string) string {
 	mems, notes := memory.Load(baseDir, projectDir, memory.DefaultLimits())
 	var b strings.Builder
 	if len(mems) == 0 && len(notes) == 0 {
-		b.WriteString("no memories saved — the agent persists durable facts with save_memory (approval-gated):\n")
-		fmt.Fprintf(&b, "  %s/global/<name>.md            (every project)\n", baseDir)
-		fmt.Fprintf(&b, "  %s/projects/<project>/<name>.md (this project)\n", baseDir)
-		b.WriteString("plain markdown — edit or delete by hand, or ask the agent\n")
+		b.WriteString("no memories saved — the agent persists durable facts with save_memory (approval-gated)\n")
+		b.WriteString(storageHint(baseDir))
 		return b.String()
 	}
 	for _, m := range mems {
@@ -101,11 +99,29 @@ func memoryListing(baseDir, projectDir string) string {
 		if i := strings.IndexByte(first, '\n'); i >= 0 {
 			first = first[:i]
 		}
-		fmt.Fprintf(&b, "  [%s] %-24s %5dB  %s\n", m.Scope, m.Name, len(m.Content), clipRunes(first, 60))
+		// Pad the bracketed scope, not just the name: "[global]" and
+		// "[project]" differ in width, which shifted every later column.
+		fmt.Fprintf(&b, "  %-9s %-24s %5dB  %s\n", "["+m.Scope+"]", m.Name, len(m.Content), clipRunes(first, 60))
 	}
 	for _, n := range notes {
 		b.WriteString("  ⚠ " + n + "\n")
 	}
+	b.WriteString(storageHint(baseDir))
 	b.WriteString("memory is loaded into the prompt at session start — a new save takes effect next session\n")
+	return b.String()
+}
+
+// storageHint says where memories live and how to remove one. Both
+// branches of the listing print it: it used to appear only when there
+// were no memories, so the one moment it was needed — something is
+// stored and the operator wants it gone — was the moment it vanished,
+// and `/memory` itself takes no arguments (there is no `/memory
+// delete`), which made the omission read as "there is no way".
+func storageHint(baseDir string) string {
+	var b strings.Builder
+	b.WriteString("stored as plain markdown under:\n")
+	fmt.Fprintf(&b, "  %s/global/<name>.md             (every project)\n", baseDir)
+	fmt.Fprintf(&b, "  %s/projects/<project>/<name>.md (this project)\n", baseDir)
+	b.WriteString("to remove one: ask the agent to forget it (delete_memory, approval-gated), or delete the file\n")
 	return b.String()
 }

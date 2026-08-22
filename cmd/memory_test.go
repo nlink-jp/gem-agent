@@ -144,3 +144,29 @@ func TestMemoryPromptWiring(t *testing.T) {
 		}
 	}
 }
+
+// The listing must say where memories live and how to remove one in
+// BOTH branches. The hint used to appear only when nothing was stored —
+// it vanished exactly when it was needed — and `/memory` takes no
+// arguments, so its absence read as "there is no way to delete".
+func TestMemoryListingAlwaysShowsHowToRemove(t *testing.T) {
+	base := t.TempDir()
+	proj := t.TempDir()
+
+	empty := memoryListing(base, proj)
+	if _, _, err := memory.Save(base, proj, memory.ScopeProject, "quirk", "warm the cache first", memory.DefaultLimits()); err != nil {
+		t.Fatal(err)
+	}
+	full := memoryListing(base, proj)
+
+	if !strings.Contains(full, "quirk") {
+		t.Fatalf("listing does not show the saved memory:\n%s", full)
+	}
+	for _, want := range []string{"delete_memory", "delete the file", base} {
+		for name, out := range map[string]string{"empty": empty, "non-empty": full} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s listing is missing %q:\n%s", name, want, out)
+			}
+		}
+	}
+}
