@@ -7,7 +7,8 @@ memory.
 ## Transcripts and resume (ADR-0005)
 
 ```sh
-gem-agent sessions        # ids, age, model, and the opening question
+gem-agent sessions        # ids, age, size, model, and the opening question
+gem-agent sessions --all  # every project, not just this one
 gem-agent -c              # the most recent session in this directory
 gem-agent --resume 20260819-150102
 ```
@@ -73,7 +74,12 @@ the same figures through `agent_info`.
 
 The agent persists short facts across sessions: decisions, preferences,
 environment quirks — things worth knowing next time that no project
-file states.
+file states. The prompt also says **when**: as a piece of work
+finishes, the agent asks whether it learned something that would have
+saved work had it known at the start, and proposes a memory then
+without being asked (ADR-0020 §5). Before that trigger existed the
+model proposed a memory zero times in 39 sessions — the wording granted
+a capability and spent its concrete sentences on prohibitions.
 
 | Scope | Recalled in | Stored at |
 |---|---|---|
@@ -87,13 +93,18 @@ file states.
 - **Writes are approval-gated** (`save_memory` / `delete_memory`): a
   persisted memory reappears in every later session's prompt, so
   memory is a persistence vector for injected instructions — the human
-  reviews each write. The [per-tool policy](approval.md) relaxes that
-  per tool if you accept the trade.
+  reviews each write. Auto-approve cannot stand in for that review:
+  memory writes are excluded from the ladder and always escalate, since
+  the model evaluating the write is the one that proposed it
+  (ADR-0020 §6). The [per-tool policy](approval.md) is the one way to
+  relax it, deliberately and per tool.
 - The injected section is framed as background knowledge the agent
   recorded — explicitly below the standing of your own instruction
   files, and possibly stale.
 - Nothing is ever written into the repository, and `~/.claude` is
   never read. The files are plain markdown: audit, edit, or delete
   them by hand whenever you like.
-- `/memory` lists what is stored right now; a new save takes effect
-  from the next session.
+- `/memory` lists what is stored right now, where the files live, and
+  the two ways to remove one — ask the agent to forget it, or delete
+  the file. It takes no arguments. A new save takes effect from the
+  next session.

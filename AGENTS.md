@@ -1,12 +1,14 @@
 # AGENTS.md — gem-agent
 
 Interactive CLI agent backed by Vertex AI Gemini. Continuity (backup) tool
-for when Claude Code is unavailable. macOS-only. Released (v0.1.x, Homebrew
-tap + notarized zip): agent loop, MCP client, drop-in
+for when Claude Code is unavailable. macOS-only. Released (Homebrew tap +
+notarized zip; `git tag` is the current version — no number is written here,
+because a number written here goes stale): agent loop, MCP client, drop-in
 AGENTS.md/CLAUDE.md/.mcp.json, one-shot mode, nonce isolation, backoff,
-inline TUI, auto-approve, session resume, context compaction — all verified
-live. Outstanding: monthly drill runbook and written cli-series promotion
-criteria (RFP Phase 3).
+inline TUI, auto-approve, session resume, context compaction, agent memory,
+skills, agentic file search, terminal diagrams — all verified live. RFP
+Phase 3 is delivered: the [monthly drill](docs/en/reference/drill.md) and
+the [promotion criteria](docs/en/reference/promotion.md) are written.
 
 - **Module:** `github.com/nlink-jp/gem-agent`
 - **Series:** lab-series. Promotion criteria are written down in
@@ -53,6 +55,8 @@ internal/mediastore/ GCS media uploads (ADR-0027): content-addressed, quota proj
 internal/uitext/   ja/en UI string catalogs (ADR-0029): completeness enforced by test —
                    new operator-facing strings go in BOTH catalogs or make check fails
 internal/statedir/ shared per-project state convention (ADR-0022): root+env override, escape, .project marker
+internal/telemetry/ opt-in audit events (ADR-0035): metadata only, Cloud Logging or OTLP, Sub(label) for child agents
+internal/diagram/  terminal mermaid rendering (ADR-0042): translate / fit / verify, TUI only
 cmd/settings.go    /settings panel content + edits (ADR-0009)
 internal/mention/  @-reference parsing, project-confined resolution, completion
 internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery
@@ -178,6 +182,12 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   `internal/tui` (`pinWidthModel`, honours an explicit RUNEWIDTH_EASTASIAN).
   Any new dependency that measures width must agree with x/ansi — test it
   with `runewidth.DefaultCondition.EastAsianWidth = true` first.
+- **`make check` compares identifiers across en/ja pairs, not just filenames**
+  — `scripts/docs-mirror-check.sh` fails when a tool name, config key, flag
+  or slash command is backticked in one language only, and it covers the root
+  READMEs (which is where the drift it was written for actually happened).
+  If a check fires on prose rather than an identifier, drop the backticks
+  rather than weakening the rule.
 - **Memory writes never auto-approve, and the prompt says when to save**
   (ADR-0020 §5–6) — `save_memory`/`delete_memory` are excluded from the
   model tier in `decideAuto`: the evaluator is the same party that
@@ -280,7 +290,8 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   differently.
 - **The settings panel never writes `config.toml`** (ADR-0009) — the TOML
   encoder does not preserve comments, and that file is hand-written with
-  71 lines of them. Persisted policy goes to the machine-owned
+  well over a hundred lines of them (`config.example.toml`; the count is not
+  written here because a count written here goes stale). Persisted policy goes to the machine-owned
   `policy.toml`, which wins collisions so a UI change is never silently
   overridden, and every row shows which file decided it.
 - **`cmd.settingsStore` owns the merge; `internal/tui` only renders.**

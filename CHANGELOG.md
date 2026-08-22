@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.39.2] - 2026-08-22
+
+### Fixed — a full documentation audit: 43 confirmed discrepancies
+
+Seven releases had shipped since the last audit. Eight parallel audits
+checked every claim in the doc set against the code; only `CLAUDE.md`
+was clean. What was actively misleading:
+
+- The **RFP** — the canonical spec — still declared memory *out of
+  scope* while memory ships, offered `location = "us-central1"` in its
+  config sample (the Gemini 3 family is global-endpoint-only, so a
+  reader following it gets 404s), listed 5 built-in tools of 20, 3
+  flags of 8, 5 slash commands of 13, and gave the pre-ADR-0022 session
+  path
+- **`trusted_projects`** was documented as approval relaxation. It
+  grants full project trust: the project's `.mcp.json` servers spawn,
+  its skills are discovered and its instruction files are read. Someone
+  relaxing one approval was enabling three other things
+- `p` (persist to policy) was stated unconditionally; it is a TUI
+  answer, absent from the plain-stdin gate
+- The drill runbook pointed at the flat session path, called
+  auto-approve a config default (it ships off), and referred to a step
+  number that shifted when a step was inserted — as did the promotion
+  criteria
+
+Everything from v0.35.0–v0.39.1 that had not reached the reference
+volumes is now there: the memory-write auto-approve exclusion (missing
+from approval, sessions *and* architecture), the memory save trigger,
+`internal/diagram` (absent from the architecture doc entirely),
+terminal diagrams in `README.md`, `/memory`'s removal routes,
+`sessions --all`, and the fact that the plain REPL really does reload.
+Incomplete enumerations were completed: `⚡auto` in the status line, the
+`pattern` provenance value, `OnRoundLimit`/`OnToolDone`,
+`web_search`/`web_fetch` as gated tools, `/dev` in the sandbox's
+writable set, `@` absolute paths covering documents and media as well
+as images, the 80-line diagram height cap, and the previously
+undocumented `GEMAGENT_MCP_STDERR` and `RUNEWIDTH_EASTASIAN`.
+
+### Changed — the mirror check now compares content, and covers the READMEs
+
+- `scripts/docs-mirror-check.sh` verified only that each `docs/en` file
+  had a `docs/ja` counterpart. That is how `README.md` lost the
+  terminal-diagram sentence for six releases while `README.ja.md`
+  carried it — the pair existed, and nothing compared them. The root
+  READMEs were not even in scope
+- It now also compares the **identifiers** of every pair: tool names,
+  config keys, CLI flags and slash commands in backticks, outside
+  fenced blocks. A translation must not change those, and they are what
+  goes stale. Placeholders, filenames and prose are ignored. Measured
+  across the set: 55 pairs, and it found three real one-sided
+  identifiers on its first run
+- The RFP and AGENTS.md no longer carry counts or version numbers that
+  rot. Where they used to enumerate, they now name the catalogue that
+  owns the list
+
 ## [0.39.1] - 2026-08-22
 
 ### Fixed — `/memory` hid how to delete a memory, exactly when there was one to delete

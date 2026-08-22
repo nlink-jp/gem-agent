@@ -18,7 +18,7 @@ All of the following, together:
 |---|---|---|
 | 1 | **Six consecutive monthly drills passed**, none skipped | drill records; a skipped step is not a pass |
 | 2 | **No step-4b failure, ever** | containment is the one non-negotiable: a sandbox that did not hold, even once, resets the count |
-| 3 | **Two real tasks completed with gem-agent alone**, in different months, that the operator would have shipped | drill step 7's two questions, answered yes |
+| 3 | **Two real tasks completed with gem-agent alone**, in different months, that the operator would have shipped | the drill's closing two questions (step 8), answered yes |
 | 4 | **No open issue that blocks a drill step** | issue tracker |
 | 5 | **No breaking config or CLI change in the last three months** | CHANGELOG; a fallback whose flags moved is a fallback you cannot use from memory |
 | 6 | **The model policy survives one retirement cycle** | a Gemini generation retired while gem-agent kept working via config alone, with no code change |

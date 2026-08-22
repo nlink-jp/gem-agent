@@ -99,8 +99,8 @@ config/カタログ整合）で並列レビューを行い、各所見はコー�
 - 正常終了がターン context を cancel していなかった（ターンごとに
   子 context が 1 つリーク）; 'p' 回答が最後の 2 書き込みイベント
   だった; settings パネルが高さ 8 で 1 行溢れた（最小 9 に）。
-- `/settings` に追跡済みなのに非表示だった 2 行（compact_at_pct・
-  mcp.enabled）を追加。theme 行は「適用した」と言って何も適用しない
+- `/settings` に追跡済みなのに非表示だった 2 行（`agent.compact_at_pct`・
+  `mcp.enabled`）を追加。theme 行は「適用した」と言って何も適用しない
   編集可能行だった — 再起動注記つき読み取り専用に。language 行は
   `auto` の解決先を表示。パネルでの変更は出所を `session` と表示。
 - `agent_info` は MCP 一覧を起動時スナップショットと明示し、trust
@@ -109,7 +109,7 @@ config/カタログ整合）で並列レビューを行い、各所見はコー�
   `/exit` は補完可能になり別名として文書化。ツールメッセージの
   添付（view_image/read_document の PDF）にもユーザー添付と同じ
   untrusted-data 注記。`estimateTokens` はツール引数とインライン
-  バイトを数える。thinking 設定時や gs:// 添付履歴での 400 は
+  バイトを数える。`[model].thinking` 設定時や gs:// 添付履歴での 400 は
   設定キーや回復手順を名指しする。空の `[gcp].location` は config
   読込時に失敗する。
 

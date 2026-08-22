@@ -100,3 +100,77 @@ if [ "$adr_errors" -ne 0 ]; then
     exit 1
 fi
 echo "OK: ADR index complete and ordered in both languages."
+
+# --- identifier parity between each en/ja pair -------------------------
+# Pairing alone proved too weak. A capability documented in one language
+# only passes every check above: README.md lost the terminal-diagram
+# sentence for six releases while README.ja.md carried it, because the
+# pair existed and nobody compares content.
+#
+# Full prose comparison is impossible across a translation, but the
+# things that actually go stale — tool names, config keys, CLI flags,
+# slash commands — are identifiers a translation must NOT change. This
+# compares exactly those, in backticks, outside fenced blocks, and
+# ignores anything a translator legitimately rewrites (placeholders like
+# `<escaped-path>`, filenames, prose in either language). Measured over
+# the whole doc set at introduction: 55 pairs, 0 differences, and it
+# found three real one-sided identifiers on its first run.
+#
+# The root READMEs are included: they are a mirror pair too, and the
+# structural check above only walks docs/.
+python3 - <<'PY' || exit 1
+import glob, io, os, re, sys
+
+IDENT = re.compile(
+    r"^(?:--[a-z][a-z0-9-]*"          # --flag
+    r"|/[a-z]+"                        # /command
+    r"|[a-z][a-z0-9]*(?:_[a-z0-9]+)+"  # snake_case identifier
+    r"|\[[a-z_]+\]\.[a-z_]+"          # [section].key
+    r"|[a-z_]+\.[a-z_]+)$"             # section.key
+)
+
+
+def idents(path):
+    text = re.sub(r"```.*?```", "", io.open(path, encoding="utf-8").read(), flags=re.S)
+    found = set()
+    for m in re.finditer(r"`([^`\n]+)`", text):
+        tok = m.group(1).strip()
+        if tok.endswith((".md", ".json", ".toml")):
+            continue
+        if IDENT.match(tok):
+            found.add(tok)
+    return found
+
+
+pairs = []
+for en in sorted(glob.glob("docs/en/**/*.md", recursive=True)):
+    ja = "docs/ja/" + en[len("docs/en/"):-3] + ".ja.md"
+    if os.path.exists(ja):
+        pairs.append((en, ja))
+for en, ja in (("README.md", "README.ja.md"),):
+    if os.path.exists(en) and os.path.exists(ja):
+        pairs.append((en, ja))
+
+bad = 0
+for en, ja in pairs:
+    a, b = idents(en), idents(ja)
+    if a != b:
+        bad += 1
+        print(f"ERROR: identifiers differ between {en} and {ja}", file=sys.stderr)
+        if a - b:
+            print(f"  only in {en}: {' '.join(sorted(a - b))}", file=sys.stderr)
+        if b - a:
+            print(f"  only in {ja}: {' '.join(sorted(b - a))}", file=sys.stderr)
+
+if bad:
+    print("", file=sys.stderr)
+    print(
+        "A tool name, config key, flag or slash command is documented in one "
+        "language only. Document it in both, or (if it is prose rather than an "
+        "identifier) drop the backticks.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+print(f"OK: identifiers agree across all {len(pairs)} en/ja pairs.")
+PY

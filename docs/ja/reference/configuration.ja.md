@@ -71,7 +71,7 @@ insecure = false            # otlp-* のみ
 # headers_file = "~/.config/gem-agent/auth.json"  # otlp-* 認証ヘッダ・mode 0600
 
 [approval]
-# trusted_projects = ["/path/to/repo"]  # .gem-agent.toml の緩和を許すプロジェクト
+# trusted_projects = ["/path/to/repo"]  # プロジェクト全体の信頼 — 下の注意を参照
 [approval.tools]
 # "mcp__tor-exit-lookup__*" = "never"   # ツール別ポリシー — approval.ja.md 参照
 ```
@@ -86,8 +86,18 @@ config file > defaults。設定ファイル内の未知キーはエラーにな�
 `~/.config/gem-agent/policy.toml` に入り、手書きの `config.toml` は
 書き換えられません。
 
+`trusted_projects` は承認の緩和だけでなく**プロジェクト全体の信頼**を与えます。
+ここに列挙したディレクトリでは同時に 4 つのことが起きます: その
+`.gem-agent.toml` が承認を外せるようになり、その `.mcp.json` のサーバーが起動し、
+その `.claude/skills` が探索され、その指示ファイルが読み込まれます。起動時の
+信頼プロンプトに yes と答えるのと同じ判断なので、承認 1 つを緩めたいだけの
+つもりで追加しないでください。
+
 環境変数 `GEMAGENT_STATE_DIR` はテスト/訓練の隔離用に state ルート
-（sessions と memory）を差し替えます。
+（sessions と memory）を差し替えます。デバッグ用に、設定ファイル外で直接読まれる
+環境変数がもう 2 つあります: `GEMAGENT_MCP_STDERR=1` は MCP サーバーの stderr を
+端末へ流し、`RUNEWIDTH_EASTASIAN` は CJK ロケール下で罫線を測るために固定して
+いる幅モデルを上書きします。
 
 ## CLI フラグ
 

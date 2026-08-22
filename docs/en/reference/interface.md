@@ -14,16 +14,17 @@ terminal's width, so copied lines are not broken by an artificial cap).
 The input box and its status line pin to the window bottom (like Claude
 Code), while the conversation scrolls above with native terminal
 scrollback intact (ADR-0003; the screen is cleared once at startup). The
-status line shows the model, current context occupancy against the
-model's window (auto-detected from model metadata, or
-`[model].context_window`), cumulative token consumption, the live cache
-hit share (`cache NN%`), and the project directory.
+status line shows `⚡auto` when auto-approve is on, the model, current
+context occupancy against the model's window (auto-detected from model
+metadata, or `[model].context_window`), cumulative token consumption,
+the live cache hit share (`cache NN%`), and the project directory.
 
 **Mermaid diagrams draw in the terminal** (ADR-0042): a ```` ```mermaid ````
 block in the answer becomes Unicode box art at flush time when it is a
 type the renderer draws faithfully — flowchart/graph (any direction,
 subgraphs; node shapes are drawn as boxes), sequenceDiagram with ASCII
-labels, erDiagram — and fits the terminal. Anything else stays as
+labels, erDiagram — and fits the width budget and the 80-line height cap
+(the height bound is a fixed cap, not the terminal's rows). Anything else stays as
 source, and the model is told so, so it adds a one-line caption when it
 uses such a type in chat; files the model writes are untouched. The
 art is measured before it is accepted and every label in the source
@@ -31,7 +32,9 @@ must appear in it — a diagram the renderer would draw incompletely is
 shown as source rather than drawn wrong.
 
 Piped/scripted use falls back to a plain line REPL automatically; the
-plain REPL answers the same slash commands read-only. One-shot mode
+plain REPL answers the same slash commands, `/mcp reload`,
+`/skills reload`, `/auto`, `/clear` and `/compact` included — only
+`/settings` is read-only there, since editing needs the panel. One-shot mode
 (`-p "<prompt>"`) runs a single turn, answers on stdout, and denies
 mutating tools (pipe-friendly; a tool set to `"never"` in the approval
 policy never asks, so it still runs — see
@@ -79,7 +82,8 @@ saved — saying "continue" resumes where it left off.
 ## Keys
 
 Enter sends, ↑/↓ navigate input history, Ctrl+C interrupts a running
-turn (or clears the input), Ctrl+D quits. All of this is also in
+turn — at the prompt it clears the input box, or quits when the box is
+already empty — and Ctrl+D quits. All of this is also in
 `/help`.
 
 **You can keep typing while a turn runs.** The input box stays visible
@@ -140,7 +144,7 @@ match completes in place, multiple matches advance to the common prefix,
 and when Tab cannot advance the candidates are listed:
 
 - `@<path>` project file references (see [attachments](attachments.md))
-- `/commands`
+- slash commands
 - skill names after `/skill `
 
 ## Shell escape
@@ -193,7 +197,9 @@ pipeline must not hang.
 
 `/settings` opens a panel showing every setting **with where its value
 came from** — `flag`, `env:VAR`, `config.toml`, `policy.toml`, the
-project file, `session` (changed in this panel), or `default`. Four
+project file (or the project file marked `ignored: untrusted`),
+`pattern` for a tool matched by a wildcard policy rule, `session`
+(changed in this panel), or `default`. Four
 precedence layers with nothing on screen is a design that assumes you
 remember them.
 

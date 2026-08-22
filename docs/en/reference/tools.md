@@ -102,7 +102,7 @@ pointing the model here for the live moment.
 ## `ask_user` (ADR-0036)
 
 A structured mid-turn choice: the model presents a question and 2–8
-options, the operator picks one (arrows/Tab, digits 1–9 in one press,
+options, the operator picks one (arrows/Tab, the option's digit in one press,
 Enter; Esc declines), and the result names the choice — no
 end-the-turn round-trip. Read-only and never approval-gated (a gate
 on a question would be a dialog to permit a dialog). Esc returns a
@@ -134,7 +134,7 @@ makes them usable in `-p` one-shot mode.
   so claims can be checked rather than believed. First-party and
   ToS-clean — the reason plain search APIs were not used.
 - **`web_fetch(url, focus?)`** — the URL Context tool on the
-  lightweight digest model: the page is fetched by the provider's
+  `[model].summary` model, or the main model when that is unset: the page is fetched by the provider's
   infrastructure and read in the digest model's own context; only an
   **organized extraction** (key points with exact
   names/numbers/dates, caveats) enters this conversation. Server-side

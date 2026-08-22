@@ -115,15 +115,21 @@ compact_at_pct = 80
 #"mcp__tor-exit-lookup__*" = "never"
 #"shell_exec"              = "always"
 
-# Project directories whose own .gem-agent.toml may REMOVE approvals.
-# Everywhere else a project file may only ADD them: a checked-out
-# repository is not necessarily something you wrote, and it must not be
-# able to switch the gate off. Ignored entries are reported at startup.
+# Project directories you trust completely. This is NOT approval-only:
+# a listed project's .gem-agent.toml may REMOVE approvals, AND its
+# .mcp.json servers are spawned, its .claude/skills are discovered, and
+# its instruction files are read. It is the same decision as answering
+# yes to the startup trust prompt. Everywhere else a project file may
+# only ADD approvals: a checked-out repository is not necessarily
+# something you wrote, and it must not be able to switch the gate off.
+# Ignored entries are reported at startup.
 #trusted_projects = ["/Users/you/works/your-repo"]
 
 [mcp]
 # Connect MCP servers declared in ~/.config/gem-agent/mcp.json (global)
-# and <project>/.mcp.json (project; wins name collisions). Both files
+# and <project>/.mcp.json (project; wins name collisions). The project
+# file is read only in a trusted project — an untrusted one contributes
+# no servers at all (ADR-0023). Both files
 # use the Claude Code format — see mcp.example.json. The --mcp flag
 # overrides this per run (on|off — "off" skips every server spawn,
 # what a -p pipeline usually wants); /mcp reload reconnects servers

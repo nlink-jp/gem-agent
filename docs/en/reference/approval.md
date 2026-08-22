@@ -8,8 +8,9 @@ run before anything loads.
 
 Mutating tools ask before running (the dialog itself is described in
 [interface](interface.md)). `y` allows once, `a` allows the tool for
-the session, `p` persists never-ask to the policy file, deny fails
-closed. `a` never covers the dangerous cases: Block-tier calls (sudo,
+the session, `p` persists never-ask to the policy file (`p` is a TUI
+answer; the plain-stdin gate used when the TUI is off offers `y`/`n`/`a`
+only), deny fails closed. `a` never covers the dangerous cases: Block-tier calls (sudo,
 recursive deletes, credential paths, …) and tools pinned to `"always"`
 by policy keep asking regardless (ADR-0021).
 
@@ -30,8 +31,19 @@ call. Each mutating call then goes through:
    available). It must both approve *and* be confident, or the call
    asks.
 
-Anything that fails — model error, malformed verdict, unknown tool —
-asks. The blocked tier is a hard floor the model cannot override, and
+**Memory writes never reach tier 2.** `save_memory` and `delete_memory`
+are Review-tier, so they would take the *uncertain* branch — but they
+are excluded from auto-approval outright and always ask, whatever the
+evaluation would have said (ADR-0020 §6). The evaluator is the same
+party that proposed the write, so it cannot be the defence against a
+poisoned tool result talking the agent into remembering an instruction;
+memory is a persistence vector, and what the agent remembers is the
+operator's call. The per-tool policy remains the way to relax that on
+purpose.
+
+Anything that fails — model error or a malformed verdict — asks. (An
+*unknown* tool never reaches the gate at all: the dispatcher rejects it
+with an error before approval is consulted, so it also never runs.) The blocked tier is a hard floor the model cannot override, and
 the sandbox applies in every mode.
 
 For the **first three rounds of a turn**, the model tier also sees the
@@ -52,7 +64,8 @@ Both outcomes are explained: auto-approved calls print their reason,
 and an escalated call's dialog carries a `⚠` line naming the tier that
 objected and why — `blocked by rule (always asks): …` for the
 deterministic floor, `escalated by risk review: …` for a model
-judgment.
+judgment, and `auto-approve escalated: …` for a call the ladder never
+put to the model, which today means a memory write.
 
 Note the MCP boundary: MCP tools are approval-gated and Mutating by
 definition, but the rule tier cannot judge a foreign server's tool, so
@@ -109,8 +122,9 @@ clobber each other's decisions.
 ## Sandbox (ADR-0001)
 
 `shell_exec` (and `!` commands) run wrapped in macOS sandbox-exec:
-file writes restricted to the project directory + scratch dirs,
-enforced by Seatbelt and covered by a real enforcement test.
+file writes restricted to the project directory, the scratch dirs
+(`TMPDIR`, `/private/tmp`) and `/dev`, enforced by Seatbelt and covered
+by a real enforcement test.
 `--no-sandbox` disables the wrapper (debugging only). The sandbox
 applies in every approval mode.
 

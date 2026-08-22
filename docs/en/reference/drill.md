@@ -58,8 +58,9 @@ Read the banner and confirm all of it:
 **Fails if** the binary will not launch, the banner reports a missing
 config key, or `instructions:`/`mcp:` is empty where it should not be.
 
-Then check the status line for `⚡auto`. If auto-approve is on (a config
-default), **turn it off with shift+tab** and confirm the indicator
+Then check the status line for `⚡auto`. Auto-approve is off by default, so
+if the indicator is showing, this machine's config turned it on — **turn it
+off with shift+tab** and confirm the indicator
 disappears: the drill is where the approval gate gets exercised, and in
 auto mode most of step 4 would run unattended. Toggling also drills the
 toggle.
@@ -209,8 +210,8 @@ silently degrades as Claude Code moves ahead of it.
   operations. No further ceremony.
 - **Fail:** open an issue on `nlink-jp/gem-agent` with the session id and
   the step number. The transcript under
-  `~/.local/state/gem-agent/sessions/<id>.jsonl` holds the exact
-  exchange, so the issue does not need a reconstruction from memory.
+  `~/.local/state/gem-agent/sessions/projects/<escaped-project-path>/<id>.jsonl`
+  holds the exact exchange, so the issue does not need a reconstruction from memory.
 - **Skipped a step:** say which and why. A drill with an unrecorded gap
   reads as a pass, which is how a backup rots while looking maintained.
 
@@ -235,8 +236,8 @@ What the run changed in the runbook above:
   with a question no instruction file can answer (file counts, the first
   function in a specific file), which produced `list_files` + `read_file`
   and a correct answer.
-- **Auto-approve was on** (a config default), so most of step 4 would
-  have run unattended. Step 1 now checks the indicator and turns it off.
+- **Auto-approve was on** (this machine's config had enabled it — the
+  shipped default is off), so most of step 4 would have run unattended. Step 1 now checks the indicator and turns it off.
 - **Step 4's containment check depended on the model's cooperation.**
   Asked to write outside the project, the model read the confinement out
   of the system prompt and *declined to try* — which looks like a pass
@@ -252,7 +253,8 @@ servers with scopes, instruction files), the MCP round trip through
 one-shot with a clean stdout, `gem-agent sessions`, and `--continue`
 answering from restored history.
 
-**Step 7** (one real task, gem-agent only) was a read-only review: *which
+**The real-task step** (gem-agent alone — step 8 in the current runbook,
+step 7 when this drill was run) was a read-only review: *which
 function enforces path confinement in `internal/tools/tools.go`, which
 tools route through it, and does anything skip it?* — plus a follow-up on
 symlinks. It named `resolvePath` with its `within` / `resolveExisting`

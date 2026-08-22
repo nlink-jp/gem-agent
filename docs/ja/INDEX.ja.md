@@ -3,8 +3,10 @@
 gem-agent の保守者向けドキュメントの入口。利用者向けは
 [`README.ja.md`](../../README.ja.md) を参照。
 
-英語版ミラー: [`INDEX.md`](../en/INDEX.md)（完全対応。
-`scripts/docs-mirror-check.sh` で機械検証）。
+英語版ミラー: [`INDEX.md`](../en/INDEX.md)。`scripts/docs-mirror-check.sh` が
+`make check` で構造面を機械検証する — `docs/en` の各ファイルに `docs/ja` の
+対応物があること（逆も）、ADR カタログが両言語で完全かつ昇順であること、
+各ペアのコードスパンが一致すること。散文の対応は著者の責任。
 
 ## 仕様
 

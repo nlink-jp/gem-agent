@@ -11,7 +11,7 @@ Claude Code が利用できない状況（Anthropic 側障害・契約やネッ�
 MCP サーバー接続を備え、既存プロジェクトの AGENTS.md / CLAUDE.md / .mcp.json を
 そのまま解釈することで、障害時にプロジェクト単位の再設定なしで乗り換えられる
 （drop-in）ことを最重要要件とする。対象ユーザーは nlink-jp 運営者本人。スコープは
-意図的に最小限（read / edit / shell / MCP / 承認ゲート）とし、メモリ・分析・GUI 等は
+意図的に最小限（read / edit / shell / MCP / 承認ゲート）とし、分析・GUI 等は
 持たない。macOS 専用とし、sandbox-exec + 承認ゲートの二層で防御する。
 
 ## 2. Functional Specification
@@ -29,19 +29,28 @@ MCP サーバー接続を備え、既存プロジェクトの AGENTS.md / CLAUDE
 - `--config <path>` — 設定ファイルパスの上書き
 - `--model <name>` — モデル名の上書き
 - `--no-sandbox` — sandbox-exec ラップを無効化（デバッグ用、起動時に警告表示）
+- `--thinking <level>` — 推論レベルの上書き（[ADR-0025](adr/0025-thinking-level.ja.md)）
+- `--mcp on|off` — この実行での MCP 有効/無効（[ADR-0039](adr/0039-integration-reload.ja.md)）
+- `-p, --prompt <text>` — 単発実行、パイプ向け
+- `-c, --continue` / `--resume <id>` — セッション再開（[ADR-0005](adr/0005-session-resume.ja.md)）
 
-**REPL 内スラッシュコマンド:** `/help` `/tools` `/mcp` `/clear` `/quit`
+**REPL 内スラッシュコマンド:** 現行は `/help` `/tools` `/mcp` `/memory` `/skills`
+`/skill` `/settings` `/usage` `/auto` `/compact` `/clear` `/quit`（`/exit` は
+`/quit` の別名）で、`/mcp` と `/skills` には `reload` サブコマンドがある。
+現行表は[インターフェースリファレンス](reference/interface.ja.md)が持つ —
+ここは名前を挙げるだけで一覧を所有しないので、遅れようがない。
 
-**組み込みツール:**
+**組み込みツール:** v1 は 5 つ（`list_files`・`read_file`・`write_file`・
+`edit_file`・`shell_exec`）と MCP ツールで出荷した。以降の追加はすべて ADR
+（後述 *v1 以降に採用したもの*）であり、権威ある一覧は
+[ツールリファレンス](reference/tools.ja.md)である — ここに二つ目の列挙を置けば
+二つ目の同期対象が生まれる。ゲートの規則自体は変わっていない:
 
-| ツール | MITL 既定 |
+| 種別 | MITL 既定 |
 |---|---|
-| `list_files` | 自動許可 |
-| `read_file` | 自動許可 |
-| `write_file` | 都度承認 |
-| `edit_file` | 都度承認 |
-| `shell_exec`（sandbox-exec ラップ） | 都度承認 |
-| MCP ツール（外部サーバー由来） | 都度承認 |
+| 読み取り専用ツール（探索・読取・要約・`agent_info`・`ask_user`） | 自動許可 |
+| 変更系ツール（`write_file`・`edit_file`・`shell_exec`・メモリ書込・Web 送信） | 都度承認 |
+| MCP ツール（外部サーバー由来） | 都度承認。構造的に Safe へ落ちない |
 
 承認プロンプトでは「このセッションでは常に許可」を選択でき、セッション内
 allowlist に登録される（永続化しない）。
@@ -52,8 +61,10 @@ allowlist に登録される（永続化しない）。
   構造的に防止）。入力履歴ナビゲーション（ArrowUp/Down）は「履歴ナビ中」state
   フラグ必須実装とする
 - **出力:** モデル応答はストリーミング表示。ツール実行はイベント行として表示
-- **セッションログ:** JSONL 追記保存（`~/.local/state/gem-agent/sessions/`）。
-  v1 出荷後、これが resume の正本になった（ADR-0005）
+- **セッションログ:** JSONL 追記保存、1 会話 1 ファイルで
+  `~/.local/state/gem-agent/sessions/projects/<escaped-project-path>/` 配下
+  （[ADR-0022](adr/0022-per-project-session-layout.ja.md) が v1 のフラット配置から
+  移した）。v1 出荷後、これが resume の正本になった（ADR-0005）
 
 ### Configuration
 
@@ -62,7 +73,7 @@ allowlist に登録される（永続化しない）。
 ```toml
 [gcp]
 project  = "your-project-id"
-location = "us-central1"
+location = "global"   # Gemini 3 系は global エンドポイント専用。regional は 404
 
 [model]
 name = "<gemini-3.x model id>"
@@ -126,7 +137,6 @@ max_turns = 50
 
 ### Out of scope（明示的除外）
 
-- メモリサブシステム（Global/Session Memory 等）
 - データ分析機能（DuckDB 等）
 - GUI
 - Linux / Windows 対応
@@ -163,6 +173,19 @@ max_turns = 50
   そのまま読む。skills-series に書き溜めた手順は Claude Code 停止時に
   そのまま失われるが、それはこのツールが埋めるべき穴と同じものである。
 
+上の 10 件は、この節の判断に最も強く反論した追加であり、その反論自体が
+価値なので全文を残す。以降の追加も同じ形で記録され、権威ある一覧は
+[`INDEX.ja.md`](INDEX.ja.md) が持つ: ツール別承認ポリシー（0008）、設定
+パネル（0009）、使用量集計（0019）、**エージェントメモリ（0020）** — 本節が
+かつて除外していたもので、「運用が当初の理由に反論した」という同じ基準で
+採用した。作業中に得た事実がセッションと共に死に、フォールバックツールは
+最も必要なときにその連続性を失っていた — 思考レベル（0025）、文書読取
+（0026）、音声・動画（0027）、UI 言語（0029）、エージェント自己情報（0030）、
+datetime（0032）、ターン可観測性（0033）、監査テレメトリ（0035）、`ask_user`
+（0036）、エージェンティックファイル検索（0037）、統合リロード（0039）、
+ラウンド上限介入（0040）、端末内図描画（0042）。この段落はカタログを複製せず
+参照する — 2 箇所で保守される列挙は必ず片方が遅れ、実際にここが遅れた。
+
 スコープ最小化は shell-agent v1 の「盛りすぎによる複雑化 → 作り直し」の教訓に
 基づく。バックアップ用途に必要なのは Claude Code の日常機能の中核 2 割である。
 
@@ -193,10 +216,11 @@ max_turns = 50
 すべて完了（2026-08-19）:
 
 - docs/{en,ja} 三層ドキュメント + ADR — [`INDEX.ja.md`](INDEX.ja.md)、
-  `reference/`、`adr/`（ADR 6 本）。en/ja ミラーは
+  `reference/`、`adr/`（当時 ADR 6 本。現行は [`INDEX.ja.md`](INDEX.ja.md) の
+  カタログが正）。en/ja ミラーは
   `scripts/docs-mirror-check.sh` が `make check` で機械検証する
 - 実プロジェクトでの E2E — 初回訓練を `json-filter` と本リポジトリに対して実施。
-  ステップ 7（gem-agent だけで実タスク 1 件）はツール層のパス封じ込めの
+  実タスクのステップ（gem-agent だけ）はツール層のパス封じ込めの
   読み取り専用レビューで、回答をソースと照合して確認した
 - リリース — 署名 + notarize 済み darwin/arm64、Homebrew tap
 - [**月次訓練手順書**](reference/drill.ja.md) — 初回実行で自分自身の
@@ -259,5 +283,5 @@ max_turns = 50
 - **コンテキスト圧縮・メモリ・resume:** v1 から明示的に除外（shell-agent v1 の
   盛りすぎ教訓）。ただし圧縮と resume は v1 出荷後に、それぞれ ADR（0006 /
   0005）付きで採用した。運用の結果、どちらもフォールバックという役割の
-  土台であって便利機能ではないと分かったためである。メモリサブシステムは
-  引き続き対象外
+  土台であって便利機能ではないと分かったためである。メモリも後に同じ基準で
+  ADR-0020 により採用した

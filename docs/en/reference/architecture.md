@@ -33,11 +33,14 @@ tier), `internal/policy` (per-tool approval policy), `internal/mcp`
 state layout), `internal/memory` (agent memory), `internal/skills`
 (skill discovery/loading), `internal/docext` (Office text extraction),
 `internal/mediastore` (GCS media uploads), `internal/uitext` (ja/en UI
-string catalogs), `internal/telemetry` (audit-event export).
+string catalogs), `internal/telemetry` (audit-event export),
+`internal/diagram` (terminal mermaid rendering — ADR-0042; wired at two
+points only: `PromptSection` into the system prompt under the TUI, and
+`Rewrite` at Markdown flush).
 
 The agent core knows nothing about the UI. It receives an `Approver`
-interface, a set of callbacks (`OnToolCall`, `OnUsage`, `OnNotice`,
-`OnAutoDecision`, `OnAttach`), and a telemetry sink whose nil value
+interface, a set of callbacks (`OnToolCall`, `OnToolDone`, `OnUsage`, `OnNotice`,
+`OnAutoDecision`, `OnAttach`, `OnRoundLimit`), and a telemetry sink whose nil value
 disables auditing; the TUI implements the callbacks by sending Bubble
 Tea messages, and the plain REPL by writing to stderr. That is what lets
 the same loop run under a pty, a pipe, and `-p`.
@@ -120,8 +123,9 @@ Per-round details that matter:
   nonce-wrapped tool result. Its audit events carry an `agent` label.
 
 Images (ADR-0012) enter as attachments: `@` routes for the operator
-(project paths; absolute/~ paths for image extensions only, because `@`
-is parsed from typed input alone; `@clipboard` via osascript) and the
+(project paths; absolute and `~` paths for the attachment extensions —
+images, documents, audio and video — because `@` is parsed from typed
+input alone; `@clipboard` via osascript) and the
 project-confined `view_image` tool for the model — a Gemini function
 response cannot carry pixels, so the agent follows the tool result with
 a user-role message bearing the image part. Bytes are MIME-sniffed,
@@ -131,7 +135,8 @@ only as placeholders.
 ## Approval
 
 Mutating tools (`write_file`, `edit_file`, `shell_exec`,
-`save_memory`/`delete_memory`, and every MCP tool) pass the gate. `y`
+`save_memory`/`delete_memory`, `web_search`/`web_fetch` — the query and
+the URL are egress — and every MCP tool) pass the gate. `y`
 allows once, `a` allows that tool for the session, `n`/Esc denies; a
 denial is returned to the model as a result, never as silence. Answers
 are selectable with ←→/Tab + Enter because a Japanese IME swallows
@@ -150,15 +155,19 @@ anywhere and may loosen only in a directory listed in
 With auto-approve on (opt-in; `shift+tab` toggles it, mid-run included),
 each mutating call first passes a pure rule classifier: *safe* runs,
 *blocked* always asks, *uncertain* goes to a model evaluation that must
-both approve and be confident. Every failure path asks. The blocked tier
+both approve and be confident. Memory writes are the exception to the
+third branch: they are Review-tier but skip the evaluation entirely and
+always ask, because the evaluator is the party that proposed the write
+(ADR-0020 §6). Every failure path asks. The blocked tier
 is a floor the model cannot lift, and the sandbox applies in all modes.
 For a turn's first rounds the model evaluation also sees the operator's
 typed request as wrapped evidence (ADR-0038) — misalignment escalates;
 later rounds keep the call-only view byte-identically.
 
 `/settings` shows every setting with its provenance and edits what can
-take effect now: the approval policy, auto-approve, auto-compaction, and
-the theme. Persisted policy goes to `~/.config/gem-agent/policy.toml`, a
+take effect now: the approval policy, auto-approve and auto-compaction.
+Rows that cannot take effect until restart — the theme among them — are
+shown read-only rather than offered as edits that would do nothing. Persisted policy goes to `~/.config/gem-agent/policy.toml`, a
 machine-owned file that wins collisions with hand-written `config.toml`
 (ADR-0009), which is never rewritten so its comments survive.
 

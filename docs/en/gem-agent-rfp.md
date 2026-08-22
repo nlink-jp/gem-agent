@@ -12,8 +12,8 @@ read/write, command execution, and MCP server connectivity, and interprets an ex
 project's AGENTS.md / CLAUDE.md / .mcp.json as-is, so that switching over during an
 outage requires no per-project reconfiguration (drop-in) — this is the single most
 important requirement. The target user is the nlink-jp operator themselves. The scope
-is deliberately minimal (read / edit / shell / MCP / approval gates) with no memory,
-analysis, or GUI subsystems. macOS-only, defended by two layers: sandbox-exec plus
+is deliberately minimal (read / edit / shell / MCP / approval gates) with no
+analysis or GUI subsystems. macOS-only, defended by two layers: sandbox-exec plus
 approval gates.
 
 ## 2. Functional Specification
@@ -31,19 +31,29 @@ approval gates.
 - `--config <path>` — override config file path
 - `--model <name>` — override model name
 - `--no-sandbox` — disable the sandbox-exec wrapper (debugging only; prints a warning at startup)
+- `--thinking <level>` — override the reasoning level ([ADR-0025](adr/0025-thinking-level.md))
+- `--mcp on|off` — enable or disable MCP for this run ([ADR-0039](adr/0039-integration-reload.md))
+- `-p, --prompt <text>` — one-shot execution, for pipes
+- `-c, --continue` / `--resume <id>` — resume a session ([ADR-0005](adr/0005-session-resume.md))
 
-**REPL slash commands:** `/help` `/tools` `/mcp` `/clear` `/quit`
+**REPL slash commands:** the live set is `/help` `/tools` `/mcp` `/memory` `/skills`
+`/skill` `/settings` `/usage` `/auto` `/compact` `/clear` `/quit` (`/exit` aliases
+`/quit`), with `reload` subcommands on `/mcp` and `/skills`. The
+[interface reference](reference/interface.md) carries the current table — this
+paragraph names them rather than owning the list, so it cannot fall behind.
 
-**Built-in tools:**
+**Built-in tools:** v1 shipped five (`list_files`, `read_file`, `write_file`,
+`edit_file`, `shell_exec`) plus MCP tools. Each later addition is an ADR (see
+*Admitted after v1* below), and the
+[tools reference](reference/tools.md) is the authoritative list — a second
+enumeration here would be a second thing to keep in step. The gating rule has not
+changed:
 
-| Tool | MITL default |
+| Kind | MITL default |
 |---|---|
-| `list_files` | auto-approved |
-| `read_file` | auto-approved |
-| `write_file` | per-call approval |
-| `edit_file` | per-call approval |
-| `shell_exec` (wrapped in sandbox-exec) | per-call approval |
-| MCP tools (from external servers) | per-call approval |
+| Read-only tools (navigation, reading, summarising, `agent_info`, `ask_user`) | auto-approved |
+| Mutating tools (`write_file`, `edit_file`, `shell_exec`, memory writes, web egress) | per-call approval |
+| MCP tools (from external servers) | per-call approval, never auto-approvable to Safe |
 
 The approval prompt offers "always allow in this session", which registers the tool in
 a session-scoped allowlist (not persisted).
@@ -55,8 +65,11 @@ a session-scoped allowlist (not persisted).
   navigation (ArrowUp/Down) must be implemented with an explicit "navigating history"
   state flag
 - **Output:** model responses stream to the terminal; tool executions are shown as event lines
-- **Session log:** appended as JSONL (`~/.local/state/gem-agent/sessions/`). After v1
-  shipped this became the resume source of truth (ADR-0005)
+- **Session log:** appended as JSONL, one file per conversation, under
+  `~/.local/state/gem-agent/sessions/projects/<escaped-project-path>/`
+  ([ADR-0022](adr/0022-per-project-session-layout.md) moved it there from the flat
+  directory v1 used). After v1 shipped this became the resume source of truth
+  (ADR-0005)
 
 ### Configuration
 
@@ -65,7 +78,7 @@ a session-scoped allowlist (not persisted).
 ```toml
 [gcp]
 project  = "your-project-id"
-location = "us-central1"
+location = "global"   # the Gemini 3 family is global-endpoint-only; regional 404s
 
 [model]
 name = "<gemini-3.x model id>"
@@ -131,7 +144,6 @@ max_turns = 50
 
 ### Out of scope (explicit)
 
-- Memory subsystems (Global/Session Memory, etc.)
 - Data analysis features (DuckDB, etc.)
 - GUI
 - Linux / Windows support
@@ -171,6 +183,23 @@ reasoning; both are recorded rather than quietly added):
   fallback session otherwise loses, which is the same gap this tool
   exists to cover.
 
+The ten above are the additions whose reasoning argued hardest against
+this section, kept in full because the argument is the point. Every
+later one is recorded the same way and is listed in
+[`INDEX.md`](INDEX.md), which is the authoritative catalogue: per-tool
+approval policy (0008), settings panel (0009), usage accounting (0019),
+**agent memory (0020)** — which this section previously ruled out, and
+which is admitted on the same use-argued-against-the-reasoning basis:
+facts learned during work died with the session, and the fallback tool
+loses exactly that continuity when it is needed most — thinking level
+(0025), document reading (0026), audio and video (0027), UI language
+(0029), agent self-info (0030), datetime (0032), turn observability
+(0033), audit telemetry (0035), `ask_user` (0036), agentic file search
+(0037), integration reload (0039), round-limit intervention (0040), and
+terminal diagrams (0042). This paragraph names the catalogue rather
+than duplicating it: an enumeration maintained in two places falls
+behind in one of them, and this one did.
+
 Scope minimization follows the shell-agent v1 lesson (feature accumulation → complexity
 → rewrite). A backup tool needs the core 20% of Claude Code's daily features.
 
@@ -201,11 +230,12 @@ Scope minimization follows the shell-agent v1 lesson (feature accumulation → c
 All delivered (2026-08-19):
 
 - docs/{en,ja} three-tier documentation + ADRs — [`INDEX.md`](INDEX.md),
-  `reference/`, `adr/` (six ADRs), with `scripts/docs-mirror-check.sh`
+  `reference/`, `adr/` (six ADRs at the time; the catalogue in
+  [`INDEX.md`](INDEX.md) is current), with `scripts/docs-mirror-check.sh`
   enforcing the en/ja mirror in `make check`
 - E2E on a real project — first drill run against `json-filter` and this
-  repository; step 7 (a real task with gem-agent alone) was a read-only
-  review of the tool layer's path confinement, verified against the source
+  repository; the real-task step (gem-agent alone) was a read-only review
+  of the tool layer's path confinement, verified against the source
 - Release — signed + notarized darwin/arm64, Homebrew tap
 - [**Monthly drill runbook**](reference/drill.md) — three of its steps
   were rewritten by its own first run
@@ -270,4 +300,4 @@ mitigated by the monthly drill routine and written promotion criteria.
   (shell-agent v1 over-scoping lesson). Compaction and resume were
   admitted after v1 shipped, each with an ADR (0006, 0005) — use showed
   that both are load-bearing for the fallback role, not conveniences.
-  Memory subsystems remain out
+  Memory was admitted later on the same basis, by ADR-0020

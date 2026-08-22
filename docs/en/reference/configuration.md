@@ -72,7 +72,7 @@ insecure = false            # otlp-* only
 # headers_file = "~/.config/gem-agent/auth.json"  # otlp-* auth headers, mode 0600
 
 [approval]
-# trusted_projects = ["/path/to/repo"]  # projects whose .gem-agent.toml may loosen gates
+# trusted_projects = ["/path/to/repo"]  # full project trust — see the warning below
 [approval.tools]
 # "mcp__tor-exit-lookup__*" = "never"   # per-tool policy — see approval.md
 ```
@@ -88,8 +88,19 @@ live. Machine-persisted decisions (policy edits, project trust) live in
 `~/.config/gem-agent/policy.toml`, which gem-agent owns; your
 hand-written `config.toml` is never rewritten.
 
+`trusted_projects` grants **full project trust**, not just approval
+relaxation. Listing a directory there does four things at once: its
+`.gem-agent.toml` may remove approvals, its `.mcp.json` servers are
+spawned, its `.claude/skills` are discovered, and its instruction files
+are read. Add a repository only when you would also answer yes to the
+startup trust prompt for it — relaxing one approval is not what you get.
+
 The `GEMAGENT_STATE_DIR` environment variable relocates the state root
-(sessions and memory) for test/drill isolation.
+(sessions and memory) for test/drill isolation. Two more environment
+variables exist for debugging and are read directly, outside the config
+file: `GEMAGENT_MCP_STDERR=1` forwards MCP servers' stderr to the
+terminal, and `RUNEWIDTH_EASTASIAN` overrides the pinned width model
+used to measure box art under a CJK locale.
 
 ## CLI flags
 

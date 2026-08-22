@@ -3,8 +3,10 @@
 Entry point for gem-agent's maintainer-facing documentation. For
 user-facing material see [`README.md`](../../README.md).
 
-Japanese mirror: [`INDEX.ja.md`](../ja/INDEX.ja.md) (full parity,
-enforced by `scripts/docs-mirror-check.sh`).
+Japanese mirror: [`INDEX.ja.md`](../ja/INDEX.ja.md). `scripts/docs-mirror-check.sh`
+enforces the structural half in `make check` — every `docs/en` file has its
+`docs/ja` counterpart and back, the ADR catalogue is complete and ordered in
+both, and the code spans of each pair agree. Prose parity is the author's job.
 
 ## Specification
 

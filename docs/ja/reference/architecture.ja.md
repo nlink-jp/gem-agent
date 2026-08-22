@@ -33,11 +33,14 @@ tools パッケージが持つのはプロジェクトディレクトリだけ�
 `internal/memory`（エージェントメモリ）、`internal/skills`（skill 探索/読込）、
 `internal/docext`（Office テキスト抽出）、`internal/mediastore`（GCS メディア
 アップロード）、`internal/uitext`（ja/en UI 文字列カタログ）、
-`internal/telemetry`（監査イベントのエクスポート）。
+`internal/telemetry`（監査イベントのエクスポート）、`internal/diagram`
+（端末内 mermaid 描画 — ADR-0042。配線は 2 点のみ: TUI 時にシステム
+プロンプトへ入る `PromptSection` と、Markdown 確定時の `Rewrite`）。
 
 **エージェント中核は UI を知らない。** `Approver` インターフェースと一連の
-コールバック（`OnToolCall` / `OnUsage` / `OnNotice` / `OnAutoDecision` /
-`OnAttach`）、そして nil で監査が無効になるテレメトリシンクを受け取るだけで、
+コールバック（`OnToolCall` / `OnToolDone` / `OnUsage` / `OnNotice` / `OnAutoDecision` /
+`OnAttach` / `OnRoundLimit`）、そして nil で監査が無効になるテレメトリシンクを
+受け取るだけで、
 TUI はコールバックを Bubble Tea メッセージ送信として、素 REPL は
 stderr 書き込みとして実装する。同じループが pty・パイプ・`-p` の下で動くのは
 これによる。
@@ -112,8 +115,8 @@ stderr 書き込みとして実装する。同じループが pty・パイプ・
   してこのループへ戻る。子の監査イベントは `agent` ラベルを運ぶ。
 
 画像（ADR-0012）は添付として入る: オペレータ向けの `@` 経路（プロジェクト
-パス。画像拡張子に限り絶対/~ パスも可 — `@` は打鍵入力からしか解析されない
-ため。`@clipboard` は osascript 経由）と、モデル向けのプロジェクト封じ込め
+パス。添付対象の拡張子（画像・文書・音声/動画）に限り絶対/~ パスも可 —
+`@` は打鍵入力からしか解析されないため。`@clipboard` は osascript 経由）と、モデル向けのプロジェクト封じ込め
 `view_image` ツール — Gemini の function response は画素を運べないので、
 エージェントがツール結果の直後に画像パート付き user メッセージを追加する。
 バイト列は MIME 判別・上限付きでトランスクリプトに保存され、圧縮の要約器には
@@ -122,7 +125,8 @@ stderr 書き込みとして実装する。同じループが pty・パイプ・
 ## 承認
 
 変更系ツール（`write_file` / `edit_file` / `shell_exec` /
-`save_memory`/`delete_memory` と全 MCP ツール）はゲートを通る。`y` は 1 回、
+`save_memory`/`delete_memory` / `web_search`・`web_fetch` — クエリと URL
+自体が外部送信 — と全 MCP ツール）はゲートを通る。`y` は 1 回、
 `a` はそのセッションのそのツール、`n`/Esc は拒否。拒否は「沈黙」ではなく
 結果としてモデルに返す。回答は ←→/Tab + Enter で選択できる — 日本語 IME が
 文字キーを吸うためである。`ask_user` ダイアログ（ADR-0036）は同じ操作文法を
@@ -139,14 +143,17 @@ Block の床を持ち上げないので、block パターンに当たる `shell_
 
 自動承認 ON（opt-in、`shift+tab` で切替。実行中も可）のとき、各変更系コールは
 まず純粋なルール分類器を通る: *safe* は実行、*blocked* は必ず確認、*不確実* は
-モデル評価へ回り、承認 **かつ** 高確信のときだけ通る。失敗系はすべて確認へ倒れる。
+モデル評価へ回り、承認 **かつ** 高確信のときだけ通る。メモリ書込はこの第 3 分岐の
+例外で、Review 層でありながら評価を一切通さず必ず確認へ回る — 評価するのが書込を
+提案した当事者だからである（ADR-0020 §6）。失敗系はすべて確認へ倒れる。
 blocked 層はモデルが持ち上げられない床であり、sandbox は全モードで有効である。
 ターンの序盤ラウンドでは、モデル評価は操作者のタイプした依頼もラップ済み証拠と
 して見る（ADR-0038）— 不整合はエスカレーション。以後のラウンドはコール単体
 視点をバイト同一で保つ。
 
 `/settings` は全設定を出所付きで表示し、いま効かせられるもの（承認ポリシー・
-自動承認・自動圧縮・テーマ）を編集する。永続化するポリシーは
+自動承認・自動圧縮）を編集する。再起動まで効かない行 — テーマもそれ — は、
+何も起きない編集を提示するのではなく読み取り専用で表示する。永続化するポリシーは
 `~/.config/gem-agent/policy.toml`（機械所有）へ書き、手書きの `config.toml`
 とは衝突時に前者が勝つ（ADR-0009）。`config.toml` は書き換えないのでコメントが
 残る。

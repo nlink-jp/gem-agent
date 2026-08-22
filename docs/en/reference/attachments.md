@@ -21,7 +21,7 @@ model:
 | Route | Example |
 |---|---|
 | Project file | `@docs/mock.png これを再現して` |
-| Anywhere (images only) | `@~/Desktop/スクリーンショット.png` |
+| Anywhere (attachment extensions: images, documents, audio/video) | `@~/Desktop/スクリーンショット.png` |
 | Clipboard | Cmd+Ctrl+Shift+4, then `@clipboard ここがおかしい` |
 | Model-initiated | the `view_image` tool (project-confined, like `read_file`) |
 
