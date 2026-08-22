@@ -181,8 +181,11 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 - **internal/diagram draws only what it can prove** (ADR-0042) — the
   supported list in that package is what the system prompt advertises
   (pinned by test); a new type joins only after measuring it with Japanese
-  labels, and the fidelity guard (every source label must appear in the
-  art) must keep passing. The rewrite runs inside the TUI renderer only —
+  labels, and BOTH fidelity guards must keep passing: every source label
+  appears in the art, and the flowchart's edge count equals the arrowheads
+  drawn (label presence alone let a mis-parsed `-- text -->` edge through
+  as a plausible wrong graph, v0.37.2). New mermaid syntax the renderer
+  does not parse is normalized in `prepare`, never left to chance. The rewrite runs inside the TUI renderer only —
   never in the plain REPL or one-shot, whose stdout is verbatim model text.
 - **The live region expands tabs too** (review round 3) — `ansi.Truncate`
   counts `\t` as zero cells while the terminal advances to the next stop,

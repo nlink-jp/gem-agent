@@ -177,3 +177,34 @@ func TestAmpersandInLabel(t *testing.T) {
 		t.Errorf("label not drawn with ＆:\n%s", out)
 	}
 }
+
+// `A -- text --> B` edge labels are normalized to the parsed form; the
+// decision node keeps its branches (v0.37.2 — the field case: the
+// renderer read "A -- text" as a node and the label guard let it pass).
+func TestEdgeTextSyntaxRendersCorrectly(t *testing.T) {
+	src := "flowchart TD\n    Start[Investigation Start] --> InputType{Indicator Type?}\n    InputType -- IP Address --> CheckTor[Tor Exit Node Check]\n    InputType -- Domain --> CheckWhois[WHOIS / RDAP Lookup]\n    CheckTor --> CheckASN[ASN & GeoIP Resolution]\n"
+	art, ok := Render(src, 120)
+	if !ok {
+		t.Fatal("not drawn")
+	}
+	if strings.Contains(art, "InputType --") {
+		t.Errorf("edge text parsed as a node:\n%s", art)
+	}
+	if got := arrowheads(art); got != 4 {
+		t.Errorf("arrowheads = %d, want 4 (one per edge):\n%s", got, art)
+	}
+}
+
+// Structural guard: the edge count and the subgraph-endpoint refusal.
+func TestFlowStructuralGuards(t *testing.T) {
+	if n := flowEdgeCount("graph TD\n  A[a] --> B{b}\n  B -->|x| C[c] & D[d]\n  E[e] & F[f] --> G[g]\n  H --- I\n"); n != 5 {
+		t.Errorf("flowEdgeCount = %d, want 5", n)
+	}
+	if arrowheads("┌a┐ ─► ┌b┐\n ▼\n◄ ▲") != 4 {
+		t.Error("arrowheads miscounted")
+	}
+	sub := fence("flowchart LR\n    subgraph Passive_Sources [Passive Investigation Layer]\n        DNS[DoH]\n    end\n    Passive_Sources --> Aggregator[Indicator Aggregator]\n")
+	if got := Rewrite(sub, 120); got != sub {
+		t.Errorf("edge to a subgraph id was drawn (phantom node):\n%s", got)
+	}
+}

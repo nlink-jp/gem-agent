@@ -73,6 +73,24 @@ var (
 	// '&' as the fan-in operator even inside a label (measured), so it
 	// becomes the full-width ＆ — same meaning to a reader, no operator.
 	ampLabelRe = regexp.MustCompile(`\[([^\]]*)&([^\]]*)\]`)
+	// edgeTextRes rewrite the `A -- text --> B` family of edge labels to
+	// the `-->|text|` form the renderer parses; left alone, the renderer
+	// read "A -- text" as a node (measured: a decision node lost its
+	// branches and phantom nodes appeared, v0.37.2).
+	edgeTextRes = []struct {
+		re  *regexp.Regexp
+		out string
+	}{
+		{regexp.MustCompile(`--\s+(.+?)\s+-->`), "-->|$1|"},
+		{regexp.MustCompile(`-\.\s+(.+?)\s+\.->`), "-.->|$1|"},
+		{regexp.MustCompile(`==\s+(.+?)\s+==>`), "==>|$1|"},
+	}
+	// arrowTokRe tokenizes a flowchart statement into its arrow-bearing
+	// edges (open links --- are not counted: they draw no head).
+	arrowTokRe  = regexp.MustCompile(`-\.+->|-->|==>`)
+	edgeLabelRm = regexp.MustCompile(`\|[^|]*\|`)
+	subgraphRe  = regexp.MustCompile(`^\s*subgraph\s+([A-Za-z0-9_]+)`)
+	nodeIDRe    = regexp.MustCompile(`^\s*([A-Za-z0-9_]+)`)
 	// presentational statements carry no graph semantics and the renderer
 	// may reject them.
 	presentationRe = regexp.MustCompile(`^\s*(classDef|class|style|linkStyle|click)\b`)
@@ -144,6 +162,12 @@ func Render(src string, width int) (string, bool) {
 	if budget < 20 {
 		return "", false
 	}
+	if k == kindFlow && edgesToSubgraphs(prepared) {
+		// An edge whose endpoint is a subgraph id: the renderer draws a
+		// phantom node named after the id — a wrong graph that the label
+		// guard cannot see. Source is the honest display.
+		return "", false
+	}
 	art, ok := renderFit(prepared, dir, budget)
 	if !ok {
 		return "", false
@@ -151,7 +175,85 @@ func Render(src string, width int) (string, bool) {
 	if !faithful(k, prepared, art) {
 		return "", false
 	}
+	if k == kindFlow && flowEdgeCount(prepared) != arrowheads(art) {
+		// Structural guard (v0.37.2): every source edge must have drawn
+		// exactly one arrowhead. Label presence alone let a mis-parsed
+		// edge syntax through as a plausible-looking wrong graph.
+		return "", false
+	}
 	return art, true
+}
+
+// flowEdgeCount counts the arrow-bearing edges a flowchart source
+// declares: for each statement, consecutive arrow-separated segments
+// contribute |left| × |right| edges, where a segment's size is its
+// number of '&'-separated endpoints.
+func flowEdgeCount(src string) int {
+	total := 0
+	for _, line := range strings.Split(src, "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" || strings.HasPrefix(t, "%%") || headerRe.MatchString(t) ||
+			strings.HasPrefix(t, "subgraph") || t == "end" || strings.HasPrefix(t, "direction") {
+			continue
+		}
+		t = edgeLabelRm.ReplaceAllString(t, "")
+		segs := arrowTokRe.Split(t, -1)
+		if len(segs) < 2 {
+			continue
+		}
+		count := func(seg string) int {
+			n := 0
+			for _, item := range strings.Split(seg, "&") {
+				if strings.TrimSpace(item) != "" {
+					n++
+				}
+			}
+			return n
+		}
+		for i := 0; i+1 < len(segs); i++ {
+			total += count(segs[i]) * count(segs[i+1])
+		}
+	}
+	return total
+}
+
+// arrowheads counts the arrowhead glyphs the renderer draws.
+func arrowheads(art string) int {
+	n := 0
+	for _, r := range art {
+		if strings.ContainsRune("►◄▲▼", r) {
+			n++
+		}
+	}
+	return n
+}
+
+// edgesToSubgraphs reports an edge endpoint that is a subgraph id.
+func edgesToSubgraphs(src string) bool {
+	ids := map[string]bool{}
+	for _, line := range strings.Split(src, "\n") {
+		if m := subgraphRe.FindStringSubmatch(line); m != nil {
+			ids[m[1]] = true
+		}
+	}
+	if len(ids) == 0 {
+		return false
+	}
+	for _, line := range strings.Split(src, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "subgraph") || !arrowTokRe.MatchString(t) {
+			continue
+		}
+		t = edgeLabelRm.ReplaceAllString(t, "")
+		for _, seg := range arrowTokRe.Split(t, -1) {
+			for _, item := range strings.Split(seg, "&") {
+				if m := nodeIDRe.FindStringSubmatch(item); m != nil && ids[m[1]] {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func classify(body string) (kind, string) {
@@ -215,6 +317,9 @@ func prepare(k kind, body string) string {
 		})
 		for ampLabelRe.MatchString(line) {
 			line = ampLabelRe.ReplaceAllString(line, "[$1＆$2]")
+		}
+		for _, e := range edgeTextRes {
+			line = e.re.ReplaceAllString(line, e.out)
 		}
 		kept = append(kept, line)
 	}

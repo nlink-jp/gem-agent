@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.37.2] - 2026-08-22
+
+### Fixed — a flowchart drawn wrong passed the fidelity guard (operator report)
+
+- The `A -- text --> B` edge-label syntax was not parsed by the
+  renderer, which read "A -- text" as a node: the decision node lost
+  its branches and phantom nodes appeared — and every label was still
+  present, so the label-presence guard let the wrong graph through.
+  Edge text is now normalized to the `-->|text|` form (also the dotted
+  and thick variants), and a **structural guard** requires the source's
+  edge count (|left| × |right| per arrow, '&' fan-ins included) to
+  equal the arrowheads drawn — a diagram with a dropped or mis-parsed
+  edge falls back to source
+- An edge whose endpoint is a subgraph id draws a phantom node named
+  after the id; such diagrams now stay source
+
 ## [0.37.1] - 2026-08-22
 
 ### Fixed — box art sheared under a Japanese locale (operator report)
