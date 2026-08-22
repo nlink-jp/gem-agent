@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.37.6] - 2026-08-22
+
+### Fixed — flowcharts with subgraph-id edges were refused by an assumption
+
+- v0.37.2 refused any flowchart with an edge whose endpoint is a
+  subgraph id ("the renderer draws a phantom node") — written from an
+  assumption, never measured. Measurement shows the renderer draws
+  those edges correctly in most diagrams (the field case: 13 source
+  edges, 13 arrowheads, every label present), and where it does not,
+  the generic verification already catches it. The blacklist is gone
+- The tight-padding retry is gone too: it overwrote label cells in
+  double-width text ("種別判定" came back as "種別┬定"). One layout —
+  the art fits the terminal or the source is shown
+
+### Changed — the package is three rules, and nothing else (operator direction)
+
+- Four field reports had produced four special cases. The operator
+  named the pattern — build the minimum necessary judgment instead of
+  bolting external judgment and correction onto the renderer — so the
+  package now runs exactly: **translate** (deterministic mapping of
+  constructs the renderer's grammar rejects, each entry a syntax fact),
+  **fit** (one layout), **verify** (labels present, edges == arrowheads)
+- Rule 3 is what makes per-construct blacklists unnecessary; both that
+  had accumulated are deleted. Measured against every mermaid block
+  from five field sessions: 16 of 18 draw, and the two refusals are
+  diagrams where the renderer genuinely lost a subgraph title or an
+  edge label
+
 ## [0.37.5] - 2026-08-22
 
 ### Fixed — flowcharts with multi-word edge labels stopped drawing (operator report)

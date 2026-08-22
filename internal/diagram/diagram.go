@@ -1,9 +1,29 @@
-// Package diagram draws mermaid fenced blocks as Unicode box art for the
-// terminal (ADR-0042). It draws the types the renderer is measured to
-// draw faithfully — flowchart/graph, sequenceDiagram with ASCII labels,
-// erDiagram — and leaves everything else as source. The advertised list
-// (PromptSection) and the renderer's capability are one list here, so
-// the model is never promised what the terminal cannot do.
+// Package diagram draws mermaid fenced blocks as Unicode box art for
+// the terminal (ADR-0042). The advertised list (PromptSection) and the
+// renderer's capability are one list here, so the model is never
+// promised what the terminal cannot do.
+//
+// THREE RULES, AND NOTHING ELSE (ADR-0042 §5). Every block goes
+// through exactly these, in order:
+//
+//  1. TRANSLATE — a deterministic mapping of mermaid constructs the
+//     renderer's grammar rejects into ones it accepts, preserving the
+//     graph: node shapes to boxes, `A -- text --> B` to `-->|text|`,
+//     `&` inside a label to the full-width ＆, presentation-only
+//     statements dropped. No guessing: each entry is a syntax fact.
+//  2. FIT — the art must fit the terminal and the height cap, or the
+//     source is shown. One layout; no retry variants.
+//  3. VERIFY — every label the source wrote must appear in the art,
+//     and a flowchart's edge count must equal the arrowheads drawn.
+//
+// Rule 3 is the safety net that makes per-construct blacklists
+// unnecessary, and two of them (an ER complexity cap, a refusal of
+// edges to subgraph ids) were added from field reports and later
+// deleted: the first judged beauty rather than correctness, and the
+// second refused diagrams the renderer draws correctly while rule 3
+// already caught the ones it does not. When a new construct breaks,
+// the fix belongs in rule 1 (if the renderer's grammar is the
+// problem) or nowhere (rule 3 already shows the source).
 package diagram
 
 import (
@@ -96,8 +116,6 @@ var (
 	// edges (open links --- are not counted: they draw no head).
 	arrowTokRe  = regexp.MustCompile(`-\.+->|-->|==>`)
 	edgeLabelRm = regexp.MustCompile(`\|[^|]*\|`)
-	subgraphRe  = regexp.MustCompile(`^\s*subgraph\s+([A-Za-z0-9_]+)`)
-	nodeIDRe    = regexp.MustCompile(`^\s*([A-Za-z0-9_]+)`)
 	// directionRe matches a `direction XX` statement — a subgraph layout
 	// hint the renderer draws as a literal node (measured v0.37.3: it
 	// also fused adjacent subgraph titles). Dropped before rendering.
@@ -171,7 +189,7 @@ func Rewrite(markdown string, width int) string {
 // renderer lost (ADR-0042 §3).
 func Render(src string, width int) (string, bool) {
 	body, _ := mdiagram.StripFrontmatter(src)
-	k, dir := classify(body)
+	k := classify(body)
 	if k == kindUnsupported {
 		return "", false
 	}
@@ -184,13 +202,7 @@ func Render(src string, width int) (string, bool) {
 	if budget < 20 {
 		return "", false
 	}
-	if k == kindFlow && edgesToSubgraphs(prepared) {
-		// An edge whose endpoint is a subgraph id: the renderer draws a
-		// phantom node named after the id — a wrong graph that the label
-		// guard cannot see. Source is the honest display.
-		return "", false
-	}
-	art, ok := renderFit(prepared, dir, budget)
+	art, ok := draw(prepared, budget)
 	if !ok {
 		return "", false
 	}
@@ -250,35 +262,7 @@ func arrowheads(art string) int {
 	return n
 }
 
-// edgesToSubgraphs reports an edge endpoint that is a subgraph id.
-func edgesToSubgraphs(src string) bool {
-	ids := map[string]bool{}
-	for _, line := range strings.Split(src, "\n") {
-		if m := subgraphRe.FindStringSubmatch(line); m != nil {
-			ids[m[1]] = true
-		}
-	}
-	if len(ids) == 0 {
-		return false
-	}
-	for _, line := range strings.Split(src, "\n") {
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "subgraph") || !arrowTokRe.MatchString(t) {
-			continue
-		}
-		t = edgeLabelRm.ReplaceAllString(t, "")
-		for _, seg := range arrowTokRe.Split(t, -1) {
-			for _, item := range strings.Split(seg, "&") {
-				if m := nodeIDRe.FindStringSubmatch(item); m != nil && ids[m[1]] {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-func classify(body string) (kind, string) {
+func classify(body string) kind {
 	for _, line := range strings.Split(body, "\n") {
 		t := strings.TrimSpace(line)
 		if t == "" || strings.HasPrefix(t, "%%") {
@@ -286,23 +270,19 @@ func classify(body string) (kind, string) {
 		}
 		m := headerRe.FindStringSubmatch(t)
 		if m == nil {
-			return kindUnsupported, ""
+			return kindUnsupported
 		}
 		switch m[1] {
 		case "graph", "flowchart":
-			dir := "TD"
-			if d := strings.ToUpper(m[2]); d == "LR" || d == "RL" {
-				dir = "LR"
-			}
-			return kindFlow, dir
+			return kindFlow
 		case "sequenceDiagram":
-			return kindSequence, ""
+			return kindSequence
 		case "erDiagram":
-			return kindER, ""
+			return kindER
 		}
-		return kindUnsupported, ""
+		return kindUnsupported
 	}
-	return kindUnsupported, ""
+	return kindUnsupported
 }
 
 // hasWide reports any rune the terminal draws in two cells — the case
@@ -348,38 +328,28 @@ func prepare(k kind, body string) string {
 	return strings.Join(kept, "\n")
 }
 
-// renderFit renders with the default layout, then with tight padding,
-// and refuses anything that would not fit the width or the height cap.
-func renderFit(src, dir string, budget int) (string, bool) {
-	try := func(cfg *mdiagram.Config) (string, bool) {
-		out, err := mermaid.RenderDiagram(src, cfg)
-		if err != nil {
-			return "", false
-		}
-		out = strings.TrimRight(out, "\n")
-		lines := strings.Split(out, "\n")
-		if len(lines) > maxArtLines {
-			return "", false
-		}
-		for i, l := range lines {
-			lines[i] = strings.TrimRight(l, " ")
-			if ansi.StringWidth(lines[i]) > budget {
-				return "", false
-			}
-		}
-		return strings.Join(lines, "\n"), true
-	}
-	if art, ok := try(mdiagram.DefaultConfig()); ok {
-		return art, true
-	}
-	if dir == "" {
-		dir = "TD"
-	}
-	compact, err := mdiagram.NewCLIConfig(false, false, false, 0, 1, 0, dir)
+// draw renders with the renderer's default layout and refuses anything
+// that would not fit the width or the height cap (rule 2). One layout:
+// a tight-padding retry existed to squeeze wide diagrams and was
+// deleted in v0.37.6 after it was measured overwriting label cells in
+// double-width text ("種別判定" came back as "種別┬定") — a second
+// layout is a second failure mode, and "fits or source" is one rule.
+func draw(src string, budget int) (string, bool) {
+	out, err := mermaid.RenderDiagram(src, mdiagram.DefaultConfig())
 	if err != nil {
 		return "", false
 	}
-	return try(compact)
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) > maxArtLines {
+		return "", false
+	}
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " ")
+		if ansi.StringWidth(lines[i]) > budget {
+			return "", false
+		}
+	}
+	return strings.Join(lines, "\n"), true
 }
 
 // faithful checks that every label written in the source appears in

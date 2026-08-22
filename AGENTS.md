@@ -178,16 +178,16 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   `internal/tui` (`pinWidthModel`, honours an explicit RUNEWIDTH_EASTASIAN).
   Any new dependency that measures width must agree with x/ansi — test it
   with `runewidth.DefaultCondition.EastAsianWidth = true` first.
-- **internal/diagram draws only what it can prove** (ADR-0042) — the
-  supported list in that package is what the system prompt advertises
-  (pinned by test); a new type joins only after measuring it with Japanese
-  labels, and BOTH fidelity guards must keep passing: every source label
-  appears in the art, and the flowchart's edge count equals the arrowheads
-  drawn (label presence alone let a mis-parsed `-- text -->` edge through
-  as a plausible wrong graph, v0.37.2). **Compare through the renderer's
-  decoration** — it pads labels with box drawing ("──IP─/─CIDR──") and
-  crosses them with borders ("Domain│/ FQDN"); a guard that strips only
-  whitespace refuses correct diagrams (v0.37.5). Test guards against the
+- **internal/diagram is three rules, and nothing else** (ADR-0042 §5) —
+  translate (deterministic mapping of constructs the renderer's grammar
+  rejects; each entry a syntax fact), fit (one layout: fits or source),
+  verify (every source label present — compared THROUGH the renderer's
+  line-art decoration — and edges == arrowheads). Do not add a
+  per-construct blacklist: two were added from field reports and both
+  were deleted, one judging beauty and one written from an unverified
+  assumption that measurement disproved. When something breaks, the fix
+  goes in rule 1 or nowhere. The supported list is what the prompt
+  advertises (pinned by test), and guards are tested against the
   renderer's REAL output, never hand-written art. New mermaid syntax the renderer
   does not parse is normalized in `prepare`, never left to chance. The rewrite runs inside the TUI renderer only —
   never in the plain REPL or one-shot, whose stdout is verbatim model text.

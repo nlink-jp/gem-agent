@@ -82,6 +82,38 @@ streams as it goes. Neither renders Markdown today, and neither gets
 the diagram pass — the prompt section is omitted there, so the model is
 not told about a capability that surface lacks.
 
+### 5. Three rules, and nothing else (v0.37.6, operator direction)
+
+Four field reports produced four patches, each a new special case:
+a shape normalizer, an edge-syntax normalizer, a refusal of edges to
+subgraph ids, an ER complexity cap. That is whack-a-mole, and the
+operator named it: *build the minimum necessary judgment instead of
+bolting external judgment and correction onto the renderer.* The
+package now runs exactly three rules in order:
+
+1. **Translate** — a deterministic mapping of constructs the
+   renderer's grammar rejects into ones it accepts, preserving the
+   graph (shapes to boxes, `A -- text --> B` to `-->|text|`, `&` in a
+   label to ＆, presentation-only statements dropped). Each entry is a
+   syntax fact, never a prediction.
+2. **Fit** — one layout: the art fits the terminal and the height cap,
+   or the source is shown. The tight-padding retry is gone; it was
+   measured overwriting label cells in double-width text, and a second
+   layout is a second failure mode.
+3. **Verify** — every label the source wrote must appear in the art
+   (compared through the renderer's own line-art decoration), and a
+   flowchart's edge count must equal the arrowheads drawn.
+
+Rule 3 is what makes per-construct blacklists unnecessary, and both
+blacklists were deleted on that basis: the ER complexity cap judged
+beauty rather than correctness, and the subgraph-endpoint refusal was
+written from an assumption — measurement showed the renderer draws
+those edges correctly in most diagrams, while rule 3 already catches
+the ones where it does not (a lost subgraph title, a phantom node).
+When a construct breaks in future, the fix belongs in rule 1 if the
+renderer's grammar is the problem, and nowhere otherwise: rule 3
+already shows the source.
+
 ## Consequences
 
 - A flowchart in the chat is readable where the conversation happens,
@@ -111,3 +143,8 @@ not told about a capability that surface lacks.
   dropped (the renderer drew it as a node and fused adjacent titles);
   one width model is pinned so box art is not sheared under a CJK
   locale (v0.37.1).
+- Measured against every mermaid block from five field sessions
+  (v0.37.6): 16 of 18 draw with their edge counts matching; the two
+  refusals are diagrams where the renderer genuinely lost something —
+  a subgraph title fused with its neighbour, and an edge label dropped
+  where two edges share a path. Both are rule 3 working.

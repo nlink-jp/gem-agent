@@ -67,18 +67,21 @@ func TestSequenceASCIIAndERRender(t *testing.T) {
 	}
 }
 
-// Width: a wide chain stays source at 60 columns and is drawn (with
-// tight padding) at 100.
+// Rule 2 is one rule: the diagram fits the terminal or the source is
+// shown. (A tight-padding retry that squeezed wide diagrams was deleted
+// in v0.37.6 — it corrupted double-width labels.)
 func TestWidthBudget(t *testing.T) {
 	wide := fence("graph LR\n  A[Parse config] --> B[Resolve project] --> C[Connect MCP] --> D[Discover skills] --> E[Build prompt] --> F[Start TUI]\n")
-	if got := Rewrite(wide, 60); got != wide {
-		t.Errorf("too-wide diagram was drawn at 60 cols:\n%s", got)
+	for _, narrow := range []int{60, 100} {
+		if got := Rewrite(wide, narrow); got != wide {
+			t.Errorf("too-wide diagram was drawn at %d cols:\n%s", narrow, got)
+		}
 	}
-	out := Rewrite(wide, 100)
+	out := Rewrite(wide, 140)
 	if strings.Contains(out, "graph LR") {
-		t.Fatalf("wide chain not drawn at 100 cols")
+		t.Fatalf("wide chain not drawn at 140 cols")
 	}
-	if w := maxWidth(out); w > 100-widthMargin {
+	if w := maxWidth(out); w > 140-widthMargin {
 		t.Errorf("art width %d exceeds budget", w)
 	}
 }
@@ -147,7 +150,7 @@ func TestPromptSectionListsSupported(t *testing.T) {
 		"stateDiagram-v2\nA-->B":    kindUnsupported,
 		"classDiagram\nclass A":     kindUnsupported,
 	} {
-		if k, _ := classify(src); k != want {
+		if k := classify(src); k != want {
 			t.Errorf("classify(%q) = %v, want %v", src, k, want)
 		}
 	}
@@ -203,9 +206,16 @@ func TestFlowStructuralGuards(t *testing.T) {
 	if arrowheads("┌a┐ ─► ┌b┐\n ▼\n◄ ▲") != 4 {
 		t.Error("arrowheads miscounted")
 	}
-	sub := fence("flowchart LR\n    subgraph Passive_Sources [Passive Investigation Layer]\n        DNS[DoH]\n    end\n    Passive_Sources --> Aggregator[Indicator Aggregator]\n")
-	if got := Rewrite(sub, 120); got != sub {
-		t.Errorf("edge to a subgraph id was drawn (phantom node):\n%s", got)
+	// An edge whose endpoint is a subgraph id draws correctly (measured
+	// v0.37.6; the v0.37.2 refusal was an unverified assumption). The
+	// edge-count guard is what proves it, not a syntax blacklist.
+	sub := "flowchart LR\n    subgraph Passive_Sources [Passive Investigation Layer]\n        DNS[DoH]\n    end\n    Passive_Sources --> Aggregator[Indicator Aggregator]\n"
+	art, ok := Render(sub, 120)
+	if !ok {
+		t.Fatalf("edge to a subgraph id refused")
+	}
+	if arrowheads(art) != flowEdgeCount(prepare(kindFlow, sub)) {
+		t.Errorf("subgraph-id edge miscounted:\n%s", art)
 	}
 }
 
@@ -274,5 +284,39 @@ func TestSubgraphFlowchartWithLabelledEdges(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q", want)
 		}
+	}
+}
+
+// The field flowchart that stopped drawing in v0.37.2–v0.37.5: edges
+// whose endpoints are subgraph ids, CJK labels, multi-word edge labels.
+func TestSubgraphIDEdgesWithJapaneseLabels(t *testing.T) {
+	src := "flowchart TD\n    Start([調査開始 / Indicator Input]) --> CheckType{種別判定}\n    CheckType -->|Domain / FQDN| StepDomain[ドメイン帰属調査 SOP]\n    CheckType -->|IP Address| StepIP[IPアドレス帰属調査 SOP]\n    subgraph DomainFlow [ドメイン調査]\n        StepDomain --> D1[WHOIS / RDAP 照会]\n        D1 --> D2[DoH DNSレコード解決]\n    end\n    subgraph IPFlow [IP調査]\n        StepIP --> I1[ASN / GeoIP 特定]\n        I1 --> I2[Tor 判定]\n    end\n    DomainFlow --> Correlate[相関分析]\n    IPFlow --> Correlate\n    Correlate --> Report[レポート出力]\n"
+	art, ok := Render(src, 185)
+	if !ok {
+		t.Fatal("field flowchart with subgraph-id edges refused")
+	}
+	if got, want := arrowheads(art), flowEdgeCount(prepare(kindFlow, src)); got != want {
+		t.Errorf("arrowheads %d != source edges %d:\n%s", got, want, art)
+	}
+	// Compare the way the production guard does — through the
+	// renderer's decoration (v0.37.5).
+	flat := decorationRe.ReplaceAllString(art, "")
+	for _, want := range []string{"種別判定", "ドメイン調査", "IP調査", "相関分析", "Domain / FQDN"} {
+		if !strings.Contains(flat, decorationRe.ReplaceAllString(want, "")) {
+			t.Errorf("label %q lost", want)
+		}
+	}
+}
+
+// The tight-padding retry corrupts double-width labels ("種別判定" →
+// "種別┬定"), so a CJK diagram that does not fit is shown as source
+// rather than retried (v0.37.6).
+func TestNoCompactRetryForWideRunes(t *testing.T) {
+	src := "graph LR\n  A[とても長い日本語のラベルその一] --> B[とても長い日本語のラベルその二] --> C[とても長い日本語のラベルその三]\n"
+	if _, ok := Render(src, 60); ok {
+		t.Error("wide-rune diagram was drawn through the corrupting compact retry")
+	}
+	if _, ok := Render(src, 200); !ok {
+		t.Error("wide-rune diagram that fits the default layout was refused")
 	}
 }
