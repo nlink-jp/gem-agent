@@ -241,3 +241,38 @@ func TestDenseERDrawsWhenItFits(t *testing.T) {
 		t.Error("simple ER not drawn")
 	}
 }
+
+// The renderer pads edge labels with its own line art: a horizontal
+// edge label becomes "──IP─/─CIDR──" and a label crossing a subgraph
+// border "Domain│/ FQDN". The fidelity guard compares through the
+// decoration — stripping only whitespace read those as lost labels and
+// refused correct diagrams (v0.37.5, field report).
+func TestFaithfulSeesThroughLineArt(t *testing.T) {
+	src := "flowchart TD\n  A[Start] --> B{Target Type?}\n  B -->|Domain / FQDN| C[WHOIS Lookup]\n  B -->|IP / CIDR| D[ASN Lookup]\n"
+	art, ok := Render(src, 120)
+	if !ok {
+		t.Fatal("multi-word edge labels refused — the guard is reading padded labels as lost")
+	}
+	if got := arrowheads(art); got != 3 {
+		t.Errorf("arrowheads = %d, want 3:\n%s", got, art)
+	}
+	// Padding must not be mistaken for a present label either.
+	if faithful(kindFlow, src, "┌Start┐ ─► ┌WHOIS Lookup┐ ─► ┌ASN Lookup┐") {
+		t.Error("a genuinely missing edge label was accepted")
+	}
+}
+
+// A flowchart whose edge labels cross subgraph borders draws (the
+// field case that stopped rendering in v0.37.4).
+func TestSubgraphFlowchartWithLabelledEdges(t *testing.T) {
+	src := "flowchart TD\n    Start([Investigation Target]) --> CheckType{Target Type?}\n    subgraph Domain_Flow[Domain Attribution]\n        CheckType -->|Domain / FQDN| D1[WHOIS / RDAP Lookup]\n        D1 --> D2[DNS / DoH Resolution]\n    end\n    subgraph IP_Flow[IP Attribution]\n        CheckType -->|IP / CIDR| I1[ASN & GeoIP Lookup]\n        I1 --> I2[Tor / Relay Check]\n    end\n    D2 --> R[Report]\n    I2 --> R\n"
+	out := Rewrite(fence(src), 140)
+	if strings.Contains(out, "flowchart TD") {
+		t.Fatalf("field flowchart not drawn:\n%s", out)
+	}
+	for _, want := range []string{"Domain Attribution", "IP Attribution", "WHOIS / RDAP Lookup", "Report"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+}

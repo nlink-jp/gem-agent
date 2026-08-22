@@ -106,6 +106,16 @@ var (
 	// may reject them.
 	presentationRe = regexp.MustCompile(`^\s*(classDef|class|style|linkStyle|click)\b`)
 	classSuffixRe  = regexp.MustCompile(`:::[A-Za-z0-9_-]+`)
+	// decorationRe strips the renderer's line art (box drawing, block
+	// elements, geometric arrowheads) and whitespace. The fidelity
+	// guard compares through it because the renderer PADS labels with
+	// its own glyphs: a horizontal edge label is drawn as
+	// "──IP─/─CIDR──" and a label crossing a subgraph border as
+	// "Domain│/ FQDN". Stripping only whitespace read those as lost
+	// labels and refused correct diagrams (v0.37.5). Stripping
+	// decoration can only make the guard more permissive about
+	// PRESENCE; the edge-count guard still proves the structure.
+	decorationRe = regexp.MustCompile(`[\x{2500}-\x{25FF}\s]+`)
 	// label extraction for the fidelity guard
 	boxLabelRe  = regexp.MustCompile(`\[("?)([^\]"]+)"?\]`)
 	edgeLabelRe = regexp.MustCompile(`\|([^|]+)\|`)
@@ -401,13 +411,13 @@ func faithful(k kind, src, art string) bool {
 			}
 		}
 	}
-	flat := strings.Join(strings.Fields(art), "")
+	flat := decorationRe.ReplaceAllString(art, "")
 	for _, l := range labels {
 		l = strings.TrimSpace(strings.Trim(l, `"`))
 		if l == "" {
 			continue
 		}
-		if !strings.Contains(flat, strings.Join(strings.Fields(l), "")) {
+		if !strings.Contains(flat, decorationRe.ReplaceAllString(l, "")) {
 			return false
 		}
 	}

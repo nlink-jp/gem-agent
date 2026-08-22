@@ -184,7 +184,11 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   labels, and BOTH fidelity guards must keep passing: every source label
   appears in the art, and the flowchart's edge count equals the arrowheads
   drawn (label presence alone let a mis-parsed `-- text -->` edge through
-  as a plausible wrong graph, v0.37.2). New mermaid syntax the renderer
+  as a plausible wrong graph, v0.37.2). **Compare through the renderer's
+  decoration** — it pads labels with box drawing ("──IP─/─CIDR──") and
+  crosses them with borders ("Domain│/ FQDN"); a guard that strips only
+  whitespace refuses correct diagrams (v0.37.5). Test guards against the
+  renderer's REAL output, never hand-written art. New mermaid syntax the renderer
   does not parse is normalized in `prepare`, never left to chance. The rewrite runs inside the TUI renderer only —
   never in the plain REPL or one-shot, whose stdout is verbatim model text.
 - **The live region expands tabs too** (review round 3) — `ansi.Truncate`

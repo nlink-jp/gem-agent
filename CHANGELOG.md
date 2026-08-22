@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.37.5] - 2026-08-22
+
+### Fixed — flowcharts with multi-word edge labels stopped drawing (operator report)
+
+- The fidelity guard compared the source's labels against the art with
+  only whitespace stripped, but the renderer PADS labels with its own
+  line art: a horizontal edge label is drawn as "──IP─/─CIDR──" and a
+  label crossing a subgraph border as "Domain│/ FQDN". Those read as
+  lost labels, so correct diagrams were refused and shown as source —
+  visible only once a diagram used an edge label containing a space
+  (single-word labels never tripped it, which is why it shipped)
+- The guard now compares through the decoration (box drawing, block
+  elements, geometric arrowheads, whitespace). Presence is all that
+  becomes more permissive; the edge-count guard still proves the
+  structure. Verified against every mermaid block from three field
+  sessions: all flowcharts draw with edges == arrowheads, the
+  phantom-node case still falls back, ER is bound only by width
+
 ## [0.37.4] - 2026-08-22
 
 ### Reverted — the ER complexity cap (operator direction)
