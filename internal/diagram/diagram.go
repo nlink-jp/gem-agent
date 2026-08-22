@@ -24,14 +24,14 @@ const (
 	// maxArtLines bounds the art's height: a taller diagram is shown as
 	// source — a screenful of box art stops being a summary.
 	maxArtLines = 80
-	// ER complexity limits (measured v0.37.3): the renderer draws
-	// crow's-foot lines that cross once an entity gathers several
-	// relationships — 2 relationships are clean, 3 still read, the
-	// field's 7 (one entity at degree 4) were unreadable. Beyond these
-	// the diagram is shown as source.
-	maxERRelationships = 5
-	maxERDegree        = 3
 )
+
+// An ER complexity cap (relationships/degree) was tried in v0.37.3 and
+// reverted in v0.37.4 (operator direction): a dense diagram that FITS
+// the screen is shown — readability is the operator's call, and "too
+// complex, simplify" is a message to the model, not a threshold. The
+// guards that remain are about being WRONG (labels, edge counts,
+// phantom nodes), never about being ugly.
 
 // kind is the renderable family of a mermaid block.
 type kind int
@@ -169,11 +169,6 @@ func Render(src string, width int) (string, bool) {
 		return "", false
 	}
 	body = directionRe.ReplaceAllString(body, "")
-	if k == kindER && erTooComplex(body) {
-		// Crow's-foot lines cross once an entity gathers several
-		// relationships; source is the honest display (v0.37.3).
-		return "", false
-	}
 	prepared := prepare(k, body)
 	budget := width - widthMargin
 	if budget < 20 {
@@ -375,30 +370,6 @@ func renderFit(src, dir string, budget int) (string, bool) {
 		return "", false
 	}
 	return try(compact)
-}
-
-// erTooComplex reports an ER diagram whose relationship count or
-// per-entity degree exceeds what the renderer draws without crossings
-// (measured v0.37.3).
-func erTooComplex(src string) bool {
-	deg := map[string]int{}
-	rels := 0
-	for _, line := range strings.Split(src, "\n") {
-		if m := erRelRe.FindStringSubmatch(line); m != nil {
-			rels++
-			deg[m[1]]++
-			deg[m[2]]++
-		}
-	}
-	if rels > maxERRelationships {
-		return true
-	}
-	for _, d := range deg {
-		if d > maxERDegree {
-			return true
-		}
-	}
-	return false
 }
 
 // faithful checks that every label written in the source appears in

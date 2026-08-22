@@ -102,9 +102,12 @@ not told about a capability that surface lacks.
   (v0.37.2): a flowchart's source edge count must equal the arrowheads
   drawn, `-- text -->` edge labels are normalized to the parsed form,
   and an edge to a subgraph id (a phantom node) falls back to source.
-- Layout quality has limits the guards cannot phrase as "wrong": a
-  dense ER diagram (v0.37.3, >5 relationships or an entity at degree
-  >3) has its crow's-foot lines cross, so it is shown as source; a
-  subgraph's `direction` hint is dropped (the renderer drew it as a
-  node and fused adjacent titles). One width model is pinned so box
-  art is not sheared under a CJK locale (v0.37.1).
+- A complexity cap for dense ER diagrams (v0.37.3) was tried and
+  **reverted** (v0.37.4, operator direction): a diagram that fits the
+  screen is shown even when its lines cross — readability is the
+  operator's call, and "too complex, simplify" is a message to the
+  model, not a threshold. The guards that remain are about being
+  wrong, never about being ugly. A subgraph's `direction` hint stays
+  dropped (the renderer drew it as a node and fused adjacent titles);
+  one width model is pinned so box art is not sheared under a CJK
+  locale (v0.37.1).

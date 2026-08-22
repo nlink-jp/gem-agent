@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.37.4] - 2026-08-22
+
+### Reverted — the ER complexity cap (operator direction)
+
+- v0.37.3's dense-ER fallback (relationships/degree thresholds) is
+  gone: a diagram that fits the screen is shown, crossings and all —
+  readability is the operator's call, and "too complex, simplify" is
+  a message to the model, not a threshold. The guards that remain are
+  about being wrong (labels, edge counts, phantom nodes), never about
+  being ugly. The subgraph `direction` fix from v0.37.3 stays
+
 ## [0.37.3] - 2026-08-22
 
 ### Fixed — subgraph `direction` drawn as a node; dense ER diagrams cross (operator report)

@@ -226,17 +226,18 @@ func TestSubgraphDirectionDropped(t *testing.T) {
 	}
 }
 
-// A dense ER diagram (an entity at high degree) crosses; it stays source
-// while a simple one draws (v0.37.3).
-func TestERComplexityGuard(t *testing.T) {
+// A dense ER diagram that FITS the screen is drawn — readability is
+// the operator's call (v0.37.4 revert of the v0.37.3 complexity cap);
+// the width budget remains the only bound.
+func TestDenseERDrawsWhenItFits(t *testing.T) {
 	ents := "\n  DOMAIN {\n    string fqdn PK\n  }\n  IP {\n    string v4 PK\n  }\n  ASN {\n    int asn PK\n  }\n  CERT {\n    string sha PK\n  }\n  ABUSE {\n    string id PK\n  }\n  PULSE {\n    string id PK\n  }\n"
 	dense := "erDiagram\n  DOMAIN ||--o{ IP : a\n  DOMAIN ||--o{ CERT : b\n  DOMAIN ||--|| ASN : c\n  DOMAIN ||--o{ ABUSE : d\n  DOMAIN ||--o{ PULSE : e\n  IP }|--|| ASN : f\n  IP ||--o{ ABUSE : g\n" + ents
-	if got := Rewrite(fence(dense), 200); got != fence(dense) {
-		t.Errorf("dense ER (degree 5) was drawn instead of shown as source")
+	out := Rewrite(fence(dense), 250)
+	if strings.Contains(out, "erDiagram") {
+		t.Errorf("dense ER that fits was not drawn:\n%s", out)
 	}
 	simple := "erDiagram\n  DOMAIN ||--o{ IP : resolves\n  IP }|--|| ASN : belongs\n\n  DOMAIN {\n    string fqdn PK\n  }\n  IP {\n    string v4 PK\n  }\n  ASN {\n    int asn PK\n  }\n"
-	out := Rewrite(fence(simple), 120)
-	if strings.Contains(out, "erDiagram") {
-		t.Errorf("simple ER not drawn:\n%s", out)
+	if strings.Contains(Rewrite(fence(simple), 120), "erDiagram") {
+		t.Error("simple ER not drawn")
 	}
 }
