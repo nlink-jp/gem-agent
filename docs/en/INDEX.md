@@ -174,6 +174,7 @@ excepted).
   the live region's tab width hole, a second stdin reader), plus the
   stall detector, ask dialog, and audit-gap fixes
 - [`ADR-0042`](adr/0042-terminal-diagrams.md) — mermaid diagrams
+- [`ADR-0043`](adr/0043-diagram-tool.md) — diagrams are drawn by a tool, not by rewriting what the model wrote
   draw in the terminal: the measured-faithful types only (flowchart,
   ASCII sequence, ER), shapes normalized to boxes, a fidelity guard,
   the rest shown as source; the model is told exactly what renders

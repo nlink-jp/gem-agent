@@ -477,6 +477,19 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// --- agent_info: the model's view of its own runtime (ADR-0030) ---
 	// Registered before agent.New (which caches the declarations); the
 	// snapshot closure reads `ag` lazily — the tool can only run inside
+	// render_diagram draws into the TUI, so it exists only there
+	// (ADR-0043): a surface must not advertise what it cannot do. The
+	// closure captures prog, which is assigned when the program starts.
+	if useTUI {
+		if err := registerDiagramTool(registry, func(art string) {
+			if prog != nil {
+				prog.Send(tui.Diagram{Art: art})
+			}
+		}); err != nil {
+			return err
+		}
+	}
+
 	// ag.Run, so the pointer is always set by then.
 	var ag *agent.Agent
 	if err := registerInfoTool(registry, func() infoSnapshot {
@@ -497,6 +510,8 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			SessionID:      sessionID,
 			MCPServers:     mcpSummary,
 			SkillCount:     len(skillsList),
+			DiagramCols:    diagramCols(useTUI),
+			DiagramRows:    diagramRows(useTUI),
 			MemoryOn:       memBase != "",
 			MediaBucket:    cfg.GCP.Bucket != "",
 			ProjectTrusted: projectTrusted,

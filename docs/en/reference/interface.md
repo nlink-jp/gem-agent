@@ -19,14 +19,20 @@ context occupancy against the model's window (auto-detected from model
 metadata, or `[model].context_window`), cumulative token consumption,
 the live cache hit share (`cache NN%`), and the project directory.
 
-**Mermaid diagrams draw in the terminal** (ADR-0042): a ```` ```mermaid ````
-block in the answer becomes Unicode box art at flush time when it is a
-type the renderer draws faithfully — flowchart/graph (any direction,
-subgraphs; node shapes are drawn as boxes), sequenceDiagram with ASCII
-labels, erDiagram — and fits the width budget and the 80-line height cap
-(the height bound is a fixed cap, not the terminal's rows). Anything else stays as
-source, and the model is told so, so it adds a one-line caption when it
-uses such a type in chat; files the model writes are untouched. The
+**Mermaid diagrams are drawn by a tool** (ADR-0042, ADR-0043): the model
+calls `render_diagram`, the art appears in the terminal, and the model
+receives only whether it worked. A ```` ```mermaid ```` fence written
+into a reply is *not* drawn — it is shown as source, because the reply
+is displayed as the model wrote it. The renderer draws flowchart/graph
+(any direction, subgraphs; node shapes are drawn as boxes),
+sequenceDiagram with ASCII labels, and erDiagram, within the width
+budget and the 80-line height cap (the height bound is a fixed cap, not
+the terminal's rows — the inline TUI scrolls). `agent_info` reports the
+current budget so the model can shape a diagram to fit before composing
+it; files the model writes are untouched. When a diagram is refused the
+reason goes back to the model — too wide, a lost label, an edge parsed
+wrongly — so it corrects and calls again, and the operator sees the
+finished diagram rather than the attempts. The
 art is measured before it is accepted and every label in the source
 must appear in it — a diagram the renderer would draw incompletely is
 shown as source rather than drawn wrong.

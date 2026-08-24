@@ -16,7 +16,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
-	"github.com/nlink-jp/gem-agent/internal/diagram"
 	"github.com/rivo/uniseg"
 
 	"github.com/nlink-jp/gem-agent/internal/uitext"
@@ -388,9 +387,11 @@ func newGlamourRenderer(width int, style string) func(string) string {
 		return func(s string) string { return s }
 	}
 	return func(s string) string {
-		// Mermaid blocks the terminal can draw faithfully become box art
-		// before glamour sees them (ADR-0042); the rest stay source.
-		s = diagram.Rewrite(s, width)
+		// The model's Markdown is rendered as written. Mermaid fences
+		// stay source: diagrams are drawn by the render_diagram tool,
+		// which tells the model whether it worked — rewriting the reply
+		// here drew the diagram but left the model unable to learn that
+		// its source was malformed (ADR-0043 §1).
 		out, err := r.Render(s)
 		if err != nil {
 			return s
@@ -577,6 +578,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			parts = append(parts, m.st.warn.Render("⚠ "+note))
 		}
 		return m, m.emitJoined(parts...)
+
+	case Diagram:
+		// Verbatim, like ShellDone: box art through the Markdown
+		// renderer would be re-wrapped and sheared.
+		return m, m.emitJoined(msg.Art)
 
 	case ShellDone:
 		out := msg.Output

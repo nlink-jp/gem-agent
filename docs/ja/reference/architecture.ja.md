@@ -34,8 +34,9 @@ tools パッケージが持つのはプロジェクトディレクトリだけ�
 `internal/docext`（Office テキスト抽出）、`internal/mediastore`（GCS メディア
 アップロード）、`internal/uitext`（ja/en UI 文字列カタログ）、
 `internal/telemetry`（監査イベントのエクスポート）、`internal/diagram`
-（端末内 mermaid 描画 — ADR-0042。配線は 2 点のみ: TUI 時にシステム
-プロンプトへ入る `PromptSection` と、Markdown 確定時の `Rewrite`）。
+（端末内 mermaid 描画 — ADR-0042/0043。`render_diagram` ツールのエンジン。
+Markdown レンダラは回答に触れない: 図はモデルが求めたから描かれ、拒否
+理由はブロックが黙ってソースのまま残るのではなくモデルへ戻る）。
 
 **エージェント中核は UI を知らない。** `Approver` インターフェースと一連の
 コールバック（`OnToolCall` / `OnToolDone` / `OnUsage` / `OnNotice` / `OnAutoDecision` /

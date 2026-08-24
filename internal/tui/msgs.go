@@ -75,6 +75,12 @@ type Attached struct {
 // Interrupted marks a Ctrl+C'd run: a message queued during it is
 // handed back rather than auto-sent (ADR-0007's rule, which the shell
 // path previously ignored — ADR-0021).
+// Diagram carries finished box art from render_diagram (ADR-0043 §2).
+// The art is a side effect of the tool call, never something the model
+// repeats: it goes to scrollback verbatim, never through the Markdown
+// renderer, exactly as shell output does.
+type Diagram struct{ Art string }
+
 type ShellDone struct {
 	Output      string
 	Interrupted bool

@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.40.0] - 2026-08-22
+
+### Changed — diagrams are drawn by a tool, and the runtime stops rewriting the reply (ADR-0043)
+
+- The chat rewrite is **removed**. A ```` ```mermaid ```` fence in a reply
+  is displayed as source: the reply is shown as the model wrote it
+- `render_diagram` draws instead. The art appears in the terminal as a
+  side effect and the model receives a status line — never the art,
+  which it would reproduce badly and pay for twice
+- **The model is now told when a diagram fails.** The old path called
+  `diagram.Rewrite` from one place, the Markdown renderer, so a refused
+  diagram was invisible to its author: the model could not learn that
+  its source was malformed, and repeated the mistake. Every refusal now
+  returns a reason it can act on — the measured width against the
+  budget, the line count against the cap, a label the renderer dropped,
+  an edge count that does not match the arrowheads drawn
+- Verified live at 72 columns: the model tried `flowchart LR`, was
+  refused twice, switched to `flowchart TD`, and drew — the operator saw
+  only the diagram that worked
+- The three rules of ADR-0042 (translate / fit / verify) are unchanged;
+  they are the tool's engine now, and their refusals became feedback
+
+### Added — `agent_info` reports the diagram budget
+
+- Usable columns and the fixed line cap, so the model can shape a
+  diagram to fit before composing it rather than discovering the
+  constraint by being refused
+- Deliberately the budget and **not** the console's dimensions: the
+  inline TUI scrolls, so the terminal's rows are not the bound, and the
+  usable width is the terminal minus the Markdown renderer's margin. A
+  model told the raw size shrinks diagrams that had room and overruns on
+  a tall terminal
+- It is not in the system prompt: that stays byte-stable so ADR-0018's
+  cache prefix survives, and a number that changes on every resize would
+  either break it or go stale
+
 ## [0.39.2] - 2026-08-22
 
 ### Fixed — a full documentation audit: 43 confirmed discrepancies

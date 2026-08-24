@@ -87,12 +87,14 @@ func Supported() []string { return append([]string(nil), supported...) }
 // the plain REPL and one-shot mode show source and must not advertise
 // a capability they lack.
 func PromptSection() string {
-	return "\n\nDiagrams in chat: this terminal renders these mermaid types inline — " +
-		strings.Join(supported, "; ") +
-		". Prefer them when a diagram helps. " + syntaxGuidance +
-		" Any other mermaid type, or a sequence diagram with non-ASCII labels, is shown " +
-		"in the chat as raw source — when you use one anyway, add a one-line caption " +
-		"saying what it shows. Files are unaffected: write any diagram type into files freely."
+	return "\n\nDiagrams in chat: call the render_diagram tool — do NOT write a ```mermaid " +
+		"fence in a reply, because a fence is shown to the user as raw source and nothing " +
+		"draws it. The tool draws the diagram in the terminal and tells you whether it " +
+		"worked; if it refuses, the reason says what to change, and you can fix it and call " +
+		"again before the user sees anything. It renders " + strings.Join(supported, "; ") +
+		". " + syntaxGuidance + " Check agent_info for the current render budget before you " +
+		"compose a diagram, and shape it to fit — the budget is the terminal's usable columns " +
+		"and a fixed line cap. Files are unaffected: write any diagram type into files freely."
 }
 
 // syntaxGuidance teaches the dialect that draws, rather than leaving
@@ -105,11 +107,9 @@ const syntaxGuidance = "Write the subset the terminal draws best: [square-bracke
 	"(other shapes are flattened to boxes when drawn anyway), `-->|label|` for edge labels " +
 	"rather than `-- label -->`, no `direction` statements inside subgraphs, no " +
 	"classDef/style/click, and no `&` inside a label (write \"and\" — a bare `&` is the " +
-	"fan-in operator). Keep one diagram to what fits a terminal: a wide or very tall one " +
-	"is shown as source instead."
+	"fan-in operator)."
 
 var (
-	fenceOpen = regexp.MustCompile("^(`{3,}|~{3,})\\s*([A-Za-z0-9_+-]*)")
 	// headerRe classifies the first meaningful line.
 	headerRe = regexp.MustCompile(`^\s*(graph|flowchart|sequenceDiagram|erDiagram)\b\s*([A-Za-z]{2})?`)
 	// shapeRe matches node definitions whose shape the renderer does not
@@ -162,80 +162,53 @@ var (
 	erRelRe     = regexp.MustCompile(`^\s*(\S+)\s+[|}o{\-\.]+\s+(\S+)\s*:\s*(.+?)\s*$`)
 )
 
-// Rewrite replaces every eligible ```mermaid block in markdown with a
-// plain code block holding the box art, at the given terminal width.
-// Blocks that cannot be drawn faithfully are left untouched.
-func Rewrite(markdown string, width int) string {
-	if !strings.Contains(markdown, "mermaid") {
-		return markdown
-	}
-	lines := strings.Split(markdown, "\n")
-	var out []string
-	for i := 0; i < len(lines); i++ {
-		m := fenceOpen.FindStringSubmatch(lines[i])
-		if m == nil || !strings.EqualFold(m[2], "mermaid") {
-			out = append(out, lines[i])
-			continue
-		}
-		fence := m[1]
-		// Find the closing fence (same character, at least as long).
-		end := -1
-		for j := i + 1; j < len(lines); j++ {
-			if strings.HasPrefix(lines[j], fence) && strings.TrimSpace(lines[j]) == strings.Repeat(fence[:1], len(strings.TrimSpace(lines[j]))) {
-				end = j
-				break
-			}
-		}
-		if end < 0 {
-			out = append(out, lines[i])
-			continue
-		}
-		src := strings.Join(lines[i+1:end], "\n")
-		if art, ok := Render(src, width); ok {
-			out = append(out, "```text")
-			out = append(out, strings.Split(art, "\n")...)
-			out = append(out, "```")
-		} else {
-			out = append(out, lines[i:end+1]...)
-		}
-		i = end
-	}
-	return strings.Join(out, "\n")
-}
+// Budget reports the space a diagram has at this terminal width: the
+// usable columns (the terminal minus the Markdown renderer's margin)
+// and the height cap. The height is a FIXED cap, not the terminal's
+// rows — the TUI is inline, so art scrolls; reporting rows would tell
+// the model to shrink a diagram that had room, and to overrun on a
+// tall terminal (ADR-0043 §3).
+func Budget(width int) (cols, rows int) { return width - widthMargin, maxArtLines }
 
-// Render draws one mermaid source as box art that fits width, reporting
-// false when the block must stay source: unsupported type, wide labels
-// in a sequence diagram, renderer error, too wide/tall, or a label the
-// renderer lost (ADR-0042 §3).
-func Render(src string, width int) (string, bool) {
+// Render draws one mermaid source as box art that fits width. The
+// second return is why it could not be drawn — the model is told, in
+// its own tool result, instead of the refusal being invisible to it
+// (ADR-0043 §1). Every refusal names something the author can act on.
+func Render(src string, width int) (art string, why string, ok bool) {
 	body, _ := mdiagram.StripFrontmatter(src)
 	k := classify(body)
 	if k == kindUnsupported {
-		return "", false
+		return "", "this terminal draws only " + strings.Join(supported, "; ") +
+			". Other diagram types are not drawn at all — describe it in prose, or write it to a file", false
 	}
 	if k == kindSequence && hasWide(body) {
-		return "", false
+		return "", "a sequence diagram must use ASCII labels only: non-ASCII participant " +
+			"or message text misaligns the lifelines. Rewrite the labels in ASCII, or use a flowchart", false
 	}
 	body = directionRe.ReplaceAllString(body, "")
 	prepared := prepare(k, body)
-	budget := width - widthMargin
-	if budget < 20 {
-		return "", false
+	cols, rows := Budget(width)
+	if cols < 20 {
+		return "", fmt.Sprintf("the terminal is too narrow to draw anything (%d columns usable)", cols), false
 	}
-	art, ok := draw(prepared, budget)
+	art, why, ok = draw(prepared, cols, rows)
 	if !ok {
-		return "", false
+		return "", why, false
 	}
 	if !faithful(k, prepared, art) {
-		return "", false
+		return "", "the renderer dropped a label that the source wrote, so the drawing would " +
+			"have shown less than you asked for. Simplify: fewer nodes, shorter labels, or split " +
+			"it into two diagrams", false
 	}
 	if k == kindFlow && flowEdgeCount(prepared) != arrowheads(art) {
 		// Structural guard (v0.37.2): every source edge must have drawn
 		// exactly one arrowhead. Label presence alone let a mis-parsed
 		// edge syntax through as a plausible-looking wrong graph.
-		return "", false
+		return "", fmt.Sprintf("the drawing came out with %d arrowheads for %d edges in the source, "+
+			"so some edge was parsed wrongly. Use the plain `A -->|label| B` form for every edge",
+			arrowheads(art), flowEdgeCount(prepared)), false
 	}
-	return art, true
+	return art, "", true
 }
 
 // flowEdgeCount counts the arrow-bearing edges a flowchart source
@@ -354,22 +327,29 @@ func prepare(k kind, body string) string {
 // deleted in v0.37.6 after it was measured overwriting label cells in
 // double-width text ("種別判定" came back as "種別┬定") — a second
 // layout is a second failure mode, and "fits or source" is one rule.
-func draw(src string, budget int) (string, bool) {
+func draw(src string, cols, rows int) (art string, why string, ok bool) {
 	out, err := mermaid.RenderDiagram(src, mdiagram.DefaultConfig())
 	if err != nil {
-		return "", false
+		return "", "the source is not valid mermaid: " + err.Error(), false
 	}
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	if len(lines) > maxArtLines {
-		return "", false
+	if len(lines) > rows {
+		return "", fmt.Sprintf("the drawing is %d lines tall and the cap is %d. Split it into "+
+			"two diagrams, or drop a level of detail", len(lines), rows), false
 	}
+	widest := 0
 	for i, l := range lines {
 		lines[i] = strings.TrimRight(l, " ")
-		if ansi.StringWidth(lines[i]) > budget {
-			return "", false
+		if w := ansi.StringWidth(lines[i]); w > widest {
+			widest = w
 		}
 	}
-	return strings.Join(lines, "\n"), true
+	if widest > cols {
+		return "", fmt.Sprintf("the drawing is %d columns wide and only %d are usable. Use "+
+			"`flowchart TD` instead of `LR`, shorten the labels, or split it into two diagrams",
+			widest, cols), false
+	}
+	return strings.Join(lines, "\n"), "", true
 }
 
 // faithful checks that every label written in the source appears in

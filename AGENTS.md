@@ -198,6 +198,16 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   asked); before it existed the model proposed a memory 0 times in 39
   sessions. When editing that prompt, keep the positive case at least as
   concrete and as long as the prohibitions — a test enforces it.
+- **internal/diagram is the `render_diagram` tool's engine, not a Markdown
+  pass** (ADR-0043) — nothing rewrites the model's reply. A mermaid fence
+  in a reply is displayed as source; diagrams exist because the model
+  called the tool. Every refusal must return a reason the author can act
+  on: it is the model's only signal, and `false` taught it nothing. The
+  art goes to the terminal via `tui.Diagram` as a side effect and must
+  never come back in the tool result — the model would reproduce it badly
+  and pay twice. `agent_info` carries the render BUDGET (usable columns +
+  fixed line cap), never the console's size: the inline TUI scrolls, so
+  terminal rows are not the bound.
 - **internal/diagram is three rules, and nothing else** (ADR-0042 §5) —
   translate (deterministic mapping of constructs the renderer's grammar
   rejects; each entry a syntax fact), fit (one layout: fits or source),
