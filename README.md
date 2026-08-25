@@ -57,9 +57,9 @@ model's thought summaries streaming as it thinks — IME-friendly
 approval dialogs, Tab completion for `@`-paths, `/`-commands, and skill
 names, `!command` shell escape, a `render_diagram` tool that draws mermaid
 flowchart / ASCII-label sequence / ER diagrams in the terminal and tells
-the model when it could not, twelve slash commands (`/help`
+the model when it could not, thirteen slash commands (`/help`
 `/tools` `/mcp` `/auto` `/compact` `/settings` `/usage` `/memory`
-`/skills` `/skill` `/clear` `/quit`), a provenance-first `/settings`
+`/skills` `/skill` `/version` `/clear` `/quit`), a provenance-first `/settings`
 panel, theme control, and a fully bilingual chrome
 (`[tui].language = auto|ja|en`). Pipes fall back to a plain REPL;
 `-p` runs one-shot.

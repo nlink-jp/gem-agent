@@ -236,6 +236,7 @@ var en = Messages{
   /memory  list persisted memories (global + this project); saves are approval-gated
   /skills  list installed skills (/skills reload re-discovers them)
   /skill <name> [args]  invoke a skill directly
+  /version show gem-agent's version and platform
   /clear   reset the conversation history
   /quit    exit (Ctrl+D also works; /exit is an alias)
 auto-approve: safe changes run unattended; destructive, out-of-project,
@@ -350,6 +351,7 @@ var ja = Messages{
   /memory  永続メモリの一覧（グローバル + このプロジェクト）; 保存は承認制
   /skills  インストール済みスキルの一覧（/skills reload で再探索）
   /skill <name> [args]  スキルを直接起動
+  /version gem-agent のバージョンとプラットフォームを表示
   /clear   会話履歴をリセット
   /quit    終了（Ctrl+D でも可・/exit も同じ）
 auto-approve: 安全な変更は無人で実行します。破壊的・プロジェクト外・

@@ -20,6 +20,9 @@ func TestSlashCompletionsSource(t *testing.T) {
 			t.Errorf("/s missing %s: %v", want, got)
 		}
 	}
+	if got := complete("/v"); len(got) != 1 || got[0] != "/version" {
+		t.Errorf("/v → %v", got)
+	}
 	if got := complete("/skill me"); len(got) != 1 || got[0] != "/skill meeting-notes" {
 		t.Errorf("/skill me → %v", got)
 	}

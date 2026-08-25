@@ -61,6 +61,18 @@ func macOSVersion() string {
 	return v
 }
 
+// versionLine is the /version output: the identity line agent_info
+// leads with, minus the runtime counters. Version strings and platform
+// triples are locale-neutral, so the line is not in the uitext catalog
+// (same footing as the banner, ADR-0029 §3).
+func versionLine(version string) string {
+	osName := runtime.GOOS
+	if v := macOSVersion(); v != "" {
+		osName = "macOS " + v
+	}
+	return fmt.Sprintf("gem-agent %s on %s (%s/%s)\n", version, osName, runtime.GOOS, runtime.GOARCH)
+}
+
 // renderInfo turns a snapshot into the tool result. Model-facing
 // English by design (ADR-0029 §3, ADR-0030 §4).
 func renderInfo(s infoSnapshot) string {

@@ -56,9 +56,9 @@ gem-agent -p "このリポジトリを要約して"      # 単発実行、パイ
 承認ダイアログ、`@` パス・`/` コマンド・スキル名の Tab 補完、
 `!コマンド` シェルエスケープ、mermaid の flowchart / ASCII ラベルの
 sequence / ER 図を端末に描き、描けなかったときは理由をモデルに返す
-`render_diagram` ツール、12 のスラッシュコマンド（`/help`
+`render_diagram` ツール、13 のスラッシュコマンド（`/help`
 `/tools` `/mcp` `/auto` `/compact` `/settings` `/usage` `/memory`
-`/skills` `/skill` `/clear` `/quit`）、出所ファーストの `/settings`
+`/skills` `/skill` `/version` `/clear` `/quit`）、出所ファーストの `/settings`
 パネル、テーマ、完全二言語のクローム（`[tui].language = auto|ja|en`）。
 パイプは素の REPL に、`-p` は単発実行に。
 

@@ -11,7 +11,7 @@ import (
 // the resolved language — the historical mixed EN/JA text must not
 // come back.
 func TestSlashHelpFollowsLanguage(t *testing.T) {
-	out, isErr, quit := slashOutput("/help", nil, nil, nil, nil, slashReloads{}, nil, nil, uitext.For(uitext.JA))
+	out, isErr, quit := slashOutput("/help", nil, nil, nil, nil, slashReloads{}, nil, nil, "", uitext.For(uitext.JA))
 	if isErr || quit {
 		t.Fatalf("/help: isErr=%v quit=%v", isErr, quit)
 	}
@@ -19,7 +19,7 @@ func TestSlashHelpFollowsLanguage(t *testing.T) {
 		t.Errorf("ja /help not Japanese:\n%s", out)
 	}
 
-	out, _, _ = slashOutput("/help", nil, nil, nil, nil, slashReloads{}, nil, nil, uitext.For(uitext.EN))
+	out, _, _ = slashOutput("/help", nil, nil, nil, nil, slashReloads{}, nil, nil, "", uitext.For(uitext.EN))
 	if !strings.Contains(out, "commands:") || strings.Contains(out, "送信") {
 		t.Errorf("en /help not English:\n%s", out)
 	}

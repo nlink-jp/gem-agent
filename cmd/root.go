@@ -50,8 +50,13 @@ var (
 	flagResume    string
 )
 
+// appVersion mirrors rootCmd.Version for use inside rootCmd's own run
+// closures — reading rootCmd there is an initialization cycle.
+var appVersion = "dev"
+
 // Execute runs the root command.
 func Execute(version string) {
+	appVersion = version
 	rootCmd.Version = version
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -893,7 +898,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				return slashOutput(in, ag, registry, mcpSummary, skillsList,
 					slashReloads{mcp: reloadMCP, skills: reloadSkills},
 					func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
-					func() string { return memoryListing(memBase, projectDir) }, msgs)
+					func() string { return memoryListing(memBase, projectDir) }, appVersion, msgs)
 			},
 		})
 		prog = tea.NewProgram(model)
@@ -981,7 +986,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			out, _, quit := slashOutput(input, ag, registry, mcpSummary, skillsList,
 				slashReloads{mcp: reloadMCP, skills: reloadSkills},
 				func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
-				func() string { return memoryListing(memBase, projectDir) }, msgs)
+				func() string { return memoryListing(memBase, projectDir) }, appVersion, msgs)
 			fmt.Fprint(stderr, out)
 			if quit {
 				return nil
@@ -1131,6 +1136,7 @@ func slashCompletions(getSkills func() []skills.Skill) func(string) []string {
 	commands := []string{
 		"/auto", "/clear", "/compact", "/exit", "/help", "/mcp", "/memory",
 		"/quit", "/settings", "/skill", "/skills", "/tools", "/usage",
+		"/version",
 	}
 	return func(prefix string) []string {
 		if rest, ok := strings.CutPrefix(prefix, "/skill "); ok {
@@ -1208,7 +1214,7 @@ type slashReloads struct {
 	skills func() string
 }
 
-func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, reload slashReloads, usage func() string, memoryInfo func() string, msgs *uitext.Messages) (output string, isErr bool, quit bool) {
+func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, reload slashReloads, usage func() string, memoryInfo func() string, version string, msgs *uitext.Messages) (output string, isErr bool, quit bool) {
 	var b strings.Builder
 	fields := strings.Fields(input)
 	// The one supported subcommand shape: "/mcp reload" and
@@ -1270,6 +1276,8 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 		}
 	case "/usage":
 		b.WriteString(usage())
+	case "/version":
+		b.WriteString(versionLine(version))
 	case "/memory":
 		b.WriteString(memoryInfo())
 	case "/skills":

@@ -135,6 +135,7 @@ in the input box as one message, never one LLM call per line.
 | `/memory` | persisted memories, global + this project |
 | `/skills` | installed skills; `/skills reload` re-discovers them (ADR-0039) |
 | `/skill <name> [args]` | invoke a skill directly, no extra model round |
+| `/version` | this build's version and platform, one line |
 | `/clear` | reset the conversation history |
 | `/quit` | exit (`/exit` is an alias; Ctrl+D also works) |
 

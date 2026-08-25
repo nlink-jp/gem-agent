@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `/version` slash command: one line with the build's version, macOS
+  version, and platform — the same identity line `agent_info` leads
+  with, now reachable without asking the model (operator proposal)
+
 ## [0.41.1] - 2026-08-25
 
 ### Fixed — verify-release now gates on notarization; an un-notarised zip once shipped green

@@ -102,6 +102,7 @@ func TestHelpListsEveryCommand(t *testing.T) {
 	commands := []string{
 		"/auto", "/clear", "/compact", "/help", "/mcp", "/memory",
 		"/quit", "/settings", "/skill", "/skills", "/tools", "/usage",
+		"/version",
 	}
 	sort.Strings(commands)
 	for _, lang := range []Lang{JA, EN} {
