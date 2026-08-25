@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.43.0] - 2026-08-26
+
+### Added
+
+- Auto-approve model tier now reads MCP tool self-descriptions
+  (ADR-0046): an `mcp__` call's risk evaluation carries the
+  description the server publishes for the tool, nonce-wrapped as an
+  untrusted claim — the evaluator no longer guesses semantics from
+  the tool name alone, which is where verdicts wobbled call to call.
+  Honest read-only semantics support approval; arguments contradicting
+  the description escalate; a description that lobbies for its own
+  approval is itself escalation evidence (live-measured). Built-in
+  tools are unchanged, and the Block floor and pre-tool hooks are
+  untouched.
+- ADR-0045 (transcript-driven approval-rule learning, `/learn`)
+  drafted as Proposed — design only, no behaviour change yet.
+
 ## [0.42.0] - 2026-08-26
 
 ### Added
