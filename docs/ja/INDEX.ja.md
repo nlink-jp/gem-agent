@@ -170,6 +170,8 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0042`](adr/0042-terminal-diagrams.ja.md) — mermaid 図を端末に
 - [`ADR-0043`](adr/0043-diagram-tool.ja.md) — 図はツールが描く。モデルが書いたものを書き換えない
 - [`ADR-0044`](adr/0044-pre-tool-hooks.ja.md) — オペレーター pre-tool フック: 組織のガードをフォールバック後も生かす
+- [`ADR-0045`](adr/0045-transcript-approval-learning.ja.md) — トランスクリプト駆動の承認ルール学習: `/learn` が提案し、オペレータが決める
+- [`ADR-0046`](adr/0046-mcp-description-risk-evidence.ja.md) — MCP ツール description をリスク評価の証拠に: オペレータが既に導入したものを評価器に教える
   描画: 実測で忠実な種別だけ（flowchart・ASCII sequence・ER）、形状は
   矩形に正規化、忠実性ガード、残りはソース表示; モデルには描けるものを
   正確に伝える
