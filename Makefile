@@ -40,13 +40,24 @@ package: build-all
 # verify-release inspects the packaged zip from INSIDE the repo: the
 # ad-hoc "cd scratch && unzip && gh release ..." chain stranded gh in a
 # non-repo cwd three releases in a row. Run this, then gh from here.
+# The notarization marker is the gate, written by notarize-darwin.sh
+# only on "status: Accepted". spctl is shown for information but NOT
+# gated on: piped through head it cannot fail the chain anyway (the
+# pipeline's exit status is head's), and its online ticket lookup can
+# lag a fresh submission. An un-notarised zip once shipped with this
+# target green — the probe failed on an updated Apple agreement, the
+# script failed open by design, and nothing here checked.
 verify-release:
+	@test -f "$(DIST_DIR)/$(BINARY)-$(VERSION)-darwin-arm64.zip.notarized" || { \
+		echo "verify-release: FAIL — $(BINARY)-$(VERSION)-darwin-arm64.zip has no notarization marker."; \
+		echo "  make package must end with '[notarize] ...: Accepted'. Do not upload this zip."; \
+		exit 1; }
 	@tmp=$$(mktemp -d) && \
 		unzip -oq "$(DIST_DIR)/$(BINARY)-$(VERSION)-darwin-arm64.zip" -d "$$tmp" && \
 		"$$tmp/$(BINARY)" --version && \
-		spctl -a -vv -t install "$$tmp/$(BINARY)" 2>&1 | head -2 && \
-		rm -rf "$$tmp" && \
-		echo "verify-release: OK ($(VERSION))"
+		spctl -a -vv -t install "$$tmp/$(BINARY)" 2>&1 | head -2 || true; \
+		rm -rf "$$tmp"
+	@echo "verify-release: OK ($(VERSION), notarization marker present)"
 
 test:
 	go test ./...

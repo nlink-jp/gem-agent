@@ -82,6 +82,14 @@ echo "$SUBMISSION_OUT"
 # even if Apple shifts exit-code semantics in a future release.
 if printf '%s\n' "$SUBMISSION_OUT" | grep -q 'status: Accepted'; then
   echo "[notarize] $ZIP: Accepted"
+  # Success marker for verify-release. The fail-open above (shipping
+  # un-notarised when the profile probe fails) exists for contributors
+  # without credentials — but on the release machine it once shipped an
+  # un-notarised zip while verify-release stayed green, because the
+  # probe failed on an updated Apple agreement and nothing downstream
+  # checked. verify-release now requires this marker, so the fail-open
+  # path can no longer reach a release unnoticed.
+  touch "$ZIP.notarized"
   exit 0
 fi
 

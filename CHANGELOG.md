@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.41.1] - 2026-08-25
+
+### Fixed — verify-release now gates on notarization; an un-notarised zip once shipped green
+
+- The v0.41.0 zip went out un-notarised with every check green. Three
+  failures stacked: Apple's updated developer agreement made the
+  notary profile probe fail, `notarize-darwin.sh` failed open by
+  design (so contributors without credentials can still build), and
+  `verify-release` *displayed* the spctl verdict without gating on it
+  — piped through `head`, the pipeline's exit status is head's, so a
+  `rejected` could never fail the chain. (The zip was re-submitted
+  unchanged after the agreement was signed: same bytes, now Accepted,
+  so the published asset and the tap needed no update)
+- `notarize-darwin.sh` now writes `<zip>.notarized` only on
+  `status: Accepted`, and `verify-release` requires that marker —
+  deterministic and local, no reliance on spctl's online ticket
+  lookup, which can lag a fresh submission. The fail-open path for
+  credential-less builds remains, but it can no longer reach a
+  release unnoticed. Both directions are tested live: marker present
+  passes, marker absent fails the build
+
 ## [0.41.0] - 2026-08-25
 
 ### Added — operator pre-tool hooks: the org's guards survive the fallback (ADR-0044)
