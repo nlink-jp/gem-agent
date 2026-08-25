@@ -164,7 +164,10 @@ always ask, because the evaluator is the party that proposed the write
 is a floor the model cannot lift, and the sandbox applies in all modes.
 For a turn's first rounds the model evaluation also sees the operator's
 typed request as wrapped evidence (ADR-0038) — misalignment escalates;
-later rounds keep the call-only view byte-identically.
+later rounds keep the call-only view byte-identically. MCP calls
+additionally carry the tool's server-published self-description as
+wrapped evidence (ADR-0046) — a claim, never a fact; a self-arguing
+description escalates.
 
 `/settings` shows every setting with its provenance and edits what can
 take effect now: the approval policy, auto-approve and auto-compaction.

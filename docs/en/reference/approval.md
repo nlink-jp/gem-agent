@@ -94,6 +94,19 @@ context reaches only calls that reach the model tier: Safe-tier calls
 stay rule-approved as before, and Block is decided before the model is
 consulted.
 
+For **MCP calls**, the model tier also sees the tool's
+self-description — the description the server publishes in its tool
+listing (ADR-0046) — quoted as untrusted evidence inside the same
+isolation wrap, clipped, read live from the registry. Without it the
+evaluator guesses semantics from the tool name alone, which is where
+verdicts wobbled call to call. The prompt weighs it as a claim, not a
+fact: honest "read-only, fully offline" semantics support approval,
+arguments that contradict the description escalate, and a description
+that argues for its own approval is itself escalation evidence
+(live-measured: a lobbying description was escalated and named as an
+injection attempt, while the same call with an honest read-only
+description approved).
+
 Both outcomes are explained: auto-approved calls print their reason,
 and an escalated call's dialog carries a `⚠` line naming the tier that
 objected and why — `blocked by rule (always asks): …` for the
@@ -104,7 +117,8 @@ put to the model, which today means a memory write.
 Note the MCP boundary: MCP tools are approval-gated and Mutating by
 definition, but the rule tier cannot judge a foreign server's tool, so
 they can never reach the Block floor — in auto mode the model tier may
-pass routine calls, and a session `a` covers the tool for any later
+pass routine calls (judging with the server-published description as
+evidence, ADR-0046), and a session `a` covers the tool for any later
 arguments. Pin `"always"` in the policy where that trade is wrong.
 
 ## Per-tool approval policy (ADR-0008)
