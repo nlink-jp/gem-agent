@@ -4,6 +4,40 @@ The layers between a model-proposed action and its execution, from the
 per-call dialog to the Seatbelt sandbox — and the startup gates that
 run before anything loads.
 
+## Operator pre-tool hooks (ADR-0044)
+
+Before any gate below — in every mode, auto-approve included —
+operator-configured hooks get the call first. Each
+`[[hooks.pre_tool_use]]` entry in the global config runs its command
+with the call as Claude Code PreToolUse JSON on stdin:
+
+```toml
+[[hooks.pre_tool_use]]
+matcher = "shell_exec"           # exact name, "a|b", or "*"
+command = "python3 /Users/you/.claude/hooks/guard-recursive-write.py"
+timeout_sec = 10                 # optional; 0 = default (10)
+```
+
+The contract is Claude Code's, measured against the org's installed
+guard rather than taken from documentation — a Claude Code guard
+script is registered here **unchanged**. A hook denies via stdout
+JSON (`permissionDecision: "deny"` with the reason, the form the org
+guard actually emits) or exit code 2 with the reason on stderr; the
+guard reads `tool_input.command`, which is also the name of
+`shell_exec`'s argument. Matchers accept Claude Code names too
+(`Bash` matches `shell_exec`; `Write`/`Edit`/`Read` likewise).
+
+A deny is a **deterministic floor**: the ladder below, the model
+tier, and the session allowlist never see the call, and the reason is
+returned to the model as the tool result, so it corrects and retries
+(verified live: the org's relative-path guard denied a `sed -i`
+inside gem-agent, the full reason reached the model, and the file
+stayed untouched). Anything short of an explicit deny — a crash, a
+timeout, unparseable output — proceeds with a warning: hooks only
+ever tighten, and a broken guard script must not brick the fallback
+tool. Hooks cover the model's calls only; the operator's own
+`!command` escape does not pass through them.
+
 ## Per-call approval (MITL)
 
 Mutating tools ask before running (the dialog itself is described in
@@ -20,15 +54,7 @@ Off by default. shift+tab (or `/auto`) toggles it; the status line
 shows `⚡auto` while on. **shift+tab also works while a turn is
 running**, so a long agent loop that started in manual mode can be
 switched over without waiting — the change applies from the next tool
-call. Before any of it, **operator pre-tool hooks** run
-(`[[hooks.pre_tool_use]]`, ADR-0044): each configured command sees the
-call as Claude Code PreToolUse JSON and can deny it outright. A hook
-deny is a deterministic floor — the ladder below, auto-approve, and
-the session allowlist never see the call — and the reason is returned
-to the model as the tool result, so it can correct and retry. Anything
-short of an explicit deny (a crash, a timeout, unparseable output)
-proceeds with a warning: hooks only ever tighten. Each mutating call
-then goes through:
+call. Each mutating call then goes through:
 
 1. **Rule tier** (no model call): *safe* → runs; *blocked* → always
    asks (`rm -rf`, `sudo`, `git push`, download-piped-to-shell, disk

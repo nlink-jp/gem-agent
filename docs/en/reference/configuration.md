@@ -95,6 +95,8 @@ spawned, its `.claude/skills` are discovered, and its instruction files
 are read. Add a repository only when you would also answer yes to the
 startup trust prompt for it — relaxing one approval is not what you get.
 
+### `[hooks]` — operator pre-tool hooks
+
 `[[hooks.pre_tool_use]]` entries (ADR-0044) run an operator command
 before every model tool call the `matcher` covers (`matcher` is an
 exact tool name, `"a|b"`, or `"*"`; Claude Code names such as `Bash`
