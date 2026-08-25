@@ -52,6 +52,9 @@ verify-release:
 		echo "verify-release: FAIL — $(BINARY)-$(VERSION)-darwin-arm64.zip has no notarization marker."; \
 		echo "  make package must end with '[notarize] ...: Accepted'. Do not upload this zip."; \
 		exit 1; }
+	@test "$(DIST_DIR)/$(BINARY)-$(VERSION)-darwin-arm64.zip.notarized" -nt "$(DIST_DIR)/$(BINARY)-$(VERSION)-darwin-arm64.zip" || { \
+		echo "verify-release: FAIL — the zip was rebuilt after its marker (re-run make package)."; \
+		exit 1; }
 	@tmp=$$(mktemp -d) && \
 		unzip -oq "$(DIST_DIR)/$(BINARY)-$(VERSION)-darwin-arm64.zip" -d "$$tmp" && \
 		"$$tmp/$(BINARY)" --version && \
