@@ -97,17 +97,79 @@ startup trust prompt for it — relaxing one approval is not what you get.
 
 ### `[hooks]` — operator pre-tool hooks
 
-`[[hooks.pre_tool_use]]` entries (ADR-0044) run an operator command
-before every model tool call the `matcher` covers (`matcher` is an
-exact tool name, `"a|b"`, or `"*"`; Claude Code names such as `Bash`
-also match their gem-agent equivalents). The command receives Claude
-Code's PreToolUse JSON on stdin and denies by the same contracts —
-`permissionDecision: "deny"` on stdout, or exit code 2 with the reason
-on stderr — so a Claude Code guard script is registered here unchanged.
-A deny is final and its reason is returned to the model; anything else
-proceeds with a warning. Global config only: a project-level hook would
-let a cloned repository run arbitrary commands. `timeout_sec` bounds
-one run (default 10).
+Each `[[hooks.pre_tool_use]]` entry (ADR-0044) runs a command of yours
+before every model tool call its matcher covers. One block per hook;
+matching hooks run in order, first denial wins.
+
+```toml
+[[hooks.pre_tool_use]]
+matcher     = "shell_exec"
+command     = "python3 /Users/you/hooks/guard.py --strict"
+timeout_sec = 10
+```
+
+**`matcher`** — what the hook *matches*: the tool name of each call,
+nothing else. Three forms only: an exact name (`shell_exec`), a
+`|`-alternation (`shell_exec|write_file`), or `"*"` for every tool —
+MCP tools included, whose names look like `mcp__server__tool`. Claude
+Code's names also match their gem-agent equivalents (`Bash` ↔
+`shell_exec`, `Write` ↔ `write_file`, `Edit` ↔ `edit_file`, `Read` ↔
+`read_file`), so a hooks block copied from Claude Code settings works
+unchanged. No globs or regular expressions beyond these.
+
+**`command`** — what the hook *runs*: a shell command line, not a
+pattern. It executes via `/bin/sh -c` in the project directory with
+gem-agent's environment, so arguments, flags, `~`, `$VAR` and pipes
+all work; name the script by absolute path (the org's own path rule).
+The command receives the call as one JSON object on stdin:
+
+```json
+{"hook_event_name": "PreToolUse",
+ "tool_name": "shell_exec",
+ "tool_input": {"command": "sed -i '' 's/a/b/' notes.txt"},
+ "cwd": "/path/to/project"}
+```
+
+`tool_input` carries the tool's arguments exactly as the model sent
+them — for `shell_exec` the command string is `tool_input.command`.
+
+**The verdict** — a hook denies in either of two ways:
+
+- print `{"hookSpecificOutput": {"permissionDecision": "deny",
+  "permissionDecisionReason": "why"}}` on stdout and exit 0 — the form
+  the org's Claude Code guard emits, so such a script registers here
+  unchanged; or
+- exit with code 2, the reason on stderr.
+
+Everything else is a pass: exit 0 with no output (or informational
+output) sends the call on to the normal approval ladder — a hook can
+refuse a call but never approve one. A crash, a timeout
+(`timeout_sec`, default 10), or unparseable output proceeds with a
+warning in the session.
+
+A complete minimal hook:
+
+```sh
+#!/bin/sh
+# refuse any shell command that pipes a download into a shell
+payload=$(cat)
+case "$payload" in
+  *curl*"| sh"*|*curl*"|sh"*)
+    echo "piping a download into a shell is banned here" >&2
+    exit 2 ;;
+esac
+exit 0
+```
+
+registered as `matcher = "shell_exec"`,
+`command = "/Users/you/hooks/no-curl-sh.sh"`.
+
+A deny is final — the approval ladder, auto-approve, and the session
+allowlist never see the call — and the reason is returned to the model,
+which corrects and retries. Global config only: a project-level hook
+would let a cloned repository run arbitrary commands. Behaviour and
+placement in the gate order are described in
+[approval](approval.md).
 
 The `GEMAGENT_STATE_DIR` environment variable relocates the state root
 (sessions and memory) for test/drill isolation. Two more environment

@@ -95,17 +95,77 @@ config file > defaults。設定ファイル内の未知キーはエラーにな�
 
 ### `[hooks]` — オペレーター pre-tool フック
 
-`[[hooks.pre_tool_use]]`（ADR-0044）は、`matcher` が対象とする全モデル
-ツールコールの前にオペレーターのコマンドを実行します（`matcher` は
-ツール名の完全一致・`"a|b"`・`"*"`。`Bash` など Claude Code 名も対応する
-gem-agent ツールに一致）。コマンドは stdin で Claude Code の PreToolUse
-JSON を受け取り、同じ契約で拒否します — stdout の
-`permissionDecision: "deny"`、または exit 2 + stderr の理由。つまり
-Claude Code のガードスクリプトを**無改修のまま**ここに登録できます。
-deny は最終決定で、理由はモデルに返ります。それ以外は警告つきで続行。
-グローバル設定専用です: プロジェクト側フックはクローンしたリポジトリに
-任意コマンドを実行させる経路になります。`timeout_sec` は 1 回の実行を
-制限します（既定 10）。
+`[[hooks.pre_tool_use]]` の各エントリ（ADR-0044）は、matcher が対象と
+する全モデルツールコールの前にあなたのコマンドを実行します。1 フック
+1 ブロック。一致したフックは順に実行され、最初の拒否で確定します。
+
+```toml
+[[hooks.pre_tool_use]]
+matcher     = "shell_exec"
+command     = "python3 /Users/you/hooks/guard.py --strict"
+timeout_sec = 10
+```
+
+**`matcher`** — フックが*照合する*もの: 各コールのツール名だけです。
+形式は 3 つのみ: 完全一致（`shell_exec`）・`|` 区切りの選択
+（`shell_exec|write_file`）・全ツール対象の `"*"`（`mcp__server__tool`
+のような名前の MCP ツールも含む）。Claude Code の名前も対応する
+gem-agent ツールに一致します（`Bash` ↔ `shell_exec`、`Write` ↔
+`write_file`、`Edit` ↔ `edit_file`、`Read` ↔ `read_file`）。glob や
+正規表現はこの 3 形式以外にはありません。
+
+**`command`** — フックが*実行する*もの: シェルのコマンド行であって、
+照合パターンではありません。`/bin/sh -c` でプロジェクトディレクトリを
+作業ディレクトリに、gem-agent の環境変数を引き継いで実行されるので、
+引数・フラグ・`~`・`$VAR`・パイプはすべて使えます。スクリプトは絶対
+パスで指定してください（組織のパス規則）。コマンドは stdin でコールを
+1 つの JSON オブジェクトとして受け取ります:
+
+```json
+{"hook_event_name": "PreToolUse",
+ "tool_name": "shell_exec",
+ "tool_input": {"command": "sed -i '' 's/a/b/' notes.txt"},
+ "cwd": "/path/to/project"}
+```
+
+`tool_input` にはモデルが送ったとおりのツール引数が入ります —
+`shell_exec` ならコマンド文字列は `tool_input.command` です。
+
+**判定** — フックの拒否方法は 2 つ:
+
+- stdout に `{"hookSpecificOutput": {"permissionDecision": "deny",
+  "permissionDecisionReason": "理由"}}` を出力して exit 0 — 組織の
+  Claude Code ガードが出す形式で、そうしたスクリプトは無改修でここに
+  登録できます。または
+- exit code 2 で終了し、理由を stderr へ。
+
+それ以外はすべて素通りです: 出力なし（または情報表示だけ）の exit 0
+はコールを通常の承認階梯へ送ります — フックはコールを拒否できますが、
+承認は決してできません。クラッシュ・タイムアウト（`timeout_sec`・
+既定 10）・解析不能な出力は、セッションに警告を出して続行します。
+
+完全な最小フックの例:
+
+```sh
+#!/bin/sh
+# ダウンロードをシェルに直接パイプするコマンドを拒否する
+payload=$(cat)
+case "$payload" in
+  *curl*"| sh"*|*curl*"|sh"*)
+    echo "ダウンロードのシェル直パイプはここでは禁止" >&2
+    exit 2 ;;
+esac
+exit 0
+```
+
+登録は `matcher = "shell_exec"`、
+`command = "/Users/you/hooks/no-curl-sh.sh"`。
+
+deny は最終決定です — 承認階梯・自動承認・セッション allowlist はその
+コールを見ることすらなく — 理由はモデルに返り、モデルは修正して再試行
+します。グローバル設定専用です: プロジェクト側フックはクローンした
+リポジトリに任意コマンドを実行させる経路になります。挙動とゲート順の
+中での位置は[承認と安全](approval.ja.md)を参照してください。
 
 環境変数 `GEMAGENT_STATE_DIR` はテスト/訓練の隔離用に state ルート
 （sessions と memory）を差し替えます。デバッグ用に、設定ファイル外で直接読まれる
