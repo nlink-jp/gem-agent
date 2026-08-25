@@ -20,7 +20,15 @@ Off by default. shift+tab (or `/auto`) toggles it; the status line
 shows `⚡auto` while on. **shift+tab also works while a turn is
 running**, so a long agent loop that started in manual mode can be
 switched over without waiting — the change applies from the next tool
-call. Each mutating call then goes through:
+call. Before any of it, **operator pre-tool hooks** run
+(`[[hooks.pre_tool_use]]`, ADR-0044): each configured command sees the
+call as Claude Code PreToolUse JSON and can deny it outright. A hook
+deny is a deterministic floor — the ladder below, auto-approve, and
+the session allowlist never see the call — and the reason is returned
+to the model as the tool result, so it can correct and retry. Anything
+short of an explicit deny (a crash, a timeout, unparseable output)
+proceeds with a warning: hooks only ever tighten. Each mutating call
+then goes through:
 
 1. **Rule tier** (no model call): *safe* → runs; *blocked* → always
    asks (`rm -rf`, `sudo`, `git push`, download-piped-to-shell, disk

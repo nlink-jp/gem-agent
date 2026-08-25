@@ -125,6 +125,23 @@ compact_at_pct = 80
 # Ignored entries are reported at startup.
 #trusted_projects = ["/Users/you/works/your-repo"]
 
+# Operator pre-tool hooks (ADR-0044). Each entry runs `command` via
+# sh -c before every model tool call whose name `matcher` covers
+# (exact, "a|b", or "*"; Claude Code names like "Bash" also match
+# their gem-agent equivalents). The command receives Claude Code's
+# PreToolUse JSON on stdin and denies via the same contracts
+# (hookSpecificOutput.permissionDecision "deny", or exit code 2 with
+# the reason on stderr) — so a Claude Code guard script works
+# unchanged. A deny is final: neither auto-approve nor the session
+# allowlist can override it, and the reason is returned to the model.
+# Anything else (crash, timeout, unparseable output) proceeds with a
+# warning: hooks only ever tighten. Global config only — a project
+# hook would let a cloned repo run arbitrary commands.
+#[[hooks.pre_tool_use]]
+#matcher = "shell_exec"
+#command = "python3 /Users/you/.claude/hooks/guard-recursive-write.py"
+#timeout_sec = 10
+
 [mcp]
 # Connect MCP servers declared in ~/.config/gem-agent/mcp.json (global)
 # and <project>/.mcp.json (project; wins name collisions). The project

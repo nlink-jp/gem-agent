@@ -18,6 +18,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/approve"
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/diagram"
+	"github.com/nlink-jp/gem-agent/internal/hooks"
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mediastore"
 	"github.com/nlink-jp/gem-agent/internal/memory"
@@ -477,6 +478,31 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// --- agent_info: the model's view of its own runtime (ADR-0030) ---
 	// Registered before agent.New (which caches the declarations); the
 	// snapshot closure reads `ag` lazily — the tool can only run inside
+	// Operator pre-tool hooks (ADR-0044): global config only, evaluated
+	// ahead of the approval ladder in every mode — the guards exist for
+	// the model's calls regardless of surface. nil when none are
+	// configured, so the common case pays nothing.
+	var preToolHook func(ctx context.Context, name string, args map[string]any) (bool, string)
+	if len(cfg.Hooks.PreToolUse) > 0 {
+		hs := make([]hooks.Hook, 0, len(cfg.Hooks.PreToolUse))
+		for _, e := range cfg.Hooks.PreToolUse {
+			hs = append(hs, hooks.Hook{
+				Matcher: e.Matcher, Command: e.Command,
+				Timeout: time.Duration(e.TimeoutSec) * time.Second,
+			})
+		}
+		runner := hooks.New(hs, func(warn string) {
+			if prog != nil {
+				prog.Send(tui.Attached{Notes: []string{warn}})
+				return
+			}
+			fmt.Fprintf(stderr, "[⚠ %s]\n", warn)
+		})
+		preToolHook = func(ctx context.Context, name string, args map[string]any) (bool, string) {
+			return runner.Pre(ctx, name, projectDir, args)
+		}
+	}
+
 	// render_diagram draws into the TUI, so it exists only there
 	// (ADR-0043): a surface must not advertise what it cannot do. The
 	// closure captures prog, which is assigned when the program starts.
@@ -617,6 +643,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Fprintf(stderr, "[⚠ %s]\n", msg)
 		},
+		PreToolHook: preToolHook,
 		OnUsage: func(promptTokens, outputTokens, cachedTokens int) {
 			sink.Usage(promptTokens, outputTokens, cachedTokens)
 			if prog != nil {

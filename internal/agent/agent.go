@@ -62,12 +62,13 @@ type Agent struct {
 	system   string
 	maxTurns int
 
-	onToolCall func(tc llm.ToolCall)
-	onUsage    func(promptTokens, outputTokens, cachedTokens int)
-	telemetry  *telemetry.Sink
-	onAuto     func(tc llm.ToolCall, d AutoDecision)
-	onAttach   func(atts []mention.Attachment, problems []mention.Problem)
-	onNotice   func(msg string)
+	onToolCall  func(tc llm.ToolCall)
+	onUsage     func(promptTokens, outputTokens, cachedTokens int)
+	telemetry   *telemetry.Sink
+	onAuto      func(tc llm.ToolCall, d AutoDecision)
+	onAttach    func(atts []mention.Attachment, problems []mention.Problem)
+	onNotice    func(msg string)
+	preToolHook func(ctx context.Context, name string, args map[string]any) (bool, string)
 
 	mu   sync.Mutex // guards auto and window (both set from the UI goroutine)
 	auto bool
@@ -169,6 +170,14 @@ type Options struct {
 	// content-filter block, a compaction) so the operator sees what
 	// happened.
 	OnNotice func(msg string)
+	// PreToolHook, when set, is consulted before every tool call, ahead
+	// of the approval ladder (ADR-0044). A deny is a deterministic
+	// floor — neither the model tier, auto-approve, nor the session
+	// allowlist can override it — and the reason is returned to the
+	// model as the tool result (the ADR-0043 principle). Anything that
+	// is not an explicit deny proceeds to the normal ladder: hooks only
+	// ever tighten.
+	PreToolHook func(ctx context.Context, name string, args map[string]any) (deny bool, reason string)
 	// Policy is the per-tool approval policy (ADR-0008).
 	Policy policy.Policy
 	// ClipboardImage captures the clipboard image as PNG bytes for the
@@ -223,19 +232,20 @@ func New(opts Options) *Agent {
 		})
 	}
 	return &Agent{
-		backend:    opts.Backend,
-		registry:   opts.Registry,
-		gate:       opts.Gate,
-		log:        opts.Log,
-		system:     opts.System,
-		maxTurns:   opts.MaxTurns,
-		onToolCall: opts.OnToolCall,
-		onUsage:    opts.OnUsage,
-		onAuto:     opts.OnAutoDecision,
-		onAttach:   opts.OnAttach,
-		onNotice:   opts.OnNotice,
-		auto:       opts.AutoApprove,
-		toolDefs:   defs,
+		backend:     opts.Backend,
+		registry:    opts.Registry,
+		gate:        opts.Gate,
+		log:         opts.Log,
+		system:      opts.System,
+		maxTurns:    opts.MaxTurns,
+		onToolCall:  opts.OnToolCall,
+		onUsage:     opts.OnUsage,
+		onAuto:      opts.OnAutoDecision,
+		onAttach:    opts.OnAttach,
+		onNotice:    opts.OnNotice,
+		preToolHook: opts.PreToolHook,
+		auto:        opts.AutoApprove,
+		toolDefs:    defs,
 
 		policy:       opts.Policy,
 		autoCompact:  opts.AutoCompact,
@@ -872,6 +882,16 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 	tool, ok := a.registry.Get(tc.Name)
 	if !ok {
 		return fmt.Sprintf("error: unknown tool %q", tc.Name)
+	}
+	// Operator pre-tool hooks run before the ladder (ADR-0044 §2): the
+	// org's guards exist to catch the agent's lapses deterministically,
+	// so nothing downstream may overrule a deny.
+	if a.preToolHook != nil {
+		if deny, why := a.preToolHook(ctx, tc.Name, tc.Args); deny {
+			a.telemetry.Approval(tc.Name, "denied", "hook", false, why)
+			a.logRecord("hook_denied", map[string]any{"name": tc.Name, "reason": why})
+			return "denied by a pre-tool hook: " + why
+		}
 	}
 	if a.gated(tool.Mutating, tc) {
 		approved, reason := false, ""

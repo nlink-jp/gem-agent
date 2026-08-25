@@ -93,6 +93,18 @@ config file > defaults。設定ファイル内の未知キーはエラーにな�
 信頼プロンプトに yes と答えるのと同じ判断なので、承認 1 つを緩めたいだけの
 つもりで追加しないでください。
 
+`[[hooks.pre_tool_use]]`（ADR-0044）は、`matcher` が対象とする全モデル
+ツールコールの前にオペレーターのコマンドを実行します（`matcher` は
+ツール名の完全一致・`"a|b"`・`"*"`。`Bash` など Claude Code 名も対応する
+gem-agent ツールに一致）。コマンドは stdin で Claude Code の PreToolUse
+JSON を受け取り、同じ契約で拒否します — stdout の
+`permissionDecision: "deny"`、または exit 2 + stderr の理由。つまり
+Claude Code のガードスクリプトを**無改修のまま**ここに登録できます。
+deny は最終決定で、理由はモデルに返ります。それ以外は警告つきで続行。
+グローバル設定専用です: プロジェクト側フックはクローンしたリポジトリに
+任意コマンドを実行させる経路になります。`timeout_sec` は 1 回の実行を
+制限します（既定 10）。
+
 環境変数 `GEMAGENT_STATE_DIR` はテスト/訓練の隔離用に state ルート
 （sessions と memory）を差し替えます。デバッグ用に、設定ファイル外で直接読まれる
 環境変数がもう 2 つあります: `GEMAGENT_MCP_STDERR=1` は MCP サーバーの stderr を

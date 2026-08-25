@@ -330,3 +330,45 @@ max_turns = 7
 		}
 	}
 }
+
+// Hooks entries parse from [[hooks.pre_tool_use]] and are validated:
+// an unnamed matcher or empty command is a config error, not a hook
+// that silently never fires (ADR-0044).
+func TestHooksConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	good := `
+[gcp]
+project = "p"
+[model]
+name = "m"
+[[hooks.pre_tool_use]]
+matcher = "shell_exec|Bash"
+command = "python3 /Users/you/guards/guard.py"
+timeout_sec = 5
+`
+	if err := os.WriteFile(path, []byte(good), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("valid hooks config rejected: %v", err)
+	}
+	if len(cfg.Hooks.PreToolUse) != 1 || cfg.Hooks.PreToolUse[0].Matcher != "shell_exec|Bash" || cfg.Hooks.PreToolUse[0].TimeoutSec != 5 {
+		t.Fatalf("hooks not loaded: %+v", cfg.Hooks)
+	}
+
+	for name, frag := range map[string]string{
+		"empty matcher":    "[[hooks.pre_tool_use]]\ncommand = \"x\"\n",
+		"empty command":    "[[hooks.pre_tool_use]]\nmatcher = \"*\"\n",
+		"negative timeout": "[[hooks.pre_tool_use]]\nmatcher = \"*\"\ncommand = \"x\"\ntimeout_sec = -1\n",
+	} {
+		bad := "[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\n" + frag
+		if err := os.WriteFile(path, []byte(bad), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(path); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

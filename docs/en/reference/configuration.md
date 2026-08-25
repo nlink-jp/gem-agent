@@ -95,6 +95,18 @@ spawned, its `.claude/skills` are discovered, and its instruction files
 are read. Add a repository only when you would also answer yes to the
 startup trust prompt for it — relaxing one approval is not what you get.
 
+`[[hooks.pre_tool_use]]` entries (ADR-0044) run an operator command
+before every model tool call the `matcher` covers (`matcher` is an
+exact tool name, `"a|b"`, or `"*"`; Claude Code names such as `Bash`
+also match their gem-agent equivalents). The command receives Claude
+Code's PreToolUse JSON on stdin and denies by the same contracts —
+`permissionDecision: "deny"` on stdout, or exit code 2 with the reason
+on stderr — so a Claude Code guard script is registered here unchanged.
+A deny is final and its reason is returned to the model; anything else
+proceeds with a warning. Global config only: a project-level hook would
+let a cloned repository run arbitrary commands. `timeout_sec` bounds
+one run (default 10).
+
 The `GEMAGENT_STATE_DIR` environment variable relocates the state root
 (sessions and memory) for test/drill isolation. Two more environment
 variables exist for debugging and are read directly, outside the config

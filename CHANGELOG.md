@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.41.0] - 2026-08-25
+
+### Added — operator pre-tool hooks: the org's guards survive the fallback (ADR-0044)
+
+- `[[hooks.pre_tool_use]]` in the global config runs an operator
+  command before every model tool call its `matcher` covers, with
+  Claude Code's PreToolUse JSON on stdin. The org's
+  `guard-recursive-write.py` runs **unchanged** — measured, not
+  assumed: the guard reads only `tool_input.command`, and gem-agent's
+  `shell_exec` argument has the same name
+- A hook deny is a deterministic floor: the approval ladder,
+  auto-approve, and the session allowlist never see the call, and the
+  reason returns to the model as the tool result (the ADR-0043
+  principle), which steers the retry
+- Both verdict contracts: stdout `permissionDecision` JSON (exit 0 —
+  what the installed guard actually emits) and exit code 2 with stderr.
+  Anything else — crash, timeout, unparseable output — proceeds with a
+  warning: hooks only ever tighten, and a broken guard script must not
+  brick the fallback tool
+- Matchers accept gem-agent names, Claude Code names (`Bash` ↔
+  `shell_exec`, `Write`/`Edit`/`Read` likewise), `a|b` alternation, and
+  `*`. Global config only; `~/.claude` remains unread (ADR-0011), and
+  the org installer is untouched — registration is one config block
+  pointing at the same script file
+
 ## [0.40.0] - 2026-08-22
 
 ### Changed — diagrams are drawn by a tool, and the runtime stops rewriting the reply (ADR-0043)

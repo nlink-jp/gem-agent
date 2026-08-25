@@ -84,7 +84,9 @@ configured, inline otherwise.
 MITL gates with a session allowlist that never covers Block-tier
 calls, an opt-in two-tier auto-approve (rules first, model review
 second), a per-tool approval policy with scope-aware resolution and
-trust-gated project loosening, the Seatbelt sandbox, startup gates for
+trust-gated project loosening, the Seatbelt sandbox, operator pre-tool
+hooks that run the same guard scripts Claude Code does and refuse a
+call before the ladder sees it, startup gates for
 broad roots and first-seen projects, and nonce-tag isolation of all
 tool output — which also keeps the request prefix byte-stable for
 81–95% measured context-cache hits.

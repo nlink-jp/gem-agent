@@ -188,6 +188,14 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   READMEs (which is where the drift it was written for actually happened).
   If a check fires on prose rather than an identifier, drop the backticks
   rather than weakening the rule.
+- **Pre-tool hooks are a floor, and their contract is measured, not
+  documented** (ADR-0044) — `internal/hooks` denies on Claude Code's real
+  contracts (stdout `permissionDecision` JSON with exit 0 — what the org
+  guard actually emits — and exit 2 + stderr), fails open with a notice on
+  everything else, and runs before the approval ladder in every mode. The
+  payload carries gem-agent's real tool name; only the matcher speaks both
+  vocabularies. Never add an "allow" bypass: hooks tighten, the ladder
+  decides.
 - **Memory writes never auto-approve, and the prompt says when to save**
   (ADR-0020 §5–6) — `save_memory`/`delete_memory` are excluded from the
   model tier in `decideAuto`: the evaluator is the same party that

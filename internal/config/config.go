@@ -22,6 +22,7 @@ type Config struct {
 	TUI       TUIConfig       `toml:"tui"`
 	Telemetry TelemetryConfig `toml:"telemetry"`
 	Approval  ApprovalConfig  `toml:"approval"`
+	Hooks     HooksConfig     `toml:"hooks"`
 
 	// Sources records where each setting's effective value came from,
 	// keyed by its TOML path ("model.name"). Four precedence layers with
@@ -249,6 +250,23 @@ type AgentConfig struct {
 	CompactAtPct int `toml:"compact_at_pct"`
 }
 
+// HooksConfig holds operator pre-tool hooks (ADR-0044). Global config
+// only: a project-level hook would let a cloned repository execute an
+// arbitrary command on every tool call (ADR-0044 §5).
+type HooksConfig struct {
+	PreToolUse []HookEntry `toml:"pre_tool_use"`
+}
+
+// HookEntry is one configured hook. Matcher is an exact tool name, a
+// "a|b" alternation, or "*", matched against both gem-agent's and
+// Claude Code's vocabulary; Command runs via sh -c with the Claude
+// Code PreToolUse JSON on stdin.
+type HookEntry struct {
+	Matcher    string `toml:"matcher"`
+	Command    string `toml:"command"`
+	TimeoutSec int    `toml:"timeout_sec"` // 0 = default
+}
+
 // DefaultPath returns the org-standard per-tool config path.
 func DefaultPath() (string, error) {
 	home, err := os.UserHomeDir()
@@ -391,6 +409,17 @@ var trackedKeys = []string{
 }
 
 func (c *Config) validate() error {
+	for i, h := range c.Hooks.PreToolUse {
+		if strings.TrimSpace(h.Matcher) == "" {
+			return fmt.Errorf("hooks.pre_tool_use[%d]: matcher is required (a tool name, \"a|b\", or \"*\")", i)
+		}
+		if strings.TrimSpace(h.Command) == "" {
+			return fmt.Errorf("hooks.pre_tool_use[%d]: command is required", i)
+		}
+		if h.TimeoutSec < 0 {
+			return fmt.Errorf("hooks.pre_tool_use[%d]: timeout_sec must be >= 0", i)
+		}
+	}
 	var missing []string
 	if c.GCP.Project == "" {
 		missing = append(missing, "[gcp].project (or GEMAGENT_PROJECT / GOOGLE_CLOUD_PROJECT)")
