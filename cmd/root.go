@@ -606,12 +606,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		ClipboardImage:   clipboardImage,
 		MediaUpload:      mediaUpload,
 		OnToolCall: func(tc llm.ToolCall) {
-			purpose := agent.CallPurpose(tc)
+			// Describe, not CallDetail+CallPurpose: only the agent knows
+			// which tools it added the purpose field to, and a tool that
+			// publishes its own "purpose" argument must keep it visible
+			// among the arguments (ADR-0047 §2).
+			detail, purpose := ag.Describe(tc)
 			if prog != nil {
-				prog.Send(tui.ToolCall{Name: tc.Name, Detail: agent.CallDetail(tc), Purpose: purpose})
+				prog.Send(tui.ToolCall{Name: tc.Name, Detail: detail, Purpose: purpose})
 				return
 			}
-			fmt.Fprintf(stderr, "\n[tool] %s %s\n", tc.Name, agent.CallDetail(tc))
+			fmt.Fprintf(stderr, "\n[tool] %s %s\n", tc.Name, detail)
 			// Headless runs (-p, piped stdin) get the declared purpose
 			// on its own line too (ADR-0047 §5): the transcript of a
 			// scripted run is the only record it leaves behind.

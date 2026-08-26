@@ -165,6 +165,21 @@ func (a *Agent) declaredPurpose(tc llm.ToolCall) string {
 	return CallPurpose(tc)
 }
 
+// Describe renders the operator-facing pair for one call: the argument
+// summary, and the purpose the model declared in gem-agent's field.
+//
+// The split is where the name-collision case is handled. A tool that
+// publishes its own argument called "purpose" keeps it as an ordinary
+// argument, visible in the summary like any other, and reports no
+// declared purpose — because gem-agent never offered that tool a field
+// to declare one in. Filtering the summary by name instead would hide a
+// real argument from the prompt, which is the one thing an approval
+// prompt may never do (ADR-0021).
+func (a *Agent) Describe(tc llm.ToolCall) (detail, purpose string) {
+	stripped := llm.ToolCall{Name: tc.Name, Args: a.stripPurpose(tc.Name, tc.Args)}
+	return CallDetail(stripped), a.declaredPurpose(tc)
+}
+
 // callSig is the loop-detector signature with the purpose removed: the
 // guard compares repeated calls, and a model that re-words its
 // justification every round while repeating the identical call would

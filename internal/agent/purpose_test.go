@@ -174,7 +174,8 @@ func TestServerDeclaredPurposeIsLeftAlone(t *testing.T) {
 			Args: map[string]any{PurposeArg: "billing audit"}}}},
 		{Content: "done"},
 	}}
-	a := New(Options{Backend: mb, Registry: reg, Gate: &approveAll{}, System: "sys", MaxTurns: 5})
+	gate := &approveAll{}
+	a := New(Options{Backend: mb, Registry: reg, Gate: gate, System: "sys", MaxTurns: 5})
 	if _, err := a.Run(context.Background(), "grant it", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -183,6 +184,18 @@ func TestServerDeclaredPurposeIsLeftAlone(t *testing.T) {
 	}
 	if req := requiredList(t, defFor(t, a, "mcp__srv__grant")); len(req) != 1 {
 		t.Errorf("required list should be untouched, got %v", req)
+	}
+	// The prompt must show the argument. Filtering the summary by name
+	// once made this call render as "(no arguments)" while it granted
+	// access "for a billing audit" — an approval prompt that hides what
+	// is being approved (ADR-0021).
+	if !strings.Contains(gate.asked[0], "billing audit") {
+		t.Errorf("the operator was asked to approve an invisible argument: %q", gate.asked[0])
+	}
+	// And it is NOT reported as a gem-agent declaration: the tool was
+	// never offered the field, so nothing was declared in it.
+	if gate.purposes[0] != "" {
+		t.Errorf("a server's own argument was presented as the model's declaration: %q", gate.purposes[0])
 	}
 }
 
@@ -277,20 +290,27 @@ func TestPurposeExcludedFromLoopSignature(t *testing.T) {
 	}
 }
 
-// CallDetail is the "what ran" line — for the audit event as much as
-// for the display, so the purpose belongs beside it, not inside it.
-func TestCallDetailOmitsPurpose(t *testing.T) {
+// Describe splits one call into the two things the operator reads: the
+// arguments, and the declaration beside them — never the same text
+// twice, and never an argument dropped.
+func TestDescribeSplitsArgumentsFromDeclaration(t *testing.T) {
+	a, _ := hookAgent(t, &mockBackend{}, &approveAll{}, nil)
 	tc := llm.ToolCall{Name: "write_file",
 		Args: map[string]any{"path": "x.txt", "content": "data", PurposeArg: declared}}
-	got := CallDetail(tc)
-	if strings.Contains(got, "purpose=") || strings.Contains(got, declared) {
-		t.Errorf("CallDetail leaked the purpose: %q", got)
+	detail, purpose := a.Describe(tc)
+	if strings.Contains(detail, "purpose=") || strings.Contains(detail, declared) {
+		t.Errorf("the declaration was duplicated into the argument summary: %q", detail)
 	}
-	if !strings.Contains(got, "path=x.txt") {
-		t.Errorf("CallDetail lost a real argument: %q", got)
+	if !strings.Contains(detail, "path=x.txt") {
+		t.Errorf("the summary lost a real argument: %q", detail)
 	}
-	if CallPurpose(tc) != declared {
-		t.Errorf("CallPurpose = %q", CallPurpose(tc))
+	if purpose != declared {
+		t.Errorf("purpose = %q", purpose)
+	}
+	// CallDetail itself renders whatever it is handed — the filtering
+	// lives in Describe, which knows whose field it is.
+	if !strings.Contains(CallDetail(tc), "purpose=") {
+		t.Error("CallDetail should render every argument it receives")
 	}
 }
 

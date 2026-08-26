@@ -641,7 +641,8 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			// The activity trace includes THIS call before any review
 			// reads it — the loop trigger's evidence must show the
 			// repetition it is escalating (review round 3).
-			a.turnCalls = append(a.turnCalls, tc.Name+" "+CallDetail(tc))
+			callDetail, callPurpose := a.Describe(tc)
+			a.turnCalls = append(a.turnCalls, tc.Name+" "+callDetail)
 			if len(a.turnCalls) > turnCallsKept {
 				a.turnCalls = a.turnCalls[len(a.turnCalls)-turnCallsKept:]
 			}
@@ -654,7 +655,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 					a.loopPrevSig, a.loopStreak = sig, 1
 				}
 				if a.loopStreak >= loopThreshold && !a.loopOK[sig] {
-					detail = CallDetail(tc)
+					detail = callDetail
 					if a.roundIntervention(ctx, "loop", detail, round, limit, roundCap) {
 						if a.loopOK == nil {
 							a.loopOK = map[string]bool{}
@@ -674,7 +675,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 				if t, ok := a.registry.Get(tc.Name); ok {
 					mutating = t.Mutating
 				}
-				a.telemetry.ToolCall(tc.Name, mutating, CallDetail(tc), a.declaredPurpose(tc), 0, "skipped")
+				a.telemetry.ToolCall(tc.Name, mutating, callDetail, callPurpose, 0, "skipped")
 			} else {
 				result = a.execCall(ctx, tc)
 			}
@@ -862,7 +863,8 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
 	if t, ok := a.registry.Get(tc.Name); ok {
 		mutating = t.Mutating
 	}
-	a.telemetry.ToolCall(tc.Name, mutating, CallDetail(tc), a.declaredPurpose(tc), time.Since(start), outcome)
+	detail, purpose := a.Describe(tc)
+	a.telemetry.ToolCall(tc.Name, mutating, detail, purpose, time.Since(start), outcome)
 	return result
 }
 
@@ -929,7 +931,8 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 		if !approved {
 			// "gate" covers the operator and the session allowlist —
 			// the gates answer as one (ADR-0035 v1 granularity).
-			if !a.gate.Approve(tc.Name, CallDetail(tc), a.declaredPurpose(tc), reason, mustPrompt) {
+			detail, purpose := a.Describe(tc)
+			if !a.gate.Approve(tc.Name, detail, purpose, reason, mustPrompt) {
 				a.telemetry.Approval(tc.Name, "denied", "gate", mustPrompt, reason)
 				return deniedResult
 			}
@@ -981,15 +984,13 @@ func CallDetail(tc llm.ToolCall) string {
 	if cmd, ok := tc.Args["command"].(string); ok && tc.Name == "shell_exec" {
 		return clip(cmd, 300)
 	}
+	// Every argument present is rendered. Filtering by name here once
+	// hid a server's own "purpose" argument from the approval prompt —
+	// the tool showed "(no arguments)" while granting access "for a
+	// billing audit". gem-agent's own field is removed from the map
+	// upstream (Describe), where it is known to be gem-agent's.
 	keys := make([]string, 0, len(tc.Args))
 	for k := range tc.Args {
-		// The declared purpose is rendered on its own line by the
-		// prompt and the event line (ADR-0047 §5); repeating it inside
-		// the argument dump would push the actual arguments out of the
-		// clip budget with a duplicate.
-		if k == PurposeArg {
-			continue
-		}
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)

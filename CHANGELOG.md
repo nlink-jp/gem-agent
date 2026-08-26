@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.44.1] - 2026-08-26
+
+### Fixed — a name collision could hide an argument from the approval prompt
+
+- An MCP tool that publishes an argument of its own called `purpose`
+  correctly received it untouched (gem-agent stands down and injects
+  nothing), but the argument summary filtered the name unconditionally:
+  the prompt rendered `(no arguments)` for a call granting access "for
+  a billing audit". An approval prompt may never drop an argument
+  (ADR-0021), least of all the one carrying the reason.
+- The filtering moved from `CallDetail` — which now renders every
+  argument it is handed — to the new `Agent.Describe`, which knows
+  which tools gem-agent added the field to. A tool with its own
+  `purpose` shows it among the arguments and reports no declared
+  purpose, because it was never offered a field to declare one in.
+- Raised by the operator asking whether the parameter name could
+  collide. Measured across the 19 configured MCP servers: none declares
+  one today, so nothing in the field was affected.
+
 ## [0.44.0] - 2026-08-26
 
 ### Added — the approval prompt now says why, not only what

@@ -13,6 +13,12 @@ removed again before the tool runs, so no MCP server receives an
 argument its own schema never declared, and it is evidence for nothing
 — see [approval](approval.md).
 
+A server that publishes an argument called `purpose` of its own keeps
+it: gem-agent adds nothing to that tool, passes the argument through
+untouched, and shows it among the arguments on the prompt like any
+other — the approval prompt never drops an argument to make room for
+an annotation.
+
 ## Orientation: `list_files`, `list_tree`, `search_files`
 
 `list_tree` shows the project as a tree; `search_files` is a fast
