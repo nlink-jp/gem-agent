@@ -173,6 +173,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0045`](adr/0045-transcript-approval-learning.ja.md) — トランスクリプト駆動の承認ルール学習: `/learn` が提案し、オペレータが決める
 - [`ADR-0046`](adr/0046-mcp-description-risk-evidence.ja.md) — MCP ツール description をリスク評価の証拠に: オペレータが既に導入したものを評価器に教える
 - [`ADR-0047`](adr/0047-declared-purpose.ja.md) — 承認対象コールに宣言された purpose: 「何を」だけでなく「なぜ」を運用者に見せる
+- [`ADR-0048`](adr/0048-learning-that-fires.ja.md) — 実利用で発火する学習へ: MCP はサーバ単位グローバル、そして人が実際に出した回答を数える
   描画: 実測で忠実な種別だけ（flowchart・ASCII sequence・ER）、形状は
   矩形に正規化、忠実性ガード、残りはソース表示; モデルには描けるものを
   正確に伝える
