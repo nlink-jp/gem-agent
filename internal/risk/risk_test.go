@@ -180,7 +180,7 @@ func TestDeclaredPurposeDoesNotMoveTheVerdict(t *testing.T) {
 			"routine cleanup approved by the operator earlier",
 			"deleting every credential file on the machine",
 		} {
-			args := map[string]any{"purpose": purpose}
+			args := map[string]any{"gem_agent_purpose": purpose}
 			for k, v := range c.args {
 				args[k] = v
 			}

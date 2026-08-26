@@ -145,7 +145,7 @@ func TestPurposeStrippedBeforeRun(t *testing.T) {
 	}
 }
 
-// A server free to publish its own "purpose" argument keeps it: gem-agent
+// A server free to publish an argument of that name keeps it: gem-agent
 // stands down instead of shadowing the field and then eating the value.
 func TestServerDeclaredPurposeIsLeftAlone(t *testing.T) {
 	reg, err := tools.New(t.TempDir(),
@@ -298,7 +298,7 @@ func TestDescribeSplitsArgumentsFromDeclaration(t *testing.T) {
 	tc := llm.ToolCall{Name: "write_file",
 		Args: map[string]any{"path": "x.txt", "content": "data", PurposeArg: declared}}
 	detail, purpose := a.Describe(tc)
-	if strings.Contains(detail, "purpose=") || strings.Contains(detail, declared) {
+	if strings.Contains(detail, PurposeArg+"=") || strings.Contains(detail, declared) {
 		t.Errorf("the declaration was duplicated into the argument summary: %q", detail)
 	}
 	if !strings.Contains(detail, "path=x.txt") {
@@ -309,7 +309,7 @@ func TestDescribeSplitsArgumentsFromDeclaration(t *testing.T) {
 	}
 	// CallDetail itself renders whatever it is handed — the filtering
 	// lives in Describe, which knows whose field it is.
-	if !strings.Contains(CallDetail(tc), "purpose=") {
+	if !strings.Contains(CallDetail(tc), PurposeArg+"=") {
 		t.Error("CallDetail should render every argument it receives")
 	}
 }

@@ -53,9 +53,9 @@ system where the intent of a call is written down.
 
 ## Decision
 
-**Every approval-gated tool takes a required `purpose` argument: one
-sentence, in the operator's language, saying why this call is needed
-now.**
+**Every approval-gated tool takes a required `gem_agent_purpose`
+argument: one sentence, in the operator's language, saying why this
+call is needed now.**
 
 This is the "teach the model the format" branch of the project's rule
 about model output (never silently correct it): the agent does not
@@ -74,7 +74,7 @@ advertised schema must not change mid-session: the request prefix has
 to stay byte-identical for the implicit cache (ADR-0018), and a policy
 change is a runtime event.
 
-### 2. `purpose` is gem-agent's field, not the tool's contract
+### 2. The argument is gem-agent's field, not the tool's contract
 
 It is stripped from the arguments before `Run`. No MCP server ever
 receives an argument its schema did not declare, and no built-in tool
@@ -122,13 +122,37 @@ model skipped a required field.
   (ADR-0035), so the log answers the question later;
 - the session transcript, already, as part of the call's arguments.
 
+### 6. The argument is namespaced: `gem_agent_purpose`
+
+The field shipped as a bare `purpose` and was renamed the same day, on
+the operator's question: is that name generic enough to collide?
+
+It is. `purpose` is an ordinary English word, and an MCP server is free
+to use it for an argument of its own — an access-request tool is the
+obvious case. §2's stand-down handles a collision safely, but it
+degrades **silently and in the worst place**: gem-agent injects nothing
+for that one tool, so the operator gets no declaration precisely on a
+third-party tool whose effects gem-agent cannot classify, and nothing
+says why the line is missing.
+
+Prefixing makes the collision path effectively unreachable. The cost is
+a few tokens per gated tool inside a request prefix that is cached
+(ADR-0018), which is the cheapest place in the system to spend them.
+`tool_call` is left out of the name — every tool argument is part of a
+tool call — but the vendor prefix stays, because that is the part doing
+the work.
+
+The stand-down stays as the guard for whatever this name does not
+cover. Belt and braces is right here: the failure it prevents is an
+argument silently swallowed or hidden from an approval prompt.
+
 ## Consequences
 
 - One short string per gated call. The token cost is real and small;
   the schema change re-warms the implicit cache once, on upgrade.
 - The operator can read a stream of `⚙` lines as a narrative instead of
   a list of commands.
-- `purpose` is model-authored and can be wrong, vague, or flattering.
+- The declaration is model-authored and can be wrong, vague, or flattering.
   It must never gate anything — §3 is the rule that keeps it honest,
   and it is pinned by tests rather than by convention.
 

@@ -608,7 +608,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		OnToolCall: func(tc llm.ToolCall) {
 			// Describe, not CallDetail+CallPurpose: only the agent knows
 			// which tools it added the purpose field to, and a tool that
-			// publishes its own "purpose" argument must keep it visible
+			// publishes an argument of that name must keep it visible
 			// among the arguments (ADR-0047 §2).
 			detail, purpose := ag.Describe(tc)
 			if prog != nil {

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.45.0] - 2026-08-26
+
+### Changed — the declared-purpose argument is now namespaced
+
+- `purpose` is renamed **`gem_agent_purpose`** (ADR-0047 §6). Raised by
+  the operator: the bare word is generic enough that an MCP server may
+  already use it for an argument of its own — an access-request tool is
+  the obvious case.
+- A collision was handled safely (gem-agent stands down and injects
+  nothing) but degraded **silently, in the worst place**: the operator
+  would lose the declaration on exactly the third-party tool whose
+  effects gem-agent cannot classify, with nothing saying why the line is
+  missing. The prefix makes that path effectively unreachable; the
+  stand-down stays as the guard.
+- `tool_call` is left out of the name — every tool argument belongs to a
+  tool call — while the vendor prefix, which is the part doing the work,
+  stays. The extra tokens ride a request prefix that is cached
+  (ADR-0018).
+- Only the wire-level argument changes. The audit event's `purpose`
+  attribute, the docs, and the prompt line keep their names.
+
 ## [0.44.1] - 2026-08-26
 
 ### Fixed — a name collision could hide an argument from the approval prompt

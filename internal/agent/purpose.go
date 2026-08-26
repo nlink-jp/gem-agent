@@ -18,7 +18,17 @@ import (
 // It is gem-agent's field, not the tool's contract: stripped before the
 // tool runs, kept in the history (replay fidelity), and never evidence
 // for any gate.
-const PurposeArg = "purpose"
+//
+// The name is namespaced deliberately. A bare "purpose" is an ordinary
+// English word that any MCP server may already use for an argument of
+// its own, and a collision degrades SILENTLY: gem-agent stands down and
+// that tool alone loses its declaration — on a third-party tool, which
+// is exactly where an operator most needs to know why a call is being
+// made. Prefixing costs a few tokens per gated tool in a cached prompt
+// prefix and makes the collision path effectively unreachable. The
+// stand-down in gatedForPurpose stays as the guard for the case this
+// name does not cover.
+const PurposeArg = "gem_agent_purpose"
 
 // purposeDescription is what the model reads. It asks for the goal
 // rather than a paraphrase of the arguments, because the arguments are

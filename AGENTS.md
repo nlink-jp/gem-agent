@@ -196,7 +196,7 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   payload carries gem-agent's real tool name; only the matcher speaks both
   vocabularies. Never add an "allow" bypass: hooks tighten, the ladder
   decides.
-- **The declared `purpose` is displayed and nothing else** (ADR-0047) —
+- **The declared `gem_agent_purpose` is displayed and nothing else** (ADR-0047) —
   `internal/agent/purpose.go` injects the argument into every `Mutating`
   tool's advertised schema and strips it again before `Run`, before the
   risk-evaluation payload, and out of the loop signature. It is written by

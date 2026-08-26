@@ -7,14 +7,14 @@ approval gate.
 
 Every approval-gated tool — the built-in mutating ones below and every
 MCP tool — takes one extra argument gem-agent adds to its schema:
-`purpose`, the model's one-sentence statement of why the call is
-needed, shown to the operator on the approval prompt (ADR-0047). It is
+`gem_agent_purpose`, the model's one-sentence statement of why the
+call is needed, shown to the operator on the approval prompt (ADR-0047). It is
 removed again before the tool runs, so no MCP server receives an
 argument its own schema never declared, and it is evidence for nothing
 — see [approval](approval.md).
 
-A server that publishes an argument called `purpose` of its own keeps
-it: gem-agent adds nothing to that tool, passes the argument through
+The name is namespaced so that a server's own argument names cannot
+collide with it. If one ever does, gem-agent adds nothing to that tool, passes the argument through
 untouched, and shows it among the arguments on the prompt like any
 other — the approval prompt never drops an argument to make room for
 an annotation.

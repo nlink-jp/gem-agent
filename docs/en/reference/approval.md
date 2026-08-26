@@ -40,7 +40,8 @@ tool. Hooks cover the model's calls only; the operator's own
 
 ## What the call is for (ADR-0047)
 
-Every approval-gated tool carries a required `purpose` argument, and
+Every approval-gated tool carries a required `gem_agent_purpose`
+argument (namespaced so a server's own argument names cannot collide), and
 the model's one sentence appears on the prompt above the arguments:
 
 ```

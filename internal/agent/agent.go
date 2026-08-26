@@ -985,7 +985,7 @@ func CallDetail(tc llm.ToolCall) string {
 		return clip(cmd, 300)
 	}
 	// Every argument present is rendered. Filtering by name here once
-	// hid a server's own "purpose" argument from the approval prompt —
+	// hid a server's own same-named argument from the approval prompt —
 	// the tool showed "(no arguments)" while granting access "for a
 	// billing audit". gem-agent's own field is removed from the map
 	// upstream (Describe), where it is known to be gem-agent's.
