@@ -62,7 +62,7 @@ func TestBlockTierSetsMustPrompt(t *testing.T) {
 // An "always" policy is the operator's explicit revocation of unattended
 // running; the allowlist may not override it either.
 func TestAlwaysPolicySetsMustPrompt(t *testing.T) {
-	pol, _, err := policy.Build(map[string]string{"write_file": "always"}, nil, false)
+	pol, _, err := policy.Build(map[string]string{"write_file": "always"}, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}

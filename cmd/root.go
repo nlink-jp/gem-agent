@@ -169,7 +169,8 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		mergedTools[k] = v
 	}
 	approvalPolicy, policyNotes, err := policy.Build(
-		mergedTools, projectCfg.Approval.Tools, cfg.TrustsProject(projectDir))
+		mergedTools, projectCfg.Approval.Tools,
+		policyFile.CommandsFor(projectDir), cfg.TrustsProject(projectDir))
 	if err != nil {
 		return err
 	}

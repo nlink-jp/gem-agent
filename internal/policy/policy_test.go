@@ -7,7 +7,7 @@ import (
 
 func build(t *testing.T, global, project map[string]string, trusted bool) (Policy, []Note) {
 	t.Helper()
-	p, notes, err := Build(global, project, trusted)
+	p, notes, err := Build(global, project, nil, trusted)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -110,10 +110,10 @@ func TestProjectMayOverrideGlobalNeverWithAlways(t *testing.T) {
 }
 
 func TestBareWildcardIsRejected(t *testing.T) {
-	if _, _, err := Build(map[string]string{"*": "never"}, nil, false); err == nil {
+	if _, _, err := Build(map[string]string{"*": "never"}, nil, nil, false); err == nil {
 		t.Fatal(`"*" was accepted — one character must not disarm every gate`)
 	}
-	if _, _, err := Build(nil, map[string]string{"*": "always"}, false); err == nil {
+	if _, _, err := Build(nil, map[string]string{"*": "always"}, nil, false); err == nil {
 		t.Fatal(`"*" was accepted from a project file`)
 	}
 }
@@ -126,7 +126,7 @@ func TestInvalidPatternsAndValuesAreErrors(t *testing.T) {
 		"empty value":    {"shell_exec": ""},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, _, err := Build(tools, nil, false); err == nil {
+			if _, _, err := Build(tools, nil, nil, false); err == nil {
 				t.Fatal("accepted an invalid policy entry")
 			}
 		})
@@ -134,7 +134,7 @@ func TestInvalidPatternsAndValuesAreErrors(t *testing.T) {
 }
 
 func TestErrorNamesTheOffendingEntry(t *testing.T) {
-	_, _, err := Build(map[string]string{"shell_exec": "maybe"}, nil, false)
+	_, _, err := Build(map[string]string{"shell_exec": "maybe"}, nil, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "shell_exec") {
 		t.Fatalf("err = %v, want it to name the tool", err)
 	}
@@ -173,7 +173,7 @@ func TestScopeBeatsSpecificity(t *testing.T) {
 	p, notes, err := Build(
 		map[string]string{"web_search": "never"},
 		map[string]string{"web_*": "always"},
-		false)
+		nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestScopeBeatsSpecificity(t *testing.T) {
 	p, _, err = Build(
 		map[string]string{"mcp__lookup__check": "always"},
 		map[string]string{"mcp__lookup__*": "never"},
-		true)
+		nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestScopeBeatsSpecificity(t *testing.T) {
 	// Within one scope, specificity still decides.
 	p, _, err = Build(
 		map[string]string{"mcp__x__*": "never", "mcp__x__post": "always"},
-		nil, false)
+		nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}

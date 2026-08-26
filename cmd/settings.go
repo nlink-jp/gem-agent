@@ -62,7 +62,8 @@ func (s *settingsStore) Rebuild() (tui.SettingsData, error) {
 	for k, v := range s.policyFile.ForProject(s.projectDir) {
 		merged[k] = v
 	}
-	p, _, err := policy.Build(merged, s.projectCfg.Approval.Tools, s.cfg.TrustsProject(s.projectDir))
+	p, _, err := policy.Build(merged, s.projectCfg.Approval.Tools,
+		s.policyFile.CommandsFor(s.projectDir), s.cfg.TrustsProject(s.projectDir))
 	if err != nil {
 		return tui.SettingsData{}, err
 	}

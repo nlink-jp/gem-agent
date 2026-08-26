@@ -68,6 +68,11 @@ type rule struct {
 // Policy answers the approval question for a tool name.
 type Policy struct {
 	rules []rule // most specific first
+	// commands is the per-command table of ADR-0045 §4, keyed by
+	// CommandKey. It exists only in the project scope: `make build`
+	// being settled in one repository says nothing about another, and a
+	// global entry would auto-run inside the next hostile clone.
+	commands map[string]Decision
 }
 
 // Note is an operator-facing message produced while building a Policy —
@@ -77,13 +82,19 @@ type Policy struct {
 type Note string
 
 // Build combines the two scopes. globalTools and projectTools map a tool
-// pattern to a config value; trusted says whether the project directory
-// is listed in the operator's global trusted_projects.
+// pattern to a config value; commands maps a CommandKey to one (ADR-0045
+// §4); trusted says whether the project directory is listed in the
+// operator's global trusted_projects.
 //
 // A project entry that tightens (always) is honoured unconditionally. A
 // project entry that loosens (never) is honoured only when trusted, and
 // otherwise dropped with a Note naming it.
-func Build(globalTools, projectTools map[string]string, trusted bool) (Policy, []Note, error) {
+//
+// commands carries no trust condition because it does not come from the
+// project directory at all: /learn writes it into the machine-owned
+// policy file after the operator confirmed each rule, which is the same
+// standing as a policy set from /settings.
+func Build(globalTools, projectTools map[string]string, commands map[string]string, trusted bool) (Policy, []Note, error) {
 	var (
 		p       Policy
 		notes   []Note
@@ -140,6 +151,24 @@ func Build(globalTools, projectTools map[string]string, trusted bool) (Policy, [
 	// TIGHTEN — breaking ADR-0008's "a project may tighten freely".
 	p.rules = append(projectRules, globalRules...)
 
+	for _, key := range sortedKeys(commands) {
+		d, err := Parse(commands[key])
+		if err != nil {
+			return Policy{}, nil, fmt.Errorf("[commands] %q: %w", key, err)
+		}
+		// A stored key that today's derivation would not produce can
+		// never match a live call, so accepting it would mean an entry
+		// the operator sees in /settings and that silently does
+		// nothing. Rejecting loudly is the ADR-0021 §6 discipline.
+		if k, ok := CommandKey(key); !ok || k != key {
+			return Policy{}, nil, fmt.Errorf("[commands] %q is not a command key: entries are a command name, optionally with a subcommand (for example \"go test\")", key)
+		}
+		if p.commands == nil {
+			p.commands = map[string]Decision{}
+		}
+		p.commands[key] = d
+	}
+
 	if len(ignored) > 0 {
 		notes = append(notes, Note(fmt.Sprintf(
 			"project policy ignored for %s: a project file may not remove approvals unless the project is trusted. To allow it, add the project path to [approval].trusted_projects in your own config",
@@ -179,8 +208,51 @@ func (p Policy) For(tool string) Decision {
 	return Default
 }
 
+// ForCall answers for one concrete call: the tool's policy, refined by
+// the per-command policy when the call is a shell command whose key is
+// known and listed (ADR-0045 §4).
+//
+// Two rules combine them, in this order:
+//
+//  1. AlwaysAsk from either table wins. It is a floor in both
+//     directions: an operator who pinned `shell_exec = "always"` said
+//     every shell call is theirs to see, and a learned rule — which
+//     only ever means "I approved this repeatedly" — must not take that
+//     back; while a learned `"always"` tightens a blanket
+//     `shell_exec = "never"`, and tightening is always free (ADR-0008).
+//  2. Otherwise the command entry answers, being the more specific
+//     statement about this call. An entry exists only because the
+//     operator confirmed it, so this is their decision either way.
+func (p Policy) ForCall(tool, command string) Decision {
+	d := p.For(tool)
+	if len(p.commands) == 0 || command == "" {
+		return d
+	}
+	key, ok := CommandKey(command)
+	if !ok {
+		return d
+	}
+	c, ok := p.commands[key]
+	if !ok {
+		return d
+	}
+	if d == AlwaysAsk || c == AlwaysAsk {
+		return AlwaysAsk
+	}
+	return c
+}
+
+// Commands returns the per-command table, keyed by CommandKey.
+func (p Policy) Commands() map[string]Decision {
+	out := make(map[string]Decision, len(p.commands))
+	for k, v := range p.commands {
+		out[k] = v
+	}
+	return out
+}
+
 // Configured reports whether any policy is in force (banner display).
-func (p Policy) Configured() bool { return len(p.rules) > 0 }
+func (p Policy) Configured() bool { return len(p.rules) > 0 || len(p.commands) > 0 }
 
 // Describe renders the rules in match order, for /tools and the banner.
 func (p Policy) Describe() []string {

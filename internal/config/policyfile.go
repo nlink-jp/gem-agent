@@ -54,6 +54,11 @@ type ProjectPolicy struct {
 	// "" while unasked. Deleting the key re-asks on the next start.
 	Trust string            `toml:"trust,omitempty"`
 	Tools map[string]string `toml:"tools"`
+	// Commands holds the per-command approval rules /learn proposed and
+	// the operator accepted (ADR-0045 §4), keyed by policy.CommandKey.
+	// There is deliberately no global counterpart: a command settled in
+	// one repository says nothing about the next one.
+	Commands map[string]string `toml:"commands"`
 }
 
 // PolicyPath returns the machine-owned policy file's path, beside the
@@ -119,8 +124,46 @@ func (pf *PolicyFile) Set(projectDir, tool, decision string) {
 	}
 	setOrDelete(entry.Tools, tool, decision)
 	// The entry survives with no tools when it still carries a trust
-	// decision (ADR-0023).
-	if len(entry.Tools) == 0 && entry.Trust == "" {
+	// decision (ADR-0023) or learned command rules (ADR-0045).
+	if len(entry.Tools) == 0 && len(entry.Commands) == 0 && entry.Trust == "" {
+		delete(pf.Projects, projectDir)
+		return
+	}
+	pf.Projects[projectDir] = entry
+}
+
+// CommandsFor returns the per-command rules recorded for projectDir
+// (ADR-0045 §4). Project scope only, so an empty projectDir has none.
+func (pf *PolicyFile) CommandsFor(projectDir string) map[string]string {
+	if projectDir == "" {
+		return nil
+	}
+	src := pf.Projects[projectDir].Commands
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+// SetCommand records a per-command rule for projectDir. An empty
+// decision removes the entry, which is how /settings expresses "back to
+// default".
+func (pf *PolicyFile) SetCommand(projectDir, key, decision string) {
+	if projectDir == "" {
+		return
+	}
+	entry := pf.Projects[projectDir]
+	if entry.Commands == nil {
+		entry.Commands = map[string]string{}
+	}
+	setOrDelete(entry.Commands, key, decision)
+	// The entry survives with nothing in it only while it carries a
+	// trust decision (ADR-0023).
+	if len(entry.Commands) == 0 && len(entry.Tools) == 0 && entry.Trust == "" {
 		delete(pf.Projects, projectDir)
 		return
 	}
@@ -207,6 +250,10 @@ func (pf *PolicyFile) Save(path string) error {
 		if len(entry.Tools) > 0 {
 			fmt.Fprintf(&b, "\n[projects.%s.tools]\n", quoteKey(dir))
 			writeTools(&b, entry.Tools)
+		}
+		if len(entry.Commands) > 0 {
+			fmt.Fprintf(&b, "\n[projects.%s.commands]\n", quoteKey(dir))
+			writeTools(&b, entry.Commands)
 		}
 	}
 

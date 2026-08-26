@@ -14,7 +14,7 @@ import (
 func policyAgent(t *testing.T, mb *mockBackend, gate Approver, tools map[string]string) (*Agent, *tools.Registry) {
 	t.Helper()
 	_, reg := newAgent(t, mb, gate, 5)
-	p, _, err := policy.Build(tools, nil, false)
+	p, _, err := policy.Build(tools, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestAlwaysPolicyGatesEvenReadOnlyToolsAndBeatsAutoMode(t *testing.T) {
 	}}
 	gate := &denyAll{}
 	_, reg := newAgent(t, mb, gate, 5)
-	p, _, err := policy.Build(map[string]string{"read_file": "always"}, nil, false)
+	p, _, err := policy.Build(map[string]string{"read_file": "always"}, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}

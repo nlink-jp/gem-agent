@@ -129,7 +129,7 @@ func TestDeniedViewImageAttachesNothing(t *testing.T) {
 		{Content: "done"},
 	}}
 	a, reg := newAgent(t, mb, &denyAll{}, 5)
-	pol, _, err := policy.Build(map[string]string{"view_image": "always"}, nil, false)
+	pol, _, err := policy.Build(map[string]string{"view_image": "always"}, nil, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
