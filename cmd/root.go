@@ -19,7 +19,6 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/diagram"
 	"github.com/nlink-jp/gem-agent/internal/hooks"
-	"github.com/nlink-jp/gem-agent/internal/learn"
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mediastore"
 	"github.com/nlink-jp/gem-agent/internal/memory"
@@ -169,11 +168,18 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	for k, v := range policyFile.ForProject(projectDir) {
 		mergedTools[k] = v
 	}
+	// Learned command rules are parsed but NOT applied (ADR-0049 §3):
+	// /learn is withdrawn, nothing displays or manages those entries, and
+	// invisible standing permissions are the state the withdrawal exists
+	// to end. Ignoring them only ever tightens. The note tells the
+	// operator where the entries live.
 	approvalPolicy, policyNotes, err := policy.Build(
-		mergedTools, projectCfg.Approval.Tools,
-		policyFile.CommandsFor(projectDir), cfg.TrustsProject(projectDir))
+		mergedTools, projectCfg.Approval.Tools, nil, cfg.TrustsProject(projectDir))
 	if err != nil {
 		return err
+	}
+	if n := len(policyFile.CommandsFor(projectDir)); n > 0 {
+		fmt.Fprintf(stderr, "note: %d learned command rule(s) in %s are not applied — /learn was withdrawn (ADR-0049); delete the [projects...commands] entries or keep them for a future version\n", n, policyPath)
 	}
 
 	// --- first-run project trust (ADR-0023): does this project's own
@@ -197,7 +203,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- MCP servers from the project's .mcp.json (drop-in) ---
-	mcpClients, mcpSummary, mcpScopes := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, projectTrusted)
+	mcpClients, mcpSummary, _ := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, projectTrusted)
 	defer func() {
 		for _, c := range mcpClients {
 			c.Close()
@@ -697,66 +703,6 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 	settingsData := settings.data()
 
-	// --- /learn: rules proposed from the operator's own decisions
-	// (ADR-0045). Built here, where the policy path and the settings
-	// store already exist, and driven by whichever surface dispatches
-	// the command. A run needs a session directory to read and an
-	// operator to ask, so it is nil when either is missing.
-	var learner *learnRunner
-	if sessionDirErr == nil && !oneShot {
-		learner = &learnRunner{
-			sessionsDir: sessionDir,
-			projectDir:  projectDir,
-			policyPath:  policyPath,
-			reload:      func() error { _, err := settings.Rebuild(); return err },
-			current:     func() policy.Policy { return ag.Policy() },
-			msgs:        msgs,
-			describe: func(tool string) string {
-				if !strings.HasPrefix(tool, "mcp__") {
-					return ""
-				}
-				t, ok := registry.Get(tool)
-				if !ok {
-					return ""
-				}
-				return t.Description
-			},
-			// A server the project supplied through .mcp.json is that
-			// project's, and never earns a rule that applies everywhere
-			// (ADR-0048 §2). mcpScopes is reassigned by /mcp reload, so
-			// both closures read the variable rather than a snapshot.
-			isGlobalServer: func(server string) bool {
-				return mcpScopes[server] == "global"
-			},
-			serverTools: func(server string) []string {
-				prefix := learn.ServerPattern(server)
-				prefix = strings.TrimSuffix(prefix, "*")
-				var out []string
-				for _, t := range registry.List() {
-					if strings.HasPrefix(t.Name, prefix) {
-						out = append(out, t.Name)
-					}
-				}
-				return out
-			},
-			ask: func(askCtx context.Context, question string, accept, skip string) (bool, error) {
-				idx, err := askOperator(askCtx, question, []string{accept, skip})
-				return err == nil && idx == 0, err
-			},
-			// Same shape as askOperator: the surface is decided at call
-			// time, because the TUI program does not exist yet here.
-			emit: func(lines []string) {
-				if prog != nil {
-					prog.Send(tui.Output{Lines: lines})
-					return
-				}
-				for _, l := range lines {
-					fmt.Fprintln(stderr, l)
-				}
-			},
-		}
-	}
-
 	// --- in-session integration reload (ADR-0039) ---
 	// Both closures reuse the startup code paths and the startup trust
 	// verdict — a reload can never widen what the trust gate allowed.
@@ -773,7 +719,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// Warnings go into the command output: under the TUI a stderr
 		// write would corrupt the display.
 		var warn bytes.Buffer
-		mcpClients, mcpSummary, mcpScopes = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, projectTrusted)
+		mcpClients, mcpSummary, _ = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, projectTrusted)
 		ag.RefreshTools()
 		mcpTools := 0
 		for _, t := range registry.List() {
@@ -956,12 +902,6 @@ func runREPL(cmd *cobra.Command, args []string) error {
 					prog.Send(tui.TurnDone{Err: err})
 				}()
 			},
-			Learn: func(learnCtx context.Context) {
-				go func() {
-					learner.Run(learnCtx)
-					prog.Send(tui.TurnDone{})
-				}()
-			},
 			StartTurn: func(turnCtx context.Context, input string) {
 				go func() {
 					_, err := ag.Run(turnCtx, input, func(s string) { prog.Send(tui.TextDelta(s)) })
@@ -1025,13 +965,6 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		if input == "/settings" {
 			writeSettingsTable(stderr, settings.data())
-			continue
-		}
-		// The plain REPL owns stdin on this goroutine, so the pass runs
-		// inline: there is no event loop to deadlock, and Ctrl+C reaches
-		// it through the shared context.
-		if input == "/learn" && learner != nil {
-			learner.Run(ctx)
 			continue
 		}
 		if turn, handled, errMsg := expandSkillInput(input, skillsList); handled {
@@ -1226,9 +1159,9 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 // call: /skills reload swaps the list mid-session (ADR-0039).
 func slashCompletions(getSkills func() []skills.Skill) func(string) []string {
 	commands := []string{
-		"/auto", "/clear", "/compact", "/exit", "/help", "/learn", "/mcp",
-		"/memory", "/quit", "/settings", "/skill", "/skills", "/tools",
-		"/usage", "/version",
+		"/auto", "/clear", "/compact", "/exit", "/help", "/mcp", "/memory",
+		"/quit", "/settings", "/skill", "/skills", "/tools", "/usage",
+		"/version",
 	}
 	return func(prefix string) []string {
 		if rest, ok := strings.CutPrefix(prefix, "/skill "); ok {

@@ -110,15 +110,6 @@ type ContextWindow struct {
 	Assumed bool
 }
 
-// Output carries plain lines to the scrollback from work running
-// outside the event loop — /learn's progress, for one (ADR-0048).
-//
-// Attached exists for two other things and neither fits: its Lines are
-// attachments (rendered with 📎) and its Notes are warnings (⚠). A
-// dozen ordinary progress lines rendered as warnings reads as a dozen
-// problems.
-type Output struct{ Lines []string }
-
 // ApprovalRequest asks the operator to approve a mutating tool call.
 // The gate goroutine blocks on Resp until the UI answers 'y', 'n' or 'a'.
 type ApprovalRequest struct {

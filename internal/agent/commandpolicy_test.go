@@ -202,7 +202,7 @@ func TestNonShellCallKeysByToolName(t *testing.T) {
 // recordingApprover captures the arguments the gate was called with.
 type recordingApprover struct {
 	fromAllowlist bool
-	calls []approverCall
+	calls         []approverCall
 }
 
 type approverCall struct {

@@ -129,64 +129,6 @@ type Messages struct {
 	RoundContinue           string
 	RoundStop               string
 
-	// --- /learn (ADR-0045) ---
-	// StatusLearning is the running-status line while transcripts are
-	// being read.
-	StatusLearning string
-	// LearnScannedFmt: sessions read, proposals found.
-	LearnScannedFmt string
-	// LearnNoneFmt reports a clean scan with nothing to propose: %d
-	// sessions read. Saying how much was read is what distinguishes
-	// "nothing yet" from "nothing looked at".
-	LearnNoneFmt string
-	// LearnUnreadableFmt: %d transcripts that could not be read.
-	LearnUnreadableFmt string
-	// LearnAskNeverFmt / LearnAskAlwaysFmt: the proposal question.
-	// %s = the key.
-	LearnAskNeverFmt  string
-	LearnAskAlwaysFmt string
-	// LearnEvidenceApprovedFmt: %d sessions approved this key.
-	LearnEvidenceApprovedFmt string
-	// LearnEvidenceDeniedFmt: %d sessions denied it.
-	LearnEvidenceDeniedFmt string
-	// LearnEvidenceWobbleFmt makes the per-call judgement's instability
-	// visible: %d auto-approved, %d escalated.
-	LearnEvidenceWobbleFmt string
-	// LearnEvidenceExamples heads the recorded example calls.
-	LearnEvidenceExamples string
-	// LearnAskServerFmt is the question for an MCP server rule
-	// (ADR-0048 §2): %s = the server name.
-	LearnAskServerFmt string
-	// LearnCoversApprovedFmt / LearnCoversUnusedFmt head the two halves
-	// of what a server rule would cover (ADR-0048 §3): %d tools each.
-	// The second is the disclosure that matters — the rule grants more
-	// than the evidence for it.
-	LearnCoversApprovedFmt string
-	LearnCoversUnusedFmt   string
-	// LearnCoversMoreFmt reports the tools a clipped list did not show:
-	// %d remaining.
-	LearnCoversMoreFmt string
-	// LearnEvidenceServerFmt: %d distinct tools of this server approved.
-	LearnEvidenceServerFmt string
-	// LearnScopeGlobal marks a rule that applies in every project.
-	LearnScopeGlobal string
-	// LearnEvidenceDescFmt shows an MCP tool's self-description
-	// (ADR-0046 §4): %s = the clipped description. It is the server's
-	// claim, which is why the line says who wrote it.
-	LearnEvidenceDescFmt string
-	// LearnAccept / LearnSkip are the two answers.
-	LearnAccept string
-	LearnSkip   string
-	// LearnSavedFmt: %s = key, %s = decision written.
-	LearnSavedFmt string
-	// LearnSaveFailedFmt: %s = the error.
-	LearnSaveFailedFmt string
-	// LearnDoneFmt: %d rules written.
-	LearnDoneFmt string
-	// LearnStopped reports an interrupted or declined run; rules
-	// already written stay written, which the operator must be told.
-	LearnStopped string
-
 	// --- slash command feedback (cmd) ---
 	Help             string // the full /help text
 	AutoOn           string
@@ -291,30 +233,6 @@ var en = Messages{
 	RoundContinue:           "continue",
 	RoundStop:               "stop here",
 
-	StatusLearning:           "reading this project's transcripts…",
-	LearnScannedFmt:          "read %d sessions of this project — %d rules to review",
-	LearnNoneFmt:             "read %d sessions of this project — nothing to propose yet. Rules come from your own repeated answers at the approval gate.",
-	LearnUnreadableFmt:       "%d transcripts could not be read and were skipped",
-	LearnAskNeverFmt:         "Stop asking about %s in this project?",
-	LearnAskAlwaysFmt:        "Always ask about %s in this project, in every mode?",
-	LearnEvidenceApprovedFmt: "you approved it in %d sessions, denied it in none",
-	LearnEvidenceDeniedFmt:   "you denied it in %d sessions",
-	LearnEvidenceWobbleFmt:   "auto mode approved %d and escalated %d — the same call judged both ways",
-	LearnEvidenceExamples:    "calls you approved:",
-	LearnEvidenceDescFmt:     "the server describes this tool as: %s",
-	LearnAskServerFmt:        "Stop asking about the %s server's tools, in every project?",
-	LearnCoversApprovedFmt:   "this rule covers %d tools you have approved:",
-	LearnCoversUnusedFmt:     "and %d you have NOT used yet — they stop asking too:",
-	LearnCoversMoreFmt:       "…and %d more",
-	LearnEvidenceServerFmt:   "you approved %d different tools of this server, denied none",
-	LearnScopeGlobal:         "this rule applies in every project, not just this one",
-	LearnAccept:              "add the rule",
-	LearnSkip:                "skip",
-	LearnSavedFmt:            "%s = %s (saved to policy.toml, this project)",
-	LearnSaveFailedFmt:       "could not save the rule: %s",
-	LearnDoneFmt:             "%d rules added. /settings shows them with their source, and removes them.",
-	LearnStopped:             "stopped — rules already added stay in effect (see /settings)",
-
 	Help: `commands:
   /help    show this help
   /tools   list available tools
@@ -322,7 +240,6 @@ var en = Messages{
   /auto    toggle auto-approve (shift+tab does the same, and works mid-run)
   /compact summarise the older half of the conversation to free context
   /settings show every setting with where it came from; edit policy + toggles
-  /learn   propose approval rules from your own past answers in this project
   /usage   token accounting: main loop, cache hit rate, side-calls, web tools
   /memory  list persisted memories (global + this project); saves are approval-gated
   /skills  list installed skills (/skills reload re-discovers them)
@@ -433,30 +350,6 @@ var ja = Messages{
 	RoundContinue:           "続行",
 	RoundStop:               "ここで停止",
 
-	StatusLearning:           "このプロジェクトの記録を読んでいます…",
-	LearnScannedFmt:          "このプロジェクトの %d セッションを読みました — 確認するルールは %d 件です",
-	LearnNoneFmt:             "このプロジェクトの %d セッションを読みました — 提案できるルールはまだありません。ルールは承認ゲートでのあなた自身の繰り返しの回答から作られます。",
-	LearnUnreadableFmt:       "%d 件の記録は読めなかったため飛ばしました",
-	LearnAskNeverFmt:         "このプロジェクトで %s について聞くのをやめますか？",
-	LearnAskAlwaysFmt:        "このプロジェクトで %s について全モードで必ず聞きますか？",
-	LearnEvidenceApprovedFmt: "%d セッションで承認・拒否はゼロ",
-	LearnEvidenceDeniedFmt:   "%d セッションで拒否",
-	LearnEvidenceWobbleFmt:   "auto モードは %d 回承認・%d 回エスカレート — 同じ呼び出しが両方に判定されています",
-	LearnEvidenceExamples:    "承認した呼び出し:",
-	LearnEvidenceDescFmt:     "サーバーによるこのツールの説明: %s",
-	LearnAskServerFmt:        "%s サーバーのツールについて、全プロジェクトで聞くのをやめますか？",
-	LearnCoversApprovedFmt:   "このルールは承認済みの %d ツールを覆います:",
-	LearnCoversUnusedFmt:     "さらに未使用の %d ツールも覆います — これらも聞かれなくなります:",
-	LearnCoversMoreFmt:       "…ほか %d 件",
-	LearnEvidenceServerFmt:   "このサーバーの異なる %d ツールを承認・拒否はゼロ",
-	LearnScopeGlobal:         "このルールはこのプロジェクトだけでなく全プロジェクトに適用されます",
-	LearnAccept:              "ルールを追加",
-	LearnSkip:                "見送る",
-	LearnSavedFmt:            "%s = %s （policy.toml に保存・このプロジェクト）",
-	LearnSaveFailedFmt:       "ルールを保存できませんでした: %s",
-	LearnDoneFmt:             "%d 件のルールを追加しました。/settings に出所付きで表示され、そこで削除できます。",
-	LearnStopped:             "中止しました — 追加済みのルールは有効なままです（/settings 参照）",
-
 	Help: `コマンド:
   /help    このヘルプを表示
   /tools   利用可能なツールの一覧
@@ -464,7 +357,6 @@ var ja = Messages{
   /auto    auto-approve を切替（shift+tab でも可・実行中も有効）
   /compact 会話の古い半分を要約してコンテキストを空ける
   /settings 全設定を出所つきで表示; ポリシーとトグルを編集
-  /learn   このプロジェクトでの過去の回答から承認ルールを提案
   /usage   トークン集計: メインループ・キャッシュ命中率・サイドコール・Web ツール
   /memory  永続メモリの一覧（グローバル + このプロジェクト）; 保存は承認制
   /skills  インストール済みスキルの一覧（/skills reload で再探索）

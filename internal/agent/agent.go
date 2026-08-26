@@ -999,12 +999,12 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 				source = "allowlist"
 			}
 			a.telemetry.Approval(tc.Name, decision, "gate", mustPrompt, reason)
-			// The transcript record (ADR-0045 §7) is what /learn reads.
-			// Telemetry already carries this, but it is opt-in and
-			// off-machine: without a local record, reconstructing the
-			// operator's own decisions means inferring them from what
-			// ran, which cannot tell a typed 'y' from a policy that was
-			// in force at the time.
+			// The transcript record (ADR-0045 §7) survives /learn's
+			// withdrawal (ADR-0049 §2): telemetry is opt-in and
+			// off-machine, and any future learning design needs a local
+			// record of the operator's own decisions — inferring them
+			// from what ran cannot tell a typed 'y' from a policy that
+			// was in force at the time.
 			//
 			// The aggregation key is resolved here, by the same function
 			// the gate matches with, so the learner never has to pair a

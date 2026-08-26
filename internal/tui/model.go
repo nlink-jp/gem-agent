@@ -119,12 +119,6 @@ type ShellStarter func(ctx context.Context, command string)
 // interruptible while it runs. Completion arrives as TurnDone.
 type CompactStarter func(ctx context.Context)
 
-// LearnStarter launches a /learn pass in a goroutine (ADR-0045). Like
-// compaction it must not block: the pass drives approval-style dialogs,
-// which are answered on this event loop — running it inline would
-// deadlock on the first question. Completion arrives as TurnDone.
-type LearnStarter func(ctx context.Context)
-
 // SlashHandler executes a /command and returns its output, whether the
 // output is an error (rendered so it stands out — an unknown command
 // must never look like dim meta text), and whether the program should
@@ -136,7 +130,6 @@ type Options struct {
 	StartTurn TurnStarter
 	Shell     ShellStarter
 	Compact   CompactStarter
-	Learn     LearnStarter
 	Slash     SlashHandler
 	BaseCtx   context.Context
 	// Msgs is the resolved language catalog (ADR-0029); nil means
@@ -238,7 +231,6 @@ type Model struct {
 	startTurn       TurnStarter
 	shell           ShellStarter
 	compact         CompactStarter
-	learn           LearnStarter
 	slash           SlashHandler
 	toggleAuto      func() bool
 	autoMode        bool
@@ -318,7 +310,6 @@ func New(opts Options) Model {
 		startTurn:       opts.StartTurn,
 		shell:           opts.Shell,
 		compact:         opts.Compact,
-		learn:           opts.Learn,
 		slash:           opts.Slash,
 		toggleAuto:      opts.ToggleAuto,
 		autoMode:        opts.AutoMode,
@@ -585,9 +576,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AutoMode:
 		m.autoMode = bool(msg)
 		return m, nil
-
-	case Output:
-		return m, m.emitJoined(msg.Lines...)
 
 	case Attached:
 		var parts []string
@@ -1311,22 +1299,6 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		ctx, cancel := context.WithCancel(m.baseCtx)
 		m.cancelTurn = cancel
 		m.compact(ctx)
-		return m, tea.Batch(m.emit("\n"+m.st.user.Render("> ")+input), m.spin.Tick)
-	}
-
-	// /learn asks the operator about each proposal, and those dialogs
-	// are answered on this event loop — so it runs like a turn, not
-	// like a slash command. toolRunning suppresses the ADR-0033 stall
-	// warning: a pass waiting on a human produces no model stream, and
-	// silence there is the normal case rather than a symptom.
-	if input == "/learn" && m.learn != nil {
-		m.phase = phaseRunning
-		m.status = m.msgs.StatusLearning
-		m.toolRunning = true
-		m.beginTurnStats()
-		ctx, cancel := context.WithCancel(m.baseCtx)
-		m.cancelTurn = cancel
-		m.learn(ctx)
 		return m, tea.Batch(m.emit("\n"+m.st.user.Render("> ")+input), m.spin.Tick)
 	}
 

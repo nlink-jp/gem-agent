@@ -94,9 +94,9 @@ func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Too
 // collision — and registers every reachable server's tools. Failures on
 // either scope are warnings; a broken file or server must not block a
 // backup tool.
-// scopes maps each connected server to "global" or "project", which
-// /learn needs: a server the project supplied is that project's, and
-// never earns a global rule (ADR-0048 §2).
+// scopes maps each connected server to "global" or "project" — kept
+// for consumers that must not treat a project-supplied server like an
+// operator-installed one (none today; /learn was, before ADR-0049).
 func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, version string, registry *tools.Registry, stderr io.Writer, projectTrusted bool) (clients []*mcp.Client, summary []string, scopes map[string]string) {
 	if !cfg.MCP.Enabled {
 		return nil, nil, nil

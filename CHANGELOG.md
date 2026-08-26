@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.48.0] - 2026-08-26
+
+### Removed — /learn is withdrawn (ADR-0049)
+
+Field-tested twice, failed twice in opposite directions: v0.46.0
+proposed nothing from 25 real approvals, and v0.47.0's fixes led the
+operator to judge that far too much ends up permitted. Per-rule
+confirmation — even with the full covered-tool list disclosed — did
+not prove a durable boundary for loosening approvals, and accepted
+command rules were invisible in every management surface. The command,
+the proposal engine, and its UI are removed; the design and the
+post-mortem are ADR-0045, ADR-0048, and ADR-0049.
+
+What this release does with what /learn left behind:
+
+- `[projects."…".commands]` entries in the machine-owned `policy.toml`
+  are **no longer applied**. A startup note reports any that exist;
+  delete them or keep them — they do nothing either way.
+- Global `[tools]` wildcards it wrote (`mcp__<server>__*`) are plain
+  ADR-0008 policy, indistinguishable from hand-written entries, and
+  **remain in force** — review `~/.config/gem-agent/policy.toml` if
+  you accepted server proposals.
+- `gate_decision` / `auto_decision` transcript records (with the
+  aggregation key and the answer's source) are still written, and
+  `Approve` still reports whether the session allowlist answered:
+  the data outlives the feature.
+
+
 ## [0.47.0] - 2026-08-26
 
 ### Fixed — /learn proposed nothing on its first real session

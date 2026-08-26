@@ -62,8 +62,9 @@ func (s *settingsStore) Rebuild() (tui.SettingsData, error) {
 	for k, v := range s.policyFile.ForProject(s.projectDir) {
 		merged[k] = v
 	}
+	// Learned command rules are parsed but not applied (ADR-0049 §3).
 	p, _, err := policy.Build(merged, s.projectCfg.Approval.Tools,
-		s.policyFile.CommandsFor(s.projectDir), s.cfg.TrustsProject(s.projectDir))
+		nil, s.cfg.TrustsProject(s.projectDir))
 	if err != nil {
 		return tui.SettingsData{}, err
 	}

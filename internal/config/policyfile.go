@@ -54,10 +54,10 @@ type ProjectPolicy struct {
 	// "" while unasked. Deleting the key re-asks on the next start.
 	Trust string            `toml:"trust,omitempty"`
 	Tools map[string]string `toml:"tools"`
-	// Commands holds the per-command approval rules /learn proposed and
-	// the operator accepted (ADR-0045 §4), keyed by policy.CommandKey.
-	// There is deliberately no global counterpart: a command settled in
-	// one repository says nothing about the next one.
+	// Commands holds the per-command rules the withdrawn /learn wrote
+	// (ADR-0045 §4), keyed by policy.CommandKey. Parsed so existing
+	// files keep loading; NOT fed into the live policy since ADR-0049.
+	// There is deliberately no global counterpart.
 	Commands map[string]string `toml:"commands"`
 }
 

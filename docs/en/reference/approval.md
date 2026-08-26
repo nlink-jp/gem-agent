@@ -200,75 +200,28 @@ machine-owned `~/.config/gem-agent/policy.toml`; concurrent instances
 write it through a locked read-modify-write, so two sessions cannot
 clobber each other's decisions.
 
-## Learned rules: `/learn` (ADR-0045)
+## Learned rules — withdrawn (ADR-0049)
 
-The policy above is written by hand, one entry at a time. `/learn`
-offers the entries your own answers already imply: it reads **this
-project's** transcripts, aggregates the decisions you made at the
-approval gate, and proposes rules — one at a time, each with its
-evidence, each answered yes or no. Nothing changes until you accept a
-proposal, and nothing runs unless you type `/learn`.
+Between v0.46.0 and v0.47.0 a `/learn` command proposed approval rules
+from your own recorded gate decisions. It was withdrawn after field
+testing: far more ended up permitted than the operator expected, and
+per-rule confirmation — even with full disclosure — did not turn out
+to be a durable boundary for loosening. ADR-0045, ADR-0048, and
+ADR-0049 hold the design and the honest post-mortem.
 
-It proposes three things:
+What remains, and what to check if you used it:
 
-- `"never"` for a command you approved **five times, or across three
-  separate sessions, with no denial anywhere** — the friction of
-  answering the same question about `go test` for the hundredth time.
-- `"always"` for one you have **denied in two or more sessions** —
-  tightening, so it takes the lower bar.
-- `"never"` for a whole **MCP server** — `mcp__asn-lookup__*` — once
-  you have approved **two or more of its distinct tools** and denied
-  none.
-
-Shell and built-in rules are per-project, in the machine-owned
-`policy.toml` under this project's path. There is deliberately no
-global command table: `make build` being settled in one repository says
-nothing about the next one, and a global rule would auto-run inside a
-hostile clone.
-
-**MCP server rules are global**, and that difference is the point. A
-server comes from your own `~/.config/gem-agent/mcp.json`, its binary
-behaves identically in every project, and a cloned repository cannot
-introduce one (a project's `.mcp.json` sits behind the trust gate). So
-`asn-lookup` is the same answer everywhere, and re-learning it per
-project would be re-answering a question that cannot vary. Servers a
-project supplied through its own `.mcp.json` are excluded — those *are*
-that project's.
-
-All of them appear in `/settings` with their source, and are removed
-there.
-
-Some details that matter when you read a proposal:
-
-- **The key is one or two tokens**: a command name, plus a second word
-  only when it looks like a subcommand (`go test`, `make build`,
-  `git status`; `ls -la` reduces to `ls`). Anything that could hide the
-  real target behind those tokens gets no key at all and can never
-  match a rule — pipes and `&&`, `$(…)` and backticks, redirection, a
-  path like `./deploy.sh`, and `FOO=bar` prefixes.
-- **An `a` is worth one vote, a typed `y` is worth one each.** The
-  gate records which it was, so answering `a` once cannot clear a
-  threshold on its own, while twenty-five typed approvals count as
-  twenty-five decisions — because that is what they are.
-- **A server rule covers tools you have never called**, and the
-  proposal lists every one of them before you answer, with the
-  server's own description of each. That list is the whole point of
-  the confirmation step: the rule grants more than the evidence for
-  it, and you are the one who knows whether that is right.
-- **A learned `"never"` is not a blank cheque**: it does not lift the
-  rule tier's Block floor, and pre-tool hooks still run first. A
-  `git push --force` still asks even where `git push` was learned.
-- **Nothing is inferred by a model.** The scan parses structured
-  records and never shows transcript text to one — a model reading
-  tool output and file contents and then proposing policy would be a
-  route from prompt injection to persistent permission. What counts is
-  your own recorded decisions, and the model's declared purpose
-  (ADR-0047) is deliberately not among the evidence.
-
-Memory writes are never proposed: where the risk lives in each call's
-content rather than its shape, frequency proves nothing (ADR-0020 §4).
-Keys your policy already answers are skipped, as are commands the rule
-tier blocks — `"never"` would not change what happens to those.
+- The transcript records it introduced (`gate_decision`, with the
+  answer's source) are still written — they are diagnostic, and any
+  future design will need them.
+- `[projects."…".commands]` entries in the machine-owned `policy.toml`
+  are **no longer applied**; a startup note reports any that exist.
+  Delete them or leave them — they do nothing either way.
+- Global `[tools]` entries it wrote (`mcp__<server>__*` wildcards) are
+  ordinary ADR-0008 policy and **remain in force** — they cannot be
+  told apart from hand-written ones. If you accepted server proposals,
+  review `~/.config/gem-agent/policy.toml` and delete any wildcard you
+  do not want.
 
 ## Sandbox (ADR-0001)
 

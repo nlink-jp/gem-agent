@@ -63,7 +63,7 @@ func TestSlashSurfacesAgree(t *testing.T) {
 	handled := slashOutputCases(t)
 	for _, c := range comps {
 		switch c {
-		case "/settings", "/compact", "/skill", "/learn":
+		case "/settings", "/compact", "/skill":
 			continue // intercepted upstream of slashOutput in both UIs
 		}
 		if !handled[c] {
