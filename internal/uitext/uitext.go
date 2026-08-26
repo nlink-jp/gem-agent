@@ -129,6 +129,45 @@ type Messages struct {
 	RoundContinue           string
 	RoundStop               string
 
+	// --- /riskbook (ADR-0050) ---
+	// RiskbookStatusLearning is the running-status line while the
+	// summary model drafts.
+	RiskbookStatusLearning string
+	// RiskbookNoDataFmt: %d sessions scanned, no gate decisions found.
+	// Saying how much was read distinguishes "nothing yet" from
+	// "nothing looked at".
+	RiskbookNoDataFmt string
+	// RiskbookScannedFmt: %d sessions, %d gate decisions — drafting.
+	RiskbookScannedFmt string
+	// RiskbookUnreadableFmt: %d transcripts skipped as unreadable.
+	RiskbookUnreadableFmt string
+	// RiskbookDraftHeader precedes the full draft — everything below it
+	// is byte-for-byte what would be stored.
+	RiskbookDraftHeader string
+	// RiskbookAskSave is the review question; Accept/Discard the answers.
+	RiskbookAskSave string
+	RiskbookAccept  string
+	RiskbookDiscard string
+	// RiskbookSavedFmt: %s = the project layer's path.
+	RiskbookSavedFmt  string
+	RiskbookDiscarded string
+	// RiskbookStopped: interrupted or declined; nothing was stored.
+	RiskbookStopped string
+	// RiskbookProvenanceFmt heads a stored draft: date, sessions,
+	// decisions — the document says what it was built from.
+	RiskbookProvenanceFmt string
+	// RiskbookShowBaseFmt / RiskbookShowProjectFmt head the layers in
+	// /riskbook show: %s = path. ShowNoneFmt names where the base
+	// would be read from, so "none" teaches the hand-written route.
+	RiskbookShowBaseFmt    string
+	RiskbookShowProjectFmt string
+	RiskbookShowNoneFmt    string
+	RiskbookReloaded       string
+	// RiskbookClearedFmt: %s = the removed project layer's path.
+	RiskbookClearedFmt string
+	RiskbookClearNone  string
+	RiskbookUsage      string
+
 	// --- slash command feedback (cmd) ---
 	Help             string // the full /help text
 	AutoOn           string
@@ -233,6 +272,26 @@ var en = Messages{
 	RoundContinue:           "continue",
 	RoundStop:               "stop here",
 
+	RiskbookStatusLearning: "drafting project risk rules from your decision record…",
+	RiskbookNoDataFmt:      "read %d sessions — no gate decisions recorded yet. The rulebook learns from your own answers at the approval gate; you can also write ~/.config/gem-agent/risk-rules.md by hand.",
+	RiskbookScannedFmt:     "read %d sessions / %d gate decisions — drafting…",
+	RiskbookUnreadableFmt:  "%d transcripts could not be read and were skipped",
+	RiskbookDraftHeader:    "proposed project risk rules — review every line; this exact text is what would be stored:",
+	RiskbookAskSave:        "Save these project risk rules? They will inform every auto-mode risk review in this project.",
+	RiskbookAccept:         "save",
+	RiskbookDiscard:        "discard",
+	RiskbookSavedFmt:       "saved to %s — in force now. /riskbook shows it; /riskbook clear removes it.",
+	RiskbookDiscarded:      "discarded — nothing was stored",
+	RiskbookStopped:        "stopped — nothing was stored",
+	RiskbookProvenanceFmt:  "(learned %s from %d sessions / %d gate decisions — operator-reviewed)",
+	RiskbookShowBaseFmt:    "base rules — %s (hand-written):",
+	RiskbookShowProjectFmt: "project rules — %s:",
+	RiskbookShowNoneFmt:    "no risk rules in force. Write %s by hand, or run /riskbook learn to draft project rules from your decision record.",
+	RiskbookReloaded:       "risk rules reloaded from disk",
+	RiskbookClearedFmt:     "project risk rules removed (%s)",
+	RiskbookClearNone:      "no project risk rules to remove",
+	RiskbookUsage:          "usage: /riskbook [show|learn|reload|clear]",
+
 	Help: `commands:
   /help    show this help
   /tools   list available tools
@@ -240,6 +299,7 @@ var en = Messages{
   /auto    toggle auto-approve (shift+tab does the same, and works mid-run)
   /compact summarise the older half of the conversation to free context
   /settings show every setting with where it came from; edit policy + toggles
+  /riskbook risk rules the auto-mode reviewer reads; learn drafts them from your answers
   /usage   token accounting: main loop, cache hit rate, side-calls, web tools
   /memory  list persisted memories (global + this project); saves are approval-gated
   /skills  list installed skills (/skills reload re-discovers them)
@@ -350,6 +410,26 @@ var ja = Messages{
 	RoundContinue:           "続行",
 	RoundStop:               "ここで停止",
 
+	RiskbookStatusLearning: "判断記録からプロジェクトのリスクルールを起草しています…",
+	RiskbookNoDataFmt:      "%d セッションを読みました — 記録されたゲート判断はまだありません。ルールブックは承認ゲートでのあなた自身の回答から学びます。~/.config/gem-agent/risk-rules.md を手で書くこともできます。",
+	RiskbookScannedFmt:     "%d セッション / %d 件のゲート判断を読みました — 起草中…",
+	RiskbookUnreadableFmt:  "%d 件の記録は読めなかったため飛ばしました",
+	RiskbookDraftHeader:    "プロジェクトリスクルールの提案 — 全行を確認してください。保存されるのはこのテキストそのものです:",
+	RiskbookAskSave:        "このプロジェクトリスクルールを保存しますか？ このプロジェクトの auto モードの全リスク評価が参照するようになります。",
+	RiskbookAccept:         "保存",
+	RiskbookDiscard:        "破棄",
+	RiskbookSavedFmt:       "%s に保存しました — いま有効です。/riskbook で表示、/riskbook clear で削除できます。",
+	RiskbookDiscarded:      "破棄しました — 何も保存されていません",
+	RiskbookStopped:        "中止しました — 何も保存されていません",
+	RiskbookProvenanceFmt:  "（%s に %d セッション / %d 件のゲート判断から学習 — オペレータレビュー済み）",
+	RiskbookShowBaseFmt:    "ベースルール — %s（手書き）:",
+	RiskbookShowProjectFmt: "プロジェクトルール — %s:",
+	RiskbookShowNoneFmt:    "有効なリスクルールはありません。%s を手で書くか、/riskbook learn で判断記録から起草できます。",
+	RiskbookReloaded:       "リスクルールをディスクから読み直しました",
+	RiskbookClearedFmt:     "プロジェクトリスクルールを削除しました（%s）",
+	RiskbookClearNone:      "削除するプロジェクトリスクルールはありません",
+	RiskbookUsage:          "使い方: /riskbook [show|learn|reload|clear]",
+
 	Help: `コマンド:
   /help    このヘルプを表示
   /tools   利用可能なツールの一覧
@@ -357,6 +437,7 @@ var ja = Messages{
   /auto    auto-approve を切替（shift+tab でも可・実行中も有効）
   /compact 会話の古い半分を要約してコンテキストを空ける
   /settings 全設定を出所つきで表示; ポリシーとトグルを編集
+  /riskbook auto モードの評価器が読むリスクルール; learn は回答記録から起草
   /usage   トークン集計: メインループ・キャッシュ命中率・サイドコール・Web ツール
   /memory  永続メモリの一覧（グローバル + このプロジェクト）; 保存は承認制
   /skills  インストール済みスキルの一覧（/skills reload で再探索）

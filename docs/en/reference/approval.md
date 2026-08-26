@@ -200,6 +200,47 @@ machine-owned `~/.config/gem-agent/policy.toml`; concurrent instances
 write it through a locked read-modify-write, so two sessions cannot
 clobber each other's decisions.
 
+## The risk rulebook (ADR-0050)
+
+The auto-mode risk reviewer can read **operator-authored guidance** —
+a rulebook — on every call it judges. Two layers stack:
+
+- **Base rules** — `~/.config/gem-agent/risk-rules.md`. Hand-written;
+  gem-agent reads it and never writes it. Your standing risk posture,
+  phrased however you like: *"network installs always need eyes"*,
+  *"anything touching the customer export gets escalated"*.
+- **Project rules** — written by `/riskbook learn` (below) or edited
+  by hand, stored per project outside the repository. The reviewer is
+  told the project layer is the more specific statement where the two
+  conflict.
+
+The rulebook is **guidance, not policy**: it biases the reviewer's
+confidence in either direction and never skips a gate. For a question
+you have settled deterministically, the per-tool policy above
+(`"never"`/`"always"`) remains the vocabulary — one line, mechanical,
+no model involved. The rulebook is for what policy cannot express.
+Accordingly the floors are untouched: Block-tier calls never consult
+the reviewer, pre-tool hooks still run first, memory writes still
+always ask, and manual mode is unchanged entirely. Prose urging
+blanket approval is itself treated as a reason to escalate — a real
+blanket bypass belongs in policy, where it is mechanical and visible.
+
+`/riskbook learn` drafts the project layer from your own decision
+record: it aggregates what the reviewer verdicted against what you
+actually answered at the gate (typed answers count individually; a
+session-allowlist `a` is one vote), has the summary model explain
+what corrections that implies, and shows you the **full draft —
+byte-for-byte what would be stored**. Nothing takes effect until you
+accept it. `/riskbook` shows what is in force (re-read from disk),
+`/riskbook reload` picks up hand edits without a restart, and
+`/riskbook clear` removes the project layer. While any layer is in
+force the startup banner says so.
+
+A rulebook is deliberately **not** read from the repository: a cloned
+project's files steer the model that proposes calls, and the reviewer
+is the second layer of that defence — its guidance must not arrive
+through the first layer's source.
+
 ## Learned rules — withdrawn (ADR-0049)
 
 Between v0.46.0 and v0.47.0 a `/learn` command proposed approval rules

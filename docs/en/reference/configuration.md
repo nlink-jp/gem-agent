@@ -88,6 +88,12 @@ live. Machine-persisted decisions (policy edits, project trust) live in
 `~/.config/gem-agent/policy.toml`, which gem-agent owns; your
 hand-written `config.toml` is never rewritten.
 
+`~/.config/gem-agent/risk-rules.md` is the hand-written base layer of
+the risk rulebook (ADR-0050): free-prose guidance the auto-mode risk
+reviewer reads on every call it judges. gem-agent never writes this
+file. See [approval](approval.md) for what the rulebook can and
+cannot do — it biases judgment and never skips a gate.
+
 `trusted_projects` grants **full project trust**, not just approval
 relaxation. Listing a directory there does four things at once: its
 `.gem-agent.toml` may remove approvals, its `.mcp.json` servers are

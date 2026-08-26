@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.49.0] - 2026-08-26
+
+### Added — the risk rulebook (ADR-0050)
+
+The successor to the withdrawn `/learn`, rebuilt on the operator's
+architecture: the decision record corrects the **judge**, never the
+policy. The auto-mode risk reviewer now reads operator-authored
+guidance on every call it judges, in two layers:
+
+- **Base rules** — `~/.config/gem-agent/risk-rules.md`, hand-written;
+  gem-agent never writes it.
+- **Project rules** — drafted by `/riskbook learn` from your own
+  recorded gate decisions (what the reviewer verdicted vs. what you
+  actually answered; typed answers count individually, an allowlist
+  `a` is one vote), then shown to you **in full, byte-for-byte what
+  would be stored** — nothing takes effect until you accept it. Also
+  hand-editable; stored per project outside the repository.
+
+The rulebook is guidance, not policy: it biases the reviewer's
+confidence in either direction and never skips a gate. Block-tier
+calls never consult the reviewer, pre-tool hooks still run first,
+memory writes still always ask, manual mode is unchanged, and prose
+urging blanket approval is itself treated as a reason to escalate.
+`/riskbook` shows what is in force, `/riskbook reload` picks up hand
+edits live, `/riskbook clear` removes the project layer, and the
+startup banner announces a rulebook while it is in force.
+
+
 ## [0.48.0] - 2026-08-26
 
 ### Removed — /learn is withdrawn (ADR-0049)

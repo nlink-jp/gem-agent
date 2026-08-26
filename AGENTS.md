@@ -50,6 +50,8 @@ internal/risk/     rule tier of the auto-approve ladder (pure, no model)
 internal/policy/   per-tool approval policy (ADR-0008), pure resolver; also the
                    ADR-0045 per-command vocabulary, parsed for file compatibility
                    but not applied since ADR-0049
+internal/riskbook/ the risk rulebook (ADR-0050): layered operator guidance the
+                   risk reviewer reads — aggregation, storage, compose
 internal/skills/   Claude Code skill discovery/loading (ADR-0010)
 internal/memory/   agent memory across sessions (ADR-0020): two scopes, budgeted injection
 internal/docext/   stdlib-only Office XML text extraction (ADR-0026): docx/xlsx/pptx
@@ -123,6 +125,14 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   changing the ladder, keep: Block never consults the model, model errors
   and malformed verdicts escalate, and confidence alone never approves.
   New dangerous patterns go in `internal/risk`, with a corpus test.
+- **The rulebook biases, never bypasses** (ADR-0050) — riskbook text
+  reaches only the model tier: keep Block, hooks, the memory-write
+  exclusion, and the confidence bar out of its reach, and keep the
+  learn route's mandatory full-text review (the enumeration carries
+  model-authored command lines; the review is the boundary that makes
+  adopted text operator-authored). Never read a rulebook from the
+  repository — the proposer's channel must not write the judge's
+  guidance.
 - **/learn is withdrawn — do not rebuild it casually** (ADR-0049).
   Field-tested twice, failed twice in opposite directions; the
   operator judged the result dangerous. Per-item confirmation with

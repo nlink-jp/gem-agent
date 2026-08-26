@@ -2,7 +2,7 @@
 
 | 項目 | 値 |
 |------|----|
-| Status | **Proposed** |
+| Status | **Accepted** |
 | 日付 | 2026-08-26 |
 | 適用対象 | gem-agent |
 | 意思決定者 | nlink-jp maintainers |

@@ -110,6 +110,14 @@ type ContextWindow struct {
 	Assumed bool
 }
 
+// Output carries plain lines to the scrollback from work running
+// outside the event loop — /riskbook learn's progress and draft, for
+// one (ADR-0050). Attached exists for two other things and neither
+// fits: its Lines are attachments (📎) and its Notes warnings (⚠);
+// a draft rendered as a column of warnings reads as a column of
+// problems.
+type Output struct{ Lines []string }
+
 // ApprovalRequest asks the operator to approve a mutating tool call.
 // The gate goroutine blocks on Resp until the UI answers 'y', 'n' or 'a'.
 type ApprovalRequest struct {

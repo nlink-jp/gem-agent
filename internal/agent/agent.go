@@ -119,6 +119,11 @@ type Agent struct {
 	// zero value leaves every tool at the default behaviour.
 	policy policy.Policy
 
+	// rulebook is the composed operator risk rulebook (ADR-0050), read
+	// by every model-tier risk evaluation. Set from the UI goroutine at
+	// startup and on /riskbook accept/reload/clear, hence mu.
+	rulebook string
+
 	// instructionTools: results of these tools bypass the nonce wrap
 	// (ADR-0010). Set at construction, read-only afterwards.
 	instructionTools map[string]bool
@@ -398,6 +403,21 @@ func (a *Agent) Policy() policy.Policy {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.policy
+}
+
+// SetRulebook installs the composed risk rulebook (ADR-0050); empty
+// removes it, returning the judge to its unassisted evaluation.
+func (a *Agent) SetRulebook(text string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.rulebook = text
+}
+
+// Rulebook returns the rulebook in force.
+func (a *Agent) Rulebook() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.rulebook
 }
 
 func (a *Agent) toolPolicy(tool string) policy.Decision {

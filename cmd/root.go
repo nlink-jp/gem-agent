@@ -25,6 +25,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/mention"
 	"github.com/nlink-jp/gem-agent/internal/policy"
 	"github.com/nlink-jp/gem-agent/internal/repl"
+	"github.com/nlink-jp/gem-agent/internal/riskbook"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/skills"
@@ -122,7 +123,8 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 	// UI language, resolved once (ADR-0029): the chrome that follows —
 	// prompts, TUI, slash output — is built with it.
-	msgs := uitext.For(uitext.Resolve(cfg.TUI.Language, os.Getenv))
+	uiLang := uitext.Resolve(cfg.TUI.Language, os.Getenv)
+	msgs := uitext.For(uiLang)
 
 	// --- project directory ---
 	cwd, err := os.Getwd()
@@ -696,6 +698,53 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		ag.SetHistory(restored)
 	}
 
+	// --- risk rulebook (ADR-0050): read both layers into the judge.
+	// A standing influence is never silent (the ADR-0049 lesson): the
+	// banner line below announces it while in force. ---
+	rbBook, rbErr := riskbook.Load(cfgPath, projectDir)
+	if rbErr != nil {
+		fmt.Fprintf(stderr, "warning: risk rulebook: %v\n", rbErr)
+	} else {
+		ag.SetRulebook(rbBook.Compose())
+	}
+
+	// The /riskbook runner (ADR-0050 §6). apply is the one path every
+	// mutation ends on: disk → compose → judge, so they cannot drift.
+	rbLangName := "English"
+	if uiLang == uitext.JA {
+		rbLangName = "Japanese"
+	}
+	rbRunner := &riskbookRunner{
+		cfgPath:     cfgPath,
+		sessionsDir: sessionDir,
+		projectDir:  projectDir,
+		backend:     summaryBackend,
+		modelName:   summaryModel,
+		langName:    rbLangName,
+		msgs:        msgs,
+		apply:       func() (riskbook.Book, error) { return applyRulebook(cfgPath, projectDir, ag) },
+		ask: func(askCtx context.Context, question, accept, discard string) (bool, error) {
+			idx, err := askOperator(askCtx, question, []string{accept, discard})
+			return err == nil && idx == 0, err
+		},
+		emit: func(lines []string) {
+			if prog != nil {
+				prog.Send(tui.Output{Lines: lines})
+				return
+			}
+			for _, l := range lines {
+				fmt.Fprintln(stderr, l)
+			}
+		},
+		record: func(kind string, data any) {
+			if sessionLog != nil {
+				_ = sessionLog.Log(kind, data)
+			}
+		},
+		tally: tally,
+		now:   time.Now,
+	}
+
 	settings := &settingsStore{
 		cfg: cfg, projectCfg: projectCfg, policyFile: policyFile,
 		policyPath: policyPath, projectDir: projectDir,
@@ -841,6 +890,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if approvalPolicy.Configured() {
 		bannerLines = append(bannerLines, policyBannerLine(approvalPolicy.Describe()))
 	}
+	if rbErr == nil && rbBook.InForce() {
+		bannerLines = append(bannerLines, riskbookBannerLine(rbBook))
+	}
 	for _, n := range policyNotes {
 		bannerLines = append(bannerLines, "warning: "+string(n))
 	}
@@ -913,11 +965,18 @@ func runREPL(cmd *cobra.Command, args []string) error {
 					prog.Send(tui.TurnDone{Err: err})
 				}()
 			},
+			Riskbook: func(learnCtx context.Context) {
+				go func() {
+					rbRunner.Learn(learnCtx)
+					prog.Send(tui.TurnDone{})
+				}()
+			},
 			Slash: func(in string) (string, bool, bool) {
 				return slashOutput(in, ag, registry, mcpSummary, skillsList,
 					slashReloads{mcp: reloadMCP, skills: reloadSkills},
 					func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
-					func() string { return memoryListing(memBase, projectDir) }, appVersion, msgs)
+					func() string { return memoryListing(memBase, projectDir) },
+					rbRunner.Command, appVersion, msgs)
 			},
 		})
 		prog = tea.NewProgram(model)
@@ -982,6 +1041,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			}
 			continue
 		}
+		// The plain REPL owns stdin on this goroutine, so the learn pass
+		// runs inline: there is no event loop to deadlock, and Ctrl+C
+		// reaches it through the shared context.
+		if input == "/riskbook learn" {
+			rbRunner.Learn(ctx)
+			continue
+		}
 		if input == "/compact" {
 			// Synchronous here: the plain REPL has no phase machine, and
 			// nothing else can be happening while it waits for a line.
@@ -1005,7 +1071,8 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			out, _, quit := slashOutput(input, ag, registry, mcpSummary, skillsList,
 				slashReloads{mcp: reloadMCP, skills: reloadSkills},
 				func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
-				func() string { return memoryListing(memBase, projectDir) }, appVersion, msgs)
+				func() string { return memoryListing(memBase, projectDir) },
+				rbRunner.Command, appVersion, msgs)
 			fmt.Fprint(stderr, out)
 			if quit {
 				return nil
@@ -1160,8 +1227,8 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 func slashCompletions(getSkills func() []skills.Skill) func(string) []string {
 	commands := []string{
 		"/auto", "/clear", "/compact", "/exit", "/help", "/mcp", "/memory",
-		"/quit", "/settings", "/skill", "/skills", "/tools", "/usage",
-		"/version",
+		"/quit", "/riskbook", "/settings", "/skill", "/skills", "/tools",
+		"/usage", "/version",
 	}
 	return func(prefix string) []string {
 		if rest, ok := strings.CutPrefix(prefix, "/skill "); ok {
@@ -1239,7 +1306,7 @@ type slashReloads struct {
 	skills func() string
 }
 
-func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, reload slashReloads, usage func() string, memoryInfo func() string, version string, msgs *uitext.Messages) (output string, isErr bool, quit bool) {
+func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, reload slashReloads, usage func() string, memoryInfo func() string, riskbookCmd func(args []string) (string, bool), version string, msgs *uitext.Messages) (output string, isErr bool, quit bool) {
 	var b strings.Builder
 	fields := strings.Fields(input)
 	// The one supported subcommand shape: "/mcp reload" and
@@ -1291,6 +1358,15 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 				}
 			}
 			fmt.Fprintf(&b, "  %-12s %s (%s)\n", t.Name, firstSentence(t.Description), marker)
+		}
+	case "/riskbook":
+		// `learn` is intercepted upstream on both surfaces (it drafts
+		// with a model and drives dialogs); the synchronous subcommands
+		// answer here.
+		out, isErr := riskbookCmd(fields[1:])
+		b.WriteString(out)
+		if isErr {
+			return b.String(), true, false
 		}
 	case "/auto":
 		ag.SetAutoApprove(!ag.AutoApprove())

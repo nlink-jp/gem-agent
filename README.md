@@ -85,7 +85,9 @@ MITL gates that show the model's own declared purpose for the call
 alongside its arguments, a session allowlist that never covers
 Block-tier calls, an opt-in two-tier auto-approve (rules first, model
 review second), a per-tool approval policy with scope-aware resolution and
-trust-gated project loosening, the Seatbelt sandbox, operator pre-tool
+trust-gated project loosening, a layered risk rulebook the auto-mode
+reviewer reads — hand-written or drafted from your own recorded
+answers, never skipping a gate — the Seatbelt sandbox, operator pre-tool
 hooks that run the same guard scripts Claude Code does and refuse a
 call before the ladder sees it, startup gates for
 broad roots and first-seen projects, and nonce-tag isolation of all

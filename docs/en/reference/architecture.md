@@ -28,7 +28,8 @@ Supporting packages: `internal/sandbox` (Seatbelt profile generation),
 `internal/approve` (plain-REPL gate), `internal/risk` (auto-approve rule
 tier), `internal/policy` (per-tool approval policy, plus the
 per-command vocabulary of ADR-0045 — parsed for file compatibility but
-not applied since ADR-0049), `internal/mcp`
+not applied since ADR-0049), `internal/riskbook` (the layered risk
+rulebook and its learning tool — ADR-0050), `internal/mcp`
 (stdio JSON-RPC client), `internal/mention` (`@`-references),
 `internal/instructions` (`AGENTS.md` discovery), `internal/session`
 (transcript: logger + resume loader), `internal/statedir` (per-project
