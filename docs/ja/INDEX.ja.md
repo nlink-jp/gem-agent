@@ -178,6 +178,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0048`](adr/0048-learning-that-fires.ja.md) — 実利用で発火する学習へ: MCP はサーバ単位グローバル、そして人が実際に出した回答を数える（0049 が撤収）
 - [`ADR-0049`](adr/0049-learn-withdrawn.ja.md) — `/learn` を撤収する: 確認は緩和の恒久的な境界にならなかった
 - [`ADR-0050`](adr/0050-risk-calibration.ja.md) — リスクルールブック: 判定器への積層ガイダンス。学習はその執筆手段の一つ
+- [`ADR-0051`](adr/0051-destructive-rewrite-floors.ja.md) — 縮む全文書き換えは危険信号: 縮小ガード・再生成規則・コンパクション失効通知・ダイアログのサイズ差分
 
 ## History（履歴）
 

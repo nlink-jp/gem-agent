@@ -68,7 +68,8 @@ panel, theme control, and a fully bilingual chrome
 (`list_files`/`list_tree`/`search_files`), windowed reads and
 summaries (`read_file`/`summarize_file`), delegated project search in
 an isolated child context (`agentic_file_search`), atomic batched edits with
-diagnosed misses (`edit_file`/`write_file`), file identification with
+diagnosed misses (`edit_file`/`write_file`, with a shrink guard so a
+whole-file rewrite cannot silently summarize a document away), file identification with
 hashes (`file_info`), images and documents for the model
 (`view_image`/`read_document`), sandboxed shell (`shell_exec`), a
 deterministic clock/calendar (`datetime`), the model's own runtime

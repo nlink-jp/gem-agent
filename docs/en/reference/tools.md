@@ -69,7 +69,21 @@ whitespace near-match is quoted with the file's real text and line, so
 the fix is a copy-paste, not a re-read), and **evidence on success** —
 the changed region with its line span, so verification needs no
 read-back. The intended loop: windowed read → one batched edit → verify
-from the result. `write_file` is for new files and full rewrites.
+from the result.
+
+`write_file` is for new files — and for *deliberate* whole-file
+replacement, which is where large documents used to die (ADR-0051): a
+model revising a big file it holds only partially or post-compaction
+regenerates the whole thing from memory, and everything it does not
+reproduce verbatim is silently destroyed, reported as success.
+Overwriting an existing file of 2KB or more with content under 70% of
+its current size is therefore **refused** unless the call declares
+`allow_shrink: true`; the refusal names both sizes and both remedies
+(targeted `edit_file`, or re-read then declare). The declaration is an
+argument, so it is visible on the approval dialog and recorded in the
+transcript — a shrinking rewrite is possible, just never silent. The
+dialog also annotates any overwrite with what it replaces
+(`replaces existing file: 42KB → 8KB`).
 
 ## `file_info` (ADR-0016)
 

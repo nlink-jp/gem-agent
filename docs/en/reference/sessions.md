@@ -57,6 +57,14 @@ notice says how many messages were summarised, because detail from that
 half is second-hand afterwards and a model that has forgotten something
 must not look like one that never knew it.
 
+The stand-in message also warns the model that file contents read
+before the compaction are no longer verbatim in context: re-read
+before editing or quoting exactly, never rewrite a file from the
+summary alone (ADR-0051). The warning is gem-agent's own framing —
+deterministic, not dependent on the summariser — and it lands at
+exactly the moment a mid-task compaction would otherwise turn a later
+whole-file write into a write-from-summary.
+
 If the summarisation call fails — an error, a content filter — the
 history is left exactly as it was and the turn continues on a full
 context. `auto_compact = false` turns the automatic path off;

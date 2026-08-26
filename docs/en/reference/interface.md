@@ -187,7 +187,9 @@ The highlight starts on *allow*, except for a call auto-approve
 escalated, where it starts on *deny* so a reflexive Enter cannot approve
 it. Long call details are budgeted to the terminal height with the
 hidden-line count disclosed — you are never asked to approve something
-you have not seen. A dialog arriving after you pressed Ctrl+C is denied
+you have not seen. A `write_file` that overwrites an existing file
+says what it replaces — `replaces existing file: 42KB → 8KB` — so a
+shrinking rewrite is visible at the moment of consent (ADR-0051). A dialog arriving after you pressed Ctrl+C is denied
 automatically: the turn is already dead.
 
 ## The ask dialog (ADR-0036)

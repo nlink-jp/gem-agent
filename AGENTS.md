@@ -143,6 +143,14 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   source, and the per-command policy vocabulary — parsed for file
   compatibility, fed as nil into Build, never applied. Any successor
   starts from ADR-0049's open questions, not from re-enabling this.
+- **The write_file shrink guard is a safety floor, not a knob**
+  (ADR-0051) — overwriting an existing file ≥2KB with content under
+  70% of its size fails without `allow_shrink: true`. Tests and
+  fixtures that legitimately shrink such files must declare it; the
+  thresholds are constants on purpose (revisit needs an ADR, not a
+  config key). The companion `Annotate` hook on `tools.Tool` is
+  display-only — it feeds the approval detail via `Describe` and must
+  never mutate anything or gate anything.
 - **skillsList/mcpSummary/mcpClients are LIVE variables** (ADR-0039) —
   /skills reload and /mcp reload reassign them mid-session, and every
   consumer reads them through a closure over the variable. Never bake

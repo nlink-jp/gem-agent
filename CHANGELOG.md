@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.50.0] - 2026-08-27
+
+### Added — four floors against summarizing overwrites (ADR-0051)
+
+Operator field report: revising a large project document tended to
+destroy it — the model regenerates the whole file from a partial,
+summarized, or compacted-away copy, and everything not reproduced
+verbatim vanishes, reported as success. Four co-reinforcing floors:
+
+- **The shrink guard**: `write_file` refuses to overwrite an existing
+  file of 2KB or more with content under 70% of its current size
+  unless the call declares `allow_shrink: true`. The refusal names
+  both sizes and both remedies; the declaration is an argument, so it
+  is visible on the approval dialog and recorded in the transcript. A
+  destroyed document now requires either targeted edits or an
+  explicit, recorded claim that the shrink is deliberate.
+- **The regeneration rule** (prompt): prefer `edit_file` for existing
+  files even for large revisions; never overwrite an existing file
+  without having read it in full, in this conversation, after any
+  compaction.
+- **The compaction staleness notice**: the message that stands in for
+  compacted history now warns that file contents read before it are
+  no longer verbatim in context — re-read before editing, never
+  rewrite a file from the summary alone. Deterministic framing, not
+  summarizer output.
+- **The dialog size delta**: a `write_file` that overwrites an
+  existing file annotates the approval detail with what it replaces
+  (`replaces existing file: 42KB → 8KB`), via a new display-only
+  `Annotate` hook on built-in tools.
+
 ## [0.49.2] - 2026-08-27
 
 ### Changed — /help is a map, and exits leave a receipt (operator UX reports)

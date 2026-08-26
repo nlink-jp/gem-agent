@@ -66,7 +66,8 @@ sequence / ER 図を端末に描き、描けなかったときは理由をモデ
 （`list_files`/`list_tree`/`search_files`）、窓読みと要約
 （`read_file`/`summarize_file`）、隔離された子コンテキストでの
 委任プロジェクト検索（`agentic_file_search`）、診断つきアトミック一括編集
-（`edit_file`/`write_file`）、ハッシュ付きファイル同定
+（`edit_file`/`write_file` — 全文書き換えが文書を黙って要約消滅させ
+ないための縮小ガード付き）、ハッシュ付きファイル同定
 （`file_info`）、モデルのための画像と文書
 （`view_image`/`read_document`）、サンドボックス化シェル
 （`shell_exec`）、決定的な時計とカレンダー（`datetime`）、モデル自身の

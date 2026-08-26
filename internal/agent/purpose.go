@@ -187,7 +187,16 @@ func (a *Agent) declaredPurpose(tc llm.ToolCall) string {
 // prompt may never do (ADR-0021).
 func (a *Agent) Describe(tc llm.ToolCall) (detail, purpose string) {
 	stripped := llm.ToolCall{Name: tc.Name, Args: a.stripPurpose(tc.Name, tc.Args)}
-	return CallDetail(stripped), a.declaredPurpose(tc)
+	detail = CallDetail(stripped)
+	// A tool's display annotation (ADR-0051) rides the detail so the
+	// approval dialog and the gate_decision record both carry it —
+	// e.g. write_file's "replaces existing file: 42KB → 8KB".
+	if t, ok := a.registry.Get(tc.Name); ok && t.Annotate != nil {
+		if note := t.Annotate(stripped.Args); note != "" {
+			detail += "\n" + note
+		}
+	}
+	return detail, a.declaredPurpose(tc)
 }
 
 // callSig is the loop-detector signature with the purpose removed: the

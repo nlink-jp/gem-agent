@@ -37,6 +37,11 @@ type Tool struct {
 	// Mutating tools require MITL approval before each run.
 	Mutating bool
 	Run      func(ctx context.Context, args map[string]any) (string, error)
+	// Annotate, when set, returns extra display lines for the approval
+	// prompt derived from live filesystem state (ADR-0051) — e.g. what
+	// an overwrite replaces. Display-only: it must not mutate anything,
+	// and an empty return means nothing to add.
+	Annotate func(args map[string]any) string
 }
 
 // ExecFunc builds the exec.Cmd for a shell command. The production
@@ -450,11 +455,26 @@ func (r *Registry) readFile() *Tool {
 	}
 }
 
+const (
+	// shrinkGuardMinBytes: existing files smaller than this may be
+	// overwritten freely — a small diff is cheap to review, and tiny
+	// files hit high shrink ratios with legitimate edits (ADR-0051).
+	shrinkGuardMinBytes = 2048
+	// shrinkGuardPct: overwriting an existing file with content below
+	// this percentage of its current size is refused without an
+	// explicit allow_shrink — a whole-file rewrite that shrinks is the
+	// signature of a regeneration that summarized away content.
+	shrinkGuardPct = 70
+)
+
 func (r *Registry) writeFile() *Tool {
 	return &Tool{
 		Name: "write_file",
-		Description: "Create or overwrite a file inside the project with the given content. " +
-			"Parent directories are created as needed. For small changes to an existing file, prefer edit_file.",
+		Description: "Create a new file inside the project with the given content, or deliberately replace " +
+			"an existing one whole. Parent directories are created as needed. For changes to an existing " +
+			"file — even large revisions — prefer edit_file: write_file replaces the WHOLE file, and " +
+			"everything not reproduced verbatim in content is destroyed. An overwrite that shrinks an " +
+			"existing file substantially is refused unless allow_shrink is true.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -466,10 +486,35 @@ func (r *Registry) writeFile() *Tool {
 					"type":        "string",
 					"description": "The complete new file content (NOT a diff, NOT the user's request text).",
 				},
+				"allow_shrink": map[string]any{
+					"type": "boolean",
+					"description": "Set true only when replacing an existing file with much smaller content " +
+						"is intentional. Without it a substantial shrink is refused, so a partial rewrite " +
+						"cannot silently destroy the rest of the file.",
+				},
 			},
 			"required": []string{"path", "content"},
 		},
 		Mutating: true,
+		Annotate: func(args map[string]any) string {
+			p, ok := strArg(args, "path")
+			if !ok {
+				return ""
+			}
+			content, ok := strArg(args, "content")
+			if !ok {
+				return ""
+			}
+			abs, err := r.resolvePath(p)
+			if err != nil {
+				return ""
+			}
+			info, err := os.Stat(abs)
+			if err != nil || info.IsDir() {
+				return ""
+			}
+			return fmt.Sprintf("replaces existing file: %s → %s", sizeLabel(info.Size()), sizeLabel(int64(len(content))))
+		},
 		Run: func(ctx context.Context, args map[string]any) (string, error) {
 			p, ok := strArg(args, "path")
 			if !ok {
@@ -483,6 +528,16 @@ func (r *Registry) writeFile() *Tool {
 			if err != nil {
 				return "", err
 			}
+			allowShrink, _ := args["allow_shrink"].(bool)
+			if info, err := os.Stat(abs); err == nil && !info.IsDir() &&
+				info.Size() >= shrinkGuardMinBytes && !allowShrink &&
+				int64(len(content))*100 < info.Size()*shrinkGuardPct {
+				return "", fmt.Errorf("refusing to replace %s (%s) with much smaller content (%s): "+
+					"a whole-file rewrite destroys everything not reproduced verbatim. Use edit_file "+
+					"for targeted changes, or re-read the file and pass allow_shrink=true if this "+
+					"shrink is intentional (file unchanged)",
+					p, sizeLabel(info.Size()), sizeLabel(int64(len(content))))
+			}
 			if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 				return "", err
 			}
@@ -491,6 +546,18 @@ func (r *Registry) writeFile() *Tool {
 			}
 			return fmt.Sprintf("wrote %d bytes to %s", len(content), p), nil
 		},
+	}
+}
+
+// sizeLabel renders a byte count for guard errors and annotations.
+func sizeLabel(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1fMB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%dKB", n/(1<<10))
+	default:
+		return fmt.Sprintf("%dB", n)
 	}
 }
 
