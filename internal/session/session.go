@@ -406,6 +406,31 @@ func List(dir, projectDir string) ([]Meta, error) {
 	return metas, nil
 }
 
+// Scan walks one transcript's records, decoding only the envelope and
+// handing each payload to fn undecoded. It is the read path for
+// consumers that want the diagnostic records Load discards — /learn
+// reads the operator's own gate decisions this way (ADR-0045 §2).
+//
+// Unreadable lines are skipped rather than fatal, matching Load's
+// tolerance: a torn tail must not cost the whole file. fn stops the walk
+// by returning an error, which Scan returns as-is.
+func Scan(path string, fn func(kind string, ts time.Time, data json.RawMessage) error) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return forEachLine(f, func(rec *rawRecord) (bool, error) {
+		if rec == nil {
+			return true, nil
+		}
+		if err := fn(rec.Kind, rec.Time, rec.Data); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
+}
+
 // listDir describes the resumable sessions in one directory. Unreadable
 // files and (when projectDir is non-empty) foreign-project headers are
 // skipped — never fatal to a listing.
