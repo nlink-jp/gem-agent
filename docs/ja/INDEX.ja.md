@@ -172,6 +172,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0044`](adr/0044-pre-tool-hooks.ja.md) — オペレーター pre-tool フック: 組織のガードをフォールバック後も生かす
 - [`ADR-0045`](adr/0045-transcript-approval-learning.ja.md) — トランスクリプト駆動の承認ルール学習: `/learn` が提案し、オペレータが決める
 - [`ADR-0046`](adr/0046-mcp-description-risk-evidence.ja.md) — MCP ツール description をリスク評価の証拠に: オペレータが既に導入したものを評価器に教える
+- [`ADR-0047`](adr/0047-declared-purpose.ja.md) — 承認対象コールに宣言された purpose: 「何を」だけでなく「なぜ」を運用者に見せる
   描画: 実測で忠実な種別だけ（flowchart・ASCII sequence・ER）、形状は
   矩形に正規化、忠実性ガード、残りはソース表示; モデルには描けるものを
   正確に伝える

@@ -178,6 +178,7 @@ excepted).
 - [`ADR-0044`](adr/0044-pre-tool-hooks.md) — operator pre-tool hooks: the org's guards survive the fallback
 - [`ADR-0045`](adr/0045-transcript-approval-learning.md) — transcript-driven approval-rule learning: `/learn` proposes, the operator decides
 - [`ADR-0046`](adr/0046-mcp-description-risk-evidence.md) — MCP tool descriptions as risk-evaluation evidence: tell the evaluator what the operator already installed
+- [`ADR-0047`](adr/0047-declared-purpose.md) — model-declared purpose on gated calls: the operator sees why, not only what
   draw in the terminal: the measured-faithful types only (flowchart,
   ASCII sequence, ER), shapes normalized to boxes, a fidelity guard,
   the rest shown as source; the model is told exactly what renders
