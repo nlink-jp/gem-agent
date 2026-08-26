@@ -70,6 +70,11 @@ naming the model that spent the tokens. The footer carries the live numbers (con
 occupancy, cumulative consumption, `cache NN%`); the model can read
 the same figures through `agent_info`.
 
+One reading note: the cache percentage is a **cost and latency**
+saving — cached prompt tokens are billed less and stream faster. It
+does not free context-window space; the window is what compaction
+manages.
+
 ## Agent memory (ADR-0020)
 
 The agent persists short facts across sessions: decisions, preferences,

@@ -57,7 +57,7 @@ func usageReport(ag *agent.Agent, tally *usageTally, mainModel, summaryModel str
 		if s.Prompt > 0 {
 			cachePct = 100 * float64(s.Cached) / float64(s.Prompt)
 		}
-		fmt.Fprintf(&b, "  cached %s of prompt (%.0f%%) — cache saves cost/latency, not window space\n",
+		fmt.Fprintf(&b, "  cached %s of prompt (%.0f%%)\n",
 			humanTok(s.Cached), cachePct)
 		window := "unknown window"
 		if s.Window > 0 {

@@ -1395,7 +1395,6 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 			for _, s := range mcpSummary {
 				b.WriteString("  " + s + "\n")
 			}
-			b.WriteString(msgs.MCPToolsNote)
 		}
 	default:
 		fmt.Fprintf(&b, msgs.UnknownCommandFmt, input)

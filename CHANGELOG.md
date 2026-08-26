@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.49.1] - 2026-08-26
+
+### Changed — status output is not documentation (operator UX report)
+
+Static explanatory captions that repeated on every render have been
+removed from command output; the facts they carried live in the
+reference docs instead. The operator's test named the pattern: a line
+that is true but unactionable on every viewing reads as "so what?" and
+trains skimming.
+
+- `/usage` no longer appends "— cache saves cost/latency, not window
+  space" to the cached line; the reading note moved to the sessions
+  reference.
+- `/riskbook` no longer labels the base layer "(hand-written)" — the
+  path is the provenance.
+- `/mcp` no longer appends the two-line explanation of tool naming and
+  gating; the integration reference carries it.
+- The post-save confirmation of `/riskbook learn` no longer recites the
+  show/clear manual.
+
+Unchanged on purpose: empty-state teaching (the one place the operator
+actually asks "so what do I do?"), per-event disclosures (clips, hidden
+lines, handbacks), varying provenance, and banner navigation pointers.
+
+
 ## [0.49.0] - 2026-08-26
 
 ### Added — the risk rulebook (ADR-0050)

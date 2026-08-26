@@ -157,8 +157,12 @@ type Messages struct {
 	// decisions — the document says what it was built from.
 	RiskbookProvenanceFmt string
 	// RiskbookShowBaseFmt / RiskbookShowProjectFmt head the layers in
-	// /riskbook show: %s = path. ShowNoneFmt names where the base
-	// would be read from, so "none" teaches the hand-written route.
+	// /riskbook show: %s = path — the path IS the provenance; labels
+	// restating what the operator already knows are noise (the
+	// status-output-is-not-documentation rule). ShowNoneFmt names where
+	// the base would be read from: an empty state is the one place
+	// teaching belongs, because it is where the operator actually asks
+	// "so what do I do?".
 	RiskbookShowBaseFmt    string
 	RiskbookShowProjectFmt string
 	RiskbookShowNoneFmt    string
@@ -183,10 +187,6 @@ type Messages struct {
 	MCPDisabled       string // /mcp reload while [mcp].enabled=false / --mcp off
 	MCPReloadedFmt    string // fmt: servers (int), tools (int)
 	SkillsReloadedFmt string // fmt: skill count (int)
-	// MCPToolsNote states the real gate honestly: MCP tools ARE
-	// approval-gated, and in auto mode the risk review may pass
-	// routine calls (review round 2 — the old text overstated).
-	MCPToolsNote string
 
 	// --- startup safety (ADR-0023, cmd) ---
 	// TrustHeaderFmt opens the first-run prompt: project dir.
@@ -280,11 +280,11 @@ var en = Messages{
 	RiskbookAskSave:        "Save these project risk rules? They will inform every auto-mode risk review in this project.",
 	RiskbookAccept:         "save",
 	RiskbookDiscard:        "discard",
-	RiskbookSavedFmt:       "saved to %s — in force now. /riskbook shows it; /riskbook clear removes it.",
+	RiskbookSavedFmt:       "saved to %s — in force now",
 	RiskbookDiscarded:      "discarded — nothing was stored",
 	RiskbookStopped:        "stopped — nothing was stored",
 	RiskbookProvenanceFmt:  "(learned %s from %d sessions / %d gate decisions — operator-reviewed)",
-	RiskbookShowBaseFmt:    "base rules — %s (hand-written):",
+	RiskbookShowBaseFmt:    "base rules — %s:",
 	RiskbookShowProjectFmt: "project rules — %s:",
 	RiskbookShowNoneFmt:    "no risk rules in force. Write %s by hand, or run /riskbook learn to draft project rules from your decision record.",
 	RiskbookReloaded:       "risk rules reloaded from disk",
@@ -344,7 +344,6 @@ mutating tools prompt for approval: y = once, a = always this session
 	MCPDisabled:       "MCP is disabled for this session ([mcp].enabled=false or --mcp off) — restart to enable it\n",
 	MCPReloadedFmt:    "mcp reloaded: %d server(s), %d tool(s)\n",
 	SkillsReloadedFmt: "skills reloaded: %d found\n",
-	MCPToolsNote:      "MCP tools appear in /tools as mcp__<server>__<tool>; they are approval-gated (in auto-approve mode, the risk review may run routine calls unattended, and 'a' covers a tool for the session)\n",
 
 	TrustHeaderFmt:           "\nnew project: %s\nthis project provides:\n",
 	TrustItemInstructionsFmt: "%s (injected as instructions)",
@@ -418,11 +417,11 @@ var ja = Messages{
 	RiskbookAskSave:        "このプロジェクトリスクルールを保存しますか？ このプロジェクトの auto モードの全リスク評価が参照するようになります。",
 	RiskbookAccept:         "保存",
 	RiskbookDiscard:        "破棄",
-	RiskbookSavedFmt:       "%s に保存しました — いま有効です。/riskbook で表示、/riskbook clear で削除できます。",
+	RiskbookSavedFmt:       "%s に保存しました — いま有効です",
 	RiskbookDiscarded:      "破棄しました — 何も保存されていません",
 	RiskbookStopped:        "中止しました — 何も保存されていません",
 	RiskbookProvenanceFmt:  "（%s に %d セッション / %d 件のゲート判断から学習 — オペレータレビュー済み）",
-	RiskbookShowBaseFmt:    "ベースルール — %s（手書き）:",
+	RiskbookShowBaseFmt:    "ベースルール — %s:",
 	RiskbookShowProjectFmt: "プロジェクトルール — %s:",
 	RiskbookShowNoneFmt:    "有効なリスクルールはありません。%s を手で書くか、/riskbook learn で判断記録から起草できます。",
 	RiskbookReloaded:       "リスクルールをディスクから読み直しました",
@@ -481,7 +480,6 @@ auto-approve: 安全な変更は無人で実行します。破壊的・プロジ
 	MCPDisabled:       "MCP はこのセッションでは無効です（[mcp].enabled=false または --mcp off）— 有効化するには再起動してください\n",
 	MCPReloadedFmt:    "MCP を再接続しました: %d サーバー・%d ツール\n",
 	SkillsReloadedFmt: "skill を再読込しました: %d 件\n",
-	MCPToolsNote:      "MCP ツールは /tools に mcp__<server>__<tool> として表示され、承認ゲートの対象です（auto-approve モードではリスクレビューが日常的な呼び出しを無人実行することがあり、'a' はそのツールをセッション中カバーします）\n",
 
 	TrustHeaderFmt:           "\n新しいプロジェクト: %s\nこのプロジェクトの提供物:\n",
 	TrustItemInstructionsFmt: "%s（instructions として注入されます）",

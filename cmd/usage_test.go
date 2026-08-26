@@ -54,7 +54,7 @@ func TestUsageReportStatement(t *testing.T) {
 		"main loop (main-model):",
 		"rounds 2 · prompt 22.0k · output 500",
 		"cached 19.0k of prompt (86%)",
-		"cache saves cost/latency, not window space",
+		"cached 19.0k of prompt (86%)",
 		"context now 12.0k of 1.0M window (1%)",
 		"summarize_file (light-model): 2 calls · prompt 1.0k · output 70",
 		"web_fetch (light-model): 1 calls · prompt 900 · output 60",
