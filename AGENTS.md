@@ -47,7 +47,10 @@ internal/agent/    tool-calling loop, approval dispatch, nonce wrapping, history
 internal/tools/    built-in tools, path confinement, ExecFunc injection, Register
 internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
 internal/risk/     rule tier of the auto-approve ladder (pure, no model)
-internal/policy/   per-tool approval policy (ADR-0008), pure resolver
+internal/policy/   per-tool + per-command approval policy (ADR-0008/0045), pure
+                   resolver; CommandKey here is shared by the gate and the learner
+internal/learn/    /learn: deterministic aggregation of the operator's recorded
+                   gate decisions into rule proposals (ADR-0045) — never a model
 internal/skills/   Claude Code skill discovery/loading (ADR-0010)
 internal/memory/   agent memory across sessions (ADR-0020): two scopes, budgeted injection
 internal/docext/   stdlib-only Office XML text extraction (ADR-0026): docx/xlsx/pptx
@@ -121,6 +124,15 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   changing the ladder, keep: Block never consults the model, model errors
   and malformed verdicts escalate, and confidence alone never approves.
   New dangerous patterns go in `internal/risk`, with a corpus test.
+- **Learned rules never widen a floor, and the learner never reads
+  prose** (ADR-0045) — a `/learn` rule is ordinary policy: the Block
+  tier and pre-tool hooks still run, and `"always"` from either table
+  wins. `policy.CommandKey` is the single derivation the gate and the
+  learner share; a second copy would mean rules firing on commands the
+  operator never approved. Keep the aggregation deterministic — feeding
+  transcript text to a model would make injected instructions a route
+  to persistent permission. Votes are per session, never per call: one
+  `a` must not clear a threshold.
 - **skillsList/mcpSummary/mcpClients are LIVE variables** (ADR-0039) —
   /skills reload and /mcp reload reassign them mid-session, and every
   consumer reads them through a closure over the variable. Never bake

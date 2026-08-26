@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** |
+| Status | **Accepted** |
 | Date | 2026-08-26 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -112,6 +112,13 @@ that carry weight are the operator's own recorded decisions.
   any redirection. A key that names two tokens must be the whole truth
   of what runs (the agent-skeleton finding). Learner and matcher share
   one derivation function so they cannot drift apart.
+- Two further exclusions the implementation added, for the same reason:
+  a head containing a path separator (`./deploy.sh`,
+  `/usr/local/bin/make`) names a *file*, whose contents can change
+  under a key that says nothing about them, while a bare name resolves
+  through the operator's own PATH; and an environment-assignment
+  prefix (`FOO=bar make build`) changes what the command does without
+  appearing in the key.
 
 Semantic or fuzzy similarity is rejected outright: it is precisely the
 loose matching §Context warns about.
@@ -129,6 +136,16 @@ ADR-0008, no third vocabulary. Semantics are identical to ADR-0008:
 - A command that fails §3's plainness test matches no rule and takes
   the normal ladder.
 
+The two tables combine in `Policy.ForCall` by two rules, in order.
+**`"always"` from either table wins**: an operator who pinned
+`shell_exec = "always"` said every shell call is theirs to see, and a
+learned rule — which only ever means "I approved this repeatedly" —
+must not take that back; in the other direction a learned `"always"`
+tightens a blanket `shell_exec = "never"`, and tightening is free
+(ADR-0008). **Otherwise the command entry answers**, being the more
+specific statement about this call; an entry exists only because the
+operator confirmed it, so it is their decision either way.
+
 A **global commands table deliberately does not exist** (operator
 direction). `make build` being safe in one repository says nothing
 about another; a `"never"` learned in a trusted project, applied
@@ -139,14 +156,23 @@ The vocabulary lives in machine-owned `policy.toml` only. Extending
 the hand-written `[approval]` tables can follow if demand appears —
 a capability without a demonstrated trigger is dead weight (ADR-0044).
 
-### 5. Proposal thresholds — v1 constants
+### 5. Proposal thresholds — v1 constants, counted per session
 
-- Propose `"never"` for a key with **≥ 5 operator approvals across
-  ≥ 2 sessions and 0 denials**, whose representative calls do not
-  classify Block today.
-- Propose `"always"` for a key with **≥ 2 denials** — tightening gets
-  the lower bar, in the Block-pattern spirit (a generous match costs
-  one prompt).
+**Votes are counted per session, not per call.** The first draft said
+"≥ 5 approvals across ≥ 2 sessions"; implementing it surfaced that a
+session allowlist (`a`) turns one keystroke into any number of
+approvals, so five "approvals" can be one decision the operator made
+once — and repeating a command within a session is the same
+inflation without the allowlist. Collapsing each session to one vote
+per key and outcome removes both, and needs no new plumbing to tell
+the allowlist apart from a typed `y`.
+
+- Propose `"never"` for a key approved in **≥ 3 separate sessions with
+  no denial anywhere**, whose recorded examples do not classify Block
+  today.
+- Propose `"always"` for a key denied in **≥ 2 sessions** — tightening
+  gets the lower bar, in the Block-pattern spirit (a generous match
+  costs one prompt).
 - Never proposed: `save_memory` / `delete_memory`. Frequency evidence
   is invalid where the risk lives in per-call content — twelve
   harmless saves say nothing about the thirteenth (ADR-0020 §4).
@@ -159,9 +185,17 @@ a capability without a demonstrated trigger is dead weight (ADR-0044).
   ADR-0008's original rationale applied: the policy table is the place
   to write down what only the operator knows.
 - Skipped: keys already covered by current policy in either scope, and
-  keys whose calls classify Safe (there is no friction to remove).
+  keys whose recorded examples classify Block — `"never"` does not lift
+  that floor, so the rule would change nothing.
 
-Constants, not config: there is no evidence yet that tuning is needed.
+The draft also excluded rule-tier **Safe** keys as friction-free. That
+was an auto-mode assumption: with auto off, Safe-tier calls do reach
+the gate, and the operator answering them repeatedly is exactly the
+friction this removes. Dropped.
+
+Constants, not config: there is no evidence yet that tuning is needed,
+and a knob here would be a knob on how readily approvals are given
+away.
 
 ### 6. Confirmation: evidence, then one decision per rule
 
@@ -182,13 +216,35 @@ provenance, editable and deletable like any other entry.
 ### 7. `gate_decision` records make future learning exact
 
 Alongside the existing telemetry emit, the agent writes a
-`gate_decision` diagnostic record (tool name, decision, source
-`operator`/`allowlist`, mustPrompt) to the transcript. `Load` already
-skips unknown kinds, so no schema bump; the record is diagnostic, like
-`auto_decision`, and invisible to resume. It records nothing that
-`ToolCalls` args do not already store. Backfill over old transcripts
-uses the §Context reconstruction; precision improves as these records
-accumulate.
+`gate_decision` diagnostic record to the transcript: tool name,
+decision, `must_prompt`, the **aggregation key**, and a clipped
+`detail` for evidence. `auto_decision` carries the key too. `Load`
+already skips unknown kinds, so no schema bump; both records are
+diagnostic and invisible to resume.
+
+Recording the key rather than deriving it later does two things.
+The learner never has to pair a decision back to a call — with several
+calls per round, that pairing is exactly the kind of positional
+guesswork that goes wrong silently. And a key derived by a future
+build cannot retroactively re-interpret an old decision: the record
+says what this build would have matched.
+
+The record does **not** distinguish a typed `y` from the session
+allowlist, and does not need to: §5's per-session counting already
+removes the difference between one 'a' and many prompts. Backfill over
+old transcripts uses the §Context reconstruction; precision improves
+as these records accumulate.
+
+### 8. The declared purpose is not part of any of this
+
+ADR-0047 gives every gated call a model-written `gem_agent_purpose`.
+It is stripped before the command key is derived (it is not part of
+what runs), it is not aggregated, and it is not shown as evidence in
+§6. The evidence for "should this command stop asking?" is what runs
+and how the operator answered — not the proposer's account of why it
+wanted to. Showing a stream of model-written justifications while
+asking for a standing rule would put the proposer's voice into a
+decision that exists to record the operator's.
 
 ## Rejected alternatives
 
@@ -214,6 +270,28 @@ accumulate.
   in §Context, mitigated by policy dedup, and decays as
   `gate_decision` records accumulate.
 - Tests: the key-derivation table (including every §3 exclusion),
-  extraction against synthetic transcripts (exact denial constant,
-  hook prefix, auto_decision exclusion), the shared learner/matcher
-  function, threshold logic, and the policy write path with dedup.
+  extraction against synthetic transcripts, the shared learner/matcher
+  function, threshold logic (including the per-session collapse), the
+  gate-side effects of a learned rule (skips the gate, stays scoped to
+  its key, does not lift the Block floor, does not match a compound
+  line), and the policy write path.
+- Surface mechanics: `/learn` runs like a turn rather than a slash
+  command in the TUI. Its dialogs are answered on the Bubble Tea event
+  loop, and a synchronous slash handler calling into that loop
+  deadlocks on an unbuffered channel — so it takes the `/compact`
+  shape (async starter, completion via `TurnDone`). The plain REPL,
+  which owns stdin on the dispatching goroutine, runs it inline. In
+  `-p` it is unreachable, which matches §1: there is no operator to
+  ask.
+- Measured end to end (isolated `GEMAGENT_STATE_DIR`, real binary,
+  pty): three seeded sessions approving `go test` produced one
+  proposal, the dialog showed it with its evidence, accepting wrote
+  `[projects."…".commands] "go test" = "never"`, and in a fresh
+  session the model's `go test ./...` ran with **no gate_decision
+  record at all** — the gate was never consulted. The operator's own
+  policy file was untouched throughout.
+- A verification lesson worth keeping: the first E2E reported a
+  failure because its expect pattern (`approval`) matched the banner's
+  "approval policy:" line, not a dialog. The check was rewritten to
+  assert on the transcript's absence of a `gate_decision` record —
+  ground truth rather than screen text.

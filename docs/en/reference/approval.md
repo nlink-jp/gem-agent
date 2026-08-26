@@ -200,6 +200,55 @@ machine-owned `~/.config/gem-agent/policy.toml`; concurrent instances
 write it through a locked read-modify-write, so two sessions cannot
 clobber each other's decisions.
 
+## Learned rules: `/learn` (ADR-0045)
+
+The policy above is written by hand, one entry at a time. `/learn`
+offers the entries your own answers already imply: it reads **this
+project's** transcripts, aggregates the decisions you made at the
+approval gate, and proposes rules — one at a time, each with its
+evidence, each answered yes or no. Nothing changes until you accept a
+proposal, and nothing runs unless you type `/learn`.
+
+It proposes two things:
+
+- `"never"` for a command approved in **three or more separate
+  sessions with no denial anywhere** — the friction of answering the
+  same question about `go test` for the hundredth time.
+- `"always"` for one you have **denied in two or more sessions** —
+  tightening, so it takes the lower bar.
+
+Rules are per-project and live in the machine-owned `policy.toml` under
+this project's path. There is deliberately no global command table:
+`make build` being settled in one repository says nothing about the
+next one, and a global rule would auto-run inside a hostile clone. They
+appear in `/settings` with their source, and are removed there.
+
+Some details that matter when you read a proposal:
+
+- **The key is one or two tokens**: a command name, plus a second word
+  only when it looks like a subcommand (`go test`, `make build`,
+  `git status`; `ls -la` reduces to `ls`). Anything that could hide the
+  real target behind those tokens gets no key at all and can never
+  match a rule — pipes and `&&`, `$(…)` and backticks, redirection, a
+  path like `./deploy.sh`, and `FOO=bar` prefixes.
+- **Counting is per session**, not per call. Answering `a` once turns
+  one keystroke into many approvals; five calls in one session are one
+  decision made once.
+- **A learned `"never"` is not a blank cheque**: it does not lift the
+  rule tier's Block floor, and pre-tool hooks still run first. A
+  `git push --force` still asks even where `git push` was learned.
+- **Nothing is inferred by a model.** The scan parses structured
+  records and never shows transcript text to one — a model reading
+  tool output and file contents and then proposing policy would be a
+  route from prompt injection to persistent permission. What counts is
+  your own recorded decisions, and the model's declared purpose
+  (ADR-0047) is deliberately not among the evidence.
+
+Memory writes are never proposed: where the risk lives in each call's
+content rather than its shape, frequency proves nothing (ADR-0020 §4).
+Keys your policy already answers are skipped, as are commands the rule
+tier blocks — `"never"` would not change what happens to those.
+
 ## Sandbox (ADR-0001)
 
 `shell_exec` (and `!` commands) run wrapped in macOS sandbox-exec:

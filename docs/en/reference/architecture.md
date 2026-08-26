@@ -26,7 +26,10 @@ model-backed and wiring-dependent tools (`summarize_file`, `web_search`
 
 Supporting packages: `internal/sandbox` (Seatbelt profile generation),
 `internal/approve` (plain-REPL gate), `internal/risk` (auto-approve rule
-tier), `internal/policy` (per-tool approval policy), `internal/mcp`
+tier), `internal/policy` (per-tool and per-command approval policy,
+including the command-key derivation the gate and the learner share),
+`internal/learn` (deterministic transcript aggregation behind `/learn`),
+`internal/mcp`
 (stdio JSON-RPC client), `internal/mention` (`@`-references),
 `internal/instructions` (`AGENTS.md` discovery), `internal/session`
 (transcript: logger + resume loader), `internal/statedir` (per-project

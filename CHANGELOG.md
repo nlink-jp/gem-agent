@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.46.0] - 2026-08-26
+
+### Added
+
+- `/learn`: approval rules proposed from your own recorded answers
+  (ADR-0045). It reads this project's transcripts, aggregates the
+  decisions you made at the approval gate, and offers one rule at a
+  time with its evidence — `"never"` for a command approved in three
+  or more separate sessions with no denial anywhere, `"always"` for
+  one denied in two or more. Nothing changes until you accept a
+  proposal, and the command only runs when you type it.
+- Per-command approval policy, project-scoped
+  (`[projects."<path>".commands]` in the machine-owned `policy.toml`).
+  A learned rule is ordinary policy: it appears in `/settings` with
+  its source, it is removed there, and it does not lift the rule
+  tier's Block floor or skip a pre-tool hook. There is deliberately no
+  global command table — `make build` being settled in one repository
+  says nothing about the next clone.
+- `gate_decision` transcript records: what the gate was asked, what
+  you answered, and the aggregation key, so the learner reads
+  decisions rather than inferring them from what ran. Diagnostic like
+  `auto_decision`, invisible to resume, no schema change.
+
+### Notes
+
+- Votes are counted per session, not per call: answering `a` once
+  turns one keystroke into many approvals, and five calls in one
+  session are one decision made once.
+- The learner is deterministic and never shows transcript text to a
+  model — tool output and file contents reaching a policy proposal
+  would be a route from prompt injection to persistent permission.
+  The model's declared purpose (ADR-0047) is likewise excluded.
+
 ## [0.45.0] - 2026-08-26
 
 ### Changed — the declared-purpose argument is now namespaced

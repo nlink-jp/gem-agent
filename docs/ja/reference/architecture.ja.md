@@ -26,7 +26,9 @@ tools パッケージが持つのはプロジェクトディレクトリだけ�
 
 補助パッケージ: `internal/sandbox`（Seatbelt プロファイル生成）、
 `internal/approve`（素 REPL のゲート）、`internal/risk`（自動承認のルール層）、
-`internal/policy`（ツール別承認ポリシー）、
+`internal/policy`（ツール別・コマンド別承認ポリシー。ゲートと学習器が
+共有するコマンドキー導出を含む）、`internal/learn`（`/learn` の背後にある
+決定論的トランスクリプト集計）、
 `internal/mcp`（stdio JSON-RPC クライアント）、`internal/mention`（`@` 参照）、
 `internal/instructions`（`AGENTS.md` 探索）、`internal/session`（トランスクリプト:
 ロガー + resume ローダ）、`internal/statedir`（プロジェクト別 state 配置）、

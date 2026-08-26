@@ -131,6 +131,7 @@ in the input box as one message, never one LLM call per line.
 | `/auto` | toggle auto-approve (shift+tab does the same, and works mid-run) |
 | `/compact` | summarise the older half of the conversation now |
 | `/settings` | every setting with its provenance; edit policy + toggles |
+| `/learn` | propose approval rules from your own past answers in this project (ADR-0045) |
 | `/usage` | the session's token statement (ADR-0019) |
 | `/memory` | persisted memories, global + this project |
 | `/skills` | installed skills; `/skills reload` re-discovers them (ADR-0039) |

@@ -696,6 +696,44 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 	settingsData := settings.data()
 
+	// --- /learn: rules proposed from the operator's own decisions
+	// (ADR-0045). Built here, where the policy path and the settings
+	// store already exist, and driven by whichever surface dispatches
+	// the command. A run needs a session directory to read and an
+	// operator to ask, so it is nil when either is missing.
+	var learner *learnRunner
+	if sessionDirErr == nil && !oneShot {
+		learner = &learnRunner{
+			sessionsDir: sessionDir,
+			projectDir:  projectDir,
+			policyPath:  policyPath,
+			reload:      func() error { _, err := settings.Rebuild(); return err },
+			current:     func() policy.Policy { return ag.Policy() },
+			msgs:        msgs,
+			describe: func(tool string) string {
+				if !strings.HasPrefix(tool, "mcp__") {
+					return ""
+				}
+				t, ok := registry.Get(tool)
+				if !ok {
+					return ""
+				}
+				return t.Description
+			},
+			ask: func(askCtx context.Context, question string, evidence []string, accept, skip string) (bool, error) {
+				// The evidence rides inside the question: the dialog
+				// shows one question and its options, and a proposal
+				// decided without its evidence is decided blind.
+				full := question
+				if len(evidence) > 0 {
+					full += "\n" + strings.Join(evidence, "\n")
+				}
+				idx, err := askOperator(askCtx, full, []string{accept, skip})
+				return err == nil && idx == 0, err
+			},
+		}
+	}
+
 	// --- in-session integration reload (ADR-0039) ---
 	// Both closures reuse the startup code paths and the startup trust
 	// verdict — a reload can never widen what the trust gate allowed.
@@ -895,6 +933,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 					prog.Send(tui.TurnDone{Err: err})
 				}()
 			},
+			Learn: func(learnCtx context.Context) {
+				go func() {
+					var out strings.Builder
+					learner.Run(learnCtx, &out)
+					if text := strings.TrimRight(out.String(), "\n"); text != "" {
+						prog.Send(tui.Attached{Notes: strings.Split(text, "\n")})
+					}
+					prog.Send(tui.TurnDone{})
+				}()
+			},
 			StartTurn: func(turnCtx context.Context, input string) {
 				go func() {
 					_, err := ag.Run(turnCtx, input, func(s string) { prog.Send(tui.TextDelta(s)) })
@@ -958,6 +1006,15 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		if input == "/settings" {
 			writeSettingsTable(stderr, settings.data())
+			continue
+		}
+		// The plain REPL owns stdin on this goroutine, so the pass runs
+		// inline: there is no event loop to deadlock, and Ctrl+C reaches
+		// it through the shared context.
+		if input == "/learn" && learner != nil {
+			var out strings.Builder
+			learner.Run(ctx, &out)
+			fmt.Fprint(stderr, out.String())
 			continue
 		}
 		if turn, handled, errMsg := expandSkillInput(input, skillsList); handled {
@@ -1152,9 +1209,9 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 // call: /skills reload swaps the list mid-session (ADR-0039).
 func slashCompletions(getSkills func() []skills.Skill) func(string) []string {
 	commands := []string{
-		"/auto", "/clear", "/compact", "/exit", "/help", "/mcp", "/memory",
-		"/quit", "/settings", "/skill", "/skills", "/tools", "/usage",
-		"/version",
+		"/auto", "/clear", "/compact", "/exit", "/help", "/learn", "/mcp",
+		"/memory", "/quit", "/settings", "/skill", "/skills", "/tools",
+		"/usage", "/version",
 	}
 	return func(prefix string) []string {
 		if rest, ok := strings.CutPrefix(prefix, "/skill "); ok {
