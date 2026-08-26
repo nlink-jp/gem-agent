@@ -181,6 +181,7 @@ excepted).
 - [`ADR-0047`](adr/0047-declared-purpose.md) — model-declared purpose on gated calls: the operator sees why, not only what
 - [`ADR-0048`](adr/0048-learning-that-fires.md) — learning that fires on real usage: server-scoped MCP rules, and counting the answers people actually gave (withdrawn by 0049)
 - [`ADR-0049`](adr/0049-learn-withdrawn.md) — `/learn` is withdrawn: confirmation was not a durable boundary for loosening
+- [`ADR-0050`](adr/0050-risk-calibration.md) — calibration, not permission: the decision record corrects the judge, not the policy
   draw in the terminal: the measured-faithful types only (flowchart,
   ASCII sequence, ER), shapes normalized to boxes, a fidelity guard,
   the rest shown as source; the model is told exactly what renders
