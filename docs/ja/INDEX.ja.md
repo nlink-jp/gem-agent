@@ -177,7 +177,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0047`](adr/0047-declared-purpose.ja.md) — 承認対象コールに宣言された purpose: 「何を」だけでなく「なぜ」を運用者に見せる
 - [`ADR-0048`](adr/0048-learning-that-fires.ja.md) — 実利用で発火する学習へ: MCP はサーバ単位グローバル、そして人が実際に出した回答を数える（0049 が撤収）
 - [`ADR-0049`](adr/0049-learn-withdrawn.ja.md) — `/learn` を撤収する: 確認は緩和の恒久的な境界にならなかった
-- [`ADR-0050`](adr/0050-risk-calibration.ja.md) — 許可ではなく較正: 判断記録はポリシーではなく判定器を補正する
+- [`ADR-0050`](adr/0050-risk-calibration.ja.md) — リスクルールブック: 判定器への積層ガイダンス。学習はその執筆手段の一つ
 
 ## History（履歴）
 
