@@ -209,19 +209,34 @@ approval gate, and proposes rules — one at a time, each with its
 evidence, each answered yes or no. Nothing changes until you accept a
 proposal, and nothing runs unless you type `/learn`.
 
-It proposes two things:
+It proposes three things:
 
-- `"never"` for a command approved in **three or more separate
-  sessions with no denial anywhere** — the friction of answering the
-  same question about `go test` for the hundredth time.
+- `"never"` for a command you approved **five times, or across three
+  separate sessions, with no denial anywhere** — the friction of
+  answering the same question about `go test` for the hundredth time.
 - `"always"` for one you have **denied in two or more sessions** —
   tightening, so it takes the lower bar.
+- `"never"` for a whole **MCP server** — `mcp__asn-lookup__*` — once
+  you have approved **two or more of its distinct tools** and denied
+  none.
 
-Rules are per-project and live in the machine-owned `policy.toml` under
-this project's path. There is deliberately no global command table:
-`make build` being settled in one repository says nothing about the
-next one, and a global rule would auto-run inside a hostile clone. They
-appear in `/settings` with their source, and are removed there.
+Shell and built-in rules are per-project, in the machine-owned
+`policy.toml` under this project's path. There is deliberately no
+global command table: `make build` being settled in one repository says
+nothing about the next one, and a global rule would auto-run inside a
+hostile clone.
+
+**MCP server rules are global**, and that difference is the point. A
+server comes from your own `~/.config/gem-agent/mcp.json`, its binary
+behaves identically in every project, and a cloned repository cannot
+introduce one (a project's `.mcp.json` sits behind the trust gate). So
+`asn-lookup` is the same answer everywhere, and re-learning it per
+project would be re-answering a question that cannot vary. Servers a
+project supplied through its own `.mcp.json` are excluded — those *are*
+that project's.
+
+All of them appear in `/settings` with their source, and are removed
+there.
 
 Some details that matter when you read a proposal:
 
@@ -231,9 +246,15 @@ Some details that matter when you read a proposal:
   real target behind those tokens gets no key at all and can never
   match a rule — pipes and `&&`, `$(…)` and backticks, redirection, a
   path like `./deploy.sh`, and `FOO=bar` prefixes.
-- **Counting is per session**, not per call. Answering `a` once turns
-  one keystroke into many approvals; five calls in one session are one
-  decision made once.
+- **An `a` is worth one vote, a typed `y` is worth one each.** The
+  gate records which it was, so answering `a` once cannot clear a
+  threshold on its own, while twenty-five typed approvals count as
+  twenty-five decisions — because that is what they are.
+- **A server rule covers tools you have never called**, and the
+  proposal lists every one of them before you answer, with the
+  server's own description of each. That list is the whole point of
+  the confirmation step: the rule grants more than the evidence for
+  it, and you are the one who knows whether that is right.
 - **A learned `"never"` is not a blank cheque**: it does not lift the
   rule tier's Block floor, and pre-tool hooks still run first. A
   `git push --force` still asks even where `git push` was learned.

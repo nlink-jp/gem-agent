@@ -60,9 +60,11 @@ func purposeOrNone(purpose string) string {
 // 'a' on such a prompt still registers the allowlist, which future
 // non-Block calls use. EOF or read errors deny — failing closed is the
 // only safe default for an approval gate.
-func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) bool {
+func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (approved, fromAllowlist bool) {
 	if !mustPrompt && g.always[toolName] {
-		return true
+		// One keystroke standing in for this call: the learner must
+		// not read it as a decision made here (ADR-0048 §1).
+		return true, true
 	}
 	fmt.Fprintf(g.out, "\n[approval] %s\n  %s\n", toolName, detail)
 	// Printed even when empty: an undeclared purpose is a fact about the
@@ -76,20 +78,22 @@ func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool
 		line, err := g.in.ReadString('\n')
 		if err != nil && line == "" {
 			fmt.Fprintln(g.out, "(no input — denied)")
-			return false
+			return false, false
 		}
 		switch strings.ToLower(strings.TrimSpace(line)) {
 		case "y", "yes":
-			return true
+			return true, false
 		case "n", "no", "":
-			return false
+			return false, false
 		case "a", "always":
 			g.always[toolName] = true
-			return true
+			// The keystroke that registers the allowlist is itself an
+			// operator decision about this call.
+			return true, false
 		default:
 			fmt.Fprint(g.out, "  please answer y / n / a: ")
 			if err != nil {
-				return false
+				return false, false
 			}
 		}
 	}

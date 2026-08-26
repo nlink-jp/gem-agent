@@ -18,7 +18,7 @@ import (
 
 // learnFixture writes n sessions that each approve the same command, and
 // returns a runner wired to a scratch policy file.
-func learnFixture(t *testing.T, n int, answer func(int) (bool, error)) (*learnRunner, string, *int) {
+func learnFixture(t *testing.T, n int, answer func(int) (bool, error)) (*learnRunner, string, *int, *[]string) {
 	t.Helper()
 	dir := t.TempDir()
 	proj := "/work/proj"
@@ -50,6 +50,7 @@ func learnFixture(t *testing.T, n int, answer func(int) (bool, error)) (*learnRu
 
 	policyPath := filepath.Join(t.TempDir(), config.PolicyFileName)
 	asked := 0
+	var emitted []string
 	r := &learnRunner{
 		sessionsDir: dir,
 		projectDir:  proj,
@@ -63,26 +64,28 @@ func learnFixture(t *testing.T, n int, answer func(int) (bool, error)) (*learnRu
 			return p
 		},
 		msgs: uitext.For(uitext.EN),
-		ask: func(ctx context.Context, q string, ev []string, accept, skip string) (bool, error) {
+		ask: func(ctx context.Context, q string, accept, skip string) (bool, error) {
 			asked++
 			return answer(asked)
 		},
+		emit: func(lines []string) { emitted = append(emitted, lines...) },
 	}
-	return r, policyPath, &asked
+	return r, policyPath, &asked, &emitted
 }
 
-func runLearn(t *testing.T, r *learnRunner, ctx context.Context) string {
+// runLearn runs a pass and returns everything it emitted, joined —
+// the operator-visible output, now produced as the pass goes.
+func runLearn(t *testing.T, r *learnRunner, ctx context.Context, emitted *[]string) string {
 	t.Helper()
-	var out strings.Builder
-	r.Run(ctx, &out)
-	return out.String()
+	r.Run(ctx)
+	return strings.Join(*emitted, "\n")
 }
 
 // The accepted rule reaches the machine-owned policy file, under this
 // project (ADR-0045 §6).
 func TestLearnWritesAnAcceptedRule(t *testing.T) {
-	r, policyPath, asked := learnFixture(t, 3, func(int) (bool, error) { return true, nil })
-	out := runLearn(t, r, context.Background())
+	r, policyPath, asked, emitted := learnFixture(t, 3, func(int) (bool, error) { return true, nil })
+	out := runLearn(t, r, context.Background(), emitted)
 
 	if *asked != 1 {
 		t.Fatalf("asked %d times, want 1", *asked)
@@ -101,8 +104,8 @@ func TestLearnWritesAnAcceptedRule(t *testing.T) {
 
 // Declining writes nothing: a proposal is an offer, not a plan.
 func TestLearnSkipWritesNothing(t *testing.T) {
-	r, policyPath, _ := learnFixture(t, 3, func(int) (bool, error) { return false, nil })
-	runLearn(t, r, context.Background())
+	r, policyPath, _, emitted := learnFixture(t, 3, func(int) (bool, error) { return false, nil })
+	runLearn(t, r, context.Background(), emitted)
 
 	pf, err := config.LoadPolicyFile(policyPath)
 	if err != nil {
@@ -116,10 +119,10 @@ func TestLearnSkipWritesNothing(t *testing.T) {
 // A declined dialog (Esc) stops the pass and says so, rather than
 // carrying on asking about the rest.
 func TestLearnStopsWhenTheOperatorDeclines(t *testing.T) {
-	r, _, asked := learnFixture(t, 3, func(int) (bool, error) {
+	r, _, asked, emitted := learnFixture(t, 3, func(int) (bool, error) {
 		return false, errors.New("declined")
 	})
-	out := runLearn(t, r, context.Background())
+	out := runLearn(t, r, context.Background(), emitted)
 	if *asked != 1 {
 		t.Errorf("asked %d times after a decline", *asked)
 	}
@@ -130,10 +133,10 @@ func TestLearnStopsWhenTheOperatorDeclines(t *testing.T) {
 
 // An interrupted pass asks nothing further.
 func TestLearnStopsOnCancellation(t *testing.T) {
-	r, _, asked := learnFixture(t, 3, func(int) (bool, error) { return true, nil })
+	r, _, asked, emitted := learnFixture(t, 3, func(int) (bool, error) { return true, nil })
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	runLearn(t, r, ctx)
+	runLearn(t, r, ctx, emitted)
 	if *asked != 0 {
 		t.Errorf("asked %d times despite a cancelled context", *asked)
 	}
@@ -142,8 +145,8 @@ func TestLearnStopsOnCancellation(t *testing.T) {
 // Nothing to propose is a normal outcome, and it reports how much was
 // read: "nothing yet" and "nothing looked at" must not read alike.
 func TestLearnReportsAnEmptyResultWithItsScope(t *testing.T) {
-	r, _, asked := learnFixture(t, 1, func(int) (bool, error) { return true, nil })
-	out := runLearn(t, r, context.Background())
+	r, _, asked, emitted := learnFixture(t, 1, func(int) (bool, error) { return true, nil })
+	out := runLearn(t, r, context.Background(), emitted)
 	if *asked != 0 {
 		t.Errorf("asked about a key below the threshold")
 	}
@@ -155,7 +158,7 @@ func TestLearnReportsAnEmptyResultWithItsScope(t *testing.T) {
 // The evidence shown is what the record says, including the auto-mode
 // wobble when the model tier judged the same key both ways.
 func TestLearnEvidenceIncludesTheWobble(t *testing.T) {
-	r, _, _ := learnFixture(t, 3, func(int) (bool, error) { return false, nil })
+	r, _, _, _ := learnFixture(t, 3, func(int) (bool, error) { return false, nil })
 	lines := r.evidence(proposalWithWobble())
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "approved 4 and escalated 7") {
@@ -182,7 +185,7 @@ func proposalWithWobble() learn.Proposal {
 // ADR-0046 §4: an MCP proposal shows the server's own description, as
 // the server's claim — it informs the operator, and decided nothing.
 func TestLearnEvidenceShowsMCPDescription(t *testing.T) {
-	r, _, _ := learnFixture(t, 3, func(int) (bool, error) { return false, nil })
+	r, _, _, _ := learnFixture(t, 3, func(int) (bool, error) { return false, nil })
 	r.describe = func(tool string) string {
 		if tool == "mcp__asn__lookup_ip" {
 			return "Resolves an IP to its AS from a local database, fully offline."

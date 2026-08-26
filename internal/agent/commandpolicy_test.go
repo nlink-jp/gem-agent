@@ -201,6 +201,7 @@ func TestNonShellCallKeysByToolName(t *testing.T) {
 
 // recordingApprover captures the arguments the gate was called with.
 type recordingApprover struct {
+	fromAllowlist bool
 	calls []approverCall
 }
 
@@ -209,7 +210,7 @@ type approverCall struct {
 	mustPrompt bool
 }
 
-func (g *recordingApprover) Approve(tool, detail, purpose, reason string, mustPrompt bool) bool {
+func (g *recordingApprover) Approve(tool, detail, purpose, reason string, mustPrompt bool) (bool, bool) {
 	g.calls = append(g.calls, approverCall{tool: tool, mustPrompt: mustPrompt})
-	return true
+	return true, g.fromAllowlist
 }

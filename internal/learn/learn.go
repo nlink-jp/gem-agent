@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/policy"
@@ -30,16 +31,30 @@ import (
 // configuration: there is no evidence yet that tuning is needed, and a
 // knob here would be a knob on how readily approvals are given away.
 const (
-	// approveSessionsForNever is how many separate sessions must have
-	// approved a key, with no denial anywhere, before "never" is
-	// proposed.
+	// approvalsForNever is how many times the operator must have typed
+	// an approval for a key — across any number of sessions — before
+	// "never" is proposed. Typed answers count individually because
+	// each one is a decision the operator actually made (ADR-0048 §1).
+	approvalsForNever = 5
+	// approveSessionsForNever is the other route to the same bar, for
+	// the operator who answers the same thing across days rather than
+	// repeatedly within one session.
 	approveSessionsForNever = 3
 	// denySessionsForAlways is the bar for proposing "always".
 	// Tightening gets the lower one, in the spirit of the Block
 	// patterns: a generous match costs one approval prompt.
 	denySessionsForAlways = 2
+	// serverToolsForNever is how many DISTINCT tools of one MCP server
+	// must have been approved before that server is proposed
+	// (ADR-0048 §2). Diversity is the right counter here and it is
+	// structurally immune to the allowlist inflation that motivated
+	// §1: the allowlist is keyed by tool name, so one 'a' can only ever
+	// add one tool to this count.
+	serverToolsForNever = 2
 	// examplesKept bounds the evidence shown per proposal.
 	examplesKept = 3
+	// mcpPrefix marks a tool provided by an MCP server.
+	mcpPrefix = "mcp__"
 )
 
 // memoryTools never earn a proposal. Where the risk lives in a call's
@@ -66,6 +81,12 @@ type KeyStats struct {
 	// the operator answered that way at the gate.
 	ApproveSessions int
 	DenySessions    int
+	// TypedApprovals counts approvals the operator typed, each one
+	// individually (ADR-0048 §1). Answers the session allowlist gave
+	// are NOT counted here: one 'a' stands in for any number of calls,
+	// and counting it like a decision would inflate the evidence — the
+	// defect that made /learn propose nothing on its first real run.
+	TypedApprovals int
 	// ModelApproved and ModelEscalated count auto-mode verdicts on this
 	// key. They are not evidence of what the operator wants; they are
 	// how the ladder behaved, and a key split between them is a
@@ -96,7 +117,15 @@ type gateRecord struct {
 	Decision string `json:"decision"`
 	Key      string `json:"key"`
 	Detail   string `json:"detail"`
+	// Source is "operator" or "allowlist" (ADR-0048 §1). Records
+	// written before that distinction existed have none; those are
+	// treated as allowlist answers — the conservative reading, since
+	// counting an unknown as a typed decision is the direction that
+	// hands out permissions.
+	Source string `json:"source"`
 }
+
+func (r gateRecord) typed() bool { return r.Source == "operator" }
 
 // autoRecord is the decoded shape of an auto_decision record.
 type autoRecord struct {
@@ -149,6 +178,9 @@ func (r *Report) scanOne(path string) error {
 				if !approved[rec.Key] {
 					approved[rec.Key] = true
 					st.ApproveSessions++
+				}
+				if rec.typed() {
+					st.TypedApprovals++
 				}
 				st.addExample(rec.Detail)
 			case "denied":
@@ -206,6 +238,147 @@ type Proposal struct {
 	KeyStats
 	// Decision is the policy value to write: "never" or "always".
 	Decision string
+	// Pattern is what gets written to the policy — the key itself for a
+	// command or built-in tool, and `mcp__<server>__*` for an MCP
+	// server (ADR-0048 §2).
+	Pattern string
+	// Global says the rule goes to the global [tools] table rather than
+	// this project's. True only for MCP servers, whose binary and
+	// behaviour are identical in every project.
+	Global bool
+	// Server is the MCP server this proposal is about, empty otherwise.
+	Server string
+	// CoveredApproved and CoveredUnused are the tools an MCP server
+	// rule would cover: the ones the operator has already approved, and
+	// the ones they have not used. The second list is the disclosure
+	// that makes the rule honest — it grants more than the evidence for
+	// it, and the operator must see exactly how much (ADR-0048 §3).
+	CoveredApproved []string
+	CoveredUnused   []string
+}
+
+// ServerOf returns the MCP server a tool belongs to, and whether the
+// name is an MCP tool at all. `mcp__asn-lookup__lookup_ip` →
+// `asn-lookup`.
+func ServerOf(tool string) (string, bool) {
+	if !strings.HasPrefix(tool, mcpPrefix) {
+		return "", false
+	}
+	rest := strings.TrimPrefix(tool, mcpPrefix)
+	i := strings.Index(rest, "__")
+	if i <= 0 {
+		return "", false
+	}
+	return rest[:i], true
+}
+
+// ServerPattern is the ADR-0008 wildcard covering one server's tools.
+func ServerPattern(server string) string { return mcpPrefix + server + "__*" }
+
+// serverStats aggregates one MCP server's keys.
+type serverStats struct {
+	server   string
+	approved map[string]*KeyStats // tool name → its stats
+	denied   bool
+}
+
+// proposeServers derives the per-server MCP rules (ADR-0048 §2).
+//
+// isGlobal reports whether a server came from the operator's own global
+// MCP config; a server a project supplied through .mcp.json is that
+// project's, and gets no global rule. toolsOf lists a server's
+// currently connected tools, which is how the covered-tool disclosure
+// can name tools the operator has never called.
+func proposeServers(rep Report, current policy.Policy,
+	isGlobal func(server string) bool, toolsOf func(server string) []string) []Proposal {
+
+	servers := map[string]*serverStats{}
+	for _, key := range sortedKeys(rep.Keys) {
+		st := rep.Keys[key]
+		name, ok := ServerOf(st.Tool)
+		if !ok {
+			continue
+		}
+		s, seen := servers[name]
+		if !seen {
+			s = &serverStats{server: name, approved: map[string]*KeyStats{}}
+			servers[name] = s
+		}
+		if st.DenySessions > 0 {
+			// One denial anywhere in the server disqualifies it: the
+			// rule covers every tool, so the evidence has to as well.
+			s.denied = true
+		}
+		if st.ApproveSessions > 0 {
+			s.approved[st.Tool] = st
+		}
+	}
+
+	var out []Proposal
+	for _, name := range sortedServerNames(servers) {
+		s := servers[name]
+		if s.denied || len(s.approved) < serverToolsForNever || !isGlobal(name) {
+			continue
+		}
+		pattern := ServerPattern(name)
+		// Already answered — by this pattern or by any rule covering
+		// its tools — means there is nothing to propose.
+		if settled(current, s.approved) {
+			continue
+		}
+		p := Proposal{
+			Decision: "never",
+			Pattern:  pattern,
+			Global:   true,
+			Server:   name,
+			KeyStats: KeyStats{Key: pattern, Tool: mcpPrefix + name},
+		}
+		for _, tool := range sortedToolNames(s.approved) {
+			st := s.approved[tool]
+			p.CoveredApproved = append(p.CoveredApproved, tool)
+			p.ApproveSessions += st.ApproveSessions
+			p.TypedApprovals += st.TypedApprovals
+			p.ModelApproved += st.ModelApproved
+			p.ModelEscalated += st.ModelEscalated
+		}
+		for _, tool := range toolsOf(name) {
+			if _, used := s.approved[tool]; !used {
+				p.CoveredUnused = append(p.CoveredUnused, tool)
+			}
+		}
+		sort.Strings(p.CoveredUnused)
+		out = append(out, p)
+	}
+	return out
+}
+
+// settled reports whether the policy already answers every approved
+// tool of a server.
+func settled(current policy.Policy, approved map[string]*KeyStats) bool {
+	for tool := range approved {
+		if current.For(tool) == policy.Default {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedServerNames(m map[string]*serverStats) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedToolNames(m map[string]*KeyStats) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // Propose derives the rules the record supports, most-evidenced first.
@@ -217,11 +390,25 @@ type Proposal struct {
 // correction for that ambiguity.
 //
 // projectDir is the confinement root the Block check classifies against.
-func Propose(rep Report, current policy.Policy, projectDir string) []Proposal {
+// isGlobal and toolsOf describe the connected MCP servers (ADR-0048 §2);
+// both may be nil, in which case no server proposal is made.
+func Propose(rep Report, current policy.Policy, projectDir string,
+	isGlobal func(server string) bool, toolsOf func(server string) []string) []Proposal {
+
 	var out []Proposal
+	if isGlobal != nil && toolsOf != nil {
+		out = append(out, proposeServers(rep, current, isGlobal, toolsOf)...)
+	}
 	for _, key := range sortedKeys(rep.Keys) {
 		st := rep.Keys[key]
 		if memoryTools[st.Tool] {
+			continue
+		}
+		// MCP tools are proposed per server, in the global scope, and
+		// never per tool: a rule about one lookup tool while its
+		// siblings still ask describes no decision an operator makes
+		// (ADR-0048 §4).
+		if _, isMCP := ServerOf(st.Tool); isMCP {
 			continue
 		}
 		switch {
@@ -229,8 +416,9 @@ func Propose(rep Report, current policy.Policy, projectDir string) []Proposal {
 			if current.ForCall(st.Tool, commandOf(st)) == policy.AlwaysAsk {
 				continue
 			}
-			out = append(out, Proposal{KeyStats: *st, Decision: "always"})
-		case st.DenySessions == 0 && st.ApproveSessions >= approveSessionsForNever:
+			out = append(out, Proposal{KeyStats: *st, Decision: "always", Pattern: st.Key})
+		case st.DenySessions == 0 &&
+			(st.TypedApprovals >= approvalsForNever || st.ApproveSessions >= approveSessionsForNever):
 			if current.ForCall(st.Tool, commandOf(st)) != policy.Default {
 				continue
 			}
@@ -240,7 +428,7 @@ func Propose(rep Report, current policy.Policy, projectDir string) []Proposal {
 			if blocksAnyExample(st, projectDir) {
 				continue
 			}
-			out = append(out, Proposal{KeyStats: *st, Decision: "never"})
+			out = append(out, Proposal{KeyStats: *st, Decision: "never", Pattern: st.Key})
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -249,12 +437,18 @@ func Propose(rep Report, current policy.Policy, projectDir string) []Proposal {
 	return out
 }
 
-// evidence ranks proposals for display: the strongest record first.
+// evidence ranks proposals for display: the strongest record first. A
+// server proposal ranks by how many of its tools the operator approved,
+// which is the count its threshold is about.
 func (p Proposal) evidence() int {
-	if p.Decision == "always" {
+	switch {
+	case p.Decision == "always":
 		return p.DenySessions
+	case p.Server != "":
+		return len(p.CoveredApproved)
+	default:
+		return max(p.TypedApprovals, p.ApproveSessions)
 	}
-	return p.ApproveSessions
 }
 
 // commandOf returns a representative command for policy resolution.

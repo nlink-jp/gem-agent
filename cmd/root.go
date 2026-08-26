@@ -19,6 +19,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/diagram"
 	"github.com/nlink-jp/gem-agent/internal/hooks"
+	"github.com/nlink-jp/gem-agent/internal/learn"
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mediastore"
 	"github.com/nlink-jp/gem-agent/internal/memory"
@@ -196,7 +197,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- MCP servers from the project's .mcp.json (drop-in) ---
-	mcpClients, mcpSummary := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, projectTrusted)
+	mcpClients, mcpSummary, mcpScopes := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, projectTrusted)
 	defer func() {
 		for _, c := range mcpClients {
 			c.Close()
@@ -720,16 +721,38 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				}
 				return t.Description
 			},
-			ask: func(askCtx context.Context, question string, evidence []string, accept, skip string) (bool, error) {
-				// The evidence rides inside the question: the dialog
-				// shows one question and its options, and a proposal
-				// decided without its evidence is decided blind.
-				full := question
-				if len(evidence) > 0 {
-					full += "\n" + strings.Join(evidence, "\n")
+			// A server the project supplied through .mcp.json is that
+			// project's, and never earns a rule that applies everywhere
+			// (ADR-0048 §2). mcpScopes is reassigned by /mcp reload, so
+			// both closures read the variable rather than a snapshot.
+			isGlobalServer: func(server string) bool {
+				return mcpScopes[server] == "global"
+			},
+			serverTools: func(server string) []string {
+				prefix := learn.ServerPattern(server)
+				prefix = strings.TrimSuffix(prefix, "*")
+				var out []string
+				for _, t := range registry.List() {
+					if strings.HasPrefix(t.Name, prefix) {
+						out = append(out, t.Name)
+					}
 				}
-				idx, err := askOperator(askCtx, full, []string{accept, skip})
+				return out
+			},
+			ask: func(askCtx context.Context, question string, accept, skip string) (bool, error) {
+				idx, err := askOperator(askCtx, question, []string{accept, skip})
 				return err == nil && idx == 0, err
+			},
+			// Same shape as askOperator: the surface is decided at call
+			// time, because the TUI program does not exist yet here.
+			emit: func(lines []string) {
+				if prog != nil {
+					prog.Send(tui.Output{Lines: lines})
+					return
+				}
+				for _, l := range lines {
+					fmt.Fprintln(stderr, l)
+				}
 			},
 		}
 	}
@@ -750,7 +773,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// Warnings go into the command output: under the TUI a stderr
 		// write would corrupt the display.
 		var warn bytes.Buffer
-		mcpClients, mcpSummary = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, projectTrusted)
+		mcpClients, mcpSummary, mcpScopes = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, projectTrusted)
 		ag.RefreshTools()
 		mcpTools := 0
 		for _, t := range registry.List() {
@@ -935,11 +958,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			},
 			Learn: func(learnCtx context.Context) {
 				go func() {
-					var out strings.Builder
-					learner.Run(learnCtx, &out)
-					if text := strings.TrimRight(out.String(), "\n"); text != "" {
-						prog.Send(tui.Attached{Notes: strings.Split(text, "\n")})
-					}
+					learner.Run(learnCtx)
 					prog.Send(tui.TurnDone{})
 				}()
 			},
@@ -1012,9 +1031,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// inline: there is no event loop to deadlock, and Ctrl+C reaches
 		// it through the shared context.
 		if input == "/learn" && learner != nil {
-			var out strings.Builder
-			learner.Run(ctx, &out)
-			fmt.Fprint(stderr, out.String())
+			learner.Run(ctx)
 			continue
 		}
 		if turn, handled, errMsg := expandSkillInput(input, skillsList); handled {
@@ -1109,7 +1126,7 @@ func (s *startupNotes) Write(p []byte) (int, error) {
 // nothing will answer.
 type denyGate struct{ out io.Writer }
 
-func (d denyGate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) bool {
+func (d denyGate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (bool, bool) {
 	fmt.Fprintf(d.out, "[denied: %s %s — mutating tools are disabled in one-shot mode; run interactively to approve]\n", toolName, detail)
 	// What it wanted, on the record: a one-shot run that ends in denials
 	// is exactly the case where the operator has to reconstruct the
@@ -1117,7 +1134,7 @@ func (d denyGate) Approve(toolName, detail, purpose, reason string, mustPrompt b
 	if purpose != "" {
 		fmt.Fprintf(d.out, "[denied: ↪ %s]\n", purpose)
 	}
-	return false
+	return false, false
 }
 
 // runTurn runs fn under a SIGINT-cancellable context and maps a

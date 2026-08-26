@@ -47,7 +47,17 @@ type Approver interface {
 	// Block-tier call of that tool through unprompted — measured.
 	// purpose is the model's own declaration of why it wants the call
 	// (ADR-0047) — context for the human, never a gate input.
-	Approve(toolName, detail, purpose, reason string, mustPrompt bool) bool
+	// It returns the verdict and whether the SESSION ALLOWLIST answered
+	// rather than a human (ADR-0048 §1). That second value is
+	// load-bearing for learning, not for safety: an allowlist answer is
+	// one keystroke standing in for any number of calls, so counting it
+	// like a typed decision inflates the evidence. Reported here rather
+	// than inferred later, because only the gate knows.
+	//
+	// Two return values instead of a struct: a shared type would have
+	// to live in a package both gates and the agent import, and
+	// `internal/agent`'s own tests already import `internal/approve`.
+	Approve(toolName, detail, purpose, reason string, mustPrompt bool) (approved, fromAllowlist bool)
 }
 
 // SessionLog receives session records. May be nil.
@@ -979,10 +989,14 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 			// "gate" covers the operator and the session allowlist —
 			// the gates answer as one (ADR-0035 v1 granularity).
 			detail, purpose := a.Describe(tc)
-			ok := a.gate.Approve(tc.Name, detail, purpose, reason, mustPrompt)
+			ok, fromAllowlist := a.gate.Approve(tc.Name, detail, purpose, reason, mustPrompt)
 			decision := "denied"
 			if ok {
 				decision = "approved"
+			}
+			source := "operator"
+			if fromAllowlist {
+				source = "allowlist"
 			}
 			a.telemetry.Approval(tc.Name, decision, "gate", mustPrompt, reason)
 			// The transcript record (ADR-0045 §7) is what /learn reads.
@@ -997,9 +1011,12 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 			// decision back to a call — and an empty key marks a call
 			// that can never match a learned rule, which is exactly the
 			// call that must not produce one either.
+			// source tells a typed answer from one the session allowlist
+			// gave (ADR-0048 §1): only the gate knows, and the learner
+			// weighs the two differently.
 			a.logRecord("gate_decision", map[string]any{
 				"name": tc.Name, "decision": decision, "must_prompt": mustPrompt,
-				"key": a.learnKey(tc), "detail": clip(detail, 300),
+				"key": a.learnKey(tc), "detail": clip(detail, 300), "source": source,
 			})
 			if !ok {
 				return deniedResult

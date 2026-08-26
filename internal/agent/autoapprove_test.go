@@ -45,9 +45,9 @@ func (b *autoBackend) ChatStream(ctx context.Context, system string, msgs []llm.
 
 type recordingGate struct{ asked []string }
 
-func (g *recordingGate) Approve(name, detail, purpose, reason string, mustPrompt bool) bool {
+func (g *recordingGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool) {
 	g.asked = append(g.asked, name+"|"+detail+"|"+reason)
-	return false // deny: tests assert on whether the gate was reached
+	return false, false // deny: tests assert on whether the gate was reached
 }
 
 func newAutoAgent(t *testing.T, b *autoBackend, gate Approver) (*Agent, *tools.Registry, *[]AutoDecision) {

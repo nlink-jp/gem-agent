@@ -124,6 +124,13 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   changing the ladder, keep: Block never consults the model, model errors
   and malformed verdicts escalate, and confidence alone never approves.
   New dangerous patterns go in `internal/risk`, with a corpus test.
+- **The gate reports HOW it answered** (ADR-0048) — `Approve` returns
+  `(approved, fromAllowlist)` because one `a` stands in for any number
+  of calls: counting it like a typed decision inflates the evidence,
+  and collapsing typed answers to hide that threw away 25 real
+  decisions on the feature's first real run. MCP rules are per server
+  and GLOBAL (a server's behaviour does not vary by project, and a
+  clone cannot introduce one); command rules stay per project.
 - **Learned rules never widen a floor, and the learner never reads
   prose** (ADR-0045) — a `/learn` rule is ordinary policy: the Block
   tier and pre-tool hooks still run, and `"always"` from either table

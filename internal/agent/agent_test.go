@@ -45,17 +45,17 @@ type approveAll struct {
 	purposes []string
 }
 
-func (a *approveAll) Approve(name, detail, purpose, reason string, mustPrompt bool) bool {
+func (a *approveAll) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool) {
 	a.asked = append(a.asked, name+": "+detail)
 	a.purposes = append(a.purposes, purpose)
-	return true
+	return true, false
 }
 
 type denyAll struct{ asked []string }
 
-func (d *denyAll) Approve(name, detail, purpose, reason string, mustPrompt bool) bool {
+func (d *denyAll) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool) {
 	d.asked = append(d.asked, name+": "+detail)
-	return false
+	return false, false
 }
 
 func newAgent(t *testing.T, backend llm.Backend, gate Approver, maxTurns int) (*Agent, *tools.Registry) {

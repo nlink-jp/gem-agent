@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.47.0] - 2026-08-26
+
+### Fixed — /learn proposed nothing on its first real session
+
+An auto-mode session escalated ~25 times, every one approved, and
+`/learn` afterwards found nothing to propose. Two causes (ADR-0048):
+
+- **Votes were collapsed per session because the gate could not report
+  how it answered.** A session allowlist (`a`) turns one keystroke into
+  any number of recorded approvals, so v0.46.0 counted each session
+  once — throwing away the twenty-five decisions the operator actually
+  made. The gate now reports whether the allowlist answered, recorded
+  as `source` on `gate_decision`: allowlist answers still collapse to
+  one vote, typed approvals count individually. The bar is five typed
+  approvals **or** three approving sessions.
+- **MCP friction has a shape per-tool frequency cannot see.** The
+  escalations were different tools, each called once — no per-tool
+  threshold is both safe and reachable. `/learn` now proposes a rule
+  per **MCP server** (`mcp__asn-lookup__*`) once two or more of its
+  distinct tools have been approved with none denied.
+
+### Changed
+
+- MCP server rules are **global**, unlike command rules: a server comes
+  from your own config, behaves identically in every project, and
+  cannot be introduced by a cloned repository. Servers a project
+  supplied through its own `.mcp.json` are excluded. Per-tool,
+  project-scoped MCP proposals are withdrawn — two proposal shapes for
+  one call would duplicate or contradict.
+- A server proposal lists **every tool the rule would cover**, split
+  into the ones you approved and the ones you have not used, each with
+  the server's own description. The rule grants more than the evidence
+  for it, so the disclosure comes before the answer, in the scrollback
+  where nothing clips it.
+- `/learn` now reports each saved rule as it happens rather than after
+  the last question.
+
+
 ## [0.46.0] - 2026-08-26
 
 ### Added

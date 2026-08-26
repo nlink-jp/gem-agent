@@ -586,6 +586,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.autoMode = bool(msg)
 		return m, nil
 
+	case Output:
+		return m, m.emitJoined(msg.Lines...)
+
 	case Attached:
 		var parts []string
 		for _, line := range msg.Lines {

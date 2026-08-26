@@ -154,6 +154,22 @@ type Messages struct {
 	LearnEvidenceWobbleFmt string
 	// LearnEvidenceExamples heads the recorded example calls.
 	LearnEvidenceExamples string
+	// LearnAskServerFmt is the question for an MCP server rule
+	// (ADR-0048 §2): %s = the server name.
+	LearnAskServerFmt string
+	// LearnCoversApprovedFmt / LearnCoversUnusedFmt head the two halves
+	// of what a server rule would cover (ADR-0048 §3): %d tools each.
+	// The second is the disclosure that matters — the rule grants more
+	// than the evidence for it.
+	LearnCoversApprovedFmt string
+	LearnCoversUnusedFmt   string
+	// LearnCoversMoreFmt reports the tools a clipped list did not show:
+	// %d remaining.
+	LearnCoversMoreFmt string
+	// LearnEvidenceServerFmt: %d distinct tools of this server approved.
+	LearnEvidenceServerFmt string
+	// LearnScopeGlobal marks a rule that applies in every project.
+	LearnScopeGlobal string
 	// LearnEvidenceDescFmt shows an MCP tool's self-description
 	// (ADR-0046 §4): %s = the clipped description. It is the server's
 	// claim, which is why the line says who wrote it.
@@ -286,6 +302,12 @@ var en = Messages{
 	LearnEvidenceWobbleFmt:   "auto mode approved %d and escalated %d — the same call judged both ways",
 	LearnEvidenceExamples:    "calls you approved:",
 	LearnEvidenceDescFmt:     "the server describes this tool as: %s",
+	LearnAskServerFmt:        "Stop asking about the %s server's tools, in every project?",
+	LearnCoversApprovedFmt:   "this rule covers %d tools you have approved:",
+	LearnCoversUnusedFmt:     "and %d you have NOT used yet — they stop asking too:",
+	LearnCoversMoreFmt:       "…and %d more",
+	LearnEvidenceServerFmt:   "you approved %d different tools of this server, denied none",
+	LearnScopeGlobal:         "this rule applies in every project, not just this one",
 	LearnAccept:              "add the rule",
 	LearnSkip:                "skip",
 	LearnSavedFmt:            "%s = %s (saved to policy.toml, this project)",
@@ -422,6 +444,12 @@ var ja = Messages{
 	LearnEvidenceWobbleFmt:   "auto モードは %d 回承認・%d 回エスカレート — 同じ呼び出しが両方に判定されています",
 	LearnEvidenceExamples:    "承認した呼び出し:",
 	LearnEvidenceDescFmt:     "サーバーによるこのツールの説明: %s",
+	LearnAskServerFmt:        "%s サーバーのツールについて、全プロジェクトで聞くのをやめますか？",
+	LearnCoversApprovedFmt:   "このルールは承認済みの %d ツールを覆います:",
+	LearnCoversUnusedFmt:     "さらに未使用の %d ツールも覆います — これらも聞かれなくなります:",
+	LearnCoversMoreFmt:       "…ほか %d 件",
+	LearnEvidenceServerFmt:   "このサーバーの異なる %d ツールを承認・拒否はゼロ",
+	LearnScopeGlobal:         "このルールはこのプロジェクトだけでなく全プロジェクトに適用されます",
 	LearnAccept:              "ルールを追加",
 	LearnSkip:                "見送る",
 	LearnSavedFmt:            "%s = %s （policy.toml に保存・このプロジェクト）",

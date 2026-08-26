@@ -110,6 +110,15 @@ type ContextWindow struct {
 	Assumed bool
 }
 
+// Output carries plain lines to the scrollback from work running
+// outside the event loop — /learn's progress, for one (ADR-0048).
+//
+// Attached exists for two other things and neither fits: its Lines are
+// attachments (rendered with 📎) and its Notes are warnings (⚠). A
+// dozen ordinary progress lines rendered as warnings reads as a dozen
+// problems.
+type Output struct{ Lines []string }
+
 // ApprovalRequest asks the operator to approve a mutating tool call.
 // The gate goroutine blocks on Resp until the UI answers 'y', 'n' or 'a'.
 type ApprovalRequest struct {
@@ -160,28 +169,32 @@ func (g *Gate) SetProgram(p sender) {
 // bound. mustPrompt says the session allowlist may not answer this call
 // (Block-tier, or an "always" policy — ADR-0021 §5); an 'a' answered on
 // such a prompt still registers, for future non-Block calls.
-func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) bool {
+func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (approved, fromAllowlist bool) {
 	g.mu.Lock()
 	if !mustPrompt && g.always[toolName] {
 		g.mu.Unlock()
-		return true
+		// One keystroke standing in for this call: the learner must not
+		// read it as a decision made here (ADR-0048 §1).
+		return true, true
 	}
 	prog := g.prog
 	g.mu.Unlock()
 	if prog == nil {
-		return false
+		return false, false
 	}
 	resp := make(chan byte, 1)
 	prog.Send(ApprovalRequest{Tool: toolName, Detail: detail, Purpose: purpose, Reason: reason, Resp: resp})
 	switch <-resp {
 	case 'y':
-		return true
+		return true, false
 	case 'a':
 		g.mu.Lock()
 		g.always[toolName] = true
 		g.mu.Unlock()
-		return true
+		// The keystroke that registers the allowlist is itself an
+		// operator decision about this call.
+		return true, false
 	default:
-		return false
+		return false, false
 	}
 }

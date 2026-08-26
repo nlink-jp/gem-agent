@@ -18,9 +18,9 @@ type floorGate struct {
 	calls []bool
 }
 
-func (g *floorGate) Approve(name, detail, purpose, reason string, mustPrompt bool) bool {
+func (g *floorGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool) {
 	g.calls = append(g.calls, mustPrompt)
-	return false
+	return false, false
 }
 
 func newFloorAgent(t *testing.T, gate Approver, pol policy.Policy) *Agent {
