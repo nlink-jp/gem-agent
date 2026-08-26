@@ -167,16 +167,16 @@ supersede する（typo とリンク修正は例外）。
   第 3 回: 所見 16 件、高 3 件（子エージェントのモデル作成 @ 参照
   展開・live 領域のタブ幅穴・2 本目の stdin reader）+ 停滞検知器・
   ask ダイアログ・監査の穴の修正
-- [`ADR-0042`](adr/0042-terminal-diagrams.ja.md) — mermaid 図を端末に
+- [`ADR-0042`](adr/0042-terminal-diagrams.ja.md) — mermaid 図を端末に描画:
+  実測で忠実な種別だけ（flowchart・ASCII sequence・ER）、形状は矩形に
+  正規化、忠実性ガード、残りはソース表示; モデルには描けるものを正確に伝える
 - [`ADR-0043`](adr/0043-diagram-tool.ja.md) — 図はツールが描く。モデルが書いたものを書き換えない
 - [`ADR-0044`](adr/0044-pre-tool-hooks.ja.md) — オペレーター pre-tool フック: 組織のガードをフォールバック後も生かす
-- [`ADR-0045`](adr/0045-transcript-approval-learning.ja.md) — トランスクリプト駆動の承認ルール学習: `/learn` が提案し、オペレータが決める
+- [`ADR-0045`](adr/0045-transcript-approval-learning.ja.md) — トランスクリプト駆動の承認ルール学習: `/learn` が提案し、オペレータが決める（0049 が撤収）
 - [`ADR-0046`](adr/0046-mcp-description-risk-evidence.ja.md) — MCP ツール description をリスク評価の証拠に: オペレータが既に導入したものを評価器に教える
 - [`ADR-0047`](adr/0047-declared-purpose.ja.md) — 承認対象コールに宣言された purpose: 「何を」だけでなく「なぜ」を運用者に見せる
-- [`ADR-0048`](adr/0048-learning-that-fires.ja.md) — 実利用で発火する学習へ: MCP はサーバ単位グローバル、そして人が実際に出した回答を数える
-  描画: 実測で忠実な種別だけ（flowchart・ASCII sequence・ER）、形状は
-  矩形に正規化、忠実性ガード、残りはソース表示; モデルには描けるものを
-  正確に伝える
+- [`ADR-0048`](adr/0048-learning-that-fires.ja.md) — 実利用で発火する学習へ: MCP はサーバ単位グローバル、そして人が実際に出した回答を数える（0049 が撤収）
+- [`ADR-0049`](adr/0049-learn-withdrawn.ja.md) — `/learn` を撤収する: 確認は緩和の恒久的な境界にならなかった
 
 ## History（履歴）
 

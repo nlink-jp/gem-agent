@@ -176,10 +176,11 @@ excepted).
 - [`ADR-0042`](adr/0042-terminal-diagrams.md) — mermaid diagrams
 - [`ADR-0043`](adr/0043-diagram-tool.md) — diagrams are drawn by a tool, not by rewriting what the model wrote
 - [`ADR-0044`](adr/0044-pre-tool-hooks.md) — operator pre-tool hooks: the org's guards survive the fallback
-- [`ADR-0045`](adr/0045-transcript-approval-learning.md) — transcript-driven approval-rule learning: `/learn` proposes, the operator decides
+- [`ADR-0045`](adr/0045-transcript-approval-learning.md) — transcript-driven approval-rule learning: `/learn` proposes, the operator decides (withdrawn by 0049)
 - [`ADR-0046`](adr/0046-mcp-description-risk-evidence.md) — MCP tool descriptions as risk-evaluation evidence: tell the evaluator what the operator already installed
 - [`ADR-0047`](adr/0047-declared-purpose.md) — model-declared purpose on gated calls: the operator sees why, not only what
-- [`ADR-0048`](adr/0048-learning-that-fires.md) — learning that fires on real usage: server-scoped MCP rules, and counting the answers people actually gave
+- [`ADR-0048`](adr/0048-learning-that-fires.md) — learning that fires on real usage: server-scoped MCP rules, and counting the answers people actually gave (withdrawn by 0049)
+- [`ADR-0049`](adr/0049-learn-withdrawn.md) — `/learn` is withdrawn: confirmation was not a durable boundary for loosening
   draw in the terminal: the measured-faithful types only (flowchart,
   ASCII sequence, ER), shapes normalized to boxes, a fidelity guard,
   the rest shown as source; the model is told exactly what renders
