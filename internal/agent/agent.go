@@ -396,6 +396,48 @@ func (a *Agent) toolPolicy(tool string) policy.Decision {
 	return a.policy.For(tool)
 }
 
+// callPolicy is toolPolicy for one concrete call: the per-command table
+// (ADR-0045) refines the tool's policy for shell commands. Every gate
+// decision goes through here rather than toolPolicy, so a learned rule
+// and an operator-set one are the same thing everywhere downstream.
+//
+// The purpose argument is stripped first: gem-agent's own field is not
+// part of what the command runs (ADR-0047 §2).
+func (a *Agent) callPolicy(tc llm.ToolCall) policy.Decision {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.policy.ForCall(tc.Name, a.shellCommand(tc))
+}
+
+// shellCommand returns the command a shell call runs, with gem-agent's
+// own purpose field removed (ADR-0047 §2). Empty for every other tool.
+func (a *Agent) shellCommand(tc llm.ToolCall) string {
+	if tc.Name != tools.ShellExecName {
+		return ""
+	}
+	s, _ := a.stripPurpose(tc.Name, tc.Args)["command"].(string)
+	return s
+}
+
+// learnKey is the key a learned rule would be written under for this
+// call (ADR-0045 §3): the command key for a shell call, the tool name
+// otherwise, and "" for a shell command too complex to key — which no
+// rule may ever match, and therefore no rule may be learned from.
+//
+// Recorded with each decision so the learner reads keys rather than
+// re-deriving them from arguments, and so a key derived by a future
+// build cannot silently re-interpret an old decision.
+func (a *Agent) learnKey(tc llm.ToolCall) string {
+	if tc.Name != tools.ShellExecName {
+		return tc.Name
+	}
+	key, ok := policy.CommandKey(a.shellCommand(tc))
+	if !ok {
+		return ""
+	}
+	return key
+}
+
 // AutoCompact reports whether automatic compaction is on.
 func (a *Agent) AutoCompact() bool {
 	a.mu.Lock()
@@ -895,7 +937,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 		// policy is "always", may not be answered by the gates' session
 		// allowlist. Decided here — where policy and the risk verdict
 		// live — not inside the gates.
-		mustPrompt := a.toolPolicy(tc.Name) == policy.AlwaysAsk
+		mustPrompt := a.callPolicy(tc) == policy.AlwaysAsk
 		if !mustPrompt && tool.Mutating {
 			if v := risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir()); v.Tier == risk.Block {
 				mustPrompt = true
@@ -908,7 +950,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 		// A tool the operator marked "always" skips the ladder: the
 		// question is settled, and spending a model round on it would
 		// both cost a request and risk answering it differently.
-		if a.AutoApprove() && a.toolPolicy(tc.Name) != policy.AlwaysAsk {
+		if a.AutoApprove() && a.callPolicy(tc) != policy.AlwaysAsk {
 			d := a.decideAuto(ctx, tc)
 			if a.onAuto != nil {
 				a.onAuto(tc, d)
@@ -916,6 +958,11 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 			a.logRecord("auto_decision", map[string]any{
 				"name": tc.Name, "approved": d.Approved,
 				"tier": d.Tier.String(), "reason": d.Reason, "model": d.ModelConsulted,
+				// The learner reads this to tell an escalation the
+				// operator then approved from a call the ladder passed
+				// on its own (ADR-0045): only the first is evidence of
+				// what the operator wants.
+				"key": a.learnKey(tc),
 			})
 			approved = d.Approved
 			if approved {
@@ -932,11 +979,31 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 			// "gate" covers the operator and the session allowlist —
 			// the gates answer as one (ADR-0035 v1 granularity).
 			detail, purpose := a.Describe(tc)
-			if !a.gate.Approve(tc.Name, detail, purpose, reason, mustPrompt) {
-				a.telemetry.Approval(tc.Name, "denied", "gate", mustPrompt, reason)
+			ok := a.gate.Approve(tc.Name, detail, purpose, reason, mustPrompt)
+			decision := "denied"
+			if ok {
+				decision = "approved"
+			}
+			a.telemetry.Approval(tc.Name, decision, "gate", mustPrompt, reason)
+			// The transcript record (ADR-0045 §7) is what /learn reads.
+			// Telemetry already carries this, but it is opt-in and
+			// off-machine: without a local record, reconstructing the
+			// operator's own decisions means inferring them from what
+			// ran, which cannot tell a typed 'y' from a policy that was
+			// in force at the time.
+			//
+			// The aggregation key is resolved here, by the same function
+			// the gate matches with, so the learner never has to pair a
+			// decision back to a call — and an empty key marks a call
+			// that can never match a learned rule, which is exactly the
+			// call that must not produce one either.
+			a.logRecord("gate_decision", map[string]any{
+				"name": tc.Name, "decision": decision, "must_prompt": mustPrompt,
+				"key": a.learnKey(tc), "detail": clip(detail, 300),
+			})
+			if !ok {
 				return deniedResult
 			}
-			a.telemetry.Approval(tc.Name, "approved", "gate", mustPrompt, reason)
 		}
 	}
 	// The purpose argument is gem-agent's, not the tool's (ADR-0047 §2):
@@ -960,7 +1027,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 // shell_exec above all — must not become "run anything unattended"
 // because of one config line, so a Block verdict still asks.
 func (a *Agent) gated(mutating bool, tc llm.ToolCall) bool {
-	switch a.toolPolicy(tc.Name) {
+	switch a.callPolicy(tc) {
 	case policy.AlwaysAsk:
 		return true
 	case policy.NeverAsk:

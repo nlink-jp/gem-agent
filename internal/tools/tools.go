@@ -155,6 +155,12 @@ func (r *Registry) List() []*Tool {
 // carrying the actual image (loaded via ReadImage).
 const ViewImageName = "view_image"
 
+// ShellExecName is the one tool whose effect is a whole command line
+// rather than a named argument, which is why several layers treat it
+// specially — the approval detail, and the per-command policy and
+// learning of ADR-0045.
+const ShellExecName = "shell_exec"
+
 // imageExts gates ReadImage and read_file's refusal. The bytes are
 // sniffed separately; the extension only routes.
 var imageExts = map[string]bool{
@@ -490,7 +496,7 @@ func (r *Registry) writeFile() *Tool {
 
 func (r *Registry) shellExec() *Tool {
 	return &Tool{
-		Name: "shell_exec",
+		Name: ShellExecName,
 		Description: "Run a shell command (bash) with the project root as the working directory. " +
 			"File writes are restricted to the project directory by the OS sandbox. " +
 			"Output is truncated when large; the exit status is reported when non-zero.",
