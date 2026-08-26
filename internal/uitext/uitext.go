@@ -172,6 +172,15 @@ type Messages struct {
 	RiskbookClearNone  string
 	RiskbookUsage      string
 
+	// --- exit summary (cmd) ---
+	// Printed once, on the way out — the last thing in the scrollback
+	// answers "how do I get back to this?". Skipped when there was no
+	// conversation: a resume hint for an empty session would be wrong.
+	// ExitSessionFmt: %s = session id (twice).
+	ExitSessionFmt string
+	// ExitUsageFmt: rounds, prompt tokens, output tokens.
+	ExitUsageFmt string
+
 	// --- slash command feedback (cmd) ---
 	Help             string // the full /help text
 	AutoOn           string
@@ -291,48 +300,38 @@ var en = Messages{
 	RiskbookClearedFmt:     "project risk rules removed (%s)",
 	RiskbookClearNone:      "no project risk rules to remove",
 	RiskbookUsage:          "usage: /riskbook [show|learn|reload|clear]",
+	ExitSessionFmt:         "session %s — resume: gem-agent -c (or --resume %s)",
+	ExitUsageFmt:           "%d rounds · prompt %s · output %s",
 
 	Help: `commands:
-  /help    show this help
-  /tools   list available tools
-  /mcp     show connected MCP servers (/mcp reload reconnects them)
-  /auto    toggle auto-approve (shift+tab does the same, and works mid-run)
-  /compact summarise the older half of the conversation to free context
-  /settings show every setting with where it came from; edit policy + toggles
-  /riskbook risk rules the auto-mode reviewer reads; learn drafts them from your answers
-  /usage   token accounting: main loop, cache hit rate, side-calls, web tools
-  /memory  list persisted memories (global + this project); saves are approval-gated
-  /skills  list installed skills (/skills reload re-discovers them)
-  /skill <name> [args]  invoke a skill directly
-  /version show gem-agent's version and platform
-  /clear   reset the conversation history
-  /quit    exit (Ctrl+D also works; /exit is an alias)
-auto-approve: safe changes run unattended; destructive, out-of-project,
-  credential-touching, or uncertain calls still ask (two-tier review)
-completion:
-  Tab completes /commands (and skill names after "/skill "), and
-  @-references below
-file references:
-  @<path>       attach a project file or directory to the message (Tab completes)
-  @<img>.png    attach an image — absolute and ~ paths work for images
-                (@~/Desktop/shot.png), because you typed them yourself
-  @clipboard    attach the clipboard image (Cmd+Ctrl+Shift+4, then this)
+  /help      show this help
+  /tools     list tools and each one's current approval gate
+  /mcp       list connected MCP servers (/mcp reload reconnects)
+  /auto      toggle auto-approve (shift+tab, works mid-run)
+  /compact   summarise the older half of the conversation
+  /settings  view and edit settings, with provenance
+  /riskbook  view the risk rules; /riskbook learn drafts them from your answers
+  /usage     token statement for this session
+  /memory    list persisted memories
+  /skills    list installed skills (/skills reload re-discovers)
+  /skill <name> [args]   invoke a skill directly
+  /version   version and platform
+  /clear     reset the conversation
+  /quit      exit (/exit and Ctrl+D too)
+
+attach:
+  @<path>      a project file or directory (Tab completes)
+  @<image>     images may also use absolute or ~ paths (@~/Desktop/shot.png)
+  @clipboard   the clipboard image
+
 shell:
-  !<command>  run it directly (sandboxed, no approval; output is shared with the model)
+  !<command>   run directly — sandboxed, no approval, output shared with the model
+
 keys:
-  Enter send · ↑↓ history · Ctrl+C interrupt/clear · Ctrl+D quit
-  You can keep typing while a turn runs: Enter queues the text as the
-    next message, sent when the turn ends cleanly (after a failure or
-    interrupt it returns to the input box unsent)
-    ※ ! and / commands cannot be queued — interrupt with Ctrl+C first
-  newline (multi-line input): Ctrl+J, or end the line with \ and press Enter
-    ※ Option+Enter works only in terminals that send Option as Meta
-      (by default it produces the same bytes as plain Enter, and sends)
-  a multi-line paste becomes one message as-is
-  approval dialog: ←→/Tab select · Enter confirm (y/n/a also work)
-mutating tools prompt for approval: y = once, a = always this session
-  (Block-tier calls and always-policy tools keep asking — 'a' never
-   covers the dangerous cases, only the routine ones)
+  Enter send · up/down history · Ctrl+C interrupt/clear · Ctrl+D quit
+  Ctrl+J or a trailing \ inserts a newline; a multi-line paste stays one message
+  typing during a turn queues the text (! and / cannot be queued)
+  approval dialog: arrows/Tab select · Enter confirm · y/n/a direct
 `,
 	AutoOn:            "auto-approve: ON — safe changes run unattended; risky ones still ask\n",
 	AutoOff:           "auto-approve: OFF — every change asks\n",
@@ -428,47 +427,38 @@ var ja = Messages{
 	RiskbookClearedFmt:     "プロジェクトリスクルールを削除しました（%s）",
 	RiskbookClearNone:      "削除するプロジェクトリスクルールはありません",
 	RiskbookUsage:          "使い方: /riskbook [show|learn|reload|clear]",
+	ExitSessionFmt:         "セッション %s — 再開: gem-agent -c（または --resume %s）",
+	ExitUsageFmt:           "%d ラウンド · prompt %s · output %s",
 
 	Help: `コマンド:
-  /help    このヘルプを表示
-  /tools   利用可能なツールの一覧
-  /mcp     接続中の MCP サーバーを表示（/mcp reload で再接続）
-  /auto    auto-approve を切替（shift+tab でも可・実行中も有効）
-  /compact 会話の古い半分を要約してコンテキストを空ける
-  /settings 全設定を出所つきで表示; ポリシーとトグルを編集
-  /riskbook auto モードの評価器が読むリスクルール; learn は回答記録から起草
-  /usage   トークン集計: メインループ・キャッシュ命中率・サイドコール・Web ツール
-  /memory  永続メモリの一覧（グローバル + このプロジェクト）; 保存は承認制
-  /skills  インストール済みスキルの一覧（/skills reload で再探索）
-  /skill <name> [args]  スキルを直接起動
-  /version gem-agent のバージョンとプラットフォームを表示
-  /clear   会話履歴をリセット
-  /quit    終了（Ctrl+D でも可・/exit も同じ）
-auto-approve: 安全な変更は無人で実行します。破壊的・プロジェクト外・
-  認証情報に触れる・判定不能の呼び出しは引き続き確認します（二段レビュー）
-補完:
-  Tab で /コマンドを補完（"/skill " の後はスキル名も）。下記の
-  @参照も補完されます
-ファイル参照:
-  @<path>       プロジェクト内のファイル/ディレクトリを添付（Tab 補完）
-  @<img>.png    画像を添付 — 画像は絶対パスと ~ も使えます
-                （@~/Desktop/shot.png）。自分で入力したパスだからです
-  @clipboard    クリップボードの画像を添付（Cmd+Ctrl+Shift+4 のあとに）
+  /help      このヘルプ
+  /tools     ツール一覧と各ツールの現在の承認ゲート
+  /mcp       接続中の MCP サーバー一覧（/mcp reload で再接続）
+  /auto      auto-approve 切替（shift+tab でも可・実行中も有効）
+  /compact   会話の古い半分を要約
+  /settings  設定の表示と編集（出所つき）
+  /riskbook  リスクルールの表示。/riskbook learn は回答記録から起草
+  /usage     このセッションのトークン明細
+  /memory    永続メモリの一覧
+  /skills    インストール済みスキル一覧（/skills reload で再探索）
+  /skill <name> [args]   スキルを直接起動
+  /version   バージョンとプラットフォーム
+  /clear     会話履歴をリセット
+  /quit      終了（/exit・Ctrl+D でも可）
+
+添付:
+  @<パス>      プロジェクト内のファイル/ディレクトリ（Tab 補完）
+  @<画像>      画像は絶対パス・~ パスも可（@~/Desktop/shot.png）
+  @clipboard   クリップボードの画像
+
 シェル:
-  !<command>  直接実行（サンドボックス内・承認なし; 出力はモデルと共有されます）
+  !<コマンド>   直接実行 — sandbox 下・承認なし・出力はモデルと共有
+
 キー:
   Enter 送信 · ↑↓ 履歴 · Ctrl+C 中断/クリア · Ctrl+D 終了
-  実行中も入力できます: Enter で次のメッセージとして予約され、ターンが正常に
-    終わった時点で送信されます（失敗・中断時は未送信のまま入力欄へ戻ります）
-    ※ ! と / のコマンドは予約できません — Ctrl+C で中断してから実行します
-  改行（複数行入力）: Ctrl+J もしくは 行末に \ を置いて Enter
-    ※ Option+Enter は「Option を Meta として送る」設定の端末でのみ有効
-      （既定では通常の Enter と同じバイトになり送信されます）
-  複数行ペーストはそのまま 1 メッセージになります
-  承認ダイアログ: ←→/Tab で選択 · Enter 決定（y/n/a も可）
-変更系ツールは承認を求めます: y = 今回のみ, a = このセッション中は常に許可
-  （Block 段の呼び出しと always ポリシーのツールは常に確認します — 'a' が
-   カバーするのは日常的な操作だけで、危険な操作には効きません）
+  改行は Ctrl+J か行末 \ + Enter。複数行ペーストは 1 メッセージのまま
+  実行中の入力は次メッセージとして予約（! と / は予約不可）
+  承認ダイアログ: ←→/Tab 選択 · Enter 決定 · y/n/a 直接
 `,
 	AutoOn:            "auto-approve: ON — 安全な変更は無人で実行します。危険なものは引き続き確認します\n",
 	AutoOff:           "auto-approve: OFF — すべての変更で確認します\n",

@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/nlink-jp/gem-agent/internal/agent"
+
+	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
 // usageTally accumulates the token spend of tools that run on their own
@@ -96,4 +98,24 @@ func humanTok(n int) string {
 	default:
 		return fmt.Sprintf("%d", n)
 	}
+}
+
+// exitSummary is printed once on the way out of an interactive session
+// (every route: /quit, Ctrl+C, Ctrl+D). The last thing in the
+// scrollback answers the two questions an operator actually has at
+// exit — how do I get back, and what did this cost — in two lines,
+// not a statement (/usage held that, while it was reachable). Empty
+// when nothing happened: a resume hint for a session with no
+// conversation would point at a file resume refuses.
+func exitSummary(s agent.UsageStats, sessionID string, msgs *uitext.Messages) []string {
+	if s.Rounds == 0 {
+		return nil
+	}
+	var lines []string
+	if sessionID != "" {
+		lines = append(lines, fmt.Sprintf(msgs.ExitSessionFmt, sessionID, sessionID))
+	}
+	lines = append(lines, fmt.Sprintf(msgs.ExitUsageFmt,
+		s.Rounds, humanTok(s.Prompt), humanTok(s.Output)))
+	return lines
 }

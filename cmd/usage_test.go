@@ -10,6 +10,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/tools"
+	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
 // usageMock replays scripted responses for the report test.
@@ -72,5 +73,34 @@ func TestUsageReportStatement(t *testing.T) {
 	fresh := agent.New(agent.Options{Backend: mb, Registry: reg, System: "s", MaxTurns: 5})
 	if out := usageReport(fresh, newUsageTally(), "m", "l"); !strings.Contains(out, "no requests yet") {
 		t.Errorf("fresh report = %q", out)
+	}
+}
+
+// The exit summary answers "how do I get back" and "what did it cost",
+// and nothing else — and stays silent for a session with no
+// conversation, whose resume hint would point at a file resume refuses.
+func TestExitSummary(t *testing.T) {
+	en := uitext.For(uitext.EN)
+	lines := exitSummary(agent.UsageStats{Rounds: 3, Prompt: 45200, Output: 3100},
+		"20260826-153012", en)
+	if len(lines) != 2 {
+		t.Fatalf("lines = %v, want session + usage", lines)
+	}
+	if !strings.Contains(lines[0], "20260826-153012") || !strings.Contains(lines[0], "gem-agent -c") {
+		t.Errorf("session line = %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "3 rounds") || !strings.Contains(lines[1], "45.2k") {
+		t.Errorf("usage line = %q", lines[1])
+	}
+
+	// No session log: the cost line still prints, the resume hint not.
+	lines = exitSummary(agent.UsageStats{Rounds: 1, Prompt: 100, Output: 10}, "", en)
+	if len(lines) != 1 || strings.Contains(lines[0], "resume") {
+		t.Errorf("no-log lines = %v", lines)
+	}
+
+	// Nothing happened: nothing to say.
+	if lines := exitSummary(agent.UsageStats{}, "20260826-153012", en); lines != nil {
+		t.Errorf("empty session produced a summary: %v", lines)
 	}
 }

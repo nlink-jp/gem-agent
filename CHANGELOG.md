@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.49.2] - 2026-08-27
+
+### Changed — /help is a map, and exits leave a receipt (operator UX reports)
+
+- `/help` rewritten in both languages: one line per item in aligned
+  columns, blank lines between sections, and no design rationale — the
+  source text's own mid-sentence line breaks used to make it wrap at
+  half the screen on wide terminals, and explanations like "because
+  you typed them yourself" answered questions nobody was asking. The
+  details (modifier-key behaviour, queueing rules, approval tiers)
+  live in the interface and approval references.
+
+### Added
+
+- Every interactive exit (`/quit`, Ctrl+C, Ctrl+D) now prints a
+  two-line summary as the last thing in the scrollback: the session id
+  with its resume command, and the session's round/token totals.
+  Silent when nothing happened, and never printed in one-shot mode.
+
+
 ## [0.49.1] - 2026-08-26
 
 ### Changed — status output is not documentation (operator UX report)

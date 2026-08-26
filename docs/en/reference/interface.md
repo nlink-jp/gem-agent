@@ -140,6 +140,11 @@ in the input box as one message, never one LLM call per line.
 | `/clear` | reset the conversation history |
 | `/quit` | exit (`/exit` is an alias; Ctrl+D also works) |
 
+Every interactive exit — `/quit`, Ctrl+C, Ctrl+D — ends with a
+two-line summary: the session id with the resume command, and the
+session's round/token totals. The last thing in the scrollback answers
+"how do I get back to this?".
+
 `/usage` breaks the session down: main-loop rounds with the cache hit
 rate, risk-check and compaction side-calls, and per-tool lines
 (summaries, web, the file-search agent) naming the model that spent

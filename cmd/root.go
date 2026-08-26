@@ -745,6 +745,19 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		now:   time.Now,
 	}
 
+	// Exit summary (operator request): every interactive exit route —
+	// /quit, Ctrl+C, Ctrl+D — ends with the resume hint and the cost
+	// line as the last thing in the scrollback. Deferred so no route
+	// can forget it; one-shot mode stays clean for pipelines.
+	if !oneShot {
+		out := cmd.ErrOrStderr()
+		defer func() {
+			for _, l := range exitSummary(ag.Usage(), sessionID, msgs) {
+				fmt.Fprintln(out, l)
+			}
+		}()
+	}
+
 	settings := &settingsStore{
 		cfg: cfg, projectCfg: projectCfg, policyFile: policyFile,
 		policyPath: policyPath, projectDir: projectDir,
