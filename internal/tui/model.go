@@ -514,7 +514,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf(m.msgs.StatusRunningFmt, msg.Name)
 		m.thoughtTail = ""   // the round's thoughts ended in a call
 		m.toolRunning = true // stream silence is expected until the tool returns
-		return m, m.emitJoined(m.takeLive(), m.st.tool.Render("⚙ "+msg.Name+" "+msg.Detail))
+		line := m.st.tool.Render("⚙ " + msg.Name + " " + msg.Detail)
+		// A gated call that was auto-approved or allowlisted never opens
+		// the dialog, so the event line is the only place its declared
+		// purpose (ADR-0047) can appear. Only gated tools carry one, so
+		// read-only chatter stays one line per call.
+		if msg.Purpose != "" {
+			line += "\n" + m.st.hint.Render("  "+m.msgs.PurposePrefix+m.purposeText(msg.Purpose))
+		}
+		return m, m.emitJoined(m.takeLive(), line)
 
 	case ToolDone:
 		// The tool returned: stall detection re-arms, and the status
@@ -757,6 +765,17 @@ func fmtElapsed(d time.Duration) string {
 		return fmt.Sprintf("%ds", s)
 	}
 	return fmt.Sprintf("%dm%02ds", s/60, s%60)
+}
+
+// purposeText renders the model's declared purpose, or names its
+// absence (ADR-0047 §4). Clipped: the field asks for one sentence, and
+// a model that writes a paragraph must not push the arguments off the
+// approval prompt.
+func (m Model) purposeText(purpose string) string {
+	if p := strings.TrimSpace(purpose); p != "" {
+		return clip(strings.ReplaceAll(p, "\n", " "), 200)
+	}
+	return m.msgs.PurposeNone
 }
 
 // thoughtView renders the live thought tail (ADR-0033 §3), dim, capped
@@ -1462,11 +1481,11 @@ func (m Model) viewContent() string {
 		// clamp then cut rows FROM THE TOP with no disclosure — the
 		// title (the tool being approved!) vanished first, the exact
 		// silent hiding clipDetail exists to prevent (review round 2).
-		// ~12 rows of fixed chrome: box borders, title, hidden marker,
-		// reason, options, hint, live line, footer, clamp margin.
+		// ~13 rows of fixed chrome: box borders, title, purpose, hidden
+		// marker, reason, options, hint, live line, footer, clamp margin.
 		budget := maxApprovalDetailLines
 		if m.height > 0 { // 0 = size not yet reported; keep the full budget
-			if avail := m.height - 12; avail < budget {
+			if avail := m.height - 13; avail < budget {
 				budget = avail
 				if budget < 0 {
 					budget = 0
@@ -1475,6 +1494,13 @@ func (m Model) viewContent() string {
 		}
 		detail, hidden := clipDetail(req.Detail, budget)
 		body := fmt.Sprintf(m.msgs.ApprovalTitleFmt, req.Tool)
+		// The model's declared purpose (ADR-0047) frames the arguments
+		// below it: the operator's question about an innocuous-looking
+		// `cp` is never "is this dangerous" but "why does it want this".
+		// Always rendered — a silently absent line would be read as "the
+		// build does not have this yet" rather than "the model skipped a
+		// required field".
+		body += "\n" + m.st.tool.Render(m.msgs.PurposePrefix+m.purposeText(req.Purpose))
 		if detail != "" {
 			body += "\n" + m.st.hint.Render(detail)
 		}

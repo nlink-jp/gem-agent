@@ -606,11 +606,18 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		ClipboardImage:   clipboardImage,
 		MediaUpload:      mediaUpload,
 		OnToolCall: func(tc llm.ToolCall) {
+			purpose := agent.CallPurpose(tc)
 			if prog != nil {
-				prog.Send(tui.ToolCall{Name: tc.Name, Detail: agent.CallDetail(tc)})
+				prog.Send(tui.ToolCall{Name: tc.Name, Detail: agent.CallDetail(tc), Purpose: purpose})
 				return
 			}
 			fmt.Fprintf(stderr, "\n[tool] %s %s\n", tc.Name, agent.CallDetail(tc))
+			// Headless runs (-p, piped stdin) get the declared purpose
+			// on its own line too (ADR-0047 §5): the transcript of a
+			// scripted run is the only record it leaves behind.
+			if purpose != "" {
+				fmt.Fprintf(stderr, "[tool] ↪ %s\n", purpose)
+			}
 		},
 		// The tool-finished signal (review round 3): the TUI's stall
 		// detector re-arms on this, never on stream chunks — a risk or
@@ -1040,8 +1047,14 @@ func (s *startupNotes) Write(p []byte) (int, error) {
 // nothing will answer.
 type denyGate struct{ out io.Writer }
 
-func (d denyGate) Approve(toolName, detail, reason string, mustPrompt bool) bool {
+func (d denyGate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) bool {
 	fmt.Fprintf(d.out, "[denied: %s %s — mutating tools are disabled in one-shot mode; run interactively to approve]\n", toolName, detail)
+	// What it wanted, on the record: a one-shot run that ends in denials
+	// is exactly the case where the operator has to reconstruct the
+	// agent's plan afterwards (ADR-0047 §5).
+	if purpose != "" {
+		fmt.Fprintf(d.out, "[denied: ↪ %s]\n", purpose)
+	}
 	return false
 }
 

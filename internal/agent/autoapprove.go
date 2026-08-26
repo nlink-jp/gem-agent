@@ -180,7 +180,12 @@ func (a *Agent) decideAuto(ctx context.Context, tc llm.ToolCall) AutoDecision {
 // as data, wrapped in a fresh nonce tag, and no tools are offered — this
 // round must not be able to act.
 func (a *Agent) evaluateRisk(ctx context.Context, tc llm.ToolCall) (riskVerdict, error) {
-	args, err := json.Marshal(tc.Args)
+	// The model's own declared purpose is removed before the evaluator
+	// sees the call (ADR-0047 §3). Leaving it in would hand the model
+	// tier the proposer's self-justification as evidence — the
+	// evaluator-is-the-proposer failure ADR-0020 §4 refused for memory
+	// writes, here applying to every gated call.
+	args, err := json.Marshal(a.stripPurpose(tc.Name, tc.Args))
 	if err != nil {
 		args = []byte("{}")
 	}

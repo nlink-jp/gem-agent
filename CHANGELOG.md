@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.44.0] - 2026-08-26
+
+### Added — the approval prompt now says why, not only what
+
+- Every approval-gated tool takes a required `purpose` argument
+  (ADR-0047): the model's one sentence about why the call is needed,
+  shown on the approval prompt above the arguments, on the `⚙` event
+  line for calls that never open a dialog, in the `tool.call` audit
+  event as its own attribute, and in the session transcript.
+  Reported by the operator: approval was requested for a `cp` into a
+  temp directory — staging a file for a Slack upload — and nothing
+  said so anywhere. The motivation was not missing but unreachable:
+  measured across 45 transcripts, 349 tool-calling turns carried a
+  text part exactly once, because Gemini 3 writes its preamble as a
+  thought summary, which is display-only, cleared the instant a round
+  ends in a call, and never stored.
+- The argument is injected centrally, so built-in and MCP tools are
+  covered identically, and stripped again before the tool runs — no
+  MCP server receives an argument its own schema never declared. A
+  server that publishes its own `purpose` keeps it untouched.
+- Self-declaration is never evidence: the purpose is stripped from the
+  risk-evaluation payload (the evaluator must not read the proposer's
+  justification), cannot move a rule-tier verdict, and is excluded
+  from the loop guard's signature so re-worded justifications cannot
+  disguise a repeated call. All three pinned by tests.
+- A call that arrives without a purpose still runs; the prompt and the
+  audit event say *(no purpose declared)* instead. Refusing would
+  invent a new failure at an approval prompt the operator cannot
+  satisfy, for an annotation that is not a safety control.
+
 ## [0.43.0] - 2026-08-26
 
 ### Added

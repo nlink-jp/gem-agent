@@ -61,7 +61,7 @@ Keep the report compact — it replaces the whole exploration in the requester's
 // operator about a context they cannot see (ADR-0037 §2).
 type searchDenyGate struct{}
 
-func (searchDenyGate) Approve(string, string, string, bool) bool { return false }
+func (searchDenyGate) Approve(string, string, string, string, bool) bool { return false }
 
 // agenticSearchOptions wires registerAgenticSearch. onToolCall may be
 // nil; everything else is required (sink may be the no-op Sink).

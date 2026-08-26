@@ -18,7 +18,7 @@ type floorGate struct {
 	calls []bool
 }
 
-func (g *floorGate) Approve(name, detail, reason string, mustPrompt bool) bool {
+func (g *floorGate) Approve(name, detail, purpose, reason string, mustPrompt bool) bool {
 	g.calls = append(g.calls, mustPrompt)
 	return false
 }

@@ -12,8 +12,8 @@ func TestSubLabelsEvents(t *testing.T) {
 	sink, rec := NewRecording()
 	sub := sink.Sub("agentic_file_search")
 
-	sink.ToolCall("read_file", false, "path=a", time.Second, "ok")
-	sub.ToolCall("search_files", false, "pattern=x", time.Second, "ok")
+	sink.ToolCall("read_file", false, "path=a", "why", time.Second, "ok")
+	sub.ToolCall("search_files", false, "pattern=x", "why", time.Second, "ok")
 	sub.Usage(10, 5, 0)
 
 	events := rec.Events()
@@ -34,6 +34,6 @@ func TestSubLabelsEvents(t *testing.T) {
 // branch (the package contract).
 func TestSubNilSafe(t *testing.T) {
 	var nilSink *Sink
-	nilSink.Sub("x").ToolCall("t", false, "", 0, "ok")
+	nilSink.Sub("x").ToolCall("t", false, "", "why", 0, "ok")
 	Nop().Sub("x").Usage(1, 1, 0)
 }

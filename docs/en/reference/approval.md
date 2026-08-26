@@ -38,6 +38,38 @@ ever tighten, and a broken guard script must not brick the fallback
 tool. Hooks cover the model's calls only; the operator's own
 `!command` escape does not pass through them.
 
+## What the call is for (ADR-0047)
+
+Every approval-gated tool carries a required `purpose` argument, and
+the model's one sentence appears on the prompt above the arguments:
+
+```
+承認が必要です: shell_exec
+↪ Slackへの添付準備としてレポートファイルを一時ディレクトリに配置するため
+cp report.csv /tmp/share/
+```
+
+Without it the prompt answered "what will run" and "why you are being
+asked", but never "why the agent wants this" — and for an
+innocuous-looking `cp` that is the whole decision. The motivation was
+not missing, only unreachable: Gemini 3 writes its preamble as a
+thought summary rather than as text (1 text part in 349 tool-calling
+turns, measured), and thought text is display-only, cleared the moment
+a round ends in a call, and never stored.
+
+The declaration is written by the same party that proposed the call,
+so it is **context for you and evidence for nothing**: it is stripped
+before the risk evaluator sees the call, cannot move a rule-tier
+verdict, and is excluded from the loop guard's signature. A call that
+arrives without one still runs — the prompt says *(no purpose
+declared)* rather than refusing, since the absence is itself something
+worth seeing.
+
+The same line rides the `⚙` event line for calls that never open a
+dialog (auto-approved or allowlisted), the `tool.call` audit event as
+its own `purpose` attribute, and the session transcript as part of the
+call's arguments.
+
 ## Per-call approval (MITL)
 
 Mutating tools ask before running (the dialog itself is described in

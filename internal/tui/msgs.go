@@ -36,9 +36,13 @@ type StreamUpdate struct {
 }
 
 // ToolCall announces a tool invocation (shown as an event line).
+// Purpose is the model's declaration of why it wants the call
+// (ADR-0047); empty for read-only tools, which are not gated and carry
+// no such field.
 type ToolCall struct {
-	Name   string
-	Detail string
+	Name    string
+	Detail  string
+	Purpose string
 }
 
 // ToolDone signals that a tool call finished (executed, denied, or
@@ -111,6 +115,13 @@ type ContextWindow struct {
 type ApprovalRequest struct {
 	Tool   string
 	Detail string
+	// Purpose is the model's own one-sentence declaration of why it
+	// wants this call (ADR-0047). The arguments say what will run and
+	// Reason says why the operator is being asked; without this the
+	// third question — why the agent wants it — had no answer anywhere
+	// on screen. Empty when the model declared nothing, which is shown
+	// as such rather than hidden.
+	Purpose string
 	// Reason is non-empty when auto-approve escalated this call instead
 	// of running it — the operator needs to know why they are being
 	// asked, and which tier objected.
@@ -149,7 +160,7 @@ func (g *Gate) SetProgram(p sender) {
 // bound. mustPrompt says the session allowlist may not answer this call
 // (Block-tier, or an "always" policy — ADR-0021 §5); an 'a' answered on
 // such a prompt still registers, for future non-Block calls.
-func (g *Gate) Approve(toolName, detail, reason string, mustPrompt bool) bool {
+func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) bool {
 	g.mu.Lock()
 	if !mustPrompt && g.always[toolName] {
 		g.mu.Unlock()
@@ -161,7 +172,7 @@ func (g *Gate) Approve(toolName, detail, reason string, mustPrompt bool) bool {
 		return false
 	}
 	resp := make(chan byte, 1)
-	prog.Send(ApprovalRequest{Tool: toolName, Detail: detail, Reason: reason, Resp: resp})
+	prog.Send(ApprovalRequest{Tool: toolName, Detail: detail, Purpose: purpose, Reason: reason, Resp: resp})
 	switch <-resp {
 	case 'y':
 		return true

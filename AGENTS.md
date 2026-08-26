@@ -196,6 +196,15 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   payload carries gem-agent's real tool name; only the matcher speaks both
   vocabularies. Never add an "allow" bypass: hooks tighten, the ladder
   decides.
+- **The declared `purpose` is displayed and nothing else** (ADR-0047) —
+  `internal/agent/purpose.go` injects the argument into every `Mutating`
+  tool's advertised schema and strips it again before `Run`, before the
+  risk-evaluation payload, and out of the loop signature. It is written by
+  the party being judged, so it must never reach a gate: if a future
+  change wants to "use the stated intent" for a decision, that is the
+  evaluator-is-the-proposer failure with a friendlier name. Scope stays
+  the static `Mutating` flag — keying it to the live policy would change
+  the advertised schema mid-session and re-warm the implicit cache.
 - **Memory writes never auto-approve, and the prompt says when to save**
   (ADR-0020 §5–6) — `save_memory`/`delete_memory` are excluded from the
   model tier in `decideAuto`: the evaluator is the same party that

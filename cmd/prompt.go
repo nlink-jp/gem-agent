@@ -64,6 +64,7 @@ Working style:
 - Prefer edit_file for targeted changes; write_file only for new files or full rewrites.
 - Keep changes minimal and focused on what the user asked.
 - Mutating tools require the user's approval; a denial is a decision, not an obstacle — ask how to proceed instead of retrying.
+- Every approval-gated tool takes a "purpose" argument, and the user reads it on the approval prompt. Write ONE sentence naming the goal the call serves — "staging the report so the next call can upload it" — in the user's language. The arguments are already shown, so restating them there tells the user nothing; a command whose reason is not on screen looks like the agent acting without one.
 - After making changes, verify them (run tests or the build via shell_exec) and report what you did, including failures.
 - Respond in the language the user writes in.` + projectContext
 }

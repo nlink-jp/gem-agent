@@ -199,11 +199,16 @@ func (s *Sink) TurnEnd(rounds int, dur time.Duration, errClass string) {
 // outcome. detail is the clipped argument summary — an audit trail of
 // "shell_exec ran" without the command is not an audit trail
 // (ADR-0035 §3).
-func (s *Sink) ToolCall(name string, mutating bool, detail string, dur time.Duration, outcome string) {
+// purpose is the model's own declaration of why it wanted the call
+// (ADR-0047), recorded so the log can answer "why did it try that?"
+// long after the thought stream that carried the motivation is gone.
+// Empty when the model omitted it — the absence is part of the record.
+func (s *Sink) ToolCall(name string, mutating bool, detail, purpose string, dur time.Duration, outcome string) {
 	s.emit("tool.call",
 		attribute.String("tool", name),
 		attribute.Bool("mutating", mutating),
 		attribute.String("detail", clip(detail, 300)),
+		attribute.String("purpose", clip(purpose, 300)),
 		attribute.Int64("duration_ms", dur.Milliseconds()),
 		attribute.String("outcome", outcome))
 }

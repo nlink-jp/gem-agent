@@ -163,8 +163,10 @@ func TestShortTerminalApprovalKeepsTitleAndDiscloses(t *testing.T) {
 	if !strings.Contains(v, "shell_exec") {
 		t.Errorf("title (the tool being approved) missing at height 14:\n%s", v)
 	}
-	if !strings.Contains(v, "+18") { // budget = 14-12 = 2 shown, 18 hidden
-		t.Errorf("hidden count wrong (want +18):\n%s", v)
+	// budget = 14-13 = 1 shown, 19 hidden. The chrome grew by one row
+	// when the declared purpose (ADR-0047) took a fixed line of its own.
+	if !strings.Contains(v, "+19") {
+		t.Errorf("hidden count wrong (want +19):\n%s", v)
 	}
 	if !strings.Contains(v, m.approvalLabels()[0]) {
 		t.Errorf("options line missing:\n%s", v)

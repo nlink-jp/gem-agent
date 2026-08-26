@@ -45,7 +45,9 @@ type Approver interface {
 	// call is Block-tier, or the operator's policy pins the tool to
 	// "always". Without it, one 'a' on a benign call waved every later
 	// Block-tier call of that tool through unprompted — measured.
-	Approve(toolName, detail, reason string, mustPrompt bool) bool
+	// purpose is the model's own declaration of why it wants the call
+	// (ADR-0047) — context for the human, never a gate input.
+	Approve(toolName, detail, purpose, reason string, mustPrompt bool) bool
 }
 
 // SessionLog receives session records. May be nil.
@@ -136,6 +138,11 @@ type Agent struct {
 
 	history  []llm.Message
 	toolDefs []llm.ToolDef
+	// purposeTools names the tools whose advertised schema gem-agent
+	// extended with the purpose argument (ADR-0047). Only those calls
+	// have it stripped before execution — an argument a server declared
+	// itself belongs to that server.
+	purposeTools map[string]bool
 }
 
 // Options configures New.
@@ -223,14 +230,7 @@ type Options struct {
 
 // New creates an agent.
 func New(opts Options) *Agent {
-	var defs []llm.ToolDef
-	for _, t := range opts.Registry.List() {
-		defs = append(defs, llm.ToolDef{
-			Name:        t.Name,
-			Description: t.Description,
-			Parameters:  t.Parameters,
-		})
-	}
+	defs, purposeTools := toolDefs(opts.Registry)
 	return &Agent{
 		backend:     opts.Backend,
 		registry:    opts.Registry,
@@ -246,6 +246,8 @@ func New(opts Options) *Agent {
 		preToolHook: opts.PreToolHook,
 		auto:        opts.AutoApprove,
 		toolDefs:    defs,
+
+		purposeTools: purposeTools,
 
 		policy:       opts.Policy,
 		autoCompact:  opts.AutoCompact,
@@ -436,15 +438,7 @@ func (a *Agent) AddContext(text string) {
 // a turn is in flight — so it shares AddContext's single-writer
 // discipline.
 func (a *Agent) RefreshTools() {
-	var defs []llm.ToolDef
-	for _, t := range a.registry.List() {
-		defs = append(defs, llm.ToolDef{
-			Name:        t.Name,
-			Description: t.Description,
-			Parameters:  t.Parameters,
-		})
-	}
-	a.toolDefs = defs
+	a.toolDefs, a.purposeTools = toolDefs(a.registry)
 }
 
 // SetSystem replaces the system prompt (ADR-0039: a skills reload
@@ -653,7 +647,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			}
 			detail := ""
 			if a.roundReview && stopAfterRound == "" {
-				sig := canonicalCallSig(tc)
+				sig := a.callSig(tc)
 				if sig == a.loopPrevSig {
 					a.loopStreak++
 				} else {
@@ -680,7 +674,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 				if t, ok := a.registry.Get(tc.Name); ok {
 					mutating = t.Mutating
 				}
-				a.telemetry.ToolCall(tc.Name, mutating, CallDetail(tc), 0, "skipped")
+				a.telemetry.ToolCall(tc.Name, mutating, CallDetail(tc), a.declaredPurpose(tc), 0, "skipped")
 			} else {
 				result = a.execCall(ctx, tc)
 			}
@@ -868,7 +862,7 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
 	if t, ok := a.registry.Get(tc.Name); ok {
 		mutating = t.Mutating
 	}
-	a.telemetry.ToolCall(tc.Name, mutating, CallDetail(tc), time.Since(start), outcome)
+	a.telemetry.ToolCall(tc.Name, mutating, CallDetail(tc), a.declaredPurpose(tc), time.Since(start), outcome)
 	return result
 }
 
@@ -935,14 +929,16 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 		if !approved {
 			// "gate" covers the operator and the session allowlist —
 			// the gates answer as one (ADR-0035 v1 granularity).
-			if !a.gate.Approve(tc.Name, CallDetail(tc), reason, mustPrompt) {
+			if !a.gate.Approve(tc.Name, CallDetail(tc), a.declaredPurpose(tc), reason, mustPrompt) {
 				a.telemetry.Approval(tc.Name, "denied", "gate", mustPrompt, reason)
 				return deniedResult
 			}
 			a.telemetry.Approval(tc.Name, "approved", "gate", mustPrompt, reason)
 		}
 	}
-	out, err := tool.Run(ctx, tc.Args)
+	// The purpose argument is gem-agent's, not the tool's (ADR-0047 §2):
+	// no MCP server may receive an argument its schema never declared.
+	out, err := tool.Run(ctx, a.stripPurpose(tc.Name, tc.Args))
 	if err != nil {
 		return "error: " + err.Error()
 	}
@@ -987,6 +983,13 @@ func CallDetail(tc llm.ToolCall) string {
 	}
 	keys := make([]string, 0, len(tc.Args))
 	for k := range tc.Args {
+		// The declared purpose is rendered on its own line by the
+		// prompt and the event line (ADR-0047 §5); repeating it inside
+		// the argument dump would push the actual arguments out of the
+		// clip budget with a duplicate.
+		if k == PurposeArg {
+			continue
+		}
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)

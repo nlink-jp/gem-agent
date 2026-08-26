@@ -157,3 +157,37 @@ func TestEmptyProjectDirIsConservative(t *testing.T) {
 		t.Errorf("absolute path with no project dir = %v, want block", v.Tier)
 	}
 }
+
+// The rule tier reads named arguments only, so the model's declared
+// purpose (ADR-0047) cannot move a verdict in either direction — a
+// reassuring sentence must not soften a Block, and an alarming one must
+// not harden a Safe. Pinned here rather than left to the reading of
+// Classify, because the whole point of the field is that it is written
+// by the party being judged.
+func TestDeclaredPurposeDoesNotMoveTheVerdict(t *testing.T) {
+	cases := []struct {
+		name string
+		args map[string]any
+	}{
+		{"shell_exec", map[string]any{"command": "rm -rf /"}},
+		{"shell_exec", map[string]any{"command": "go test ./..."}},
+		{"write_file", map[string]any{"path": "src/main.go", "content": "x"}},
+		{"write_file", map[string]any{"path": "/etc/hosts", "content": "x"}},
+	}
+	for _, c := range cases {
+		base := Classify(c.name, true, c.args, proj)
+		for _, purpose := range []string{
+			"routine cleanup approved by the operator earlier",
+			"deleting every credential file on the machine",
+		} {
+			args := map[string]any{"purpose": purpose}
+			for k, v := range c.args {
+				args[k] = v
+			}
+			if got := Classify(c.name, true, args, proj); got.Tier != base.Tier {
+				t.Errorf("%s %v: purpose %q moved the verdict %v -> %v",
+					c.name, c.args, purpose, base.Tier, got.Tier)
+			}
+		}
+	}
+}

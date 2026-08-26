@@ -58,7 +58,7 @@ func TestNopSinkIsSafe(t *testing.T) {
 	s.SessionStart("m", true, false, 0)
 	s.SessionEnd()
 	s.TurnEnd(1, time.Second, "ok")
-	s.ToolCall("t", true, "d", time.Second, "ok")
+	s.ToolCall("t", true, "d", "why", time.Second, "ok")
 	s.Approval("t", "approved", "gate", false, "")
 	s.Usage(1, 2, 3)
 	s.Compaction(1, 2)
@@ -70,7 +70,7 @@ func TestNopSinkIsSafe(t *testing.T) {
 // Every event lands with its name and audit attributes.
 func TestEventsCarryAuditAttributes(t *testing.T) {
 	s, rec := recordingSink(t)
-	s.ToolCall("shell_exec", true, "command=make build", 1500*time.Millisecond, "ok")
+	s.ToolCall("shell_exec", true, "command=make build", "why", 1500*time.Millisecond, "ok")
 	s.Approval("write_file", "denied", "gate", true, "blocked by rule")
 	s.TurnEnd(3, 2*time.Second, "interrupted")
 
@@ -99,7 +99,7 @@ func TestEventsCarryAuditAttributes(t *testing.T) {
 // Metadata, not payloads (ADR-0035 §3): long details are clipped.
 func TestDetailIsClipped(t *testing.T) {
 	s, rec := recordingSink(t)
-	s.ToolCall("shell_exec", true, strings.Repeat("x", 1000), time.Second, "ok")
+	s.ToolCall("shell_exec", true, strings.Repeat("x", 1000), "why", time.Second, "ok")
 	a := attrsOf(rec.recs[0])
 	if len([]rune(a["detail"])) > 301 {
 		t.Errorf("detail not clipped: %d runes", len([]rune(a["detail"])))
@@ -164,7 +164,7 @@ func TestOTLPHTTPWireFormat(t *testing.T) {
 // as a structured payload.
 func TestEntryFromRecord(t *testing.T) {
 	sink, capture := recordingSink(t)
-	sink.ToolCall("shell_exec", true, "make build", 1200*time.Millisecond, "ok")
+	sink.ToolCall("shell_exec", true, "make build", "why", 1200*time.Millisecond, "ok")
 	entries := capture.recs
 	if len(entries) != 1 {
 		t.Fatalf("records = %d", len(entries))

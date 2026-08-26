@@ -77,8 +77,9 @@ sequence / ER 図を端末に描き、描けなかったときは理由をモデ
 スクリーンショット（`@~/Desktop/…`・`@clipboard`）・PDF と Office
 文書・音声/動画 — バケット設定時は GCS 経由、未設定ならインライン。
 
-**[承認と安全](docs/ja/reference/approval.ja.md)** — Block 段には
-決して届かないセッション allowlist 付きの都度 MITL ゲート、opt-in の
+**[承認と安全](docs/ja/reference/approval.ja.md)** — モデル自身が申告した
+コールの目的を引数と並べて表示する都度 MITL ゲート（Block 段には
+決して届かないセッション allowlist 付き）、opt-in の
 二層自動承認（ルール先行・モデルレビュー後段）、スコープ対応解決と
 信用ゲート付きプロジェクト緩和を持つツール別承認ポリシー、Seatbelt
 サンドボックス、Claude Code と同じガードスクリプトを実行して階梯より

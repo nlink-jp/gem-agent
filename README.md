@@ -81,9 +81,10 @@ documents, and audio/video — routed through your GCS bucket when
 configured, inline otherwise.
 
 **[Approval and safety](docs/en/reference/approval.md)** — per-call
-MITL gates with a session allowlist that never covers Block-tier
-calls, an opt-in two-tier auto-approve (rules first, model review
-second), a per-tool approval policy with scope-aware resolution and
+MITL gates that show the model's own declared purpose for the call
+alongside its arguments, a session allowlist that never covers
+Block-tier calls, an opt-in two-tier auto-approve (rules first, model
+review second), a per-tool approval policy with scope-aware resolution and
 trust-gated project loosening, the Seatbelt sandbox, operator pre-tool
 hooks that run the same guard scripts Claude Code does and refuse a
 call before the ladder sees it, startup gates for

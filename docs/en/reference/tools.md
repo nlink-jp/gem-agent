@@ -5,6 +5,14 @@ behind it. All file tools are confined to the project directory,
 symlink escapes included. `/tools` lists them with each one's live
 approval gate.
 
+Every approval-gated tool — the built-in mutating ones below and every
+MCP tool — takes one extra argument gem-agent adds to its schema:
+`purpose`, the model's one-sentence statement of why the call is
+needed, shown to the operator on the approval prompt (ADR-0047). It is
+removed again before the tool runs, so no MCP server receives an
+argument its own schema never declared, and it is evidence for nothing
+— see [approval](approval.md).
+
 ## Orientation: `list_files`, `list_tree`, `search_files`
 
 `list_tree` shows the project as a tree; `search_files` is a fast

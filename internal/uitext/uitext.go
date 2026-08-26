@@ -67,10 +67,16 @@ type Messages struct {
 	// ApprovalHiddenFmt warns that %d detail lines were clipped
 	// (ADR-0021: never approve what you have not seen).
 	ApprovalHiddenFmt string
-	VerdictApproved   string
-	VerdictDenied     string
-	VerdictAlways     string
-	VerdictPersist    string
+	// PurposePrefix marks the model's declared purpose (ADR-0047), and
+	// PurposeNone stands in its place when the model declared none —
+	// "it did not say" and "there is nothing to say" must not look the
+	// same on an approval prompt.
+	PurposePrefix   string
+	PurposeNone     string
+	VerdictApproved string
+	VerdictDenied   string
+	VerdictAlways   string
+	VerdictPersist  string
 	// AutoApprovedFmt echoes an unattended approval: tier, reason.
 	AutoApprovedFmt string
 	CtrlCHint       string // "(interrupt with Ctrl+C)" while running
@@ -186,6 +192,8 @@ var en = Messages{
 	ApprovePersist:    "never ask again (p)",
 	ApprovalHint:      "←→/Tab select · Enter confirm · y/n/a direct · Esc denies",
 	ApprovalHiddenFmt: "⚠ +%d lines hidden — do not approve without seeing all of it (deny, then inspect)",
+	PurposePrefix:     "↪ ",
+	PurposeNone:       "(no purpose declared)",
 	VerdictApproved:   "approved",
 	VerdictDenied:     "denied",
 	VerdictAlways:     "approved (always this session)",
@@ -301,6 +309,8 @@ var ja = Messages{
 	ApprovePersist:    "今後聞かない (p)",
 	ApprovalHint:      "←→/Tab 選択 · Enter 決定 · y/n/a 直接指定 · Esc 拒否",
 	ApprovalHiddenFmt: "⚠ +%d 行が省略されています — 全体を見るまで承認しないでください（拒否して確認できます）",
+	PurposePrefix:     "↪ ",
+	PurposeNone:       "（理由の申告なし）",
 	VerdictApproved:   "許可しました",
 	VerdictDenied:     "拒否しました",
 	VerdictAlways:     "許可しました（このセッション中は常に）",
