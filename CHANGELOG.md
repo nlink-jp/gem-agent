@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.51.0] - 2026-08-28
+
+### Added — ignore-aware navigation (ADR-0052)
+
+Operator field report: in grown projects the model lists and searches
+more and more, responses slow down, and noise drowns the targets.
+Measured on a real 19k-file Tauri project, 99.3% of what the walks
+scanned was dependency and build output — and it was the noise:
+matches inside `node_modules` READMEs, a tree cap 86% consumed by
+generated directories.
+
+- **Ignore-aware walks**: `list_tree` and `search_files` skip
+  well-known dependency/build directories (built-in list) and
+  `.gitignore`'d entries — full gitignore(5) semantics implemented
+  in `internal/ignore` with no new dependency, cross-checked against
+  `git check-ignore` in the tests. Enumeration only: explicit paths
+  never consult the filter; ignored directories still appear, marked
+  `[ignored]` (in `list_files` too); every skip is reported;
+  `include_ignored=true` is the escape hatch; a walk rooted inside an
+  ignored area shows everything and says so. Measured: 1.4 s → 10 ms
+  warm, and only project files match.
+- **`search_files` answers "where"**: at most 5 match lines per file
+  with the remainder counted, an `include` gitignore-syntax file
+  filter (`*.go`, `src/**`), `mode="files"` for per-file counts
+  only, and true totals in the summary even when capped.
+- **`list_tree` budgets per directory**: big directories are elided
+  at a reported per-directory cap (50) instead of one directory
+  starving every sibling after it; `dirs_only=true` gives a
+  file-count-annotated skeleton for orientation.
+
+### Fixed
+
+- A submodule checkout's `.git` (a file, not a directory) was listed
+  and searched; VCS plumbing is now skipped by name either way.
+
+
 ## [0.50.0] - 2026-08-27
 
 ### Added — four floors against summarizing overwrites (ADR-0051)

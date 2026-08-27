@@ -30,7 +30,7 @@ tools パッケージが持つのはプロジェクトディレクトリだけ�
 ファイル互換のためにパースされるが、ADR-0049 以降は適用されない）、
 `internal/riskbook`（積層リスクルールブックとその学習ツール — ADR-0050）、
 `internal/mcp`（stdio JSON-RPC クライアント）、`internal/mention`（`@` 参照）、
-`internal/instructions`（`AGENTS.md` 探索）、`internal/session`（トランスクリプト:
+`internal/instructions`（`AGENTS.md` 探索）、`internal/ignore`（ignore を理解する列挙: 組み込みディレクトリリスト + gitignore マッチャ — ADR-0052）、`internal/session`（トランスクリプト:
 ロガー + resume ローダ）、`internal/statedir`（プロジェクト別 state 配置）、
 `internal/memory`（エージェントメモリ）、`internal/skills`（skill 探索/読込）、
 `internal/docext`（Office テキスト抽出）、`internal/mediastore`（GCS メディア

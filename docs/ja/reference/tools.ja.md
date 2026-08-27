@@ -22,6 +22,28 @@ gem-agent がスキーマに追加する引数が 1 つあります: `gem_agent_
 高速 grep（regex / literal、バイナリと `.git` はスキップ、上限は報告）
 — 方向づけが「ディレクトリごとに 1 ラウンド」から 1 コールになります。
 
+両 walk は ignore を理解します（ADR-0052）: 既知の依存・ビルド
+ディレクトリ（`node_modules`・`vendor`・`dist`・`target`・…）と
+`.gitignore` 対象 — gitignore 意味論の完全実装をリポジトリ内に持ち、
+`git check-ignore` とのクロスチェックで検証 — を列挙時にスキップ
+します。実在の 19k ファイル Tauri プロジェクトでの実測では旧 walk の
+スキャン量の 99.3% がこれで、しかもそれがノイズの正体でした（依存
+README 内のマッチ、`node_modules` に 86% 食われたツリー上限）。
+フィルタされるのは発見だけです。ignore されたディレクトリは
+`[ignored]` マーク付きで表示され（`list_files` でも）、skip は必ず
+脱出ハッチ（`include_ignored=true`）とともに報告され、ignore 領域の
+中を明示的に root にした walk は全部を表示してその旨を告げ、明示
+パス指定（`read_file` など）はフィルタを一切参照しません。
+
+結果の形は「最初の 200 行」ではなく「どこにあるか」に答えます
+（ADR-0052）: `search_files` は 1 ファイルにつき最大 5 マッチ行 +
+残りは件数報告、`include`（gitignore 構文のファイルパターン、例
+`*.go`・`src/**`）と、ファイルごとの件数だけを返す `mode="files"`
+を取ります。`list_tree` は巨大ディレクトリを報告付きのディレクトリ
+ごと上限で省略し（1 ディレクトリが残り全部を飢えさせない）、
+ファイル数注記付きディレクトリ骨格を返す `dirs_only=true` を取り
+ます。
+
 ## 読む: `read_file`・`summarize_file`（ADR-0014）
 
 `read_file` は `start_line`/`end_line` で全文ではなく窓を読めます

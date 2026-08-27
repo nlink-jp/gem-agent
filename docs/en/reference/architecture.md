@@ -31,7 +31,9 @@ per-command vocabulary of ADR-0045 — parsed for file compatibility but
 not applied since ADR-0049), `internal/riskbook` (the layered risk
 rulebook and its learning tool — ADR-0050), `internal/mcp`
 (stdio JSON-RPC client), `internal/mention` (`@`-references),
-`internal/instructions` (`AGENTS.md` discovery), `internal/session`
+`internal/instructions` (`AGENTS.md` discovery), `internal/ignore`
+(ignore-aware enumeration: builtin dir list + gitignore matcher —
+ADR-0052), `internal/session`
 (transcript: logger + resume loader), `internal/statedir` (per-project
 state layout), `internal/memory` (agent memory), `internal/skills`
 (skill discovery/loading), `internal/docext` (Office text extraction),

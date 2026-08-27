@@ -46,6 +46,8 @@ internal/agent/    tool-calling loop, approval dispatch, nonce wrapping, history
                    compaction (compact.go, ADR-0006)
 internal/tools/    built-in tools, path confinement, ExecFunc injection, Register
 internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
+internal/ignore/   ignore-aware enumeration (ADR-0052): builtin dir list + full
+                   gitignore matcher (in-repo, git check-ignore cross-checked)
 internal/risk/     rule tier of the auto-approve ladder (pure, no model)
 internal/policy/   per-tool approval policy (ADR-0008), pure resolver; also the
                    ADR-0045 per-command vocabulary, parsed for file compatibility
@@ -88,6 +90,11 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 - **Drop-in compatibility is the point** — gem-agent reads the *target*
   project's AGENTS.md / CLAUDE.md / .mcp.json. Changes that require per-project
   setup in target repos defeat the tool's purpose.
+- **Ignoring filters enumeration only** (ADR-0052) — `internal/ignore` is
+  consulted by the `list_tree`/`search_files` walks (and `list_files`' marker),
+  never by explicit-path tools; do not wire it into `resolvePath`. The builtin
+  dir list is a layer a `.gitignore` negation cannot re-include; the escape
+  hatch is the `include_ignored` argument. Every skip must stay reported.
 - Config: `~/.config/gem-agent/config.toml`, org-standard schema
   (`[gcp]` project/location, `[model]` name), precedence
   flags > `GEMAGENT_*` > `GOOGLE_CLOUD_*` > file > defaults. Strict decode —

@@ -16,6 +16,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/nlink-jp/gem-agent/internal/ignore"
 )
 
 const (
@@ -355,7 +357,9 @@ func (r *Registry) listFiles() *Tool {
 	return &Tool{
 		Name: "list_files",
 		Description: "List directory entries inside the project. Directories are " +
-			"suffixed with '/'. Use this to explore the project structure before reading or editing.",
+			"suffixed with '/'; dependency/build directories and .gitignore'd entries are " +
+			"marked [ignored] — prefer not to descend into those. Use this to explore the " +
+			"project structure before reading or editing.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -378,11 +382,19 @@ func (r *Registry) listFiles() *Tool {
 			if err != nil {
 				return "", err
 			}
+			rules := ignore.Root(r.projectDir, dir, false)
 			var names []string
 			for _, e := range entries {
 				n := e.Name()
 				if e.IsDir() {
 					n += "/"
+				}
+				// Annotation only — the entry is still listed. A
+				// non-recursive listing is not the enumeration cost
+				// ADR-0052 removes; the marker just teaches the model
+				// not to descend before it tries.
+				if rules.Ignored(e.Name(), e.IsDir()) {
+					n += " [ignored]"
 				}
 				names = append(names, n)
 			}

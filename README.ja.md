@@ -63,7 +63,9 @@ sequence / ER 図を端末に描き、描けなかったときは理由をモデ
 パイプは素の REPL に、`-p` は単発実行に。
 
 **[組み込みツール](docs/ja/reference/tools.ja.md)** — 方向づけ
-（`list_files`/`list_tree`/`search_files`）、窓読みと要約
+（`list_files`/`list_tree`/`search_files`、ignore 対応: 依存・ビルド
+ディレクトリと `.gitignore` 対象はスキップされ、skip は必ず報告）、
+窓読みと要約
 （`read_file`/`summarize_file`）、隔離された子コンテキストでの
 委任プロジェクト検索（`agentic_file_search`）、診断つきアトミック一括編集
 （`edit_file`/`write_file` — 全文書き換えが文書を黙って要約消滅させ

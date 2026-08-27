@@ -26,6 +26,27 @@ dependency-free grep (regex or literal, binaries and `.git` skipped,
 caps reported) — so orientation costs one call, not one round per
 directory.
 
+Both walks are ignore-aware (ADR-0052): well-known dependency and
+build directories (`node_modules`, `vendor`, `dist`, `target`, …) and
+`.gitignore`'d entries — full gitignore semantics, implemented
+in-repo and cross-checked against `git check-ignore` — are skipped
+during enumeration. Measured on a real 19k-file Tauri project, that
+is 99.3% of what the old walk scanned, and it was the noise: matches
+inside dependency READMEs, a tree cap eaten 86% by `node_modules`.
+Ignoring filters discovery only. Ignored directories still appear,
+marked `[ignored]` (in `list_files` too); every skip is reported with
+the escape hatch (`include_ignored=true`); a walk explicitly rooted
+inside an ignored area shows everything and says so; and explicitly
+named paths (`read_file` and friends) never consult the filter.
+
+The result shapes answer "where", not "first 200 lines" (ADR-0052):
+`search_files` shows at most 5 match lines per file and counts the
+rest, takes `include` (a gitignore-syntax file pattern such as
+`*.go` or `src/**`) and `mode="files"` for per-file counts only;
+`list_tree` elides big directories at a reported per-directory cap
+instead of letting one directory starve the rest, and takes
+`dirs_only=true` for a file-count-annotated directory skeleton.
+
 ## Reading: `read_file`, `summarize_file` (ADR-0014)
 
 `read_file` takes `start_line`/`end_line` to read a window instead of
