@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** |
+| Status | **Accepted** — the "sequential scan is enough" premise is amended by [ADR-0052](0052-ignore-aware-navigation.md): the walks now skip what the project ignores |
 | Date | 2026-08-19 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

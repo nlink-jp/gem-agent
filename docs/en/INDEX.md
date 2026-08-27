@@ -183,6 +183,7 @@ excepted).
 - [`ADR-0049`](adr/0049-learn-withdrawn.md) — `/learn` is withdrawn: confirmation was not a durable boundary for loosening
 - [`ADR-0050`](adr/0050-risk-calibration.md) — the risk rulebook: layered guidance for the judge, and learning is one way to write it
 - [`ADR-0051`](adr/0051-destructive-rewrite-floors.md) — whole-file rewrites that shrink are a red flag: the shrink guard, the regeneration rule, the compaction staleness notice, and the dialog size delta
+- [`ADR-0052`](adr/0052-ignore-aware-navigation.md) — ignore-aware navigation: the walks skip generated/ignored content (built-in list + full gitignore semantics, no new dependency), search answers "where", list_tree budgets per directory (amends ADR-0013's premise)
   draw in the terminal: the measured-faithful types only (flowchart,
   ASCII sequence, ER), shapes normalized to boxes, a fidelity guard,
   the rest shown as source; the model is told exactly what renders

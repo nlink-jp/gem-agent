@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** |
+| Status | **Accepted** — 「逐次スキャンで十分」の前提は [ADR-0052](0052-ignore-aware-navigation.ja.md) が修正: walk はプロジェクトが無視するものを skip する |
 | Date | 2026-08-19 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
