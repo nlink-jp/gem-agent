@@ -2,7 +2,7 @@
 
 | 項目 | 内容 |
 |------|------|
-| Status | **Accepted** |
+| Status | **Accepted** — §3 のラウンドカットオフは [ADR-0054](0054-risk-context-every-round.ja.md) が撤廃: 指示は全モデル層評価に同乗する |
 | Date | 2026-08-22 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

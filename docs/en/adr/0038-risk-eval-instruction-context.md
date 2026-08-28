@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** |
+| Status | **Accepted** — §3's round cutoff is removed by [ADR-0054](0054-risk-context-every-round.md): the instruction now rides on every model-tier evaluation |
 | Date | 2026-08-22 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
