@@ -20,6 +20,16 @@ unrecorded force-disable).
   `/settings`. Approved calls print `[auto-approved …]` to stderr so
   the pipeline's audit trail shows what ran, not only what was
   refused.
+- **`--allow "name"`**: per-run approval grants (repeatable or
+  comma-separated), in the `[approval.tools]` vocabulary — exact
+  tool names or `mcp__server__*` prefixes. Entries join the global
+  policy scope at flag precedence and go through the normal policy
+  build, so a project's `"always"` tighten still wins, the Block
+  floor is not lifted, pre-tool hooks still deny, and a bare `"*"`
+  is still an error. Nothing persists: the deliberation lives in the
+  invocation that names the tools. The one-shot `[denied: …]` line
+  now names both remedies and carries the ladder's escalation reason
+  when there is one.
 
 ### Fixed
 

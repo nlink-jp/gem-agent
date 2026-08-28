@@ -61,7 +61,8 @@ sequence / ER 図を端末に描き、描けなかったときは理由をモデ
 `/skills` `/skill` `/version` `/clear` `/quit`）、出所ファーストの `/settings`
 パネル、テーマ、完全二言語のクローム（`[tui].language = auto|ja|en`）。
 パイプは素の REPL に、`-p` は単発実行に（変更系ツールは拒否 —
-`--auto` でその実行だけリスク階梯を武装できます。ADR-0053）。
+`--allow` で実行単位のツール名指し付与、`--auto` でリスク階梯の
+武装ができます。ADR-0053）。
 
 **[組み込みツール](docs/ja/reference/tools.ja.md)** — 方向づけ
 （`list_files`/`list_tree`/`search_files`、ignore 対応: 依存・ビルド

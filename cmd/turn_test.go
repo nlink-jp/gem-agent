@@ -59,9 +59,46 @@ func TestDenyGateAlwaysDenies(t *testing.T) {
 	if !strings.Contains(buf.String(), "one-shot") {
 		t.Errorf("denial should explain itself: %q", buf.String())
 	}
-	// The generic line must name the remedy (ADR-0053 §3).
-	if !strings.Contains(buf.String(), "--auto") {
-		t.Errorf("denial should name the remedy: %q", buf.String())
+	// The generic line must name the remedies (ADR-0053 §3).
+	for _, remedy := range []string{"--auto", "--allow"} {
+		if !strings.Contains(buf.String(), remedy) {
+			t.Errorf("denial should name %s: %q", remedy, buf.String())
+		}
+	}
+}
+
+// --allow entries merge into the global policy scope at flag precedence
+// with the [approval.tools] vocabulary (ADR-0053 §2).
+func TestApplyAllowFlag(t *testing.T) {
+	merged := map[string]string{
+		"write_file": "always", // from a config file — the flag outranks it
+		"read_file":  "never",
+	}
+	err := applyAllowFlag(merged, []string{"write_file", " mcp__slack__send_message ", "mcp__lookup__*"})
+	if err != nil {
+		t.Fatalf("valid entries rejected: %v", err)
+	}
+	for pattern, want := range map[string]string{
+		"write_file":               "never", // flag precedence
+		"mcp__slack__send_message": "never", // trimmed
+		"mcp__lookup__*":           "never",
+		"read_file":                "never", // untouched
+	} {
+		if merged[pattern] != want {
+			t.Errorf("merged[%q] = %q, want %q", pattern, merged[pattern], want)
+		}
+	}
+	// The one entry that means too much stays unreachable, and the
+	// error names the flag, not a config table.
+	err = applyAllowFlag(map[string]string{}, []string{"*"})
+	if err == nil || !strings.Contains(err.Error(), "--allow") {
+		t.Errorf(`bare "*" must fail naming --allow, got: %v`, err)
+	}
+	if err := applyAllowFlag(map[string]string{}, []string{"mcp__*__x"}); err == nil {
+		t.Error("inner wildcard must be rejected")
+	}
+	if err := applyAllowFlag(map[string]string{}, []string{"  "}); err == nil {
+		t.Error("blank entry must be rejected")
 	}
 }
 

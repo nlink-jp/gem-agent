@@ -111,7 +111,7 @@ func Build(globalTools, projectTools map[string]string, commands map[string]stri
 			if err != nil {
 				return nil, fmt.Errorf("%s %q: %w", label, pattern, err)
 			}
-			if err := validPattern(pattern); err != nil {
+			if err := ValidateEntry(label, pattern); err != nil {
 				return nil, err
 			}
 			if project && d == NeverAsk && !trusted {
@@ -177,17 +177,19 @@ func Build(globalTools, projectTools map[string]string, commands map[string]stri
 	return p, notes, nil
 }
 
-// validPattern rejects patterns that cannot mean anything useful, and
+// ValidateEntry rejects patterns that cannot mean anything useful, and
 // the one that means too much: a bare "*" would disarm every gate at
-// once, which must not be reachable by a one-character entry.
-func validPattern(pattern string) error {
+// once, which must not be reachable by a one-character entry. label
+// names the entry's source in the error — a config table, or the
+// --allow flag (ADR-0053), which carries the same vocabulary.
+func ValidateEntry(label, pattern string) error {
 	switch {
 	case strings.TrimSpace(pattern) == "":
-		return fmt.Errorf("[approval.tools] has an empty tool name")
+		return fmt.Errorf("%s has an empty tool name", label)
 	case pattern == "*":
-		return fmt.Errorf(`[approval.tools] "*" is not allowed: name the tools, or a prefix like "mcp__server__*" — switching off every gate at once is not a policy entry`)
+		return fmt.Errorf(`%s "*" is not allowed: name the tools, or a prefix like "mcp__server__*" — switching off every gate at once is not a policy entry`, label)
 	case strings.Contains(strings.TrimSuffix(pattern, "*"), "*"):
-		return fmt.Errorf("[approval.tools] %q: %q is only allowed as a trailing wildcard", pattern, "*")
+		return fmt.Errorf("%s %q: %q is only allowed as a trailing wildcard", label, pattern, "*")
 	}
 	return nil
 }

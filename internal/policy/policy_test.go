@@ -133,6 +133,29 @@ func TestInvalidPatternsAndValuesAreErrors(t *testing.T) {
 	}
 }
 
+// ValidateEntry is the exported face of the pattern rules (ADR-0053):
+// the --allow flag carries the same vocabulary, and its errors must
+// name the flag rather than a config table.
+func TestValidateEntryNamesItsLabel(t *testing.T) {
+	if err := ValidateEntry("--allow", "mcp__server__*"); err != nil {
+		t.Errorf("valid prefix rejected: %v", err)
+	}
+	for name, pattern := range map[string]string{
+		"bare wildcard":  "*",
+		"inner wildcard": "mcp__*__x",
+		"empty":          " ",
+	} {
+		err := ValidateEntry("--allow", pattern)
+		if err == nil {
+			t.Errorf("%s accepted", name)
+			continue
+		}
+		if !strings.Contains(err.Error(), "--allow") {
+			t.Errorf("%s error must name the label: %v", name, err)
+		}
+	}
+}
+
 func TestErrorNamesTheOffendingEntry(t *testing.T) {
 	_, _, err := Build(map[string]string{"shell_exec": "maybe"}, nil, nil, false)
 	if err == nil || !strings.Contains(err.Error(), "shell_exec") {

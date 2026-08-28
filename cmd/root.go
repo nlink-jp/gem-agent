@@ -50,6 +50,7 @@ var (
 	flagContinue  bool
 	flagResume    string
 	flagAuto      bool
+	flagAllow     []string
 )
 
 // appVersion mirrors rootCmd.Version for use inside rootCmd's own run
@@ -89,8 +90,9 @@ func init() {
 	rootCmd.Flags().StringVar(&flagThinking, "thinking", "", "override [model].thinking for this run: minimal|low|medium|high, or 'default' to clear a configured level (supported levels are model-dependent — ADR-0025)")
 	rootCmd.Flags().StringVar(&flagMCP, "mcp", "", "override [mcp].enabled for this run: on|off (off skips every MCP server spawn — useful for -p pipelines; ADR-0039)")
 	rootCmd.Flags().BoolVar(&flagNoSandbox, "no-sandbox", false, "disable the sandbox-exec wrapper for shell_exec (debugging only, unsafe)")
-	rootCmd.Flags().StringVarP(&flagPrompt, "prompt", "p", "", "one-shot mode: run this prompt and exit (mutating tools are denied unless --auto arms the risk ladder)")
+	rootCmd.Flags().StringVarP(&flagPrompt, "prompt", "p", "", "one-shot mode: run this prompt and exit (mutating tools are denied unless granted with --allow or armed with --auto)")
 	rootCmd.Flags().BoolVar(&flagAuto, "auto", false, "start in auto-approve mode (ADR-0004); the only way to arm it in one-shot -p, where [agent].auto_approve is ignored (ADR-0053)")
+	rootCmd.Flags().StringSliceVar(&flagAllow, "allow", nil, `per-run approval grants: tool names or mcp__server__* prefixes that never ask this run (repeatable or comma-separated; the Block floor still applies — ADR-0053)`)
 	rootCmd.Flags().BoolVarP(&flagContinue, "continue", "c", false, "resume this project's most recent session")
 	rootCmd.Flags().StringVar(&flagResume, "resume", "", "resume a specific session id (see `gem-agent sessions`)")
 }
@@ -175,6 +177,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// not be silently overridden by the hand-written config (ADR-0009).
 	for k, v := range policyFile.ForProject(projectDir) {
 		mergedTools[k] = v
+	}
+	// --allow entries sit above both files (flags > machine-owned >
+	// hand-written, the order the config system already declares) and
+	// compile into the same policy build — so the project tighten, the
+	// Block floor, hooks, and the bare-"*" ban all hold without knowing
+	// the flag exists (ADR-0053 §2).
+	if err := applyAllowFlag(mergedTools, flagAllow); err != nil {
+		return err
 	}
 	// Learned command rules are parsed but NOT applied (ADR-0049 §3):
 	// /learn is withdrawn, nothing displays or manages those entries, and
@@ -1142,6 +1152,21 @@ func (s *startupNotes) Write(p []byte) (int, error) {
 	return s.w.Write(p)
 }
 
+// applyAllowFlag merges --allow entries into the global policy scope as
+// "never" values (ADR-0053 §2). It carries the [approval.tools]
+// vocabulary and validation exactly; entries are trimmed because the
+// comma-separated form invites "a, b".
+func applyAllowFlag(merged map[string]string, entries []string) error {
+	for _, pattern := range entries {
+		pattern = strings.TrimSpace(pattern)
+		if err := policy.ValidateEntry("--allow", pattern); err != nil {
+			return err
+		}
+		merged[pattern] = "never"
+	}
+	return nil
+}
+
 // effectiveAuto derives the session's auto-approve state (ADR-0053):
 // the config key arms interactive sessions only — an unattended run's
 // grant must be visible on the invocation itself — and --auto arms any
@@ -1156,7 +1181,7 @@ func effectiveAuto(cfgAuto, oneShot, flagAuto bool) bool {
 type denyGate struct{ out io.Writer }
 
 func (d denyGate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (bool, bool) {
-	why := "mutating tools are disabled in one-shot mode; approve interactively, or arm the risk ladder with --auto (ADR-0053)"
+	why := "mutating tools are disabled in one-shot mode; approve interactively, grant with --allow, or arm the risk ladder with --auto (ADR-0053)"
 	if reason != "" {
 		// The ladder or the rule tier said why this call needs a human;
 		// with no human here, that reason is the denial's story

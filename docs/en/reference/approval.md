@@ -208,6 +208,14 @@ open it up, by increasing risk appetite:
 
 - **A standing `"never"` policy** (above) — right for read-only
   lookups you always want in pipelines.
+- **`--allow "name"`** (repeatable, or comma-separated) grants the
+  named tools — exact names or `mcp__server__*` prefixes, the
+  `[approval.tools]` vocabulary — a `"never"` policy for **this run
+  only**. The entries join the global scope at flag precedence
+  (flags > machine-owned policy file > hand-written config) and go
+  through the normal policy build, so a project's `"always"` tighten
+  still wins, the Block floor is not lifted, pre-tool hooks still
+  deny, and a bare `"*"` is still an error.
 - **`--auto`** arms the ADR-0004 ladder for this run. Approvals work
   exactly as in the TUI (rule tier, then model tier with the
   confidence bar); everything the ladder would *escalate* — Block-tier
@@ -225,7 +233,7 @@ was refused.
 Note what `--auto` means here: with no human anywhere, the model
 evaluator is the sole arbiter of Review-tier calls. For a pipeline
 that reads untrusted content and holds an egress-capable tool, prefer
-naming the exact tools with a policy over arming the general ladder.
+`--allow` with the exact tools over arming the general ladder.
 
 ## The risk rulebook (ADR-0050)
 

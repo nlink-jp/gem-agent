@@ -62,8 +62,8 @@ the model when it could not, thirteen slash commands (`/help`
 `/skills` `/skill` `/version` `/clear` `/quit`), a provenance-first `/settings`
 panel, theme control, and a fully bilingual chrome
 (`[tui].language = auto|ja|en`). Pipes fall back to a plain REPL;
-`-p` runs one-shot (mutating tools denied unless `--auto` arms the
-risk ladder for that run — ADR-0053).
+`-p` runs one-shot (mutating tools denied; `--allow` grants named
+tools per run, `--auto` arms the risk ladder — ADR-0053).
 
 **[Built-in tools](docs/en/reference/tools.md)** — orientation
 (`list_files`/`list_tree`/`search_files`, ignore-aware: dependency and
