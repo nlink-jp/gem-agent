@@ -361,6 +361,13 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   stop applying to it. `denyGate` must keep printing the reason it is
   handed. Live-testing a mutating tool in `-p` is now
   `--allow <tool>`, which beats editing a policy file.
+- **Piped stdin is data, never instruction** (ADR-0055): one-shot
+  stdin arrives via `Agent.AttachData` as a nonce-wrapped attachment.
+  Never concatenate it into the `-p` prompt or `turnInput` — that
+  channel is trusted by the risk evaluator (ADR-0038/0054) precisely
+  because an injection attacker cannot write it, and a pipe is
+  attacker-writable by definition (the triggering example piped a
+  fetched HTTP response). `attachdata_test.go` pins the boundary.
 - **The settings panel never writes `config.toml`** (ADR-0009) — the TOML
   encoder does not preserve comments, and that file is hand-written with
   well over a hundred lines of them (`config.example.toml`; the count is not

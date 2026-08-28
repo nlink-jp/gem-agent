@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/approve"
@@ -880,6 +881,21 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		if !sandboxOn {
 			fmt.Fprintln(stderr, "sandbox: DISABLED — shell commands run unconfined")
 		}
+		// Piped stdin becomes a nonce-wrapped data attachment
+		// (ADR-0055) — never prompt text: the -p string alone is the
+		// instruction the risk evaluator sees (ADR-0038/0054). A
+		// terminal stdin is never read, so an interactive `-p` cannot
+		// hang waiting for input.
+		if f, ok := cmd.InOrStdin().(*os.File); !ok || !term.IsTerminal(int(f.Fd())) {
+			content, warning := readPipedStdin(cmd.InOrStdin())
+			if warning != "" {
+				fmt.Fprintf(stderr, "warning: %s\n", warning)
+			}
+			if content != "" {
+				ag.AttachData("-", "stdin", content)
+				fmt.Fprintf(stderr, "[stdin: %d bytes attached as data]\n", len(content))
+			}
+		}
 		runErr := runTurn(ctx, func(turnCtx context.Context) error {
 			_, err := ag.Run(turnCtx, flagPrompt, func(s string) { fmt.Fprint(cmd.OutOrStdout(), s) })
 			return err
@@ -1150,6 +1166,45 @@ func (s *startupNotes) Write(p []byte) (int, error) {
 		}
 	}
 	return s.w.Write(p)
+}
+
+// stdinCap bounds a piped stdin read (ADR-0055 §2): history is resent
+// every round, so an unbounded pipe would burn the context window
+// before the first response. The clip is disclosed inside the
+// attachment so a part cannot masquerade as the whole (ADR-0014).
+const stdinCap = 256 * 1024
+
+// readPipedStdin reads bounded piped stdin for one-shot mode
+// (ADR-0055). It returns the attachment content ("" when stdin is
+// empty) and a warning ("" when none): binary input is skipped with the
+// warning naming why.
+func readPipedStdin(r io.Reader) (content, warning string) {
+	buf, err := io.ReadAll(io.LimitReader(r, stdinCap+1))
+	if err != nil {
+		return "", "stdin read failed, nothing attached: " + err.Error()
+	}
+	clipped := false
+	if len(buf) > stdinCap {
+		buf, clipped = buf[:stdinCap], true
+	}
+	if len(buf) == 0 {
+		return "", ""
+	}
+	if clipped {
+		// The cap may have split a multi-byte rune; dropping at most
+		// three tail bytes repairs that without masking real garbage.
+		for i := 0; i < 3 && len(buf) > 0 && !utf8.Valid(buf); i++ {
+			buf = buf[:len(buf)-1]
+		}
+	}
+	if bytes.IndexByte(buf, 0) >= 0 || !utf8.Valid(buf) {
+		return "", "piped stdin is not UTF-8 text, nothing attached — pass binary files by path (@ reference) instead"
+	}
+	s := string(buf)
+	if clipped {
+		s += "\n[stdin clipped at 256 KiB — the rest of the pipe was not read]"
+	}
+	return s, ""
 }
 
 // applyAllowFlag merges --allow entries into the global policy scope as

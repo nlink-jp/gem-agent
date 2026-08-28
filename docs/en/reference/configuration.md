@@ -188,7 +188,7 @@ used to measure box art under a CJK locale.
 
 | Flag | Does |
 |---|---|
-| `-p "<prompt>"` | one-shot mode: single turn, stdout, mutating tools denied (unless `--auto` — ADR-0053) |
+| `-p "<prompt>"` | one-shot mode: single turn, stdout, mutating tools denied (unless `--auto` — ADR-0053); piped stdin is attached as nonce-wrapped data, never as prompt text (ADR-0055) |
 | `--auto` | start in auto-approve mode (ADR-0004); the only way to arm it in one-shot `-p`, where `[agent].auto_approve` is ignored (ADR-0053) |
 | `--allow <names>` | per-run approval grants: tool names or `mcp__server__*` prefixes that never ask this run (repeatable or comma-separated; the Block floor still applies — ADR-0053) |
 | `-c` / `--continue` | resume this project's most recent session |

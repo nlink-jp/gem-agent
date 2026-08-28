@@ -231,6 +231,14 @@ config file. Approved calls print `[auto-approved …]` lines to
 stderr, so the pipeline's audit trail shows what ran, not only what
 was refused.
 
+Piped stdin (`data | gem-agent -p "…"`) is attached to the turn as
+**nonce-wrapped data** — the `@`-file lane — never merged into the
+prompt (ADR-0055). The `-p` string alone is the instruction the risk
+evaluator sees: an injection in whatever the pipe fetched cannot
+reach the trusted instruction channel. The read is bounded (256 KiB,
+clip disclosed), binary input is skipped with a warning, and a
+terminal stdin is never read.
+
 Note what `--auto` means here: with no human anywhere, the model
 evaluator is the sole arbiter of Review-tier calls. For a pipeline
 that reads untrusted content and holds an egress-capable tool, prefer

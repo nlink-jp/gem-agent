@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.53.0] - 2026-08-29
+
+### Added — piped stdin as isolated data (ADR-0055)
+
+Operator field report: `curl -s https://ipinfo.io | gem-agent --auto
+-p "investigate the IP…"` — the piped JSON was silently discarded.
+
+- One-shot mode now reads piped stdin (never a terminal) and attaches
+  it to the turn as a **nonce-wrapped text attachment** — the same
+  lane as `@` files, flattened at send as "Attached stdin (-), quoted
+  as data". It is never merged into the prompt: the `-p` string alone
+  remains the risk evaluator's instruction channel (ADR-0038/0054),
+  so an injection in whatever the pipe fetched cannot impersonate the
+  operator. The read is bounded at 256 KiB with the clip disclosed
+  inside the attachment; binary (non-UTF-8) input is skipped with a
+  warning; empty stdin attaches nothing. The attachment persists in
+  the transcript and survives resume; stderr notes the attached size.
+- New `Agent.AttachData(ref, kind, content)` queues a data attachment
+  for the next turn (between-turns discipline, drained by Run) —
+  wired for one-shot stdin today, reusable for any future
+  paste-as-data need.
+
+
 ## [0.52.0] - 2026-08-29
 
 ### Added — one-shot approval controls (ADR-0053)

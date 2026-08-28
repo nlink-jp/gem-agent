@@ -103,6 +103,11 @@ type Agent struct {
 	turnInput string
 	turnRound int
 
+	// pendingAtts are text attachments queued by AttachData for the
+	// next Run's user message (ADR-0055: one-shot piped stdin). Set
+	// between turns only, drained by Run.
+	pendingAtts []llm.Attachment
+
 	// ADR-0040 per-turn state, agent goroutine only: the intervention
 	// callback and switch, the activity trace the progress reviewer
 	// reads, and the loop detector (consecutive identical calls;
@@ -505,6 +510,16 @@ func (a *Agent) AddContext(text string) {
 	a.appendMessage(llm.Message{Role: llm.RoleUser, Content: text})
 }
 
+// AttachData queues one text attachment for the next Run's user message
+// (ADR-0055): one-shot mode uses it to carry piped stdin as
+// nonce-wrapped untrusted data. It must never be merged into the input
+// string instead — that would hand the risk evaluator's trusted
+// instruction channel (ADR-0038/0054) to whatever produced the pipe.
+// Same between-turns discipline as AddContext.
+func (a *Agent) AttachData(ref, kind, content string) {
+	a.pendingAtts = append(a.pendingAtts, llm.Attachment{Ref: ref, Kind: kind, Content: content})
+}
+
 // RefreshTools re-caches the tool declarations from the registry
 // (ADR-0039: an MCP reload changed what the registry holds). Called
 // only between turns — a slash command structurally cannot run while
@@ -551,8 +566,11 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 	// context for this turn (ADR-0038).
 	a.turnInput = input
 	// @-references become attachments carried beside the text; the text
-	// the operator typed is left exactly as written.
+	// the operator typed is left exactly as written. Queued data
+	// attachments (ADR-0055: piped stdin) ride the same lane.
 	msg := llm.Message{Role: llm.RoleUser, Content: input}
+	msg.Attachments = append(msg.Attachments, a.pendingAtts...)
+	a.pendingAtts = nil
 	var atts []mention.Attachment
 	if !a.noMentions {
 		lim := mention.DefaultLimits()
