@@ -121,6 +121,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	oneShot := flagPrompt != ""
+	// Auto-approve is never armed from config in one-shot mode: an
+	// unattended run's grant must be visible on the invocation itself
+	// (ADR-0053). Everything downstream — the agent, telemetry — reads
+	// this one effective value, never the raw config field.
+	autoOn := cfg.Agent.AutoApprove && !oneShot
 	// UI language, resolved once (ADR-0029): the chrome that follows —
 	// prompts, TUI, slash output — is built with it.
 	uiLang := uitext.Resolve(cfg.TUI.Language, os.Getenv)
@@ -140,7 +146,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// Both gates read one unbuffered line from stdin before the REPL/TUI
 	// takes over. One-shot mode counts as non-interactive even on a TTY:
 	// a scripted -p must behave deterministically.
-	interactive := flagPrompt == "" && term.IsTerminal(int(os.Stdin.Fd()))
+	interactive := !oneShot && term.IsTerminal(int(os.Stdin.Fd()))
 	home, _ := os.UserHomeDir()
 	if reason := broadRoot(projectDir, home); reason != "" {
 		if err := confirmBroadRoot(reason, projectDir, interactive, os.Stdin, cmd.ErrOrStderr(), msgs); err != nil {
@@ -321,7 +327,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			defer sink.Shutdown()
 		}
 	}
-	sink.SessionStart(cfg.Model.Name, sandboxOn, cfg.Agent.AutoApprove, len(mcpClients))
+	// The effective auto state, not the raw config field: one-shot mode
+	// disarms auto-approve, and an audit event claiming it was armed in
+	// a run where it never could be is a false record (ADR-0053 §4).
+	sink.SessionStart(cfg.Model.Name, sandboxOn, autoOn, len(mcpClients))
 	defer sink.SessionEnd() // LIFO: runs before Shutdown's flush
 
 	// --- LLM backend ---
@@ -396,7 +405,6 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(stderr, "warning: instructions %s\n", n)
 	}
 
-	oneShot := flagPrompt != ""
 	// The TUI needs a real terminal on both ends (ADR-0002); piped use
 	// falls back to the plain line REPL so scripts and smoke pipelines
 	// keep working.
@@ -682,7 +690,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// (ADR-0040); the file-search child keeps its plain hard bound.
 		RoundReview:  true,
 		OnRoundLimit: onRoundLimit,
-		AutoApprove:  cfg.Agent.AutoApprove && !oneShot,
+		AutoApprove:  autoOn,
 		OnAutoDecision: func(tc llm.ToolCall, d agent.AutoDecision) {
 			if !d.Approved {
 				return // the escalation shows up in the approval prompt

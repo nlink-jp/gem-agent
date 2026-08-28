@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.52.0] - 2026-08-29
+
+### Fixed
+
+- The `session.start` telemetry event reported the raw
+  `[agent].auto_approve` config value while one-shot mode forced the
+  effective value off — an audit record claiming auto-approve was
+  armed in runs where it never could be. It now reports what the
+  session actually runs with (ADR-0053 §4).
+
+
 ## [0.51.0] - 2026-08-28
 
 ### Added — ignore-aware navigation (ADR-0052)
