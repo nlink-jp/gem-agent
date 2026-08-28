@@ -180,6 +180,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0050`](adr/0050-risk-calibration.ja.md) — リスクルールブック: 判定器への積層ガイダンス。学習はその執筆手段の一つ
 - [`ADR-0051`](adr/0051-destructive-rewrite-floors.ja.md) — 縮む全文書き換えは危険信号: 縮小ガード・再生成規則・コンパクション失効通知・ダイアログのサイズ差分
 - [`ADR-0052`](adr/0052-ignore-aware-navigation.ja.md) — ignore を理解するナビゲーション: walk は生成物/ignore 対象を skip (組み込みリスト + 完全 gitignore 意味論・新規依存なし)、検索は「どこ」に答え、list_tree はディレクトリごとに予算配分 (ADR-0013 の前提を修正)
+- [`ADR-0053`](adr/0053-one-shot-approval-controls.ja.md) — 単発モードの承認制御: `--auto` がヘッドレスで ADR-0004 の階梯を武装 (エスカレーションは理由つき拒否になり、config キーは無視のまま — 付与は起動に属する)、`--allow` は通常のポリシー構築を通る実行単位の `"never"` エントリ、SessionStart は実効 auto 状態を報告
 
 ## History（履歴）
 

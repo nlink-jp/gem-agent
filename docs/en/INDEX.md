@@ -184,6 +184,7 @@ excepted).
 - [`ADR-0050`](adr/0050-risk-calibration.md) — the risk rulebook: layered guidance for the judge, and learning is one way to write it
 - [`ADR-0051`](adr/0051-destructive-rewrite-floors.md) — whole-file rewrites that shrink are a red flag: the shrink guard, the regeneration rule, the compaction staleness notice, and the dialog size delta
 - [`ADR-0052`](adr/0052-ignore-aware-navigation.md) — ignore-aware navigation: the walks skip generated/ignored content (built-in list + full gitignore semantics, no new dependency), search answers "where", list_tree budgets per directory (amends ADR-0013's premise)
+- [`ADR-0053`](adr/0053-one-shot-approval-controls.md) — one-shot approval controls: `--auto` arms the ADR-0004 ladder headless (escalations become explained denials; the config key stays ignored — the grant belongs on the invocation), `--allow` grants per-run `"never"` entries through the normal policy build, and SessionStart reports the effective auto state
   draw in the terminal: the measured-faithful types only (flowchart,
   ASCII sequence, ER), shapes normalized to boxes, a fidelity guard,
   the rest shown as source; the model is told exactly what renders
