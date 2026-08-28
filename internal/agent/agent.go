@@ -96,9 +96,10 @@ type Agent struct {
 	compactFailures int  // consecutive failures; two disables auto-compaction
 	warnedNoCut     bool // "nothing safe to compact" is said once, not per round
 
-	// turnInput and turnRound feed the risk evaluator's instruction
-	// context (ADR-0038): the operator's typed request, included for the
-	// first rounds of a turn only. Touched only from the agent goroutine.
+	// turnInput feeds the risk evaluator's instruction context
+	// (ADR-0038; every round since ADR-0054); turnRound feeds the
+	// round-limit review (ADR-0040). Touched only from the agent
+	// goroutine.
 	turnInput string
 	turnRound int
 

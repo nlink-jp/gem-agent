@@ -113,17 +113,18 @@ Anything that fails — model error or a malformed verdict — asks. (An
 with an error before approval is consulted, so it also never runs.) The blocked tier is a hard floor the model cannot override, and
 the sandbox applies in every mode.
 
-For the **first three rounds of a turn**, the model tier also sees the
-request you typed (ADR-0038) — quoted as evidence inside the same
-isolation wrap, clipped; never your attachments, never the
-conversation. Alignment with your request supports approval; a call
-that contradicts it, or serves directions found in file contents
-rather than your request, escalates with the contradiction named
-(live-measured: a `make build` your instruction explicitly forbade
-escalated where the call-only view approves it). Later rounds run the
-conventional call-only evaluation byte-identically — deep in a turn,
-calls legitimately serve sub-goals your request never names. The
-context reaches only calls that reach the model tier: Safe-tier calls
+On **every evaluation**, the model tier also sees the request you
+typed (ADR-0038; the original 3-round cutoff was measured against
+real usage — 70% of evaluations fell outside it — and removed by
+ADR-0054) — quoted as evidence inside the same isolation wrap,
+clipped; never your attachments, never the conversation. Alignment
+with your request supports approval; a call that contradicts it, or
+serves directions found in file contents rather than your request,
+escalates with the contradiction named (live-measured: a `make
+build` your instruction explicitly forbade escalated where the
+call-only view approves it). An indirect relation deep in a
+multi-step turn is normal and is not by itself a reason to escalate.
+The context reaches only calls that reach the model tier: Safe-tier calls
 stay rule-approved as before, and Block is decided before the model is
 consulted.
 

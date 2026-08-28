@@ -31,6 +31,22 @@ unrecorded force-disable).
   now names both remedies and carries the ladder's escalation reason
   when there is one.
 
+### Changed — the risk evaluator sees the instruction in every round (ADR-0054)
+
+ADR-0038's 3-round window, set by intuition, was measured against
+all 55 real transcripts: 70% of model-tier evaluations and 63% of
+turns' *terminal* gated calls fell outside it, and every
+beyond-window escalation was a network-category call the operator
+then approved by hand. The cutoff is removed — the operator's typed
+instruction (the one context channel an injection attacker cannot
+write, at any round) now rides on every model-tier evaluation,
+clipped and evidence-wrapped exactly as before. The egress rubric,
+Safe/Block tiers, and the confidence bar are unchanged; the same
+measurement shows instruction context does not reliably rescue
+read-only network lookups even when present (whois: 2 approved /
+7 escalated in-window) — that friction is policy's or the
+rulebook's to settle, not this change's.
+
 ### Fixed
 
 - The `session.start` telemetry event reported the raw

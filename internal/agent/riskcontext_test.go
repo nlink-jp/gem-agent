@@ -44,15 +44,17 @@ func TestRiskEvalCarriesInstructionEarly(t *testing.T) {
 	}
 }
 
-// ADR-0038 §3: from round riskContextRounds on, the evaluation is the
-// conventional one — no instruction in the payload, base prompt
-// byte-identical.
-func TestRiskEvalFallsBackOnLateRounds(t *testing.T) {
+// ADR-0054 (amending ADR-0038 §3): a deep-turn evaluation carries the
+// instruction exactly like an early one — measured usage put 70% of
+// model-tier evaluations beyond the old 3-round window, terminal
+// actions first among them.
+func TestRiskEvalCarriesInstructionOnLateRounds(t *testing.T) {
 	list := llm.ToolCall{ID: "r", Name: "list_files", Args: map[string]any{}}
 	b := &autoBackend{
 		responses: []*llm.Response{
 			// Rounds 0–2: read-only calls that never reach the gate or
-			// the model tier; round 3: the evaluated mutating call.
+			// the model tier; round 3: the evaluated mutating call —
+			// the first round the old cutoff ran bare.
 			{ToolCalls: []llm.ToolCall{list}},
 			{ToolCalls: []llm.ToolCall{list}},
 			{ToolCalls: []llm.ToolCall{list}},
@@ -68,11 +70,11 @@ func TestRiskEvalFallsBackOnLateRounds(t *testing.T) {
 	if len(b.evals) != 1 {
 		t.Fatalf("evals = %d, want 1", len(b.evals))
 	}
-	if strings.Contains(b.evals[0], "operator instruction") {
-		t.Errorf("round %d payload still carries the instruction: %q", riskContextRounds, b.evals[0])
+	if !strings.Contains(b.evals[0], "operator instruction (this turn): ビルドして") {
+		t.Errorf("late-round payload lacks the instruction: %q", b.evals[0])
 	}
-	if strings.Contains(b.evalSystems[0], "operator instruction (this turn)") {
-		t.Error("late-round prompt is not the byte-identical base prompt")
+	if !strings.Contains(b.evalSystems[0], "operator instruction (this turn)") {
+		t.Error("late-round prompt lacks the alignment addendum")
 	}
 }
 
