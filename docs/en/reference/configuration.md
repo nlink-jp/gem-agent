@@ -188,7 +188,8 @@ used to measure box art under a CJK locale.
 
 | Flag | Does |
 |---|---|
-| `-p "<prompt>"` | one-shot mode: single turn, stdout, mutating tools denied |
+| `-p "<prompt>"` | one-shot mode: single turn, stdout, mutating tools denied (unless `--auto` — ADR-0053) |
+| `--auto` | start in auto-approve mode (ADR-0004); the only way to arm it in one-shot `-p`, where `[agent].auto_approve` is ignored (ADR-0053) |
 | `-c` / `--continue` | resume this project's most recent session |
 | `--resume <id>` | resume a specific session |
 | `--model <id>` | override the configured model |

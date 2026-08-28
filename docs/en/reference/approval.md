@@ -200,6 +200,33 @@ machine-owned `~/.config/gem-agent/policy.toml`; concurrent instances
 write it through a locked read-modify-write, so two sessions cannot
 clobber each other's decisions.
 
+## One-shot mode (`-p`) — ADR-0053
+
+One-shot mode has nobody to answer an approval prompt, so by default
+every gated call is denied, with the reason on stderr. Two controls
+open it up, by increasing risk appetite:
+
+- **A standing `"never"` policy** (above) — right for read-only
+  lookups you always want in pipelines.
+- **`--auto`** arms the ADR-0004 ladder for this run. Approvals work
+  exactly as in the TUI (rule tier, then model tier with the
+  confidence bar); everything the ladder would *escalate* — Block-tier
+  calls, `"always"`-policy tools, model doubts, evaluation errors —
+  is denied instead, with the escalation's reason in the
+  `[denied: …]` line. Fail-closed: no floor moves.
+
+`[agent].auto_approve` is deliberately **ignored** in one-shot mode:
+an unattended run's grant must be visible on the invocation itself —
+the command line a script or cron entry shows — not in a standing
+config file. Approved calls print `[auto-approved …]` lines to
+stderr, so the pipeline's audit trail shows what ran, not only what
+was refused.
+
+Note what `--auto` means here: with no human anywhere, the model
+evaluator is the sole arbiter of Review-tier calls. For a pipeline
+that reads untrusted content and holds an egress-capable tool, prefer
+naming the exact tools with a policy over arming the general ladder.
+
 ## The risk rulebook (ADR-0050)
 
 The auto-mode risk reviewer can read **operator-authored guidance** —

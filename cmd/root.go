@@ -49,6 +49,7 @@ var (
 	flagPrompt    string
 	flagContinue  bool
 	flagResume    string
+	flagAuto      bool
 )
 
 // appVersion mirrors rootCmd.Version for use inside rootCmd's own run
@@ -88,7 +89,8 @@ func init() {
 	rootCmd.Flags().StringVar(&flagThinking, "thinking", "", "override [model].thinking for this run: minimal|low|medium|high, or 'default' to clear a configured level (supported levels are model-dependent — ADR-0025)")
 	rootCmd.Flags().StringVar(&flagMCP, "mcp", "", "override [mcp].enabled for this run: on|off (off skips every MCP server spawn — useful for -p pipelines; ADR-0039)")
 	rootCmd.Flags().BoolVar(&flagNoSandbox, "no-sandbox", false, "disable the sandbox-exec wrapper for shell_exec (debugging only, unsafe)")
-	rootCmd.Flags().StringVarP(&flagPrompt, "prompt", "p", "", "one-shot mode: run this prompt and exit (mutating tools are denied)")
+	rootCmd.Flags().StringVarP(&flagPrompt, "prompt", "p", "", "one-shot mode: run this prompt and exit (mutating tools are denied unless --auto arms the risk ladder)")
+	rootCmd.Flags().BoolVar(&flagAuto, "auto", false, "start in auto-approve mode (ADR-0004); the only way to arm it in one-shot -p, where [agent].auto_approve is ignored (ADR-0053)")
 	rootCmd.Flags().BoolVarP(&flagContinue, "continue", "c", false, "resume this project's most recent session")
 	rootCmd.Flags().StringVar(&flagResume, "resume", "", "resume a specific session id (see `gem-agent sessions`)")
 }
@@ -117,16 +119,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		cfgPath = p
 	}
-	cfg, err := config.LoadWithOverrides(cfgPath, config.Overrides{Model: flagModel, Thinking: flagThinking, MCP: flagMCP})
+	cfg, err := config.LoadWithOverrides(cfgPath, config.Overrides{Model: flagModel, Thinking: flagThinking, MCP: flagMCP, Auto: flagAuto})
 	if err != nil {
 		return err
 	}
 	oneShot := flagPrompt != ""
-	// Auto-approve is never armed from config in one-shot mode: an
-	// unattended run's grant must be visible on the invocation itself
-	// (ADR-0053). Everything downstream — the agent, telemetry — reads
-	// this one effective value, never the raw config field.
-	autoOn := cfg.Agent.AutoApprove && !oneShot
+	// Everything downstream — the agent, telemetry — reads this one
+	// effective value, never the raw config field.
+	autoOn := effectiveAuto(cfg.Agent.AutoApprove, oneShot, flagAuto)
 	// UI language, resolved once (ADR-0029): the chrome that follows —
 	// prompts, TUI, slash output — is built with it.
 	uiLang := uitext.Resolve(cfg.TUI.Language, os.Getenv)
@@ -1142,13 +1142,28 @@ func (s *startupNotes) Write(p []byte) (int, error) {
 	return s.w.Write(p)
 }
 
+// effectiveAuto derives the session's auto-approve state (ADR-0053):
+// the config key arms interactive sessions only — an unattended run's
+// grant must be visible on the invocation itself — and --auto arms any
+// mode.
+func effectiveAuto(cfgAuto, oneShot, flagAuto bool) bool {
+	return flagAuto || (cfgAuto && !oneShot)
+}
+
 // denyGate is the one-shot approver: it denies every mutating call with
 // a visible reason instead of blocking on an approval prompt that
 // nothing will answer.
 type denyGate struct{ out io.Writer }
 
 func (d denyGate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (bool, bool) {
-	fmt.Fprintf(d.out, "[denied: %s %s — mutating tools are disabled in one-shot mode; run interactively to approve]\n", toolName, detail)
+	why := "mutating tools are disabled in one-shot mode; approve interactively, or arm the risk ladder with --auto (ADR-0053)"
+	if reason != "" {
+		// The ladder or the rule tier said why this call needs a human;
+		// with no human here, that reason is the denial's story
+		// (ADR-0053 §3).
+		why = reason + " — nobody to ask in one-shot mode"
+	}
+	fmt.Fprintf(d.out, "[denied: %s %s — %s]\n", toolName, detail, why)
 	// What it wanted, on the record: a one-shot run that ends in denials
 	// is exactly the case where the operator has to reconstruct the
 	// agent's plan afterwards (ADR-0047 §5).

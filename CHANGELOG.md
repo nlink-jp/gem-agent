@@ -2,6 +2,25 @@
 
 ## [0.52.0] - 2026-08-29
 
+### Added — one-shot approval controls (ADR-0053)
+
+Operator field report: a headless Slack read-summarize-post pipeline
+died on the one-shot blanket deny — the risk ladder never ran, and
+`[agent].auto_approve` was silently ignored in `-p` (an uncommented,
+unrecorded force-disable).
+
+- **`--auto`**: arms the ADR-0004 two-tier ladder in one-shot mode.
+  Approvals work exactly as in the TUI; everything the ladder would
+  escalate to a human — Block-tier calls, `"always"`-policy tools,
+  model doubts, evaluation errors — is denied instead, fail-closed,
+  with the escalation's reason in the `[denied: …]` line. The config
+  key stays ignored in `-p`, now deliberately: an unattended run's
+  grant must be visible on the invocation itself. Interactively,
+  `--auto` starts the session in auto mode with flag provenance in
+  `/settings`. Approved calls print `[auto-approved …]` to stderr so
+  the pipeline's audit trail shows what ran, not only what was
+  refused.
+
 ### Fixed
 
 - The `session.start` telemetry event reported the raw

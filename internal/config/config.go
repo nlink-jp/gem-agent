@@ -306,6 +306,10 @@ type Overrides struct {
 	// child is spawned; "on" forces MCP against a config that
 	// disables it. Empty means the flag was not given.
 	MCP string
+	// Auto arms auto-approve for this run (ADR-0053). One-way: the
+	// flag can only arm, so false simply means "flag not given" and
+	// the config value stands.
+	Auto bool
 }
 
 // Load reads the config with no CLI overrides.
@@ -366,6 +370,10 @@ func LoadWithOverrides(path string, ov Overrides) (*Config, error) {
 		cfg.note("mcp.enabled", FromFlag)
 	default:
 		return nil, fmt.Errorf("--mcp must be on or off (got %q)", ov.MCP)
+	}
+	if ov.Auto {
+		cfg.Agent.AutoApprove = true
+		cfg.note("agent.auto_approve", FromFlag)
 	}
 
 	if err := cfg.validate(); err != nil {

@@ -59,6 +59,46 @@ func TestDenyGateAlwaysDenies(t *testing.T) {
 	if !strings.Contains(buf.String(), "one-shot") {
 		t.Errorf("denial should explain itself: %q", buf.String())
 	}
+	// The generic line must name the remedy (ADR-0053 §3).
+	if !strings.Contains(buf.String(), "--auto") {
+		t.Errorf("denial should name the remedy: %q", buf.String())
+	}
+}
+
+// A reason handed to the gate — a ladder escalation's cause, a Block
+// verdict — is the denial's story, not something to swallow (ADR-0053 §3).
+func TestDenyGateShowsTheReason(t *testing.T) {
+	var buf strings.Builder
+	g := denyGate{out: &buf}
+	if allowed(g.Approve("write_file", "path=/tmp/x", "", "writes outside the project", true)) {
+		t.Fatal("one-shot gate must deny even with a reason")
+	}
+	if !strings.Contains(buf.String(), "writes outside the project") {
+		t.Errorf("escalation reason lost: %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "one-shot") {
+		t.Errorf("denial should still say which mode refused: %q", buf.String())
+	}
+}
+
+// The one-shot contract of ADR-0053: config arms interactive sessions
+// only, the flag arms any mode.
+func TestEffectiveAuto(t *testing.T) {
+	for _, tc := range []struct {
+		cfgAuto, oneShot, flagAuto, want bool
+	}{
+		{false, false, false, false},
+		{true, false, false, true}, // interactive: config stands
+		{true, true, false, false}, // one-shot ignores config
+		{false, true, true, true},  // one-shot armed by the flag only
+		{true, true, true, true},   // flag wins regardless of config
+		{false, false, true, true}, // interactive --auto = start in auto
+	} {
+		if got := effectiveAuto(tc.cfgAuto, tc.oneShot, tc.flagAuto); got != tc.want {
+			t.Errorf("effectiveAuto(cfg=%v, oneShot=%v, flag=%v) = %v, want %v",
+				tc.cfgAuto, tc.oneShot, tc.flagAuto, got, tc.want)
+		}
+	}
 }
 
 func TestRunTurnCancellationIsInterrupt(t *testing.T) {

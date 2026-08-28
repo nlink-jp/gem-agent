@@ -161,6 +161,31 @@ func TestMCPFlagOverride(t *testing.T) {
 	}
 }
 
+// --auto arms auto-approve with flag provenance; not passing it leaves
+// the config value alone (the flag is one-way — ADR-0053).
+func TestAutoFlagOverride(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("GEMAGENT_PROJECT", "p")
+	t.Setenv("GEMAGENT_MODEL", "m")
+	path := filepath.Join(t.TempDir(), "nonexistent.toml")
+
+	cfg, err := LoadWithOverrides(path, Overrides{Auto: true})
+	if err != nil || !cfg.Agent.AutoApprove {
+		t.Errorf("--auto: auto_approve=%v err=%v", cfg != nil && cfg.Agent.AutoApprove, err)
+	}
+	if cfg.Source("agent.auto_approve") != FromFlag {
+		t.Errorf("provenance = %v, want flag", cfg.Source("agent.auto_approve"))
+	}
+	cfg, err = LoadWithOverrides(path, Overrides{})
+	if err != nil || cfg.Agent.AutoApprove {
+		t.Errorf("flag not given must leave the default: auto_approve=%v err=%v",
+			cfg != nil && cfg.Agent.AutoApprove, err)
+	}
+	if cfg.Source("agent.auto_approve") == FromFlag {
+		t.Error("flag provenance recorded without the flag")
+	}
+}
+
 func TestUnknownKeyIsError(t *testing.T) {
 	clearEnv(t)
 	path := writeConfig(t, `
