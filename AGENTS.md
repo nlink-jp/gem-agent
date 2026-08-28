@@ -352,6 +352,15 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   tier *is* skipped under both `never` and `always`: the operator has
   already decided, and paying for a model round could answer it
   differently.
+- **One-shot approval has exactly two openings** (ADR-0053):
+  `effectiveAuto` in `cmd/root.go` is the single derivation of the auto
+  state — config never arms `-p`, only `--auto` does, and telemetry
+  reads the same value. `--allow` entries compile into the normal
+  policy build (global scope, flag precedence) — never add a parallel
+  bypass, or the floors (Block, project tighten, hooks, bare-`"*"`)
+  stop applying to it. `denyGate` must keep printing the reason it is
+  handed. Live-testing a mutating tool in `-p` is now
+  `--allow <tool>`, which beats editing a policy file.
 - **The settings panel never writes `config.toml`** (ADR-0009) — the TOML
   encoder does not preserve comments, and that file is hand-written with
   well over a hundred lines of them (`config.example.toml`; the count is not
