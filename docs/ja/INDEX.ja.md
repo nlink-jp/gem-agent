@@ -182,6 +182,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0052`](adr/0052-ignore-aware-navigation.ja.md) — ignore を理解するナビゲーション: walk は生成物/ignore 対象を skip (組み込みリスト + 完全 gitignore 意味論・新規依存なし)、検索は「どこ」に答え、list_tree はディレクトリごとに予算配分 (ADR-0013 の前提を修正)
 - [`ADR-0053`](adr/0053-one-shot-approval-controls.ja.md) — 単発モードの承認制御: `--auto` がヘッドレスで ADR-0004 の階梯を武装 (エスカレーションは理由つき拒否になり、config キーは無視のまま — 付与は起動に属する)、`--allow` は通常のポリシー構築を通る実行単位の `"never"` エントリ、SessionStart は実効 auto 状態を報告
 - [`ADR-0054`](adr/0054-risk-context-every-round.ja.md) — リスク評価器は全ラウンドでオペレータ指示を見る: ADR-0038 §3 のカットオフを実トランスクリプトで実測 (評価の 70%・ターン終端ゲートコールの 63% がウィンドウ外) して撤廃。egress ルーブリック・層・confidence 基準は不変
+- [`ADR-0055`](adr/0055-piped-stdin-as-data.ja.md) — 単発モードのパイプ stdin はノンスラップ付きテキスト添付 (`@` ファイルレーン) になり、プロンプト文には決してならない: リスク評価器の指示チャネルは `-p` 文字列のみのまま。上限つき読み取り + 開示クリップ、バイナリはスキップ、端末 stdin は読まない
 
 ## History（履歴）
 

@@ -186,6 +186,7 @@ excepted).
 - [`ADR-0052`](adr/0052-ignore-aware-navigation.md) — ignore-aware navigation: the walks skip generated/ignored content (built-in list + full gitignore semantics, no new dependency), search answers "where", list_tree budgets per directory (amends ADR-0013's premise)
 - [`ADR-0053`](adr/0053-one-shot-approval-controls.md) — one-shot approval controls: `--auto` arms the ADR-0004 ladder headless (escalations become explained denials; the config key stays ignored — the grant belongs on the invocation), `--allow` grants per-run `"never"` entries through the normal policy build, and SessionStart reports the effective auto state
 - [`ADR-0054`](adr/0054-risk-context-every-round.md) — the risk evaluator sees the operator's instruction in every round: ADR-0038 §3's cutoff measured against real transcripts (70% of evaluations and 63% of turns' terminal gated calls fell outside it) and removed; egress rubric, tiers, and confidence bar unchanged
+- [`ADR-0055`](adr/0055-piped-stdin-as-data.md) — piped stdin in one-shot mode becomes a nonce-wrapped text attachment (the `@`-file lane), never prompt text: the `-p` string alone stays the risk evaluator's instruction channel; bounded read with a disclosed clip, binary skipped, terminal stdin never read
   draw in the terminal: the measured-faithful types only (flowchart,
   ASCII sequence, ER), shapes normalized to boxes, a fidelity guard,
   the rest shown as source; the model is told exactly what renders
