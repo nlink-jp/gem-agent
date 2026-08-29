@@ -273,7 +273,7 @@ confined to discovered skill directories.
 | Session log unwritable | warning, session continues (a broken log must not stop a fallback) |
 | Resume target unreadable | fatal — the operator asked for that history |
 | Telemetry export fails | one warning, then silent degradation — never blocks the session |
-| Stream silent for 20s | the status line becomes a stall warning naming Ctrl+C; no automatic timeout — long thinking is legitimate |
+| Stream silent for 90s | the status line becomes a stall warning naming Ctrl+C; no automatic timeout — long thinking is legitimate, and a big file write is measured minutes of silence (ADR-0056) |
 | A tool ignores cancellation | second Ctrl+C warns, third quits the process — the transcript is written per event, so everything up to the wedged call is on disk |
 | The file-search child agent fails | error result to the model; the spend is tallied anyway |
 | Round limit reached | progress review + dialog (auto mode may continue itself); extensions up to 3× max_turns; the stop message teaches "continue", never /clear (ADR-0040) |

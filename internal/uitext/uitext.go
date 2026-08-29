@@ -104,7 +104,9 @@ type Messages struct {
 	StatusShellFmt     string // %s = command (clipped)
 	// HeartbeatFmt: elapsed, chunk count, seconds since last chunk.
 	HeartbeatFmt string
-	// StallFmt: seconds with no data — the connection may be dead.
+	// StallFmt: seconds with no data — the connection may be dead. It
+	// does NOT name Ctrl+C: CtrlCHint renders right after it, and the
+	// duplicate pushed the real hint off an 80-column terminal.
 	StallFmt string
 	// RetryFmt: attempt, max, cause token (429/503/error), wait seconds.
 	RetryFmt string
@@ -266,7 +268,7 @@ var en = Messages{
 	StatusRunningFmt:        "running %s",
 	StatusShellFmt:          "shell: %s",
 	HeartbeatFmt:            "%s · %d chunks · last %ds",
-	StallFmt:                "no data for %ds — the connection may be stalled (Ctrl+C interrupts)",
+	StallFmt:                "no data for %ds — the stream may be stalled",
 	RetryFmt:                "retry %d/%d (%s) — waiting %ds",
 	ThoughtPrefix:           "✦ ",
 	InterruptStuckWarn:      "⚠ the tool is not responding to cancellation — one more Ctrl+C quits gem-agent (the transcript up to this call is already saved)",
@@ -393,7 +395,7 @@ var ja = Messages{
 	StatusRunningFmt:        "実行中 %s",
 	StatusShellFmt:          "shell: %s",
 	HeartbeatFmt:            "%s · %d chunks · last %ds",
-	StallFmt:                "%d 秒間データなし — 接続が失速している可能性（Ctrl+C で中断できます）",
+	StallFmt:                "%d 秒間データなし — 接続が失速している可能性",
 	RetryFmt:                "リトライ %d/%d (%s) — %d 秒待機",
 	ThoughtPrefix:           "✦ ",
 	InterruptStuckWarn:      "⚠ ツールがキャンセルに応答していません — もう一度 Ctrl+C で gem-agent を終了します（この呼び出しまでの transcript は保存済みです）",

@@ -55,7 +55,7 @@ func TestToolRunningResetsOnTurnBoundary(t *testing.T) {
 	}
 	m.ta.SetValue("again")
 	m = press(m, enter())
-	m.lastChunk = time.Now().Add(-25 * time.Second)
+	m.lastChunk = time.Now().Add(-(stallSeconds + 5) * time.Second)
 	if !strings.Contains(m.View(), "stalled") {
 		t.Error("next turn's stall detector disarmed by the previous turn's tool")
 	}
@@ -70,9 +70,30 @@ func TestShellCommandNeverStallWarns(t *testing.T) {
 	m.shell = func(context.Context, string) {}
 	m.ta.SetValue("!sleep 60")
 	m = press(m, enter())
-	m.lastChunk = time.Now().Add(-25 * time.Second)
+	m.lastChunk = time.Now().Add(-(stallSeconds + 5) * time.Second)
 	if strings.Contains(m.View(), "stalled") {
 		t.Errorf("stall warning for a shell command with no connection:\n%s", m.View())
+	}
+}
+
+// `/riskbook learn` drives dialogs on this event loop and produces no
+// model stream while it waits for the human. The suppression flag used
+// to be set BEFORE beginTurnStats, which resets it — so the pass
+// warned about a connection it was not using (ADR-0056).
+func TestRiskbookLearnNeverStallWarns(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = next.(Model)
+	m.riskbook = func(context.Context) {}
+	m.ta.SetValue("/riskbook learn")
+	m = press(m, enter())
+	if !m.toolRunning {
+		t.Fatal("the learning pass did not suppress the stall detector")
+	}
+	m.lastChunk = time.Now().Add(-(stallSeconds + 5) * time.Second)
+	if strings.Contains(m.View(), "stalled") {
+		t.Errorf("stall warning while the learning pass waits on a human:\n%s", m.View())
 	}
 }
 

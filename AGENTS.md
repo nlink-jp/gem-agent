@@ -283,6 +283,21 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   a tool the only streams are side-calls (risk/progress review); clearing
   on a chunk produced false stall warnings and mis-attributed thoughts.
   The agent emits OnToolDone after every call; the TUI re-arms on that.
+  Set the flag AFTER `beginTurnStats()`, which resets it — the
+  `/riskbook learn` path set it before and silently lost the suppression.
+- **A silent stream is not a dead stream** (ADR-0056) — Gemini emits a
+  function call as ONE part, so while the model composes a large
+  `write_file` / `edit_file` argument nothing arrives at all: measured 40s
+  with not one byte read from the HTTP body (`internal/llm/*_live_test.go`
+  keep the measurement). Hence `stallSeconds = 90`. There is no
+  client-side signal that separates composing from stalled; do not go
+  looking for one — and do not put the reason on screen: the operator
+  cannot act on how the provider frames a part (that attempt was
+  rejected on review; supplier constraints go in ADRs, not the UI).
+- **The running status line must keep `(Ctrl+C interrupts)` at 80 columns**
+  — it is clipped per line, so anything appended to it eats the way out.
+  That is why `StallFmt` no longer repeats the hint; a test pins it in
+  both languages.
 - **A model-authored agent input must set `NoMentions`** — the @ grammar's
   out-of-project grants assume operator-typed input; the file-search child
   is the one such input today, and any future delegate must opt out too.

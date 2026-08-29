@@ -745,8 +745,13 @@ func (m *Model) beginTurnStats() {
 }
 
 // stallSeconds is how long with no data before the heartbeat switches
-// to the warning style (ADR-0033 §1).
-const stallSeconds = 20
+// to the warning style (ADR-0033 §1, threshold moved by ADR-0056).
+// It was 20s, which accused a working model: a Gemini function call
+// arrives as ONE whole part, so while the model composes a large
+// write_file / edit_file argument the wire carries nothing at all —
+// measured 40s without a single byte read for a 21KB file, and it
+// scales with the file.
+const stallSeconds = 90
 
 // heartbeatLine renders the live stream stats for the running status
 // bar: a scheduled retry wins, then a stall warning, then the normal
@@ -1321,8 +1326,12 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	if input == "/riskbook learn" && m.riskbook != nil {
 		m.phase = phaseRunning
 		m.status = m.msgs.RiskbookStatusLearning
-		m.toolRunning = true
 		m.beginTurnStats()
+		// AFTER beginTurnStats, which resets the flag: in the old
+		// order this suppression was a no-op, and a pass sitting on a
+		// human's answer warned about a connection it was not using
+		// (ADR-0056 §3).
+		m.toolRunning = true
 		ctx, cancel := context.WithCancel(m.baseCtx)
 		m.cancelTurn = cancel
 		m.riskbook(ctx)

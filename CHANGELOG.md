@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.54.0] - 2026-08-30
+
+### Fixed — the stall warning cried wolf on large file writes (ADR-0056)
+
+Operator field report: the model is clearly still working, but around
+an `edit_file` / `write_file` call the status line says the connection
+may be stalled.
+
+- Measured (live, gemini-3.7-flash): a `write_file` with 21,761 bytes
+  of content produced **33s with no chunk**, and a tap on the HTTP
+  response body showed **40s without a single byte** — Gemini emits a
+  function call as one whole part, so composing a large argument is
+  silence on the wire, and it scales with the file. No client-side
+  signal separates that from a dead connection.
+- The warning threshold moves from 20s to 90s, and **nothing is added
+  to the screen**: the heartbeat shows what it always showed. Putting
+  the cause on screen was tried and rejected on review — the
+  supplier's framing of a part is not something an operator can act
+  on, so it lives in the ADR. Suppression while a tool runs is
+  unchanged, and no automatic timeout was added.
+- The stall warning no longer repeats `(Ctrl+C interrupts)` inside
+  itself — the status bar's own hint renders right after it, and the
+  duplicate truncated mid-word at 80 columns. A test pins the hint at
+  80 columns in both languages.
+- `/riskbook learn` set its stall suppression flag before
+  `beginTurnStats()`, which resets it — so a pass waiting on a human
+  warned about a connection it was not using. Ordering fixed.
+- Both measurements stay in the tree as live tests
+  (`internal/llm/chunkgap_live_test.go`,
+  `internal/llm/wirebytes_live_test.go`); the latter promotes
+  `golang.org/x/oauth2` to a direct test-only dependency.
+
 ## [0.53.0] - 2026-08-29
 
 ### Added — piped stdin as isolated data (ADR-0055)

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
 // ADR-0033 regression tests: the running status distinguishes a
@@ -44,7 +45,7 @@ func TestHeartbeatShowsElapsedAndChunks(t *testing.T) {
 func TestStallWarningAfterSilence(t *testing.T) {
 	m, _ := runningModel(t)
 	// No chunk for stallSeconds: rewind the clock instead of sleeping.
-	m.turnStart = time.Now().Add(-25 * time.Second)
+	m.turnStart = time.Now().Add(-(stallSeconds + 5) * time.Second)
 	v := m.View()
 	if !strings.Contains(v, "stalled") {
 		t.Errorf("no stall warning after %ds silence:\n%s", stallSeconds, v)
@@ -54,6 +55,67 @@ func TestStallWarningAfterSilence(t *testing.T) {
 	m = next.(Model)
 	if strings.Contains(m.View(), "stalled") {
 		t.Error("stall warning survived fresh data")
+	}
+}
+
+// ADR-0056: a Gemini function call arrives as one whole part, so a
+// large write_file / edit_file argument is minutes of legitimate
+// silence on the wire. The heartbeat keeps counting; it does not
+// accuse the connection until stallSeconds.
+func TestLongToolArgumentSilenceIsNotWarned(t *testing.T) {
+	m, _ := runningModel(t)
+	next, _ := m.Update(StreamUpdate{Kind: "chunk"})
+	m = next.(Model)
+	// 40s of silence — measured benign for a 21KB write_file argument.
+	m.lastChunk = time.Now().Add(-40 * time.Second)
+	v := m.View()
+	if strings.Contains(v, "stalled") {
+		t.Errorf("40s of tool-argument silence warned as a stalled connection:\n%s", v)
+	}
+	if !strings.Contains(v, "last 40s") {
+		t.Errorf("the heartbeat dropped the silence age:\n%s", v)
+	}
+}
+
+// The warning still exists — it just waits for silence a working
+// model does not produce.
+func TestStallWarningStillFiresPastTheThreshold(t *testing.T) {
+	m, _ := runningModel(t)
+	m.lastChunk = time.Now().Add(-(stallSeconds + 5) * time.Second)
+	if !strings.Contains(m.View(), "stalled") {
+		t.Errorf("no warning after %ds of silence:\n%s", stallSeconds+5, m.View())
+	}
+}
+
+// The status line must leave the Ctrl+C hint on screen at 80 columns —
+// the warning is useless if the way out is what gets truncated. This
+// is why StallFmt no longer repeats the hint inside itself (ADR-0056).
+func TestStatusLineKeepsTheCtrlCHintAt80Columns(t *testing.T) {
+	for _, lang := range []uitext.Lang{uitext.EN, uitext.JA} {
+		c := &capture{}
+		m := newTestModel(c)
+		m.msgs = uitext.For(lang)
+		next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
+		m = next.(Model)
+		m.ta.SetValue("go")
+		m = press(m, enter())
+		next, _ = m.Update(StreamUpdate{Kind: "chunk"})
+		m = next.(Model)
+		for _, age := range []time.Duration{40 * time.Second, (stallSeconds + 5) * time.Second} {
+			m.lastChunk = time.Now().Add(-age)
+			for _, line := range strings.Split(m.View(), "\n") {
+				if !strings.Contains(line, "chunks") && !strings.Contains(line, "stalled") &&
+					!strings.Contains(line, "失速") {
+					continue
+				}
+				// The WHOLE hint, not a prefix of it: truncation cuts
+				// mid-word and "(Ctrl+C interrupt" would pass a
+				// substring check while reading as breakage.
+				if hint := strings.TrimSpace(m.msgs.CtrlCHint); !strings.Contains(line, hint) {
+					t.Errorf("%s, silent %s: the status line lost %q:\n%q", lang, age, hint, line)
+				}
+			}
+		}
 	}
 }
 
@@ -163,7 +225,7 @@ func TestNoStallWarningWhileAToolRuns(t *testing.T) {
 	m = next.(Model)
 	next, _ = m.Update(ToolCall{Name: "shell_exec", Detail: "make build"})
 	m = next.(Model)
-	m.lastChunk = time.Now().Add(-25 * time.Second) // long tool, no stream
+	m.lastChunk = time.Now().Add(-(stallSeconds + 5) * time.Second) // long tool, no stream
 	if strings.Contains(m.View(), "stalled") {
 		t.Errorf("false stall warning during tool execution:\n%s", m.View())
 	}
@@ -171,7 +233,7 @@ func TestNoStallWarningWhileAToolRuns(t *testing.T) {
 	// review) and must not re-arm the detector (review round 3).
 	next, _ = m.Update(StreamUpdate{Kind: "chunk"})
 	m = next.(Model)
-	m.lastChunk = time.Now().Add(-25 * time.Second)
+	m.lastChunk = time.Now().Add(-(stallSeconds + 5) * time.Second)
 	if strings.Contains(m.View(), "stalled") {
 		t.Errorf("side-call chunk re-armed the stall detector:\n%s", m.View())
 	}
@@ -179,7 +241,7 @@ func TestNoStallWarningWhileAToolRuns(t *testing.T) {
 	// next model round is warned.
 	next, _ = m.Update(ToolDone{Name: "shell_exec"})
 	m = next.(Model)
-	m.lastChunk = time.Now().Add(-25 * time.Second)
+	m.lastChunk = time.Now().Add(-(stallSeconds + 5) * time.Second)
 	if !strings.Contains(m.View(), "stalled") {
 		t.Errorf("real stall after the tool returned not warned:\n%s", m.View())
 	}

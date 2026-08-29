@@ -54,7 +54,8 @@ TUI with native scrollback, a bottom-pinned input box that stays live
 during a running turn (Enter queues the next message), a live turn
 status — stream heartbeat, stall warning, visible retries, and the
 model's thought summaries streaming as it thinks — IME-friendly
-approval dialogs, Tab completion for `@`-paths, `/`-commands, and skill
+approval dialogs,
+Tab completion for `@`-paths, `/`-commands, and skill
 names, `!command` shell escape, a `render_diagram` tool that draws mermaid
 flowchart / ASCII-label sequence / ER diagrams in the terminal and tells
 the model when it could not, thirteen slash commands (`/help`

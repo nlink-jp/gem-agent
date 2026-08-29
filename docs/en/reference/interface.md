@@ -56,11 +56,17 @@ While a turn runs, the status line is live, not a static spinner:
 last one. Three states that used to look identical are now
 distinguishable: a **thinking model** keeps receiving chunks (thought
 and metadata chunks count — liveness, not visibility); a **stalled
-connection** turns the line into a warning after 20s of silence,
+connection** turns the line into a warning after 90s of silence,
 naming Ctrl+C; a **backoff retry** after a transient error (429/5xx)
 shows `retry 2/3 (429) — waiting 4s` instead of silence. There is no
 automatic timeout: long thinking is legitimate, and the operator
 decides.
+
+The warning waits 90 seconds, not 20 (ADR-0056): a long silence in the
+middle of a turn is usually the model writing a file, not a broken
+connection, and a warning that fires on healthy work is one the
+operator learns to ignore. The silence age (`last 40s`) is on the line
+from the first second either way.
 
 Ctrl+C cancels the running turn — and the whole process GROUP of a
 shell command dies with it, so a skill's python (or anything else the
