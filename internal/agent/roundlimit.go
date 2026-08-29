@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/nlk/guard"
 	"github.com/nlink-jp/nlk/jsonfix"
 )
@@ -122,6 +123,7 @@ func (a *Agent) evaluateProgress(ctx context.Context) (progressVerdict, error) {
 	a.stats.RiskPrompt += resp.PromptTokens
 	a.stats.RiskOutput += resp.OutputTokens
 	a.mu.Unlock()
+	a.logUsage(session.UsageProgress, resp.Usage())
 
 	var v progressVerdict
 	if err := jsonfix.ExtractTo(resp.Content, &v); err != nil {

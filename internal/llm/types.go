@@ -80,6 +80,23 @@ type ToolDef struct {
 	Parameters  map[string]any
 }
 
+// Usage is one model call's token spend, in the buckets billing uses
+// (ADR-0057). Thoughts are NOT part of Output — the API reports them
+// separately and bills them as output — and Cached is a discounted
+// SHARE of Prompt, not an addition to it. Both measured live; Total is
+// the API's own totalTokenCount, kept so an aggregator can check
+// itself instead of undercounting quietly.
+type Usage struct {
+	Prompt   int `json:"prompt"`
+	Output   int `json:"output"`
+	Thoughts int `json:"thoughts"`
+	Cached   int `json:"cached"`
+	Total    int `json:"total"`
+}
+
+// Empty reports a call that spent nothing — nothing to account for.
+func (u Usage) Empty() bool { return u.Prompt == 0 && u.Output == 0 && u.Thoughts == 0 }
+
 // Response is the parsed result of one model turn.
 type Response struct {
 	Content         string
@@ -99,6 +116,18 @@ type Response struct {
 	// ThoughtTokens counts reasoning tokens, which are billed as output
 	// and consume the output budget on thinking models.
 	ThoughtTokens int
+	// TotalTokens is the API's own totalTokenCount — the checksum for
+	// the buckets above (ADR-0057).
+	TotalTokens int
+}
+
+// Usage returns the call's spend as the accounting record shape.
+func (r *Response) Usage() Usage {
+	if r == nil {
+		return Usage{}
+	}
+	return Usage{Prompt: r.PromptTokens, Output: r.OutputTokens,
+		Thoughts: r.ThoughtTokens, Cached: r.CachedTokens, Total: r.TotalTokens}
 }
 
 // Backend is one LLM provider. onText receives streamed text deltas as

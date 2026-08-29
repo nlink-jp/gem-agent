@@ -225,11 +225,18 @@ func (s *Sink) Approval(tool, decision, source string, mustPrompt bool, reason s
 		attribute.String("reason", clip(reason, 200)))
 }
 
-func (s *Sink) Usage(promptTok, outputTok, cachedTok int) {
+// Usage carries the same buckets as the transcript's accounting record
+// (ADR-0057): thoughts bill as output and cached is a discounted share
+// of the prompt, so a fleet-wide figure computed from this stream uses
+// the same arithmetic as one computed from a local transcript. Counts
+// only — ADR-0035's metadata-only rule is untouched.
+func (s *Sink) Usage(promptTok, outputTok, thoughtTok, cachedTok, totalTok int) {
 	s.emit("model.usage",
 		attribute.Int("prompt_tokens", promptTok),
 		attribute.Int("output_tokens", outputTok),
-		attribute.Int("cached_tokens", cachedTok))
+		attribute.Int("thought_tokens", thoughtTok),
+		attribute.Int("cached_tokens", cachedTok),
+		attribute.Int("total_tokens", totalTok))
 }
 
 // Reload records an in-session integration reload (ADR-0039): a

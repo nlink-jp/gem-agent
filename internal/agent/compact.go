@@ -158,6 +158,7 @@ func (a *Agent) summarize(ctx context.Context, msgs []llm.Message) (string, erro
 	a.stats.CompactPrompt += resp.PromptTokens
 	a.stats.CompactOutput += resp.OutputTokens
 	a.mu.Unlock()
+	a.logUsage(session.UsageCompact, resp.Usage())
 	summary := strings.TrimSpace(resp.Content)
 	if summary == "" {
 		// A blocked or empty summary must not become the conversation.

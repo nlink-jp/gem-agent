@@ -11,7 +11,7 @@ import (
 // seed writes a complete session transcript and returns its id.
 func seed(t *testing.T, dir, project, model string, msgs ...llm.Message) string {
 	t.Helper()
-	lg, err := openSessionLog(dir, "", project, model, "v0.0.0-test")
+	lg, err := openSessionLog(dir, "", project, model, "global", "v0.0.0-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestOpenSessionLogWritesAHeaderAndResumeAppends(t *testing.T) {
 	dir := t.TempDir()
 	id := seed(t, dir, "/proj", "gemini-x", llm.Message{Role: llm.RoleUser, Content: "one"})
 
-	lg, err := openSessionLog(dir, id, "/proj", "gemini-x", "v0.0.0-test")
+	lg, err := openSessionLog(dir, id, "/proj", "gemini-x", "global", "v0.0.0-test")
 	if err != nil {
 		t.Fatal(err)
 	}

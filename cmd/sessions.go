@@ -152,7 +152,7 @@ func loadResumedHistory(lg *session.Logger, id string) ([]llm.Message, []string,
 // openSessionLog starts a new transcript, or reopens the one being
 // resumed. A resumed session appends to its own file: one file is one
 // conversation, however many processes it took (ADR-0005).
-func openSessionLog(dir, resumeID, projectDir, model, version string) (*session.Logger, error) {
+func openSessionLog(dir, resumeID, projectDir, model, location, version string) (*session.Logger, error) {
 	if resumeID != "" {
 		lg, err := session.Reopen(dir, projectDir, resumeID)
 		if err != nil {
@@ -168,10 +168,11 @@ func openSessionLog(dir, resumeID, projectDir, model, version string) (*session.
 		return nil, err
 	}
 	if err := lg.Log(session.KindHeader, session.Header{
-		Schema:  session.SchemaVersion,
-		Version: version,
-		Model:   model,
-		Project: projectDir,
+		Schema:   session.SchemaVersion,
+		Version:  version,
+		Model:    model,
+		Project:  projectDir,
+		Location: location,
 	}); err != nil {
 		lg.Close()
 		return nil, err

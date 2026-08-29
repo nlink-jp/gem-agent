@@ -13,6 +13,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mention"
+	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/telemetry"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
@@ -404,7 +405,7 @@ func TestOnUsageReportsEachRound(t *testing.T) {
 	a := New(Options{
 		Backend: mb, Registry: reg, Gate: &approveAll{},
 		System: "s", MaxTurns: 5,
-		OnUsage: func(p, o, c int) { got = append(got, [2]int{p, o}) },
+		OnUsage: func(u llm.Usage) { got = append(got, [2]int{u.Prompt, u.Output}) },
 	})
 	if _, err := a.Run(context.Background(), "go", nil); err != nil {
 		t.Fatal(err)
@@ -539,7 +540,7 @@ func TestUsageCarriesCachedTokens(t *testing.T) {
 	var gotCached int
 	a := New(Options{Backend: mb, Registry: reg, Gate: &approveAll{}, Log: log,
 		System: "s", MaxTurns: 5,
-		OnUsage: func(p, o, c int) { gotCached = c }})
+		OnUsage: func(u llm.Usage) { gotCached = u.Cached }})
 	if _, err := a.Run(context.Background(), "q", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -548,8 +549,8 @@ func TestUsageCarriesCachedTokens(t *testing.T) {
 	}
 	found := false
 	for i, kind := range log.kinds {
-		if kind == "usage" {
-			if m, ok := log.data[i].(map[string]int); ok && m["cached"] == 800 {
+		if kind == session.KindUsage {
+			if r, ok := log.data[i].(session.UsageRecord); ok && r.Cached == 800 {
 				found = true
 			}
 		}
@@ -585,7 +586,7 @@ func TestSideCallUsageStaysOutOfTheFooter(t *testing.T) {
 	var footerCalls []int
 	a := New(Options{Backend: mb, Registry: reg, Gate: &approveAll{}, System: "s",
 		MaxTurns: 5, AutoApprove: true,
-		OnUsage: func(p, o, c int) { footerCalls = append(footerCalls, p) }})
+		OnUsage: func(u llm.Usage) { footerCalls = append(footerCalls, u.Prompt) }})
 	if _, err := a.Run(context.Background(), "write", nil); err != nil {
 		t.Fatal(err)
 	}

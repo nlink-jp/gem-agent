@@ -9,6 +9,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/telemetry"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
@@ -125,7 +126,8 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 			}
 
 			// Run is synchronous, so the counters need no lock.
-			var rounds, promptTok, outputTok int
+			var rounds int
+			var childUsage llm.Usage
 			sub := agent.New(agent.Options{
 				Backend:  opts.backend,
 				Registry: subReg,
@@ -144,25 +146,31 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 				// absolute/~ path) exist because an @ is operator-typed,
 				// and must not reach the child (review round 3).
 				NoMentions: true,
-				OnUsage: func(p, o, c int) {
+				OnUsage: func(u llm.Usage) {
 					rounds++
-					promptTok += p
-					outputTok += o
-					subSink.Usage(p, o, c)
+					childUsage.Prompt += u.Prompt
+					childUsage.Output += u.Output
+					childUsage.Thoughts += u.Thoughts
+					childUsage.Cached += u.Cached
+					childUsage.Total += u.Total
+					subSink.Usage(u.Prompt, u.Output, u.Thoughts, u.Cached, u.Total)
 				},
 			})
 			report, runErr := sub.Run(ctx, question, nil)
 
 			// The spend happened whether or not the run succeeded.
 			if opts.tally != nil {
-				opts.tally.add("agentic_file_search", opts.modelName, promptTok, outputTok)
+				opts.tally.add("agentic_file_search", opts.modelName, childUsage.Prompt, childUsage.Output)
 			}
 			if opts.log != nil {
 				// Not in the footer counters: the context gauge tracks the
 				// main conversation (ADR-0019), and the child never touches it.
+				// The child has no transcript of its own, so its rounds are
+				// accounted here, summed (ADR-0057).
+				logUsage(opts.log, session.UsageFileSearch, opts.modelName, childUsage)
 				_ = opts.log.Log("agentic_search_usage", map[string]any{
 					"question": clipRunes(question, 200), "model": opts.modelName,
-					"rounds": rounds, "prompt": promptTok, "output": outputTok,
+					"rounds": rounds,
 				})
 			}
 			if runErr != nil {

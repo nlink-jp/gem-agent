@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"github.com/nlink-jp/gem-agent/internal/agent"
+	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/session"
 
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
@@ -42,6 +44,26 @@ func (u *usageTally) add(tool, model string, prompt, output int) {
 	e.calls++
 	e.prompt += prompt
 	e.output += output
+}
+
+// sessionLogger is the transcript sink the tool constructors already
+// hold — narrow, so a test can capture the records.
+type sessionLogger interface {
+	Log(kind string, data any) error
+}
+
+// logUsage writes one accounting record for a side call (ADR-0057).
+// Same shape and same kind as the agent's own: an aggregator reads one
+// record type, sums by source, and prices by model.
+func logUsage(log sessionLogger, source, model string, u llm.Usage) {
+	if log == nil || u.Empty() {
+		return
+	}
+	_ = log.Log(session.KindUsage, session.UsageRecord{
+		Source: source, Model: model,
+		Prompt: u.Prompt, Output: u.Output, Thoughts: u.Thoughts,
+		Cached: u.Cached, Total: u.Total,
+	})
 }
 
 // usageReport renders the /usage statement.

@@ -13,18 +13,20 @@ import (
 	"google.golang.org/genai"
 )
 
-// SideUsage is one side-call's token spend (ADR-0019).
-type SideUsage struct {
-	Prompt, Output int
-}
-
-func sideUsage(resp *genai.GenerateContentResponse) SideUsage {
+// sideUsage reads a non-streaming response's spend into the accounting
+// shape (ADR-0057): all five buckets, not just prompt and output — a
+// record without thoughts and cached cannot be priced.
+func sideUsage(resp *genai.GenerateContentResponse) Usage {
 	if resp == nil || resp.UsageMetadata == nil {
-		return SideUsage{}
+		return Usage{}
 	}
-	return SideUsage{
-		Prompt: int(resp.UsageMetadata.PromptTokenCount),
-		Output: int(resp.UsageMetadata.CandidatesTokenCount),
+	u := resp.UsageMetadata
+	return Usage{
+		Prompt:   int(u.PromptTokenCount),
+		Output:   int(u.CandidatesTokenCount),
+		Thoughts: int(u.ThoughtsTokenCount),
+		Cached:   int(u.CachedContentTokenCount),
+		Total:    int(u.TotalTokenCount),
 	}
 }
 
@@ -38,7 +40,7 @@ type WebSource struct {
 // SearchWeb answers a query with Grounding with Google Search and
 // returns the sources the answer rests on, so a claim can be checked
 // rather than believed.
-func (v *Vertex) SearchWeb(ctx context.Context, query string) (string, []WebSource, SideUsage, error) {
+func (v *Vertex) SearchWeb(ctx context.Context, query string) (string, []WebSource, Usage, error) {
 	cfg := &genai.GenerateContentConfig{
 		Tools:          []*genai.Tool{{GoogleSearch: &genai.GoogleSearch{}}},
 		SafetySettings: v.safety,
@@ -46,7 +48,7 @@ func (v *Vertex) SearchWeb(ctx context.Context, query string) (string, []WebSour
 	resp, err := v.client.Models.GenerateContent(ctx, v.model,
 		[]*genai.Content{genai.NewContentFromText(query, genai.RoleUser)}, cfg)
 	if err != nil {
-		return "", nil, SideUsage{}, fmt.Errorf("grounded search: %w", err)
+		return "", nil, Usage{}, fmt.Errorf("grounded search: %w", err)
 	}
 	text := resp.Text()
 	if text == "" {
@@ -59,7 +61,7 @@ func (v *Vertex) SearchWeb(ctx context.Context, query string) (string, []WebSour
 // Google's infrastructure, never from this machine, which is what makes
 // the SSRF class structurally unreachable (ADR-0017 §5) — and returns
 // the model's digest plus the retrieval status.
-func (v *Vertex) FetchURL(ctx context.Context, prompt string) (string, string, SideUsage, error) {
+func (v *Vertex) FetchURL(ctx context.Context, prompt string) (string, string, Usage, error) {
 	cfg := &genai.GenerateContentConfig{
 		Tools:          []*genai.Tool{{URLContext: &genai.URLContext{}}},
 		SafetySettings: v.safety,
@@ -67,7 +69,7 @@ func (v *Vertex) FetchURL(ctx context.Context, prompt string) (string, string, S
 	resp, err := v.client.Models.GenerateContent(ctx, v.model,
 		[]*genai.Content{genai.NewContentFromText(prompt, genai.RoleUser)}, cfg)
 	if err != nil {
-		return "", "", SideUsage{}, fmt.Errorf("url fetch: %w", err)
+		return "", "", Usage{}, fmt.Errorf("url fetch: %w", err)
 	}
 	status := retrievalStatus(resp)
 	text := resp.Text()

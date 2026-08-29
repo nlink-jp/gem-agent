@@ -8,6 +8,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/risk"
+	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/nlk/guard"
 	"github.com/nlink-jp/nlk/jsonfix"
 )
@@ -253,6 +254,8 @@ func (a *Agent) evaluateRisk(ctx context.Context, tc llm.ToolCall) (riskVerdict,
 	a.stats.RiskPrompt += resp.PromptTokens
 	a.stats.RiskOutput += resp.OutputTokens
 	a.mu.Unlock()
+	// …and on disk: the tally above dies with the process (ADR-0057).
+	a.logUsage(session.UsageRisk, resp.Usage())
 
 	var verdict riskVerdict
 	// Models wrap JSON in prose or fences often enough that a plain

@@ -7,6 +7,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/nlk/guard"
 )
@@ -74,11 +75,10 @@ func registerSummarizeTool(registry *tools.Registry, backend llm.Backend, modelN
 			if log != nil {
 				// Not in the footer counters: the context gauge tracks the
 				// main conversation, and a side call's prompt tokens would
-				// misstate occupancy (ADR-0014 §7).
-				_ = log.Log("summary_usage", map[string]any{
-					"path": p, "model": modelName,
-					"prompt": resp.PromptTokens, "output": resp.OutputTokens,
-				})
+				// misstate occupancy (ADR-0014 §7). The spend itself rides
+				// the one accounting record kind (ADR-0057).
+				logUsage(log, session.UsageSummarizeFile, modelName, resp.Usage())
+				_ = log.Log("summary_usage", map[string]any{"path": p, "model": modelName})
 			}
 			summary := strings.TrimSpace(resp.Content)
 			if summary == "" {

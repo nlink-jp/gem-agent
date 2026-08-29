@@ -83,6 +83,34 @@ saving — cached prompt tokens are billed less and stream faster. It
 does not free context-window space; the window is what compaction
 manages.
 
+## Accounting records in the transcript (ADR-0057)
+
+The API reports tokens, never money, so a session's cost is token
+counts × catalog price — and the counts have to be written down as they
+happen. `/usage` lives in memory and leaves with the process.
+
+Every model call therefore writes one `usage` record:
+
+    {"kind":"usage","data":{"source":"risk","model":"gemini-…",
+     "prompt":4183,"output":42,"thoughts":81,"cached":0,"total":4306}}
+
+`source` is one of `main`, `risk`, `progress_review`, `compact`,
+`summarize_file`, `web_search`, `web_fetch`, `agentic_file_search` —
+sum by source, price by `model`, check against `total`. The session
+header records the region alongside the model, because prices are
+resolved per SKU per region.
+
+Two measured facts the arithmetic depends on: thinking tokens are a
+**separate bucket** from output (and bill as output), and `cached` is a
+discounted **share of** `prompt`, not an addition to it. `total` is the
+API's own count, so `prompt + output + thoughts == total` catches a sum
+that forgot either one, instead of undercounting quietly.
+
+Transcripts written before this keep their older `usage` records — no
+`source`, main loop only — and their risk-evaluation and compaction
+spend was never written at all. An aggregator should count them and
+report those files as partial.
+
 ## Agent memory (ADR-0020)
 
 The agent persists short facts across sessions: decisions, preferences,

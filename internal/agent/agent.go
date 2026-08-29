@@ -71,11 +71,12 @@ type Agent struct {
 	registry *tools.Registry
 	gate     Approver
 	log      SessionLog
+	model    string // for the accounting records only (ADR-0057)
 	system   string
 	maxTurns int
 
 	onToolCall  func(tc llm.ToolCall)
-	onUsage     func(promptTokens, outputTokens, cachedTokens int)
+	onUsage     func(u llm.Usage)
 	telemetry   *telemetry.Sink
 	onAuto      func(tc llm.ToolCall, d AutoDecision)
 	onAttach    func(atts []mention.Attachment, problems []mention.Problem)
@@ -179,11 +180,15 @@ type Options struct {
 	// calls that never hit the approval prompt (a silent pause reads as
 	// a hang).
 	OnToolCall func(tc llm.ToolCall)
+	// Model names the model these calls bill against. Accounting only
+	// (ADR-0057): it goes into the usage records so a transcript can be
+	// priced without joining the header. The backend picks the model.
+	Model string
 	// OnUsage, when set, receives per-round token usage (prompt tokens
 	// approximate the current context size; output tokens the round's
 	// generation; cached tokens the share of the prompt served from the
 	// implicit cache, ADR-0018) — the TUI footer consumes it.
-	OnUsage func(promptTokens, outputTokens, cachedTokens int)
+	OnUsage func(u llm.Usage)
 	// Telemetry receives audit events (ADR-0035); nil disables.
 	Telemetry *telemetry.Sink
 	// AutoApprove starts the session in auto-approve mode (ADR-0004).
@@ -257,6 +262,7 @@ func New(opts Options) *Agent {
 		registry:    opts.Registry,
 		gate:        opts.Gate,
 		log:         opts.Log,
+		model:       opts.Model,
 		system:      opts.System,
 		maxTurns:    opts.MaxTurns,
 		onToolCall:  opts.OnToolCall,
@@ -657,12 +663,9 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			a.stats.LastPrompt = resp.PromptTokens
 			a.mu.Unlock()
 			if a.onUsage != nil {
-				a.onUsage(resp.PromptTokens, resp.OutputTokens, resp.CachedTokens)
+				a.onUsage(resp.Usage())
 			}
-			a.logRecord("usage", map[string]int{
-				"prompt": resp.PromptTokens, "output": resp.OutputTokens,
-				"thoughts": resp.ThoughtTokens, "cached": resp.CachedTokens,
-			})
+			a.logUsage(session.UsageMain, resp.Usage())
 		}
 
 		// A response with neither text nor tool calls carries nothing to
@@ -1139,6 +1142,21 @@ func (a *Agent) notify(msg string) {
 	if a.onNotice != nil {
 		a.onNotice(msg)
 	}
+}
+
+// logUsage writes one accounting record per model call (ADR-0057).
+// EVERY call goes through here — main loop, risk evaluation, progress
+// review, compaction — because a tally that lives only in memory is
+// gone when the process exits, and the API never reports cost.
+func (a *Agent) logUsage(source string, u llm.Usage) {
+	if u.Empty() {
+		return
+	}
+	a.logRecord(session.KindUsage, session.UsageRecord{
+		Source: source, Model: a.model,
+		Prompt: u.Prompt, Output: u.Output, Thoughts: u.Thoughts,
+		Cached: u.Cached, Total: u.Total,
+	})
 }
 
 func (a *Agent) logRecord(kind string, data any) {

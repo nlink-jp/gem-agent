@@ -45,6 +45,38 @@ const (
 	KindResumed    = "resumed"
 )
 
+// KindUsage is the accounting record: one per model call, whatever
+// made it (ADR-0057). Diagnostic — Load skips it like the rest.
+const KindUsage = "usage"
+
+// Usage sources (ADR-0057 §1). Every model call in the process names
+// itself with one of these, so a transcript can be summed by category
+// and priced per model without knowing which code path spent it.
+const (
+	UsageMain          = "main"
+	UsageRisk          = "risk"
+	UsageProgress      = "progress_review"
+	UsageCompact       = "compact"
+	UsageSummarizeFile = "summarize_file"
+	UsageWebSearch     = "web_search"
+	UsageWebFetch      = "web_fetch"
+	UsageFileSearch    = "agentic_file_search"
+)
+
+// UsageRecord is one model call's spend. The buckets are the ones
+// billing uses: Thoughts is separate from Output (and billed as
+// output), Cached is a discounted share of Prompt, and Total is the
+// API's own count — the checksum for the other four (ADR-0057 §2).
+type UsageRecord struct {
+	Source   string `json:"source"`
+	Model    string `json:"model"`
+	Prompt   int    `json:"prompt"`
+	Output   int    `json:"output"`
+	Thoughts int    `json:"thoughts"`
+	Cached   int    `json:"cached"`
+	Total    int    `json:"total"`
+}
+
 // ShellContextPrefix opens the user-role message the agent injects when
 // the operator runs a `!` command. It lives here, rather than being
 // sniffed for, because the session listing has to tell an injected
@@ -66,6 +98,9 @@ type Header struct {
 	Version string `json:"version"`
 	Model   string `json:"model"`
 	Project string `json:"project"`
+	// Location is the Vertex region the session billed against —
+	// prices are resolved per SKU per region (ADR-0057 §4).
+	Location string `json:"location,omitempty"`
 }
 
 // Compaction is the record written when history is compacted (ADR-0006).

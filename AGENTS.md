@@ -285,6 +285,15 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   The agent emits OnToolDone after every call; the TUI re-arms on that.
   Set the flag AFTER `beginTurnStats()`, which resets it — the
   `/riskbook learn` path set it before and silently lost the suppression.
+- **Every model call must leave a `usage` record** (ADR-0057) — the API
+  reports tokens and never money, so cost is reconstructed from the
+  transcript; a new backend call site that skips `logUsage` (agent side)
+  or `logUsage(log, source, model, usage)` (cmd side) silently un-prices
+  every session that uses it. Tokens live in the `usage` record and
+  NOWHERE else: descriptive records carrying them too is a
+  double-counting bug. Thoughts are a separate bucket from output (and
+  bill as output), cached is a share of prompt, and `total` is the API's
+  own checksum — all measured, see the ADR.
 - **A silent stream is not a dead stream** (ADR-0056) — Gemini emits a
   function call as ONE part, so while the model composes a large
   `write_file` / `edit_file` argument nothing arrives at all: measured 40s

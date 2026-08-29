@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.55.0] - 2026-08-30
+
+### Added — every model call leaves an accounting record (ADR-0057)
+
+Operator question: can a session's cost be computed from its transcript
+at catalog prices? Not before this: the API reports tokens and never
+money, and two of the spenders wrote nothing down.
+
+- Every model call now writes one `usage` record — `source`, `model`,
+  and the buckets billing uses (`prompt`, `output`, `thoughts`,
+  `cached`, `total`). Sources: `main`, `risk`, `progress_review`,
+  `compact`, `summarize_file`, `web_search`, `web_fetch`,
+  `agentic_file_search`. **Risk evaluations and compaction used to
+  record nothing at all** — their tokens lived in `/usage` and left
+  with the process (309 such calls in the transcripts on the author's
+  machine, countable only as `auto_decision` lines).
+- Side-call records gain the two buckets that make them priceable:
+  thinking tokens (billed as output) and cached prompt tokens (billed
+  at a discount). `total` is the API's own count, kept as a checksum —
+  `prompt + output + thoughts == total`, measured.
+- The descriptive records (`web_search`, `web_fetch`, `summary_usage`,
+  `agentic_search_usage`) keep their diagnostics and lose their token
+  fields: one place to count, so no aggregator can double-count.
+- The session header records `location` — prices resolve per SKU per
+  region.
+- The audit stream's `model.usage` (ADR-0035) gains `thought_tokens`
+  and `total_tokens`, so a Cloud Logging figure uses the same
+  arithmetic. Metadata only, unchanged.
+- Not included, deliberately: a price table and a cost report. This
+  makes the arithmetic possible later without baking churning prices
+  into the tool.
+
 ## [0.54.0] - 2026-08-30
 
 ### Fixed — the stall warning cried wolf on large file writes (ADR-0056)

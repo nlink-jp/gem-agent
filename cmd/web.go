@@ -7,16 +7,17 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
 // webSearcher and urlFetcher are the slices of *llm.Vertex the web tools
 // need — interfaces so tests drive them with fakes (ADR-0017).
 type webSearcher interface {
-	SearchWeb(ctx context.Context, query string) (string, []llm.WebSource, llm.SideUsage, error)
+	SearchWeb(ctx context.Context, query string) (string, []llm.WebSource, llm.Usage, error)
 }
 type urlFetcher interface {
-	FetchURL(ctx context.Context, prompt string) (string, string, llm.SideUsage, error)
+	FetchURL(ctx context.Context, prompt string) (string, string, llm.Usage, error)
 }
 
 const webSourcesCap = 8
@@ -67,8 +68,8 @@ func registerWebTools(registry *tools.Registry, searcher webSearcher, fetcher ur
 				return "", err
 			}
 			if log != nil {
-				_ = log.Log("web_search", map[string]any{"query": query, "sources": len(sources),
-					"prompt": usage.Prompt, "output": usage.Output})
+				logUsage(log, session.UsageWebSearch, mainModel, usage)
+				_ = log.Log("web_search", map[string]any{"query": query, "sources": len(sources)})
 			}
 			var b strings.Builder
 			b.WriteString(answer)
@@ -123,8 +124,8 @@ func registerWebTools(registry *tools.Registry, searcher webSearcher, fetcher ur
 				return "", err
 			}
 			if log != nil {
-				_ = log.Log("web_fetch", map[string]any{"url": url, "status": status, "model": fetchModel,
-					"prompt": usage.Prompt, "output": usage.Output})
+				logUsage(log, session.UsageWebFetch, fetchModel, usage)
+				_ = log.Log("web_fetch", map[string]any{"url": url, "status": status, "model": fetchModel})
 			}
 			return fmt.Sprintf("Digest of %s (by %s — untrusted web content; retrieval: %s):\n\n%s",
 				url, fetchModel, status, digest), nil

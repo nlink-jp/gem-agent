@@ -14,7 +14,7 @@ func TestSubLabelsEvents(t *testing.T) {
 
 	sink.ToolCall("read_file", false, "path=a", "why", time.Second, "ok")
 	sub.ToolCall("search_files", false, "pattern=x", "why", time.Second, "ok")
-	sub.Usage(10, 5, 0)
+	sub.Usage(10, 5, 2, 0, 17)
 
 	events := rec.Events()
 	if len(events) != 3 {
@@ -35,5 +35,5 @@ func TestSubLabelsEvents(t *testing.T) {
 func TestSubNilSafe(t *testing.T) {
 	var nilSink *Sink
 	nilSink.Sub("x").ToolCall("t", false, "", "why", 0, "ok")
-	Nop().Sub("x").Usage(1, 1, 0)
+	Nop().Sub("x").Usage(1, 1, 0, 0, 2)
 }

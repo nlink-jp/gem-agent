@@ -295,7 +295,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if sessionDirErr != nil {
 		fmt.Fprintf(stderr, "warning: session log disabled: %v\n", sessionDirErr)
 	} else {
-		lg, err := openSessionLog(sessionDir, resumedID, projectDir, cfg.Model.Name, cmd.Root().Version)
+		lg, err := openSessionLog(sessionDir, resumedID, projectDir, cfg.Model.Name, cfg.GCP.Location, cmd.Root().Version)
 		switch {
 		case err != nil && resumedID != "":
 			return fmt.Errorf("cannot append to session %s: %w", resumedID, err)
@@ -621,6 +621,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return s
 	}
 	ag = agent.New(agent.Options{
+		// Accounting only (ADR-0057): the model name that goes into
+		// this session's usage records.
+		Model:    cfg.Model.Name,
 		Backend:  backend,
 		Registry: registry,
 		Gate:     gate,
@@ -689,10 +692,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(stderr, "[⚠ %s]\n", msg)
 		},
 		PreToolHook: preToolHook,
-		OnUsage: func(promptTokens, outputTokens, cachedTokens int) {
-			sink.Usage(promptTokens, outputTokens, cachedTokens)
+		OnUsage: func(u llm.Usage) {
+			sink.Usage(u.Prompt, u.Output, u.Thoughts, u.Cached, u.Total)
 			if prog != nil {
-				prog.Send(tui.Usage{Prompt: promptTokens, Output: outputTokens, Cached: cachedTokens})
+				prog.Send(tui.Usage{Prompt: u.Prompt, Output: u.Output, Cached: u.Cached})
 			}
 		},
 		AutoCompact:  cfg.Agent.AutoCompact,

@@ -60,7 +60,7 @@ func TestNopSinkIsSafe(t *testing.T) {
 	s.TurnEnd(1, time.Second, "ok")
 	s.ToolCall("t", true, "d", "why", time.Second, "ok")
 	s.Approval("t", "approved", "gate", false, "")
-	s.Usage(1, 2, 3)
+	s.Usage(1, 2, 3, 4, 10)
 	s.Compaction(1, 2)
 	s.MediaUpload(1, "gs://x")
 	s.Shutdown()
