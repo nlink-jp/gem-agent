@@ -185,6 +185,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0055`](adr/0055-piped-stdin-as-data.ja.md) — 単発モードのパイプ stdin はノンスラップ付きテキスト添付 (`@` ファイルレーン) になり、プロンプト文には決してならない: リスク評価器の指示チャネルは `-p` 文字列のみのまま。上限つき読み取り + 開示クリップ、バイナリはスキップ、端末 stdin は読まない
 - [`ADR-0056`](adr/0056-stall-warning-threshold.ja.md) — 失速警告が狼を叫んでいた: Gemini の function call は丸ごと 1 part で届くため、大きな書き込み/編集の引数生成中は実測で数十秒〜数分のあいだ 1 バイトも流れない (チャンク以前の問題)。しきい値を 20 秒 → 90 秒に移し、画面には何も足さない — 供給側の事情は ADR に書き、ステータス行には書かない。`/riskbook learn` の抑止フラグは `beginTurnStats` の後に立てる
 - [`ADR-0057`](adr/0057-usage-accounting-records.ja.md) — すべてのモデル呼び出しが `usage` レコードを 1 行残す (source・model・prompt/output/thoughts/cached/total): API は金額を返さないのでコストは「トークン数 × カタログ単価」しかなく、カウントは呼び出し時点でディスクに落ちている必要がある。リスク評価と圧縮の消費はプロセスと共に消えていた。thoughts は output として課金され、cached は prompt の割引内訳 (どちらも実測)
+- [`ADR-0058`](adr/0058-session-work-directory.ja.md) — セッションごとの作業ディレクトリ (state root 配下・session id で採番・resume は同じ場所に戻る): sandbox の書き込みルートかつファイルツールの第 2 ルートで、`GEMAGENT_WORK_DIR` として export される。MCP の結果だけが唯一上限のないツール出力で、file-mediated なサーバが軒並み `workspace_root` を持つに至った原因だった — サーバはモデルの context window を知り得ない。大きすぎる結果は切り捨てずここへ保存し、これまで黙って捨てていた非テキストコンテンツも保存して `view_image` に渡す
 
 ## History（履歴）
 

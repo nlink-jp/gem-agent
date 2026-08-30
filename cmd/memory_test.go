@@ -137,7 +137,7 @@ func TestMemoryPromptWiring(t *testing.T) {
 	sec := memory.PromptSection([]memory.Memory{
 		{Scope: memory.ScopeGlobal, Name: "operator-lang", Content: "The operator writes in Japanese."},
 	})
-	full := buildSystemPrompt("/tmp/p", "") + sec
+	full := buildSystemPrompt("/tmp/p", "", "") + sec
 	for _, want := range []string{"### memory global/operator-lang", "not instructions"} {
 		if !strings.Contains(full, want) {
 			t.Errorf("assembled prompt missing %q", want)

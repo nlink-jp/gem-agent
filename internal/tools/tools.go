@@ -21,10 +21,10 @@ import (
 )
 
 const (
-	// outputCap bounds any tool result fed back into the LLM context.
+	// OutputCap bounds any tool result fed back into the LLM context.
 	// Unbounded tool output is the primary context-explosion failure
 	// mode for agent loops.
-	outputCap = 20_000
+	OutputCap = 20_000
 	// readCap bounds read_file content.
 	readCap = 200 * 1024
 	// listCap bounds list_files entries.
@@ -53,7 +53,16 @@ type ExecFunc func(ctx context.Context, command string) *exec.Cmd
 
 // Registry holds the built-in tools for one project directory.
 type Registry struct {
-	projectDir   string
+	projectDir string
+	// workDir is the session work directory (internal/workdir), empty
+	// until one is set. It is a second root the file tools may read and
+	// write, because everything the session puts outside the project
+	// lands there: MCP results too large to hold in context, binary a
+	// server returned, scratch a shell command produced. Without it the
+	// model can see those paths and not open them, and it routes around
+	// the built-ins with shell redirection — which is less reviewable,
+	// not more contained.
+	workDir      string
 	execFn       ExecFunc
 	shellTimeout time.Duration
 	tools        map[string]*Tool
@@ -87,6 +96,33 @@ func New(projectDir string, execFn ExecFunc, shellTimeout time.Duration) (*Regis
 // ProjectDir returns the resolved project directory.
 func (r *Registry) ProjectDir() string { return r.projectDir }
 
+// WorkDir returns the session work directory, or "" when none is set.
+func (r *Registry) WorkDir() string { return r.workDir }
+
+// UseWorkDir adds dir as a second root for the file tools. It is
+// resolved the same way the project is (absolute, symlinks evaluated),
+// so containment compares like with like.
+func (r *Registry) UseWorkDir(dir string) error {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return fmt.Errorf("work directory: %w", err)
+	}
+	r.workDir = real
+	return nil
+}
+
+// roots returns the directories the file tools may touch.
+func (r *Registry) roots() []string {
+	if r.workDir == "" {
+		return []string{r.projectDir}
+	}
+	return []string{r.projectDir, r.workDir}
+}
+
 // Register adds an external tool (MCP). Name collisions are errors — a
 // duplicate would silently shadow one implementation.
 func (r *Registry) Register(t *Tool) error {
@@ -106,6 +142,7 @@ func (r *Registry) Register(t *Tool) error {
 func (r *Registry) Subset(names ...string) (*Registry, error) {
 	sub := &Registry{
 		projectDir:   r.projectDir,
+		workDir:      r.workDir,
 		execFn:       r.execFn,
 		shellTimeout: r.shellTimeout,
 		tools:        map[string]*Tool{},
@@ -279,6 +316,16 @@ func within(base, p string) bool {
 	return p == base || strings.HasPrefix(p, base+string(filepath.Separator))
 }
 
+// withinAny reports whether p sits under any of the roots.
+func withinAny(roots []string, p string) bool {
+	for _, base := range roots {
+		if within(base, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveExisting resolves symlinks on the deepest existing ancestor of
 // path and rejoins the non-existing remainder, so a not-yet-created file
 // under a symlinked directory still gets containment-checked against the
@@ -304,11 +351,16 @@ func resolveExisting(path string) (string, error) {
 	return filepath.Join(append([]string{real}, suffix...)...), nil
 }
 
-// resolvePath confines p (relative to the project dir, or absolute) to the
-// project directory. String-level checks alone are insufficient — a
-// symlink inside the project pointing outside would pass them — so the
-// real path is checked too. OS-level containment for child processes is
-// the sandbox's job (ADR-0001); this guards the built-in file tools.
+// resolvePath confines p to the registry's roots: the project directory
+// and, when set, the session work directory. A relative path is always
+// relative to the PROJECT — the work directory is reached by the
+// absolute path the session prompt names, so an unqualified "report.md"
+// keeps meaning the project file it has always meant.
+//
+// String-level checks alone are insufficient — a symlink inside a root
+// pointing outside would pass them — so the real path is checked too.
+// OS-level containment for child processes is the sandbox's job
+// (ADR-0001); this guards the built-in file tools.
 func (r *Registry) resolvePath(p string) (string, error) {
 	if p == "" {
 		return "", errors.New("path is required")
@@ -318,18 +370,18 @@ func (r *Registry) resolvePath(p string) (string, error) {
 		abs = filepath.Join(r.projectDir, p)
 	}
 	abs = filepath.Clean(abs)
-	if !within(r.projectDir, abs) {
+	if !withinAny(r.roots(), abs) {
 		return "", fmt.Errorf("path escapes the project directory: %s", p)
 	}
 	real, err := resolveExisting(abs)
 	if err != nil {
 		// Deliberately not %w: the OS error names the path where
 		// resolution stumbled, which for an escaping link chain lies
-		// OUTSIDE the project — an error message must not leak
+		// OUTSIDE the roots — an error message must not leak
 		// out-of-project path fragments to the model (ADR-0021).
 		return "", fmt.Errorf("resolve %s: a link in the path is broken or its target is not accessible", p)
 	}
-	if !within(r.projectDir, real) {
+	if !withinAny(r.roots(), real) {
 		return "", fmt.Errorf("path escapes the project directory via symlink: %s", p)
 	}
 	return abs, nil
@@ -601,7 +653,7 @@ func (r *Registry) shellExec() *Tool {
 			cmd.Dir = r.projectDir
 			hardenExec(cmd)
 			out, err := cmd.CombinedOutput()
-			result := truncate(string(out), outputCap)
+			result := truncate(string(out), OutputCap)
 			if cctx.Err() == context.DeadlineExceeded {
 				return result + fmt.Sprintf("\n[command timed out after %s]", r.shellTimeout), nil
 			}

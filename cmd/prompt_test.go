@@ -8,7 +8,7 @@ import (
 )
 
 func TestSystemPromptShape(t *testing.T) {
-	sys := buildSystemPrompt("/tmp/proj", "")
+	sys := buildSystemPrompt("/tmp/proj", "", "")
 
 	// The defensive framing must stay at the very top, ahead of
 	// anything a project could put in front of it.
@@ -26,7 +26,7 @@ func TestSystemPromptShape(t *testing.T) {
 }
 
 func TestSystemPromptAppendsProjectContext(t *testing.T) {
-	sys := buildSystemPrompt("/tmp/proj", "\n\nProject instructions:\n\n### AGENTS.md\n\nbuild with make")
+	sys := buildSystemPrompt("/tmp/proj", "", "\n\nProject instructions:\n\n### AGENTS.md\n\nbuild with make")
 	if !strings.Contains(sys, "build with make") {
 		t.Error("project context not appended")
 	}
@@ -74,5 +74,31 @@ func TestLoadInstructionsReadsVendorFiles(t *testing.T) {
 	// Nearest last: the project's own file is the final section.
 	if strings.Index(section, "workspace rules") > strings.Index(section, "gemini rules") {
 		t.Error("project rules should come after ancestor rules")
+	}
+}
+
+// A capability nothing points at never gets used: without the section
+// the model has no way to learn the directory exists, and keeps putting
+// intermediates in the project (ADR-0058).
+func TestSystemPromptNamesTheWorkDirectory(t *testing.T) {
+	work := "/state/gem-agent/proj/work/sess-1"
+	got := buildSystemPrompt("/proj", work, "")
+	if !strings.Contains(got, work) {
+		t.Error("the work directory is not named in the prompt")
+	}
+	// The literal path, not the variable: an MCP tool argument is JSON
+	// the model writes, and nothing expands a variable on the way.
+	if !strings.Contains(got, "$GEMAGENT_WORK_DIR") {
+		t.Error("shell commands are not told the variable exists")
+	}
+	if i, j := strings.Index(got, work), strings.Index(got, "$GEMAGENT_WORK_DIR"); i < 0 || j < 0 || i > j {
+		t.Error("the literal path should be given before the variable is mentioned")
+	}
+}
+
+func TestSystemPromptOmitsTheSectionWithoutAWorkDirectory(t *testing.T) {
+	got := buildSystemPrompt("/proj", "", "")
+	if strings.Contains(got, "Session work directory") {
+		t.Error("a session with no work directory should not be told it has one")
 	}
 }

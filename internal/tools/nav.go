@@ -221,7 +221,7 @@ func (r *Registry) listTree() *Tool {
 			if n := rules.Note(); n != "" {
 				out = n + "\n" + out
 			}
-			return truncate(strings.TrimRight(out, "\n"), outputCap), nil
+			return truncate(strings.TrimRight(out, "\n"), OutputCap), nil
 		},
 	}
 }
@@ -410,15 +410,18 @@ func (r *Registry) searchFiles() *Tool {
 			if n := rules.Note(); n != "" {
 				out = n + "\n" + out
 			}
-			return truncate(out, outputCap), nil
+			return truncate(out, OutputCap), nil
 		},
 	}
 }
 
-// relOrDot renders a path relative to the project for display.
+// relOrDot renders a path relative to the project for display. A path
+// outside the project — the session work directory, listed by its
+// absolute path — is shown absolute rather than as a climb through
+// "../..", which reads as an escape and is not one.
 func relOrDot(projectDir, p string) string {
 	rel, err := filepath.Rel(projectDir, p)
-	if err != nil {
+	if err != nil || strings.HasPrefix(rel, "..") {
 		return p
 	}
 	return rel

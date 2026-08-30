@@ -3,6 +3,7 @@ package mcp
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -340,47 +341,63 @@ func (c *Client) ListTools(ctx context.Context) ([]Tool, error) {
 	}
 }
 
-// CallTool invokes one tool. The result is always a string for the LLM:
-// text content concatenated, non-text content noted, and server-side
-// tool failures (isError) prefixed with "error: " rather than dropped.
-func (c *Client) CallTool(ctx context.Context, tool string, args map[string]any) (string, error) {
+// Content is one block of a tool result. MCP servers may answer with
+// more than text — an image, audio, a resource — and this type carries
+// each block whole rather than flattening it. Text blocks fill Text;
+// binary blocks fill Data (already base64-decoded) and MIME.
+type Content struct {
+	Type string
+	Text string
+	Data []byte
+	MIME string
+}
+
+// CallTool invokes one tool and returns its content blocks in order,
+// plus whether the server marked the call failed (isError). The blocks
+// are returned whole because the caller, not this client, decides what
+// to do with them: a block too large for the model's context and a
+// block that is not text at all both have to land somewhere on disk,
+// and this package knows nothing about where that is.
+func (c *Client) CallTool(ctx context.Context, tool string, args map[string]any) ([]Content, bool, error) {
 	if err := c.ensureStarted(ctx); err != nil {
-		return "", err
+		return nil, false, err
 	}
 	if args == nil {
 		args = map[string]any{}
 	}
 	res, err := c.rawCall(ctx, "tools/call", map[string]any{"name": tool, "arguments": args})
 	if err != nil {
-		return "", fmt.Errorf("mcp %s: %s: %w", c.name, tool, err)
+		return nil, false, fmt.Errorf("mcp %s: %s: %w", c.name, tool, err)
 	}
 	var out struct {
 		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Data     string `json:"data"`
+			MimeType string `json:"mimeType"`
 		} `json:"content"`
 		IsError bool `json:"isError"`
 	}
 	if err := json.Unmarshal(res, &out); err != nil {
-		return "", fmt.Errorf("mcp %s: %s result: %w", c.name, tool, err)
+		return nil, false, fmt.Errorf("mcp %s: %s result: %w", c.name, tool, err)
 	}
-	var b []byte
-	for i, item := range out.Content {
-		if i > 0 {
-			b = append(b, '\n')
+	blocks := make([]Content, 0, len(out.Content))
+	for _, item := range out.Content {
+		b := Content{Type: item.Type, Text: item.Text, MIME: item.MimeType}
+		if item.Data != "" {
+			// A block that says it carries data and whose data will not
+			// decode is reported as text rather than dropped: silently
+			// losing a server's answer is the failure this whole change
+			// exists to stop.
+			raw, derr := base64.StdEncoding.DecodeString(item.Data)
+			if derr != nil {
+				b.Type = "text"
+				b.Text = fmt.Sprintf("[%s content could not be decoded: %v]", item.Type, derr)
+			} else {
+				b.Data = raw
+			}
 		}
-		if item.Type == "text" {
-			b = append(b, item.Text...)
-		} else {
-			b = append(b, ("[non-text content: " + item.Type + "]")...)
-		}
+		blocks = append(blocks, b)
 	}
-	text := string(b)
-	if text == "" {
-		text = "(no content)"
-	}
-	if out.IsError {
-		return "error: " + text, nil
-	}
-	return text, nil
+	return blocks, out.IsError, nil
 }

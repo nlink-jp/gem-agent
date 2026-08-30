@@ -34,6 +34,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/tui"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
+	"github.com/nlink-jp/gem-agent/internal/workdir"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -209,63 +210,6 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(stderr, "%s\n", trustNote)
 	}
 
-	// --- shell execution strategy (ADR-0001 defense-in-depth) ---
-	sandboxOn := cfg.Sandbox.Enabled && !flagNoSandbox
-	execFn, err := buildExecFn(sandboxOn, projectDir)
-	if err != nil {
-		return err
-	}
-
-	registry, err := tools.New(projectDir, execFn, time.Duration(cfg.Agent.ShellTimeoutSec)*time.Second)
-	if err != nil {
-		return err
-	}
-
-	// --- MCP servers from the project's .mcp.json (drop-in) ---
-	mcpClients, mcpSummary, _ := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, projectTrusted)
-	defer func() {
-		for _, c := range mcpClients {
-			c.Close()
-		}
-	}()
-
-	// --- skills: Claude Code's skill library, read as-is (ADR-0010) ---
-	// skillsList and mcpSummary/mcpClients above are reassigned by the
-	// /skills reload and /mcp reload closures (ADR-0039); every consumer
-	// reads the variables through a closure, so updates propagate. The
-	// single-writer discipline holds because a slash command cannot run
-	// while a turn is in flight.
-	skillsList, skillNotes := discoverSkills(projectDir, projectTrusted)
-	for _, n := range skillNotes {
-		fmt.Fprintf(stderr, "warning: %s\n", n)
-	}
-	if err := registerSkillTool(registry, func() []skills.Skill { return skillsList }); err != nil {
-		return err
-	}
-
-	// --- agent memory: facts persisted across sessions (ADR-0020) ---
-	// A missing home disables memory with a warning; a backup tool must
-	// not refuse to start over its least essential feature.
-	memBase := ""
-	var memories []memory.Memory
-	if base, err := memory.DefaultDir(); err == nil {
-		memBase = base
-		var memNotes []string
-		memories, memNotes = memory.Load(memBase, projectDir, memory.DefaultLimits())
-		for _, n := range memNotes {
-			fmt.Fprintf(stderr, "warning: %s\n", n)
-		}
-		if err := registerMemoryTools(registry, memBase, projectDir); err != nil {
-			return err
-		}
-	} else {
-		fmt.Fprintf(stderr, "warning: memory disabled: %v\n", err)
-	}
-	memorySection := ""
-	if memBase != "" {
-		memorySection = memory.PromptSection(memories)
-	}
-
 	// --- session transcript: the log, and the resume source (ADR-0005) ---
 	if flagContinue && flagResume != "" {
 		return fmt.Errorf("--continue and --resume name different sessions; use one")
@@ -320,6 +264,107 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				restored = history
 			}
 		}
+	}
+
+	// --- session work directory (ADR-0058) ---
+	// Everything the session produces outside the project lands here: an
+	// MCP result too large to hold in context, binary a server returned,
+	// scratch a shell command wrote. It has to exist BEFORE the sandbox
+	// profile is built (it is a writable root) and before the MCP
+	// servers start, because ${GEMAGENT_WORK_DIR} in an mcp.json args
+	// entry is expanded at load time from the process environment.
+	//
+	// That ordering is why the session block above was moved ahead of
+	// this one: the directory is keyed by session id, so a resume lands
+	// back in the directory its earlier self used.
+	workDir := ""
+	if sessionID != "" {
+		if dir, err := workdir.Ensure(projectDir, sessionID); err != nil {
+			// A missing work directory degrades the session (oversized
+			// MCP results get truncated with a note); it does not stop
+			// a backup tool from starting.
+			fmt.Fprintf(stderr, "warning: session work directory unavailable: %v\n", err)
+		} else {
+			workDir = dir
+			// Exported, not passed: this is what puts the path in front
+			// of shell_exec's child, every MCP server (internal/mcp
+			// inherits os.Environ), and every hook, without any of them
+			// needing to know gem-agent's layout.
+			if err := os.Setenv(workdir.EnvVar, workDir); err != nil {
+				fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", workdir.EnvVar, err)
+			}
+			defer workdir.RemoveIfEmpty(workDir)
+			if dirs, bytes, err := workdir.Sweep(projectDir, sessionID); err == nil && dirs > 0 {
+				fmt.Fprintf(stderr, "note: %d earlier session work director%s hold %s here — nothing is deleted automatically\n",
+					dirs, map[bool]string{true: "y", false: "ies"}[dirs == 1], humanBytes(bytes))
+			}
+		}
+	}
+
+	// --- shell execution strategy (ADR-0001 defense-in-depth) ---
+	sandboxOn := cfg.Sandbox.Enabled && !flagNoSandbox
+	execFn, err := buildExecFn(sandboxOn, projectDir, workDir)
+	if err != nil {
+		return err
+	}
+
+	registry, err := tools.New(projectDir, execFn, time.Duration(cfg.Agent.ShellTimeoutSec)*time.Second)
+	if err != nil {
+		return err
+	}
+	if workDir != "" {
+		// The file tools get the work directory as a second root, so a
+		// result the intake saved is one read_file can read back. Without
+		// it the model sees paths it cannot open and routes around the
+		// built-ins with shell redirection, which is less reviewable.
+		if err := registry.UseWorkDir(workDir); err != nil {
+			fmt.Fprintf(stderr, "warning: work directory not readable by the file tools: %v\n", err)
+		}
+	}
+
+	// --- MCP servers from the project's .mcp.json (drop-in) ---
+	mcpClients, mcpSummary, _ := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, projectTrusted)
+	defer func() {
+		for _, c := range mcpClients {
+			c.Close()
+		}
+	}()
+
+	// --- skills: Claude Code's skill library, read as-is (ADR-0010) ---
+	// skillsList and mcpSummary/mcpClients above are reassigned by the
+	// /skills reload and /mcp reload closures (ADR-0039); every consumer
+	// reads the variables through a closure, so updates propagate. The
+	// single-writer discipline holds because a slash command cannot run
+	// while a turn is in flight.
+	skillsList, skillNotes := discoverSkills(projectDir, projectTrusted)
+	for _, n := range skillNotes {
+		fmt.Fprintf(stderr, "warning: %s\n", n)
+	}
+	if err := registerSkillTool(registry, func() []skills.Skill { return skillsList }); err != nil {
+		return err
+	}
+
+	// --- agent memory: facts persisted across sessions (ADR-0020) ---
+	// A missing home disables memory with a warning; a backup tool must
+	// not refuse to start over its least essential feature.
+	memBase := ""
+	var memories []memory.Memory
+	if base, err := memory.DefaultDir(); err == nil {
+		memBase = base
+		var memNotes []string
+		memories, memNotes = memory.Load(memBase, projectDir, memory.DefaultLimits())
+		for _, n := range memNotes {
+			fmt.Fprintf(stderr, "warning: %s\n", n)
+		}
+		if err := registerMemoryTools(registry, memBase, projectDir); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintf(stderr, "warning: memory disabled: %v\n", err)
+	}
+	memorySection := ""
+	if memBase != "" {
+		memorySection = memory.PromptSection(memories)
 	}
 
 	// --- telemetry: audit events to the operator's collector (ADR-0035) ---
@@ -568,6 +613,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			SandboxOn:      sandboxOn,
 			ProjectDir:     projectDir,
 			SessionID:      sessionID,
+			WorkDir:        workDir,
 			MCPServers:     mcpSummary,
 			SkillCount:     len(skillsList),
 			DiagramCols:    diagramCols(useTUI),
@@ -614,7 +660,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// the plain REPL and one-shot show source and must not advertise a
 	// capability they lack.
 	composeSystem := func() string {
-		s := buildSystemPrompt(projectDir, projectContext) + skills.PromptSection(skillsList) + memorySection
+		s := buildSystemPrompt(projectDir, workDir, projectContext) + skills.PromptSection(skillsList) + memorySection
 		if useTUI {
 			s += diagram.PromptSection()
 		}
@@ -1274,7 +1320,7 @@ func runTurn(parent context.Context, fn func(ctx context.Context) error) error {
 
 // buildExecFn returns the shell execution strategy: sandbox-exec-wrapped
 // when the sandbox is on, direct bash otherwise.
-func buildExecFn(sandboxOn bool, projectDir string) (tools.ExecFunc, error) {
+func buildExecFn(sandboxOn bool, projectDir, workDir string) (tools.ExecFunc, error) {
 	if !sandboxOn {
 		return func(ctx context.Context, command string) *exec.Cmd {
 			return exec.CommandContext(ctx, shell, "-c", command)
@@ -1284,6 +1330,13 @@ func buildExecFn(sandboxOn bool, projectDir string) (tools.ExecFunc, error) {
 		return nil, fmt.Errorf("%s not found (gem-agent is macOS-only); use --no-sandbox to bypass at your own risk", sandbox.Executable)
 	}
 	writeDirs := []string{projectDir}
+	if workDir != "" {
+		// The session work directory (ADR-0058). A shell command told to
+		// put its output in $GEMAGENT_WORK_DIR has to be able to.
+		if resolved, err := sandbox.ResolveWriteDir(workDir); err == nil {
+			writeDirs = append(writeDirs, resolved)
+		}
+	}
 	// Scratch locations shell tools legitimately write to. Resolved to
 	// real paths — Seatbelt matches post-symlink (/tmp is /private/tmp).
 	for _, d := range []string{os.TempDir(), "/private/tmp", "/dev"} {

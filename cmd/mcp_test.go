@@ -12,14 +12,19 @@ import (
 )
 
 type stubCaller struct {
-	name  string
-	calls []string
+	name   string
+	calls  []string
+	blocks []mcp.Content
+	isErr  bool
 }
 
 func (s *stubCaller) Name() string { return s.name }
-func (s *stubCaller) CallTool(ctx context.Context, tool string, args map[string]any) (string, error) {
+func (s *stubCaller) CallTool(ctx context.Context, tool string, args map[string]any) ([]mcp.Content, bool, error) {
 	s.calls = append(s.calls, tool)
-	return "remote-result", nil
+	if s.blocks != nil {
+		return s.blocks, s.isErr, nil
+	}
+	return []mcp.Content{{Type: "text", Text: "remote-result"}}, false, nil
 }
 
 func TestMCPToolName(t *testing.T) {

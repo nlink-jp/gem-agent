@@ -62,7 +62,7 @@ func (r *Registry) fileInfo() *Tool {
 				}
 				out = append(out, info)
 			}
-			return truncate(strings.Join(out, "\n\n"), outputCap), nil
+			return truncate(strings.Join(out, "\n\n"), OutputCap), nil
 		},
 	}
 }
@@ -109,13 +109,13 @@ func (r *Registry) describeFile(p string) (string, error) {
 		if !filepath.IsAbs(lex) {
 			lex = filepath.Clean(filepath.Join(r.projectDir, p))
 		}
-		if within(r.projectDir, lex) {
+		if withinAny(r.roots(), lex) {
 			// The PARENT must genuinely resolve inside the project:
 			// Lstat follows intermediate symlinks, so a lexically
 			// in-project path under a model-planted escaping link would
 			// report link targets of files wholly outside (ADR-0021).
 			parent, perr := filepath.EvalSymlinks(filepath.Dir(lex))
-			if perr == nil && within(r.projectDir, parent) {
+			if perr == nil && withinAny(r.roots(), parent) {
 				entry := filepath.Join(parent, filepath.Base(lex))
 				if lst, lerr := os.Lstat(entry); lerr == nil && lst.Mode()&os.ModeSymlink != 0 {
 					target, _ := os.Readlink(entry)
@@ -137,7 +137,7 @@ func (r *Registry) describeFile(p string) (string, error) {
 		target, _ := os.Readlink(abs)
 		fmt.Fprintf(&b, "\n  symlink → %s", target)
 		real, err := filepath.EvalSymlinks(abs)
-		if err != nil || !within(r.projectDir, real) {
+		if err != nil || !withinAny(r.roots(), real) {
 			// Reported, never silently followed (ADR-0016 §4).
 			b.WriteString("\n  target: outside the project — not inspected")
 			return b.String(), nil

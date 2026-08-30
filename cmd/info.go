@@ -30,6 +30,7 @@ type infoSnapshot struct {
 	SandboxOn    bool
 	ProjectDir   string
 	SessionID    string // "" when the log is disabled
+	WorkDir      string // "" when there is no session work directory
 	MCPServers   []string
 	SkillCount   int
 	MemoryOn     bool
@@ -119,6 +120,12 @@ func renderInfo(s infoSnapshot) string {
 	fmt.Fprintf(&b, "project: %s\n", s.ProjectDir)
 	if s.SessionID != "" {
 		fmt.Fprintf(&b, "session: %s\n", s.SessionID)
+	}
+	// Named because the operator has to be able to find what the
+	// session produced. An agent that writes files to a location only
+	// it knows has hidden them (ADR-0058).
+	if s.WorkDir != "" {
+		fmt.Fprintf(&b, "work dir: %s\n", s.WorkDir)
 	}
 
 	// "as last connected": the summary is the connection-time snapshot

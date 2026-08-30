@@ -3,9 +3,11 @@ package mcp
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -114,7 +116,7 @@ func TestListAndCall(t *testing.T) {
 		t.Fatalf("tools = %+v", tools)
 	}
 
-	out, err := c.CallTool(context.Background(), "check_ip", map[string]any{"ip": "192.0.2.1"})
+	out, err := callText(t, c, "check_ip", map[string]any{"ip": "192.0.2.1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +147,7 @@ func TestIsErrorPrefixed(t *testing.T) {
 	c := newTestClient(f, 2*time.Second)
 	defer c.Close()
 
-	out, err := c.CallTool(context.Background(), "check_ip", nil)
+	out, err := callText(t, c, "check_ip", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +173,7 @@ func TestNotificationAndServerRequestInterleaved(t *testing.T) {
 	c := newTestClient(f, 2*time.Second)
 	defer c.Close()
 
-	out, err := c.CallTool(context.Background(), "check_ip", nil)
+	out, err := callText(t, c, "check_ip", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +210,7 @@ func TestTimeoutKillsThenRespawns(t *testing.T) {
 	c := newTestClient(f, 300*time.Millisecond)
 	defer c.Close()
 
-	_, err := c.CallTool(context.Background(), "check_ip", nil)
+	_, err := callText(t, c, "check_ip", nil)
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("expected timeout error, got %v", err)
 	}
@@ -216,7 +218,7 @@ func TestTimeoutKillsThenRespawns(t *testing.T) {
 		t.Fatalf("spawns = %d before respawn", f.spawnCount())
 	}
 
-	out, err := c.CallTool(context.Background(), "check_ip", nil)
+	out, err := callText(t, c, "check_ip", nil)
 	if err != nil {
 		t.Fatalf("call after respawn failed: %v", err)
 	}
@@ -238,13 +240,39 @@ func TestLargeToolOutput(t *testing.T) {
 	c := newTestClient(f, 5*time.Second)
 	defer c.Close()
 
-	out, err := c.CallTool(context.Background(), "check_ip", nil)
+	out, err := callText(t, c, "check_ip", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if out != big {
 		t.Errorf("large output corrupted: len=%d", len(out))
 	}
+}
+
+// callText drives CallTool and renders the blocks the way a caller
+// that only wants text would: the client no longer flattens for it.
+func callText(t *testing.T, c *Client, tool string, args map[string]any) (string, error) {
+	t.Helper()
+	blocks, isErr, err := c.CallTool(context.Background(), tool, args)
+	if err != nil {
+		return "", err
+	}
+	var parts []string
+	for _, b := range blocks {
+		if b.Type == "text" {
+			parts = append(parts, b.Text)
+			continue
+		}
+		parts = append(parts, "["+b.Type+" content: "+strconv.Itoa(len(b.Data))+" bytes "+b.MIME+"]")
+	}
+	out := strings.Join(parts, "\n")
+	if out == "" {
+		out = "(no content)"
+	}
+	if isErr {
+		out = "error: " + out
+	}
+	return out, nil
 }
 
 func TestToolListPagination(t *testing.T) {
@@ -277,5 +305,68 @@ func TestToolListPagination(t *testing.T) {
 	}
 	if len(tools) != 2 || tools[0].Name != "a" || tools[1].Name != "b" {
 		t.Errorf("paginated tools = %+v", tools)
+	}
+}
+
+// A server may answer with an image. The client used to flatten every
+// non-text block to "[non-text content: image]", so a screenshot from
+// chrome-pilot-mcp was invisible to the model (ADR-0058).
+func TestNonTextContentSurvives(t *testing.T) {
+	png := []byte("\x89PNG\r\n\x1a\nfake pixels")
+	f := &fakeServer{}
+	f.handler = func(_ *fakeServer, method string, _ json.RawMessage) ([]string, any, bool) {
+		if method == "tools/call" {
+			return nil, map[string]any{"content": []map[string]any{
+				{"type": "text", "text": "shot taken"},
+				{"type": "image", "data": base64.StdEncoding.EncodeToString(png), "mimeType": "image/png"},
+			}}, true
+		}
+		r, ok := stdResult(method)
+		return nil, r, ok
+	}
+	c := newTestClient(f, 2*time.Second)
+	defer c.Close()
+
+	blocks, isErr, err := c.CallTool(context.Background(), "take_screenshot", nil)
+	if err != nil || isErr {
+		t.Fatalf("call failed: %v isErr=%v", err, isErr)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("blocks = %d, want the text and the image", len(blocks))
+	}
+	if blocks[0].Type != "text" || blocks[0].Text != "shot taken" {
+		t.Errorf("text block = %+v", blocks[0])
+	}
+	img := blocks[1]
+	if img.Type != "image" || img.MIME != "image/png" {
+		t.Fatalf("image block = %+v", img)
+	}
+	if string(img.Data) != string(png) {
+		t.Errorf("image bytes = %q, want the decoded PNG", img.Data)
+	}
+}
+
+// Undecodable data is reported, never dropped: silently losing a
+// server's answer is the failure this change exists to stop.
+func TestUndecodableContentIsReportedNotDropped(t *testing.T) {
+	f := &fakeServer{}
+	f.handler = func(_ *fakeServer, method string, _ json.RawMessage) ([]string, any, bool) {
+		if method == "tools/call" {
+			return nil, map[string]any{"content": []map[string]any{
+				{"type": "image", "data": "!!! not base64 !!!", "mimeType": "image/png"},
+			}}, true
+		}
+		r, ok := stdResult(method)
+		return nil, r, ok
+	}
+	c := newTestClient(f, 2*time.Second)
+	defer c.Close()
+
+	blocks, _, err := c.CallTool(context.Background(), "take_screenshot", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 1 || blocks[0].Type != "text" || !strings.Contains(blocks[0].Text, "could not be decoded") {
+		t.Errorf("blocks = %+v, want one text block saying so", blocks)
 	}
 }

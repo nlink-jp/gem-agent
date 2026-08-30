@@ -1,5 +1,38 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **A work directory per session** (ADR-0058), under the same state root as
+  transcripts and memory and keyed by session id, so `--resume` lands back in
+  the one its earlier session used. It is a writable root of the sandbox
+  profile and a second root of the file tools, its path is in the system
+  prompt and in `/status`, and it is exported as `GEMAGENT_WORK_DIR` — which
+  reaches `shell_exec`, every hook, and `${GEMAGENT_WORK_DIR}` in an
+  `mcp.json` args entry.
+- Startup reports how many earlier work directories exist and how much they
+  hold. Nothing is deleted for you; a directory a session left empty is
+  removed on exit.
+
+### Fixed
+
+- **MCP results are bounded at last.** Built-in tool results have always been
+  cut at 20,000 bytes; MCP results were passed into the conversation whole.
+  An oversized result is now saved to the work directory and the model gets
+  the head plus the path — saved, not truncated, so nothing is lost.
+- **Non-text MCP content is no longer discarded.** `CallTool` flattened every
+  image to `[non-text content: image]`, which made screenshots taken through
+  `chrome-pilot-mcp` invisible to the model. They are now saved to the work
+  directory and the model is told to call `view_image` on the path.
+
+### Changed
+
+- The session id is resolved before the MCP servers start, so
+  `${GEMAGENT_WORK_DIR}` in `mcp.json` expands to a directory that exists.
+- `tools.OutputCap` is exported: the MCP adapter applies the same number the
+  built-in tools do.
+
 ## [0.55.0] - 2026-08-30
 
 ### Added — every model call leaves an accounting record (ADR-0057)

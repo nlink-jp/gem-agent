@@ -39,7 +39,11 @@ gem-agent -p "summarize this repository"   # one-shot, pipe-friendly
 
 The current directory becomes the project: file tools cannot leave it,
 sandboxed shell commands cannot write outside it, and mutating tool
-calls ask for approval before running. Requirements: macOS (Apple
+calls ask for approval before running. Each session also gets a work
+directory of its own for anything that is not part of the project —
+intermediate data, an oversized tool result, a screenshot a server
+returned — so the working copy stays clean. `/status` names it, and
+nothing in it is ever deleted for you. Requirements: macOS (Apple
 Silicon), a Google Cloud project with Vertex AI enabled, and ADC
 (`gcloud auth application-default login`) — details in
 [configuration](docs/en/reference/configuration.md).

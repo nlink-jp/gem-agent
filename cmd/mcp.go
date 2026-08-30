@@ -20,7 +20,7 @@ import (
 // so tests can stub the wire protocol away.
 type mcpCaller interface {
 	Name() string
-	CallTool(ctx context.Context, tool string, args map[string]any) (string, error)
+	CallTool(ctx context.Context, tool string, args map[string]any) ([]mcp.Content, bool, error)
 }
 
 const (
@@ -61,6 +61,9 @@ func sanitizeToolName(s string) string {
 // tools require approval (RFP: external-server tools are gated) — this
 // tool cannot know which remote operations mutate what.
 func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Tool) (added []string, errs []string) {
+	// The intake spills to the registry's work directory, so a result
+	// it saves is one the file tools can read back (ADR-0058).
+	intake := newMCPIntake(registry.WorkDir())
 	for _, t := range list {
 		remoteName := t.Name
 		desc := "[MCP:" + client.Name() + "] " + t.Description
@@ -77,7 +80,11 @@ func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Too
 			Parameters:  params,
 			Mutating:    true,
 			Run: func(ctx context.Context, args map[string]any) (string, error) {
-				return client.CallTool(ctx, remoteName, args)
+				blocks, isErr, err := client.CallTool(ctx, remoteName, args)
+				if err != nil {
+					return "", err
+				}
+				return intake.render(client.Name(), remoteName, blocks, isErr), nil
 			},
 		}
 		if err := registry.Register(tool); err != nil {

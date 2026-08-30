@@ -61,6 +61,8 @@ internal/mediastore/ GCS media uploads (ADR-0027): content-addressed, quota proj
 internal/uitext/   ja/en UI string catalogs (ADR-0029): completeness enforced by test —
                    new operator-facing strings go in BOTH catalogs or make check fails
 internal/statedir/ shared per-project state convention (ADR-0022): root+env override, escape, .project marker
+internal/workdir/  per-session work directory (ADR-0058): layout under the state root,
+                   sweep report, empty-dir removal; GEMAGENT_WORK_DIR is exported at startup
 internal/telemetry/ opt-in audit events (ADR-0035): metadata only, Cloud Logging or OTLP, Sub(label) for child agents
 internal/diagram/  terminal mermaid rendering (ADR-0042): translate / fit / verify, TUI only
 cmd/settings.go    /settings panel content + edits (ADR-0009)
