@@ -126,16 +126,22 @@ func (in mcpIntake) write(server, tool, ext string, data []byte) (string, error)
 		return "", err
 	}
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
+		// Cleanup on a path that has already failed: the write error is
+		// what the caller needs, and a failure to tidy up after it does
+		// not change the answer.
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
 		return "", err
 	}
+	// This Close is checked, unlike the one above: it is the last thing
+	// between the data and durability, and a file that closed badly must
+	// never be renamed into place looking complete.
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
+		_ = os.Remove(tmp.Name())
 		return "", err
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {
-		os.Remove(tmp.Name())
+		_ = os.Remove(tmp.Name())
 		return "", err
 	}
 	return path, nil

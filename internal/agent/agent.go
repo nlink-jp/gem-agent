@@ -432,16 +432,10 @@ func (a *Agent) Rulebook() string {
 	return a.rulebook
 }
 
-func (a *Agent) toolPolicy(tool string) policy.Decision {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.policy.For(tool)
-}
-
-// callPolicy is toolPolicy for one concrete call: the per-command table
-// (ADR-0045) refines the tool's policy for shell commands. Every gate
-// decision goes through here rather than toolPolicy, so a learned rule
-// and an operator-set one are the same thing everywhere downstream.
+// callPolicy resolves the policy for one concrete call: the per-command
+// table (ADR-0045) refines the tool's policy for shell commands. Every
+// gate decision goes through here, so a learned rule and an
+// operator-set one are the same thing everywhere downstream.
 //
 // The purpose argument is stripped first: gem-agent's own field is not
 // part of what the command runs (ADR-0047 §2).
