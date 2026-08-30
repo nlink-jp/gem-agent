@@ -215,3 +215,17 @@ func TestMacOSVersionLive(t *testing.T) {
 		t.Errorf("macOSVersion() = %q, want a dotted product version", v)
 	}
 }
+
+// The operator has to be able to find what the session produced: an
+// agent that writes files somewhere only it knows has hidden them
+// (ADR-0058).
+func TestRenderInfoNamesTheWorkDirectory(t *testing.T) {
+	s := infoFixture()
+	if strings.Contains(renderInfo(s), "work dir") {
+		t.Error("a session with no work directory should not claim one")
+	}
+	s.WorkDir = "/state/gem-agent/proj/work/2026-08-21-abcdef"
+	if !strings.Contains(renderInfo(s), s.WorkDir) {
+		t.Errorf("/status does not name the work directory:\n%s", renderInfo(s))
+	}
+}
