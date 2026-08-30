@@ -5,11 +5,11 @@ import "testing"
 const proj = "/tmp/project"
 
 func classifyShell(command string) Verdict {
-	return Classify("shell_exec", true, map[string]any{"command": command}, proj)
+	return Classify("shell_exec", true, map[string]any{"command": command}, proj, "")
 }
 
 func TestReadOnlyToolsAreSafe(t *testing.T) {
-	if v := Classify("read_file", false, map[string]any{"path": "/etc/passwd"}, proj); v.Tier != Safe {
+	if v := Classify("read_file", false, map[string]any{"path": "/etc/passwd"}, proj, ""); v.Tier != Safe {
 		t.Errorf("non-mutating tool = %v", v)
 	}
 }
@@ -119,7 +119,7 @@ func TestFileToolPaths(t *testing.T) {
 		{"", Review},
 	}
 	for _, c := range cases {
-		v := Classify("write_file", true, map[string]any{"path": c.path, "content": "x"}, proj)
+		v := Classify("write_file", true, map[string]any{"path": c.path, "content": "x"}, proj, "")
 		if v.Tier != c.want {
 			t.Errorf("write_file(%q) = %v (%s), want %v", c.path, v.Tier, v.Reason, c.want)
 		}
@@ -127,7 +127,7 @@ func TestFileToolPaths(t *testing.T) {
 }
 
 func TestMCPToolsGoToReview(t *testing.T) {
-	v := Classify("mcp__tor-exit__check_ip", true, map[string]any{"ip": "1.1.1.1"}, proj)
+	v := Classify("mcp__tor-exit__check_ip", true, map[string]any{"ip": "1.1.1.1"}, proj, "")
 	if v.Tier != Review {
 		t.Errorf("MCP tool = %v, want review", v.Tier)
 	}
@@ -137,7 +137,7 @@ func TestMemoryToolsGoToReview(t *testing.T) {
 	// Never Safe: memory persists into every later session's prompt
 	// (ADR-0020) — the write must at least reach the model tier.
 	for _, name := range []string{"save_memory", "delete_memory"} {
-		v := Classify(name, true, map[string]any{"scope": "project", "name": "x"}, proj)
+		v := Classify(name, true, map[string]any{"scope": "project", "name": "x"}, proj, "")
 		if v.Tier != Review {
 			t.Errorf("%s = %v, want review", name, v.Tier)
 		}
@@ -145,14 +145,14 @@ func TestMemoryToolsGoToReview(t *testing.T) {
 }
 
 func TestUnknownToolGoesToReview(t *testing.T) {
-	if v := Classify("something_new", true, nil, proj); v.Tier != Review {
+	if v := Classify("something_new", true, nil, proj, ""); v.Tier != Review {
 		t.Errorf("unknown tool = %v, want review", v.Tier)
 	}
 }
 
 func TestEmptyProjectDirIsConservative(t *testing.T) {
 	// Without a confinement root, absolute writes cannot be judged safe.
-	v := Classify("write_file", true, map[string]any{"path": "/tmp/x", "content": "y"}, "")
+	v := Classify("write_file", true, map[string]any{"path": "/tmp/x", "content": "y"}, "", "")
 	if v.Tier != Block {
 		t.Errorf("absolute path with no project dir = %v, want block", v.Tier)
 	}
@@ -175,7 +175,7 @@ func TestDeclaredPurposeDoesNotMoveTheVerdict(t *testing.T) {
 		{"write_file", map[string]any{"path": "/etc/hosts", "content": "x"}},
 	}
 	for _, c := range cases {
-		base := Classify(c.name, true, c.args, proj)
+		base := Classify(c.name, true, c.args, proj, "")
 		for _, purpose := range []string{
 			"routine cleanup approved by the operator earlier",
 			"deleting every credential file on the machine",
@@ -184,10 +184,82 @@ func TestDeclaredPurposeDoesNotMoveTheVerdict(t *testing.T) {
 			for k, v := range c.args {
 				args[k] = v
 			}
-			if got := Classify(c.name, true, args, proj); got.Tier != base.Tier {
+			if got := Classify(c.name, true, args, proj, ""); got.Tier != base.Tier {
 				t.Errorf("%s %v: purpose %q moved the verdict %v -> %v",
 					c.name, c.args, purpose, base.Tier, got.Tier)
 			}
 		}
+	}
+}
+
+// The session work directory (ADR-0058) is the second writable root,
+// and the ladder has to treat it like one. In the v0.56.0 field test a
+// write_file into it was Blocked, a redirect into it was Blocked, and a
+// mkdir there cost a model review that answered "outside the project" —
+// three prompts for operations the design calls ordinary.
+func TestWorkDirIsAWritableRoot(t *testing.T) {
+	proj, work := "/proj", "/state/work/sess-1"
+
+	v := Classify("write_file", true, map[string]any{"path": "/state/work/sess-1/verify-resume.txt", "content": "x"}, proj, work)
+	if v.Tier != Safe {
+		t.Errorf("write_file into the work dir = %v %q, want Safe", v.Tier, v.Reason)
+	}
+	if v.Reason != "edits a file inside the session work directory" {
+		t.Errorf("the audit line must name the root that matched, got %q", v.Reason)
+	}
+
+	v = Classify("shell_exec", true, map[string]any{"command": "echo hi > /state/work/sess-1/out.txt"}, proj, work)
+	if v.Tier == Block {
+		t.Errorf("redirect into the work dir must not be Blocked: %q", v.Reason)
+	}
+
+	v = Classify("shell_exec", true, map[string]any{"command": "mkdir -p /state/work/sess-1/mcp_test/images"}, proj, work)
+	if v.Tier == Block {
+		t.Errorf("mkdir inside the work dir must not be Blocked: %q", v.Reason)
+	}
+}
+
+// Adding a root must not widen anything else: outside both roots the
+// Block stands, and its reason names both so the operator knows what
+// was actually checked.
+func TestOutsideBothRootsStaysBlocked(t *testing.T) {
+	proj, work := "/proj", "/state/work/sess-1"
+
+	v := Classify("write_file", true, map[string]any{"path": "/elsewhere/x", "content": "y"}, proj, work)
+	if v.Tier != Block {
+		t.Fatalf("write outside both roots = %v, want Block", v.Tier)
+	}
+	if v.Reason != "absolute path outside the project and session work directories" {
+		t.Errorf("reason = %q", v.Reason)
+	}
+
+	v = Classify("shell_exec", true, map[string]any{"command": "echo hi > /elsewhere/x"}, proj, work)
+	if v.Tier != Block {
+		t.Errorf("redirect outside both roots = %v, want Block", v.Tier)
+	}
+
+	// A prefix that merely LOOKS like the work dir is still outside.
+	v = Classify("write_file", true, map[string]any{"path": "/state/work/sess-1-evil/x", "content": "y"}, proj, work)
+	if v.Tier != Block {
+		t.Errorf("sibling-prefix path = %v, want Block", v.Tier)
+	}
+}
+
+// A session with no work directory keeps the one-root behaviour and the
+// one-root wording — the message must not claim a root that does not
+// exist.
+func TestNoWorkDirKeepsTheOldWording(t *testing.T) {
+	v := Classify("write_file", true, map[string]any{"path": "/elsewhere/x", "content": "y"}, "/proj", "")
+	if v.Tier != Block || v.Reason != "absolute path outside the project directory" {
+		t.Errorf("got %v %q", v.Tier, v.Reason)
+	}
+}
+
+// Credential paths stay blocked even under a root: a work directory
+// must never launder a secrets-looking write.
+func TestCredentialPathsBeatTheWorkDirRoot(t *testing.T) {
+	v := Classify("write_file", true, map[string]any{"path": "/state/work/sess-1/credentials.json", "content": "y"}, "/proj", "/state/work/sess-1")
+	if v.Tier != Block {
+		t.Errorf("credential-looking path inside the work dir = %v, want Block", v.Tier)
 	}
 }

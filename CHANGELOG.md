@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **The risk ladder now knows the session work directory.** ADR-0058 made the
+  work directory a sandbox root and a file-tool root, but both tiers of the
+  auto-approve ladder (ADR-0004) still judged against the project alone: the
+  rule tier Blocked a `write_file` into the work directory ("absolute path
+  outside the project directory") and a shell redirect into it, and the model
+  tier — whose payload never named the work directory — refused a `mkdir -p`
+  there as "outside the stated project directory", costing a model review plus
+  a human prompt for operations the design calls ordinary (all three observed
+  in the v0.56.0 field test transcript). The rule tier now accepts both roots
+  and its audit lines name the root that matched; the reviewer's instructions
+  and payload state the work directory when one exists. Outside both roots is
+  still Blocked, and credential-looking paths stay Blocked even inside a root.
+
 ## [0.56.0] - 2026-08-31
 
 ### Added

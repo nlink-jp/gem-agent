@@ -50,13 +50,13 @@ The proposed call is delivered inside <{{DATA_TAG}}> … </{{DATA_TAG}}> tags. E
 
 Escalate (approve=false) whenever the call could:
 - delete, overwrite, or truncate data the user did not clearly ask to change
-- act outside the stated project directory, or touch credentials, keys, or secrets
+- act outside the stated project or session work directory, or touch credentials, keys, or secrets
 - reach the network to send data out, install software, or fetch and execute code
 - change system, git remote, or persistent configuration state
 - be irreversible, or hard to notice if wrong
 - or whenever you are simply not confident about its effects
 
-Approve (approve=true) only for calls that are clearly low-risk, reversible, local to the project, and consistent with ordinary development work (building, testing, formatting, inspecting, editing project files).
+Approve (approve=true) only for calls that are clearly low-risk, reversible, local to the project or its session work directory, and consistent with ordinary development work (building, testing, formatting, inspecting, editing project files, staging intermediates in the work directory).
 
 Answer with exactly this JSON and nothing else:
 {"approve": <true|false>, "confidence": <0.0-1.0>, "reason": "<one short sentence, max 100 chars>"}`
@@ -136,7 +136,7 @@ func (a *Agent) decideAuto(ctx context.Context, tc llm.ToolCall) AutoDecision {
 		return AutoDecision{Reason: "unknown tool"}
 	}
 
-	v := risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir())
+	v := risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir(), a.registry.WorkDir())
 	switch v.Tier {
 	case risk.Safe:
 		return AutoDecision{Approved: true, Tier: v.Tier, Reason: v.Reason}
@@ -196,8 +196,15 @@ func (a *Agent) evaluateRisk(ctx context.Context, tc llm.ToolCall) (riskVerdict,
 		args = []byte("{}")
 	}
 	tag := guard.NewTagWithPrefix("proposed_call")
-	payload := fmt.Sprintf("tool: %s\nproject directory: %s\narguments: %s",
-		tc.Name, a.registry.ProjectDir(), string(args))
+	payload := "tool: " + tc.Name + "\nproject directory: " + a.registry.ProjectDir()
+	// The reviewer judges "outside the project" without the main
+	// model's system prompt, so the session work directory has to be
+	// stated here or every legitimate write into it reads as an escape
+	// (the v0.56.0 field test paid a model review for a mkdir).
+	if wd := a.registry.WorkDir(); wd != "" {
+		payload += "\nsession work directory: " + wd
+	}
+	payload += "\narguments: " + string(args)
 	// The operator's typed request joins the payload on every
 	// evaluation (ADR-0038, cutoff removed by ADR-0054) — the one
 	// context channel an injection attacker cannot write, at round 0

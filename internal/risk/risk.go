@@ -88,8 +88,13 @@ var readOnlyCommands = map[string]bool{
 }
 
 // Classify returns the logical verdict for one tool call. projectDir is
-// the confinement root; args come straight from the model.
-func Classify(toolName string, mutating bool, args map[string]any, projectDir string) Verdict {
+// the confinement root and workDir the session work directory — the
+// second root of ADR-0058, empty when the session has none. Both are
+// ordinary places for a session to write; treating the work directory
+// as foreign made every spill, staging step, and mkdir there cost a
+// model review or a human prompt (found in the v0.56.0 field test).
+// args come straight from the model.
+func Classify(toolName string, mutating bool, args map[string]any, projectDir, workDir string) Verdict {
 	if !mutating {
 		return Verdict{Safe, "read-only tool"}
 	}
@@ -97,16 +102,21 @@ func Classify(toolName string, mutating bool, args map[string]any, projectDir st
 	switch toolName {
 	case "write_file", "edit_file":
 		path, _ := args["path"].(string)
-		if v, blocked := classifyPath(path, projectDir); blocked {
+		if v, blocked := classifyPath(path, projectDir, workDir); blocked {
 			return v
 		}
 		// Content is not inspected here: the file tools cannot execute
-		// it, and judging intent from content is the model's job.
+		// it, and judging intent from content is the model's job. The
+		// reason names the root that matched — recording a work-dir
+		// write as "inside the project" would be a false audit line.
+		if workDir != "" && filepath.IsAbs(path) && withinDir(workDir, filepath.Clean(path)) {
+			return Verdict{Safe, "edits a file inside the session work directory"}
+		}
 		return Verdict{Safe, "edits a file inside the project"}
 
 	case "shell_exec":
 		command, _ := args["command"].(string)
-		return classifyCommand(command, projectDir)
+		return classifyCommand(command, projectDir, workDir)
 
 	case "save_memory", "delete_memory":
 		// Never Safe: a persisted memory reappears in every later
@@ -122,7 +132,7 @@ func Classify(toolName string, mutating bool, args map[string]any, projectDir st
 	return Verdict{Review, "unrecognised tool"}
 }
 
-func classifyPath(path, projectDir string) (Verdict, bool) {
+func classifyPath(path, projectDir, workDir string) (Verdict, bool) {
 	if path == "" {
 		return Verdict{Review, "missing path argument"}, true
 	}
@@ -130,8 +140,8 @@ func classifyPath(path, projectDir string) (Verdict, bool) {
 		return Verdict{Block, "path looks like credential material"}, true
 	}
 	if filepath.IsAbs(path) {
-		if projectDir == "" || !withinDir(projectDir, filepath.Clean(path)) {
-			return Verdict{Block, "absolute path outside the project directory"}, true
+		if !withinAnyRoot(filepath.Clean(path), projectDir, workDir) {
+			return Verdict{Block, outsideRootsReason("absolute path", workDir)}, true
 		}
 		return Verdict{}, false
 	}
@@ -141,7 +151,7 @@ func classifyPath(path, projectDir string) (Verdict, bool) {
 	return Verdict{}, false
 }
 
-func classifyCommand(command, projectDir string) Verdict {
+func classifyCommand(command, projectDir, workDir string) Verdict {
 	trimmed := strings.TrimSpace(command)
 	if trimmed == "" {
 		return Verdict{Review, "empty command"}
@@ -154,7 +164,7 @@ func classifyCommand(command, projectDir string) Verdict {
 	if hasCredentialPath(trimmed) {
 		return Verdict{Block, "references credential material"}
 	}
-	if v, ok := blockedRedirect(trimmed, projectDir); ok {
+	if v, ok := blockedRedirect(trimmed, projectDir, workDir); ok {
 		return v
 	}
 	// Command substitution hides the real target from any pattern rule
@@ -170,16 +180,37 @@ func classifyCommand(command, projectDir string) Verdict {
 }
 
 // blockedRedirect flags output redirection to an absolute path outside
-// the project (the sandbox would deny it, but escalating explains why).
-func blockedRedirect(command, projectDir string) (Verdict, bool) {
+// the writable roots (the sandbox would deny it, but escalating
+// explains why).
+func blockedRedirect(command, projectDir, workDir string) (Verdict, bool) {
 	re := regexp.MustCompile(`>>?\s*("?)(/[^\s"';|&]+)`)
 	for _, m := range re.FindAllStringSubmatch(command, -1) {
-		target := filepath.Clean(m[2])
-		if projectDir == "" || !withinDir(projectDir, target) {
-			return Verdict{Block, "redirects output outside the project directory"}, true
+		if !withinAnyRoot(filepath.Clean(m[2]), projectDir, workDir) {
+			return Verdict{Block, outsideRootsReason("redirects output", workDir)}, true
 		}
 	}
 	return Verdict{}, false
+}
+
+// withinAnyRoot reports whether an absolute, cleaned path sits under
+// any non-empty root.
+func withinAnyRoot(path string, roots ...string) bool {
+	for _, r := range roots {
+		if r != "" && withinDir(r, path) {
+			return true
+		}
+	}
+	return false
+}
+
+// outsideRootsReason names what the operator actually configured: with
+// no work directory the old wording stays, so the message never claims
+// a root that does not exist.
+func outsideRootsReason(what, workDir string) string {
+	if workDir == "" {
+		return what + " outside the project directory"
+	}
+	return what + " outside the project and session work directories"
 }
 
 // readOnlyCommand reports whether every segment of a pipeline/sequence

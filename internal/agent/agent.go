@@ -985,7 +985,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 		// live — not inside the gates.
 		mustPrompt := a.callPolicy(tc) == policy.AlwaysAsk
 		if !mustPrompt && tool.Mutating {
-			if v := risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir()); v.Tier == risk.Block {
+			if v := risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir(), a.registry.WorkDir()); v.Tier == risk.Block {
 				mustPrompt = true
 				// Shown on the prompt, so the operator sees why an
 				// earlier 'a' did not stick — and the deny-default that
@@ -1091,7 +1091,7 @@ func (a *Agent) gated(mutating bool, tc llm.ToolCall) bool {
 		if !ok {
 			return true
 		}
-		return risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir()).Tier == risk.Block
+		return risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir(), a.registry.WorkDir()).Tier == risk.Block
 	default:
 		return mutating
 	}

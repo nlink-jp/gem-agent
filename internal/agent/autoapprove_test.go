@@ -361,9 +361,49 @@ func TestMemoryWritesNeverAutoApproved(t *testing.T) {
 	// The rule tier must keep them off the Safe path, or decideAuto
 	// would return before the exclusion is reached.
 	for _, name := range []string{"save_memory", "delete_memory"} {
-		v := risk.Classify(name, true, map[string]any{"scope": "project", "name": "x", "content": "y"}, t.TempDir())
+		v := risk.Classify(name, true, map[string]any{"scope": "project", "name": "x", "content": "y"}, t.TempDir(), "")
 		if v.Tier == risk.Safe {
 			t.Errorf("%s classified Safe — it would bypass the memory-write exclusion", name)
 		}
+	}
+}
+
+// The reviewer judges "outside the project" without the main model's
+// system prompt, so the session work directory has to be stated in its
+// payload — or every legitimate write into it reads as an escape (the
+// v0.56.0 field test paid a model review for a mkdir, and the reviewer
+// answered "outside the stated project directory").
+func TestRiskEvaluatorIsToldTheWorkDirectory(t *testing.T) {
+	b := &autoBackend{verdict: `{"approve": true, "confidence": 0.9, "reason": "ok"}`}
+	a, reg, _ := newAutoAgent(t, b, &recordingGate{})
+	work := t.TempDir()
+	if err := reg.UseWorkDir(work); err != nil {
+		t.Fatal(err)
+	}
+
+	// A shell command into the work dir is Review at the rule tier, so
+	// it reaches the model tier and its payload is observable.
+	a.decideAuto(context.Background(), shellCall("mkdir -p "+reg.WorkDir()+"/mcp_test"))
+	if len(b.evals) == 0 {
+		t.Fatal("the model tier was never consulted")
+	}
+	if !strings.Contains(b.evals[0], "session work directory: "+reg.WorkDir()) {
+		t.Errorf("payload does not state the work directory:\n%s", b.evals[0])
+	}
+	if !strings.Contains(b.evalSystems[0], "session work directory") {
+		t.Errorf("the instructions never mention the work directory:\n%s", b.evalSystems[0])
+	}
+}
+
+// Without a work directory the payload must not name one.
+func TestRiskEvaluatorPayloadOmitsAnAbsentWorkDirectory(t *testing.T) {
+	b := &autoBackend{verdict: `{"approve": true, "confidence": 0.9, "reason": "ok"}`}
+	a, _, _ := newAutoAgent(t, b, &recordingGate{})
+	a.decideAuto(context.Background(), shellCall("mkdir -p ./x"))
+	if len(b.evals) == 0 {
+		t.Fatal("the model tier was never consulted")
+	}
+	if strings.Contains(b.evals[0], "session work directory") {
+		t.Errorf("payload claims a work directory that does not exist:\n%s", b.evals[0])
 	}
 }
