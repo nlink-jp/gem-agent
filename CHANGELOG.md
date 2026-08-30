@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`gem-agent workdirs` and `workdirs clean`** (ADR-0059) — the cleanup half
+  of the accumulation note, which shipped as a report without a remedy. The
+  listing shows id, age, files and size per earlier session; `clean` deletes
+  the named ids (or every non-running one), printing exactly what will go and
+  asking first — EOF aborts, `--yes` is for scripts, and a directory whose
+  session still holds its transcript open is never touched. The startup note
+  now points at the command, and its singular form finally agrees with its
+  verb.
+
 ## [0.56.2] - 2026-08-31
 
 ### Fixed

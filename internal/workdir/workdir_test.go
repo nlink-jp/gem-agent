@@ -156,3 +156,74 @@ func TestRemoveIfEmptyLeavesADirectoryThatHoldsAnything(t *testing.T) {
 		t.Fatalf("RemoveIfEmpty destroyed the session's output: %v", err)
 	}
 }
+
+// List is the ledger the note and the cleanup both read: complete,
+// sized, and read-only.
+func TestListReportsEverySessionWithSizes(t *testing.T) {
+	isolate(t)
+	project := t.TempDir()
+	a, _ := Ensure(project, "sess-a")
+	if err := os.WriteFile(filepath.Join(a, "x.bin"), make([]byte, 100), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := Ensure(project, "sess-b")
+	if err := os.WriteFile(filepath.Join(b, "y.bin"), make([]byte, 40), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	infos, err := List(project, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(infos) != 2 {
+		t.Fatalf("listed %d, want 2", len(infos))
+	}
+	sizes := map[string]int64{}
+	for _, in := range infos {
+		sizes[in.ID] = in.Bytes
+	}
+	if sizes["sess-a"] != 100 || sizes["sess-b"] != 40 {
+		t.Errorf("sizes = %v", sizes)
+	}
+	if got, _, _ := Sweep(project, "sess-b"); got != 1 {
+		t.Errorf("Sweep must exclude the asking session: dirs = %d, want 1", got)
+	}
+}
+
+// Remove deletes exactly the named session and folds up an emptied
+// parent; a malformed id never reaches the filesystem.
+func TestRemoveDeletesOnlyTheNamedSession(t *testing.T) {
+	isolate(t)
+	project := t.TempDir()
+	a, _ := Ensure(project, "sess-a")
+	if err := os.WriteFile(filepath.Join(a, "keep-me-not.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bDir, _ := Ensure(project, "sess-b")
+	if err := os.WriteFile(filepath.Join(bDir, "survivor.txt"), []byte("y"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Remove(project, "sess-a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(a); !os.IsNotExist(err) {
+		t.Error("sess-a should be gone")
+	}
+	if _, err := os.Stat(filepath.Join(bDir, "survivor.txt")); err != nil {
+		t.Errorf("sess-b was touched: %v", err)
+	}
+	for _, bad := range []string{"", "..", "a/b", "../escape"} {
+		if err := Remove(project, bad); err == nil {
+			t.Errorf("id %q was accepted for deletion", bad)
+		}
+	}
+	// Removing the last one folds the empty parent up.
+	if err := Remove(project, "sess-b"); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Dir(bDir)
+	if _, err := os.Stat(parent); !os.IsNotExist(err) {
+		t.Errorf("emptied work/ parent should be folded up: %v", err)
+	}
+}

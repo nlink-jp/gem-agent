@@ -1,0 +1,211 @@
+package cmd
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"text/tabwriter"
+	"time"
+
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
+	"github.com/nlink-jp/gem-agent/internal/session"
+	"github.com/nlink-jp/gem-agent/internal/workdir"
+
+	"github.com/spf13/cobra"
+)
+
+// The workdirs command is the cleanup half of the ADR-0058 accumulation
+// note (ADR-0059): the note tells the operator what earlier sessions
+// left behind, and this is the tool it points at. It is a CLI
+// subcommand, not a slash command, because freeing disk must not
+// require starting a model session.
+
+var flagWorkdirsYes bool
+
+var workdirsCmd = &cobra.Command{
+	Use:   "workdirs",
+	Short: "List this project's session work directories",
+	Long: `List the work directories earlier sessions of this project left
+behind — id, age, files, size — newest first.
+
+Nothing is ever deleted automatically (ADR-0058); 'workdirs clean' is
+the explicit remedy, and it never touches a running session's directory.`,
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE:         runWorkdirsList,
+}
+
+var workdirsCleanCmd = &cobra.Command{
+	Use:   "clean [session-id]...",
+	Short: "Delete session work directories (asks first)",
+	Long: `Delete the named session work directories, or every one whose
+session is not currently running when no ids are given.
+
+The exact list — ids, sizes, total — is printed and confirmed before
+anything is removed; EOF or anything but 'y' aborts. A directory whose
+session holds its transcript open (a live gem-agent) is skipped.`,
+	SilenceUsage: true,
+	RunE:         runWorkdirsClean,
+}
+
+func init() {
+	workdirsCleanCmd.Flags().BoolVar(&flagWorkdirsYes, "yes", false, "delete without asking (for scripts; interactive confirmation is the default)")
+	workdirsCmd.AddCommand(workdirsCleanCmd)
+	rootCmd.AddCommand(workdirsCmd)
+}
+
+// workdirsProject resolves the project the same way a session would, so
+// the listing shows exactly what the startup note counted.
+func workdirsProject() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return sandbox.ResolveWriteDir(cwd)
+}
+
+func runWorkdirsList(cmd *cobra.Command, _ []string) error {
+	projectDir, err := workdirsProject()
+	if err != nil {
+		return err
+	}
+	infos, err := workdir.List(projectDir, "")
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+	if len(infos) == 0 {
+		fmt.Fprintln(out, "no session work directories here")
+		return nil
+	}
+	sessDir, sessErr := session.DefaultDir()
+	tw := tabwriter.NewWriter(out, 2, 8, 2, ' ', 0)
+	fmt.Fprintln(tw, "SESSION\tAGE\tFILES\tSIZE\t")
+	var total int64
+	for _, in := range infos {
+		note := ""
+		if sessErr == nil && session.InUse(sessDir, projectDir, in.ID) {
+			note = "(running)"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n", in.ID, humanAge(in.LastUsed), in.Files, humanBytes(in.Bytes), note)
+		total += in.Bytes
+	}
+	_ = tw.Flush()
+	fmt.Fprintf(out, "total: %s in %d director%s — delete with 'gem-agent workdirs clean'\n",
+		humanBytes(total), len(infos), plural(len(infos), "y", "ies"))
+	return nil
+}
+
+func runWorkdirsClean(cmd *cobra.Command, args []string) error {
+	projectDir, err := workdirsProject()
+	if err != nil {
+		return err
+	}
+	infos, err := workdir.List(projectDir, "")
+	if err != nil {
+		return err
+	}
+	sessDir, sessErr := session.DefaultDir()
+	live := func(id string) bool {
+		return sessErr == nil && session.InUse(sessDir, projectDir, id)
+	}
+
+	// Select: the named ids, or everything not running. Naming an id
+	// that does not exist is an error, not a silent skip — a cleanup
+	// that quietly ignores a typo looks like it worked (ADR-0037's
+	// allowlist lesson, applied to deletion).
+	byID := map[string]workdir.Info{}
+	for _, in := range infos {
+		byID[in.ID] = in
+	}
+	var picked []workdir.Info
+	if len(args) > 0 {
+		for _, id := range args {
+			in, ok := byID[id]
+			if !ok {
+				return fmt.Errorf("no work directory for session %s here", id)
+			}
+			if live(id) {
+				return fmt.Errorf("session %s is running — not deleting its work directory", id)
+			}
+			picked = append(picked, in)
+		}
+	} else {
+		for _, in := range infos {
+			if live(in.ID) {
+				fmt.Fprintf(cmd.OutOrStdout(), "skipping %s (session is running)\n", in.ID)
+				continue
+			}
+			picked = append(picked, in)
+		}
+	}
+	out := cmd.OutOrStdout()
+	if len(picked) == 0 {
+		fmt.Fprintln(out, "nothing to clean")
+		return nil
+	}
+
+	var total int64
+	for _, in := range picked {
+		fmt.Fprintf(out, "  %s  %s (%d file%s)\n", in.ID, humanBytes(in.Bytes), in.Files, plural(in.Files, "", "s"))
+		total += in.Bytes
+	}
+	fmt.Fprintf(out, "delete %d director%s, %s in total? [y/N] ",
+		len(picked), plural(len(picked), "y", "ies"), humanBytes(total))
+	if !flagWorkdirsYes {
+		// Deny on EOF and on a non-TTY, the approval gate's stance: a
+		// pipe that says nothing has not said yes.
+		if !confirmYes(cmd.InOrStdin()) {
+			fmt.Fprintln(out, "aborted — nothing deleted")
+			return nil
+		}
+	} else {
+		fmt.Fprintln(out, "y (--yes)")
+	}
+
+	for _, in := range picked {
+		if err := workdir.Remove(projectDir, in.ID); err != nil {
+			return fmt.Errorf("remove %s: %w", in.ID, err)
+		}
+		fmt.Fprintf(out, "deleted %s\n", in.ID)
+	}
+	return nil
+}
+
+// confirmYes reads one line and accepts only an explicit yes.
+func confirmYes(in io.Reader) bool {
+	line, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil && line == "" {
+		return false
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "y" || answer == "yes"
+}
+
+// humanAge renders how long ago t was, coarsely — the listing is for
+// telling last week's session from this morning's, not for timing.
+func humanAge(t time.Time) string {
+	if t.IsZero() {
+		return "?"
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
+}
+
+// plural picks the suffix for one-vs-many. Tiny, but the startup note
+// shipped with "1 directory hold" — grammar is part of the contract too.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}

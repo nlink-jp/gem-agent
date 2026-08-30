@@ -186,6 +186,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0056`](adr/0056-stall-warning-threshold.ja.md) — 失速警告が狼を叫んでいた: Gemini の function call は丸ごと 1 part で届くため、大きな書き込み/編集の引数生成中は実測で数十秒〜数分のあいだ 1 バイトも流れない (チャンク以前の問題)。しきい値を 20 秒 → 90 秒に移し、画面には何も足さない — 供給側の事情は ADR に書き、ステータス行には書かない。`/riskbook learn` の抑止フラグは `beginTurnStats` の後に立てる
 - [`ADR-0057`](adr/0057-usage-accounting-records.ja.md) — すべてのモデル呼び出しが `usage` レコードを 1 行残す (source・model・prompt/output/thoughts/cached/total): API は金額を返さないのでコストは「トークン数 × カタログ単価」しかなく、カウントは呼び出し時点でディスクに落ちている必要がある。リスク評価と圧縮の消費はプロセスと共に消えていた。thoughts は output として課金され、cached は prompt の割引内訳 (どちらも実測)
 - [`ADR-0058`](adr/0058-session-work-directory.ja.md) — セッションごとの作業ディレクトリ (state root 配下・session id で採番・resume は同じ場所に戻る): sandbox の書き込みルートかつファイルツールの第 2 ルートで、`GEMAGENT_WORK_DIR` として export される。MCP の結果だけが唯一上限のないツール出力で、file-mediated なサーバが軒並み `workspace_root` を持つに至った原因だった — サーバはモデルの context window を知り得ない。大きすぎる結果は切り捨てずここへ保存し、これまで黙って捨てていた非テキストコンテンツも保存して `view_image` に渡す
+- [`ADR-0059`](adr/0059-workdirs-cleanup-command.ja.md) — `gem-agent workdirs` 一覧 + `clean`: ADR-0058 の蓄積 note の「掃除側」（対処なき報告は無視の訓練にしかならない）。確認が既定で deny-on-EOF、稼働セッションのディレクトリは transcript への共有 flock プローブで判別して決して消さず、掃除はプロジェクト単位・CLI 側 — ディスクを空けるのにモデルセッションを要してはならない
 
 ## History（履歴）
 

@@ -647,3 +647,26 @@ func firstLine(s string, limit int) string {
 	}
 	return s
 }
+
+// InUse reports whether a session is currently held open by a running
+// gem-agent process. Every live logger holds a non-blocking exclusive
+// flock on its transcript for its lifetime (see lockSession), so a
+// shared-flock probe answering EWOULDBLOCK means running. Advisory like
+// the lock it probes: a missing transcript, or a state root on a
+// filesystem without flock, reports not-in-use — callers must fail
+// toward a human reading a list, never toward silent action (ADR-0059).
+func InUse(dir, projectDir, id string) bool {
+	if !ValidID(id) {
+		return false
+	}
+	f, err := os.Open(filepath.Join(projectSubdir(dir, projectDir), id+".jsonl"))
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); err != nil {
+		return err == syscall.EWOULDBLOCK
+	}
+	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	return false
+}

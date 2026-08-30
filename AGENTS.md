@@ -63,7 +63,10 @@ internal/uitext/   ja/en UI string catalogs (ADR-0029): completeness enforced by
                    new operator-facing strings go in BOTH catalogs or make check fails
 internal/statedir/ shared per-project state convention (ADR-0022): root+env override, escape, .project marker
 internal/workdir/  per-session work directory (ADR-0058): layout under the state root,
-                   sweep report, empty-dir removal; GEMAGENT_WORK_DIR is exported at startup
+                   sweep report, empty-dir removal; GEMAGENT_WORK_DIR is exported at startup.
+                   List/Remove back the workdirs cleanup command (ADR-0059) —
+                   confirmation-gated, never a live session's directory
+cmd/workdirs.go    `workdirs` list + `clean` (ADR-0059): the remedy the startup note points at
 internal/telemetry/ opt-in audit events (ADR-0035): metadata only, Cloud Logging or OTLP, Sub(label) for child agents
 internal/diagram/  terminal mermaid rendering (ADR-0042): translate / fit / verify, TUI only
 cmd/settings.go    /settings panel content + edits (ADR-0009)

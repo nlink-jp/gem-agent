@@ -295,8 +295,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			}
 			defer workdir.RemoveIfEmpty(workDir)
 			if dirs, bytes, err := workdir.Sweep(projectDir, sessionID); err == nil && dirs > 0 {
-				fmt.Fprintf(stderr, "note: %d earlier session work director%s hold %s here — nothing is deleted automatically\n",
-					dirs, map[bool]string{true: "y", false: "ies"}[dirs == 1], humanBytes(bytes))
+				verb := "hold"
+				if dirs == 1 {
+					verb = "holds"
+				}
+				fmt.Fprintf(stderr, "note: %d earlier session work director%s %s %s here — review with 'gem-agent workdirs' (nothing is deleted automatically)\n",
+					dirs, plural(dirs, "y", "ies"), verb, humanBytes(bytes))
 			}
 		}
 	}

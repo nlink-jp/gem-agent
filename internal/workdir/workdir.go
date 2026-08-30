@@ -15,16 +15,21 @@
 // isolates it for tests and drills exactly as it isolates those, and a
 // resume lands back in the same directory.
 //
-// Nothing here deletes anything. The files are the point — a report the
-// model produced, a screenshot it was told to look at — and an agent
-// that tidies its own output away between runs is worse than one that
-// accumulates. Retention is the operator's call.
+// Nothing here deletes on its own initiative. The files are the point —
+// a report the model produced, a screenshot it was told to look at —
+// and an agent that tidies its own output away between runs is worse
+// than one that accumulates. Retention is the operator's call, and
+// Remove is its instrument: invoked only by the explicit workdirs
+// command (ADR-0059), behind a confirmation this package never gives
+// itself.
 package workdir
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/statedir"
 )
@@ -74,44 +79,96 @@ func Path(projectDir, sessionID string) (string, error) {
 	return filepath.Join(root, statedir.EscapeProject(projectDir), "work", sessionID), nil
 }
 
-// Sweep reports the work directories of a project's earlier sessions:
-// how many there are and how many bytes they hold, excluding the one in
-// use. It is deliberately a report and not a deletion. Removing a tree
-// of files the operator may not have looked at yet is not a decision an
-// agent gets to make on its own, and a recursive delete driven by a
-// pattern is the shape of mistake this organisation has already paid
-// for once.
-func Sweep(projectDir, currentSessionID string) (dirs int, bytes int64, err error) {
-	current, err := Path(projectDir, currentSessionID)
+// Info describes one session's work directory for the listing and the
+// startup report.
+type Info struct {
+	ID       string
+	Path     string
+	Files    int
+	Bytes    int64
+	LastUsed time.Time
+}
+
+// List returns a project's session work directories, newest first,
+// excluding excludeSessionID when non-empty (the session doing the
+// asking). Read-only: sizes are summed, nothing is touched.
+func List(projectDir, excludeSessionID string) ([]Info, error) {
+	root, err := statedir.Root()
 	if err != nil {
-		return 0, 0, err
+		return nil, err
 	}
-	base := filepath.Dir(current)
+	base := filepath.Join(root, statedir.EscapeProject(projectDir), "work")
 	entries, err := os.ReadDir(base)
 	if os.IsNotExist(err) {
-		return 0, 0, nil
+		return nil, nil
 	}
 	if err != nil {
-		return 0, 0, err
+		return nil, err
 	}
+	var infos []Info
 	for _, e := range entries {
-		if !e.IsDir() || filepath.Join(base, e.Name()) == current {
+		if !e.IsDir() || e.Name() == excludeSessionID {
 			continue
 		}
-		size := int64(0)
-		_ = filepath.WalkDir(filepath.Join(base, e.Name()), func(_ string, d os.DirEntry, err error) error {
+		in := Info{ID: e.Name(), Path: filepath.Join(base, e.Name())}
+		if fi, err := e.Info(); err == nil {
+			in.LastUsed = fi.ModTime()
+		}
+		_ = filepath.WalkDir(in.Path, func(_ string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
 				return nil //nolint:nilerr // an unreadable entry is skipped, not fatal
 			}
 			if info, err := d.Info(); err == nil {
-				size += info.Size()
+				in.Files++
+				in.Bytes += info.Size()
+				if info.ModTime().After(in.LastUsed) {
+					in.LastUsed = info.ModTime()
+				}
 			}
 			return nil
 		})
+		infos = append(infos, in)
+	}
+	sort.Slice(infos, func(i, j int) bool { return infos[i].LastUsed.After(infos[j].LastUsed) })
+	return infos, nil
+}
+
+// Sweep aggregates List for the startup report: how many earlier work
+// directories exist and how many bytes they hold. It is deliberately a
+// report and not a deletion. Removing a tree of files the operator may
+// not have looked at yet is not a decision an agent gets to make on its
+// own; the explicit remedy is the workdirs command (ADR-0059).
+func Sweep(projectDir, currentSessionID string) (dirs int, bytes int64, err error) {
+	if _, err := Path(projectDir, currentSessionID); err != nil {
+		return 0, 0, err
+	}
+	infos, err := List(projectDir, currentSessionID)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, in := range infos {
 		dirs++
-		bytes += size
+		bytes += in.Bytes
 	}
 	return dirs, bytes, nil
+}
+
+// Remove deletes one session's work directory (ADR-0059). The path is
+// computed from a validated single-segment id, never taken from input,
+// so there is nothing to traverse; the caller owns confirmation and the
+// not-while-live check. The parent work/ directory is folded up when
+// this leaves it empty — a non-recursive rmdir that cannot remove
+// anything that still holds files.
+func Remove(projectDir, sessionID string) error {
+	dir, err := Path(projectDir, sessionID)
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	RemoveIfEmpty(filepath.Dir(dir))
+	return nil
 }
 
 // RemoveIfEmpty deletes the directory when the session put nothing in

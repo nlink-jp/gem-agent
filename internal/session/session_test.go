@@ -481,3 +481,30 @@ func TestPreviewPrefersTypedMessagesAndRendersShellCommands(t *testing.T) {
 		})
 	}
 }
+
+// InUse is the not-while-live guard for workdirs clean (ADR-0059): a
+// running logger holds the transcript flock, so its session reads as in
+// use exactly until it closes.
+func TestInUseTracksTheTranscriptLock(t *testing.T) {
+	dir, project := t.TempDir(), t.TempDir()
+	lg, err := Open(dir, project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := lg.ID()
+	if !InUse(dir, project, id) {
+		t.Error("a session with an open logger must read as in use")
+	}
+	if err := lg.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if InUse(dir, project, id) {
+		t.Error("a closed session must not read as in use")
+	}
+	if InUse(dir, project, "20990101-000000") {
+		t.Error("a session with no transcript must read as not in use")
+	}
+	if InUse(dir, project, "../etc/passwd") {
+		t.Error("a malformed id must read as not in use, and must not be probed")
+	}
+}

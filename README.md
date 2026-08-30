@@ -43,7 +43,9 @@ calls ask for approval before running. Each session also gets a work
 directory of its own for anything that is not part of the project —
 intermediate data, an oversized tool result, a screenshot a server
 returned — so the working copy stays clean. `/status` names it, and
-nothing in it is ever deleted for you. Requirements: macOS (Apple
+nothing in it is ever deleted for you — `gem-agent workdirs` lists what
+earlier sessions left behind, and `workdirs clean` removes it after
+showing you exactly what and asking first. Requirements: macOS (Apple
 Silicon), a Google Cloud project with Vertex AI enabled, and ADC
 (`gcloud auth application-default login`) — details in
 [configuration](docs/en/reference/configuration.md).

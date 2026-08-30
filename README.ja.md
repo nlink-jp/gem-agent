@@ -42,7 +42,9 @@ gem-agent -p "このリポジトリを要約して"      # 単発実行、パイ
 専用の作業ディレクトリが用意され、プロジェクトの一部でないもの——
 中間データ、大きすぎるツール結果、サーバーが返した画像——はそちらに
 落ちるので、作業コピーは汚れません。`/status` が場所を表示し、
-中身が自動で削除されることはありません。動作要件は macOS
+中身が自動で削除されることはありません — 過去セッションの残置分は
+`gem-agent workdirs` で一覧し、`workdirs clean` が対象を提示して
+確認の上で削除します。動作要件は macOS
 （Apple Silicon）、Vertex AI が有効な Google Cloud プロジェクト、ADC
 （`gcloud auth application-default login`）— 詳細は
 [設定](docs/ja/reference/configuration.ja.md)。
