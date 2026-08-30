@@ -182,11 +182,13 @@ func Refs(text string) []string {
 	return refs
 }
 
-// Expand resolves every reference in text against projectDir and returns
-// the attachments plus the references that failed. Text itself is not
-// modified: what the operator typed stays what the model sees as the
-// instruction, with the contents delivered alongside.
-func Expand(ctx context.Context, text, projectDir string, lim Limits) ([]Attachment, []Problem) {
+// Expand resolves every reference in text against projectDir — and, for
+// absolute paths, the session work directory (ADR-0058): spilled MCP
+// results and staged intermediates land there, and an operator who can
+// see a path in the conversation must be able to @-reference it. Text
+// itself is not modified: what the operator typed stays what the model
+// sees as the instruction, with the contents delivered alongside.
+func Expand(ctx context.Context, text, projectDir, workDir string, lim Limits) ([]Attachment, []Problem) {
 	var atts []Attachment
 	var problems []Problem
 	total := 0
@@ -229,7 +231,7 @@ func Expand(ctx context.Context, text, projectDir string, lim Limits) ([]Attachm
 			atts = append(atts, att)
 			continue
 		}
-		abs, err := resolve(projectDir, ref)
+		abs, err := resolve(projectDir, workDir, ref)
 		if err != nil {
 			problems = append(problems, Problem{ref, err.Error()})
 			continue
@@ -408,7 +410,9 @@ func resolveImagePath(projectDir, ref string) (string, error) {
 		p = filepath.Join(home, strings.TrimPrefix(p, "~"))
 	}
 	if !filepath.IsAbs(p) {
-		return resolve(projectDir, ref)
+		// A relative image reference means the project; absolute paths
+		// take the anywhere branch below, work directory included.
+		return resolve(projectDir, "", ref)
 	}
 	p = filepath.Clean(p)
 	real, err := filepath.EvalSymlinks(p)
@@ -461,29 +465,41 @@ func attachDir(ref, abs string, lim Limits) (Attachment, error) {
 	return Attachment{Ref: ref, Kind: "directory", Content: content, Bytes: len(content)}, nil
 }
 
-// resolve confines a reference to the project directory, checking both
-// the lexical path and the symlink-resolved one.
-func resolve(projectDir, ref string) (string, error) {
+// resolve confines a reference to the project directory and, when the
+// session has one, the work directory — checking both the lexical path
+// and the symlink-resolved one. A relative reference always means the
+// project; the work directory is reached only by the absolute path the
+// conversation shows.
+func resolve(projectDir, workDir, ref string) (string, error) {
 	if projectDir == "" {
 		return "", fmt.Errorf("no project directory")
 	}
+	inRoots := func(p string) bool {
+		return within(projectDir, p) || (workDir != "" && within(workDir, p))
+	}
+	outside := func(suffix string) error {
+		if workDir == "" {
+			return fmt.Errorf("outside the project directory%s", suffix)
+		}
+		return fmt.Errorf("outside the project and work directories%s", suffix)
+	}
 	p := ref
 	if strings.HasPrefix(p, "~") {
-		return "", fmt.Errorf("outside the project directory")
+		return "", outside("")
 	}
 	if !filepath.IsAbs(p) {
 		p = filepath.Join(projectDir, p)
 	}
 	p = filepath.Clean(p)
-	if !within(projectDir, p) {
-		return "", fmt.Errorf("outside the project directory")
+	if !inRoots(p) {
+		return "", outside("")
 	}
 	real, err := filepath.EvalSymlinks(p)
 	if err != nil {
 		return "", fmt.Errorf("not found")
 	}
-	if !within(projectDir, real) {
-		return "", fmt.Errorf("outside the project directory (via symlink)")
+	if !inRoots(real) {
+		return "", outside(" (via symlink)")
 	}
 	return p, nil
 }
@@ -508,7 +524,9 @@ func Complete(projectDir, prefix string, max int) []string {
 	default:
 		base = prefix
 	}
-	abs, err := resolve(projectDir, dir)
+	// Completion suggests project-relative names only; an absolute
+	// work-dir path is typed (or pasted) whole, not completed.
+	abs, err := resolve(projectDir, "", dir)
 	if err != nil {
 		return nil
 	}

@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **`@`-references reach the session work directory.** Spilled MCP results and
+  staged intermediates land there and their paths are visible in the
+  conversation, but the reference resolver still confined text references to
+  the project alone — the last one-root consumer, found by enumerating every
+  consumer of the old boundary after v0.56.1. A relative reference still means
+  the project; the work directory is reached only by the absolute path the
+  conversation shows; outside both roots (sibling-prefix paths and planted
+  symlinks included) is still refused, and with no work directory the refusal
+  keeps its one-root wording.
+
 ## [0.56.1] - 2026-08-31
 
 ### Fixed

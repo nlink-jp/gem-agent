@@ -577,7 +577,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 		lim.Clipboard = a.clipboard
 		lim.UploadMedia = a.mediaUpload
 		var problems []mention.Problem
-		atts, problems = mention.Expand(ctx, input, a.registry.ProjectDir(), lim)
+		atts, problems = mention.Expand(ctx, input, a.registry.ProjectDir(), a.registry.WorkDir(), lim)
 		if a.onAttach != nil && (len(atts) > 0 || len(problems) > 0) {
 			a.onAttach(atts, problems)
 		}

@@ -63,7 +63,7 @@ func TestExpandFileAndDir(t *testing.T) {
 		"src/b.go":   "package b",
 		"docs/x.txt": "doc",
 	})
-	atts, problems := Expand(context.Background(), "@README.md と @src/ を見て", proj, DefaultLimits())
+	atts, problems := Expand(context.Background(), "@README.md と @src/ を見て", proj, "", DefaultLimits())
 	if len(problems) != 0 {
 		t.Fatalf("problems = %v", problems)
 	}
@@ -96,7 +96,7 @@ func TestExpandConfinement(t *testing.T) {
 		filepath.Join(outside, "secret.txt"),
 		"link/secret.txt",
 	} {
-		atts, problems := Expand(context.Background(), "@"+ref, proj, DefaultLimits())
+		atts, problems := Expand(context.Background(), "@"+ref, proj, "", DefaultLimits())
 		if len(atts) != 0 {
 			t.Errorf("%q attached %d files, want 0", ref, len(atts))
 		}
@@ -108,7 +108,7 @@ func TestExpandConfinement(t *testing.T) {
 
 func TestExpandMissingFileIsReported(t *testing.T) {
 	proj := projectWith(t, nil)
-	atts, problems := Expand(context.Background(), "@nope.txt", proj, DefaultLimits())
+	atts, problems := Expand(context.Background(), "@nope.txt", proj, "", DefaultLimits())
 	if len(atts) != 0 || len(problems) != 1 || problems[0].Reason != "not found" {
 		t.Errorf("atts=%v problems=%v", atts, problems)
 	}
@@ -119,7 +119,7 @@ func TestExpandLimits(t *testing.T) {
 	proj := projectWith(t, map[string]string{"big.txt": big, "big2.txt": big})
 	lim := Limits{PerFileBytes: 1000, TotalBytes: 1500, DirEntries: 10}
 
-	atts, problems := Expand(context.Background(), "@big.txt @big2.txt", proj, lim)
+	atts, problems := Expand(context.Background(), "@big.txt @big2.txt", proj, "", lim)
 	if len(atts) != 1 {
 		t.Fatalf("budget should stop the second file: atts=%d", len(atts))
 	}
@@ -207,7 +207,7 @@ func TestExpandAttachesProjectImages(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "shot.png"), tinyPNG, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	atts, problems := Expand(context.Background(), "@shot.png what is this", dir, DefaultLimits())
+	atts, problems := Expand(context.Background(), "@shot.png what is this", dir, "", DefaultLimits())
 	if len(problems) != 0 || len(atts) != 1 {
 		t.Fatalf("atts=%v problems=%v", atts, problems)
 	}
@@ -229,13 +229,13 @@ func TestExpandImageOutsideProjectAllowedTextRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	atts, problems := Expand(context.Background(), "@"+img+" describe", project, DefaultLimits())
+	atts, problems := Expand(context.Background(), "@"+img+" describe", project, "", DefaultLimits())
 	if len(problems) != 0 || len(atts) != 1 || atts[0].Kind != "image" {
 		t.Fatalf("out-of-project image refused: atts=%v problems=%v", atts, problems)
 	}
 
 	// A text file outside the project stays refused.
-	_, problems = Expand(context.Background(), "@"+filepath.Join(outside, "notes.txt")+" read", project, DefaultLimits())
+	_, problems = Expand(context.Background(), "@"+filepath.Join(outside, "notes.txt")+" read", project, "", DefaultLimits())
 	if len(problems) != 1 {
 		t.Fatalf("out-of-project text was attached: %v", problems)
 	}
@@ -249,7 +249,7 @@ func TestExpandRejectsFakeImages(t *testing.T) {
 	if err := os.WriteFile(fake, []byte("#!/bin/sh\necho secrets\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	atts, problems := Expand(context.Background(), "@"+fake, project, DefaultLimits())
+	atts, problems := Expand(context.Background(), "@"+fake, project, "", DefaultLimits())
 	if len(atts) != 0 || len(problems) != 1 || !strings.Contains(problems[0].Reason, "not an image") {
 		t.Fatalf("fake image accepted: atts=%v problems=%v", atts, problems)
 	}
@@ -258,20 +258,20 @@ func TestExpandRejectsFakeImages(t *testing.T) {
 func TestExpandClipboardRoute(t *testing.T) {
 	lim := DefaultLimits()
 	lim.Clipboard = func() ([]byte, error) { return tinyPNG, nil }
-	atts, problems := Expand(context.Background(), "@clipboard ここがおかしい", t.TempDir(), lim)
+	atts, problems := Expand(context.Background(), "@clipboard ここがおかしい", t.TempDir(), "", lim)
 	if len(problems) != 0 || len(atts) != 1 || atts[0].Kind != "image" || atts[0].Ref != "clipboard" {
 		t.Fatalf("atts=%v problems=%v", atts, problems)
 	}
 
 	// No clipboard hook: a reported problem, never a silent no-op.
-	_, problems = Expand(context.Background(), "@clipboard x", t.TempDir(), DefaultLimits())
+	_, problems = Expand(context.Background(), "@clipboard x", t.TempDir(), "", DefaultLimits())
 	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "unavailable") {
 		t.Fatalf("problems = %v", problems)
 	}
 
 	// Clipboard errors surface as-is ("no image on the clipboard").
 	lim.Clipboard = func() ([]byte, error) { return nil, fmt.Errorf("no image on the clipboard") }
-	_, problems = Expand(context.Background(), "@clipboard x", t.TempDir(), lim)
+	_, problems = Expand(context.Background(), "@clipboard x", t.TempDir(), "", lim)
 	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "no image") {
 		t.Fatalf("problems = %v", problems)
 	}
@@ -284,7 +284,7 @@ func TestExpandImageLimits(t *testing.T) {
 	}
 	lim := DefaultLimits()
 	lim.ImageBytes = 8 // smaller than tinyPNG: refused whole, never truncated
-	_, problems := Expand(context.Background(), "@a.png", dir, lim)
+	_, problems := Expand(context.Background(), "@a.png", dir, "", lim)
 	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "limit") {
 		t.Fatalf("oversized image: %v", problems)
 	}
@@ -294,8 +294,89 @@ func TestExpandImageLimits(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "b.png"), tinyPNG, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	atts, problems := Expand(context.Background(), "@a.png @b.png", dir, lim)
+	atts, problems := Expand(context.Background(), "@a.png @b.png", dir, "", lim)
 	if len(atts) != 1 || len(problems) != 1 {
 		t.Fatalf("image count cap: atts=%d problems=%v", len(atts), problems)
+	}
+}
+
+// The session work directory (ADR-0058) holds spilled MCP results and
+// staged intermediates, and the operator can see those paths in the
+// conversation — so an @-reference to one has to attach. Found by
+// applying the v0.56.1 lesson (enumerate every consumer of the old
+// one-root boundary): this resolver was the remaining consumer.
+func TestWorkDirReferencesAttach(t *testing.T) {
+	// Resolved roots, as production passes them (registry resolves both;
+	// macOS t.TempDir() sits under a symlinked /var).
+	proj := projectWith(t, nil)
+	work, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spilled := filepath.Join(work, "rdns-lookup-lookup_rdns-99d6ac00.json")
+	if err := os.WriteFile(spilled, []byte(`{"kind":"rdns"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	atts, problems := Expand(context.Background(), "@"+spilled+" を見て", proj, work, DefaultLimits())
+	if len(problems) != 0 {
+		t.Fatalf("work-dir reference refused: %v", problems)
+	}
+	if len(atts) != 1 || !strings.Contains(atts[0].Content, `"kind":"rdns"`) {
+		t.Fatalf("attachment = %+v", atts)
+	}
+}
+
+// Adding the root must not widen anything else: outside both roots is
+// still refused, a sibling-prefix directory is outside, and a symlink
+// planted in the work directory is not a way out.
+func TestWorkDirDoesNotWidenTheBoundary(t *testing.T) {
+	proj := projectWith(t, nil)
+	work, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "x.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, problems := Expand(context.Background(), "@"+filepath.Join(outside, "x.txt"), proj, work, DefaultLimits())
+	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "outside the project and work directories") {
+		t.Fatalf("outside both roots should be refused with both roots named: %v", problems)
+	}
+
+	sibling := work + "-evil"
+	if err := os.MkdirAll(sibling, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sibling, "x.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, problems = Expand(context.Background(), "@"+filepath.Join(sibling, "x.txt"), proj, work, DefaultLimits())
+	if len(problems) != 1 {
+		t.Fatalf("sibling-prefix path should be refused: %v", problems)
+	}
+
+	link := filepath.Join(work, "escape.txt")
+	if err := os.Symlink(filepath.Join(outside, "x.txt"), link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	_, problems = Expand(context.Background(), "@"+link, proj, work, DefaultLimits())
+	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "symlink") {
+		t.Fatalf("symlink out of the work dir should be refused: %v", problems)
+	}
+}
+
+// A session with no work directory keeps the one-root wording — the
+// refusal must not claim a root that does not exist.
+func TestNoWorkDirKeepsTheOneRootWording(t *testing.T) {
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "x.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, problems := Expand(context.Background(), "@"+filepath.Join(outside, "x.txt"), t.TempDir(), "", DefaultLimits())
+	if len(problems) != 1 || problems[0].Reason != "outside the project directory" {
+		t.Fatalf("got %v", problems)
 	}
 }

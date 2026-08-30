@@ -28,7 +28,7 @@ func TestMediaBucketAlwaysWins(t *testing.T) {
 		uploaded = append(uploaded, p+"|"+mime)
 		return "gs://ops/gem-agent/media/abc.wav", nil
 	}
-	atts, problems := Expand(context.Background(), "聞いて @memo.wav", dir, lim)
+	atts, problems := Expand(context.Background(), "聞いて @memo.wav", dir, "", lim)
 	if len(problems) != 0 || len(atts) != 1 {
 		t.Fatalf("atts=%d problems=%v", len(atts), problems)
 	}
@@ -50,14 +50,14 @@ func TestMediaInlineCapWithoutBucket(t *testing.T) {
 
 	lim := DefaultLimits()
 	lim.MediaBytes = 4096
-	atts, problems := Expand(context.Background(), "@s.wav", dir, lim)
+	atts, problems := Expand(context.Background(), "@s.wav", dir, "", lim)
 	if len(problems) != 0 || len(atts) != 1 || len(atts[0].Data) == 0 || atts[0].URI != "" {
 		t.Fatalf("inline attach failed: %+v %v", atts, problems)
 	}
 
 	big := filepath.Join(dir, "b.mp4")
 	_ = os.WriteFile(big, fakeWAV(8192), 0o644)
-	_, problems = Expand(context.Background(), "@b.mp4", dir, lim)
+	_, problems = Expand(context.Background(), "@b.mp4", dir, "", lim)
 	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "[gcp].bucket") {
 		t.Errorf("oversize refusal must name the bucket remedy: %v", problems)
 	}
@@ -68,7 +68,7 @@ func TestMediaRejectsPlainText(t *testing.T) {
 	dir := realTempDir(t)
 	fake := filepath.Join(dir, "fake.mp3")
 	_ = os.WriteFile(fake, []byte("this is just text pretending"), 0o644)
-	_, problems := Expand(context.Background(), "@fake.mp3", dir, DefaultLimits())
+	_, problems := Expand(context.Background(), "@fake.mp3", dir, "", DefaultLimits())
 	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "not a media file") {
 		t.Errorf("plain text accepted as media: %v", problems)
 	}
@@ -84,7 +84,7 @@ func TestMediaUploadFailureReported(t *testing.T) {
 	lim.UploadMedia = func(_ context.Context, p, mime string) (string, error) {
 		return "", os.ErrPermission
 	}
-	atts, problems := Expand(context.Background(), "@m.mov", dir, lim)
+	atts, problems := Expand(context.Background(), "@m.mov", dir, "", lim)
 	if len(atts) != 0 || len(problems) != 1 || !strings.Contains(problems[0].Reason, "upload") {
 		t.Errorf("atts=%v problems=%v", atts, problems)
 	}

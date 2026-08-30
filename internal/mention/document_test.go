@@ -24,7 +24,7 @@ func TestExpandDocuments(t *testing.T) {
 	_ = zw.Close()
 	_ = os.WriteFile(filepath.Join(dir, "note.docx"), buf.Bytes(), 0o644)
 
-	atts, problems := Expand(context.Background(), "読んで @spec.pdf と @note.docx", dir, DefaultLimits())
+	atts, problems := Expand(context.Background(), "読んで @spec.pdf と @note.docx", dir, "", DefaultLimits())
 	if len(problems) != 0 {
 		t.Fatalf("problems: %v", problems)
 	}
@@ -41,14 +41,14 @@ func TestExpandDocuments(t *testing.T) {
 	// Oversized PDF: refused whole, limit named.
 	lim := DefaultLimits()
 	lim.DocumentBytes = 8
-	_, problems = Expand(context.Background(), "@spec.pdf", dir, lim)
+	_, problems = Expand(context.Background(), "@spec.pdf", dir, "", lim)
 	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "limit is 8") {
 		t.Errorf("oversize refusal: %v", problems)
 	}
 
 	// A renamed text file is a reported problem, not a silent attach.
 	_ = os.WriteFile(filepath.Join(dir, "fake.pdf"), []byte("just text"), 0o644)
-	_, problems = Expand(context.Background(), "@fake.pdf", dir, DefaultLimits())
+	_, problems = Expand(context.Background(), "@fake.pdf", dir, "", DefaultLimits())
 	if len(problems) != 1 {
 		t.Errorf("renamed file: %v", problems)
 	}
