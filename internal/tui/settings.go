@@ -202,8 +202,8 @@ func (m Model) settingsView() string {
 		if len(row.Values) == 0 {
 			value = m.st.hint.Render(value)
 		}
-		b.WriteString(fmt.Sprintf("\n%s%s%s %s %s", marker, label, pad, value,
-			m.st.hint.Render("("+row.Source+")")))
+		fmt.Fprintf(&b, "\n%s%s%s %s %s", marker, label, pad, value,
+			m.st.hint.Render("("+row.Source+")"))
 	}
 	if end < len(rows) {
 		b.WriteString("\n" + m.st.hint.Render(fmt.Sprintf("  … %d more below", len(rows)-end)))

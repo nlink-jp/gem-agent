@@ -15,7 +15,7 @@ func seed(t *testing.T, dir, project, model string, msgs ...llm.Message) string 
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lg.Close()
+	defer func() { _ = lg.Close() }()
 	for _, m := range msgs {
 		if err := lg.Log(session.KindMessage, m); err != nil {
 			t.Fatal(err)
@@ -113,7 +113,7 @@ func TestOpenSessionLogWritesAHeaderAndResumeAppends(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := lg.Path()
-	lg.Close()
+	_ = lg.Close()
 
 	history, header, _, err := session.Load(path)
 	if err != nil {
@@ -190,7 +190,7 @@ func resolveAndLoad(dir, projectDir, model, id string) (session.Meta, []llm.Mess
 	if err != nil {
 		return meta, nil, nil, err
 	}
-	defer lg.Close()
+	defer func() { _ = lg.Close() }()
 	history, notes, err := loadResumedHistory(lg, meta.ID)
 	return meta, history, notes, err
 }

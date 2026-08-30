@@ -29,11 +29,11 @@ func TestTornLineCostsOnlyItself(t *testing.T) {
 	id := lg.ID()
 	path := lg.Path()
 	_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "turn one"})
-	lg.Close()
+	_ = lg.Close()
 
 	f, _ := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
-	f.WriteString(`{"ts":"2026-01-01T00:00:00Z","kind":"message","da`) // torn, no newline
-	f.Close()
+	_, _ = f.WriteString(`{"ts":"2026-01-01T00:00:00Z","kind":"message","da`) // torn, no newline
+	_ = f.Close()
 
 	lg2, err := Reopen(dir, "/p", id)
 	if err != nil {
@@ -42,7 +42,7 @@ func TestTornLineCostsOnlyItself(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		_ = lg2.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "post-resume turn"})
 	}
-	lg2.Close()
+	_ = lg2.Close()
 
 	history, _, skipped, err := Load(path)
 	if err != nil {
@@ -63,13 +63,13 @@ func TestCorruptMiddleLineIsSkippedNotFatal(t *testing.T) {
 	id := lg.ID()
 	path := lg.Path()
 	_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "before"})
-	lg.Close()
+	_ = lg.Close()
 	f, _ := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
-	f.WriteString("this is not json\n")
-	f.Close()
+	_, _ = f.WriteString("this is not json\n")
+	_ = f.Close()
 	lg2, _ := Reopen(dir, "/p", id)
 	_ = lg2.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "after"})
-	lg2.Close()
+	_ = lg2.Close()
 
 	history, _, skipped, err := Load(path)
 	if err != nil || len(history) != 2 || skipped != 1 {
@@ -88,13 +88,13 @@ func TestCompactionAfterSkippedLinesRefused(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "m"})
 	}
-	lg.Close()
+	_ = lg.Close()
 	f, _ := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
-	f.WriteString("corrupt\n")
-	f.Close()
+	_, _ = f.WriteString("corrupt\n")
+	_ = f.Close()
 	lg2, _ := Reopen(dir, "/p", id)
 	_ = lg2.Log(KindCompaction, Compaction{Replaced: 2, Message: llm.Message{Role: llm.RoleUser, Content: "summary"}})
-	lg2.Close()
+	_ = lg2.Close()
 
 	if _, _, _, err := Load(path); err == nil || !strings.Contains(err.Error(), "unreadable lines precede a compaction") {
 		t.Errorf("Load = %v — a compaction after skipped lines must refuse, not guess", err)
@@ -111,7 +111,7 @@ func TestClearRecordReplays(t *testing.T) {
 	_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleAssistant, Content: "discarded two"})
 	_ = lg.Log(KindClear, map[string]any{"messages": 2})
 	_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "kept"})
-	lg.Close()
+	_ = lg.Close()
 
 	history, _, skipped, err := Load(lg.Path())
 	if err != nil || skipped != 0 {
@@ -128,17 +128,17 @@ func TestClearResetsCompactionSkipGuard(t *testing.T) {
 	id := lg.ID()
 	path := lg.Path()
 	_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "old"})
-	lg.Close()
+	_ = lg.Close()
 	f, _ := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
-	f.WriteString("corrupt line before clear\n")
-	f.Close()
+	_, _ = f.WriteString("corrupt line before clear\n")
+	_ = f.Close()
 	lg2, _ := Reopen(dir, "/p", id)
 	_ = lg2.Log(KindClear, nil)
 	for i := 0; i < 3; i++ {
 		_ = lg2.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "fresh"})
 	}
 	_ = lg2.Log(KindCompaction, Compaction{Replaced: 2, Message: llm.Message{Role: llm.RoleUser, Content: "sum"}})
-	lg2.Close()
+	_ = lg2.Close()
 
 	history, _, skipped, err := Load(path)
 	if err != nil {
@@ -154,17 +154,17 @@ func TestConcurrentReopenRefused(t *testing.T) {
 	dir := t.TempDir()
 	lg := openWithHeader(t, dir)
 	id := lg.ID()
-	defer lg.Close()
+	defer func() { _ = lg.Close() }()
 
 	if _, err := Reopen(dir, "/p", id); err == nil || !strings.Contains(err.Error(), "in use") {
 		t.Errorf("Reopen while the session is open = %v, want an in-use refusal", err)
 	}
-	lg.Close()
+	_ = lg.Close()
 	lg2, err := Reopen(dir, "/p", id)
 	if err != nil {
 		t.Errorf("Reopen after close: %v — the lock must die with the file", err)
 	} else {
-		lg2.Close()
+		_ = lg2.Close()
 	}
 }
 
@@ -178,7 +178,7 @@ func TestSchemaOneFileStillLoads(t *testing.T) {
 	}
 	_ = lg.Log(KindHeader, Header{Schema: 1, Project: "/p", Model: "m"})
 	_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "old but fine"})
-	lg.Close()
+	_ = lg.Close()
 	history, header, _, err := Load(lg.Path())
 	if err != nil || len(history) != 1 || header.Schema != 1 {
 		t.Errorf("schema-1 load: history=%d header=%+v err=%v", len(history), header, err)

@@ -45,7 +45,7 @@ func recordingSink(t *testing.T) (*Sink, *recorder) {
 func attrsOf(rec sdklog.Record) map[string]string {
 	out := map[string]string{}
 	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
-		out[string(kv.Key)] = kv.Value.Emit()
+		out[string(kv.Key)] = kv.Value.String()
 		return true
 	})
 	return out
@@ -188,11 +188,11 @@ func TestHeadersFile(t *testing.T) {
 	path := dir + "/auth.json"
 
 	// Group/other-readable credentials are refused, naming the fix.
-	os.WriteFile(path, []byte(`{"Authorization":"Bearer tok"}`), 0o644)
+	_ = os.WriteFile(path, []byte(`{"Authorization":"Bearer tok"}`), 0o644)
 	if _, err := loadHeaders(path); err == nil || !strings.Contains(err.Error(), "chmod 600") {
 		t.Errorf("world-readable headers file accepted: %v", err)
 	}
-	os.Chmod(path, 0o600)
+	_ = os.Chmod(path, 0o600)
 	h, err := loadHeaders(path)
 	if err != nil || h["Authorization"] != "Bearer tok" {
 		t.Fatalf("headers = %v, %v", h, err)
@@ -202,7 +202,7 @@ func TestHeadersFile(t *testing.T) {
 		t.Errorf("unset headers_file: %v %v", h, err)
 	}
 	// Garbage is named as such.
-	os.WriteFile(path, []byte("not json"), 0o600)
+	_ = os.WriteFile(path, []byte("not json"), 0o600)
 	if _, err := loadHeaders(path); err == nil || !strings.Contains(err.Error(), "JSON") {
 		t.Errorf("garbage accepted: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestHeadersRideTheWire(t *testing.T) {
 
 	dir := t.TempDir()
 	path := dir + "/auth.json"
-	os.WriteFile(path, []byte(`{"Authorization":"Bearer file-token"}`), 0o600)
+	_ = os.WriteFile(path, []byte(`{"Authorization":"Bearer file-token"}`), 0o600)
 
 	sink, err := New(context.Background(), Config{
 		Enabled: true, Backend: "otlp-http",

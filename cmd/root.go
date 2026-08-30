@@ -246,7 +246,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		case err != nil:
 			fmt.Fprintf(stderr, "warning: session log disabled: %v\n", err)
 		default:
-			defer lg.Close()
+			defer func() { _ = lg.Close() }()
 			sessionLog = lg
 			sessionPath = lg.Path()
 			sessionID = lg.ID()

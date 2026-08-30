@@ -18,8 +18,8 @@ func clipboardImage() ([]byte, error) {
 		return nil, err
 	}
 	path := tmp.Name()
-	tmp.Close()
-	defer os.Remove(path)
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(path) }()
 
 	script := fmt.Sprintf(`set f to open for access POSIX file %q with write permission
 try

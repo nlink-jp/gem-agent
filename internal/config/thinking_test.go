@@ -21,11 +21,11 @@ func TestThinkingValidation(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	os.WriteFile(path, []byte("[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\nthinking = \"turbo\"\n"), 0o644)
+	_ = os.WriteFile(path, []byte("[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\nthinking = \"turbo\"\n"), 0o644)
 	if _, err := LoadWithOverrides(path, Overrides{}); err == nil || !strings.Contains(err.Error(), "thinking") {
 		t.Errorf("invalid thinking loaded without error: %v", err)
 	}
-	os.WriteFile(path, []byte("[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\nthinking = \"high\"\n"), 0o644)
+	_ = os.WriteFile(path, []byte("[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\nthinking = \"high\"\n"), 0o644)
 	cfg, err := LoadWithOverrides(path, Overrides{})
 	if err != nil || cfg.Model.Thinking != "high" {
 		t.Errorf("valid thinking: cfg=%v err=%v", cfg.Model.Thinking, err)
@@ -41,7 +41,7 @@ func TestThinkingValidation(t *testing.T) {
 func TestThinkingFlagOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
-	os.WriteFile(path, []byte("[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\nthinking = \"low\"\n"), 0o644)
+	_ = os.WriteFile(path, []byte("[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\nthinking = \"low\"\n"), 0o644)
 
 	cfg, err := LoadWithOverrides(path, Overrides{Thinking: "high"})
 	if err != nil || cfg.Model.Thinking != "high" {

@@ -19,7 +19,7 @@ func TestOpenCreatesPerProjectLayout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lg.Close()
+	defer func() { _ = lg.Close() }()
 
 	wantDir := filepath.Join(dir, "projects", statedir.EscapeProject("/proj/alpha"))
 	if filepath.Dir(lg.Path()) != wantDir {
@@ -63,7 +63,7 @@ func TestLegacyFlatSessionStaysUsable(t *testing.T) {
 		t.Errorf("Reopen moved the file: %s", lg.Path())
 	}
 	_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "appended after upgrade"})
-	lg.Close()
+	_ = lg.Close()
 	history, _, _, err := Load(legacy)
 	if err != nil || len(history) != 2 {
 		t.Errorf("legacy resume roundtrip: %d messages, err=%v", len(history), err)
@@ -81,7 +81,7 @@ func TestListMergesLayoutsAndSeparatesProjects(t *testing.T) {
 	}
 	_ = lg.Log(KindHeader, Header{Schema: SchemaVersion, Model: "m", Project: "/proj"})
 	_ = lg.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "new layout"})
-	lg.Close()
+	_ = lg.Close()
 	// New-layout session for another project.
 	other, err := Open(dir, "/other")
 	if err != nil {
@@ -89,7 +89,7 @@ func TestListMergesLayoutsAndSeparatesProjects(t *testing.T) {
 	}
 	_ = other.Log(KindHeader, Header{Schema: SchemaVersion, Model: "m", Project: "/other"})
 	_ = other.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "other project"})
-	other.Close()
+	_ = other.Close()
 	// Legacy flat session for /proj.
 	legacy := filepath.Join(dir, "20260101-120000.jsonl")
 	lines := []string{

@@ -25,7 +25,8 @@ the [promotion criteria](docs/en/reference/promotion.md) are written.
 |------|---------|
 | Build | `make build` → `dist/gem-agent` (never `go build` directly) |
 | Test | `make test` (or `go test ./...`) |
-| Vet + test + docs mirror + build | `make check` |
+| Lint | `make lint` (golangci-lint, org config in `.golangci.yml`) |
+| Vet + lint + test + docs mirror + build | `make check` |
 | Docs mirror only | `make docs-check` |
 | Release archive | `make package` → `dist/gem-agent-vX.Y.Z-darwin-arm64.zip` |
 

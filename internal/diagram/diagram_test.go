@@ -8,20 +8,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// drawn reports whether a source renders at the given width; the old
-// helper wrapped it in a Markdown fence, but the fence path is gone —
-// diagrams are drawn by the tool now (ADR-0043).
-func drawn(src string, width int) bool {
-	_, _, ok := Render(src, width)
-	return ok
-}
-
-// why returns the refusal reason, which the tool hands to the model.
-func why(src string, width int) string {
-	_, w, _ := Render(src, width)
-	return w
-}
-
 func maxWidth(s string) int {
 	w := 0
 	for _, l := range strings.Split(s, "\n") {

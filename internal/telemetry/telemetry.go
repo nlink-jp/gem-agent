@@ -289,7 +289,7 @@ func (r *Recording) Export(_ context.Context, records []sdklog.Record) error {
 	for _, rec := range records {
 		ev := RecordedEvent{Name: rec.EventName(), Attrs: map[string]string{}}
 		rec.WalkAttributes(func(kv attribute.KeyValue) bool {
-			ev.Attrs[string(kv.Key)] = kv.Value.Emit()
+			ev.Attrs[string(kv.Key)] = kv.Value.String()
 			return true
 		})
 		r.events = append(r.events, ev)

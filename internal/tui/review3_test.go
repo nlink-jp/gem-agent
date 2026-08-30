@@ -170,8 +170,7 @@ func TestReleaseTurnDrainsApproval(t *testing.T) {
 	resp := make(chan byte, 1)
 	next, _ := m.Update(ApprovalRequest{Tool: "shell_exec", Detail: "x", Resp: resp})
 	m = next.(Model)
-	next, _ = m.Update(TurnDone{})
-	m = next.(Model)
+	m.Update(TurnDone{})
 	select {
 	case b := <-resp:
 		if b != 'n' {

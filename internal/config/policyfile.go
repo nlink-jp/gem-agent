@@ -216,7 +216,8 @@ func MutatePolicyFile(path string, fn func(*PolicyFile)) (*PolicyFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer lock.Close() // Close releases the flock
+	// Close releases the flock
+	defer func() { _ = lock.Close() }()
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
 		return nil, fmt.Errorf("lock %s: %v", path+".lock", err)
 	}
@@ -262,7 +263,7 @@ func (pf *PolicyFile) Save(path string) error {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	return nil

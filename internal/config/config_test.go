@@ -22,7 +22,7 @@ func clearEnv(t *testing.T) {
 	for _, k := range []string{"GEMAGENT_PROJECT", "GEMAGENT_LOCATION", "GEMAGENT_MODEL",
 		"GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION"} {
 		t.Setenv(k, "")
-		os.Unsetenv(k)
+		_ = os.Unsetenv(k)
 	}
 }
 

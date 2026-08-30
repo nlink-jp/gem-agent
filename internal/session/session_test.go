@@ -17,7 +17,7 @@ func TestLogAppendsJSONL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	if err := l.Log("user", map[string]string{"content": "こんにちは"}); err != nil {
 		t.Fatal(err)
@@ -30,7 +30,7 @@ func TestLogAppendsJSONL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var kinds []string
 	sc := bufio.NewScanner(f)
@@ -55,14 +55,14 @@ func TestOpenCreatesUniqueFilePerSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l1.Close()
+	defer func() { _ = l1.Close() }()
 	// A second session in the same second gets a suffixed file (O_EXCL +
 	// retry) — never silent reuse of the same file.
 	l2, err := Open(dir, "/p")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l2.Close()
+	defer func() { _ = l2.Close() }()
 	if l1.Path() == l2.Path() {
 		t.Error("two sessions share one file")
 	}
@@ -95,7 +95,7 @@ func TestOpenParallelUniqueIDs(t *testing.T) {
 				errs[i] = err
 				return
 			}
-			defer l.Close()
+			defer func() { _ = l.Close() }()
 			paths[i] = l.Path()
 			ids[i] = l.ID()
 		}(i)
@@ -141,7 +141,7 @@ func TestLoadRestoresFullFidelityHistory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	l.Close()
+	_ = l.Close()
 
 	got, header, _, err := Load(l.Path())
 	if err != nil {
@@ -195,7 +195,7 @@ func TestLoadAppliesCompaction(t *testing.T) {
 	if err := l.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "four"}); err != nil {
 		t.Fatal(err)
 	}
-	l.Close()
+	_ = l.Close()
 
 	got, _, _, err := Load(l.Path())
 	if err != nil {
@@ -222,7 +222,7 @@ func TestLoadRejectsNewerSchema(t *testing.T) {
 	if err := l.Log(KindHeader, Header{Schema: SchemaVersion + 1}); err != nil {
 		t.Fatal(err)
 	}
-	l.Close()
+	_ = l.Close()
 	if _, _, _, err := Load(l.Path()); err == nil {
 		t.Fatal("a transcript from a newer build loaded silently")
 	}
@@ -271,7 +271,7 @@ func TestReopenAppendsToTheSameTranscript(t *testing.T) {
 	if err := l.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "before"}); err != nil {
 		t.Fatal(err)
 	}
-	l.Close()
+	_ = l.Close()
 
 	l2, err := Reopen(dir, "/p", l.ID())
 	if err != nil {
@@ -280,7 +280,7 @@ func TestReopenAppendsToTheSameTranscript(t *testing.T) {
 	if err := l2.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "after"}); err != nil {
 		t.Fatal(err)
 	}
-	l2.Close()
+	_ = l2.Close()
 	if l2.Path() != l.Path() {
 		t.Errorf("resume wrote to %s, want %s", l2.Path(), l.Path())
 	}
@@ -307,7 +307,7 @@ func TestListFiltersByProjectAndSortsNewestFirst(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer l.Close()
+		defer func() { _ = l.Close() }()
 		if err := l.Log(KindHeader, Header{Schema: SchemaVersion, Model: "m", Project: project}); err != nil {
 			t.Fatal(err)
 		}
@@ -390,7 +390,7 @@ func TestListSkipsSessionsWithNoConversation(t *testing.T) {
 	if err := real.Log(KindMessage, llm.Message{Role: llm.RoleUser, Content: "the actual work"}); err != nil {
 		t.Fatal(err)
 	}
-	real.Close()
+	_ = real.Close()
 
 	empty, err := Open(dir, "/proj")
 	if err != nil {
@@ -399,7 +399,7 @@ func TestListSkipsSessionsWithNoConversation(t *testing.T) {
 	if err := empty.Log(KindHeader, Header{Schema: SchemaVersion, Model: "m", Project: "/proj"}); err != nil {
 		t.Fatal(err)
 	}
-	empty.Close()
+	_ = empty.Close()
 
 	metas, err := List(dir, "/proj")
 	if err != nil {
@@ -463,7 +463,7 @@ func TestPreviewPrefersTypedMessagesAndRendersShellCommands(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			l.Close()
+			_ = l.Close()
 
 			metas, err := List(dir, "/proj")
 			if err != nil {

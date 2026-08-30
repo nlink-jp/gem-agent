@@ -20,7 +20,7 @@ func fakeWAV(size int) []byte {
 func TestMediaBucketAlwaysWins(t *testing.T) {
 	dir := realTempDir(t)
 	path := filepath.Join(dir, "memo.wav")
-	os.WriteFile(path, fakeWAV(64), 0o644)
+	_ = os.WriteFile(path, fakeWAV(64), 0o644)
 
 	var uploaded []string
 	lim := DefaultLimits()
@@ -46,7 +46,7 @@ func TestMediaBucketAlwaysWins(t *testing.T) {
 func TestMediaInlineCapWithoutBucket(t *testing.T) {
 	dir := realTempDir(t)
 	small := filepath.Join(dir, "s.wav")
-	os.WriteFile(small, fakeWAV(64), 0o644)
+	_ = os.WriteFile(small, fakeWAV(64), 0o644)
 
 	lim := DefaultLimits()
 	lim.MediaBytes = 4096
@@ -56,7 +56,7 @@ func TestMediaInlineCapWithoutBucket(t *testing.T) {
 	}
 
 	big := filepath.Join(dir, "b.mp4")
-	os.WriteFile(big, fakeWAV(8192), 0o644)
+	_ = os.WriteFile(big, fakeWAV(8192), 0o644)
 	_, problems = Expand(context.Background(), "@b.mp4", dir, lim)
 	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "[gcp].bucket") {
 		t.Errorf("oversize refusal must name the bucket remedy: %v", problems)
@@ -67,7 +67,7 @@ func TestMediaInlineCapWithoutBucket(t *testing.T) {
 func TestMediaRejectsPlainText(t *testing.T) {
 	dir := realTempDir(t)
 	fake := filepath.Join(dir, "fake.mp3")
-	os.WriteFile(fake, []byte("this is just text pretending"), 0o644)
+	_ = os.WriteFile(fake, []byte("this is just text pretending"), 0o644)
 	_, problems := Expand(context.Background(), "@fake.mp3", dir, DefaultLimits())
 	if len(problems) != 1 || !strings.Contains(problems[0].Reason, "not a media file") {
 		t.Errorf("plain text accepted as media: %v", problems)
@@ -79,7 +79,7 @@ func TestMediaRejectsPlainText(t *testing.T) {
 func TestMediaUploadFailureReported(t *testing.T) {
 	dir := realTempDir(t)
 	path := filepath.Join(dir, "m.mov")
-	os.WriteFile(path, fakeWAV(64), 0o644)
+	_ = os.WriteFile(path, fakeWAV(64), 0o644)
 	lim := DefaultLimits()
 	lim.UploadMedia = func(_ context.Context, p, mime string) (string, error) {
 		return "", os.ErrPermission

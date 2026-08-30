@@ -69,10 +69,10 @@ func TestSearchReportTruncationRuneSafe(t *testing.T) {
 func TestStartupNotesFreeze(t *testing.T) {
 	var out bytes.Buffer
 	n := &startupNotes{w: &out}
-	n.Write([]byte("warning: one\n"))
+	_, _ = n.Write([]byte("warning: one\n"))
 	n.freeze()
 	for i := 0; i < 100; i++ {
-		n.Write([]byte("[tool] x\n"))
+		_, _ = n.Write([]byte("[tool] x\n"))
 	}
 	if len(n.lines) != 0 {
 		t.Errorf("tee kept %d lines after freeze", len(n.lines))

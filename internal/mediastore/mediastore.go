@@ -55,8 +55,8 @@ func New(ctx context.Context, project, bucket string) (*Uploader, error) {
 	// at NewClient; token refreshes reuse them (verified by a live
 	// upload after the restore).
 	if os.Getenv("GOOGLE_CLOUD_QUOTA_PROJECT") == "" {
-		os.Setenv("GOOGLE_CLOUD_QUOTA_PROJECT", project)
-		defer os.Unsetenv("GOOGLE_CLOUD_QUOTA_PROJECT")
+		_ = os.Setenv("GOOGLE_CLOUD_QUOTA_PROJECT", project)
+		defer func() { _ = os.Unsetenv("GOOGLE_CLOUD_QUOTA_PROJECT") }()
 	}
 	client, err := storage.NewClient(ctx)
 	if err != nil {
@@ -87,7 +87,7 @@ func (u *Uploader) Upload(ctx context.Context, path, contentType string) (string
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
@@ -163,7 +163,7 @@ func (s *gcsStore) Write(ctx context.Context, object, contentType string, r io.R
 	w.ContentType = contentType
 	if _, err := io.Copy(w, r); err != nil {
 		cancel()
-		w.Close()
+		_ = w.Close()
 		return err
 	}
 	return w.Close()

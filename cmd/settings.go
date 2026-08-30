@@ -254,7 +254,7 @@ func writeSettingsTable(out io.Writer, d tui.SettingsData) {
 		}
 		fmt.Fprintf(tw, "  %s\t%s\t(%s)%s\n", row.Label, row.Value, row.Source, editable)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 	fmt.Fprintln(out, "\nrun gem-agent in a terminal for the interactive panel")
 }
 

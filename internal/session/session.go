@@ -187,7 +187,7 @@ func Open(dir, projectDir string) (*Logger, error) {
 				// nothing; removing it by its full literal path is the
 				// error-path cleanup, not data deletion — leaving it
 				// littered zero-byte orphans (review round 2).
-				os.Remove(path)
+				_ = os.Remove(path)
 				return nil, err
 			}
 			return &Logger{f: f, id: id}, nil
@@ -232,7 +232,7 @@ func Reopen(dir, projectDir, id string) (*Logger, error) {
 		buf := make([]byte, 1)
 		if _, err := f.ReadAt(buf, st.Size()-1); err == nil && buf[0] != '\n' {
 			if _, err := f.Write([]byte("\n")); err != nil {
-				f.Close()
+				_ = f.Close()
 				return nil, fmt.Errorf("repairing session tail: %w", err)
 			}
 		}
@@ -246,7 +246,7 @@ func Reopen(dir, projectDir, id string) (*Logger, error) {
 // them had — refusing the second is the only honest answer (ADR-0021).
 func lockSession(f *os.File, id string) error {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		f.Close()
+		_ = f.Close()
 		// Only EWOULDBLOCK means another process holds the lock; a
 		// filesystem without flock (a network-mounted state root)
 		// failed with the same false "already in use" diagnosis
@@ -344,7 +344,7 @@ func Load(path string) ([]llm.Message, Header, int, error) {
 	if err != nil {
 		return nil, Header{}, 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var (
 		header  Header
@@ -454,7 +454,7 @@ func Scan(path string, fn func(kind string, ts time.Time, data json.RawMessage) 
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return forEachLine(f, func(rec *rawRecord) (bool, error) {
 		if rec == nil {
 			return true, nil
@@ -559,7 +559,7 @@ func describe(path, id string) (Meta, error) {
 	if err != nil {
 		return Meta{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	meta := Meta{ID: id, Path: path}
 	if st, err := f.Stat(); err == nil {

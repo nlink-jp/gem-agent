@@ -202,11 +202,12 @@ func TestMentionTabCompletion(t *testing.T) {
 func TestAttachedNoticeIsVisible(t *testing.T) {
 	c := &capture{}
 	m := newTestModel(c)
-	next, _ := m.Update(Attached{
+	// The notice is written to the capture as a side effect; the model
+	// the update returns is not what this test looks at.
+	m.Update(Attached{
 		Lines: []string{"attached file: README.md (120 bytes)"},
 		Notes: []string{"@nope.txt: not found"},
 	})
-	m = next.(Model)
 	out := c.all()
 	if !strings.Contains(out, "📎") || !strings.Contains(out, "README.md") {
 		t.Errorf("attachment notice missing: %q", out)
@@ -358,8 +359,7 @@ func TestAutoModeToggleDuringRun(t *testing.T) {
 func TestAutoApprovedEventIsVisible(t *testing.T) {
 	c := &capture{}
 	m := newTestModel(c)
-	next, _ := m.Update(AutoApproved{Tool: "shell_exec", Reason: "local build", Tier: "review"})
-	m = next.(Model)
+	m.Update(AutoApproved{Tool: "shell_exec", Reason: "local build", Tier: "review"})
 	out := c.all()
 	if !strings.Contains(out, "auto-approved") || !strings.Contains(out, "local build") || !strings.Contains(out, "review") {
 		t.Errorf("auto-approval must be visible with tier and reason: %q", out)
@@ -515,7 +515,7 @@ func TestStreamFlushOrder(t *testing.T) {
 	if iText == -1 || iTool == -1 || iAfter == -1 {
 		t.Fatalf("missing segments in scrollback: %q", out)
 	}
-	if !(iText < iTool && iTool < iAfter) {
+	if iText >= iTool || iTool >= iAfter {
 		t.Errorf("scrollback order broken: %q", out)
 	}
 	if m.phase != phaseInput {
@@ -1197,7 +1197,7 @@ func TestApprovalPersistAnswerWritesPolicyAndAllows(t *testing.T) {
 	m = next.(Model)
 	m = dialogSeen(m)
 
-	m = press(m, runeMsg("p"))
+	press(m, runeMsg("p"))
 	if got.Tool != "mcp__x__y" || got.Value != "never" || got.Scope != ScopeGlobal {
 		t.Fatalf("change = %+v", got)
 	}
@@ -1222,7 +1222,7 @@ func TestApprovalPersistAnswerWritesPolicyAndAllows(t *testing.T) {
 func TestApprovalPersistDegradesWithoutAPolicyStore(t *testing.T) {
 	c := &capture{}
 	m, resp := openApproval(t, newTestModel(c), "")
-	m = press(m, runeMsg("p"))
+	press(m, runeMsg("p"))
 	select {
 	case answer := <-resp:
 		if answer != 'y' {

@@ -79,7 +79,7 @@ func writeSessions(out io.Writer, metas []session.Meta, showProject bool) {
 		row = append(row, m.Preview)
 		fmt.Fprintln(tw, strings.Join(row, "\t"))
 	}
-	tw.Flush()
+	_ = tw.Flush()
 	fmt.Fprintln(out, "\nresume with:  gem-agent --resume <id>   (or --continue for the most recent)")
 }
 
@@ -174,7 +174,7 @@ func openSessionLog(dir, resumeID, projectDir, model, location, version string) 
 		Project:  projectDir,
 		Location: location,
 	}); err != nil {
-		lg.Close()
+		_ = lg.Close()
 		return nil, err
 	}
 	return lg, nil

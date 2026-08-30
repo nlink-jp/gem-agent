@@ -335,7 +335,7 @@ func readMember(data []byte, name string, cap int64) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer rc.Close()
+		defer func() { _ = rc.Close() }()
 		raw, err := io.ReadAll(io.LimitReader(rc, cap+1))
 		if err != nil {
 			return nil, err

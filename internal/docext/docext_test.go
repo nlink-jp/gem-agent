@@ -153,7 +153,7 @@ func TestExtractPptxFixture(t *testing.T) {
 	i1 := strings.Index(text, "### slide 1\n")
 	i2 := strings.Index(text, "### slide 2\n")
 	i10 := strings.Index(text, "### slide 10\n")
-	if i1 < 0 || i2 < 0 || i10 < 0 || !(i1 < i2 && i2 < i10) {
+	if i1 < 0 || i2 < 0 || i10 < 0 || i1 >= i2 || i2 >= i10 {
 		t.Errorf("slide order wrong (1=%d 2=%d 10=%d):\n%s", i1, i2, i10, text)
 	}
 	if !strings.Contains(text, "タイトル: 計画") || !strings.Contains(text, "付録") {

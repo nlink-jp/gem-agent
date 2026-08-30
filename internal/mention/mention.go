@@ -277,8 +277,8 @@ func attachImage(ref, projectDir string, lim Limits, images *int) (Attachment, e
 	}
 	var data []byte
 	var err error
-	switch {
-	case ref == ClipboardRef:
+	switch ref {
+	case ClipboardRef:
 		if lim.Clipboard == nil {
 			return Attachment{}, fmt.Errorf("clipboard capture is unavailable here")
 		}

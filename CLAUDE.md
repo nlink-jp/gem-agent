@@ -14,6 +14,10 @@ Project-specific rules for AI agents. Org rules: nlink-jp/.github CONVENTIONS.md
 
 - `make build` only — never `go build` directly (outputs to `dist/`).
 - Tests are mandatory and written with the implementation.
+- `make check` gates on the linter too. errcheck is on everywhere except
+  writes to the CLI's own streams, so an error you mean to ignore has to be
+  written as `_ =` — an unchecked `Close` on a file this tool wrote is a real
+  defect class, not noise.
 - macOS-only by design (sandbox-exec). Do not add linux/windows build targets.
 
 ## Implementation rules

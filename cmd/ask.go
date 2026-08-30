@@ -64,7 +64,7 @@ func registerAskTool(registry *tools.Registry, ask askFunc) error {
 				if s == "" {
 					continue
 				}
-				if r := []rune(s); r != nil && len(r) > maxAskOptionSize {
+				if r := []rune(s); len(r) > maxAskOptionSize {
 					s = string(r[:maxAskOptionSize]) + "…"
 				}
 				options = append(options, s)

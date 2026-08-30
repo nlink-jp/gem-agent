@@ -76,7 +76,7 @@ func TestUploadContentAddressedAndDeduped(t *testing.T) {
 
 	// Different content, different object.
 	path2 := filepath.Join(dir, "other.m4a")
-	os.WriteFile(path2, []byte("different"), 0o644)
+	_ = os.WriteFile(path2, []byte("different"), 0o644)
 	uri3, err := u.Upload(context.Background(), path2, "audio/mp4")
 	if err != nil || uri3 == uri {
 		t.Errorf("distinct content collided: %s, %v", uri3, err)
@@ -116,8 +116,8 @@ func TestUploadRefusesFileChangedDuringUpload(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		f.WriteString("-appended-while-uploading")
-		f.Close()
+		_, _ = f.WriteString("-appended-while-uploading")
+		_ = f.Close()
 	}})
 	_, err := u.Upload(context.Background(), path, "audio/mp4")
 	if err == nil || !strings.Contains(err.Error(), "changed while uploading") {
@@ -131,7 +131,7 @@ func TestUploadRefusesFileChangedDuringUpload(t *testing.T) {
 func TestVerifyReaderPassesUnchangedContent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "ok.m4a")
-	os.WriteFile(path, []byte("stable"), 0o600)
+	_ = os.WriteFile(path, []byte("stable"), 0o600)
 	fake := newFakeStore()
 	u := newWithStore("b", fake)
 	uri, err := u.Upload(context.Background(), path, "audio/mp4")

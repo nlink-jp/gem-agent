@@ -49,15 +49,15 @@ func TestProbeProject(t *testing.T) {
 	if !probeProject(dir).empty() {
 		t.Error("empty project reported an offering")
 	}
-	os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("do things"), 0o644)
-	os.WriteFile(filepath.Join(dir, ".mcp.json"), []byte(`{"mcpServers":{"a":{"command":"/bin/true"},"b":{"command":"/bin/true"}}}`), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("do things"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, ".mcp.json"), []byte(`{"mcpServers":{"a":{"command":"/bin/true"},"b":{"command":"/bin/true"}}}`), 0o644)
 	// Only entries that look like skills count (review round 2): a
 	// real skill dir, plus decoys — a stray file and a dir without
 	// SKILL.md — that must NOT inflate the trust prompt's number.
-	os.MkdirAll(filepath.Join(dir, ".claude", "skills", "s1"), 0o755)
-	os.WriteFile(filepath.Join(dir, ".claude", "skills", "s1", "SKILL.md"), []byte("# s1"), 0o644)
-	os.WriteFile(filepath.Join(dir, ".claude", "skills", ".DS_Store"), []byte{0}, 0o644)
-	os.MkdirAll(filepath.Join(dir, ".claude", "skills", "not-a-skill"), 0o755)
+	_ = os.MkdirAll(filepath.Join(dir, ".claude", "skills", "s1"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, ".claude", "skills", "s1", "SKILL.md"), []byte("# s1"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, ".claude", "skills", ".DS_Store"), []byte{0}, 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, ".claude", "skills", "not-a-skill"), 0o755)
 	o := probeProject(dir)
 	if len(o.Instructions) != 1 || o.Instructions[0] != "AGENTS.md" {
 		t.Errorf("instructions = %v", o.Instructions)
@@ -79,7 +79,7 @@ func trustFixture(t *testing.T) (*config.Config, *config.PolicyFile, string, str
 	pf := &config.PolicyFile{Tools: map[string]string{}, Projects: map[string]config.ProjectPolicy{}}
 	policyPath := filepath.Join(t.TempDir(), "policy.toml")
 	project := t.TempDir()
-	os.WriteFile(filepath.Join(project, "CLAUDE.md"), []byte("clone instructions"), 0o644)
+	_ = os.WriteFile(filepath.Join(project, "CLAUDE.md"), []byte("clone instructions"), 0o644)
 	return cfg, pf, policyPath, project
 }
 
@@ -165,10 +165,10 @@ func TestResolveProjectTrustShortcuts(t *testing.T) {
 // Untrusted projects contribute no instruction files; ancestors stay.
 func TestLoadInstructionsExcludesUntrustedProject(t *testing.T) {
 	parent := t.TempDir()
-	os.WriteFile(filepath.Join(parent, "AGENTS.md"), []byte("workspace rules"), 0o644)
+	_ = os.WriteFile(filepath.Join(parent, "AGENTS.md"), []byte("workspace rules"), 0o644)
 	project := filepath.Join(parent, "clone")
-	os.MkdirAll(project, 0o755)
-	os.WriteFile(filepath.Join(project, "AGENTS.md"), []byte("CLONE INSTRUCTIONS"), 0o644)
+	_ = os.MkdirAll(project, 0o755)
+	_ = os.WriteFile(filepath.Join(project, "AGENTS.md"), []byte("CLONE INSTRUCTIONS"), 0o644)
 
 	// home = parent so the ancestor walk includes it.
 	t.Setenv("HOME", parent)

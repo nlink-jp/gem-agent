@@ -14,8 +14,8 @@ func writeMiniDocx(t *testing.T, path, text string) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	w, _ := zw.Create("word/document.xml")
-	w.Write([]byte(`<w:document xmlns:w="x"><w:body><w:p><w:r><w:t>` + text + `</w:t></w:r></w:p></w:body></w:document>`))
-	zw.Close()
+	_, _ = w.Write([]byte(`<w:document xmlns:w="x"><w:body><w:p><w:r><w:t>` + text + `</w:t></w:r></w:p></w:body></w:document>`))
+	_ = zw.Close()
 	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestReadDocumentTool(t *testing.T) {
 	// A tiny (invalid-but-magic) PDF: the tool marks it attached and
 	// ReadDocumentPDF hands the agent the bytes.
 	pdf := []byte("%PDF-1.4\nfake body for routing tests")
-	os.WriteFile(filepath.Join(dir, "r.pdf"), pdf, 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "r.pdf"), pdf, 0o644)
 	out, err = run(t, r, "read_document", map[string]any{"path": "r.pdf"})
 	if err != nil || !strings.Contains(out, "document part") {
 		t.Errorf("pdf marker: out=%q err=%v", out, err)
@@ -58,7 +58,7 @@ func TestReadDocumentTool(t *testing.T) {
 	}
 
 	// A renamed text file is rejected by content, extension ignored.
-	os.WriteFile(filepath.Join(dir, "fake.docx"), []byte("plain text"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "fake.docx"), []byte("plain text"), 0o644)
 	if _, err := run(t, r, "read_document", map[string]any{"path": "fake.docx"}); err == nil ||
 		!strings.Contains(err.Error(), "out of scope") && !strings.Contains(err.Error(), "not a supported") {
 		t.Errorf("renamed text accepted: %v", err)

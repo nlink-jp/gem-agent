@@ -15,14 +15,14 @@ import (
 func TestExpandDocuments(t *testing.T) {
 	dir := realTempDir(t)
 	pdf := []byte("%PDF-1.4\nfake")
-	os.WriteFile(filepath.Join(dir, "spec.pdf"), pdf, 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "spec.pdf"), pdf, 0o644)
 
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	w, _ := zw.Create("word/document.xml")
-	w.Write([]byte(`<w:document xmlns:w="x"><w:body><w:p><w:r><w:t>合意事項メモ</w:t></w:r></w:p></w:body></w:document>`))
-	zw.Close()
-	os.WriteFile(filepath.Join(dir, "note.docx"), buf.Bytes(), 0o644)
+	_, _ = w.Write([]byte(`<w:document xmlns:w="x"><w:body><w:p><w:r><w:t>合意事項メモ</w:t></w:r></w:p></w:body></w:document>`))
+	_ = zw.Close()
+	_ = os.WriteFile(filepath.Join(dir, "note.docx"), buf.Bytes(), 0o644)
 
 	atts, problems := Expand(context.Background(), "読んで @spec.pdf と @note.docx", dir, DefaultLimits())
 	if len(problems) != 0 {
@@ -47,7 +47,7 @@ func TestExpandDocuments(t *testing.T) {
 	}
 
 	// A renamed text file is a reported problem, not a silent attach.
-	os.WriteFile(filepath.Join(dir, "fake.pdf"), []byte("just text"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "fake.pdf"), []byte("just text"), 0o644)
 	_, problems = Expand(context.Background(), "@fake.pdf", dir, DefaultLimits())
 	if len(problems) != 1 {
 		t.Errorf("renamed file: %v", problems)

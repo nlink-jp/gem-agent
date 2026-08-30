@@ -180,7 +180,7 @@ func (r *Registry) describeFile(p string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("unreadable")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	head := make([]byte, typeSniffBytes)
 	n, _ := io.ReadFull(f, head)

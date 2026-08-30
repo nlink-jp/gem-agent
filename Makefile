@@ -11,7 +11,7 @@ DIST_DIR := dist
 CODESIGN_IDENTITY ?= Developer ID Application
 NOTARY_PROFILE    ?= nlink-jp-notary
 
-.PHONY: build build-all package verify-release test vet docs-check check clean
+.PHONY: build build-all package verify-release test vet lint docs-check check clean
 
 build:
 	@mkdir -p $(DIST_DIR)
@@ -68,13 +68,20 @@ test:
 vet:
 	go vet ./...
 
+## lint: golangci-lint with the org config (.golangci.yml). errcheck is
+## on everywhere except writes to the CLI's own streams, so an ignored
+## error has to be written as one — an unchecked Close on a file this
+## tool wrote is a real defect class, not noise.
+lint:
+	golangci-lint run ./...
+
 ## docs-check: docs/en and docs/ja must be full structural mirrors. A
 ## missing translation is invisible in review — it looks exactly like a
 ## document nobody has written yet — so it is checked mechanically.
 docs-check:
 	@scripts/docs-mirror-check.sh
 
-check: vet test docs-check build
+check: vet lint test docs-check build
 
 clean:
 	rm -rf $(DIST_DIR)

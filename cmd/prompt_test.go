@@ -49,7 +49,7 @@ func TestLoadInstructionsReadsVendorFiles(t *testing.T) {
 	if err != nil {
 		t.Skip("cannot create a temp dir under home")
 	}
-	defer os.RemoveAll(base)
+	defer func() { _ = os.RemoveAll(base) }()
 	proj := filepath.Join(base, "proj")
 	if err := os.MkdirAll(proj, 0o755); err != nil {
 		t.Fatal(err)

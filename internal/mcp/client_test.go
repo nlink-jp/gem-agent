@@ -60,10 +60,10 @@ func (f *fakeServer) spawn() (io.WriteCloser, io.ReadCloser, func(), error) {
 	}()
 
 	kill := func() {
-		inW.Close()
-		outW.Close()
-		inR.Close()
-		outR.Close()
+		_ = inW.Close()
+		_ = outW.Close()
+		_ = inR.Close()
+		_ = outR.Close()
 	}
 	return inW, outR, kill, nil
 }

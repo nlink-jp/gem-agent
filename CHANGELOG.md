@@ -14,6 +14,10 @@
 - Startup reports how many earlier work directories exist and how much they
   hold. Nothing is deleted for you; a directory a session left empty is
   removed on exit.
+- `make lint` (golangci-lint, org config in `.golangci.yml`), now part of
+  `make check`. The repo had no linter at all; the one exclusion is
+  `fmt.Fprint*` to the CLI's own streams, because reporting a failed write to
+  the stream that just failed is circular.
 
 ### Fixed
 
@@ -25,6 +29,16 @@
   image to `[non-text content: image]`, which made screenshots taken through
   `chrome-pilot-mcp` invisible to the model. They are now saved to the work
   directory and the model is told to call `view_image` on the path.
+- Every error the code means to ignore now says so. Reviewed one at a time and
+  no latent defect was behind any of them — all are read-side `Close`, a
+  `Close` on an already-failed write path, or best-effort temp-file cleanup;
+  the durability paths (the `Close` before a rename, the rename, the GCS
+  writer's commit `Close`) were checked already.
+- Dropped dead code the linter surfaced: `Agent.toolPolicy` (superseded by
+  `callPolicy` in ADR-0045) and two unused diagram test helpers.
+- Four TUI tests assigned an updated model and never read it; the assertion is
+  on the captured output, so the assignment was dead, not the call.
+- Migrated off the deprecated `attribute.Value.Emit`.
 
 ### Changed
 

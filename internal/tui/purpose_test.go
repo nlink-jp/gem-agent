@@ -57,8 +57,7 @@ func TestToolCallLineCarriesPurpose(t *testing.T) {
 	m = next.(Model)
 
 	before := len(c.printedCalls())
-	next, _ = m.Update(ToolCall{Name: "shell_exec", Detail: "cp report.csv /tmp/x/", Purpose: why})
-	m = next.(Model)
+	m.Update(ToolCall{Name: "shell_exec", Detail: "cp report.csv /tmp/x/", Purpose: why})
 	if got := printCalls(c, before); got != 1 {
 		t.Errorf("tool event produced %d writes, want 1", got)
 	}
