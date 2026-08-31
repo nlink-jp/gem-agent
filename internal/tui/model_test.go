@@ -67,6 +67,41 @@ func press(m Model, key tea.KeyMsg) Model {
 	return next.(Model)
 }
 
+// The /auto slash route must keep the footer marker in sync: the shared
+// slash handler flips the agent flag but cannot see this model, and the
+// footer said ⚡auto while every change asked (found live, ADR-0060 E2E).
+func TestSlashAutoUpdatesFooterMarker(t *testing.T) {
+	c := &capture{}
+	on := false
+	m := New(Options{
+		StartTurn: func(ctx context.Context, input string) {},
+		Slash: func(cmd string) (string, bool, bool) {
+			if cmd == "/auto" {
+				t.Fatal("/auto reached the shared slash handler — the footer cannot follow it there")
+			}
+			return "", false, false
+		},
+		ToggleAuto: func() bool { on = !on; return on },
+		Printer:    c.printer,
+		RenderFactory: func(width int) func(string) string {
+			return func(s string) string { return s }
+		},
+	})
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = next.(Model)
+
+	m.ta.SetValue("/auto")
+	m = press(m, enter())
+	if !m.autoMode || !strings.Contains(m.footer(), "⚡auto") {
+		t.Errorf("after /auto: autoMode=%v footer=%q — marker did not turn on", m.autoMode, m.footer())
+	}
+	m.ta.SetValue("/auto")
+	m = press(m, enter())
+	if m.autoMode || strings.Contains(m.footer(), "⚡auto") {
+		t.Errorf("after second /auto: autoMode=%v — marker did not turn off", m.autoMode)
+	}
+}
+
 func enter() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyEnter} }
 
 func runeMsg(s string) tea.KeyMsg {

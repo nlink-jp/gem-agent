@@ -17,6 +17,15 @@
   typed reason lands in the `gate_decision` transcript record but never
   in the telemetry export.
 
+### Fixed
+
+- **`/auto` left the footer's ⚡auto marker stale.** The slash handler
+  flipped the agent's flag but could not see the TUI model, so after
+  `/auto` the footer kept reporting auto ON while every change asked
+  (or the reverse). `/auto` now routes through the same toggle as
+  shift+tab, which updates the marker and prints the same localized
+  state line. Found live in this release's E2E.
+
 ## [0.57.0] - 2026-08-31
 
 ### Added

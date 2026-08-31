@@ -1365,6 +1365,15 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		return m.openSettings()
 	}
 
+	// /auto goes through toggleAutoMode, never the shared slash
+	// handler: the handler flips the agent flag but cannot see this
+	// model, so the footer's ⚡auto marker went stale — it reported
+	// auto ON while every change asked (found live in the ADR-0060
+	// release E2E; ADR-0004 requires the mode visible at all times).
+	if input == "/auto" && m.toggleAuto != nil {
+		return m.toggleAutoMode()
+	}
+
 	// /skill expands into a turn (ADR-0010): echo what the operator
 	// typed, run the expanded text. Checked before the slash handler so
 	// a synchronous handler never sees it.
