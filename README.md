@@ -1,25 +1,30 @@
 # gem-agent
 
-Interactive CLI agent backed by Vertex AI Gemini 3.x — a continuity tool for
-development work when Claude Code is unavailable.
+Interactive CLI agent runtime backed by Vertex AI Gemini 3.x — deliberately
+minimal, sandboxed, and usable both interactively and headlessly.
 
 > **Released.** Install with `brew install nlink-jp/tap/gem-agent`
 > or from the [releases page](https://github.com/nlink-jp/gem-agent/releases)
 > (Developer ID signed, Apple-notarized, macOS arm64) — the releases page
 > is the authority on the current version, so this line does not repeat it.
-> It is an experimental (lab-series) tool: interfaces may change between
-> releases.
+> It is a cli-series tool: interface stability is a promise, and breaking
+> changes go through the org's breaking-change process (ADR-0061).
 > See the [RFP](docs/en/gem-agent-rfp.md) for the full specification.
 
 [日本語版 README](README.ja.md)
 
 ## Why
 
-When Claude Code is unavailable (provider-side outage, contractual or network
-constraints), development work should not stop. gem-agent is a deliberately
-minimal fallback agent on an independent backend (Vertex AI), designed to be
-**drop-in**: it reads an existing project's `AGENTS.md` / `CLAUDE.md` /
-`.mcp.json` as-is, so switching over requires no per-project reconfiguration.
+gem-agent is an independent agent runtime: a minimal, auditable agent loop
+(read / edit / shell / MCP / approval) on Vertex AI Gemini, defended by two
+layers (sandbox-exec containment plus human-in-the-loop approval), with no
+analysis or GUI subsystems. It is **drop-in** compatible with the project
+ecosystem: it reads an existing project's `AGENTS.md` / `CLAUDE.md` /
+`.mcp.json` (and Claude Code-format skills) as-is, so one project setup
+serves every runtime that works on it. It began life as a Claude Code
+backup and was repositioned as an independent runtime once real-world use
+outgrew that role
+([ADR-0061](docs/en/adr/0061-independent-runtime-promotion.md)).
 
 ## Quickstart
 

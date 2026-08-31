@@ -270,7 +270,7 @@ confined to discovered skill directories.
 | Tool denied or errors | result string to the model, so it can react |
 | MCP call times out | server killed, respawned lazily on the next call |
 | 429 / 5xx before any chunk | exponential backoff retry; never after output has been consumed |
-| Session log unwritable | warning, session continues (a broken log must not stop a fallback) |
+| Session log unwritable | warning, session continues (a broken log must not stop the agent) |
 | Resume target unreadable | fatal — the operator asked for that history |
 | Telemetry export fails | one warning, then silent degradation — never blocks the session |
 | Stream silent for 90s | the status line becomes a stall warning naming Ctrl+C; no automatic timeout — long thinking is legitimate, and a big file write is measured minutes of silence (ADR-0056) |

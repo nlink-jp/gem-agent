@@ -5,16 +5,20 @@
 
 ## 1. Problem Statement
 
-**gem-agent** is a CLI interactive agent backed by Vertex AI Gemini 3.x, built as a
-continuity tool for development work in situations where Claude Code is unavailable
-(Anthropic-side outages, contractual or network constraints). It provides local file
-read/write, command execution, and MCP server connectivity, and interprets an existing
-project's AGENTS.md / CLAUDE.md / .mcp.json as-is, so that switching over during an
-outage requires no per-project reconfiguration (drop-in) — this is the single most
-important requirement. The target user is the nlink-jp operator themselves. The scope
-is deliberately minimal (read / edit / shell / MCP / approval gates) with no
-analysis or GUI subsystems. macOS-only, defended by two layers: sandbox-exec plus
-approval gates.
+**gem-agent** is a CLI interactive agent runtime backed by Vertex AI Gemini 3.x.
+It provides local file read/write, command execution, and MCP server connectivity,
+and interprets an existing project's AGENTS.md / CLAUDE.md / .mcp.json as-is, so
+that one project setup serves every runtime that works on it (drop-in) — this is
+the single most important requirement. The target user is the nlink-jp operator
+themselves. The scope is deliberately minimal (read / edit / shell / MCP /
+approval gates) with no analysis or GUI subsystems. macOS-only, defended by two
+layers: sandbox-exec plus approval gates.
+
+> **Positioning note (2026-09-01).** This document was originally written for a
+> continuity tool — a backup for when Claude Code is unavailable. That charter
+> was retired by [ADR-0061](adr/0061-independent-runtime-promotion.md):
+> gem-agent is an independent agent runtime, and the backup language that
+> remains in the Discussion Log below is history, not the current charter.
 
 ## 2. Functional Specification
 
@@ -201,7 +205,10 @@ than duplicating it: an enumeration maintained in two places falls
 behind in one of them, and this one did.
 
 Scope minimization follows the shell-agent v1 lesson (feature accumulation → complexity
-→ rewrite). A backup tool needs the core 20% of Claude Code's daily features.
+→ rewrite). The original yardstick — "a backup tool needs the core 20% of Claude
+Code's daily features" — was replaced by a self-defined charter when the backup role
+was retired (ADR-0061): a minimal, auditable agent loop — read / edit / shell / MCP /
+approval — with no analysis or GUI subsystems. Features still enter by ADR only.
 
 ## 4. Development Plan
 
@@ -251,12 +258,17 @@ Each phase is independently reviewable.
 
 ## 6. Series Placement
 
-**Series: lab-series**
+**Series: cli-series** (promoted 2026-09-01 by operator decision, ADR-0061)
 
-**Reason:** Place the new build in lab-series as experimental during its initial
-period, and consider promotion to cli-series once E2E and drill operations have proven
-it. The tension between "experimental shelf" and "a backup must always work" is
-mitigated by the monthly drill routine and written promotion criteria.
+**Reason:** The original placement was lab-series — experimental during the initial
+period, with promotion to cli-series once E2E and drill operations had proven it, and
+the tension between "experimental shelf" and "a backup must always work" mitigated by
+the monthly drill routine and written promotion criteria. When the backup charter was
+retired, the drill-based bar was superseded rather than passed: real-world deployment
+already answered the question the new role needs answered
+([promotion](reference/promotion.md) records the original bar and the decision).
+The cli-series contract applies: interface stability is a promise, and breaking
+changes go through the org's breaking-change process.
 
 ## 7. External Platform Constraints
 

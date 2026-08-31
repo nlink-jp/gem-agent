@@ -1,6 +1,15 @@
 # Promotion criteria: lab-series → cli-series
 
-gem-agent sits in lab-series, whose contract is "experimental; interfaces
+> **Closed (2026-09-01).** gem-agent was promoted to cli-series by
+> operator decision under
+> [ADR-0061](../adr/0061-independent-runtime-promotion.md). The bar below
+> was superseded, not passed: it measured whether a backup would work on
+> the day it was needed, and the backup role was retired — real-world
+> deployment already answered what the new role needs answered. This
+> document remains as the record of the bar and of that decision; nothing
+> below is expected to change again.
+
+gem-agent sat in lab-series, whose contract is "experimental; interfaces
 may change without notice". A fallback tool wants the opposite contract —
 it must work on the day it is needed, without surprises. The RFP (§6) put
 it in lab-series anyway and named the tension explicitly, to be resolved
@@ -53,13 +62,11 @@ is installed, released, and drilled either way. The only thing promotion
 buys is a stability promise to other people, and gem-agent currently has
 one operator.
 
-## Current status
+## Outcome
 
-**Not met.** As of 2026-08-19: one drill run (2026-08-19, pass), so
-criterion 1 stands at 1 of 6. Criterion 6 is open until the next Gemini
-retirement (2.5 retires 2026-10-16, which gem-agent already does not use).
-Criteria 2, 3, 4, 5 have no failures recorded, but 3 needs a second real
-task in a later month.
-
-Re-check this section after each drill; it is the only part of this
-document expected to change.
+**Promoted 2026-09-01 — bar superseded** (see the banner at the top and
+ADR-0061). Status when the bar was retired, as of 2026-08-19: one drill
+run (2026-08-19, pass), so criterion 1 stood at 1 of 6. Criterion 6 was
+open until the next Gemini retirement. Criteria 2, 3, 4, 5 had no
+failures recorded. The bar was never failed — it stopped being the right
+question.

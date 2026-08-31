@@ -6,7 +6,8 @@ Project-specific rules for AI agents. Org rules: nlink-jp/.github CONVENTIONS.md
 
 - The RFP (`docs/{en,ja}/gem-agent-rfp*.md`) is the canonical spec. Do not add
   features outside its scope without an ADR — scope minimalism is a design
-  goal, not an accident (backup tool: "the core 20% of Claude Code").
+  goal, not an accident (ADR-0061 charter: a minimal, auditable agent loop —
+  read / edit / shell / MCP / approval — no analysis or GUI subsystems).
 - Non-obvious design decisions get an ADR in `docs/{en,ja}/adr/` (four-digit,
   `Binds: gem-agent`) **before** implementation.
 

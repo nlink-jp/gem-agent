@@ -1,13 +1,19 @@
-# Monthly drill
+# Health check
 
-A backup that is never exercised is not a backup. gem-agent exists for
-the day Claude Code is unavailable, which is the worst possible day to
-discover that credentials expired, the configured model was retired, or
-the binary no longer launches. This drill is how that day stays boring.
+An agent runtime you have not exercised lately will surprise you at the
+worst moment: credentials expired, the configured model was retired, the
+binary no longer launches. Day-to-day use catches most of this rot as it
+happens; this runbook covers the stretches day-to-day use does not.
+Until [ADR-0061](../adr/0061-independent-runtime-promotion.md) this was
+the mandatory monthly drill of the backup role — the procedure survives
+unchanged, and the steps below still call a run a "drill": the name
+stuck, the obligation did not.
 
-**Cadence:** once a month. **Time box:** 20 minutes. **Verdict:** every
-step below either passes or produces an issue — there is no "mostly
-worked".
+**When to run:** on demand — after a long idle stretch, before relying
+on a clean-machine install, after an OS or model-generation change, or
+when the architecture doc is suspected of drifting from the code
+(step 7). **Time box:** 20 minutes. **Verdict:** every step below either
+passes or produces an issue — there is no "mostly worked".
 
 Run it from a real project, not a scratch directory. Half of what rots
 is project-shaped: instruction files, `.mcp.json` entries, the paths the
@@ -212,13 +218,12 @@ silently degrades as Claude Code moves ahead of it.
   the step number. The transcript under
   `~/.local/state/gem-agent/sessions/projects/<escaped-project-path>/<id>.jsonl`
   holds the exact exchange, so the issue does not need a reconstruction from memory.
-- **Skipped a step:** say which and why. A drill with an unrecorded gap
-  reads as a pass, which is how a backup rots while looking maintained.
+- **Skipped a step:** say which and why. A run with an unrecorded gap
+  reads as a pass, which is how rot hides behind a maintained look.
 
-Two consecutive failed drills, or a failure that has stayed open for a
-month, mean gem-agent cannot currently be relied on as the fallback —
-which is worth knowing deliberately rather than discovering it under
-pressure.
+Two consecutive failed runs, or a failure that has stayed open for a
+month, mean gem-agent cannot currently be relied on — which is worth
+knowing deliberately rather than discovering it mid-task.
 
 ## First drill — 2026-08-19
 

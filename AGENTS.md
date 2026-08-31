@@ -1,19 +1,22 @@
 # AGENTS.md — gem-agent
 
-Interactive CLI agent backed by Vertex AI Gemini. Continuity (backup) tool
-for when Claude Code is unavailable. macOS-only. Released (Homebrew tap +
-notarized zip; `git tag` is the current version — no number is written here,
-because a number written here goes stale): agent loop, MCP client, drop-in
-AGENTS.md/CLAUDE.md/.mcp.json, one-shot mode, nonce isolation, backoff,
-inline TUI, auto-approve, session resume, context compaction, agent memory,
-skills, agentic file search, terminal diagrams — all verified live. RFP
-Phase 3 is delivered: the [monthly drill](docs/en/reference/drill.md) and
-the [promotion criteria](docs/en/reference/promotion.md) are written.
+Interactive CLI agent runtime backed by Vertex AI Gemini. Independent
+runtime, drop-in compatible with a project's AGENTS.md/CLAUDE.md/.mcp.json
+(ADR-0061 retired the original Claude Code-backup charter). macOS-only.
+Released (Homebrew tap + notarized zip; `git tag` is the current version —
+no number is written here, because a number written here goes stale):
+agent loop, MCP client, drop-in instruction files, one-shot mode, nonce
+isolation, backoff, inline TUI, auto-approve, session resume, context
+compaction, agent memory, skills, agentic file search, terminal
+diagrams — all verified live. The former monthly drill survives as an
+on-demand [health check](docs/en/reference/drill.md).
 
 - **Module:** `github.com/nlink-jp/gem-agent`
-- **Series:** lab-series. Promotion criteria are written down in
-  `docs/en/reference/promotion.md`; the count restarts if the sandbox ever
-  fails a drill.
+- **Series:** cli-series (promoted 2026-09-01, ADR-0061 — the drill-based
+  bar in `docs/en/reference/promotion.md` was superseded by operator
+  decision; that document is now a closed record). The cli-series
+  stability contract applies: breaking changes go through the org's
+  breaking-change process.
 - **Spec:** `docs/en/gem-agent-rfp.md` / `docs/ja/gem-agent-rfp.ja.md` (canonical)
 - **Docs entry point:** `docs/en/INDEX.md` / `docs/ja/INDEX.ja.md` — three
   tiers (reference / adr / history). Add a doc to the INDEX, not to a

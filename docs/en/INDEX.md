@@ -44,11 +44,12 @@ Project references:
 - [`reference/architecture.md`](reference/architecture.md) — package
   layout, the turn loop, the two confinement boundaries, persistence,
   and failure behaviour in one table
-- [`reference/drill.md`](reference/drill.md) — the monthly drill: what
-  rots on its own, the procedure that catches it, and the record of the
-  first run
-- [`reference/promotion.md`](reference/promotion.md) — the checkable bar
-  for moving out of lab-series into cli-series, and the current status
+- [`reference/drill.md`](reference/drill.md) — the on-demand health
+  check (the former monthly drill, ADR-0061): what rots on its own, the
+  procedure that catches it, and the record of the first run
+- [`reference/promotion.md`](reference/promotion.md) — closed record of
+  the lab-series → cli-series bar and the 2026-09-01 promotion decision
+  that superseded it (ADR-0061)
 
 ## ADRs
 
@@ -192,6 +193,7 @@ excepted).
 - [`ADR-0058`](adr/0058-session-work-directory.md) — a work directory per session (state root, keyed by session id, resume lands back in it): a sandbox write root and a second root of the file tools, exported as `GEMAGENT_WORK_DIR`. MCP results were the one tool output never bounded, which is why every file-mediated server grew a `workspace_root` — a server cannot know the model's context window; oversized results are now saved here rather than truncated, and non-text content (silently discarded until now) is saved for `view_image`
 - [`ADR-0059`](adr/0059-workdirs-cleanup-command.md) — `gem-agent workdirs` list + `clean`: the cleanup half of ADR-0058's accumulation note (a report without a remedy trains people to ignore it). Confirmation is the default with deny-on-EOF, a live session's directory is never deleted (shared-flock probe on its transcript), and cleaning stays per-project and CLI-side — freeing disk must not require a model session
 - [`ADR-0060`](adr/0060-deny-with-reason.md) — deny with reason, the `N` answer: the fixed denial text spent a model round fetching a reason the operator knew when they pressed `n`, and the denial's own function response is the one slot the API leaves open mid-round (ADR-0012). `n` stays a one-keystroke deny; denial results ship unwrapped by message provenance, never by content (a denial-shaped tool output stays wrapped); the reason lands in `gate_decision` but not in telemetry
+- [`ADR-0061`](adr/0061-independent-runtime-promotion.md) — independent agent runtime: the backup charter is retired (real-world deployment outgrew it), drop-in compatibility stays the top requirement with an ecosystem-compatibility rationale, scope minimalism stands on its own charter instead of "20% of Claude Code", the drill becomes an on-demand health check, and gem-agent is promoted to cli-series by operator decision — the drill-based bar superseded, not passed
   draw in the terminal: the measured-faithful types only (flowchart,
   ASCII sequence, ER), shapes normalized to boxes, a fidelity guard,
   the rest shown as source; the model is told exactly what renders

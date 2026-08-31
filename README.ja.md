@@ -1,24 +1,30 @@
 # gem-agent
 
-Vertex AI Gemini 3.x をバックエンドとする CLI 対話型エージェント — Claude Code が
-利用できない状況での開発作業継続手段。
+Vertex AI Gemini 3.x をバックエンドとする CLI エージェントランタイム —
+意図的に最小限・サンドボックス化・対話とヘッドレスの両用。
 
 > **リリース済。** `brew install nlink-jp/tap/gem-agent` または
 > [リリースページ](https://github.com/nlink-jp/gem-agent/releases)から
 > 導入できます（Developer ID 署名 + Apple notarize 済み、macOS arm64）。
 > 現在の版はリリースページが正であり、ここには書きません（腐るため）。
-> 実験的ツール（lab-series）であり、リリース間でインターフェースが変わる
-> ことがあります。完全な仕様は [RFP](docs/ja/gem-agent-rfp.ja.md) を参照。
+> cli-series のツールであり、インターフェースの安定性は約束です。破壊的
+> 変更は組織の破壊的変更プロセスを通ります（ADR-0061）。
+> 完全な仕様は [RFP](docs/ja/gem-agent-rfp.ja.md) を参照。
 
 [English README](README.md)
 
 ## Why
 
-Claude Code が使えない状況（プロバイダ側障害・契約やネットワークの制約）でも
-開発作業を止めないためのツールです。独立したバックエンド（Vertex AI）上の
-意図的に最小限なフォールバックエージェントで、**drop-in** を最重要要件と
-します: 既存プロジェクトの `AGENTS.md` / `CLAUDE.md` / `.mcp.json` をそのまま
-解釈するため、乗り換えにプロジェクト単位の再設定は不要です。
+gem-agent は独立したエージェントランタイムです: Vertex AI Gemini 上の
+最小限で監査可能なエージェントループ（read / edit / shell / MCP / 承認）を、
+二層（sandbox-exec による封じ込め + human-in-the-loop 承認）で防御し、
+分析・GUI サブシステムは持ちません。プロジェクトエコシステムとの
+**drop-in** 互換を最重要要件とします: 既存プロジェクトの `AGENTS.md` /
+`CLAUDE.md` / `.mcp.json`（および Claude Code 形式の skills）をそのまま
+解釈するため、1 つのプロジェクト設定がその上で動くすべてのランタイムに
+仕えます。出自は Claude Code のバックアップであり、実戦投入がその役割を
+超えた時点で独立ランタイムとして再位置づけされました
+（[ADR-0061](docs/ja/adr/0061-independent-runtime-promotion.ja.md)）。
 
 ## クイックスタート
 

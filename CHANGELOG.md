@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Repositioned as an independent agent runtime; promoted to
+  cli-series** (ADR-0061, docs-only). The Claude Code-backup charter is
+  retired: real-world deployment outgrew it. Drop-in compatibility with
+  a project's `AGENTS.md` / `CLAUDE.md` / `.mcp.json` / skills stays the
+  top requirement, now justified as ecosystem compatibility; scope
+  minimalism stands on its own charter instead of "the core 20% of
+  Claude Code". The monthly drill becomes an on-demand health check, and
+  the drill-based promotion bar is closed as superseded — the repository
+  moves from the lab-series umbrella to cli-series, whose stability
+  contract (org breaking-change process) now applies. No code changes.
+
 ## [0.58.0] - 2026-08-31
 
 ### Added
