@@ -58,12 +58,18 @@ func For(lang Lang) *Messages {
 // the same verbs in the same order.
 type Messages struct {
 	// --- approval dialog (TUI) ---
-	ApprovalTitleFmt string // dialog title: %s = tool name
-	ApproveAllow     string // dialog answer: allow once
-	ApproveDeny      string // dialog answer: deny
-	ApproveAlways    string // dialog answer: allow for the session
-	ApprovePersist   string // dialog answer: persist never-ask (ADR-0009 §5)
-	ApprovalHint     string // key help under the dialog
+	ApprovalTitleFmt  string // dialog title: %s = tool name
+	ApproveAllow      string // dialog answer: allow once
+	ApproveDeny       string // dialog answer: deny
+	ApproveDenyReason string // dialog answer: deny with a typed reason (ADR-0060)
+	ApproveAlways     string // dialog answer: allow for the session
+	ApprovePersist    string // dialog answer: persist never-ask (ADR-0009 §5)
+	ApprovalHint      string // key help under the dialog
+	// Reason field (ADR-0060): the label above the input, its
+	// placeholder, and the key help while it is open.
+	ApprovalReasonPrompt      string
+	ApprovalReasonPlaceholder string
+	ApprovalReasonHint        string
 	// ApprovalHiddenFmt warns that %d detail lines were clipped
 	// (ADR-0021: never approve what you have not seen).
 	ApprovalHiddenFmt string
@@ -75,8 +81,11 @@ type Messages struct {
 	PurposeNone     string
 	VerdictApproved string
 	VerdictDenied   string
-	VerdictAlways   string
-	VerdictPersist  string
+	// VerdictDeniedReasonFmt echoes a reasoned denial: %s = the reason
+	// (clipped for display; the transcript keeps it whole).
+	VerdictDeniedReasonFmt string
+	VerdictAlways          string
+	VerdictPersist         string
 	// AutoApprovedFmt echoes an unattended approval: tier, reason.
 	AutoApprovedFmt string
 	CtrlCHint       string // "(interrupt with Ctrl+C)" while running
@@ -236,20 +245,25 @@ func (m *Messages) BroadReason(key string) string {
 
 var en = Messages{
 	ApprovalTitleFmt:  "approval required: %s",
-	ApproveAllow:      "allow (y)",
-	ApproveDeny:       "deny (n)",
-	ApproveAlways:     "always allow (a)",
-	ApprovePersist:    "never ask again (p)",
-	ApprovalHint:      "←→/Tab select · Enter confirm · y/n/a direct · Esc denies",
-	ApprovalHiddenFmt: "⚠ +%d lines hidden — do not approve without seeing all of it (deny, then inspect)",
-	PurposePrefix:     "↪ ",
-	PurposeNone:       "(no purpose declared)",
-	VerdictApproved:   "approved",
-	VerdictDenied:     "denied",
-	VerdictAlways:     "approved (always this session)",
-	VerdictPersist:    "approved (and this tool will not ask again)",
-	AutoApprovedFmt:   "  ↳ auto-approved (%s): %s",
-	CtrlCHint:         "  (Ctrl+C interrupts)",
+	ApproveAllow:              "allow (y)",
+	ApproveDeny:               "deny (n)",
+	ApproveDenyReason:         "deny with reason (N)",
+	ApproveAlways:             "always allow (a)",
+	ApprovePersist:            "never ask again (p)",
+	ApprovalHint:              "←→/Tab select · Enter confirm · y/n/N/a direct · Esc denies",
+	ApprovalReasonPrompt:      "deny reason:",
+	ApprovalReasonPlaceholder: "why this call should not run, or what to do instead…",
+	ApprovalReasonHint:        "Enter send · empty Enter denies without a reason · Esc back",
+	ApprovalHiddenFmt:         "⚠ +%d lines hidden — do not approve without seeing all of it (deny, then inspect)",
+	PurposePrefix:             "↪ ",
+	PurposeNone:               "(no purpose declared)",
+	VerdictApproved:           "approved",
+	VerdictDenied:             "denied",
+	VerdictDeniedReasonFmt:    "denied — reason: %s",
+	VerdictAlways:             "approved (always this session)",
+	VerdictPersist:            "approved (and this tool will not ask again)",
+	AutoApprovedFmt:           "  ↳ auto-approved (%s): %s",
+	CtrlCHint:                 "  (Ctrl+C interrupts)",
 
 	Placeholder:   "message…  Enter send · Ctrl+J newline · /help · !shell",
 	QueueRefused:  "⚠ ! and / commands cannot run mid-turn — interrupt with Ctrl+C first (your input is preserved)",
@@ -333,7 +347,7 @@ keys:
   Enter send · up/down history · Ctrl+C interrupt/clear · Ctrl+D quit
   Ctrl+J or a trailing \ inserts a newline; a multi-line paste stays one message
   typing during a turn queues the text (! and / cannot be queued)
-  approval dialog: arrows/Tab select · Enter confirm · y/n/a direct
+  approval dialog: arrows/Tab select · Enter confirm · y/n/N/a direct (N = deny with a reason)
 `,
 	AutoOn:            "auto-approve: ON — safe changes run unattended; risky ones still ask\n",
 	AutoOff:           "auto-approve: OFF — every change asks\n",
@@ -362,21 +376,26 @@ keys:
 }
 
 var ja = Messages{
-	ApprovalTitleFmt:  "承認が必要です: %s",
-	ApproveAllow:      "許可 (y)",
-	ApproveDeny:       "拒否 (n)",
-	ApproveAlways:     "常に許可 (a)",
-	ApprovePersist:    "今後聞かない (p)",
-	ApprovalHint:      "←→/Tab 選択 · Enter 決定 · y/n/a 直接指定 · Esc 拒否",
-	ApprovalHiddenFmt: "⚠ +%d 行が省略されています — 全体を見るまで承認しないでください（拒否して確認できます）",
-	PurposePrefix:     "↪ ",
-	PurposeNone:       "（理由の申告なし）",
-	VerdictApproved:   "許可しました",
-	VerdictDenied:     "拒否しました",
-	VerdictAlways:     "許可しました（このセッション中は常に）",
-	VerdictPersist:    "許可しました（このツールは今後確認しません）",
-	AutoApprovedFmt:   "  ↳ 自動承認 (%s): %s",
-	CtrlCHint:         "  (Ctrl+C で中断)",
+	ApprovalTitleFmt:          "承認が必要です: %s",
+	ApproveAllow:              "許可 (y)",
+	ApproveDeny:               "拒否 (n)",
+	ApproveDenyReason:         "理由を添えて拒否 (N)",
+	ApproveAlways:             "常に許可 (a)",
+	ApprovePersist:            "今後聞かない (p)",
+	ApprovalHint:              "←→/Tab 選択 · Enter 決定 · y/n/N/a 直接指定 · Esc 拒否",
+	ApprovalReasonPrompt:      "拒否理由:",
+	ApprovalReasonPlaceholder: "拒否する理由や、代わりにすべきこと…",
+	ApprovalReasonHint:        "Enter 送信 · 空 Enter は理由なし拒否 · Esc で戻る",
+	ApprovalHiddenFmt:         "⚠ +%d 行が省略されています — 全体を見るまで承認しないでください（拒否して確認できます）",
+	PurposePrefix:             "↪ ",
+	PurposeNone:               "（理由の申告なし）",
+	VerdictApproved:           "許可しました",
+	VerdictDenied:             "拒否しました",
+	VerdictDeniedReasonFmt:    "拒否しました — 理由: %s",
+	VerdictAlways:             "許可しました（このセッション中は常に）",
+	VerdictPersist:            "許可しました（このツールは今後確認しません）",
+	AutoApprovedFmt:           "  ↳ 自動承認 (%s): %s",
+	CtrlCHint:                 "  (Ctrl+C で中断)",
 
 	Placeholder:   "message…  Enter 送信 · Ctrl+J 改行 · /help · !shell",
 	QueueRefused:  "⚠ ! と / のコマンドは実行中には送れません — Ctrl+C で中断してから実行してください（入力は残っています）",
@@ -460,7 +479,7 @@ var ja = Messages{
   Enter 送信 · ↑↓ 履歴 · Ctrl+C 中断/クリア · Ctrl+D 終了
   改行は Ctrl+J か行末 \ + Enter。複数行ペーストは 1 メッセージのまま
   実行中の入力は次メッセージとして予約（! と / は予約不可）
-  承認ダイアログ: ←→/Tab 選択 · Enter 決定 · y/n/a 直接
+  承認ダイアログ: ←→/Tab 選択 · Enter 決定 · y/n/N/a 直接（N = 理由を添えて拒否）
 `,
 	AutoOn:            "auto-approve: ON — 安全な変更は無人で実行します。危険なものは引き続き確認します\n",
 	AutoOff:           "auto-approve: OFF — すべての変更で確認します\n",

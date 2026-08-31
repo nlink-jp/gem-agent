@@ -18,9 +18,9 @@ type floorGate struct {
 	calls []bool
 }
 
-func (g *floorGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool) {
+func (g *floorGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
 	g.calls = append(g.calls, mustPrompt)
-	return false, false
+	return false, false, ""
 }
 
 func newFloorAgent(t *testing.T, gate Approver, pol policy.Policy) *Agent {
@@ -99,14 +99,14 @@ func TestSessionAllowlistDoesNotLiftBlockFloor(t *testing.T) {
 		t.Fatalf("first (benign) call: %d prompts, want 1", promptsAfterFirst)
 	}
 
-	result := a.execCall(context.Background(), llm.ToolCall{
+	result, denied := a.execCall(context.Background(), llm.ToolCall{
 		Name: "shell_exec", Args: map[string]any{"command": "sudo whoami"},
 	})
 	if strings.Count(out.String(), "[approval]") != 2 {
 		t.Errorf("Block-tier call after 'a' did not prompt — the allowlist lifted the floor:\n%s", out.String())
 	}
-	if !strings.Contains(result, "denied") {
-		t.Errorf("denied Block-tier call result = %q", result)
+	if !denied || !strings.Contains(result, "denied") {
+		t.Errorf("denied Block-tier call: denied=%v result=%q", denied, result)
 	}
 	// And the ordinary case still benefits from 'a': no third prompt.
 	a.execCall(context.Background(), llm.ToolCall{

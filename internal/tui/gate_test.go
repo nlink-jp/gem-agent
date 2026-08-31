@@ -15,7 +15,7 @@ type autoResponder struct {
 func (a *autoResponder) Send(msg tea.Msg) {
 	if req, ok := msg.(ApprovalRequest); ok {
 		a.asked++
-		req.Resp <- a.answer
+		req.Resp <- ApprovalAnswer{Key: a.answer}
 	}
 }
 
@@ -89,19 +89,42 @@ func TestGateMustPromptSkipsAllowlist(t *testing.T) {
 	}
 }
 
-// allowed drops the allowlist flag for assertions that only care about
-// the verdict (ADR-0048 §1).
-func allowed(approved, _ bool) bool { return approved }
+// allowed drops the allowlist flag and deny reason for assertions that
+// only care about the verdict (ADR-0048 §1).
+func allowed(approved, _ bool, _ string) bool { return approved }
 
 // The gate reports an allowlist answer as such: the learner counts one
 // keystroke once, however many calls it covers.
 func TestGateReportsAllowlistAnswers(t *testing.T) {
 	g := NewGate()
 	g.SetProgram(&autoResponder{answer: 'a'})
-	if approved, fromAllowlist := g.Approve("shell_exec", "x", "", "", false); !approved || fromAllowlist {
+	if approved, fromAllowlist, _ := g.Approve("shell_exec", "x", "", "", false); !approved || fromAllowlist {
 		t.Errorf("the 'a' keystroke = (%v, %v), want (true, false)", approved, fromAllowlist)
 	}
-	if approved, fromAllowlist := g.Approve("shell_exec", "y", "", "", false); !approved || !fromAllowlist {
+	if approved, fromAllowlist, _ := g.Approve("shell_exec", "y", "", "", false); !approved || !fromAllowlist {
 		t.Errorf("the allowlist answer = (%v, %v), want (true, true)", approved, fromAllowlist)
+	}
+}
+
+// reasonResponder answers every request with a reasoned denial.
+type reasonResponder struct{ reason string }
+
+func (r *reasonResponder) Send(msg tea.Msg) {
+	if req, ok := msg.(ApprovalRequest); ok {
+		req.Resp <- ApprovalAnswer{Key: 'n', Reason: r.reason}
+	}
+}
+
+// ADR-0060: the operator's typed reason rides back through the gate
+// verbatim, and only on denials.
+func TestGateRelaysDenyReason(t *testing.T) {
+	g := NewGate()
+	g.SetProgram(&reasonResponder{reason: "use the work dir instead"})
+	approved, _, reason := g.Approve("write_file", "x", "", "", false)
+	if approved {
+		t.Fatal("reasoned denial approved")
+	}
+	if reason != "use the work dir instead" {
+		t.Errorf("deny reason = %q", reason)
 	}
 }

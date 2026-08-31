@@ -74,7 +74,8 @@ internal/mention/  @-reference parsing, project-confined resolution, completion
 internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery
                    (ancestor walk, stops at $HOME)
 internal/sandbox/  SBPL profile generation, sandbox-exec wrapping
-internal/approve/  MITL gate (y/n/a + session allowlist)
+internal/approve/  MITL gate (y/n/N/a + session allowlist; N = deny with
+                   a typed reason, ADR-0060)
 internal/session/  JSONL transcript: logger + resume loader (ADR-0005)
 internal/repl/     paste-safe input reader (plain REPL, non-TTY fallback)
 internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate
@@ -150,9 +151,10 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   Field-tested twice, failed twice in opposite directions; the
   operator judged the result dangerous. Per-item confirmation with
   full disclosure was NOT a durable boundary for loosening. What
-  remains on purpose: `Approve` returns `(approved, fromAllowlist)`
-  (one `a` stands in for many calls and must not count as many
-  decisions), the `gate_decision`/`auto_decision` records with key and
+  remains on purpose: `Approve` returns `(approved, fromAllowlist,
+  denyReason)` (one `a` stands in for many calls and must not count as
+  many decisions; denyReason is ADR-0060's typed denial reason), the
+  `gate_decision`/`auto_decision` records with key and
   source, and the per-command policy vocabulary — parsed for file
   compatibility, fed as nil into Build, never applied. Any successor
   starts from ADR-0049's open questions, not from re-enabling this.

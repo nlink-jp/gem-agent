@@ -177,11 +177,17 @@ context, so `!git status` followed by "fix that" just works.
 
 Mutating tool calls show a dialog before running. Answer it either by
 selection — ←→ or Tab to move, Enter to confirm — or with the
-`y` / `n` / `a` / `p` shortcuts; Esc denies. The selection route exists
-because those letters cannot be typed with a Japanese IME switched on.
+`y` / `n` / `N` / `a` / `p` shortcuts; Esc denies. The selection route
+exists because those letters cannot be typed with a Japanese IME
+switched on.
 
 - `y` — allow this call
 - `n` — deny (fails closed; the model is told to ask you, not retry)
+- `N` — deny with a typed reason (ADR-0060): a one-line field opens,
+  and the reason rides back to the model inside the denial — guidance
+  at the moment of decision instead of a model round of "how should I
+  proceed?". Enter on an empty field is a plain deny; Esc backs out to
+  the options
 - `a` — allow this tool for the rest of the session. Never covers the
   dangerous cases: Block-tier calls and always-policy tools keep asking
   (ADR-0021)

@@ -86,7 +86,7 @@ func TestApprovalAfterInterruptIsAutoDenied(t *testing.T) {
 	m = press(m, enter())
 	m = press(m, tea.KeyMsg{Type: tea.KeyCtrlC}) // interrupt the turn
 
-	resp := make(chan byte, 1)
+	resp := make(chan ApprovalAnswer, 1)
 	next, _ = m.Update(ApprovalRequest{Tool: "write_file", Detail: "x", Resp: resp})
 	m = next.(Model)
 	if m.phase == phaseApproval {
@@ -94,8 +94,8 @@ func TestApprovalAfterInterruptIsAutoDenied(t *testing.T) {
 	}
 	select {
 	case got := <-resp:
-		if got != 'n' {
-			t.Errorf("auto-answer = %q, want 'n'", got)
+		if got.Key != 'n' {
+			t.Errorf("auto-answer = %q, want 'n'", got.Key)
 		}
 	default:
 		t.Fatal("gate left blocking after interrupt")
@@ -106,7 +106,7 @@ func TestApprovalAfterInterruptIsAutoDenied(t *testing.T) {
 	m = next.(Model)
 	m.ta.SetValue("again")
 	m = press(m, enter())
-	resp2 := make(chan byte, 1)
+	resp2 := make(chan ApprovalAnswer, 1)
 	next, _ = m.Update(ApprovalRequest{Tool: "write_file", Detail: "x", Resp: resp2})
 	m = next.(Model)
 	if m.phase != phaseApproval {
@@ -156,7 +156,7 @@ func TestShortTerminalApprovalKeepsTitleAndDiscloses(t *testing.T) {
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 14})
 	m = next.(Model)
 	detail := strings.TrimRight(strings.Repeat("line\n", 20), "\n") // 20 lines
-	resp := make(chan byte, 1)
+	resp := make(chan ApprovalAnswer, 1)
 	next, _ = m.Update(ApprovalRequest{Tool: "shell_exec", Detail: detail, Resp: resp})
 	m = next.(Model)
 	v := m.View()

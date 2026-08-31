@@ -210,7 +210,7 @@ type approverCall struct {
 	mustPrompt bool
 }
 
-func (g *recordingApprover) Approve(tool, detail, purpose, reason string, mustPrompt bool) (bool, bool) {
+func (g *recordingApprover) Approve(tool, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
 	g.calls = append(g.calls, approverCall{tool: tool, mustPrompt: mustPrompt})
-	return true, g.fromAllowlist
+	return true, g.fromAllowlist, ""
 }

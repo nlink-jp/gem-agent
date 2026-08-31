@@ -59,7 +59,7 @@ func TestBottomHoldKeepsFrameHeightThroughFlushAndDialog(t *testing.T) {
 
 	// Approval dialog opens (frame grows or holds), then closes: the
 	// close must not shrink the frame either.
-	next, _ = m.Update(ApprovalRequest{Tool: "mcp__x__y", Detail: "d", Resp: make(chan byte, 1)})
+	next, _ = m.Update(ApprovalRequest{Tool: "mcp__x__y", Detail: "d", Resp: make(chan ApprovalAnswer, 1)})
 	m = next.(Model)
 	m = dialogSeen(m)
 	open := frameLines(m)

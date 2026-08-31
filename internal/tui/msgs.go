@@ -118,8 +118,17 @@ type ContextWindow struct {
 // problems.
 type Output struct{ Lines []string }
 
+// ApprovalAnswer is the UI's reply to one ApprovalRequest. Key is the
+// dialog answer byte ('y', 'n', 'a' — 'p' resolves to 'y' before it is
+// sent, and a reasoned denial arrives as 'n'); Reason is the operator's
+// typed denial reason (ADR-0060), empty for every other answer.
+type ApprovalAnswer struct {
+	Key    byte
+	Reason string
+}
+
 // ApprovalRequest asks the operator to approve a mutating tool call.
-// The gate goroutine blocks on Resp until the UI answers 'y', 'n' or 'a'.
+// The gate goroutine blocks on Resp until the UI answers.
 type ApprovalRequest struct {
 	Tool   string
 	Detail string
@@ -134,7 +143,7 @@ type ApprovalRequest struct {
 	// of running it — the operator needs to know why they are being
 	// asked, and which tier objected.
 	Reason string
-	Resp   chan byte
+	Resp   chan ApprovalAnswer
 }
 
 // sender is the slice of *tea.Program the gate needs (testable).
@@ -167,33 +176,36 @@ func (g *Gate) SetProgram(p sender) {
 // Approve implements agent.Approver. Fails closed when no program is
 // bound. mustPrompt says the session allowlist may not answer this call
 // (Block-tier, or an "always" policy — ADR-0021 §5); an 'a' answered on
-// such a prompt still registers, for future non-Block calls.
-func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (approved, fromAllowlist bool) {
+// such a prompt still registers, for future non-Block calls. A denial
+// may carry the operator's typed reason (ADR-0060), which rides back
+// to the agent verbatim.
+func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (approved, fromAllowlist bool, denyReason string) {
 	g.mu.Lock()
 	if !mustPrompt && g.always[toolName] {
 		g.mu.Unlock()
 		// One keystroke standing in for this call: the learner must not
 		// read it as a decision made here (ADR-0048 §1).
-		return true, true
+		return true, true, ""
 	}
 	prog := g.prog
 	g.mu.Unlock()
 	if prog == nil {
-		return false, false
+		return false, false, ""
 	}
-	resp := make(chan byte, 1)
+	resp := make(chan ApprovalAnswer, 1)
 	prog.Send(ApprovalRequest{Tool: toolName, Detail: detail, Purpose: purpose, Reason: reason, Resp: resp})
-	switch <-resp {
+	answer := <-resp
+	switch answer.Key {
 	case 'y':
-		return true, false
+		return true, false, ""
 	case 'a':
 		g.mu.Lock()
 		g.always[toolName] = true
 		g.mu.Unlock()
 		// The keystroke that registers the allowlist is itself an
 		// operator decision about this call.
-		return true, false
+		return true, false, ""
 	default:
-		return false, false
+		return false, false, answer.Reason
 	}
 }

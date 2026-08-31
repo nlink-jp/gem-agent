@@ -30,8 +30,8 @@ func TestApprovalTypeAheadGrace(t *testing.T) {
 
 	m = dialogSeen(m) // grace elapsed: the operator has read the dialog
 	m = press(m, enter())
-	if got := <-resp; got != 'y' {
-		t.Errorf("deliberate Enter after the grace = %q, want 'y'", got)
+	if got := <-resp; got.Key != 'y' {
+		t.Errorf("deliberate Enter after the grace = %q, want 'y'", got.Key)
 	}
 }
 

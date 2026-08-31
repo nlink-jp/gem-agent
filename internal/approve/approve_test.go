@@ -49,6 +49,39 @@ func TestEOFDenies(t *testing.T) {
 	}
 }
 
+// ADR-0060 §1: 'N' denies and reads one reason line; the case is
+// load-bearing, so a lowercase 'n' must never reach the reason prompt.
+func TestDenyWithReason(t *testing.T) {
+	var out bytes.Buffer
+	g := New(strings.NewReader("N\n書き込み先が違う — notes.md に\n"), &out)
+	approved, fromAllowlist, reason := g.Approve("write_file", "x.txt", "", "", false)
+	if approved || fromAllowlist {
+		t.Errorf("N = (%v, %v), want a denial", approved, fromAllowlist)
+	}
+	if reason != "書き込み先が違う — notes.md に" {
+		t.Errorf("reason = %q", reason)
+	}
+	if !strings.Contains(out.String(), "deny reason") {
+		t.Errorf("the reason prompt was never shown: %q", out.String())
+	}
+}
+
+func TestDenyWithReasonEmptyLineIsPlainDeny(t *testing.T) {
+	g := New(strings.NewReader("N\n\n"), &bytes.Buffer{})
+	approved, _, reason := g.Approve("write_file", "x.txt", "", "", false)
+	if approved || reason != "" {
+		t.Errorf("N + empty reason = (%v, %q), want plain deny", approved, reason)
+	}
+}
+
+func TestDenyWithReasonEOFMidQuestionDenies(t *testing.T) {
+	g := New(strings.NewReader("N\n"), &bytes.Buffer{})
+	approved, _, reason := g.Approve("write_file", "x.txt", "", "", false)
+	if approved || reason != "" {
+		t.Errorf("EOF at the reason prompt = (%v, %q), want plain deny", approved, reason)
+	}
+}
+
 func TestAlwaysSkipsSubsequentPrompts(t *testing.T) {
 	var out bytes.Buffer
 	g := New(strings.NewReader("a\n"), &out)
@@ -72,9 +105,10 @@ func TestInvalidInputReprompts(t *testing.T) {
 	}
 }
 
-// allowed drops the allowlist flag for the assertions that only care
-// about the verdict. Tests that care about the flag read both values.
-func allowed(approved, _ bool) bool { return approved }
+// allowed drops the allowlist flag and deny reason for the assertions
+// that only care about the verdict. Tests that care about them read
+// all three values.
+func allowed(approved, _ bool, _ string) bool { return approved }
 
 // ADR-0048 §1: the gate reports whether the session allowlist answered,
 // so the learner can tell one keystroke from many typed decisions.
@@ -82,17 +116,17 @@ func TestApproveReportsAllowlistAnswers(t *testing.T) {
 	g := New(strings.NewReader("a\ny\n"), io.Discard)
 
 	// The keystroke that registers the allowlist is a decision made here.
-	approved, fromAllowlist := g.Approve("shell_exec", "make build", "", "", false)
+	approved, fromAllowlist, _ := g.Approve("shell_exec", "make build", "", "", false)
 	if !approved || fromAllowlist {
 		t.Errorf("the 'a' keystroke = (%v, %v), want (true, false)", approved, fromAllowlist)
 	}
 	// The next call is answered by the allowlist, with nobody looking.
-	approved, fromAllowlist = g.Approve("shell_exec", "make test", "", "", false)
+	approved, fromAllowlist, _ = g.Approve("shell_exec", "make test", "", "", false)
 	if !approved || !fromAllowlist {
 		t.Errorf("the allowlist answer = (%v, %v), want (true, true)", approved, fromAllowlist)
 	}
 	// A typed 'y' is the operator's own answer.
-	approved, fromAllowlist = g.Approve("write_file", "x.txt", "", "", false)
+	approved, fromAllowlist, _ = g.Approve("write_file", "x.txt", "", "", false)
 	if !approved || fromAllowlist {
 		t.Errorf("the typed 'y' = (%v, %v), want (true, false)", approved, fromAllowlist)
 	}

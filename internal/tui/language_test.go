@@ -33,7 +33,7 @@ func TestApprovalDialogRendersInJapanese(t *testing.T) {
 	m := New(Options{Msgs: uitext.For(uitext.JA), Theme: "notty"})
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m = next.(Model)
-	resp := make(chan byte, 1)
+	resp := make(chan ApprovalAnswer, 1)
 	next, _ = m.Update(ApprovalRequest{Tool: "write_file", Detail: "x", Resp: resp})
 	m = next.(Model)
 	v := m.View()

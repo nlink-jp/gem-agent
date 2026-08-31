@@ -76,10 +76,18 @@ call's arguments.
 Mutating tools ask before running (the dialog itself is described in
 [interface](interface.md)). `y` allows once, `a` allows the tool for
 the session, `p` persists never-ask to the policy file (`p` is a TUI
-answer; the plain-stdin gate used when the TUI is off offers `y`/`n`/`a`
-only), deny fails closed. `a` never covers the dangerous cases: Block-tier calls (sudo,
+answer; the plain-stdin gate used when the TUI is off offers
+`y`/`n`/`N`/`a`), deny fails closed. `a` never covers the dangerous cases: Block-tier calls (sudo,
 recursive deletes, credential paths, …) and tools pinned to `"always"`
 by policy keep asking regardless (ADR-0021).
+
+`N` denies **with a typed reason** (ADR-0060): a one-line field opens,
+and what you type rides back to the model inside the denial itself —
+so "wrong file, put it in notes.md" arrives at the moment of decision
+instead of costing a model round of "how should I proceed?". Enter on
+an empty field is a plain deny, Esc backs out to the options; `n`
+stays the one-keystroke deny. The reason is recorded in the session
+transcript (`gate_decision`) but never exported to telemetry.
 
 ## Auto-approve mode (ADR-0004)
 

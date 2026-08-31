@@ -187,6 +187,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0057`](adr/0057-usage-accounting-records.ja.md) — すべてのモデル呼び出しが `usage` レコードを 1 行残す (source・model・prompt/output/thoughts/cached/total): API は金額を返さないのでコストは「トークン数 × カタログ単価」しかなく、カウントは呼び出し時点でディスクに落ちている必要がある。リスク評価と圧縮の消費はプロセスと共に消えていた。thoughts は output として課金され、cached は prompt の割引内訳 (どちらも実測)
 - [`ADR-0058`](adr/0058-session-work-directory.ja.md) — セッションごとの作業ディレクトリ (state root 配下・session id で採番・resume は同じ場所に戻る): sandbox の書き込みルートかつファイルツールの第 2 ルートで、`GEMAGENT_WORK_DIR` として export される。MCP の結果だけが唯一上限のないツール出力で、file-mediated なサーバが軒並み `workspace_root` を持つに至った原因だった — サーバはモデルの context window を知り得ない。大きすぎる結果は切り捨てずここへ保存し、これまで黙って捨てていた非テキストコンテンツも保存して `view_image` に渡す
 - [`ADR-0059`](adr/0059-workdirs-cleanup-command.ja.md) — `gem-agent workdirs` 一覧 + `clean`: ADR-0058 の蓄積 note の「掃除側」（対処なき報告は無視の訓練にしかならない）。確認が既定で deny-on-EOF、稼働セッションのディレクトリは transcript への共有 flock プローブで判別して決して消さず、掃除はプロジェクト単位・CLI 側 — ディスクを空けるのにモデルセッションを要してはならない
+- [`ADR-0060`](adr/0060-deny-with-reason.ja.md) — 理由つき拒否・`N` 回答: 固定拒否文は「利用者が `n` を押した瞬間に知っていた理由」の入手にモデル 1 往復を費やしていて、拒否自身の function response がラウンド途中で API が開けている唯一のスロット（ADR-0012）。`n` は 1 打拒否のまま。拒否結果のアンラップは内容ではなくメッセージ出所で判定（拒否の形をしたツール出力はラップされたまま）。理由は `gate_decision` に残り、テレメトリには載せない
 
 ## History（履歴）
 

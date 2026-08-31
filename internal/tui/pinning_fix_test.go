@@ -80,7 +80,7 @@ func TestApprovalDetailBudgeted(t *testing.T) {
 	m = next.(Model)
 
 	script := "cat <<EOF > f\n" + strings.TrimRight(strings.Repeat("line\n", 20), "\n") + "\nEOF"
-	resp := make(chan byte, 1)
+	resp := make(chan ApprovalAnswer, 1)
 	next, _ = m.Update(ApprovalRequest{Tool: "shell_exec", Detail: script, Resp: resp})
 	m = next.(Model)
 

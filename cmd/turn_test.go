@@ -150,4 +150,4 @@ func TestRunTurnCancellationIsInterrupt(t *testing.T) {
 	}
 }
 
-func allowed(approved, _ bool) bool { return approved }
+func allowed(approved, _ bool, _ string) bool { return approved }

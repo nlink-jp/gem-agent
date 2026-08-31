@@ -167,14 +167,14 @@ func TestLiveViewExpandsTabs(t *testing.T) {
 // releaseTurn never strands the approval gate either.
 func TestReleaseTurnDrainsApproval(t *testing.T) {
 	m, _ := runningModel(t)
-	resp := make(chan byte, 1)
+	resp := make(chan ApprovalAnswer, 1)
 	next, _ := m.Update(ApprovalRequest{Tool: "shell_exec", Detail: "x", Resp: resp})
 	m = next.(Model)
 	m.Update(TurnDone{})
 	select {
 	case b := <-resp:
-		if b != 'n' {
-			t.Errorf("drained approval answered %q, want n", b)
+		if b.Key != 'n' {
+			t.Errorf("drained approval answered %q, want n", b.Key)
 		}
 	default:
 		t.Error("approval gate stranded on TurnDone")

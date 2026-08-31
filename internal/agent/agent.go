@@ -54,10 +54,15 @@ type Approver interface {
 	// like a typed decision inflates the evidence. Reported here rather
 	// than inferred later, because only the gate knows.
 	//
-	// Two return values instead of a struct: a shared type would have
+	// denyReason is the operator's optional typed reason for a denial
+	// (ADR-0060) — non-empty only when approved is false, and delivered
+	// to the model inside the denial function response, the one slot the
+	// API leaves open mid-round (ADR-0012 §5).
+	//
+	// Plain returns instead of a struct: a shared type would have
 	// to live in a package both gates and the agent import, and
 	// `internal/agent`'s own tests already import `internal/approve`.
-	Approve(toolName, detail, purpose, reason string, mustPrompt bool) (approved, fromAllowlist bool)
+	Approve(toolName, detail, purpose, reason string, mustPrompt bool) (approved, fromAllowlist bool, denyReason string)
 }
 
 // SessionLog receives session records. May be nil.
@@ -755,6 +760,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 				}
 			}
 			var result string
+			var denied bool
 			if stopAfterRound != "" {
 				result = "error: the turn was stopped by the loop guard; not executed"
 				// Shown as proposed, never executed: the audit trail says
@@ -765,7 +771,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 				}
 				a.telemetry.ToolCall(tc.Name, mutating, callDetail, callPurpose, 0, "skipped")
 			} else {
-				result = a.execCall(ctx, tc)
+				result, denied = a.execCall(ctx, tc)
 			}
 			if a.onToolDone != nil {
 				a.onToolDone(tc)
@@ -775,13 +781,17 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 				ToolName:   tc.Name,
 				ToolCallID: tc.ID,
 				Content:    result,
+				// Provenance, not content (ADR-0060 §3): the wrap layer
+				// trusts this flag, so it is set only from execCall's
+				// gate-denial verdict, never inferred from the text.
+				Denial: denied,
 			}
 			// view_image's pixels ride INSIDE the function response as a
 			// multimodal response part (ADR-0012 §5). The alternative — a
 			// separate user message after the tool round — measured a 400
 			// on the next round: Gemini requires the content following a
 			// function-call turn to consist of exactly its responses.
-			if tc.Name == tools.ViewImageName && !strings.HasPrefix(result, "error:") && result != deniedResult {
+			if tc.Name == tools.ViewImageName && !strings.HasPrefix(result, "error:") && !denied {
 				if path, _ := tc.Args["path"].(string); path != "" {
 					if data, mime, err := a.registry.ReadImage(path); err == nil {
 						msg.Attachments = []llm.Attachment{{Ref: path, Kind: "image", Data: data, MIME: mime}}
@@ -793,7 +803,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			// past the tool round). Office formats return extracted text
 			// and never reach this branch — ReadDocumentPDF refuses
 			// non-PDF bytes.
-			if tc.Name == tools.ReadDocumentName && !strings.HasPrefix(result, "error:") && result != deniedResult {
+			if tc.Name == tools.ReadDocumentName && !strings.HasPrefix(result, "error:") && !denied {
 				if path, _ := tc.Args["path"].(string); path != "" {
 					if data, err := a.registry.ReadDocumentPDF(path); err == nil {
 						msg.Attachments = []llm.Attachment{{Ref: path, Kind: "document", Data: data, MIME: "application/pdf"}}
@@ -868,6 +878,16 @@ func wrapToolMessages(history []llm.Message, tag guard.Tag, instructionTools map
 			if instructionTools[out[i].ToolName] {
 				continue
 			}
+			// Gate denials are the other trusted tool result (ADR-0060
+			// §3): their content is authored by gem-agent and the
+			// operator, and wrapping the operator's typed guidance as
+			// data the system prompt forbids following would leave it
+			// half-inert — the ADR-0010 argument, applied to the party
+			// the system already trusts unwrapped. The flag is
+			// provenance from the executor, never derived from content.
+			if out[i].Denial {
+				continue
+			}
 			out[i].Content = wrapUntrusted(out[i].Content, tag)
 			// view_image / read_document attach their bytes to the
 			// TOOL message (ADR-0012 §5 / ADR-0026); those parts used
@@ -928,21 +948,32 @@ func wrapUntrusted(content string, tag guard.Tag) string {
 // execCall runs one tool call and always returns a result string for the
 // model: denials and failures are results the model must see, never
 // silent drops (Gemini pairs every function call with a response).
-// deniedResult is execCall's answer for a gate denial. A named
-// constant because the attach branches must recognize it: they used to
-// screen only for the "error:" prefix, so a DENIED view_image /
-// read_document still attached the pixels/PDF to the function response
-// — the operator's refusal was silently ineffective (review round 2).
+// deniedResult is execCall's answer for a bare gate denial; the denied
+// return value, not this text, is what the attach branches and the
+// audit outcome recognize (ADR-0060 §3) — they used to match the
+// string, which was one denial-shaped tool output away from
+// misclassification.
 const deniedResult = "Tool execution denied by the user. Do not retry the same call; ask the user how to proceed instead."
 
+// deniedWithReason renders a denial that carries the operator's typed
+// reason (ADR-0060 §2): guidance delivered in the denial function
+// response, the one slot the API leaves open mid-round.
+func deniedWithReason(reason string) string {
+	return "Tool execution denied by the user, who gave this reason:\n" +
+		reason +
+		"\nDo not retry the same call; follow the reason, or ask the user how to proceed."
+}
+
 // execCall wraps execCallInner with the ADR-0035 tool.call audit
-// event: what ran, for how long, with what outcome.
-func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
+// event: what ran, for how long, with what outcome. denied is
+// provenance, not content (ADR-0060 §3): true exactly when the gate
+// refused the call.
+func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) (result string, denied bool) {
 	start := time.Now()
-	result := a.execCallInner(ctx, tc)
+	result, denied = a.execCallInner(ctx, tc)
 	outcome := "ok"
 	switch {
-	case result == deniedResult:
+	case denied:
 		outcome = "denied"
 	case strings.HasPrefix(result, "error:"):
 		outcome = "error"
@@ -953,19 +984,19 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) string {
 	}
 	detail, purpose := a.Describe(tc)
 	a.telemetry.ToolCall(tc.Name, mutating, detail, purpose, time.Since(start), outcome)
-	return result
+	return result, denied
 }
 
-func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
+func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result string, denied bool) {
 	// A cancelled turn must not open an approval dialog: the operator
 	// interrupted, and a prompt (worse, an 'a' answer) on behalf of a
 	// dead call is the last thing they asked for (review round 2).
 	if ctx.Err() != nil {
-		return "error: interrupted before execution"
+		return "error: interrupted before execution", false
 	}
 	tool, ok := a.registry.Get(tc.Name)
 	if !ok {
-		return fmt.Sprintf("error: unknown tool %q", tc.Name)
+		return fmt.Sprintf("error: unknown tool %q", tc.Name), false
 	}
 	// Operator pre-tool hooks run before the ladder (ADR-0044 §2): the
 	// org's guards exist to catch the agent's lapses deterministically,
@@ -974,7 +1005,11 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 		if deny, why := a.preToolHook(ctx, tc.Name, tc.Args); deny {
 			a.telemetry.Approval(tc.Name, "denied", "hook", false, why)
 			a.logRecord("hook_denied", map[string]any{"name": tc.Name, "reason": why})
-			return "denied by a pre-tool hook: " + why
+			// Hook text is the org's own guard speaking, but the denial
+			// exemption (ADR-0060 §3) stays scoped to the gate path:
+			// hooks are configured commands whose output no one reviews
+			// at the prompt, so their words ship wrapped like any result.
+			return "denied by a pre-tool hook: " + why, false
 		}
 	}
 	if a.gated(tool.Mutating, tc) {
@@ -1025,7 +1060,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 			// "gate" covers the operator and the session allowlist —
 			// the gates answer as one (ADR-0035 v1 granularity).
 			detail, purpose := a.Describe(tc)
-			ok, fromAllowlist := a.gate.Approve(tc.Name, detail, purpose, reason, mustPrompt)
+			ok, fromAllowlist, denyReason := a.gate.Approve(tc.Name, detail, purpose, reason, mustPrompt)
 			decision := "denied"
 			if ok {
 				decision = "approved"
@@ -1050,12 +1085,22 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 			// source tells a typed answer from one the session allowlist
 			// gave (ADR-0048 §1): only the gate knows, and the learner
 			// weighs the two differently.
-			a.logRecord("gate_decision", map[string]any{
+			record := map[string]any{
 				"name": tc.Name, "decision": decision, "must_prompt": mustPrompt,
 				"key": a.learnKey(tc), "detail": clip(detail, 300), "source": source,
-			})
+			}
+			// The operator's own words about their own decision — the
+			// strongest evidence ADR-0045 stores. Local record only:
+			// free text stays out of the telemetry export (ADR-0060 §4).
+			if denyReason != "" {
+				record["deny_reason"] = denyReason
+			}
+			a.logRecord("gate_decision", record)
 			if !ok {
-				return deniedResult
+				if denyReason != "" {
+					return deniedWithReason(denyReason), true
+				}
+				return deniedResult, true
 			}
 		}
 	}
@@ -1063,12 +1108,12 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) string {
 	// no MCP server may receive an argument its schema never declared.
 	out, err := tool.Run(ctx, a.stripPurpose(tc.Name, tc.Args))
 	if err != nil {
-		return "error: " + err.Error()
+		return "error: " + err.Error(), false
 	}
 	if out == "" {
-		return "(no output)"
+		return "(no output)", false
 	}
-	return out
+	return out, false
 }
 
 // gated reports whether this call goes through the approval machinery at

@@ -95,7 +95,9 @@ configured, inline otherwise.
 
 **[Approval and safety](docs/en/reference/approval.md)** — per-call
 MITL gates that show the model's own declared purpose for the call
-alongside its arguments, a session allowlist that never covers
+alongside its arguments, a deny-with-reason answer (`N`) that carries
+your one-line "do this instead" to the model inside the denial itself,
+a session allowlist that never covers
 Block-tier calls, an opt-in two-tier auto-approve (rules first, model
 review second), a per-tool approval policy with scope-aware resolution and
 trust-gated project loosening, a layered risk rulebook the auto-mode

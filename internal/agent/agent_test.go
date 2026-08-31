@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nlink-jp/nlk/guard"
+
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mention"
 	"github.com/nlink-jp/gem-agent/internal/session"
@@ -46,17 +48,17 @@ type approveAll struct {
 	purposes []string
 }
 
-func (a *approveAll) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool) {
+func (a *approveAll) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
 	a.asked = append(a.asked, name+": "+detail)
 	a.purposes = append(a.purposes, purpose)
-	return true, false
+	return true, false, ""
 }
 
 type denyAll struct{ asked []string }
 
-func (d *denyAll) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool) {
+func (d *denyAll) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
 	d.asked = append(d.asked, name+": "+detail)
-	return false, false
+	return false, false, ""
 }
 
 func newAgent(t *testing.T, backend llm.Backend, gate Approver, maxTurns int) (*Agent, *tools.Registry) {
@@ -169,6 +171,59 @@ func TestDeniedMutatingCall(t *testing.T) {
 	toolMsg := mb.calls[1][2]
 	if !strings.Contains(toolMsg.Content, "denied") {
 		t.Errorf("denial not surfaced to the model: %q", toolMsg.Content)
+	}
+}
+
+// denyWithReasonGate denies every call with the operator's typed
+// reason (ADR-0060).
+type denyWithReasonGate struct{ reason string }
+
+func (d *denyWithReasonGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
+	return false, false, d.reason
+}
+
+// ADR-0060 §2/§3: the typed reason rides inside the denial function
+// response, and the denial ships unwrapped — guidance the model may
+// follow, not nonce-tagged data the system prompt forbids following.
+func TestDeniedWithReasonReachesModelUnwrapped(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "write_file",
+			Args: map[string]any{"path": "x.txt", "content": "data"}}}},
+		{Content: "understood"},
+	}}
+	a, reg := newAgent(t, mb, &denyWithReasonGate{reason: "wrong file — put it in notes.md"}, 5)
+
+	if _, err := a.Run(context.Background(), "write x.txt", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(reg.ProjectDir(), "x.txt")); !os.IsNotExist(err) {
+		t.Error("denied tool call still executed")
+	}
+	toolMsg := mb.calls[1][2]
+	if !strings.Contains(toolMsg.Content, "wrong file — put it in notes.md") {
+		t.Errorf("operator reason not surfaced to the model: %q", toolMsg.Content)
+	}
+	// Unwrapped: the sent content starts with the denial text itself. A
+	// wrapped result would open with the nonce tag instead.
+	if !strings.HasPrefix(toolMsg.Content, "Tool execution denied by the user") {
+		t.Errorf("reasoned denial reached the model wrapped: %q", toolMsg.Content)
+	}
+}
+
+// ADR-0060 §3: the wrap exemption keys on message provenance, never on
+// content — a tool result that merely looks like a denial stays wrapped.
+func TestWrapExemptsDenialByProvenanceOnly(t *testing.T) {
+	tag := guard.NewTagWithPrefix("tool_output")
+	history := []llm.Message{
+		{Role: llm.RoleTool, ToolName: "write_file", Content: deniedWithReason("use notes.md"), Denial: true},
+		{Role: llm.RoleTool, ToolName: "mcp__x__y", Content: deniedResult}, // forged shape, real tool output
+	}
+	out := wrapToolMessages(history, tag, nil)
+	if out[0].Content != history[0].Content {
+		t.Errorf("gate denial was wrapped: %q", out[0].Content)
+	}
+	if out[1].Content == history[1].Content {
+		t.Error("denial-shaped tool output shipped unwrapped — the exemption leaked from provenance to content")
 	}
 }
 
@@ -625,7 +680,7 @@ func TestExecCallRefusesAfterCancel(t *testing.T) {
 	a, _ := newAgent(t, &mockBackend{}, gate, 5)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	out := a.execCall(ctx, llm.ToolCall{Name: "write_file", Args: map[string]any{"path": "x", "content": "y"}})
+	out, _ := a.execCall(ctx, llm.ToolCall{Name: "write_file", Args: map[string]any{"path": "x", "content": "y"}})
 	if !strings.HasPrefix(out, "error:") {
 		t.Errorf("cancelled call ran: %q", out)
 	}

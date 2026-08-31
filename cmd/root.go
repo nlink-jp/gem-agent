@@ -1288,7 +1288,7 @@ func effectiveAuto(cfgAuto, oneShot, flagAuto bool) bool {
 // nothing will answer.
 type denyGate struct{ out io.Writer }
 
-func (d denyGate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (bool, bool) {
+func (d denyGate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
 	why := "mutating tools are disabled in one-shot mode; approve interactively, grant with --allow, or arm the risk ladder with --auto (ADR-0053)"
 	if reason != "" {
 		// The ladder or the rule tier said why this call needs a human;
@@ -1303,7 +1303,9 @@ func (d denyGate) Approve(toolName, detail, purpose, reason string, mustPrompt b
 	if purpose != "" {
 		fmt.Fprintf(d.out, "[denied: ↪ %s]\n", purpose)
 	}
-	return false, false
+	// No operator, no typed reason (ADR-0060 §1): the model keeps the
+	// standing "ask the user" denial text.
+	return false, false, ""
 }
 
 // runTurn runs fn under a SIGINT-cancellable context and maps a

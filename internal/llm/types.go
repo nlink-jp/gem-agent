@@ -71,6 +71,14 @@ type Message struct {
 	// Tool-role fields.
 	ToolName   string `json:"tool_name,omitempty"`
 	ToolCallID string `json:"tool_call_id,omitempty"`
+	// Denial marks a gate-denial result (ADR-0060): content authored by
+	// gem-agent and the operator, no one else — so the send-time wrap
+	// treats it as trusted. Set in exactly one place, the executor's
+	// denial path; recognizing denials by content instead would let any
+	// tool output shaped like one ride unwrapped. Additive field: old
+	// builds resuming a transcript that carries it just wrap the denial
+	// as before.
+	Denial bool `json:"denial,omitempty"`
 }
 
 // ToolDef describes one tool to the model.

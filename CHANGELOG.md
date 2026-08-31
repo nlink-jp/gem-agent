@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.58.0] - 2026-08-31
+
+### Added
+
+- **Deny with reason — the `N` answer** (ADR-0060). The approval dialog
+  (and the plain-stdin gate) gains a fifth answer between deny and
+  always-allow: `N` opens a one-line field, and what you type rides back
+  to the model inside the denial itself — "wrong file, put it in
+  notes.md" arrives at the moment of decision instead of costing a model
+  round of "how should I proceed?". `n`, Esc and Ctrl+C stay the
+  one-keystroke deny; an empty reason line is a plain deny; Esc backs
+  out of the field with nothing decided. Denial results now ship
+  unwrapped — recognized by message provenance, never by content, so a
+  tool result merely shaped like a denial stays nonce-wrapped — and the
+  typed reason lands in the `gate_decision` transcript record but never
+  in the telemetry export.
+
 ## [0.57.0] - 2026-08-31
 
 ### Added

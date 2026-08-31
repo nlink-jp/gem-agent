@@ -16,7 +16,7 @@ func TestApprovalDialogShowsDeclaredPurpose(t *testing.T) {
 	m := newTestModel(c)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m = next.(Model)
-	resp := make(chan byte, 1)
+	resp := make(chan ApprovalAnswer, 1)
 	next, _ = m.Update(ApprovalRequest{
 		Tool: "shell_exec", Detail: "cp report.csv /tmp/x/", Purpose: why, Resp: resp,
 	})
@@ -37,7 +37,7 @@ func TestApprovalDialogNamesAMissingPurpose(t *testing.T) {
 	m := newTestModel(c)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m = next.(Model)
-	resp := make(chan byte, 1)
+	resp := make(chan ApprovalAnswer, 1)
 	next, _ = m.Update(ApprovalRequest{Tool: "shell_exec", Detail: "cp a b", Resp: resp})
 	m = next.(Model)
 	if v := m.View(); !strings.Contains(v, m.msgs.PurposeNone) {

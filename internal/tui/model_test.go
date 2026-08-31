@@ -609,7 +609,7 @@ func TestApprovalFlow(t *testing.T) {
 	m.ta.SetValue("do it")
 	m = press(m, enter())
 
-	resp := make(chan byte, 1)
+	resp := make(chan ApprovalAnswer, 1)
 	next, _ := m.Update(ApprovalRequest{Tool: "shell_exec", Detail: "make build", Resp: resp})
 	m = next.(Model)
 	m = dialogSeen(m)
@@ -627,8 +627,8 @@ func TestApprovalFlow(t *testing.T) {
 	m = press(m, runeMsg("a"))
 	select {
 	case got := <-resp:
-		if got != 'a' {
-			t.Errorf("answer = %c", got)
+		if got.Key != 'a' {
+			t.Errorf("answer = %c", got.Key)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("gate never received the answer")
@@ -793,12 +793,12 @@ func TestResizeNeverQueriesTerminal(t *testing.T) {
 	}
 }
 
-func approvalReq(reason string) (ApprovalRequest, chan byte) {
-	resp := make(chan byte, 1)
+func approvalReq(reason string) (ApprovalRequest, chan ApprovalAnswer) {
+	resp := make(chan ApprovalAnswer, 1)
 	return ApprovalRequest{Tool: "shell_exec", Detail: "make build", Reason: reason, Resp: resp}, resp
 }
 
-func openApproval(t *testing.T, m Model, reason string) (Model, chan byte) {
+func openApproval(t *testing.T, m Model, reason string) (Model, chan ApprovalAnswer) {
 	t.Helper()
 	req, resp := approvalReq(reason)
 	next, _ := m.Update(req)
@@ -830,10 +830,14 @@ func TestApprovalSelectionKeys(t *testing.T) {
 	}
 	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
 	if m.choice != 2 {
-		t.Errorf("Tab should move to 常に許可, got %d", m.choice)
+		t.Errorf("Tab should move to 理由を添えて拒否, got %d", m.choice)
 	}
 	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
 	if m.choice != 3 {
+		t.Errorf("Tab should move to 常に許可, got %d", m.choice)
+	}
+	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.choice != 4 {
 		t.Errorf("Tab should move to 今後聞かない, got %d", m.choice)
 	}
 	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
@@ -845,7 +849,7 @@ func TestApprovalSelectionKeys(t *testing.T) {
 		t.Errorf("Left should wrap backwards to the last option, got %d", m.choice)
 	}
 	m = press(m, tea.KeyMsg{Type: tea.KeyLeft})
-	if m.choice != 2 {
+	if m.choice != 3 {
 		t.Errorf("Left should step back to 常に許可, got %d", m.choice)
 	}
 
@@ -853,8 +857,8 @@ func TestApprovalSelectionKeys(t *testing.T) {
 	m = press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	select {
 	case got := <-resp:
-		if got != 'a' {
-			t.Errorf("Enter confirmed %c, want a", got)
+		if got.Key != 'a' {
+			t.Errorf("Enter confirmed %c, want a", got.Key)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Enter did not answer the gate")
@@ -873,8 +877,8 @@ func TestApprovalEscalationDefaultsToDeny(t *testing.T) {
 		t.Fatalf("escalated prompt should start on 拒否, got %d", m.choice)
 	}
 	m = press(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if got := <-resp; got != 'n' {
-		t.Errorf("Enter on an escalation answered %c, want n", got)
+	if got := <-resp; got.Key != 'n' {
+		t.Errorf("Enter on an escalation answered %c, want n", got.Key)
 	}
 }
 
@@ -888,8 +892,8 @@ func TestApprovalLetterShortcutsStillWork(t *testing.T) {
 		m = press(m, runeMsg(tc.key))
 		select {
 		case got := <-resp:
-			if got != tc.want {
-				t.Errorf("%q answered %c, want %c", tc.key, got, tc.want)
+			if got.Key != tc.want {
+				t.Errorf("%q answered %c, want %c", tc.key, got.Key, tc.want)
 			}
 		case <-time.After(time.Second):
 			t.Errorf("%q did not answer the gate", tc.key)
@@ -902,8 +906,88 @@ func TestApprovalEscDenies(t *testing.T) {
 	c := &capture{}
 	m, resp := openApproval(t, newTestModel(c), "")
 	m = press(m, tea.KeyMsg{Type: tea.KeyEsc})
-	if got := <-resp; got != 'n' {
-		t.Errorf("Esc answered %c, want n", got)
+	if got := <-resp; got.Key != 'n' {
+		t.Errorf("Esc answered %c, want n", got.Key)
+	}
+	_ = m
+}
+
+// ADR-0060: 'N' opens the reason field instead of answering; Enter then
+// sends the denial with the typed reason riding along.
+func TestApprovalDenyWithReasonFlow(t *testing.T) {
+	c := &capture{}
+	m, resp := openApproval(t, newTestModel(c), "")
+	m = press(m, runeMsg("N"))
+	if !m.reasonMode {
+		t.Fatal("'N' should open the reason field")
+	}
+	select {
+	case got := <-resp:
+		t.Fatalf("'N' answered the gate early with %q", got.Key)
+	default:
+	}
+	if v := m.View(); !strings.Contains(v, m.msgs.ApprovalReasonPrompt) {
+		t.Errorf("reason prompt missing from the dialog:\n%s", v)
+	}
+	m = press(m, runeMsg("違うファイルへ"))
+	m = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	select {
+	case got := <-resp:
+		if got.Key != 'n' || got.Reason != "違うファイルへ" {
+			t.Errorf("answer = (%c, %q), want (n, 違うファイルへ)", got.Key, got.Reason)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Enter did not answer the gate")
+	}
+	if m.phase != phaseRunning {
+		t.Error("answering should leave the approval phase")
+	}
+}
+
+// The IME-safe route (ADR-0002 lineage) reaches the reason field too:
+// Tab-select 理由を添えて拒否, Enter — and an empty reason line is
+// exactly a plain deny.
+func TestApprovalReasonSelectionRouteAndEmptyEnter(t *testing.T) {
+	c := &capture{}
+	m, resp := openApproval(t, newTestModel(c), "")
+	m = press(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = press(m, tea.KeyMsg{Type: tea.KeyTab}) // 許可 → 拒否 → 理由を添えて拒否
+	m = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.reasonMode {
+		t.Fatal("Enter on 理由を添えて拒否 should open the reason field")
+	}
+	m = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // empty reason
+	if got := <-resp; got.Key != 'n' || got.Reason != "" {
+		t.Errorf("empty reason Enter = (%c, %q), want a plain deny", got.Key, got.Reason)
+	}
+}
+
+// Esc backs out of the reason field with nothing decided; the next 'N'
+// gets a fresh field, not the abandoned draft.
+func TestApprovalReasonEscBacksOut(t *testing.T) {
+	c := &capture{}
+	m, resp := openApproval(t, newTestModel(c), "")
+	m = press(m, runeMsg("N"))
+	m = press(m, runeMsg("half-typed"))
+	m = press(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.reasonMode || m.phase != phaseApproval {
+		t.Fatalf("Esc should return to the options row (reasonMode=%v phase=%d)", m.reasonMode, m.phase)
+	}
+	select {
+	case got := <-resp:
+		t.Fatalf("Esc answered the gate with %q", got.Key)
+	default:
+	}
+	m = press(m, runeMsg("N"))
+	if !m.reasonMode {
+		t.Fatal("'N' after backing out should reopen the field")
+	}
+	if v := m.reasonInput.Value(); v != "" {
+		t.Errorf("reopened reason field carries the abandoned draft %q", v)
+	}
+	m = press(m, tea.KeyMsg{Type: tea.KeyCtrlC})
+	if got := <-resp; got.Key != 'n' || got.Reason != "" {
+		t.Errorf("Ctrl+C in the reason field = (%c, %q), want a plain deny", got.Key, got.Reason)
 	}
 	_ = m
 }
@@ -946,7 +1030,7 @@ func TestApprovalShowsEscalationReason(t *testing.T) {
 		Tool:   "shell_exec",
 		Detail: "rm -rf build",
 		Reason: "auto-approve blocked by rule (always asks): recursive force delete",
-		Resp:   make(chan byte, 1),
+		Resp:   make(chan ApprovalAnswer, 1),
 	})
 	m = next.(Model)
 
@@ -1160,14 +1244,14 @@ func TestApprovalDialogStillOwnsTheKeysWhileOpen(t *testing.T) {
 	m := newTestModel(c)
 	m.ta.SetValue("first")
 	m = press(m, enter())
-	resp := make(chan byte, 1)
+	resp := make(chan ApprovalAnswer, 1)
 	next, _ := m.Update(ApprovalRequest{Tool: "write_file", Detail: "x", Resp: resp})
 	m = next.(Model)
 	m = dialogSeen(m)
 
 	m = press(m, runeMsg("y"))
-	if got := <-resp; got != 'y' {
-		t.Fatalf("approval answer = %q", got)
+	if got := <-resp; got.Key != 'y' {
+		t.Fatalf("approval answer = %q", got.Key)
 	}
 	if m.pending != "" || m.ta.Value() != "" {
 		t.Errorf("dialog keys leaked into the input box: pending=%q value=%q", m.pending, m.ta.Value())
@@ -1192,7 +1276,7 @@ func TestApprovalPersistAnswerWritesPolicyAndAllows(t *testing.T) {
 			return func(s string) string { return s }
 		},
 	})
-	resp := make(chan byte, 1)
+	resp := make(chan ApprovalAnswer, 1)
 	next, _ := m.Update(ApprovalRequest{Tool: "mcp__x__y", Detail: "d", Resp: resp})
 	m = next.(Model)
 	m = dialogSeen(m)
@@ -1205,8 +1289,8 @@ func TestApprovalPersistAnswerWritesPolicyAndAllows(t *testing.T) {
 	// question the tool never got.
 	select {
 	case answer := <-resp:
-		if answer != 'y' {
-			t.Errorf("gate answered %c, want y", answer)
+		if answer.Key != 'y' {
+			t.Errorf("gate answered %c, want y", answer.Key)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("the gate was never answered")
@@ -1225,8 +1309,8 @@ func TestApprovalPersistDegradesWithoutAPolicyStore(t *testing.T) {
 	press(m, runeMsg("p"))
 	select {
 	case answer := <-resp:
-		if answer != 'y' {
-			t.Errorf("gate answered %c, want y", answer)
+		if answer.Key != 'y' {
+			t.Errorf("gate answered %c, want y", answer.Key)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("the gate was never answered")

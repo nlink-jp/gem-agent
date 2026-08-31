@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
@@ -44,10 +45,12 @@ const (
 // from the language catalog (ADR-0029). Persisting ('p') is
 // deliberately a separate answer from 'a': one is a session
 // convenience, the other edits a file on disk (ADR-0009 §5).
-var approvalAnswers = []byte{'y', 'n', 'a', 'p'}
+// 'N' (ADR-0060) sits next to 'n' — the same verdict, plus a typed
+// reason; it opens the reason field rather than answering directly.
+var approvalAnswers = []byte{'y', 'n', 'N', 'a', 'p'}
 
 func (m Model) approvalLabels() []string {
-	return []string{m.msgs.ApproveAllow, m.msgs.ApproveDeny, m.msgs.ApproveAlways, m.msgs.ApprovePersist}
+	return []string{m.msgs.ApproveAllow, m.msgs.ApproveDeny, m.msgs.ApproveDenyReason, m.msgs.ApproveAlways, m.msgs.ApprovePersist}
 }
 
 const (
@@ -220,6 +223,11 @@ type Model struct {
 	// land one message behind the dialog and answer it — 'a' would even
 	// session-allowlist the tool (ADR-0021).
 	approvalAt time.Time
+	// reasonMode: the operator chose 'N' (ADR-0060) and the dialog's
+	// options row is replaced by the one-line reason field below.
+	// textinput is value-copy safe (no noCopy fields), like textarea.
+	reasonMode  bool
+	reasonInput textinput.Model
 
 	// Settings panel (ADR-0009). settingsData is the caller-supplied
 	// snapshot used to open the panel; settings is the live copy.
@@ -563,13 +571,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// The turn is already cancelled; the dialog would demand
 			// an answer on behalf of a dead call. Deny silently — the
 			// TurnDone (interrupted) line is the visible outcome.
-			msg.Resp <- 'n'
+			msg.Resp <- ApprovalAnswer{Key: 'n'}
 			return m, nil
 		}
 		req := msg
 		m.approval = &req
 		m.approvalAt = time.Now()
 		m.phase = phaseApproval
+		m.reasonMode = false
 		// An escalated call starts on 拒否 so a reflexive Enter cannot
 		// approve what the risk ladder objected to; an ordinary prompt
 		// starts on 許可, which is what the operator is there to do.
@@ -835,8 +844,9 @@ func (m *Model) releaseTurn() {
 		m.ask = nil
 	}
 	if m.approval != nil {
-		m.approval.Resp <- 'n' // same rule for the approval gate
+		m.approval.Resp <- ApprovalAnswer{Key: 'n'} // same rule for the approval gate
 		m.approval = nil
+		m.reasonMode = false
 	}
 	m.turnStart = time.Time{}
 	m.retryLine = ""
@@ -958,9 +968,17 @@ func (m *Model) emitJoined(parts ...string) tea.Cmd {
 // input box, short enough to be imperceptible when answering for real.
 const approvalGrace = 300 * time.Millisecond
 
+// maxDenyReasonRunes caps the typed denial reason (ADR-0060). The
+// reason rides inside a function response, so the cap is generosity,
+// not protocol: a paragraph fits, a pasted file does not belong.
+const maxDenyReasonRunes = 500
+
 func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if time.Since(m.approvalAt) < approvalGrace {
 		return m, nil // typed-ahead key aimed at the input box (ADR-0021)
+	}
+	if m.reasonMode {
+		return m.updateApprovalReason(msg)
 	}
 	answer := byte(0)
 	switch msg.Type {
@@ -976,22 +994,79 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		answer = 'n'
 	}
 	if answer == 0 {
-		// Letter shortcuts still work when the IME is off.
-		switch strings.ToLower(msg.String()) {
-		case "y":
-			answer = 'y'
-		case "n":
-			answer = 'n'
-		case "a":
-			answer = 'a'
-		case "p":
-			answer = 'p'
-		default:
-			return m, nil
+		// Letter shortcuts still work when the IME is off. 'N' is
+		// matched before the case fold — the one answer whose case is
+		// load-bearing (ADR-0060 §1).
+		if msg.String() == "N" {
+			answer = 'N'
+		} else {
+			switch strings.ToLower(msg.String()) {
+			case "y":
+				answer = 'y'
+			case "n":
+				answer = 'n'
+			case "a":
+				answer = 'a'
+			case "p":
+				answer = 'p'
+			default:
+				return m, nil
+			}
 		}
 	}
+	if answer == 'N' {
+		// 'N' opens the reason field instead of answering; the verdict
+		// is sent when the field resolves (Enter / Esc / Ctrl+C).
+		return m.enterReasonMode()
+	}
+	return m.answerApproval(answer, "")
+}
+
+// enterReasonMode swaps the options row for the one-line reason field
+// (ADR-0060 §1). A fresh textinput per entry: no stale text from an
+// earlier denial can ride along.
+func (m Model) enterReasonMode() (tea.Model, tea.Cmd) {
+	ti := textinput.New()
+	ti.Placeholder = m.msgs.ApprovalReasonPlaceholder
+	ti.Prompt = "> "
+	ti.CharLimit = maxDenyReasonRunes
+	if m.width > 10 {
+		ti.Width = m.width - 8 // box borders + padding + prompt
+	}
+	// Focus BEFORE the copy into the model: an unfocused textinput
+	// ignores every key, and Focus mutates the receiver it is called
+	// on, not the copy already stored (the value-copy lesson again).
+	cmd := ti.Focus()
+	m.reasonInput = ti
+	m.reasonMode = true
+	return m, cmd
+}
+
+// updateApprovalReason routes keys while the reason field is open.
+// Esc backs out with nothing decided; Ctrl+C keeps its dialog-level
+// meaning (plain deny); Enter sends — empty means a plain deny, which
+// makes 'N' then Enter exactly 'n'.
+func (m Model) updateApprovalReason(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.reasonMode = false
+		return m, nil
+	case tea.KeyCtrlC:
+		return m.answerApproval('n', "")
+	case tea.KeyEnter:
+		return m.answerApproval('n', strings.TrimSpace(m.reasonInput.Value()))
+	}
+	var cmd tea.Cmd
+	m.reasonInput, cmd = m.reasonInput.Update(msg)
+	return m, cmd
+}
+
+// answerApproval resolves the pending dialog with one answer byte and,
+// for a denial, the operator's typed reason (ADR-0060).
+func (m Model) answerApproval(answer byte, denyReason string) (tea.Model, tea.Cmd) {
 	req := m.approval
 	m.approval = nil
+	m.reasonMode = false
 	m.phase = phaseRunning
 	m.status = m.msgs.StatusToolWait
 
@@ -1014,9 +1089,9 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if req != nil {
 		if answer == 'p' {
-			req.Resp <- 'y'
+			req.Resp <- ApprovalAnswer{Key: 'y'}
 		} else {
-			req.Resp <- answer
+			req.Resp <- ApprovalAnswer{Key: answer, Reason: denyReason}
 		}
 	}
 	verdict := map[byte]string{
@@ -1025,6 +1100,11 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		'a': m.msgs.VerdictAlways,
 		'p': m.msgs.VerdictPersist,
 	}[answer]
+	if answer == 'n' && denyReason != "" {
+		// The scrollback records that a reason was sent, and what it
+		// said — the transcript is the durable copy (gate_decision).
+		verdict = fmt.Sprintf(m.msgs.VerdictDeniedReasonFmt, clip(denyReason, 200))
+	}
 	// One write for verdict + applier note: the 'p' path was the last
 	// two-Println event left after the single-write convergence, and
 	// separate writes are exactly the slow-terminal flash the rule
@@ -1519,9 +1599,15 @@ func (m Model) viewContent() string {
 		// silent hiding clipDetail exists to prevent (review round 2).
 		// ~13 rows of fixed chrome: box borders, title, purpose, hidden
 		// marker, reason, options, hint, live line, footer, clamp margin.
+		// The reason field (ADR-0060) swaps the options row for a
+		// prompt + input + hint — one row taller.
+		chrome := 13
+		if m.reasonMode {
+			chrome = 14
+		}
 		budget := maxApprovalDetailLines
 		if m.height > 0 { // 0 = size not yet reported; keep the full budget
-			if avail := m.height - 13; avail < budget {
+			if avail := m.height - chrome; avail < budget {
 				budget = avail
 				if budget < 0 {
 					budget = 0
@@ -1550,8 +1636,16 @@ func (m Model) viewContent() string {
 			// answer it.
 			body += "\n" + m.st.warn.Render("⚠ "+clip(req.Reason, 200))
 		}
-		body += "\n" + m.optionsLine() + "\n" +
-			m.st.hint.Render(m.msgs.ApprovalHint)
+		if m.reasonMode {
+			// 'N' chosen (ADR-0060): the options row yields to the
+			// one-line reason field until Enter, Esc or Ctrl+C.
+			body += "\n" + m.st.tool.Render(m.msgs.ApprovalReasonPrompt) +
+				"\n" + m.reasonInput.View() + "\n" +
+				m.st.hint.Render(m.msgs.ApprovalReasonHint)
+		} else {
+			body += "\n" + m.optionsLine() + "\n" +
+				m.st.hint.Render(m.msgs.ApprovalHint)
+		}
 		return m.liveView() + "\n" + m.st.box.Render(body) + "\n" + m.footer() + "\n"
 	default:
 		// One status line only — the key bindings live in /help. Two

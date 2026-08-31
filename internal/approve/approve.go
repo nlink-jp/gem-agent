@@ -58,13 +58,15 @@ func purposeOrNone(purpose string) string {
 // of running it. mustPrompt says the session allowlist may not answer
 // this call (Block-tier, or an "always" policy — ADR-0021 §5); answering
 // 'a' on such a prompt still registers the allowlist, which future
-// non-Block calls use. EOF or read errors deny — failing closed is the
-// only safe default for an approval gate.
-func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (approved, fromAllowlist bool) {
+// non-Block calls use. 'N' denies with a typed reason (ADR-0060),
+// read from the next line; an empty reason line is a plain deny.
+// EOF or read errors deny — failing closed is the only safe default
+// for an approval gate.
+func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (approved, fromAllowlist bool, denyReason string) {
 	if !mustPrompt && g.always[toolName] {
 		// One keystroke standing in for this call: the learner must
 		// not read it as a decision made here (ADR-0048 §1).
-		return true, true
+		return true, true, ""
 	}
 	fmt.Fprintf(g.out, "\n[approval] %s\n  %s\n", toolName, detail)
 	// Printed even when empty: an undeclared purpose is a fact about the
@@ -73,27 +75,37 @@ func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool
 	if reason != "" {
 		fmt.Fprintf(g.out, "  ⚠ %s\n", reason)
 	}
-	fmt.Fprint(g.out, "  allow? [y]es / [n]o / [a]lways this session: ")
+	fmt.Fprint(g.out, "  allow? [y]es / [n]o / [N]o with reason / [a]lways this session: ")
 	for {
 		line, err := g.in.ReadString('\n')
 		if err != nil && line == "" {
 			fmt.Fprintln(g.out, "(no input — denied)")
-			return false, false
+			return false, false, ""
+		}
+		// 'N' is checked before the lowercase switch: it is the one
+		// answer whose case is load-bearing (ADR-0060 §1).
+		if strings.TrimSpace(line) == "N" {
+			fmt.Fprint(g.out, "  deny reason (empty = deny without one): ")
+			reasonLine, rerr := g.in.ReadString('\n')
+			if rerr != nil && reasonLine == "" {
+				return false, false, "" // EOF mid-question: plain deny
+			}
+			return false, false, strings.TrimSpace(reasonLine)
 		}
 		switch strings.ToLower(strings.TrimSpace(line)) {
 		case "y", "yes":
-			return true, false
+			return true, false, ""
 		case "n", "no", "":
-			return false, false
+			return false, false, ""
 		case "a", "always":
 			g.always[toolName] = true
 			// The keystroke that registers the allowlist is itself an
 			// operator decision about this call.
-			return true, false
+			return true, false, ""
 		default:
-			fmt.Fprint(g.out, "  please answer y / n / a: ")
+			fmt.Fprint(g.out, "  please answer y / n / N / a: ")
 			if err != nil {
-				return false, false
+				return false, false, ""
 			}
 		}
 	}
