@@ -69,12 +69,14 @@ func Execute(version string) {
 
 var rootCmd = &cobra.Command{
 	Use:   "gem-agent [first message]",
-	Short: "Interactive CLI agent backed by Vertex AI Gemini (Claude Code fallback)",
-	Long: `gem-agent is an interactive CLI agent backed by Vertex AI Gemini 3.x,
-built as a continuity tool for development work when Claude Code is
-unavailable. It provides file read/write, sandboxed command execution,
-and (from Phase 2) MCP server connectivity, with write/exec gated behind
-per-call approval.
+	Short: "Minimal, sandboxed CLI agent runtime backed by Vertex AI Gemini",
+	Long: `gem-agent is an independent, deliberately minimal CLI agent runtime
+backed by Vertex AI Gemini 3.x: an auditable loop of file read/write,
+sandboxed command execution, and MCP server connectivity, with mutating
+calls gated behind per-call approval. It is drop-in compatible with the
+agent ecosystem's conventions — AGENTS.md / CLAUDE.md instruction
+files, Claude Code-format .mcp.json and skills — so a project needs no
+gem-agent-specific setup.
 
 The current working directory is the project: file access is confined to
 it, and shell file-writes are restricted to it by macOS sandbox-exec.
@@ -239,9 +241,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// restored is loaded below, AFTER Reopen holds the flock.
 	}
 
-	// A broken log warns; it must not block a backup tool. A broken
-	// *resume* is fatal, though — the operator asked for that history,
-	// and continuing without it silently would be worse than stopping.
+	// A broken log warns; a session that cannot be recorded is still a
+	// session, and degrading beats refusing to start. A broken *resume*
+	// is fatal, though — the operator asked for that history, and
+	// continuing without it silently would be worse than stopping.
 	var sessionLog agent.SessionLog
 	sessionPath := "(disabled)"
 	sessionID := ""
@@ -291,7 +294,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		if dir, err := workdir.Ensure(projectDir, sessionID); err != nil {
 			// A missing work directory degrades the session (oversized
 			// MCP results get truncated with a note); it does not stop
-			// a backup tool from starting.
+			// the session from starting.
 			fmt.Fprintf(stderr, "warning: session work directory unavailable: %v\n", err)
 		} else {
 			workDir = dir
@@ -358,7 +361,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- agent memory: facts persisted across sessions (ADR-0020) ---
-	// A missing home disables memory with a warning; a backup tool must
+	// A missing home disables memory with a warning; the runtime must
 	// not refuse to start over its least essential feature.
 	memBase := ""
 	var memories []memory.Memory

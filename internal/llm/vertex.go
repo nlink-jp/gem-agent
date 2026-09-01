@@ -120,8 +120,8 @@ func (v *Vertex) WithModel(name string) *Vertex {
 }
 
 // ContextWindow fetches the model's input token limit from the model
-// metadata. Callers treat failures as "unknown", never fatal — the
-// footer display must not block a backup tool.
+// metadata. Callers treat failures as "unknown", never fatal — a
+// footer statistic must never block the session.
 func (v *Vertex) ContextWindow(ctx context.Context) (int, error) {
 	info, err := v.client.Models.Get(ctx, v.model, nil)
 	if err != nil {

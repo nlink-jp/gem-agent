@@ -2,6 +2,18 @@
 
 ## [0.61.0] - 2026-09-02
 
+### Fixed
+
+- **`--help` still pitched the retired positioning** (ADR-0061
+  follow-up). The cobra `Short`/`Long` text called gem-agent a
+  "Claude Code fallback" / "continuity tool" — the one user-facing
+  surface the ADR-0061 repositioning sweep missed. It now states the
+  current charter: an independent, deliberately minimal agent runtime
+  with drop-in ecosystem compatibility. Code comments that justified
+  fail-open behavior with "a backup tool must start" now give the
+  behavior's real, still-standing rationale (degrading beats refusing
+  to start); the behaviors themselves are unchanged.
+
 ### Added
 
 - **A positional argument is the first interactive turn** (ADR-0064).

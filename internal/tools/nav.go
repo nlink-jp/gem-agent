@@ -2,8 +2,8 @@ package tools
 
 // Project navigation tools (ADR-0013, reshaped by ADR-0052): a tree
 // listing and a fast grep. Both are read-only, project-confined, and
-// dependency-free — a backup tool must not acquire a ripgrep
-// prerequisite on the day it is needed. Neither follows symlinks: a
+// dependency-free — an optional ripgrep prerequisite would fork the
+// behavior into two variants (ADR-0013). Neither follows symlinks: a
 // walk that follows links can leave the project through a link the
 // per-path checks never see.
 //

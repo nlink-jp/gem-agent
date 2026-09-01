@@ -99,8 +99,8 @@ func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Too
 // connectMCPServers loads the global (~/.config/gem-agent/mcp.json) and
 // project (.mcp.json) server lists — the project entry wins a name
 // collision — and registers every reachable server's tools. Failures on
-// either scope are warnings; a broken file or server must not block a
-// backup tool.
+// either scope are warnings; a broken file or server degrades the
+// session, it must not block the runtime from starting.
 // scopes maps each connected server to "global" or "project" — kept
 // for consumers that must not treat a project-supplied server like an
 // operator-installed one (none today; /learn was, before ADR-0049).
