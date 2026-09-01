@@ -82,8 +82,8 @@ internal/approve/  MITL gate (y/n/N/a + session allowlist; N = deny with
 internal/session/  JSONL transcript: logger + resume loader (ADR-0005)
 internal/repl/     paste-safe input reader (plain REPL, non-TTY fallback)
 internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate
-internal/diagram/  mermaid → terminal box art (ADR-0042): supported-type list,
-                   shape normalization, fidelity guard, width budget
+internal/diagram/  mermaid → terminal box art (ADR-0042/0063): fence scanner,
+                   shape normalization, wrongness guards — no size gates
 scripts/           codesign-darwin.sh / notarize-darwin.sh (org templates, verbatim)
 docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 ```
@@ -263,16 +263,18 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   asked); before it existed the model proposed a memory 0 times in 39
   sessions. When editing that prompt, keep the positive case at least as
   concrete and as long as the prohibitions — a test enforces it.
-- **internal/diagram is the `render_diagram` tool's engine, not a Markdown
-  pass** (ADR-0043) — nothing rewrites the model's reply. A mermaid fence
-  in a reply is displayed as source; diagrams exist because the model
-  called the tool. Every refusal must return a reason the author can act
-  on: it is the model's only signal, and `false` taught it nothing. The
-  art goes to the terminal via `tui.Diagram` as a side effect and must
-  never come back in the tool result — the model would reproduce it badly
-  and pay twice. `agent_info` carries the render BUDGET (usable columns +
-  fixed line cap), never the console's size: the inline TUI scrolls, so
-  terminal rows are not the bound.
+- **internal/diagram is a view-layer rewrite, and the model is told
+  nothing about it** (ADR-0063, superseding ADR-0043's tool). The TUI's
+  Markdown renderer calls `diagram.Rewrite` on completed segments: a
+  mermaid fence that draws faithfully becomes box art in place, one that
+  does not stays source with a one-line reader-facing note, unsupported
+  types pass silently. There is no width or height gate — overflow wraps
+  at the terminal and loses nothing (measured); the guards that remain
+  are wrongness guards (label fidelity, edge count). Do not add diagram
+  wording to the system prompt or a diagram tool to the registry: both
+  the fence prohibition and a format instruction were measured steering
+  the model into hand-drawn box art (ADR-0063 context). The transcript
+  keeps the model's source verbatim.
 - **internal/diagram is three rules, and nothing else** (ADR-0042 §5) —
   translate (deterministic mapping of constructs the renderer's grammar
   rejects; each entry a syntax fact), fit (one layout: fits or source),

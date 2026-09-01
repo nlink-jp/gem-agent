@@ -175,7 +175,11 @@ excepted).
   the live region's tab width hole, a second stdin reader), plus the
   stall detector, ask dialog, and audit-gap fixes
 - [`ADR-0042`](adr/0042-terminal-diagrams.md) — mermaid diagrams
-- [`ADR-0043`](adr/0043-diagram-tool.md) — diagrams are drawn by a tool, not by rewriting what the model wrote
+  draw in the terminal: the measured-faithful types only (flowchart,
+  ASCII sequence, ER), shapes normalized to boxes, a fidelity guard,
+  the rest shown as source (the FIT rule and the prompt section were
+  later removed by 0063)
+- [`ADR-0043`](adr/0043-diagram-tool.md) — diagrams are drawn by a tool, not by rewriting what the model wrote (superseded by 0063)
 - [`ADR-0044`](adr/0044-pre-tool-hooks.md) — operator pre-tool hooks: the org's guards survive the fallback
 - [`ADR-0045`](adr/0045-transcript-approval-learning.md) — transcript-driven approval-rule learning: `/learn` proposes, the operator decides (withdrawn by 0049)
 - [`ADR-0046`](adr/0046-mcp-description-risk-evidence.md) — MCP tool descriptions as risk-evaluation evidence: tell the evaluator what the operator already installed
@@ -195,9 +199,7 @@ excepted).
 - [`ADR-0060`](adr/0060-deny-with-reason.md) — deny with reason, the `N` answer: the fixed denial text spent a model round fetching a reason the operator knew when they pressed `n`, and the denial's own function response is the one slot the API leaves open mid-round (ADR-0012). `n` stays a one-keystroke deny; denial results ship unwrapped by message provenance, never by content (a denial-shaped tool output stays wrapped); the reason lands in `gate_decision` but not in telemetry
 - [`ADR-0061`](adr/0061-independent-runtime-promotion.md) — independent agent runtime: the backup charter is retired (real-world deployment outgrew it), drop-in compatibility stays the top requirement with an ecosystem-compatibility rationale, scope minimalism stands on its own charter instead of "20% of Claude Code", the drill becomes an on-demand health check, and gem-agent is promoted to cli-series by operator decision — the drill-based bar superseded, not passed
 - [`ADR-0062`](adr/0062-delegation-first-exploration.md) — delegation-first exploration: 75 sessions / 788 tool calls held zero spontaneous agentic_file_search firings because the system prompt prescribed the manual list/search/read loop by name and never mentioned the tool — a description-level trigger cannot outcompete a prompt-level workflow. The prompt now routes exploration to delegation first (self-navigation is the known-target path), the description gains "trust the report", and the wiring is pinned by tests
-  draw in the terminal: the measured-faithful types only (flowchart,
-  ASCII sequence, ER), shapes normalized to boxes, a fidelity guard,
-  the rest shown as source; the model is told exactly what renders
+- [`ADR-0063`](adr/0063-diagram-fences-render-in-place.md) — diagram fences render in place and the runtime says nothing about diagrams: two months measured the tool firing once while the model hand-drew box art instead (the fence prohibition over-generalized — a specific prohibition beside a vague recommendation reads as "rarely"). The fence path returns as a view-layer rewrite, the FIT gate is deleted (overflow wraps and loses nothing — measured), the wrongness guards stay, and an attempted draw that fails keeps the source plus a one-line reader-facing note
 
 ## History
 

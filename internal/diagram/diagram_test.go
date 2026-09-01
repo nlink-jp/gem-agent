@@ -8,6 +8,30 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+func fence(src string) string { return "before\n\n```mermaid\n" + src + "```\n\nafter\n" }
+
+// rejoin flattens Split for assertions on overall content; per-segment
+// properties (which parts are art) are asserted directly where they
+// matter.
+func rejoin(md string) string {
+	var parts []string
+	for _, s := range Split(md) {
+		parts = append(parts, s.Text)
+	}
+	return strings.Join(parts, "\n")
+}
+
+// artSegments returns just the drawn segments.
+func artSegments(md string) []string {
+	var arts []string
+	for _, s := range Split(md) {
+		if s.Art {
+			arts = append(arts, s.Text)
+		}
+	}
+	return arts
+}
+
 func maxWidth(s string) int {
 	w := 0
 	for _, l := range strings.Split(s, "\n") {
@@ -18,123 +42,186 @@ func maxWidth(s string) int {
 	return w
 }
 
-// A Japanese flowchart — the case that decides usability — is drawn and
-// nothing is wider than the width budget.
+// A Japanese flowchart — the case that decides usability — is drawn as
+// its own art segment, the source is gone, and the surrounding text
+// survives in markdown segments.
 func TestFlowchartJapaneseRenders(t *testing.T) {
-	src := "graph TD\n  A[開始] --> B[承認が必要か]\n  B -->|はい| C[ダイアログ表示]\n  B -->|いいえ| D[そのまま実行]\n"
-	art, w, ok := Render(src, 100)
-	if !ok {
-		t.Fatalf("not drawn: %s", w)
+	md := fence("graph TD\n  A[開始] --> B[承認が必要か]\n  B -->|はい| C[ダイアログ表示]\n  B -->|いいえ| D[そのまま実行]\n")
+	out := rejoin(md)
+	if strings.Contains(out, "graph TD") {
+		t.Fatalf("source not replaced:\n%s", out)
 	}
-	for _, want := range []string{"┌", "開始", "ダイアログ表示", "はい", "いいえ"} {
-		if !strings.Contains(art, want) {
-			t.Errorf("missing %q in:\n%s", want, art)
+	for _, want := range []string{"before", "after", "┌", "開始", "ダイアログ表示", "はい", "いいえ"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
 		}
 	}
-	if got := maxWidth(art); got > 100-widthMargin {
-		t.Errorf("art width %d exceeds budget", got)
+	arts := artSegments(md)
+	if len(arts) != 1 || !strings.Contains(arts[0], "開始") {
+		t.Fatalf("expected exactly one art segment carrying the drawing, got %d", len(arts))
 	}
 }
 
-// Unsupported types and a sequence diagram with wide labels are refused,
-// and every refusal carries a reason: the model is told, in its own tool
-// result, what to do instead (ADR-0043 §1).
-func TestUnsupportedStaysSource(t *testing.T) {
+// Unsupported diagram types pass through byte for byte, with no note
+// and no art segment: a gantt in the chat is not an error (ADR-0063 §4).
+func TestUnsupportedStaysSourceSilently(t *testing.T) {
 	for _, src := range []string{
 		"stateDiagram-v2\n  [*] --> A\n  A --> B\n",
 		"pie title T\n  \"a\" : 1\n",
-		"sequenceDiagram\n  participant U as 操作者\n  U->>A: 質問\n",
 		"gantt\n  title x\n",
+		"classDiagram\n  class A\n",
 	} {
-		if _, reason, ok := Render(src, 100); ok {
-			t.Errorf("unsupported source was drawn: %q", src)
-		} else if reason == "" {
-			t.Errorf("refusal for %q carried no reason — the model would learn nothing", src)
+		md := fence(src)
+		segs := Split(md)
+		if len(segs) != 1 || segs[0].Art || segs[0].Text != md {
+			t.Errorf("unsupported block was not passed through untouched:\n%v", segs)
 		}
+	}
+}
+
+// A supported kind that cannot be drawn keeps its fence and gains the
+// reader-facing note, as its own paragraph on BOTH sides — a note
+// glued to the next paragraph reads as its prefix. The sequence-CJK
+// case is the deterministic failure: the renderer misaligns wide runes.
+func TestAttemptedFailureLeavesFencePlusNote(t *testing.T) {
+	md := fence("sequenceDiagram\n  participant U as 操作者\n  U->>A: 質問\n")
+	out := rejoin(md)
+	if !strings.Contains(out, "sequenceDiagram") || !strings.Contains(out, "操作者") {
+		t.Fatalf("source lost:\n%s", out)
+	}
+	if !strings.Contains(out, "```\n\n*diagram shown as source: ") {
+		t.Errorf("note missing or not separated from the fence:\n%s", out)
+	}
+	noteEnd := strings.Index(out, "labels*")
+	if noteEnd < 0 || !strings.HasPrefix(out[noteEnd+len("labels*"):], "\n\n") {
+		t.Errorf("note not followed by a blank line:\n%s", out)
+	}
+	if len(artSegments(md)) != 0 {
+		t.Error("a failed diagram produced an art segment")
 	}
 }
 
 func TestSequenceASCIIAndERRender(t *testing.T) {
-	out, _, _ := Render("sequenceDiagram\n  participant U as User\n  participant A as Agent\n  U->>A: question\n  A-->>U: answer\n", 100)
+	seq := fence("sequenceDiagram\n  participant U as User\n  participant A as Agent\n  U->>A: question\n  A-->>U: answer\n")
+	out := rejoin(seq)
 	if strings.Contains(out, "sequenceDiagram") || !strings.Contains(out, "question") || !strings.Contains(out, "┌") {
 		t.Errorf("sequence not drawn:\n%s", out)
 	}
-	out, _, _ = Render("erDiagram\n  SESSION ||--o{ MESSAGE : contains\n", 100)
+	er := fence("erDiagram\n  SESSION ||--o{ MESSAGE : contains\n")
+	out = rejoin(er)
 	if strings.Contains(out, "erDiagram") || !strings.Contains(out, "contains") {
 		t.Errorf("ER not drawn:\n%s", out)
 	}
 }
 
-// Rule 2 is one rule: the diagram fits or it is refused — and the
-// refusal now says how wide it came out and how much room there was,
-// because that reason is what the model receives (ADR-0043 §1).
-func TestWidthBudget(t *testing.T) {
-	wide := "graph LR\n  A[Parse config] --> B[Resolve project] --> C[Connect MCP] --> D[Discover skills] --> E[Build prompt] --> F[Start TUI]\n"
-	for _, narrow := range []int{60, 100} {
-		art, reason, ok := Render(wide, narrow)
-		if ok {
-			t.Errorf("too-wide diagram drawn at %d cols:\n%s", narrow, art)
-			continue
-		}
-		if !strings.Contains(reason, "columns wide") || !strings.Contains(reason, "usable") {
-			t.Errorf("refusal at %d cols does not say the measurements: %q", narrow, reason)
-		}
+// There is no width gate (ADR-0063 §3): a chain that needs far more
+// than a typical terminal draws anyway, as a verbatim art segment the
+// TUI hands to the terminal (whose own wrap splits rows in order).
+func TestNoWidthGate(t *testing.T) {
+	wide := fence("graph LR\n  A[Parse config] --> B[Resolve project] --> C[Connect MCP] --> D[Discover skills] --> E[Build prompt] --> F[Start TUI]\n")
+	arts := artSegments(wide)
+	if len(arts) != 1 {
+		t.Fatalf("wide chain not drawn: %d art segments", len(arts))
 	}
-	art, reason, ok := Render(wide, 140)
-	if !ok {
-		t.Fatalf("wide chain not drawn at 140 cols: %s", reason)
+	if w := maxWidth(arts[0]); w <= 100 {
+		t.Errorf("expected art wider than 100 cells (proving no gate), got %d", w)
 	}
-	if got := maxWidth(art); got > 140-widthMargin {
-		t.Errorf("art width %d exceeds budget", got)
+	// Wide runes draw too — the compact retry that corrupted them is
+	// long gone, and without a width gate there is nothing to squeeze
+	// for.
+	cjk := fence("graph LR\n  A[とても長い日本語のラベルその一] --> B[とても長い日本語のラベルその二] --> C[とても長い日本語のラベルその三]\n")
+	if len(artSegments(cjk)) != 1 {
+		t.Error("wide-rune diagram not drawn")
+	}
+}
+
+// There is no height cap either: a tall chain draws and scrolls.
+func TestNoHeightCap(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("graph TD\n")
+	for i := 0; i < 30; i++ {
+		fmt.Fprintf(&b, "  N%d[step %d] --> N%d[step %d]\n", i, i, i+1, i+1)
+	}
+	arts := artSegments(fence(b.String()))
+	if len(arts) != 1 {
+		t.Fatalf("tall chain not drawn")
+	}
+	if n := strings.Count(arts[0], "\n"); n <= 80 {
+		t.Errorf("expected art taller than the old 80-line cap, got %d lines", n)
+	}
+}
+
+// A ```mermaid line that is content of an enclosing fence is data: an
+// example inside a ````markdown block, or a quoted fence inside a
+// ```text block, must never be replaced by art (independent review of
+// ADR-0063 caught the scanner treating them as openers).
+func TestMermaidInsideEnclosingFenceUntouched(t *testing.T) {
+	quoted := "````markdown\nHow to write a diagram:\n\n```mermaid\ngraph LR\n  A[a] --> B[b]\n```\n````\ntail\n"
+	segs := Split(quoted)
+	if len(segs) != 1 || segs[0].Art || segs[0].Text != quoted {
+		t.Fatalf("mermaid example inside a ````markdown block was rewritten:\n%v", segs)
+	}
+	inner := "```text\nliteral lines\n```mermaid\ngraph LR\n  A[a] --> B[b]\n```\n"
+	segs = Split(inner)
+	for _, s := range segs {
+		if s.Art {
+			t.Fatalf("mermaid-labeled content line inside a ```text block was drawn:\n%v", segs)
+		}
 	}
 }
 
 // Shapes the renderer does not parse are drawn as boxes carrying the
 // label — never as a literal "{text}" plus a stray node.
 func TestShapesNormalizedToBoxes(t *testing.T) {
-	src := "flowchart TD\n  A[開始] --> B{承認?}\n  B -->|はい| C((実行))\n  B -->|いいえ| D([停止])\n  D --> E[(DB)]:::cls\n  classDef cls fill:#f9f\n"
-	art, w, ok := Render(src, 100)
-	if !ok {
-		t.Fatalf("not drawn: %s", w)
+	md := fence("flowchart TD\n  A[開始] --> B{承認?}\n  B -->|はい| C((実行))\n  B -->|いいえ| D([停止])\n  D --> E[(DB)]:::cls\n  classDef cls fill:#f9f\n")
+	out := rejoin(md)
+	if strings.Contains(out, "flowchart TD") {
+		t.Fatalf("not drawn:\n%s", out)
 	}
 	for _, bad := range []string{"{承認", "((実行", "([停止", "[(DB", ":::"} {
-		if strings.Contains(art, bad) {
+		if strings.Contains(out, bad) {
 			t.Errorf("raw shape syntax leaked into the art: %q", bad)
 		}
 	}
 	for _, want := range []string{"承認?", "実行", "停止", "DB"} {
-		if !strings.Contains(art, want) {
+		if !strings.Contains(out, want) {
 			t.Errorf("label %q missing from the art", want)
 		}
 	}
 }
 
-// The fence path is gone (ADR-0043): the package no longer inspects or
-// rewrites Markdown at all. It renders one source at a time, and a
-// fenced block handed to it is accepted rather than refused on
-// punctuation — the tool strips it before calling.
-func TestPackageNoLongerTouchesMarkdown(t *testing.T) {
-	if _, _, ok := Render("```mermaid\ngraph LR\n  A[a] --> B[b]\n```", 100); ok {
-		t.Error("Render accepted a fenced block; stripping belongs to the caller")
+// Non-mermaid fences and unclosed fences are untouched; several blocks
+// are handled independently.
+func TestFencesUntouchedAndMultiple(t *testing.T) {
+	md := "```go\nfunc main() {}\n```\n\n```mermaid\ngraph LR\n  A[a] --> B[b]\n```\n\n```mermaid\nstateDiagram-v2\n  [*] --> X\n```\n"
+	out := rejoin(md)
+	if !strings.Contains(out, "```go\nfunc main() {}\n```") {
+		t.Error("go fence altered")
 	}
-	if _, _, ok := Render("graph LR\n  A[a] --> B[b]\n", 100); !ok {
-		t.Error("bare source not drawn")
+	if strings.Contains(out, "graph LR") {
+		t.Error("first mermaid block not drawn")
+	}
+	if !strings.Contains(out, "stateDiagram-v2") {
+		t.Error("unsupported second block not preserved")
+	}
+	unclosed := "```mermaid\ngraph LR\n  A --> B\n"
+	if segs := Split(unclosed); len(segs) != 1 || segs[0].Art || segs[0].Text != unclosed {
+		t.Error("unclosed fence rewritten")
+	}
+	if segs := Split("plain text"); len(segs) != 1 || segs[0].Text != "plain text" {
+		t.Error("text without mermaid altered")
+	}
+	// The fast path is case-insensitive like the fence matcher: a
+	// ```Mermaid fence draws with or without a lowercase "mermaid"
+	// elsewhere in the segment.
+	upper := "```Mermaid\ngraph LR\n  A[a] --> B[b]\n```\n"
+	if len(artSegments(upper)) != 1 {
+		t.Error("```Mermaid fence not drawn")
 	}
 }
 
-// The prompt promises exactly the supported list (ADR-0042 §1) — the
-// two can never drift because they are one slice.
-func TestPromptSectionListsSupported(t *testing.T) {
-	p := PromptSection()
-	for _, s := range Supported() {
-		if !strings.Contains(p, s) {
-			t.Errorf("prompt lacks %q", s)
-		}
-	}
-	if !strings.Contains(p, "raw source") || !strings.Contains(p, "Files are unaffected") {
-		t.Errorf("prompt must state the fallback and the file exemption: %q", p)
-	}
-	// And the classifier accepts exactly those families.
+// The classifier accepts exactly the renderable families.
+func TestClassify(t *testing.T) {
 	for src, want := range map[string]kind{
 		"graph LR\nA-->B":           kindFlow,
 		"flowchart TD\nA-->B":       kindFlow,
@@ -164,7 +251,8 @@ func TestFaithfulGuard(t *testing.T) {
 // drawn as the full-width ＆ so the graph stays right and the label
 // stays readable (v0.37.1).
 func TestAmpersandInLabel(t *testing.T) {
-	out, _, _ := Render("graph TD\n  A[開始] --> R([レポート作成 & 確度評価])\n", 100)
+	md := fence("graph TD\n  A[開始] --> R([レポート作成 & 確度評価])\n")
+	out := rejoin(md)
 	if strings.Contains(out, "graph TD") {
 		t.Fatalf("not drawn:\n%s", out)
 	}
@@ -178,9 +266,9 @@ func TestAmpersandInLabel(t *testing.T) {
 // renderer read "A -- text" as a node and the label guard let it pass).
 func TestEdgeTextSyntaxRendersCorrectly(t *testing.T) {
 	src := "flowchart TD\n    Start[Investigation Start] --> InputType{Indicator Type?}\n    InputType -- IP Address --> CheckTor[Tor Exit Node Check]\n    InputType -- Domain --> CheckWhois[WHOIS / RDAP Lookup]\n    CheckTor --> CheckASN[ASN & GeoIP Resolution]\n"
-	art, _, ok := Render(src, 120)
-	if !ok {
-		t.Fatal("not drawn")
+	art, why, attempted := render(src)
+	if !attempted || why != "" {
+		t.Fatalf("not drawn: %s", why)
 	}
 	if strings.Contains(art, "InputType --") {
 		t.Errorf("edge text parsed as a node:\n%s", art)
@@ -190,7 +278,8 @@ func TestEdgeTextSyntaxRendersCorrectly(t *testing.T) {
 	}
 }
 
-// Structural guard: the edge count and the subgraph-endpoint refusal.
+// Structural guard: the edge count, and the subgraph-id edge that a
+// blacklist once wrongly refused.
 func TestFlowStructuralGuards(t *testing.T) {
 	if n := flowEdgeCount("graph TD\n  A[a] --> B{b}\n  B -->|x| C[c] & D[d]\n  E[e] & F[f] --> G[g]\n  H --- I\n"); n != 5 {
 		t.Errorf("flowEdgeCount = %d, want 5", n)
@@ -202,9 +291,9 @@ func TestFlowStructuralGuards(t *testing.T) {
 	// v0.37.6; the v0.37.2 refusal was an unverified assumption). The
 	// edge-count guard is what proves it, not a syntax blacklist.
 	sub := "flowchart LR\n    subgraph Passive_Sources [Passive Investigation Layer]\n        DNS[DoH]\n    end\n    Passive_Sources --> Aggregator[Indicator Aggregator]\n"
-	art, _, ok := Render(sub, 120)
-	if !ok {
-		t.Fatalf("edge to a subgraph id refused")
+	art, why, attempted := render(sub)
+	if !attempted || why != "" {
+		t.Fatalf("edge to a subgraph id refused: %s", why)
 	}
 	if arrowheads(art) != flowEdgeCount(prepare(kindFlow, sub)) {
 		t.Errorf("subgraph-id edge miscounted:\n%s", art)
@@ -215,7 +304,8 @@ func TestFlowStructuralGuards(t *testing.T) {
 // node and which fused adjacent subgraph titles; it is dropped, and the
 // multi-subgraph flowchart draws with its titles intact (v0.37.3).
 func TestSubgraphDirectionDropped(t *testing.T) {
-	out, _, _ := Render("flowchart LR\n    subgraph A [Client Zone]\n        U[App] --> G[CLI]\n    end\n    subgraph B [MCP Servers]\n        direction TB\n        W[whois]\n    end\n    G --> W\n", 120)
+	md := fence("flowchart LR\n    subgraph A [Client Zone]\n        U[App] --> G[CLI]\n    end\n    subgraph B [MCP Servers]\n        direction TB\n        W[whois]\n    end\n    G --> W\n")
+	out := rejoin(md)
 	if strings.Contains(out, "flowchart LR") {
 		t.Fatalf("not drawn:\n%s", out)
 	}
@@ -227,18 +317,17 @@ func TestSubgraphDirectionDropped(t *testing.T) {
 	}
 }
 
-// A dense ER diagram that FITS the screen is drawn — readability is
-// the operator's call (v0.37.4 revert of the v0.37.3 complexity cap);
-// the width budget remains the only bound.
-func TestDenseERDrawsWhenItFits(t *testing.T) {
+// A dense ER diagram is drawn — readability is the operator's call
+// (v0.37.4 revert of the complexity cap; ADR-0063 removed the width
+// bound that remained).
+func TestDenseERDraws(t *testing.T) {
 	ents := "\n  DOMAIN {\n    string fqdn PK\n  }\n  IP {\n    string v4 PK\n  }\n  ASN {\n    int asn PK\n  }\n  CERT {\n    string sha PK\n  }\n  ABUSE {\n    string id PK\n  }\n  PULSE {\n    string id PK\n  }\n"
 	dense := "erDiagram\n  DOMAIN ||--o{ IP : a\n  DOMAIN ||--o{ CERT : b\n  DOMAIN ||--|| ASN : c\n  DOMAIN ||--o{ ABUSE : d\n  DOMAIN ||--o{ PULSE : e\n  IP }|--|| ASN : f\n  IP ||--o{ ABUSE : g\n" + ents
-	out, _, _ := Render(dense, 250)
-	if strings.Contains(out, "erDiagram") {
-		t.Errorf("dense ER that fits was not drawn:\n%s", out)
+	if len(artSegments(fence(dense))) != 1 {
+		t.Error("dense ER was not drawn")
 	}
 	simple := "erDiagram\n  DOMAIN ||--o{ IP : resolves\n  IP }|--|| ASN : belongs\n\n  DOMAIN {\n    string fqdn PK\n  }\n  IP {\n    string v4 PK\n  }\n  ASN {\n    int asn PK\n  }\n"
-	if _, _, ok := Render(simple, 120); !ok {
+	if len(artSegments(fence(simple))) != 1 {
 		t.Error("simple ER not drawn")
 	}
 }
@@ -250,9 +339,9 @@ func TestDenseERDrawsWhenItFits(t *testing.T) {
 // refused correct diagrams (v0.37.5, field report).
 func TestFaithfulSeesThroughLineArt(t *testing.T) {
 	src := "flowchart TD\n  A[Start] --> B{Target Type?}\n  B -->|Domain / FQDN| C[WHOIS Lookup]\n  B -->|IP / CIDR| D[ASN Lookup]\n"
-	art, _, ok := Render(src, 120)
-	if !ok {
-		t.Fatal("multi-word edge labels refused — the guard is reading padded labels as lost")
+	art, why, attempted := render(src)
+	if !attempted || why != "" {
+		t.Fatalf("multi-word edge labels refused (%s) — the guard is reading padded labels as lost", why)
 	}
 	if got := arrowheads(art); got != 3 {
 		t.Errorf("arrowheads = %d, want 3:\n%s", got, art)
@@ -267,7 +356,7 @@ func TestFaithfulSeesThroughLineArt(t *testing.T) {
 // field case that stopped rendering in v0.37.4).
 func TestSubgraphFlowchartWithLabelledEdges(t *testing.T) {
 	src := "flowchart TD\n    Start([Investigation Target]) --> CheckType{Target Type?}\n    subgraph Domain_Flow[Domain Attribution]\n        CheckType -->|Domain / FQDN| D1[WHOIS / RDAP Lookup]\n        D1 --> D2[DNS / DoH Resolution]\n    end\n    subgraph IP_Flow[IP Attribution]\n        CheckType -->|IP / CIDR| I1[ASN & GeoIP Lookup]\n        I1 --> I2[Tor / Relay Check]\n    end\n    D2 --> R[Report]\n    I2 --> R\n"
-	out, _, _ := Render(src, 140)
+	out := rejoin(fence(src))
 	if strings.Contains(out, "flowchart TD") {
 		t.Fatalf("field flowchart not drawn:\n%s", out)
 	}
@@ -282,9 +371,9 @@ func TestSubgraphFlowchartWithLabelledEdges(t *testing.T) {
 // whose endpoints are subgraph ids, CJK labels, multi-word edge labels.
 func TestSubgraphIDEdgesWithJapaneseLabels(t *testing.T) {
 	src := "flowchart TD\n    Start([調査開始 / Indicator Input]) --> CheckType{種別判定}\n    CheckType -->|Domain / FQDN| StepDomain[ドメイン帰属調査 SOP]\n    CheckType -->|IP Address| StepIP[IPアドレス帰属調査 SOP]\n    subgraph DomainFlow [ドメイン調査]\n        StepDomain --> D1[WHOIS / RDAP 照会]\n        D1 --> D2[DoH DNSレコード解決]\n    end\n    subgraph IPFlow [IP調査]\n        StepIP --> I1[ASN / GeoIP 特定]\n        I1 --> I2[Tor 判定]\n    end\n    DomainFlow --> Correlate[相関分析]\n    IPFlow --> Correlate\n    Correlate --> Report[レポート出力]\n"
-	art, _, ok := Render(src, 185)
-	if !ok {
-		t.Fatal("field flowchart with subgraph-id edges refused")
+	art, why, attempted := render(src)
+	if !attempted || why != "" {
+		t.Fatalf("field flowchart with subgraph-id edges refused: %s", why)
 	}
 	if got, want := arrowheads(art), flowEdgeCount(prepare(kindFlow, src)); got != want {
 		t.Errorf("arrowheads %d != source edges %d:\n%s", got, want, art)
@@ -295,89 +384,6 @@ func TestSubgraphIDEdgesWithJapaneseLabels(t *testing.T) {
 	for _, want := range []string{"種別判定", "ドメイン調査", "IP調査", "相関分析", "Domain / FQDN"} {
 		if !strings.Contains(flat, decorationRe.ReplaceAllString(want, "")) {
 			t.Errorf("label %q lost", want)
-		}
-	}
-}
-
-// The tight-padding retry corrupts double-width labels ("種別判定" →
-// "種別┬定"), so a CJK diagram that does not fit is shown as source
-// rather than retried (v0.37.6).
-func TestNoCompactRetryForWideRunes(t *testing.T) {
-	src := "graph LR\n  A[とても長い日本語のラベルその一] --> B[とても長い日本語のラベルその二] --> C[とても長い日本語のラベルその三]\n"
-	if _, _, ok := Render(src, 60); ok {
-		t.Error("wide-rune diagram was drawn through the corrupting compact retry")
-	}
-	if _, _, ok := Render(src, 200); !ok {
-		t.Error("wide-rune diagram that fits the default layout was refused")
-	}
-}
-
-// The prompt teaches the dialect that draws (v0.38.0): the translation
-// table is the backstop, not the mechanism. Each construct the table
-// handles must be named in the guidance, or the model is left to
-// discover it by having its diagram silently rewritten.
-func TestPromptTeachesTheDialect(t *testing.T) {
-	p := PromptSection()
-	for _, want := range []string{"[square-bracket]", "-->|label|", "direction", "classDef", "&"} {
-		if !strings.Contains(p, want) {
-			t.Errorf("prompt does not teach %q:\n%s", want, p)
-		}
-	}
-	// ADR-0043: the prompt must send the model to the tool and forbid
-	// the fence, and must point at where the budget lives. A prompt
-	// that only offers a capability does not get used — measured.
-	for _, want := range []string{"render_diagram", "do NOT write a ```mermaid", "agent_info", "render budget"} {
-		if !strings.Contains(p, want) {
-			t.Errorf("prompt is missing %q:\n%s", want, p)
-		}
-	}
-}
-
-// The budget is the usable columns and the FIXED line cap — never the
-// terminal's rows, because the inline TUI scrolls (ADR-0043 §3).
-func TestBudgetIsSpaceNotConsoleSize(t *testing.T) {
-	cols, rows := Budget(150)
-	if cols != 150-widthMargin {
-		t.Errorf("cols = %d, want %d", cols, 150-widthMargin)
-	}
-	if rows != maxArtLines {
-		t.Errorf("rows = %d, want the fixed cap %d", rows, maxArtLines)
-	}
-	if _, tall := Budget(40); tall != maxArtLines {
-		t.Error("the height cap moved with the width — it is fixed")
-	}
-}
-
-// tallChain builds a narrow vertical flowchart far past the line cap.
-func tallChain(n int) string {
-	var b strings.Builder
-	b.WriteString("flowchart TD\n")
-	for i := 0; i < n; i++ {
-		fmt.Fprintf(&b, "  N%d[s%d] --> N%d[s%d]\n", i, i, i+1, i+1)
-	}
-	return b.String()
-}
-
-// Every refusal must name something the author can act on: the reason
-// is the model's only signal, and "false" taught it nothing (ADR-0043).
-func TestEveryRefusalIsActionable(t *testing.T) {
-	cases := map[string]string{
-		"unsupported type": "stateDiagram-v2\n  [*] --> A\n",
-		"wide sequence":    "sequenceDiagram\n  participant U as 操作者\n  U->>A: 質問\n",
-		"too tall":         tallChain(40),
-		"too wide":         "graph LR\n  A[Parse config] --> B[Resolve project] --> C[Connect MCP] --> D[Discover skills] --> E[Build prompt] --> F[Start TUI]\n",
-	}
-	for name, src := range cases {
-		art, reason, ok := Render(src, 60)
-		if ok {
-			t.Errorf("%s: drawn unexpectedly:\n%s", name, art)
-			continue
-		}
-		if len(reason) < 25 {
-			t.Errorf("%s: reason too thin to act on: %q", name, reason)
-		}
-		if strings.HasSuffix(strings.TrimSpace(reason), ".") && !strings.Contains(reason, " ") {
-			t.Errorf("%s: reason is not a sentence: %q", name, reason)
 		}
 	}
 }

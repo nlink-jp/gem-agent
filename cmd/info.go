@@ -35,16 +35,6 @@ type infoSnapshot struct {
 	SkillCount   int
 	MemoryOn     bool
 	MediaBucket  bool
-	// DiagramCols/DiagramRows: the space render_diagram has, in usable
-	// columns and the fixed line cap (ADR-0043 §3). Zero means the
-	// tool is not registered on this surface. Deliberately the BUDGET
-	// and not the console's dimensions: the inline TUI scrolls, so the
-	// terminal's height is not the bound, and the usable width is the
-	// terminal minus the Markdown renderer's margin. A model told the
-	// raw size shrinks diagrams that had room, and overruns on a tall
-	// terminal.
-	DiagramCols int
-	DiagramRows int
 	// ProjectTrusted: false means the project's OWN instruction files,
 	// .mcp.json, and skills were not loaded (ADR-0023). Without this
 	// line the model misdiagnosed missing tools as missing
@@ -147,14 +137,6 @@ func renderInfo(s infoSnapshot) string {
 	}
 	fmt.Fprintf(&b, "skills: %d · memory: %s · media bucket: %s\n",
 		s.SkillCount, onOff(s.MemoryOn), bucket)
-	if s.DiagramCols > 0 {
-		// The budget, not the console size: the height is a fixed cap
-		// and the terminal's rows do not bound it, because the inline
-		// TUI scrolls (ADR-0043 §3).
-		fmt.Fprintf(&b, "diagram budget (render_diagram): %d columns x %d lines — "+
-			"the line count is a fixed cap, not the window height; output scrolls\n",
-			s.DiagramCols, s.DiagramRows)
-	}
 	return b.String()
 }
 

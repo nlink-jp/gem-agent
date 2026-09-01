@@ -2,7 +2,7 @@
 
 | 項目 | 値 |
 |-------|-----|
-| ステータス | **Accepted** |
+| ステータス | **Superseded — [ADR-0063](0063-diagram-fences-render-in-place.ja.md) により廃止** |
 | 日付 | 2026-08-22 |
 | 拘束範囲 | gem-agent |
 | 改訂対象 | [ADR-0042](0042-terminal-diagrams.ja.md) |

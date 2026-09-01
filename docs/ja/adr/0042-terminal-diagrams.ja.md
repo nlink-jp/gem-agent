@@ -2,7 +2,7 @@
 
 | 項目 | 内容 |
 |------|------|
-| Status | **Accepted** |
+| Status | **Accepted** — FIT 規則とプロンプト節は [ADR-0063](0063-diagram-fences-render-in-place.ja.md) で削除 |
 | Date | 2026-08-22 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

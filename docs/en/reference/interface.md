@@ -19,23 +19,22 @@ context occupancy against the model's window (auto-detected from model
 metadata, or `[model].context_window`), cumulative token consumption,
 the live cache hit share (`cache NN%`), and the project directory.
 
-**Mermaid diagrams are drawn by a tool** (ADR-0042, ADR-0043): the model
-calls `render_diagram`, the art appears in the terminal, and the model
-receives only whether it worked. A ```` ```mermaid ```` fence written
-into a reply is *not* drawn — it is shown as source, because the reply
-is displayed as the model wrote it. The renderer draws flowchart/graph
-(any direction, subgraphs; node shapes are drawn as boxes),
-sequenceDiagram with ASCII labels, and erDiagram, within the width
-budget and the 80-line height cap (the height bound is a fixed cap, not
-the terminal's rows — the inline TUI scrolls). `agent_info` reports the
-current budget so the model can shape a diagram to fit before composing
-it; files the model writes are untouched. When a diagram is refused the
-reason goes back to the model — too wide, a lost label, an edge parsed
-wrongly — so it corrects and calls again, and the operator sees the
-finished diagram rather than the attempts. The
-art is measured before it is accepted and every label in the source
-must appear in it — a diagram the renderer would draw incompletely is
-shown as source rather than drawn wrong.
+**Mermaid fences render in place** (ADR-0042, ADR-0063): a ```` ```mermaid ````
+fence in a reply is drawn as Unicode box art where it stands, at
+display time. The transcript keeps the model's source
+verbatim, and the model is told nothing about diagrams — no tool, no
+format preference, no prohibition; rendering is a view-layer concern
+like everything else the Markdown renderer does. The renderer draws
+flowchart/graph (any direction, subgraphs; node shapes are drawn as
+boxes), sequenceDiagram with ASCII labels, and erDiagram. There is no
+width or height gate: art wider than the terminal wraps there, taller
+art scrolls — overflow loses no information, and readability is the
+operator's call. What IS guarded is wrongness: every label in the
+source must appear in the art and every edge must draw exactly one
+arrowhead, or the source is shown instead, with a one-line note saying
+why. Diagram types the renderer does not know (gantt, classDiagram, …)
+pass through as source, note-free. Files the model writes are
+untouched.
 
 Piped/scripted use falls back to a plain line REPL automatically; the
 plain REPL answers the same slash commands, `/mcp reload`,

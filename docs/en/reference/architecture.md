@@ -39,11 +39,12 @@ state layout), `internal/memory` (agent memory), `internal/skills`
 (skill discovery/loading), `internal/docext` (Office text extraction),
 `internal/mediastore` (GCS media uploads), `internal/uitext` (ja/en UI
 string catalogs), `internal/telemetry` (audit-event export),
-`internal/diagram` (terminal mermaid rendering — ADR-0042/0043; the
-engine behind the `render_diagram` tool. The Markdown renderer no
-longer touches the reply: a diagram is drawn because the model asked
-for it, and the refusal reason goes back to the model instead of the
-block silently staying source).
+`internal/diagram` (terminal mermaid rendering — ADR-0042/0063; a
+view-layer rewrite hooked into the TUI's Markdown renderer. A mermaid
+fence that draws faithfully becomes box art in place; one that does
+not stays source with a one-line reader-facing note. The model is
+told nothing about diagrams, and the transcript keeps its source
+verbatim).
 
 The agent core knows nothing about the UI. It receives an `Approver`
 interface, a set of callbacks (`OnToolCall`, `OnToolDone`, `OnUsage`, `OnNotice`,

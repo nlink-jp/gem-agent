@@ -67,9 +67,9 @@ status — stream heartbeat, stall warning, visible retries, and the
 model's thought summaries streaming as it thinks — IME-friendly
 approval dialogs,
 Tab completion for `@`-paths, `/`-commands, and skill
-names, `!command` shell escape, a `render_diagram` tool that draws mermaid
-flowchart / ASCII-label sequence / ER diagrams in the terminal and tells
-the model when it could not, thirteen slash commands (`/help`
+names, `!command` shell escape, mermaid fences drawn in place in the
+reply (flowchart / ASCII-label sequence / ER; anything the terminal
+cannot draw faithfully stays source), thirteen slash commands (`/help`
 `/tools` `/mcp` `/auto` `/compact` `/settings` `/usage` `/memory`
 `/skills` `/skill` `/version` `/clear` `/quit`), a provenance-first `/settings`
 panel, theme control, and a fully bilingual chrome

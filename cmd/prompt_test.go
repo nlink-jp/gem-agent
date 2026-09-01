@@ -128,3 +128,18 @@ func TestSystemPromptDelegatesExplorationFirst(t *testing.T) {
 		t.Error("the delegation trigger lost its unprompted-use clause")
 	}
 }
+
+// The system prompt says nothing about diagrams, on any surface
+// (ADR-0063): no tool to call, no format to prefer, no prohibition to
+// over-generalize. Fence rendering is a view-layer concern, and the
+// model's natural prior — a mermaid fence in Markdown — is already the
+// wanted behavior. The measured failure this pins against: "do NOT
+// write a mermaid fence" bred hand-drawn box art in replies and files.
+func TestSystemPromptSaysNothingAboutDiagrams(t *testing.T) {
+	sys := strings.ToLower(buildSystemPrompt("/proj", "/work", ""))
+	for _, banned := range []string{"mermaid", "diagram", "ascii art", "box art"} {
+		if strings.Contains(sys, banned) {
+			t.Errorf("system prompt mentions %q — ADR-0063 keeps diagrams out of the prompt", banned)
+		}
+	}
+}

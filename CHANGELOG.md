@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.60.0] - 2026-09-02
+
+### Changed
+
+- **Mermaid fences render in place again, and the runtime says nothing
+  about diagrams** (ADR-0063, supersedes ADR-0043). Two months of
+  sessions measured the tool design failing in the field:
+  `render_diagram` fired once in 76 sessions, while the model — told
+  "do NOT write a mermaid fence" — generalized the prohibition and
+  hand-drew box-art diagrams in replies and Markdown files instead
+  (seven occurrences), unverified and wrong for files. The fence path
+  returns as a pure view-layer rewrite in the TUI's Markdown renderer:
+  a fence that draws faithfully becomes box art in place, one that
+  does not stays source with a one-line reader-facing note
+  (`*diagram shown as source: …*`), and unsupported diagram types pass
+  through silently — as does a ```` ```mermaid ```` line that is
+  content of an enclosing fence (a quoted example is data, not a
+  diagram). The system prompt carries no diagram wording at
+  all — no tool, no format preference, no prohibition (pinned by
+  test): the model's natural prior, a mermaid fence in Markdown, is
+  already the wanted behavior everywhere. The FIT gate is deleted with
+  the tool: no width or height bound. Art segments bypass glamour and
+  reach the terminal verbatim (the independent review measured glamour
+  word-wrapping code-block lines at spaces, which sheared wide art;
+  the terminal's own wrap splits overflowing rows in order and loses
+  nothing). The wrongness guards are
+  unchanged: label fidelity, edge count vs arrowheads, and the
+  sequence-CJK misalignment refusal. The frozen translation table
+  stays as the backstop; the v0.38.0 dialect teaching retires with the
+  prompt section.
+
+### Removed
+
+- The `render_diagram` tool, `diagram.Budget`, and the diagram-budget
+  lines of `agent_info` (ADR-0063 §5).
+
 ## [0.59.0] - 2026-09-02
 
 ### Fixed

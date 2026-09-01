@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** |
+| Status | **Accepted** — the FIT rule and the prompt section are removed by [ADR-0063](0063-diagram-fences-render-in-place.md) |
 | Date | 2026-08-22 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

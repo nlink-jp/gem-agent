@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** |
+| Status | **Superseded by [ADR-0063](0063-diagram-fences-render-in-place.md)** |
 | Date | 2026-08-22 |
 | Binds | gem-agent |
 | Amends | [ADR-0042](0042-terminal-diagrams.md) |

@@ -19,6 +19,7 @@ import (
 	"github.com/mattn/go-runewidth"
 	"github.com/rivo/uniseg"
 
+	"github.com/nlink-jp/gem-agent/internal/diagram"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
@@ -404,16 +405,31 @@ func newGlamourRenderer(width int, style string) func(string) string {
 		return func(s string) string { return s }
 	}
 	return func(s string) string {
-		// The model's Markdown is rendered as written. Mermaid fences
-		// stay source: diagrams are drawn by the render_diagram tool,
-		// which tells the model whether it worked — rewriting the reply
-		// here drew the diagram but left the model unable to learn that
-		// its source was malformed (ADR-0043 §1).
-		out, err := r.Render(s)
-		if err != nil {
-			return s
+		// Mermaid fences the terminal can draw faithfully become box
+		// art in place (ADR-0042/0063) — a view-layer transform; the
+		// transcript keeps the model's source verbatim, and a fence
+		// that cannot be drawn is shown as source. The art segments
+		// must NOT pass through glamour: it word-wraps code-block
+		// lines at spaces, shearing wide art into interleaved
+		// fragments (measured for ADR-0063). They go out verbatim —
+		// the lane shell output uses — so overlong art wraps at the
+		// terminal, row by row, losing nothing.
+		var parts []string
+		for _, seg := range diagram.Split(s) {
+			if seg.Art {
+				parts = append(parts, seg.Text)
+				continue
+			}
+			if strings.TrimSpace(seg.Text) == "" {
+				continue
+			}
+			out, err := r.Render(seg.Text)
+			if err != nil {
+				out = seg.Text
+			}
+			parts = append(parts, strings.Trim(out, "\n"))
 		}
-		return strings.Trim(out, "\n")
+		return strings.Join(parts, "\n\n")
 	}
 }
 
@@ -607,11 +623,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			parts = append(parts, m.st.warn.Render("⚠ "+note))
 		}
 		return m, m.emitJoined(parts...)
-
-	case Diagram:
-		// Verbatim, like ShellDone: box art through the Markdown
-		// renderer would be re-wrapped and sheared.
-		return m, m.emitJoined(msg.Art)
 
 	case ShellDone:
 		out := msg.Output

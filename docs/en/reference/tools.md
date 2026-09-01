@@ -170,39 +170,16 @@ turn and asking IS the free-text channel.
 The model's view of its own runtime — version, platform, the model it
 runs as, thinking level, context occupancy, cumulative token usage
 (the `/usage` numbers — one accounting source), limits,
-approval/sandbox state, project trust, connected MCP servers (as last
-connected — startup or the most recent `/mcp reload`) and skills, plus
-the **diagram budget** `render_diagram` has right now. Read-only, no
-approval. GCP identifiers and hostname deliberately excluded.
+approval/sandbox state, project trust, and connected MCP servers (as
+last connected — startup or the most recent `/mcp reload`) and skills.
+Read-only, no approval. GCP identifiers and hostname deliberately
+excluded.
 
-The budget is reported as usable columns and a line cap, not as the
-console's dimensions (ADR-0043 §3): the inline TUI scrolls, so the
-terminal's height is not the bound, and the usable width is the
-terminal minus the Markdown renderer's margin. A model told the raw
-size would shrink diagrams that had room, and overrun on a tall
-terminal.
-
-## `render_diagram` (ADR-0043)
-
-Draws one mermaid diagram in the terminal: flowchart/graph,
-sequenceDiagram with ASCII labels, erDiagram. Takes `source` (the
-mermaid text; a ```` ``` ```` fence around it is accepted and
-stripped). Read-only, never approval-gated — it writes nothing and
-reaches no network — and registered only under the TUI, since the
-plain REPL and one-shot mode have nowhere to draw.
-
-The art goes to the terminal as a side effect; the tool returns a
-status line, never the art. Handing back sixty lines of box drawing
-would double the tokens and invite the model to reproduce it badly. A
-refusal returns the reason and the budget — too wide with both
-measurements, taller than the cap, a label the renderer dropped, an
-edge count that does not match the arrowheads drawn — so the model
-corrects and calls again before the operator sees anything. That
-feedback is the whole point: rewriting the reply drew the diagram but
-left the model unable to learn that its source was malformed.
-
-Writing a ```` ```mermaid ```` fence into a reply does **not** draw
-anything: the reply is displayed as the model wrote it.
+There is no diagram tool (ADR-0063): a ```` ```mermaid ```` fence in a
+reply is rendered in place by the TUI when the terminal can draw it
+faithfully, and shown as source otherwise. The model is told nothing
+about diagrams — rendering is a view-layer concern, like everything
+else the Markdown renderer does to a reply.
 
 ## Web access: `web_search`, `web_fetch` (ADR-0017)
 

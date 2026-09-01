@@ -65,9 +65,9 @@ gem-agent -p "このリポジトリを要約して"      # 単発実行、パイ
 最下部固定の入力欄（Enter は次メッセージの予約）、ライブなターン
 ステータス — ストリーム鼓動・失速警告・リトライの可視化・思考中の
 モデルの思考サマリ実況 — 日本語 IME に優しい承認ダイアログ、`@` パス・`/` コマンド・スキル名の Tab 補完、
-`!コマンド` シェルエスケープ、mermaid の flowchart / ASCII ラベルの
-sequence / ER 図を端末に描き、描けなかったときは理由をモデルに返す
-`render_diagram` ツール、13 のスラッシュコマンド（`/help`
+`!コマンド` シェルエスケープ、回答中の mermaid フェンスのその場描画
+（flowchart / ASCII ラベルの sequence / ER。端末が忠実に描けない
+ものはソースのまま）、13 のスラッシュコマンド（`/help`
 `/tools` `/mcp` `/auto` `/compact` `/settings` `/usage` `/memory`
 `/skills` `/skill` `/version` `/clear` `/quit`）、出所ファーストの `/settings`
 パネル、テーマ、完全二言語のクローム（`[tui].language = auto|ja|en`）。

@@ -18,7 +18,6 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/approve"
 	"github.com/nlink-jp/gem-agent/internal/config"
-	"github.com/nlink-jp/gem-agent/internal/diagram"
 	"github.com/nlink-jp/gem-agent/internal/hooks"
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mediastore"
@@ -586,19 +585,6 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// render_diagram draws into the TUI, so it exists only there
-	// (ADR-0043): a surface must not advertise what it cannot do. The
-	// closure captures prog, which is assigned when the program starts.
-	if useTUI {
-		if err := registerDiagramTool(registry, func(art string) {
-			if prog != nil {
-				prog.Send(tui.Diagram{Art: art})
-			}
-		}); err != nil {
-			return err
-		}
-	}
-
 	// ag.Run, so the pointer is always set by then.
 	var ag *agent.Agent
 	if err := registerInfoTool(registry, func() infoSnapshot {
@@ -620,8 +606,6 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			WorkDir:        workDir,
 			MCPServers:     mcpSummary,
 			SkillCount:     len(skillsList),
-			DiagramCols:    diagramCols(useTUI),
-			DiagramRows:    diagramRows(useTUI),
 			MemoryOn:       memBase != "",
 			MediaBucket:    cfg.GCP.Bucket != "",
 			ProjectTrusted: projectTrusted,
@@ -659,16 +643,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// The system prompt is composed in ONE place so a skills reload
-	// rebuilds exactly what startup built (ADR-0039). The terminal
-	// diagram section rides only where the TUI renders it (ADR-0042):
-	// the plain REPL and one-shot show source and must not advertise a
-	// capability they lack.
+	// rebuilds exactly what startup built (ADR-0039). It says nothing
+	// about diagrams on any surface (ADR-0063): fence rendering is a
+	// view-layer concern the model is never told about, and both a
+	// prohibition and a format instruction were measured steering the
+	// model away from the behavior its own prior already had.
 	composeSystem := func() string {
-		s := buildSystemPrompt(projectDir, workDir, projectContext) + skills.PromptSection(skillsList) + memorySection
-		if useTUI {
-			s += diagram.PromptSection()
-		}
-		return s
+		return buildSystemPrompt(projectDir, workDir, projectContext) + skills.PromptSection(skillsList) + memorySection
 	}
 	ag = agent.New(agent.Options{
 		// Accounting only (ADR-0057): the model name that goes into
