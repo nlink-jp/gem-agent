@@ -37,6 +37,7 @@ cp config.example.toml ~/.config/gem-agent/config.toml   # [gcp].project と [mo
 ```sh
 cd /path/to/your/project
 gem-agent                                  # 対話 REPL
+gem-agent "テストを回して"                   # 対話モード、これが第1ターン
 gem-agent -c                               # ここでの最新セッションを再開
 gem-agent sessions                         # 再開可能なセッション一覧
 gem-agent -p "このリポジトリを要約して"      # 単発実行、パイプ向け
@@ -71,6 +72,8 @@ gem-agent -p "このリポジトリを要約して"      # 単発実行、パイ
 `/tools` `/mcp` `/auto` `/compact` `/settings` `/usage` `/memory`
 `/skills` `/skill` `/version` `/clear` `/quit`）、出所ファーストの `/settings`
 パネル、テーマ、完全二言語のクローム（`[tui].language = auto|ja|en`）。
+位置引数は対話セッションの第 1 ターン — `gem-agent "…"` はそれを
+実行してからキーボードを渡します（ADR-0064）。
 パイプは素の REPL に、`-p` は単発実行に（変更系ツールは拒否 —
 `--allow` で実行単位のツール名指し付与、`--auto` でリスク階梯の
 武装ができます。ADR-0053）。`データ | gem-agent -p "…"` のパイプ

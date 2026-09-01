@@ -36,6 +36,16 @@ why. Diagram types the renderer does not know (gantt, classDiagram, …)
 pass through as source, note-free. Files the model writes are
 untouched.
 
+A positional argument is the first interactive turn (ADR-0064):
+`gem-agent "run the tests"` submits it once the banner has printed —
+through the exact typed path, so `!` shell escape, slash commands,
+`/skill` expansion and `@` mentions all work, and it lands in the
+input history — then the session is ordinary interactive gem-agent.
+It composes with `--continue`/`--resume`/`--auto` unchanged; combining
+it with `-p` is an error, since the two select different session
+shapes. In the piped fallback the argument runs before the first
+stdin line; piped stdin itself is never prompt text (ADR-0055).
+
 Piped/scripted use falls back to a plain line REPL automatically; the
 plain REPL answers the same slash commands, `/mcp reload`,
 `/skills reload`, `/auto`, `/clear` and `/compact` included — only

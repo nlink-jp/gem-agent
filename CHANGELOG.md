@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.61.0] - 2026-09-02
+
+### Added
+
+- **A positional argument is the first interactive turn** (ADR-0064).
+  `gem-agent "run the tests"` starts the ordinary interactive session
+  and submits the message as turn 1 once the banner has printed — the
+  shape "the opening move is decided, the rest is interactive" that
+  neither `-p` (answers and exits) nor plain interactive (turn 1 must
+  be typed) covered. The message travels the exact typed path — `!`
+  shell escape, slash commands, `/skill` expansion, `@` mentions, the
+  `> line` echo, input history — and fires exactly once (cleared when
+  the first size report queues it, so a resize cannot resubmit).
+  Composes with `--continue`/`--resume`/`--auto` unchanged. Combining
+  it with `-p` is refused with both meanings named. In the piped
+  plain-REPL fallback the argument runs before the first stdin line;
+  ADR-0055's boundary (piped stdin is data, never prompt text) is
+  untouched.
+
 ## [0.60.0] - 2026-09-02
 
 ### Changed

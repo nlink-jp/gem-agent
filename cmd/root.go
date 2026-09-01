@@ -68,7 +68,7 @@ func Execute(version string) {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "gem-agent",
+	Use:   "gem-agent [first message]",
 	Short: "Interactive CLI agent backed by Vertex AI Gemini (Claude Code fallback)",
 	Long: `gem-agent is an interactive CLI agent backed by Vertex AI Gemini 3.x,
 built as a continuity tool for development work when Claude Code is
@@ -80,7 +80,10 @@ The current working directory is the project: file access is confined to
 it, and shell file-writes are restricted to it by macOS sandbox-exec.
 
 macOS only. See docs/ for the RFP and design records.`,
-	Args:         cobra.NoArgs,
+	// One optional positional argument: the first interactive turn
+	// (ADR-0064). It runs through the same path a typed message takes,
+	// then the session is ordinary interactive gem-agent.
+	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE:         runREPL,
 }
@@ -127,6 +130,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	oneShot := flagPrompt != ""
+	// The first interactive turn, from the positional argument
+	// (ADR-0064). Never combined with -p: the two select different
+	// session shapes, and ambiguity is refused, not resolved.
+	initialInput, err := firstMessage(args, oneShot)
+	if err != nil {
+		return err
+	}
 	// Everything downstream — the agent, telemetry — reads this one
 	// effective value, never the raw config field.
 	autoOn := effectiveAuto(cfg.Agent.AutoApprove, oneShot, flagAuto)
@@ -994,12 +1004,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// Msgs is the wiring ADR-0029 shipped without: the catalog
 			// was resolved here but never handed to the TUI, so the
 			// whole chrome fell back to English (review round 2).
-			Msgs:       msgs,
-			Theme:      resolveTheme(cfg.TUI.Theme),
-			ModelName:  cfg.Model.Name,
-			ProjectDir: abbreviateHome(projectDir),
-			Banner:     bannerLines,
-			AutoMode:   ag.AutoApprove(),
+			Msgs:         msgs,
+			Theme:        resolveTheme(cfg.TUI.Theme),
+			ModelName:    cfg.Model.Name,
+			ProjectDir:   abbreviateHome(projectDir),
+			Banner:       bannerLines,
+			InitialInput: initialInput,
+			AutoMode:     ag.AutoApprove(),
 			ToggleAuto: func() bool {
 				ag.SetAutoApprove(!ag.AutoApprove())
 				return ag.AutoApprove()
@@ -1076,14 +1087,26 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(stderr, "/help for commands, Ctrl+D to quit\n")
 
 	// --- plain REPL loop (non-TTY fallback) ---
+	// The argv first message (ADR-0064) runs before the first read,
+	// through the same handling a read line gets; the echoed "> line"
+	// keeps the terminal record showing what ran. Piped stdin lines
+	// follow as they always have (ADR-0055's boundary is untouched).
+	pending := initialInput
 	for {
-		input, err := reader.Read("\n> ")
-		if errors.Is(err, io.EOF) {
-			fmt.Fprintln(stderr, msgs.Bye)
-			return nil
-		}
-		if err != nil {
-			return err
+		var input string
+		if pending != "" {
+			input, pending = pending, ""
+			fmt.Fprintf(stderr, "\n> %s\n", input)
+		} else {
+			line, err := reader.Read("\n> ")
+			if errors.Is(err, io.EOF) {
+				fmt.Fprintln(stderr, msgs.Bye)
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			input = line
 		}
 		input = strings.TrimSpace(input)
 		if input == "" {
@@ -1254,6 +1277,25 @@ func applyAllowFlag(merged map[string]string, entries []string) error {
 		merged[pattern] = "never"
 	}
 	return nil
+}
+
+// firstMessage resolves the positional argument into the first
+// interactive turn (ADR-0064). Whitespace-only counts as absent. -p
+// beside it is an error, because the two select different session
+// shapes — one answers and exits, the other starts and stays — and
+// ambiguity is refused, not resolved by precedence.
+func firstMessage(args []string, oneShot bool) (string, error) {
+	if len(args) == 0 {
+		return "", nil
+	}
+	msg := strings.TrimSpace(args[0])
+	if msg == "" {
+		return "", nil
+	}
+	if oneShot {
+		return "", fmt.Errorf("cannot combine -p with a first-message argument: -p runs one turn and exits, the argument starts an interactive session (ADR-0064)")
+	}
+	return msg, nil
 }
 
 // effectiveAuto derives the session's auto-approve state (ADR-0053):

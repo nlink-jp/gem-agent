@@ -37,6 +37,7 @@ cp config.example.toml ~/.config/gem-agent/config.toml   # set [gcp].project and
 ```sh
 cd /path/to/your/project
 gem-agent                                  # interactive REPL
+gem-agent "run the tests"                  # interactive, with this as turn 1
 gem-agent -c                               # continue the last session here
 gem-agent sessions                         # list resumable sessions
 gem-agent -p "summarize this repository"   # one-shot, pipe-friendly
@@ -73,7 +74,9 @@ cannot draw faithfully stays source), thirteen slash commands (`/help`
 `/tools` `/mcp` `/auto` `/compact` `/settings` `/usage` `/memory`
 `/skills` `/skill` `/version` `/clear` `/quit`), a provenance-first `/settings`
 panel, theme control, and a fully bilingual chrome
-(`[tui].language = auto|ja|en`). Pipes fall back to a plain REPL;
+(`[tui].language = auto|ja|en`). A positional argument is the first
+interactive turn — `gem-agent "…"` runs it and hands you the keyboard
+(ADR-0064). Pipes fall back to a plain REPL;
 `-p` runs one-shot (mutating tools denied; `--allow` grants named
 tools per run, `--auto` arms the risk ladder — ADR-0053), and
 `data | gem-agent -p "…"` attaches piped stdin as isolated data,

@@ -159,6 +159,12 @@ type Options struct {
 	// startup screen clear — they must go through the line counter or
 	// the bottom pinning (ADR-0003) would drift from frame one.
 	Banner []string
+	// InitialInput is submitted as the first message once the banner
+	// has printed (ADR-0064), through the exact path a typed message
+	// takes — !shell, slash commands, /skill expansion, @ mentions —
+	// and echoed as "> line". argv is operator input, the same trust
+	// as the keyboard. Empty starts the session idle.
+	InitialInput string
 	// AutoMode is the initial auto-approve state; ToggleAuto flips it
 	// (shift+tab) and returns the new state.
 	AutoMode   bool
@@ -278,14 +284,18 @@ type Model struct {
 	// follow-up). Cleared when the stream speaks again.
 	toolRunning bool
 
-	width    int
-	height   int
-	sized    bool // first WindowSizeMsg received
-	banner   []string
-	st       styleSet
-	render   func(string) string
-	mkRender func(width int) func(string) string
-	println  func(...any) tea.Cmd
+	width  int
+	height int
+	sized  bool // first WindowSizeMsg received
+	banner []string
+	// initialInput is the argv first message (ADR-0064); cleared when
+	// the first size report queues its submission, so a resize can
+	// never resubmit it.
+	initialInput string
+	st           styleSet
+	render       func(string) string
+	mkRender     func(width int) func(string) string
+	println      func(...any) tea.Cmd
 
 	// Footer state.
 	modelName     string
@@ -341,6 +351,7 @@ func New(opts Options) Model {
 		mkRender:        opts.RenderFactory,
 		width:           80,
 		banner:          opts.Banner,
+		initialInput:    opts.InitialInput,
 		modelName:       opts.ModelName,
 		projectDir:      opts.ProjectDir,
 	}
@@ -436,6 +447,35 @@ func newGlamourRenderer(width int, style string) func(string) string {
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd { return textarea.Blink }
 
+// initialSubmit carries the argv first message (ADR-0064) into the
+// typed-input path once the banner has printed.
+type initialSubmit string
+
+// initialCmd wraps the pending initial input as a message; nil when
+// there is none.
+func (m Model) initialCmd() tea.Cmd {
+	if m.initialInput == "" {
+		return nil
+	}
+	first := m.initialInput
+	return func() tea.Msg { return initialSubmit(first) }
+}
+
+// firstFrameCmds builds the first frame's command list: clear screen,
+// banner lines through the counter (ADR-0003), and the argv first
+// message last (ADR-0064). Split out so the queueing wiring itself is
+// pinned by test; the once-only clearing stays with the caller.
+func (m Model) firstFrameCmds() []tea.Cmd {
+	cmds := []tea.Cmd{tea.ClearScreen}
+	for _, line := range m.banner {
+		cmds = append(cmds, m.emit(line))
+	}
+	if c := m.initialCmd(); c != nil {
+		cmds = append(cmds, c)
+	}
+	return cmds
+}
+
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -479,10 +519,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// counting needs the real width.
 			m.hold.printed = 0
 			m.hold.lastTotal = 0
-			cmds := []tea.Cmd{tea.ClearScreen}
-			for _, line := range m.banner {
-				cmds = append(cmds, m.emit(line))
-			}
+			cmds := m.firstFrameCmds()
+			// The argv first message (ADR-0064) rides last in that
+			// sequence — tea.Sequence guarantees the order — and
+			// exactly once: cleared here so a resize cannot resubmit.
+			m.initialInput = ""
 			return m, tea.Sequence(cmds...)
 		case resized:
 			m.hold.printed = 0 // the clear empties the viewport
@@ -610,6 +651,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AutoMode:
 		m.autoMode = bool(msg)
 		return m, nil
+
+	case initialSubmit:
+		// The argv first message enters the same submit() the Enter
+		// key uses (ADR-0064): !shell, slash commands, /skill
+		// expansion, @ mentions and the "> line" echo all behave as
+		// if the operator had typed it.
+		//
+		// A type-ahead line can have taken the turn already — the
+		// input reader subscribes before the first resize delivers
+		// this message — so a busy phase queues it exactly like an
+		// Enter during a running turn (ADR-0007), except commands,
+		// which cannot queue (ADR-0021 §7) and are refused visibly.
+		if m.phase != phaseInput {
+			text := string(msg)
+			if strings.HasPrefix(text, "!") || strings.HasPrefix(text, "/") {
+				return m, m.emit(m.st.warn.Render(m.msgs.QueueRefused))
+			}
+			if m.pending != "" {
+				m.pending += "\n" + text
+			} else {
+				m.pending = text
+			}
+			return m, m.emit(m.st.hint.Render(m.msgs.QueuedPrefix + clip(text, 100)))
+		}
+		// A draft typed ahead of this message survives it: submit()
+		// resets the box, so the draft goes back in afterwards.
+		draft := m.ta.Value()
+		m.ta.SetValue(string(msg))
+		next, cmd := m.submit()
+		nm, ok := next.(Model)
+		if ok && strings.TrimSpace(draft) != "" {
+			nm.ta.SetValue(draft)
+			nm.syncHeight()
+			return nm, cmd
+		}
+		return next, cmd
 
 	case Output:
 		return m, m.emitJoined(msg.Lines...)
