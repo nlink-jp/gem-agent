@@ -102,3 +102,29 @@ func TestSystemPromptOmitsTheSectionWithoutAWorkDirectory(t *testing.T) {
 		t.Error("a session with no work directory should not be told it has one")
 	}
 }
+
+// A capability the workflow never points at never fires: 75 sessions /
+// 788 tool calls produced zero spontaneous agentic_file_search
+// delegations while this prompt prescribed the manual list/search/read
+// loop by name and never mentioned the tool (ADR-0062). The delegation
+// guidance must exist, keep its concrete trigger, and come BEFORE the
+// self-navigation guidance.
+func TestSystemPromptDelegatesExplorationFirst(t *testing.T) {
+	sys := buildSystemPrompt("/proj", "", "")
+	di := strings.Index(sys, "agentic_file_search")
+	if di < 0 {
+		t.Fatal("the system prompt does not name agentic_file_search")
+	}
+	ni := strings.Index(sys, "Navigate yourself")
+	if ni < 0 {
+		t.Fatal("the manual-navigation guidance is missing")
+	}
+	if di > ni {
+		t.Error("delegation guidance must precede the manual-navigation guidance")
+	}
+	// The trigger stays concrete — a vague recommendation next to
+	// specific manual guidance reads as "rarely" (the v0.39.0 lesson).
+	if !strings.Contains(sys, "without waiting to be asked") {
+		t.Error("the delegation trigger lost its unprompted-use clause")
+	}
+}

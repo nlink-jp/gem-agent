@@ -122,6 +122,12 @@ func TestSearchAgentRunsChildLoop(t *testing.T) {
 		!strings.Contains(out, "pond.txt:1") {
 		t.Errorf("out = %q", out)
 	}
+	// The header is the in-band surface of the trust contract
+	// (ADR-0062): a "verify with read_file" invitation here was
+	// measured triggering a full re-exploration after the delegation.
+	if !strings.Contains(out, "Trust it for answering") {
+		t.Errorf("report header lost the trust contract: %q", out)
+	}
 	if len(*seen) != 1 || (*seen)[0] != "search_files" {
 		t.Errorf("child tool calls seen = %v", *seen)
 	}
@@ -209,4 +215,20 @@ func TestSearchAgentEmptyReport(t *testing.T) {
 		!strings.Contains(err.Error(), "empty report") {
 		t.Errorf("err = %v", err)
 	}
+}
+
+// ADR-0062: the description carries the trust contract. Without it,
+// the one measured firing ended with the main model re-reading files
+// to double-check the report, halving the delegation's saving.
+func TestAgenticSearchDescriptionCarriesTheTrustContract(t *testing.T) {
+	reg, _, _, _ := searchSetup(t, &scriptBackend{responses: []*llm.Response{{Content: "r"}}})
+	for _, tool := range reg.List() {
+		if tool.Name == "agentic_file_search" {
+			if !strings.Contains(tool.Description, "Trust the report") {
+				t.Error("description lost the trust-the-report sentence")
+			}
+			return
+		}
+	}
+	t.Fatal("agentic_file_search not registered")
 }

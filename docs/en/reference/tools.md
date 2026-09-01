@@ -61,20 +61,25 @@ client — or the main model when unset. File content reaches the
 summariser nonce-wrapped with no tools, exactly like compaction; a
 blocked summary is a reported error, never a silent empty one.
 
-## Delegated search: `agentic_file_search` (ADR-0037)
+## Delegated search: `agentic_file_search` (ADR-0037, routing ADR-0062)
 
 ADR-0014's principle generalised from one file to one question: a
 child agent loop (on the main model) explores the project in its own
 isolated context and returns only a compact report — the exploration,
 dead ends included, never enters the conversation. `search_files`
-finds strings you already know; this answers "where/how is X done".
+finds strings you already know; this answers "where/how is X done" —
+and since ADR-0062 the system prompt routes exploration here *first*
+(self-navigation is the known-target path), after measurement showed
+the tool had never fired spontaneously while the prompt prescribed
+the manual loop.
 The child gets a positive allowlist of read-only tools (orientation,
 windowed reads, summaries — never shell, edits, web, MCP, or itself:
 recursion is structurally impossible), 10 rounds, and a deny-all
 approval gate as fail-closed insurance. The report contract names its
 negative space — what was *not* found is stated explicitly — and
 evidence comes as `path:line-range` with verbatim quotes, flagged
-lossy: verify with `read_file` before editing. Child tool calls render
+lossy: the report is to be trusted for answers, and re-read only for
+the lines the caller will edit or quote (ADR-0062). Child tool calls render
 live as `↳ tool` lines, and every child audit event carries
 `agent="agentic_file_search"` in telemetry; token spend shows in
 `/usage` as its own category.

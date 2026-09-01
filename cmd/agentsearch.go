@@ -101,7 +101,8 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 			"itself never enters this conversation, so this is far cheaper than several " +
 			"rounds of list/search/read for answering questions like \"where/how is X done\". " +
 			"For a literal string or pattern you already know, call search_files directly. " +
-			"Read-only; the sub-agent cannot modify anything.",
+			"Read-only; the sub-agent cannot modify anything. " +
+			"Trust the report — re-read only the lines you will edit or quote.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -188,7 +189,13 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 			if report == "" {
 				return "", errors.New("file-search agent returned an empty report — search directly instead")
 			}
-			header := fmt.Sprintf("Report from the file-search agent (%s, %d rounds — quotes may be lossy; verify exact lines with read_file before editing):",
+			// The header is the third surface of the trust contract
+			// (description, system prompt, and this line must agree —
+			// ADR-0062): an in-band "verify with read_file" here was
+			// measured inviting a full re-exploration sweep after the
+			// delegation. Trust for answering; re-read only before
+			// editing those exact lines.
+			header := fmt.Sprintf("Report from the file-search agent (%s, %d rounds). Trust it for answering — re-read only the exact lines you are about to edit:",
 				opts.modelName, rounds)
 			out := header + "\n\n" + report
 			if len(out) > searchReportCap {

@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`agentic_file_search` never fired — the system prompt routed around
+  it** (ADR-0062). Measured across all 75 real sessions (788 tool
+  calls): zero spontaneous delegations; the one recorded call was the
+  ADR-0037 E2E naming the tool by hand. The Working style section
+  prescribed the manual list/search/read loop by name and never
+  mentioned delegation, so the model followed the workflow it was
+  given — while ten turns ran four-plus navigation calls each (one ran
+  thirty). The prompt now routes exploration-shaped questions
+  ("where/how is X done", anything expected to take more than a couple
+  of list/search/read calls) to `agentic_file_search` first,
+  self-navigation stays for known targets, and the trust contract
+  ("trust the report — re-read only the lines you will edit or
+  quote") now spans all three surfaces: the tool description, the
+  prompt, and the report header — whose old in-band "verify with
+  read_file" invitation was measured triggering a 29-call
+  re-exploration right after a successful delegation. Wiring pinned
+  by tests; verified live twice (unprompted questions delegate
+  first; post-report re-reads dropped to 6 targeted ones after the
+  header fix).
+
 ### Changed
 
 - **Repositioned as an independent agent runtime; promoted to
