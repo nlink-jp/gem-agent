@@ -44,6 +44,14 @@ README 内のマッチ、`node_modules` に 86% 食われたツリー上限）�
 ファイル数注記付きディレクトリ骨格を返す `dirs_only=true` を取り
 ます。
 
+両 walk は Ctrl+C で止まります（ADR-0065）: ディレクトリ・ファイル
+の読み取りごと（ファイル内でも 1024 行ごと）にターンの context を
+参照するので、遅いファイルシステム上の中断のコストは syscall 1 回分
+で、残りのプロジェクト全部ではありません。見つけたものはラベル付き
+の結果として残り — `[interrupted after N files scanned — results
+above are partial]`・`[interrupted — the tree above is partial]` —
+再開のために transcript に保持されます。
+
 ## 読む: `read_file`・`summarize_file`（ADR-0014）
 
 `read_file` は `start_line`/`end_line` で全文ではなく窓を読めます

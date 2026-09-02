@@ -275,7 +275,7 @@ confined to discovered skill directories.
 | Resume target unreadable | fatal — the operator asked for that history |
 | Telemetry export fails | one warning, then silent degradation — never blocks the session |
 | Stream silent for 90s | the status line becomes a stall warning naming Ctrl+C; no automatic timeout — long thinking is legitimate, and a big file write is measured minutes of silence (ADR-0056) |
-| A tool ignores cancellation | second Ctrl+C warns, third quits the process — the transcript is written per event, so everything up to the wedged call is on disk |
+| A tool ignores cancellation | the file walks stop on their own within one syscall and return a labelled partial result; any other call is abandoned by the agent's floor 1 s after the cancel (`outcome = abandoned`; a late return is recorded, and a mutating one announced next turn) — the turn ends either way (ADR-0065). If even that is not enough, second Ctrl+C warns, third quits the process — in the TUI, the plain REPL and `-p` alike; the transcript is written per event, so everything up to the wedged call is on disk |
 | The file-search child agent fails | error result to the model; the spend is tallied anyway |
 | Round limit reached | progress review + dialog (auto mode may continue itself); extensions up to 3× max_turns; the stop message teaches "continue", never /clear (ADR-0040) |
 | SIGINT | cancels the turn, not the process (escalation: see the stuck-tool row) |

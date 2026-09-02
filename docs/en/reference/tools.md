@@ -47,6 +47,14 @@ rest, takes `include` (a gitignore-syntax file pattern such as
 instead of letting one directory starve the rest, and takes
 `dirs_only=true` for a file-count-annotated directory skeleton.
 
+Both walks stop on Ctrl+C (ADR-0065): they consult the turn's context
+before every directory and file read (and every 1024 lines inside a
+file), so an interrupt on a slow filesystem costs one syscall, not
+the remaining project. What was found stays a result, labelled —
+`[interrupted after N files scanned — results above are partial]`,
+`[interrupted — the tree above is partial]` — and is kept in the
+transcript for a resume.
+
 ## Reading: `read_file`, `summarize_file` (ADR-0014)
 
 `read_file` takes `start_line`/`end_line` to read a window instead of

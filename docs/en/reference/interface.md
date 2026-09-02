@@ -80,9 +80,16 @@ from the first second either way.
 Ctrl+C cancels the running turn — and the whole process GROUP of a
 shell command dies with it, so a skill's python (or anything else the
 command spawned) cannot keep the call hanging by holding the output
-pipe (ADR-0034). If a tool still ignores cancellation, a second
-Ctrl+C warns and a third quits gem-agent — the transcript is written
-per event, so everything up to the wedged call is already on disk.
+pipe (ADR-0034). The file walks stop within one syscall and return
+what they found, labelled partial; any other tool call that has not
+returned one second after the cancel is abandoned by the agent — the
+turn ends, the call may finish in the background, and the exit
+receipt counts such calls while they run (ADR-0065). A tool that is
+waiting on you (`ask_user`) is left alone: you decide when it
+returns. If a turn still ignores cancellation, a second Ctrl+C warns
+and a third quits gem-agent — the transcript is written per event, so
+everything up to the wedged call is already on disk. The plain REPL
+and `-p` climb the same ladder.
 
 With `[tui].show_thoughts = true` (the default) the model's thought
 summaries also stream into the live area in the dim style, replaced as
@@ -158,7 +165,10 @@ in the input box as one message, never one LLM call per line.
 Every interactive exit — `/quit`, Ctrl+C, Ctrl+D — ends with a
 two-line summary: the session id with the resume command, and the
 session's round/token totals. The last thing in the scrollback answers
-"how do I get back to this?".
+"how do I get back to this?". A third line names abandoned tool calls
+still running, when there are any; and with audit logging enabled the
+exit says `sending audit events… (up to 3s)` before its bounded flush
+instead of pausing silently (ADR-0065).
 
 `/usage` breaks the session down: main-loop rounds with the cache hit
 rate, risk-check and compaction side-calls, and per-tool lines

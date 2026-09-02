@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.61.1] - 2026-09-02
+
+### Fixed — cancellation ignored by file walks (ADR-0065, operator report)
+
+- Ctrl+C during a file search stayed on "interrupting…" while the
+  search ran to the end of the project; on a slow filesystem the wait
+  was the whole remaining walk. Root cause: `search_files` and
+  `list_tree` received the turn's context and never consulted it, and
+  the agent ran every tool synchronously with no floor under it. The
+  delegated `agentic_file_search` child wedged the same way. Measured
+  on 30k files: the shipped walk returned 1.6 s after a cancel fired
+  at 20 ms; the fixed one, 2 ms
+- The walks now check the context before every directory and file
+  read (and every 1024 lines inside a file) and return what they
+  found, labelled `[interrupted after N files scanned — results above
+  are partial]` / `[interrupted — the tree above is partial]`;
+  reproduced deterministically with a FIFO stalling the walk inside
+  `ReadFile`
+- A return-guaranteed floor under every tool call: a call that has
+  not returned 1 s after the cancel is abandoned — the model sees an
+  explicit "abandoned" result, the audit event says `abandoned`, the
+  exit receipt counts abandoned calls still running, a late return is
+  recorded (`tool_late_return` record and `tool.late_return` event),
+  and a late MUTATING return is announced to the model at the start
+  of the next turn. `ask_user` is exempt (it waits on you, not a
+  filesystem). The shell `WaitDelay` drops from 2 s to 500 ms so a
+  cancelled shell call's output is never discarded by the floor
+- The three-press escape ladder now exists outside the TUI too: in
+  the plain REPL and `-p`, the first Ctrl+C cancels and says
+  "interrupting…", the second warns, the third exits 130.
+  Previously every SIGINT after the first was swallowed
+- The exit says `sending audit events… (up to 3s)` before its bounded
+  flush instead of pausing silently — that pause was the wait behind
+  the "third Ctrl+C took a while" report
+
 ## [0.61.0] - 2026-09-02
 
 ### Fixed

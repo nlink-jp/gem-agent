@@ -123,6 +123,15 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 - **Never write from the MCP read loop** — a blocking write while the peer
   is not reading deadlocks both directions (internal/mcp refuses server
   requests from a goroutine; caught by the pipe-based tests).
+- **Every `Tool.Run` consults its context** (ADR-0065). The agent's floor
+  guarantees the RETURN of a cancelled call (abandoned 1 s after the cancel,
+  result discarded, effect possibly still landing), never the STOP — a walk
+  or read that ignores `ctx` keeps running in a leaked goroutine. Check
+  `ctx.Err()` before every syscall-shaped step and return a labelled partial
+  result. A tool that blocks on the operator's own input sets
+  `WaitsOnOperator` so the floor leaves it alone (an abandoned stdin read is
+  a second reader on the shared stdin). Keep `abandonGrace` longer than
+  `tools.ShellWaitDelay` (pinned by a test).
 - **A new config key means updating `config.example.toml`** — strict
   decode makes a stale template a hard startup error for users, so the
   loader tests parse the shipped templates and compare their values
