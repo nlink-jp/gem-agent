@@ -132,9 +132,17 @@ func (r *Registry) listTree() *Tool {
 			var b strings.Builder
 			entries := 0
 			truncated := ""
+			interrupted := false
 			var walk func(dir string, level int, rules *ignore.Rules)
 			walk = func(dir string, level int, rules *ignore.Rules) {
-				if truncated != "" {
+				if truncated != "" || interrupted {
+					return
+				}
+				// Cancellation ends the walk (ADR-0065 §1): consulted
+				// before every directory read, so Ctrl+C on a slow
+				// filesystem costs one syscall, not the remaining tree.
+				if ctx.Err() != nil {
+					interrupted = true
 					return
 				}
 				items, err := os.ReadDir(dir)
@@ -173,6 +181,9 @@ func (r *Registry) listTree() *Tool {
 
 				indent := strings.Repeat("  ", level)
 				for i, row := range rows {
+					if interrupted {
+						return // a child walk saw the cancel
+					}
 					if entries >= treeEntryCap {
 						truncated = fmt.Sprintf("[stopped at %d entries — pass a subdirectory path to see more]", treeEntryCap)
 						return
@@ -209,11 +220,16 @@ func (r *Registry) listTree() *Tool {
 			}
 			walk(abs, 0, rules)
 			out := b.String()
-			if out == "" {
+			if out == "" && !interrupted {
 				out = "(empty directory)"
 			}
 			if truncated != "" {
 				out += truncated + "\n"
+			}
+			if interrupted {
+				// A partial tree is a result, never silently a whole
+				// one (ADR-0052's rule applied to ADR-0065's cut).
+				out += "[interrupted — the tree above is partial]\n"
 			}
 			if s := tally.summary(); s != "" {
 				out += s + "\n"
@@ -303,9 +319,18 @@ func (r *Registry) searchFiles() *Tool {
 			var b strings.Builder
 			totalMatches, filesHit, filesScanned, filteredOut, shownLines := 0, 0, 0, 0, 0
 			capped := false
+			interrupted := false
 			var walk func(dir string, rules *ignore.Rules)
 			walk = func(dir string, rules *ignore.Rules) {
-				if capped {
+				if capped || interrupted {
+					return
+				}
+				// Cancellation ends the walk (ADR-0065 §1): consulted
+				// before every directory read and every file read, so
+				// the partial result is back within one syscall of
+				// the cancel instead of after the remaining project.
+				if ctx.Err() != nil {
+					interrupted = true
 					return
 				}
 				items, err := os.ReadDir(dir)
@@ -314,7 +339,11 @@ func (r *Registry) searchFiles() *Tool {
 				}
 				sort.Slice(items, func(i, j int) bool { return items[i].Name() < items[j].Name() })
 				for _, e := range items {
-					if capped {
+					if capped || interrupted {
+						return
+					}
+					if ctx.Err() != nil {
+						interrupted = true
 						return
 					}
 					if e.Type()&os.ModeSymlink != 0 {
@@ -403,6 +432,11 @@ func (r *Registry) searchFiles() *Tool {
 				if capped {
 					out += fmt.Sprintf(" — stopped at the %d-line cap; narrow with path or include, or use mode=\"files\"", searchMatchCap)
 				}
+			}
+			if interrupted {
+				// What was found stays a result (the transcript keeps
+				// it for a resume); the cut is named, never silent.
+				out += fmt.Sprintf("\n[interrupted after %d files scanned — results above are partial]", filesScanned)
 			}
 			if s := tally.summary(); s != "" {
 				out += "\n" + s
