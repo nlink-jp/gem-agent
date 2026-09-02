@@ -146,6 +146,19 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// prompts, TUI, slash output — is built with it.
 	uiLang := uitext.Resolve(cfg.TUI.Language, os.Getenv)
 	msgs := uitext.For(uiLang)
+	// The escape ladder for turns outside the TUI (ADR-0065 §3): the
+	// TUI has its own three-press exit; the plain REPL and one-shot
+	// mode get the same one here. The quit skips the deferred flushes
+	// on purpose — the transcript is per event, and the warning that
+	// preceded it says so.
+	ladder := &interruptLadder{
+		Interrupting: func() { fmt.Fprintln(cmd.ErrOrStderr(), msgs.StatusInterrupting) },
+		Warn:         func() { fmt.Fprintln(cmd.ErrOrStderr(), msgs.InterruptStuckWarn) },
+		Quit: func() {
+			fmt.Fprintln(cmd.ErrOrStderr(), msgs.Bye)
+			os.Exit(130)
+		},
+	}
 
 	// --- project directory ---
 	cwd, err := os.Getwd()
@@ -396,7 +409,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(stderr, "warning: telemetry disabled: %v\n", err)
 		} else {
 			sink = s
-			defer sink.Shutdown()
+			defer func() {
+				// The flush is bounded (3s) but was silent, and a
+				// silent wait after the last Ctrl+C reads as a hang
+				// (ADR-0065 §4). One-shot mode stays quiet for
+				// pipelines, like the exit receipt.
+				if !oneShot {
+					fmt.Fprintln(cmd.ErrOrStderr(), msgs.ExitFlushing)
+				}
+				sink.Shutdown()
+			}()
 		}
 	}
 	// The effective auto state, not the raw config field: one-shot mode
@@ -943,7 +965,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(stderr, "[stdin: %d bytes attached as data]\n", len(content))
 			}
 		}
-		runErr := runTurn(ctx, func(turnCtx context.Context) error {
+		runErr := runTurnWith(ctx, ladder, func(turnCtx context.Context) error {
 			_, err := ag.Run(turnCtx, flagPrompt, func(s string) { fmt.Fprint(cmd.OutOrStdout(), s) })
 			return err
 		})
@@ -1123,7 +1145,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// runTurn's signal handling: Ctrl+C interrupts the command,
 			// not the process (ADR-0021 — outside it, the default action
 			// killed the whole session).
-			_ = runTurn(ctx, func(shellCtx context.Context) error {
+			_ = runTurnWith(ctx, ladder, func(shellCtx context.Context) error {
 				fmt.Fprintln(cmd.OutOrStdout(), runDirectShell(shellCtx, registry, ag, command))
 				return nil
 			})
@@ -1138,7 +1160,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				fmt.Fprintln(stderr, errMsg)
 				continue
 			}
-			runErr := runTurn(ctx, func(turnCtx context.Context) error {
+			runErr := runTurnWith(ctx, ladder, func(turnCtx context.Context) error {
 				_, err := ag.Run(turnCtx, turn, func(s string) { fmt.Fprint(cmd.OutOrStdout(), s) })
 				return err
 			})
@@ -1160,7 +1182,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// nothing else can be happening while it waits for a line.
 			// runTurn makes Ctrl+C interrupt the summariser call rather
 			// than kill the process (ADR-0021).
-			runErr := runTurn(ctx, func(compactCtx context.Context) error {
+			runErr := runTurnWith(ctx, ladder, func(compactCtx context.Context) error {
 				note, err := compactNow(compactCtx, ag, msgs, sink)
 				if err == nil {
 					fmt.Fprintln(stderr, note)
@@ -1188,7 +1210,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 
 		// SIGINT cancels the in-flight turn, not the process.
-		runErr := runTurn(ctx, func(turnCtx context.Context) error {
+		runErr := runTurnWith(ctx, ladder, func(turnCtx context.Context) error {
 			_, err := ag.Run(turnCtx, input, func(s string) { fmt.Fprint(cmd.OutOrStdout(), s) })
 			return err
 		})
@@ -1334,16 +1356,89 @@ func (d denyGate) Approve(toolName, detail, purpose, reason string, mustPrompt b
 	return false, false, ""
 }
 
-// runTurn runs fn under a SIGINT-cancellable context and maps a
-// cancellation-caused failure to errInterrupted. The context error MUST
-// be captured before stop() — signal.NotifyContext's stop() cancels the
-// context itself, so consulting it afterwards misreports every error
-// (404s included) as a user interrupt.
+// interruptLadder is the plain REPL / one-shot counterpart of the
+// TUI's three-press exit (ADR-0034 §3, extended by ADR-0065 §3). The
+// first Ctrl+C of a turn cancels it; the second calls Warn; the third
+// calls Quit. Before ADR-0065, signal.NotifyContext swallowed every
+// SIGINT after the first, so a wedged turn outside the TUI could only
+// be killed from another terminal. Armed is a test hook: it fires once
+// the signal handler is registered, so a test can raise SIGINT
+// without racing the registration.
+type interruptLadder struct {
+	// Interrupting fires on the first press, so the operator sees the
+	// press land before the turn returns (the TUI shows "interrupting…"
+	// for the same reason).
+	Interrupting func()
+	Warn         func()
+	Quit         func()
+	Armed        func()
+}
+
+// ladderStep names what the n-th SIGINT of one turn does. Pure, so the
+// ladder's shape is pinned without raising signals.
+func ladderStep(n int) string {
+	switch {
+	case n <= 1:
+		return "cancel"
+	case n == 2:
+		return "warn"
+	default:
+		return "quit"
+	}
+}
+
+// runTurn runs fn under a SIGINT-cancellable context with no ladder:
+// extra presses do nothing, which is the pre-ADR-0065 behaviour the
+// tests pin.
 func runTurn(parent context.Context, fn func(ctx context.Context) error) error {
-	ctx, stop := signal.NotifyContext(parent, os.Interrupt)
+	return runTurnWith(parent, nil, fn)
+}
+
+// runTurnWith runs fn under a SIGINT-cancellable context, climbing the
+// ladder on repeated presses, and maps a cancellation-caused failure
+// to errInterrupted. The context error MUST be captured before the
+// deferred cancel — consulting it afterwards would misreport every
+// error (404s included) as a user interrupt (regression test in
+// turn_test.go).
+func runTurnWith(parent context.Context, ladder *interruptLadder, fn func(ctx context.Context) error) error {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt)
+	defer signal.Stop(sigs)
+	finished := make(chan struct{})
+	go func() {
+		presses := 0
+		for {
+			select {
+			case <-finished:
+				return
+			case <-sigs:
+				presses++
+				switch ladderStep(presses) {
+				case "cancel":
+					cancel()
+					if ladder != nil && ladder.Interrupting != nil {
+						ladder.Interrupting()
+					}
+				case "warn":
+					if ladder != nil && ladder.Warn != nil {
+						ladder.Warn()
+					}
+				default:
+					if ladder != nil && ladder.Quit != nil {
+						ladder.Quit()
+					}
+				}
+			}
+		}
+	}()
+	if ladder != nil && ladder.Armed != nil {
+		ladder.Armed()
+	}
 	err := fn(ctx)
 	canceled := ctx.Err() != nil
-	stop()
+	close(finished)
 	if err != nil && canceled {
 		return errInterrupted
 	}
