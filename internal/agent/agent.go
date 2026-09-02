@@ -970,11 +970,19 @@ func deniedWithReason(reason string) string {
 // refused the call.
 func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) (result string, denied bool) {
 	start := time.Now()
-	result, denied = a.execCallInner(ctx, tc)
+	var floor floorState
+	result, denied, floor = a.execCallInner(ctx, tc)
+	// The ADR-0065 outcomes come first: an abandoned call has no
+	// result to classify, and a cooperative return after the cancel
+	// is "interrupted" whatever its text says.
 	outcome := "ok"
 	switch {
+	case floor == floorAbandoned:
+		outcome = "abandoned"
 	case denied:
 		outcome = "denied"
+	case floor == floorInterrupted:
+		outcome = "interrupted"
 	case strings.HasPrefix(result, "error:"):
 		outcome = "error"
 	}
@@ -987,16 +995,16 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) (result string, d
 	return result, denied
 }
 
-func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result string, denied bool) {
+func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result string, denied bool, floor floorState) {
 	// A cancelled turn must not open an approval dialog: the operator
 	// interrupted, and a prompt (worse, an 'a' answer) on behalf of a
 	// dead call is the last thing they asked for (review round 2).
 	if ctx.Err() != nil {
-		return "error: interrupted before execution", false
+		return "error: interrupted before execution", false, floorRan
 	}
 	tool, ok := a.registry.Get(tc.Name)
 	if !ok {
-		return fmt.Sprintf("error: unknown tool %q", tc.Name), false
+		return fmt.Sprintf("error: unknown tool %q", tc.Name), false, floorRan
 	}
 	// Operator pre-tool hooks run before the ladder (ADR-0044 §2): the
 	// org's guards exist to catch the agent's lapses deterministically,
@@ -1009,7 +1017,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			// exemption (ADR-0060 §3) stays scoped to the gate path:
 			// hooks are configured commands whose output no one reviews
 			// at the prompt, so their words ship wrapped like any result.
-			return "denied by a pre-tool hook: " + why, false
+			return "denied by a pre-tool hook: " + why, false, floorRan
 		}
 	}
 	if a.gated(tool.Mutating, tc) {
@@ -1098,22 +1106,99 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			a.logRecord("gate_decision", record)
 			if !ok {
 				if denyReason != "" {
-					return deniedWithReason(denyReason), true
+					return deniedWithReason(denyReason), true, floorRan
 				}
-				return deniedResult, true
+				return deniedResult, true, floorRan
 			}
 		}
 	}
-	// The purpose argument is gem-agent's, not the tool's (ADR-0047 §2):
-	// no MCP server may receive an argument its schema never declared.
-	out, err := tool.Run(ctx, a.stripPurpose(tc.Name, tc.Args))
+	out, state, err := a.runWithFloor(ctx, tool, tc)
+	if state == floorAbandoned {
+		return abandonedResult, false, state
+	}
 	if err != nil {
-		return "error: " + err.Error(), false
+		return "error: " + err.Error(), false, state
 	}
 	if out == "" {
-		return "(no output)", false
+		return "(no output)", false, state
 	}
-	return out, false
+	return out, false, state
+}
+
+// floorState says how a tool call came back through the ADR-0065
+// floor: on its own, after the cancel but inside the grace, or not at
+// all (abandoned — the floor returned without it).
+type floorState int
+
+const (
+	floorRan floorState = iota
+	floorInterrupted
+	floorAbandoned
+)
+
+// abandonGrace is how long the floor waits, after the turn's context
+// is cancelled, for a tool to return on its own (ADR-0065 §2). A walk
+// that consults the context is back within one syscall on a
+// filesystem that answers, and that partial result must win the race
+// against the floor; a blocking syscall on a hung mount never comes
+// back, and the session must not wait for it.
+const abandonGrace = 500 * time.Millisecond
+
+// abandonedResult is what the model sees for a call the floor gave up
+// on: the effect may still land, the result never will.
+const abandonedResult = "error: interrupted — the call was abandoned; it may still complete in the background and its result is discarded"
+
+// runWithFloor runs the tool under the return guarantee of ADR-0065
+// §2: the call runs in its own goroutine, and once the context is
+// cancelled the caller waits at most abandonGrace for it. The stop is
+// best-effort, the return is guaranteed — ADR-0034's rule applied to
+// the process, which a cooperative check alone cannot deliver (a
+// ReadDir on a hung mount returns when the kernel says so). Only the
+// run is under the floor, never the approval gate: a dialog waiting
+// on the operator is not a wedged tool, and abandoning a stdin read
+// would leave two readers on the plain REPL's one stdin.
+//
+// An abandoned call that returns later is recorded (tool_late_return)
+// so the audit trail never loses an effect that happened — a write
+// abandoned mid-call may still land. Nothing consumes its result.
+func (a *Agent) runWithFloor(ctx context.Context, tool *tools.Tool, tc llm.ToolCall) (out string, state floorState, err error) {
+	type res struct {
+		out string
+		err error
+	}
+	done := make(chan res, 1)
+	start := time.Now()
+	go func() {
+		// The purpose argument is gem-agent's, not the tool's (ADR-0047
+		// §2): no MCP server may receive an argument its schema never
+		// declared.
+		out, err := tool.Run(ctx, a.stripPurpose(tc.Name, tc.Args))
+		done <- res{out, err}
+	}()
+	select {
+	case r := <-done:
+		return r.out, floorRan, r.err
+	case <-ctx.Done():
+	}
+	grace := time.NewTimer(abandonGrace)
+	defer grace.Stop()
+	select {
+	case r := <-done:
+		return r.out, floorInterrupted, r.err
+	case <-grace.C:
+	}
+	go func() {
+		r := <-done
+		outcome := "ok"
+		if r.err != nil {
+			outcome = "error"
+		}
+		a.logRecord("tool_late_return", map[string]any{
+			"name": tc.Name, "outcome": outcome,
+			"duration_ms": time.Since(start).Milliseconds(), "bytes": len(r.out),
+		})
+	}()
+	return "", floorAbandoned, nil
 }
 
 // gated reports whether this call goes through the approval machinery at
