@@ -1403,7 +1403,10 @@ func runTurn(parent context.Context, fn func(ctx context.Context) error) error {
 func runTurnWith(parent context.Context, ladder *interruptLadder, fn func(ctx context.Context) error) error {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	sigs := make(chan os.Signal, 1)
+	// Buffered generously: signal.Notify drops a signal the channel
+	// cannot take, and a press arriving while the ladder goroutine is
+	// writing the previous warning must still count (review finding).
+	sigs := make(chan os.Signal, 8)
 	signal.Notify(sigs, os.Interrupt)
 	defer signal.Stop(sigs)
 	finished := make(chan struct{})

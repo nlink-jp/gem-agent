@@ -89,7 +89,8 @@ waiting on you (`ask_user`) is left alone: you decide when it
 returns. If a turn still ignores cancellation, a second Ctrl+C warns
 and a third quits gem-agent — the transcript is written per event, so
 everything up to the wedged call is already on disk. The plain REPL
-and `-p` climb the same ladder.
+and `-p` climb the same ladder; that forced exit returns status 130,
+while a plain interrupted `-p` run exits 1 as before.
 
 With `[tui].show_thoughts = true` (the default) the model's thought
 summaries also stream into the live area in the dim style, replaced as

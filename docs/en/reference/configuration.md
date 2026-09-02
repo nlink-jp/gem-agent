@@ -209,7 +209,9 @@ infrastructure, log name `gem-agent` in the Logs Explorer (needs
 `logging.googleapis.com` enabled and `roles/logging.logWriter`). The
 `otlp-grpc` / `otlp-http` backends send OpenTelemetry log records to
 your own collector instead. Events: `session.start/end`, `tool.call` (name,
-clipped detail, duration, outcome), `approval.decision` (decision and
+clipped detail, duration, outcome — `ok`, `error`, `denied`, `skipped`,
+`interrupted`, `abandoned`), `tool.late_return` (an abandoned call
+that returned after all — ADR-0065), `approval.decision` (decision and
 which layer made it), `turn.end`, `model.usage`, `compaction`,
 `media.upload`, `integration.reload` (an in-session `/mcp reload` or
 `/skills reload` changed the tool surface — ADR-0039) — with

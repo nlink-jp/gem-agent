@@ -412,6 +412,7 @@ func (a *Agent) Usage() UsageStats {
 	defer a.mu.Unlock()
 	s := a.stats
 	s.Window = a.window
+	s.AbandonedRunning = a.registry.AbandonedRunning()
 	return s
 }
 
@@ -1017,7 +1018,9 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 	// interrupted, and a prompt (worse, an 'a' answer) on behalf of a
 	// dead call is the last thing they asked for (review round 2).
 	if ctx.Err() != nil {
-		return "error: interrupted before execution", false, floorRan
+		// Audited as interrupted, not error: the call never ran
+		// because the operator stopped the turn (ADR-0065 review).
+		return "error: interrupted before execution", false, floorInterrupted
 	}
 	tool, ok := a.registry.Get(tc.Name)
 	if !ok {
@@ -1217,9 +1220,7 @@ func (a *Agent) runWithFloor(ctx context.Context, tool *tools.Tool, tc llm.ToolC
 		return r.out, floorInterrupted, r.err
 	case <-grace.C:
 	}
-	a.mu.Lock()
-	a.stats.AbandonedRunning++
-	a.mu.Unlock()
+	a.registry.NoteAbandoned(1) // on the registry: a delegated child's count is the session's
 	go func() {
 		r := <-done
 		took := time.Since(start)
@@ -1227,8 +1228,8 @@ func (a *Agent) runWithFloor(ctx context.Context, tool *tools.Tool, tc llm.ToolC
 		if r.err != nil {
 			outcome = "error"
 		}
+		a.registry.NoteAbandoned(-1)
 		a.mu.Lock()
-		a.stats.AbandonedRunning--
 		if tool.Mutating {
 			a.lateNotices = append(a.lateNotices, fmt.Sprintf(
 				"note from gem-agent: the %s call abandoned by the interrupt completed in the background after %s with outcome %s; its result was discarded. Verify its effect before relying on it.",

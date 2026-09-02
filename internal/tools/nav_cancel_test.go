@@ -103,10 +103,27 @@ func TestSearchFilesStopsMidWalkOnCancel(t *testing.T) {
 		done <- result{out, err}
 	}()
 
-	// Blocks until the walk has the FIFO open for reading.
-	w, err := os.OpenFile(fifo, os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatal(err)
+	// Blocks until the walk has the FIFO open for reading. Bounded: if
+	// a future walk skips FIFOs the reader never comes, and this test
+	// must fail, not hang the package.
+	type opened struct {
+		w   *os.File
+		err error
+	}
+	writer := make(chan opened, 1)
+	go func() {
+		w, err := os.OpenFile(fifo, os.O_WRONLY, 0)
+		writer <- opened{w, err}
+	}()
+	var w *os.File
+	select {
+	case o := <-writer:
+		if o.err != nil {
+			t.Fatal(o.err)
+		}
+		w = o.w
+	case <-time.After(5 * time.Second):
+		t.Fatal("the walk never opened the FIFO — does search_files still read non-regular files?")
 	}
 	cancel()
 	_ = w.Close() // EOF: the stalled read returns, the walk sees the cancel

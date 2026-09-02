@@ -26,7 +26,12 @@
   and a late MUTATING return is announced to the model at the start
   of the next turn. `ask_user` is exempt (it waits on you, not a
   filesystem). The shell `WaitDelay` drops from 2 s to 500 ms so a
-  cancelled shell call's output is never discarded by the floor
+  cancelled shell call's output is never discarded by the floor — and
+  a command that exited normally but left a background child on the
+  output pipe now returns its output with a note instead of an error
+  (`ErrWaitDelay`, previously reported as a failure). The abandoned
+  count is shared with the `agentic_file_search` child, so its
+  abandoned calls appear on the receipt too
 - The three-press escape ladder now exists outside the TUI too: in
   the plain REPL and `-p`, the first Ctrl+C cancels and says
   "interrupting…", the second warns, the third exits 130.

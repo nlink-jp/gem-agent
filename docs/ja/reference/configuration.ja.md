@@ -204,7 +204,9 @@ Explorer でのログ名は `gem-agent`（`logging.googleapis.com` の有効化
 と `roles/logging.logWriter` が必要）。`otlp-grpc` / `otlp-http`
 バックエンドは代わりに自前のコレクタへ OpenTelemetry ログレコードを
 送ります。イベント: `session.start/end`・`tool.call`
-（名前・切詰め詳細・所要・結果）・`approval.decision`（判定とどの層が
+（名前・切詰め詳細・所要・結果 — `ok`・`error`・`denied`・`skipped`・
+`interrupted`・`abandoned`）・`tool.late_return`（放棄された呼び出しが
+結局戻った — ADR-0065）・`approval.decision`（判定とどの層が
 決めたか）・`turn.end`・`model.usage`・`compaction`・`media.upload`・
 `integration.reload`（セッション中の `/mcp reload` / `/skills reload`
 がツール面を変えた — ADR-0039）—

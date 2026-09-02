@@ -413,3 +413,42 @@ func TestShellExecCancelReturnsDespitePipeHoldingChild(t *testing.T) {
 		t.Fatal("shell_exec hung after cancel — the Ctrl+C deadlock (ADR-0034)")
 	}
 }
+
+// A command that exits but leaves a background child holding the
+// output pipe past WaitDelay is a result with a note, not a failure
+// (ADR-0065 §2 review: the shorter WaitDelay widened this band).
+func TestShellExecKeepsOutputWhenBackgroundChildHoldsPipe(t *testing.T) {
+	r, err := New(t.TempDir(), directExec, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool, _ := r.Get("shell_exec")
+	out, err := tool.Run(context.Background(), map[string]any{"command": "(sleep 2; echo late) & echo now"})
+	if err != nil {
+		t.Fatalf("exit-0 command with a lingering child reported as failure: %v", err)
+	}
+	if !strings.Contains(out, "now") {
+		t.Errorf("output before the cut lost: %q", out)
+	}
+	if !strings.Contains(out, "background child still held the output pipe") {
+		t.Errorf("cut not named: %q", out)
+	}
+}
+
+// The abandoned-call counter is shared with a Subset (ADR-0065 §2): the
+// delegated child's abandoned goroutines count on the session's receipt.
+func TestSubsetSharesAbandonedCounter(t *testing.T) {
+	r := newRegistry(t)
+	sub, err := r.Subset("read_file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.NoteAbandoned(1)
+	if got := r.AbandonedRunning(); got != 1 {
+		t.Errorf("parent sees %d abandoned, want 1", got)
+	}
+	sub.NoteAbandoned(-1)
+	if got := r.AbandonedRunning(); got != 0 {
+		t.Errorf("parent sees %d abandoned after the return, want 0", got)
+	}
+}

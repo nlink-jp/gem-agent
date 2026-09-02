@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -73,6 +74,12 @@ type Registry struct {
 	shellTimeout time.Duration
 	tools        map[string]*Tool
 	order        []string
+	// abandoned counts tool calls the agent's floor gave up on that
+	// have not returned yet (ADR-0065 §2). It lives on the registry,
+	// not the agent, so a delegated child (Subset) shares the parent's
+	// counter: the goroutine holding the syscall is the child's, and
+	// the exit receipt is the parent's.
+	abandoned *atomic.Int64
 }
 
 // New creates the registry. projectDir must exist; it is resolved to a
@@ -91,6 +98,7 @@ func New(projectDir string, execFn ExecFunc, shellTimeout time.Duration) (*Regis
 		execFn:       execFn,
 		shellTimeout: shellTimeout,
 		tools:        map[string]*Tool{},
+		abandoned:    new(atomic.Int64),
 	}
 	for _, t := range []*Tool{r.listFiles(), r.listTree(), r.searchFiles(), r.readFile(), r.fileInfo(), r.viewImage(), r.readDocument(), r.dateTime(), r.writeFile(), r.editFile(), r.shellExec()} {
 		r.tools[t.Name] = t
@@ -152,6 +160,7 @@ func (r *Registry) Subset(names ...string) (*Registry, error) {
 		execFn:       r.execFn,
 		shellTimeout: r.shellTimeout,
 		tools:        map[string]*Tool{},
+		abandoned:    r.abandoned, // shared: the child's abandoned calls are the session's
 	}
 	for _, n := range names {
 		t, ok := r.tools[n]
@@ -163,6 +172,14 @@ func (r *Registry) Subset(names ...string) (*Registry, error) {
 	}
 	return sub, nil
 }
+
+// NoteAbandoned adjusts the count of abandoned calls still running
+// (+1 when the floor gives up on a call, -1 when it finally returns).
+func (r *Registry) NoteAbandoned(delta int64) { r.abandoned.Add(delta) }
+
+// AbandonedRunning reports abandoned calls that have not returned yet,
+// across this registry and every Subset sharing it.
+func (r *Registry) AbandonedRunning() int { return int(r.abandoned.Load()) }
 
 // RemoveByPrefix deletes every tool whose name starts with prefix and
 // returns how many were removed — the MCP half of an integration
@@ -662,6 +679,15 @@ func (r *Registry) shellExec() *Tool {
 			result := truncate(string(out), OutputCap)
 			if cctx.Err() == context.DeadlineExceeded {
 				return result + fmt.Sprintf("\n[command timed out after %s]", r.shellTimeout), nil
+			}
+			// The command exited but a child it left behind still held
+			// the output pipe past WaitDelay (a `… &` in a start
+			// script). Go reports that as an error; the output before
+			// the cut is the result, and the model is told where it
+			// was cut (ADR-0065 §2 review: the shorter WaitDelay must
+			// not turn such commands into failures).
+			if errors.Is(err, exec.ErrWaitDelay) {
+				return result + fmt.Sprintf("\n[a background child still held the output pipe %s after the command exited — later output is not captured]", ShellWaitDelay), nil
 			}
 			if err != nil {
 				var exitErr *exec.ExitError

@@ -82,7 +82,12 @@ The grace is longer than the shell's `WaitDelay` on purpose, and the
 `WaitDelay` of ADR-0034 §2 drops from 2 s to 500 ms to make that so:
 a cancelled shell call whose escapee held the pipe returns the output
 produced before the cut at the `WaitDelay`, and the floor must still
-be waiting for it. A test pins the ordering.
+be waiting for it. A test pins the ordering. The shorter `WaitDelay`
+also widens the band where a command that *exited normally* but left
+a background child on the pipe (`… &` in a start script) hits Go's
+`ErrWaitDelay`; `shell_exec` now treats that like a timeout — the
+output before the cut is the result, with a note naming the cut —
+instead of reporting the command as failed (review finding, measured).
 
 Two things are outside the floor. The approval gate: a dialog waiting
 on the operator is not a wedged tool. And a tool that itself waits on
@@ -92,9 +97,12 @@ stdin, eating the operator's next line (the shared-reader rule in
 AGENTS.md). The operator decides when those return.
 
 What the floor abandons is accounted for. The count of abandoned
-calls still running is kept in the usage statistics and named on the
-exit receipt when it is not zero — a goroutine holding a syscall may
-write after the process is gone. When an abandoned call does return,
+calls still running lives on the tool registry — shared with the
+delegated child's `Subset`, so a goroutine the child abandoned is the
+session's — and is named on the exit receipt when it is not zero: a
+goroutine holding a syscall may write after the process is gone. A
+call that never started because the turn was already cancelled is
+audited as `interrupted`, not `error`. When an abandoned call does return,
 a `tool_late_return` session record and a `tool.late_return` audit
 event say so (name, outcome, duration); both are best-effort once the
 session has closed its log or shut down its exporter. A MUTATING call
