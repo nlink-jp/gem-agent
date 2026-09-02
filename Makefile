@@ -90,5 +90,5 @@ clean:
 # `make brew` generates this formula from the built darwin-arm64 zip into the
 # local nlink-jp/homebrew-tap checkout. The package target is unchanged.
 BREW_KIND := formula
-BREW_DESC := Interactive CLI agent on Vertex AI Gemini (Claude Code fallback)
+BREW_DESC := Interactive CLI agent runtime on Vertex AI Gemini
 include scripts/release-brew.mk

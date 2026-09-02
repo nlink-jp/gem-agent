@@ -39,6 +39,9 @@
 - The exit says `sending audit events… (up to 3s)` before its bounded
   flush instead of pausing silently — that pause was the wait behind
   the "third Ctrl+C took a while" report
+- The Homebrew formula description drops the retired "Claude Code
+  fallback" wording (ADR-0061 follow-up; the tap README already said
+  "agent runtime")
 
 ## [0.61.0] - 2026-09-02
 
