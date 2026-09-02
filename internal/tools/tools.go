@@ -38,7 +38,13 @@ type Tool struct {
 	Parameters  map[string]any
 	// Mutating tools require MITL approval before each run.
 	Mutating bool
-	Run      func(ctx context.Context, args map[string]any) (string, error)
+	// WaitsOnOperator marks a tool whose Run blocks on the operator's
+	// own input (ask_user). The ADR-0065 floor never abandons such a
+	// call: a stdin read left behind would be a second reader on the
+	// plain REPL's one stdin, eating the operator's next line. The
+	// operator, not a filesystem, decides when it returns.
+	WaitsOnOperator bool
+	Run             func(ctx context.Context, args map[string]any) (string, error)
 	// Annotate, when set, returns extra display lines for the approval
 	// prompt derived from live filesystem state (ADR-0051) — e.g. what
 	// an overwrite replaces. Display-only: it must not mutate anything,
@@ -683,6 +689,10 @@ func (r *Registry) shellExec() *Tool {
 //   - WaitDelay: the backstop for a setsid/double-fork escapee — Wait
 //     stops waiting for inherited pipes instead of hanging the session
 //     for an orphan. The kill is best-effort; the return is guaranteed.
+//     It is shorter than the agent's abandon grace (ADR-0065 §2) on
+//     purpose: the output produced before the cut must reach the
+//     model, not be discarded by the floor a moment before Wait
+//     returns it.
 func hardenExec(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
@@ -694,5 +704,10 @@ func hardenExec(cmd *exec.Cmd) {
 		}
 		return nil
 	}
-	cmd.WaitDelay = 2 * time.Second
+	cmd.WaitDelay = ShellWaitDelay
 }
+
+// ShellWaitDelay bounds how long a cancelled shell call waits for an
+// escapee's inherited pipes (ADR-0034 §2). The agent's abandon grace
+// must stay longer than this (pinned by a test in internal/agent).
+const ShellWaitDelay = 500 * time.Millisecond

@@ -104,3 +104,18 @@ func TestExitSummary(t *testing.T) {
 		t.Errorf("empty session produced a summary: %v", lines)
 	}
 }
+
+// ADR-0065 §2: a goroutine the floor left behind is named on the way
+// out — and only then.
+func TestExitSummaryNamesAbandonedCalls(t *testing.T) {
+	en := uitext.For(uitext.EN)
+	lines := exitSummary(agent.UsageStats{Rounds: 1, Prompt: 10, Output: 5, AbandonedRunning: 2}, "", en)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "2 abandoned tool call(s) still running") {
+		t.Errorf("abandoned calls not named:\n%s", joined)
+	}
+	lines = exitSummary(agent.UsageStats{Rounds: 1, Prompt: 10, Output: 5}, "", en)
+	if strings.Contains(strings.Join(lines, "\n"), "abandoned") {
+		t.Error("receipt mentions abandoned calls when there are none")
+	}
+}

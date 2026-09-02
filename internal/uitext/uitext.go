@@ -191,6 +191,13 @@ type Messages struct {
 	ExitSessionFmt string
 	// ExitUsageFmt: rounds, prompt tokens, output tokens.
 	ExitUsageFmt string
+	// ExitAbandonedFmt: %d = tool calls the ADR-0065 floor abandoned
+	// that are still running at exit — their effect may land after
+	// the process is gone, so the operator hears it.
+	ExitAbandonedFmt string
+	// ExitFlushing precedes the bounded audit-event flush on the way
+	// out (ADR-0065 §4): a silent wait reads as a hang.
+	ExitFlushing string
 
 	// --- slash command feedback (cmd) ---
 	Help             string // the full /help text
@@ -244,7 +251,7 @@ func (m *Messages) BroadReason(key string) string {
 }
 
 var en = Messages{
-	ApprovalTitleFmt:  "approval required: %s",
+	ApprovalTitleFmt:          "approval required: %s",
 	ApproveAllow:              "allow (y)",
 	ApproveDeny:               "deny (n)",
 	ApproveDenyReason:         "deny with reason (N)",
@@ -318,6 +325,8 @@ var en = Messages{
 	RiskbookUsage:          "usage: /riskbook [show|learn|reload|clear]",
 	ExitSessionFmt:         "session %s — resume: gem-agent -c (or --resume %s)",
 	ExitUsageFmt:           "%d rounds · prompt %s · output %s",
+	ExitAbandonedFmt:       "%d abandoned tool call(s) still running — an effect may still land after this exit",
+	ExitFlushing:           "sending audit events… (up to 3s)",
 
 	Help: `commands:
   /help      show this help
@@ -450,6 +459,8 @@ var ja = Messages{
 	RiskbookUsage:          "使い方: /riskbook [show|learn|reload|clear]",
 	ExitSessionFmt:         "セッション %s — 再開: gem-agent -c（または --resume %s）",
 	ExitUsageFmt:           "%d ラウンド · prompt %s · output %s",
+	ExitAbandonedFmt:       "放棄したツール呼び出し %d 件がまだ実行中 — 終了後に効果が及ぶことがあります",
+	ExitFlushing:           "監査イベントを送信中…（最大 3 秒）",
 
 	Help: `コマンド:
   /help      このヘルプ

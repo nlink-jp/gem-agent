@@ -386,6 +386,15 @@ func (r *Registry) searchFiles() *Tool {
 					var shown []string
 					count := 0
 					for i, line := range strings.Split(string(data), "\n") {
+						// A 2 MB file under a heavy pattern can outlast
+						// the abandon grace on its own (ADR-0065 §2); the
+						// check is periodic so a cancel lands mid-file
+						// too. This file's partial count is dropped —
+						// the footer names the cut.
+						if i&1023 == 1023 && ctx.Err() != nil {
+							interrupted = true
+							break
+						}
 						if !re.MatchString(line) {
 							continue
 						}
@@ -394,6 +403,10 @@ func (r *Registry) searchFiles() *Tool {
 							shown = append(shown, fmt.Sprintf("%s:%d: %s",
 								display, i+1, clipRunes(strings.TrimSpace(line), searchLineClip)))
 						}
+					}
+					if interrupted {
+						filesScanned-- // not scanned to the end: not counted
+						return
 					}
 					if count == 0 {
 						continue

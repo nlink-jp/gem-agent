@@ -139,5 +139,10 @@ func exitSummary(s agent.UsageStats, sessionID string, msgs *uitext.Messages) []
 	}
 	lines = append(lines, fmt.Sprintf(msgs.ExitUsageFmt,
 		s.Rounds, humanTok(s.Prompt), humanTok(s.Output)))
+	if s.AbandonedRunning > 0 {
+		// ADR-0065 §2: a goroutine the floor left behind may still
+		// write after the process is gone; the operator hears it.
+		lines = append(lines, fmt.Sprintf(msgs.ExitAbandonedFmt, s.AbandonedRunning))
+	}
 	return lines
 }

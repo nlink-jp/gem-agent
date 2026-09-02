@@ -213,6 +213,18 @@ func (s *Sink) ToolCall(name string, mutating bool, detail, purpose string, dur 
 		attribute.String("outcome", outcome))
 }
 
+// ToolLateReturn closes the audit gap behind an abandoned call
+// (ADR-0065 §2): the floor reported outcome=abandoned at the grace;
+// this says the call did return, when, and how. Best-effort — a
+// return after Shutdown is lost, like any event after Shutdown.
+func (s *Sink) ToolLateReturn(name string, mutating bool, dur time.Duration, outcome string) {
+	s.emit("tool.late_return",
+		attribute.String("tool", name),
+		attribute.Bool("mutating", mutating),
+		attribute.Int64("duration_ms", dur.Milliseconds()),
+		attribute.String("outcome", outcome))
+}
+
 // Approval records who or what let a call through (or refused it):
 // source is operator / allowlist / policy_never / auto_rule /
 // auto_model.

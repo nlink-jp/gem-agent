@@ -32,6 +32,11 @@ type UsageStats struct {
 	LastPrompt, Window                         int
 	RiskCalls, RiskPrompt, RiskOutput          int
 	CompactCalls, CompactPrompt, CompactOutput int
+	// AbandonedRunning counts tool calls the ADR-0065 floor gave up
+	// on that have not returned yet — goroutines still holding a
+	// syscall, whose effect may still land. The exit receipt names
+	// them when the count is not zero.
+	AbandonedRunning int
 }
 
 // Approver gates mutating tool calls (see internal/approve for the
@@ -109,6 +114,12 @@ type Agent struct {
 	turnInput string
 	turnRound int
 
+	// lateNotices are messages queued for the start of the next turn
+	// by abandoned MUTATING calls that completed in the background
+	// (ADR-0065 §2): the model was told "interrupted, result
+	// discarded", and the effect landed anyway. Written from the
+	// abandoned goroutine, under mu; drained on the turn goroutine.
+	lateNotices []string
 	// pendingAtts are text attachments queued by AttachData for the
 	// next Run's user message (ADR-0055: one-shot piped stdin). Set
 	// between turns only, drained by Run.
@@ -570,6 +581,12 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 	// @ref tokens, not bytes) is the risk evaluator's instruction
 	// context for this turn (ADR-0038).
 	a.turnInput = input
+	// An abandoned mutating call that completed since the last turn
+	// is announced before this turn's message (ADR-0065 §2): the
+	// model's last word on it was "interrupted, result discarded".
+	for _, note := range a.takeLateNotices() {
+		a.appendMessage(llm.Message{Role: llm.RoleUser, Content: note})
+	}
 	// @-references become attachments carried beside the text; the text
 	// the operator typed is left exactly as written. Queued data
 	// attachments (ADR-0055: piped stdin) ride the same lane.
@@ -1141,8 +1158,11 @@ const (
 // that consults the context is back within one syscall on a
 // filesystem that answers, and that partial result must win the race
 // against the floor; a blocking syscall on a hung mount never comes
-// back, and the session must not wait for it.
-const abandonGrace = 500 * time.Millisecond
+// back, and the session must not wait for it. It is longer than
+// tools.ShellWaitDelay on purpose (pinned by a test): a cancelled
+// shell call whose escapee held the pipe returns its output at the
+// WaitDelay, and that output must not be discarded by the floor.
+const abandonGrace = time.Second
 
 // abandonedResult is what the model sees for a call the floor gave up
 // on: the effect may still land, the result never will.
@@ -1154,14 +1174,27 @@ const abandonedResult = "error: interrupted — the call was abandoned; it may s
 // best-effort, the return is guaranteed — ADR-0034's rule applied to
 // the process, which a cooperative check alone cannot deliver (a
 // ReadDir on a hung mount returns when the kernel says so). Only the
-// run is under the floor, never the approval gate: a dialog waiting
-// on the operator is not a wedged tool, and abandoning a stdin read
-// would leave two readers on the plain REPL's one stdin.
+// run is under the floor, never the approval gate, and a tool that
+// waits on the operator (ask_user) is exempt: neither is a wedged
+// tool, and an abandoned stdin read would leave two readers on the
+// plain REPL's one stdin, eating the operator's next line.
 //
-// An abandoned call that returns later is recorded (tool_late_return)
-// so the audit trail never loses an effect that happened — a write
-// abandoned mid-call may still land. Nothing consumes its result.
+// An abandoned call that returns later is recorded — a session record
+// and an audit event (tool_late_return) — so the trail never loses an
+// effect that happened, and a MUTATING one is announced to the model
+// at the start of the next turn: its last word was "result
+// discarded", and a write may have landed anyway. Both are
+// best-effort after the session has ended. Nothing consumes the late
+// result itself.
 func (a *Agent) runWithFloor(ctx context.Context, tool *tools.Tool, tc llm.ToolCall) (out string, state floorState, err error) {
+	// The purpose argument is gem-agent's, not the tool's (ADR-0047
+	// §2): no MCP server may receive an argument its schema never
+	// declared.
+	args := a.stripPurpose(tc.Name, tc.Args)
+	if tool.WaitsOnOperator {
+		out, err := tool.Run(ctx, args)
+		return out, floorRan, err
+	}
 	type res struct {
 		out string
 		err error
@@ -1169,10 +1202,7 @@ func (a *Agent) runWithFloor(ctx context.Context, tool *tools.Tool, tc llm.ToolC
 	done := make(chan res, 1)
 	start := time.Now()
 	go func() {
-		// The purpose argument is gem-agent's, not the tool's (ADR-0047
-		// §2): no MCP server may receive an argument its schema never
-		// declared.
-		out, err := tool.Run(ctx, a.stripPurpose(tc.Name, tc.Args))
+		out, err := tool.Run(ctx, args)
 		done <- res{out, err}
 	}()
 	select {
@@ -1187,18 +1217,41 @@ func (a *Agent) runWithFloor(ctx context.Context, tool *tools.Tool, tc llm.ToolC
 		return r.out, floorInterrupted, r.err
 	case <-grace.C:
 	}
+	a.mu.Lock()
+	a.stats.AbandonedRunning++
+	a.mu.Unlock()
 	go func() {
 		r := <-done
+		took := time.Since(start)
 		outcome := "ok"
 		if r.err != nil {
 			outcome = "error"
 		}
+		a.mu.Lock()
+		a.stats.AbandonedRunning--
+		if tool.Mutating {
+			a.lateNotices = append(a.lateNotices, fmt.Sprintf(
+				"note from gem-agent: the %s call abandoned by the interrupt completed in the background after %s with outcome %s; its result was discarded. Verify its effect before relying on it.",
+				tc.Name, took.Round(100*time.Millisecond), outcome))
+		}
+		a.mu.Unlock()
 		a.logRecord("tool_late_return", map[string]any{
-			"name": tc.Name, "outcome": outcome,
-			"duration_ms": time.Since(start).Milliseconds(), "bytes": len(r.out),
+			"name": tc.Name, "mutating": tool.Mutating, "outcome": outcome,
+			"duration_ms": took.Milliseconds(), "bytes": len(r.out),
 		})
+		a.telemetry.ToolLateReturn(tc.Name, tool.Mutating, took, outcome)
 	}()
 	return "", floorAbandoned, nil
+}
+
+// takeLateNotices drains the queue filled by abandoned mutating calls
+// (turn goroutine only, like AddContext).
+func (a *Agent) takeLateNotices() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	notes := a.lateNotices
+	a.lateNotices = nil
+	return notes
 }
 
 // gated reports whether this call goes through the approval machinery at

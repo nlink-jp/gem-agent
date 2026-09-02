@@ -47,6 +47,9 @@ func registerAskTool(registry *tools.Registry, ask askFunc) error {
 			"required": []string{"question", "options"},
 		},
 		Mutating: false,
+		// The call returns when the operator answers, not when a
+		// filesystem does: the ADR-0065 floor leaves it alone.
+		WaitsOnOperator: true,
 		Run: func(ctx context.Context, args map[string]any) (string, error) {
 			question, _ := args["question"].(string)
 			question = strings.TrimSpace(question)
