@@ -1,6 +1,24 @@
 # Changelog
 
-## [Unreleased]
+## [0.63.0] - 2026-09-04
+
+### Added — a one-shot run waiting on piped stdin says so (ADR-0067)
+
+- `-p` reads a non-terminal stdin to EOF (ADR-0055); a scheduler or
+  tool harness that hands the child an idle inherited pipe made it
+  wait forever with nothing on either stream (observed: ten minutes,
+  read as a hang). The read is unchanged — a slow producer is never
+  cut off — but a pipe still open after 2 s now earns one stderr line
+  naming both remedies: close the pipe, or launch with `< /dev/null`
+  when nothing is meant to be attached
+- An announced wait is seen to end: the existing
+  `[stdin: N bytes attached as data]` when content arrived, a new
+  `[stdin: ended empty — nothing attached]` when the pipe closed
+  without data (ADR-0033 §2). `< /dev/null`, here-strings and
+  `echo … |` deliver EOF at once and stay silent
+- Tests cover the silent fast path, the announced slow producer, and
+  the idle pipe released empty; README, the approval reference, and
+  AGENTS.md (both languages where mirrored) name the idiom
 
 ### Changed — Gemini 3.8 Flash (GA 2026-09-02) verified; SDK refreshed
 

@@ -117,6 +117,10 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   `us-central1` 404s); Gemini 2.5 works regionally.
 - **stdout is model text only** — banner, prompts, tool events, and approval
   prompts go to stderr. Keep it that way; Phase 2's one-shot mode depends on it.
+- **`-p` reads a non-terminal stdin to EOF** (ADR-0055). A harness or
+  scheduler that hands the child an idle inherited pipe makes it wait;
+  after 2 s a stderr line says so (ADR-0067). When scripting `-p` with no
+  data intended, launch with `< /dev/null`.
 - **REPL and approval gate share ONE bufio.Reader** (bufio.NewReader returns
   an existing *bufio.Reader unchanged). Wrapping os.Stdin twice strands
   buffered input — don't "simplify" this.

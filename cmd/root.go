@@ -954,15 +954,24 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// (ADR-0055) — never prompt text: the -p string alone is the
 		// instruction the risk evaluator sees (ADR-0038/0054). A
 		// terminal stdin is never read, so an interactive `-p` cannot
-		// hang waiting for input.
+		// hang waiting for input. A non-terminal stdin that never
+		// closes (an idle pipe inherited from a scheduler or harness)
+		// is read to EOF like any other, but the wait is announced
+		// after a short grace so it cannot pass for a hang (ADR-0067).
 		if f, ok := cmd.InOrStdin().(*os.File); !ok || !term.IsTerminal(int(f.Fd())) {
-			content, warning := readPipedStdin(cmd.InOrStdin())
+			waited := false
+			content, warning := readPipedStdinNoticing(cmd.InOrStdin(), stdinWaitNotice, func() {
+				waited = true
+				fmt.Fprintln(stderr, stdinWaitMessage)
+			})
 			if warning != "" {
 				fmt.Fprintf(stderr, "warning: %s\n", warning)
 			}
 			if content != "" {
 				ag.AttachData("-", "stdin", content)
-				fmt.Fprintf(stderr, "[stdin: %d bytes attached as data]\n", len(content))
+			}
+			if line := stdinOutcomeLine(content, warning, waited); line != "" {
+				fmt.Fprintln(stderr, line)
 			}
 		}
 		runErr := runTurnWith(ctx, ladder, func(turnCtx context.Context) error {
@@ -1287,6 +1296,57 @@ func readPipedStdin(r io.Reader) (content, warning string) {
 		s += "\n[stdin clipped at 256 KiB — the rest of the pipe was not read]"
 	}
 	return s, ""
+}
+
+// stdinWaitNotice is the grace before a still-open piped stdin is
+// announced (ADR-0067 §1): long enough that `< /dev/null`, here-strings
+// and `echo … |` stay silent, short enough that an idle inherited pipe
+// is named before anyone reads the silence as a hang. The TUI
+// heartbeat (ADR-0033 §1) never runs in -p, so this is the only wait
+// notice in play here.
+const stdinWaitNotice = 2 * time.Second
+
+// stdinOutcomeLine is the stderr line that closes a piped-stdin read
+// (ADR-0067 §2): the byte count when content was attached; the "ended
+// empty" line only when the wait was announced and no warning already
+// said nothing was attached; nothing otherwise, so the silent fast
+// path stays silent.
+func stdinOutcomeLine(content, warning string, waited bool) string {
+	switch {
+	case content != "":
+		return fmt.Sprintf("[stdin: %d bytes attached as data]", len(content))
+	case waited && warning == "":
+		return "[stdin: ended empty — nothing attached]"
+	}
+	return ""
+}
+
+// stdinWaitMessage names both remedies, because the operator reading
+// it cannot tell a slow producer from an idle pipe.
+const stdinWaitMessage = "[stdin: waiting for piped input to end (no EOF after 2s) — close the pipe, or run with < /dev/null if nothing should be attached]"
+
+// readPipedStdinNoticing is readPipedStdin with the wait announced:
+// if the read has not finished within `after`, notify is called once,
+// then the read continues to EOF unchanged (ADR-0067). The reader is
+// never abandoned — a slow producer must not be cut off — so a truly
+// endless pipe still blocks, but no longer silently.
+func readPipedStdinNoticing(r io.Reader, after time.Duration, notify func()) (content, warning string) {
+	type result struct{ content, warning string }
+	done := make(chan result, 1)
+	go func() {
+		c, w := readPipedStdin(r)
+		done <- result{c, w}
+	}()
+	select {
+	case res := <-done:
+		return res.content, res.warning
+	case <-time.After(after):
+		if notify != nil {
+			notify()
+		}
+		res := <-done
+		return res.content, res.warning
+	}
 }
 
 // applyAllowFlag merges --allow entries into the global policy scope as

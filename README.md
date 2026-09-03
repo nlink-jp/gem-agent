@@ -82,7 +82,10 @@ interactive turn — `gem-agent "…"` runs it and hands you the keyboard
 `-p` runs one-shot (mutating tools denied; `--allow` grants named
 tools per run, `--auto` arms the risk ladder — ADR-0053), and
 `data | gem-agent -p "…"` attaches piped stdin as isolated data,
-never as prompt text (ADR-0055).
+never as prompt text (ADR-0055). The pipe is read to EOF; if it is
+still open after 2 s, a stderr line says so and names the remedy —
+launch with `< /dev/null` when nothing is meant to be attached
+(ADR-0067).
 
 **[Built-in tools](docs/en/reference/tools.md)** — orientation
 (`list_files`/`list_tree`/`search_files`, ignore-aware: dependency and

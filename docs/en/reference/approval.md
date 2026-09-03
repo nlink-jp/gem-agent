@@ -246,7 +246,12 @@ prompt (ADR-0055). The `-p` string alone is the instruction the risk
 evaluator sees: an injection in whatever the pipe fetched cannot
 reach the trusted instruction channel. The read is bounded (256 KiB,
 clip disclosed), binary input is skipped with a warning, and a
-terminal stdin is never read.
+terminal stdin is never read. A non-terminal stdin is read to EOF —
+a slow producer is never cut off — and if it is still open after 2 s
+one stderr line announces the wait and names the remedies: close the
+pipe, or launch with `< /dev/null` when nothing is meant to be
+attached (ADR-0067). Schedulers and tool harnesses that hand a child
+an idle inherited pipe are the case this catches.
 
 Note what `--auto` means here: with no human anywhere, the model
 evaluator is the sole arbiter of Review-tier calls. For a pipeline

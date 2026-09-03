@@ -80,7 +80,9 @@ syscall 1 回分で止まり、それ以外は有界の猶予後に放棄 — AD
 `--allow` で実行単位のツール名指し付与、`--auto` でリスク階梯の
 武装ができます。ADR-0053）。`データ | gem-agent -p "…"` のパイプ
 stdin は隔離データとして添付され、プロンプト文にはなりません
-（ADR-0055）。
+（ADR-0055）。パイプは EOF まで読みます。2 秒経っても開いたままなら
+stderr に 1 行出して対処を示します — 何も添付しない起動は
+`< /dev/null` を付けてください（ADR-0067）。
 
 **[組み込みツール](docs/ja/reference/tools.ja.md)** — 方向づけ
 （`list_files`/`list_tree`/`search_files`、ignore 対応: 依存・ビルド
