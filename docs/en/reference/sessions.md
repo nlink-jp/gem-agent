@@ -96,8 +96,9 @@ Every model call therefore writes one `usage` record:
      "total":4306}}
 
 `source` is one of `main`, `risk`, `progress_review`, `compact`,
-`summarize_file`, `web_search`, `web_fetch`, `agentic_file_search` —
-sum by source, price by `model`, check against `total`. The session
+`summarize_file`, `web_search`, `web_fetch`, `agentic_file_search`,
+`riskbook_learn` — sum by source, price by `model`, check against
+`total`. The session
 header records the region alongside the model, because prices are
 resolved per SKU per region.
 

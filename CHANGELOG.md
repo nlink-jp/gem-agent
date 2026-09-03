@@ -22,6 +22,16 @@
 - A `-tags live` test issues one URL-context fetch and asserts the
   four-term checksum with a non-zero fourth term, next to the existing
   main-loop measurement
+- `/riskbook learn` wrote no `usage` record — its draft call landed
+  four days before ADR-0057 and the sweep missed it (found by the
+  ADR-0066 review). It now writes one with source `riskbook_learn`
+
+### Added
+
+- `/usage` per-tool lines show `tool results N` when the bucket is
+  non-zero — on a `web_fetch` the fetched page is most of the call
+  (measured 953 of 1054 tokens), and a line without it undercounted
+  the tool's input by an order of magnitude
 
 ## [0.61.1] - 2026-09-02
 

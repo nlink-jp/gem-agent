@@ -92,8 +92,9 @@ API が返すのはトークン数であって金額ではない。したがっ�
      "total":4306}}
 
 `source` は `main` / `risk` / `progress_review` / `compact` /
-`summarize_file` / `web_search` / `web_fetch` / `agentic_file_search`
-のいずれか — source で合計し、`model` で値付けし、`total` で検算する。
+`summarize_file` / `web_search` / `web_fetch` / `agentic_file_search` /
+`riskbook_learn` のいずれか — source で合計し、`model` で値付けし、
+`total` で検算する。
 単価は SKU × リージョンで解決されるので、セッションヘッダにはモデルと
 並んでリージョンも記録される。
 

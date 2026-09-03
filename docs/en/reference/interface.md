@@ -174,7 +174,9 @@ instead of pausing silently (ADR-0065).
 `/usage` breaks the session down: main-loop rounds with the cache hit
 rate, risk-check and compaction side-calls, and per-tool lines
 (summaries, web, the file-search agent) naming the model that spent
-the tokens.
+the tokens. A web line adds `tool results N` — the page or search
+results the provider fed back to the model, billed as input and
+usually most of the call.
 
 ## Completion
 

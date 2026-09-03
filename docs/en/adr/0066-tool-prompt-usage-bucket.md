@@ -64,8 +64,14 @@ Two facts about how it surfaced:
 (`"tool_prompt"`), populated from `ToolUsePromptTokenCount` on both
 paths — the streaming accumulator (`Response.ToolPromptTokens`) and
 the non-streaming `sideUsage`. Every call site that builds a record
-goes through the two `logUsage` helpers, so no source is left out;
-the bucket is structurally zero everywhere but the two web sources.
+goes through the two `logUsage` helpers; the bucket is structurally
+zero everywhere but the two web sources.
+
+Re-verifying "every model call leaves a record" for this amendment
+found one that did not: `/riskbook learn` drafts on the summary model
+(ADR-0050, landed four days before ADR-0057) and fed only the in-memory
+tally. It now writes a `usage` record with source `riskbook_learn` —
+the ADR-0057 promise, not a new one.
 
 The key is written always, zero included, in the position before
 `total` (addends before the checksum):
@@ -93,13 +99,15 @@ non-negative remainder; a negative remainder is still a broken record.
 figure computed from Cloud Logging keeps using the same arithmetic as
 one computed from a transcript. Still counts only.
 
-### 4. What does not change
+### 4. `/usage` names the tool results; the rest does not change
 
-- **`/usage` and the exit receipt.** The in-memory statement shows
-  prompt and output per category and already omits thoughts and
-  cached for side calls; it is a glance, and the transcript is the
-  accounting document. `UsageStats` is untouched — the main loop has no
-  built-in tool, so the bucket is zero there by construction.
+- **`/usage`.** The per-tool lines gain `· tool results N` when the
+  bucket is non-zero. The first draft left the statement alone as "a
+  glance"; the review pointed at §5's own number — the fetched page is
+  90% of a `web_fetch` call — and a line that omits 90% of a tool's
+  input is not a glance, it is wrong by an order of magnitude.
+  `UsageStats` and the exit receipt are untouched — the main loop has
+  no built-in tool, so the bucket is zero there by construction.
 - **`Usage.Empty()`** keeps its three terms: a call that returned
   tool-result tokens and no prompt tokens does not exist.
 - **Not a schema bump.** Usage records are diagnostic; `Load` ignores
