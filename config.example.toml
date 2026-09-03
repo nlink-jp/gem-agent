@@ -10,9 +10,13 @@
 # Also settable via GEMAGENT_PROJECT or GOOGLE_CLOUD_PROJECT.
 project = "your-project-id"
 
-# Vertex AI endpoint location. "global" is the default and is required
-# for the Gemini 3 family — regional endpoints return 404 for those
-# models. Use a region (e.g. "us-central1") only for Gemini 2.5 models.
+# Vertex AI endpoint location. "global" is the default. The Gemini 3
+# family is served from "global" and the "us" / "eu" multi-regions
+# only ("eu" per the Vertex model page) — single regions return 404
+# for those models (measured:
+# gemini-3.8-flash and gemini-3.7-flash answer from "global" and "us",
+# "us-central1" 404s). Use a single region (e.g. "us-central1") only
+# for Gemini 2.5 models.
 location = "global"
 
 # GCS bucket for audio/video attachments (ADR-0027). When set, attached
@@ -27,7 +31,7 @@ location = "global"
 [model]
 # Gemini model ID. Required, and deliberately without a built-in
 # default: model IDs churn, and a stale hardcoded one fails at runtime.
-name = "gemini-3.7-flash"
+name = "gemini-3.8-flash"
 
 # Context window shown in the status line. Optional — Vertex does not
 # report inputTokenLimit, so gem-agent falls back to the Gemini-family
@@ -58,8 +62,10 @@ name = "gemini-3.7-flash"
 # shown in the footer and /usage; lower levels answer faster and
 # cheaper, higher levels reason more (measured on one arithmetic prompt:
 # low 93 / medium 170 / high 222 thought tokens). Which levels a model
-# accepts is model-dependent — gemini-3.7-flash rejects "minimal" with a
-# clear 400 on the first turn (measured). The summarize_file model is
+# accepts is model-dependent — gemini-3.7-flash and gemini-3.8-flash
+# reject "minimal" with a clear 400 on the first turn (measured; both
+# accept low/medium/high, medium being their default). The
+# summarize_file model is
 # not affected. The --thinking flag overrides this per run.
 #thinking = "high"
 

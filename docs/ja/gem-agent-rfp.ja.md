@@ -78,7 +78,7 @@ allowlist に登録される（永続化しない）。
 ```toml
 [gcp]
 project  = "your-project-id"
-location = "global"   # Gemini 3 系は global エンドポイント専用。regional は 404
+location = "global"   # Gemini 3 系は "global" / "us" / "eu" のみ。単一リージョンは 404
 
 [model]
 name = "<gemini-3.x model id>"

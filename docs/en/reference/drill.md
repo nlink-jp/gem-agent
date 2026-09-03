@@ -90,8 +90,9 @@ without calling `read_file`/`list_files` — with a question like the one
 above, no tool calls means the answer was invented.
 
 A 404 here almost always means the configured model is gone: check
-`[model].name`, and remember the Gemini 3 family is served only from the
-`global` endpoint.
+`[model].name`, and remember the Gemini 3 family is served only from
+`global` and the `us` / `eu` multi-regions — a single region such as
+`us-central1` 404s.
 
 ### 3. MCP tool call (3 min)
 

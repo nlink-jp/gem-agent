@@ -28,7 +28,7 @@ func TestExampleConfigLoads(t *testing.T) {
 		t.Errorf("template should carry placeholder project/model: %+v", cfg)
 	}
 	if cfg.GCP.Location != "global" {
-		t.Errorf("template location = %q, want global (Gemini 3 is global-only)", cfg.GCP.Location)
+		t.Errorf("template location = %q, want global (the Gemini 3 default; single regions 404 it)", cfg.GCP.Location)
 	}
 	def := defaults()
 	if cfg.Sandbox.Enabled != def.Sandbox.Enabled ||

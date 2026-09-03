@@ -32,7 +32,7 @@ cp mcp.example.json    ~/.config/gem-agent/mcp.json   # 任意: MCP サーバー
 ```toml
 [gcp]
 project  = "your-project-id"
-location = "global"        # デフォルト; Gemini 3 系は global エンドポイント専用
+location = "global"        # デフォルト; Gemini 3 系は "global" / "us" / "eu" のみ
 # bucket = "your-bucket"   # 任意; 音声/動画を GCS 経由にする（ADR-0027）
 
 [model]
@@ -252,8 +252,12 @@ Vertex はリクエストとレスポンスの両方にコンテンツフィル�
 
 ## エンドポイント
 
-2026-08 時点で Gemini 3 系（gemini-3.7-flash / gemini-3-flash-preview
-で実測）は global エンドポイントからのみ提供されており、リージョナル
-指定は 404 になります。Gemini 2.5 系は `us-central1` 等のリージョナル
-で動作するので、使う場合は `location` をそちらに設定してください。
-Vertex の一時障害（429/5xx）は指数バックオフでリトライします。
+2026-09 時点で Gemini 3 系は global エンドポイントと `us` / `eu`
+マルチリージョンから提供されています（Vertex のモデルページによる;
+`global` と `us` は gemini-3.8-flash / gemini-3.7-flash で実測）。
+`us-central1` のような単一リージョン指定は 404 になります（実測）。
+既定は `global` で、データ所在地の要件がある場合に
+`location = "us"` または `"eu"` を設定してください。Gemini 2.5 系は
+`us-central1` 等の単一リージョンで動作するので、使う場合は
+`location` をそちらに設定してください。Vertex の一時障害（429/5xx）
+は指数バックオフでリトライします。

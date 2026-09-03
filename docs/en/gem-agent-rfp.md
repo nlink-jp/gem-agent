@@ -82,7 +82,7 @@ a session-scoped allowlist (not persisted).
 ```toml
 [gcp]
 project  = "your-project-id"
-location = "global"   # the Gemini 3 family is global-endpoint-only; regional 404s
+location = "global"   # Gemini 3: "global", "us", or "eu" only; single regions 404
 
 [model]
 name = "<gemini-3.x model id>"

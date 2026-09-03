@@ -31,7 +31,7 @@ func TestThoughtSummariesArrive(t *testing.T) {
 	contents := []*genai.Content{genai.NewContentFromText(
 		"1 から 50 の素数のうち桁の和が偶数のものを挙げて。よく考えて。", genai.RoleUser)}
 	thoughtParts, thoughtWithText, textParts := 0, 0, 0
-	for chunk, err := range client.Models.GenerateContentStream(ctx, "gemini-3.7-flash", contents, cfg) {
+	for chunk, err := range client.Models.GenerateContentStream(ctx, "gemini-3.8-flash", contents, cfg) {
 		if err != nil {
 			t.Fatalf("stream: %v", err)
 		}
@@ -68,7 +68,7 @@ func TestThoughtEventsThroughChatStream(t *testing.T) {
 	if project == "" {
 		t.Skip("GEM_TEST_PROJECT unset")
 	}
-	v, err := NewVertex(ctx, project, "global", "gemini-3.7-flash", "off", "high", true)
+	v, err := NewVertex(ctx, project, "global", "gemini-3.8-flash", "off", "high", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestThoughtEventsWithToolsArmed(t *testing.T) {
 	if project == "" {
 		t.Skip("GEM_TEST_PROJECT unset")
 	}
-	v, err := NewVertex(ctx, project, "global", "gemini-3.7-flash", "off", "high", true)
+	v, err := NewVertex(ctx, project, "global", "gemini-3.8-flash", "off", "high", true)
 	if err != nil {
 		t.Fatal(err)
 	}

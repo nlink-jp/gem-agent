@@ -32,7 +32,7 @@ func TestRiskContextLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	backend, err := llm.NewVertex(ctx, project, "global", "gemini-3.7-flash", "off", "", false)
+	backend, err := llm.NewVertex(ctx, project, "global", "gemini-3.8-flash", "off", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}

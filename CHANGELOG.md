@@ -1,5 +1,38 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed — Gemini 3.8 Flash (GA 2026-09-02) verified; SDK refreshed
+
+- No code path keys on the model name, so gemini-3.8-flash works
+  unchanged: measured live 2026-09-04 with the released v0.62.0 binary
+  and with this build — tool-call rounds, thought-signature replay
+  across rounds, and the four-term usage checksum
+  (`prompt + output + thoughts + tool_prompt == total`) all hold at
+  the default level and at `low` / `high`. `minimal` is rejected by
+  3.8 Flash exactly as by 3.7 Flash (a clear 400 on the first turn,
+  which gem-agent already annotates with the `[model].thinking` hint);
+  the example config's thinking comment now says so for both models
+- `google.golang.org/genai` v1.54.0 → v1.71.0. Nothing gem-agent calls
+  changed shape; the refresh brings the SDK's newer finish reasons
+  (`TOO_MANY_TOOL_CALLS` among them, which the generic
+  non-STOP branch already reports by name) and usage-metadata fields
+- Endpoint note corrected: the Gemini 3 family is served from `global`
+  **and the `us` / `eu` multi-regions** (model page; `global` and `us`
+  measured live 2026-09-04 with 3.8 and 3.7 Flash), not from `global`
+  alone — single regions such as `us-central1` still 404 (measured).
+  `config.example.toml`, `AGENTS.md`, the `defaults()` comment in
+  `internal/config`, the configuration reference and health-check
+  runbook (both languages), and the RFP's endpoint line say so; the
+  example config now names gemini-3.8-flash
+- The `-tags live` measurement tests address gemini-3.8-flash
+
+### Fixed
+
+- The output-limit error pointed at `[model].max_output_tokens`, a key
+  that does not exist (strict decode would have rejected it). It now
+  suggests narrowing the request or lowering `[model].thinking`
+
 ## [0.62.0] - 2026-09-03
 
 ### Fixed — usage records omitted the tool-use prompt bucket (ADR-0066, issue #1)

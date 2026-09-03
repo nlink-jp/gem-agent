@@ -33,7 +33,7 @@ cp mcp.example.json    ~/.config/gem-agent/mcp.json   # optional, MCP servers
 ```toml
 [gcp]
 project  = "your-project-id"
-location = "global"        # default; Gemini 3 models are global-endpoint-only
+location = "global"        # default; Gemini 3: "global", "us", or "eu" only
 # bucket = "your-bucket"   # optional; routes audio/video through GCS (ADR-0027)
 
 [model]
@@ -257,9 +257,11 @@ Loosening it is a deliberate choice, so the default is left alone.
 
 ## Endpoints
 
-As of 2026-08, the Gemini 3 family (verified with gemini-3.7-flash and
-gemini-3-flash-preview) is served only from the global endpoint —
-regional locations return 404. Gemini 2.5 models work from regional
-endpoints such as `us-central1`; set `location` accordingly if you use
-one. Transient Vertex failures (429/5xx) retry with exponential
-backoff.
+As of 2026-09, the Gemini 3 family is served from the global endpoint
+and the `us` / `eu` multi-regions (per the Vertex model page; `global`
+and `us` verified live with gemini-3.8-flash and gemini-3.7-flash) —
+single regions such as `us-central1` return 404 (verified). `global`
+is the default; set `location = "us"` or `"eu"` when data residency
+requires it. Gemini 2.5 models work from single regions
+such as `us-central1`; set `location` accordingly if you use one.
+Transient Vertex failures (429/5xx) retry with exponential backoff.

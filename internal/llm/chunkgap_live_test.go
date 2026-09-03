@@ -24,7 +24,7 @@ func TestChunkGapDuringLargeToolCallLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	backend, err := NewVertex(ctx, project, "global", "gemini-3.7-flash", "off", "", true)
+	backend, err := NewVertex(ctx, project, "global", "gemini-3.8-flash", "off", "", true)
 	if err != nil {
 		t.Fatal(err)
 	}

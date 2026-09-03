@@ -98,7 +98,7 @@ func TestWireBytesDuringLargeToolCallLive(t *testing.T) {
 
 	chunks := 0
 	last := tr.start
-	for chunk, err := range client.Models.GenerateContentStream(ctx, "gemini-3.7-flash", contents, cfg) {
+	for chunk, err := range client.Models.GenerateContentStream(ctx, "gemini-3.8-flash", contents, cfg) {
 		if err != nil {
 			t.Fatal(err)
 		}
