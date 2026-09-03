@@ -88,7 +88,8 @@ API が返すのはトークン数であって金額ではない。したがっ�
 そこで、すべてのモデル呼び出しが `usage` レコードを 1 行書く:
 
     {"kind":"usage","data":{"source":"risk","model":"gemini-…",
-     "prompt":4183,"output":42,"thoughts":81,"cached":0,"total":4306}}
+     "prompt":4183,"output":42,"thoughts":81,"cached":0,"tool_prompt":0,
+     "total":4306}}
 
 `source` は `main` / `risk` / `progress_review` / `compact` /
 `summarize_file` / `web_search` / `web_fetch` / `agentic_file_search`
@@ -96,15 +97,21 @@ API が返すのはトークン数であって金額ではない。したがっ�
 単価は SKU × リージョンで解決されるので、セッションヘッダにはモデルと
 並んでリージョンも記録される。
 
-計算が依存する実測事実が 2 つ: thinking トークンは output とは**別の
+計算が依存する事実が 3 つ: thinking トークンは output とは**別の
 バケツ**であり（課金上は output 扱い）、`cached` は `prompt` への加算
-ではなく割引される**内訳**である。`total` は API 自身のカウントなので、
-`prompt + output + thoughts == total` がどちらかを忘れた集計を捕まえる
-— 静かに過小計上されるのではなく。
+ではなく割引される**内訳**であり、`tool_prompt` はプロバイダの組み込み
+ツール（検索グラウンディング・URL コンテキスト）の結果がモデルに入力
+として戻された分である — 入力として課金され、キャッシュされず、
+非ゼロになるのは `web_search` と `web_fetch` だけ（ADR-0066）。`total`
+は API 自身のカウントなので、`prompt + output + thoughts + tool_prompt
+== total` がどれかを忘れた集計を捕まえる — 静かに過小計上されるのでは
+なく。
 
 これ以前に書かれた transcript は古い `usage` レコード（`source` 無し・
 主ループのみ）のままで、リスク評価と圧縮の消費はそもそも書かれていない。
 集計側はそれらを数えたうえで、そのファイルは部分的だと報告すべきである。
+`tool_prompt` キーの無いレコードは ADR-0066 以前のもの: 壊れたレコード
+として扱うのではなく、チェックサムの非負の残差としてバケツを導出する。
 
 ## エージェントメモリ（ADR-0020）
 

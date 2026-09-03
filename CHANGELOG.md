@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.62.0] - 2026-09-03
+
+### Fixed — usage records omitted the tool-use prompt bucket (ADR-0066, issue #1)
+
+- Vertex defines `totalTokenCount` as the sum of four counts — prompt,
+  candidates, **tool-use prompt**, thoughts — and gem-agent copied
+  three, so a `web_search` / `web_fetch` record whose built-in tool
+  returned content had a `total` larger than the sum of its parts and
+  failed ADR-0057's own checksum (observed by gem-usage-lens `verify`,
+  two records on a 2026-09-01 transcript). The bucket is the results
+  of search grounding / URL context fed back to the model as input
+- Every `usage` record now carries `tool_prompt` (written always, zero
+  included — a missing key is how an aggregator tells a pre-0066
+  record from a measured zero), populated on both the streaming and
+  the side-call paths; the checksum is restated as
+  `prompt + output + thoughts + tool_prompt == total`
+- The `model.usage` audit event gains `tool_prompt_tokens`, so a
+  figure computed from Cloud Logging keeps the same arithmetic as one
+  computed from a transcript
+- A `-tags live` test issues one URL-context fetch and asserts the
+  four-term checksum with a non-zero fourth term, next to the existing
+  main-loop measurement
+
 ## [0.61.1] - 2026-09-02
 
 ### Fixed — cancellation ignored by file walks (ADR-0065, operator report)
