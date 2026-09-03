@@ -46,9 +46,12 @@ func TestUsageReportStatement(t *testing.T) {
 	}
 
 	tally := newUsageTally()
-	tally.add("summarize_file", "light-model", 600, 40)
-	tally.add("summarize_file", "light-model", 400, 30)
-	tally.add("web_fetch", "light-model", 900, 60)
+	tally.add("summarize_file", "light-model", 600, 40, 0)
+	tally.add("summarize_file", "light-model", 400, 30, 0)
+	// ADR-0066 §4: the fetched page is most of a web_fetch call and
+	// bills as input; the line names it rather than hiding 90% of the
+	// tool's input (measured 953 of 1054).
+	tally.add("web_fetch", "light-model", 900, 60, 1091)
 
 	out := usageReport(ag, tally, "main-model", "light-model")
 	for _, want := range []string{
@@ -57,8 +60,8 @@ func TestUsageReportStatement(t *testing.T) {
 		"cached 19.0k of prompt (86%)",
 		"cached 19.0k of prompt (86%)",
 		"context now 12.0k of 1.0M window (1%)",
-		"summarize_file (light-model): 2 calls · prompt 1.0k · output 70",
-		"web_fetch (light-model): 1 calls · prompt 900 · output 60",
+		"summarize_file (light-model): 2 calls · prompt 1.0k · output 70\n",
+		"web_fetch (light-model): 1 calls · prompt 900 · output 60 · tool results 1.1k\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report missing %q:\n%s", want, out)

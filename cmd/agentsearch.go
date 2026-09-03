@@ -162,7 +162,7 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 
 			// The spend happened whether or not the run succeeded.
 			if opts.tally != nil {
-				opts.tally.add("agentic_file_search", opts.modelName, childUsage.Prompt, childUsage.Output)
+				opts.tally.add("agentic_file_search", opts.modelName, childUsage.Prompt, childUsage.Output, childUsage.ToolPrompt)
 			}
 			if opts.log != nil {
 				// Not in the footer counters: the context gauge tracks the

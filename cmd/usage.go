@@ -26,13 +26,18 @@ type usageTally struct {
 type tallyEntry struct {
 	model                 string
 	calls, prompt, output int
+	// toolPrompt is the built-in tool results fed back as input
+	// (ADR-0066) — on a web_fetch it is most of the call, so a line
+	// that omitted it would undercount the tool's input by an order of
+	// magnitude (measured: 953 of 1054).
+	toolPrompt int
 }
 
 func newUsageTally() *usageTally {
 	return &usageTally{entries: map[string]*tallyEntry{}}
 }
 
-func (u *usageTally) add(tool, model string, prompt, output int) {
+func (u *usageTally) add(tool, model string, prompt, output, toolPrompt int) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	e, ok := u.entries[tool]
@@ -44,6 +49,7 @@ func (u *usageTally) add(tool, model string, prompt, output int) {
 	e.calls++
 	e.prompt += prompt
 	e.output += output
+	e.toolPrompt += toolPrompt
 }
 
 // sessionLogger is the transcript sink the tool constructors already
@@ -51,6 +57,13 @@ func (u *usageTally) add(tool, model string, prompt, output int) {
 type sessionLogger interface {
 	Log(kind string, data any) error
 }
+
+// recordFunc adapts a bare record callback (the riskbook runner's
+// shape) to sessionLogger, so a side call that only holds the callback
+// still writes the one accounting shape through logUsage.
+type recordFunc func(kind string, data any)
+
+func (f recordFunc) Log(kind string, data any) error { f(kind, data); return nil }
 
 // logUsage writes one accounting record for a side call (ADR-0057).
 // Same shape and same kind as the agent's own: an aggregator reads one
@@ -101,8 +114,12 @@ func usageReport(ag *agent.Agent, tally *usageTally, mainModel, summaryModel str
 	tally.mu.Lock()
 	for _, tool := range tally.order {
 		e := tally.entries[tool]
-		fmt.Fprintf(&b, "%s (%s): %d calls · prompt %s · output %s\n",
+		fmt.Fprintf(&b, "%s (%s): %d calls · prompt %s · output %s",
 			tool, e.model, e.calls, humanTok(e.prompt), humanTok(e.output))
+		if e.toolPrompt > 0 {
+			fmt.Fprintf(&b, " · tool results %s", humanTok(e.toolPrompt))
+		}
+		b.WriteString("\n")
 	}
 	tally.mu.Unlock()
 

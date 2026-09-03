@@ -62,7 +62,7 @@ func registerWebTools(registry *tools.Registry, searcher webSearcher, fetcher ur
 			}
 			answer, sources, usage, err := searcher.SearchWeb(ctx, query)
 			if tally != nil {
-				tally.add("web_search", mainModel, usage.Prompt, usage.Output)
+				tally.add("web_search", mainModel, usage.Prompt, usage.Output, usage.ToolPrompt)
 			}
 			if err != nil {
 				return "", err
@@ -118,7 +118,7 @@ func registerWebTools(registry *tools.Registry, searcher webSearcher, fetcher ur
 			}
 			digest, status, usage, err := fetcher.FetchURL(ctx, fmt.Sprintf(fetchPromptTemplate, url, focusLine))
 			if tally != nil {
-				tally.add("web_fetch", fetchModel, usage.Prompt, usage.Output)
+				tally.add("web_fetch", fetchModel, usage.Prompt, usage.Output, usage.ToolPrompt)
 			}
 			if err != nil {
 				return "", err

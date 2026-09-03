@@ -70,7 +70,7 @@ func registerSummarizeTool(registry *tools.Registry, backend llm.Backend, modelN
 				return "", fmt.Errorf("summariser (%s): %w", modelName, err)
 			}
 			if tally != nil {
-				tally.add("summarize_file", modelName, resp.PromptTokens, resp.OutputTokens)
+				tally.add("summarize_file", modelName, resp.PromptTokens, resp.OutputTokens, resp.ToolPromptTokens)
 			}
 			if log != nil {
 				// Not in the footer counters: the context gauge tracks the

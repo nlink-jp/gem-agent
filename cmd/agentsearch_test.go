@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/telemetry"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
@@ -231,4 +232,47 @@ func TestAgenticSearchDescriptionCarriesTheTrustContract(t *testing.T) {
 		}
 	}
 	t.Fatal("agentic_file_search not registered")
+}
+
+// ADR-0057/0066: the child writes no transcript of its own, so its
+// rounds are summed into ONE usage record here — the one place a
+// bucket can be dropped without the shared-shape test noticing. Every
+// bucket of every round must survive the sum, the tool-prompt one
+// included (structurally zero for this child today, which is exactly
+// why a test has to feed it).
+func TestSearchAgentSumsEveryBucketIntoOneRecord(t *testing.T) {
+	sb := &scriptBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "1", Name: "search_files", Args: map[string]any{"pattern": "heron"}}},
+			PromptTokens: 100, OutputTokens: 10, ThoughtTokens: 4, CachedTokens: 50, ToolPromptTokens: 5, TotalTokens: 119},
+		{Content: "pond.txt:1", PromptTokens: 120, OutputTokens: 30, ThoughtTokens: 6, CachedTokens: 60, ToolPromptTokens: 7, TotalTokens: 163},
+	}}
+	reg, err := tools.New(t.TempDir(), nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(reg.ProjectDir(), "pond.txt"), []byte("a heron\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := registerSummarizeTool(reg, &fakeBackend{resp: &llm.Response{Content: "s"}}, "light-model", nil, newUsageTally()); err != nil {
+		t.Fatal(err)
+	}
+	log := &capturingLog{}
+	sink, _ := telemetry.NewRecording()
+	if err := registerAgenticSearch(reg, agenticSearchOptions{
+		backend: sb, modelName: "main-model", tally: newUsageTally(), sink: sink, log: log,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runSearch(t, reg, map[string]any{"question": "heron?"}); err != nil {
+		t.Fatal(err)
+	}
+	recs := log.usage(t)
+	if len(recs) != 1 {
+		t.Fatalf("want one summed record, got %d: %+v", len(recs), recs)
+	}
+	want := session.UsageRecord{Source: session.UsageFileSearch, Model: "main-model",
+		Prompt: 220, Output: 40, Thoughts: 10, Cached: 110, ToolPrompt: 12, Total: 282}
+	if recs[0] != want {
+		t.Errorf("record = %+v, want %+v", recs[0], want)
+	}
 }
