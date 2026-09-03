@@ -110,8 +110,14 @@ one computed from a transcript. Still counts only.
 
 A `-tags live` test issues one URL-context fetch and asserts the
 four-term checksum with a non-zero fourth term, next to the existing
-main-loop measurement. If a future SDK moves the bucket, that test is
-what notices — not an aggregator three weeks later.
+main-loop measurement. Measured on acceptance (gemini-3.5-flash-lite,
+global, RFC 2119 fetched):
+
+    prompt=48 output=53 thoughts=0 cached=0 tool_prompt=953 total=1054
+
+The fetched page is 90% of the call, and every token of it was
+invisible to the three-term record. If a future SDK moves the bucket,
+that test is what notices — not an aggregator three weeks later.
 
 ## Consequences
 
