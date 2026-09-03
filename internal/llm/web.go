@@ -14,19 +14,23 @@ import (
 )
 
 // sideUsage reads a non-streaming response's spend into the accounting
-// shape (ADR-0057): all five buckets, not just prompt and output — a
-// record without thoughts and cached cannot be priced.
+// shape (ADR-0057): every bucket, not just prompt and output — a
+// record without thoughts and cached cannot be priced. These are the
+// only calls that enable a built-in tool, so they are the only ones
+// where ToolUsePromptTokenCount is non-zero (ADR-0066): dropping it
+// here left total larger than the sum of its parts.
 func sideUsage(resp *genai.GenerateContentResponse) Usage {
 	if resp == nil || resp.UsageMetadata == nil {
 		return Usage{}
 	}
 	u := resp.UsageMetadata
 	return Usage{
-		Prompt:   int(u.PromptTokenCount),
-		Output:   int(u.CandidatesTokenCount),
-		Thoughts: int(u.ThoughtsTokenCount),
-		Cached:   int(u.CachedContentTokenCount),
-		Total:    int(u.TotalTokenCount),
+		Prompt:     int(u.PromptTokenCount),
+		Output:     int(u.CandidatesTokenCount),
+		Thoughts:   int(u.ThoughtsTokenCount),
+		Cached:     int(u.CachedContentTokenCount),
+		ToolPrompt: int(u.ToolUsePromptTokenCount),
+		Total:      int(u.TotalTokenCount),
 	}
 }
 

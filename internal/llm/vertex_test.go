@@ -226,9 +226,11 @@ func TestSafetySettings(t *testing.T) {
 }
 
 // ADR-0057: the accounting buckets, exactly as the API reports them.
-// Measured live: prompt + candidates + thoughts == total, so thoughts
-// are a SEPARATE bucket (billed as output) and cached is a discounted
-// share OF prompt. Total is carried as the checksum for both facts.
+// Measured live: prompt + candidates + thoughts == total on the main
+// loop, so thoughts are a SEPARATE bucket (billed as output) and cached
+// is a discounted share OF prompt. ADR-0066: the SDK defines total as
+// the sum of FOUR counts — tool-use prompt tokens are the fourth, and
+// this test pins them non-zero so the omission cannot return silently.
 func TestAccumulateChunkCapturesEveryBillingBucket(t *testing.T) {
 	resp := &Response{}
 	var text strings.Builder
@@ -239,18 +241,19 @@ func TestAccumulateChunkCapturesEveryBillingBucket(t *testing.T) {
 			CandidatesTokenCount:    174,
 			ThoughtsTokenCount:      534,
 			CachedContentTokenCount: 20,
-			TotalTokenCount:         733,
+			ToolUsePromptTokenCount: 300,
+			TotalTokenCount:         1033,
 		},
 	}
 	accumulateChunk(last, resp, &text, nil, nil)
 
 	u := resp.Usage()
-	want := Usage{Prompt: 25, Output: 174, Thoughts: 534, Cached: 20, Total: 733}
+	want := Usage{Prompt: 25, Output: 174, Thoughts: 534, Cached: 20, ToolPrompt: 300, Total: 1033}
 	if u != want {
 		t.Errorf("usage = %+v, want %+v", u, want)
 	}
-	if u.Prompt+u.Output+u.Thoughts != u.Total {
-		t.Errorf("checksum broken: %d + %d + %d != %d", u.Prompt, u.Output, u.Thoughts, u.Total)
+	if u.Prompt+u.Output+u.Thoughts+u.ToolPrompt != u.Total {
+		t.Errorf("checksum broken: %d + %d + %d + %d != %d", u.Prompt, u.Output, u.Thoughts, u.ToolPrompt, u.Total)
 	}
 	if u.Empty() {
 		t.Error("a call that spent tokens reported Empty")

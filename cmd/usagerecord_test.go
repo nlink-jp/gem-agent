@@ -97,13 +97,13 @@ func TestWebToolsLeaveAccountingRecords(t *testing.T) {
 func TestUsageRecordShapeIsShared(t *testing.T) {
 	log := &capturingLog{}
 	logUsage(log, session.UsageSummarizeFile, "light-model",
-		llm.Usage{Prompt: 10, Output: 2, Thoughts: 3, Cached: 4, Total: 15})
+		llm.Usage{Prompt: 10, Output: 2, Thoughts: 3, Cached: 4, ToolPrompt: 5, Total: 20})
 	recs := log.usage(t)
 	if len(recs) != 1 {
 		t.Fatalf("got %d records", len(recs))
 	}
 	want := session.UsageRecord{Source: session.UsageSummarizeFile, Model: "light-model",
-		Prompt: 10, Output: 2, Thoughts: 3, Cached: 4, Total: 15}
+		Prompt: 10, Output: 2, Thoughts: 3, Cached: 4, ToolPrompt: 5, Total: 20}
 	if recs[0] != want {
 		t.Errorf("record = %+v, want %+v", recs[0], want)
 	}

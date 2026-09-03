@@ -153,8 +153,9 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 					childUsage.Output += u.Output
 					childUsage.Thoughts += u.Thoughts
 					childUsage.Cached += u.Cached
+					childUsage.ToolPrompt += u.ToolPrompt
 					childUsage.Total += u.Total
-					subSink.Usage(u.Prompt, u.Output, u.Thoughts, u.Cached, u.Total)
+					subSink.Usage(u.Prompt, u.Output, u.Thoughts, u.Cached, u.ToolPrompt, u.Total)
 				},
 			})
 			report, runErr := sub.Run(ctx, question, nil)

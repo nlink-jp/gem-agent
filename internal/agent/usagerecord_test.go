@@ -35,7 +35,8 @@ func TestRiskEvaluationLeavesAnAccountingRecord(t *testing.T) {
 		{ToolCalls: []llm.ToolCall{{ID: "c", Name: "mcp__x__post", Args: map[string]any{"data": "hi"}}},
 			PromptTokens: 3000, OutputTokens: 20, ThoughtTokens: 5, TotalTokens: 3025},
 		{Content: `{"approve": true, "confidence": 0.95, "reason": "benign"}`,
-			PromptTokens: 777, OutputTokens: 30, ThoughtTokens: 11, CachedTokens: 100, TotalTokens: 818},
+			PromptTokens: 777, OutputTokens: 30, ThoughtTokens: 11, CachedTokens: 100,
+			ToolPromptTokens: 9, TotalTokens: 827},
 		{Content: "done", PromptTokens: 5000, OutputTokens: 100, TotalTokens: 5100},
 	}}
 	_, reg := newAgent(t, mb, &approveAll{}, 5)
@@ -74,9 +75,12 @@ func TestRiskEvaluationLeavesAnAccountingRecord(t *testing.T) {
 	if risk == nil {
 		t.Fatal("the risk evaluation wrote no accounting record")
 	}
-	// Every bucket billing needs, plus the model that priced it.
+	// Every bucket billing needs, plus the model that priced it. The
+	// tool-prompt bucket is structurally zero on these paths (no
+	// built-in tool), but the record must carry whatever the backend
+	// reported (ADR-0066) — the agent is not the place to know that.
 	if risk.Prompt != 777 || risk.Output != 30 || risk.Thoughts != 11 ||
-		risk.Cached != 100 || risk.Total != 818 || risk.Model != "gemini-test" {
+		risk.Cached != 100 || risk.ToolPrompt != 9 || risk.Total != 827 || risk.Model != "gemini-test" {
 		t.Errorf("risk record = %+v", *risk)
 	}
 }

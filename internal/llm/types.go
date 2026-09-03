@@ -91,15 +91,20 @@ type ToolDef struct {
 // Usage is one model call's token spend, in the buckets billing uses
 // (ADR-0057). Thoughts are NOT part of Output — the API reports them
 // separately and bills them as output — and Cached is a discounted
-// SHARE of Prompt, not an addition to it. Both measured live; Total is
-// the API's own totalTokenCount, kept so an aggregator can check
-// itself instead of undercounting quietly.
+// SHARE of Prompt, not an addition to it. Both measured live. ToolPrompt
+// is the fourth addend of the API's total (ADR-0066): the results of
+// the provider's built-in tools (search grounding, URL context) fed
+// back to the model as input, billed as input and never cached — zero
+// everywhere but the web side calls. Total is the API's own
+// totalTokenCount, kept so an aggregator can check itself instead of
+// undercounting quietly: prompt + output + thoughts + tool_prompt.
 type Usage struct {
-	Prompt   int `json:"prompt"`
-	Output   int `json:"output"`
-	Thoughts int `json:"thoughts"`
-	Cached   int `json:"cached"`
-	Total    int `json:"total"`
+	Prompt     int `json:"prompt"`
+	Output     int `json:"output"`
+	Thoughts   int `json:"thoughts"`
+	Cached     int `json:"cached"`
+	ToolPrompt int `json:"tool_prompt"`
+	Total      int `json:"total"`
 }
 
 // Empty reports a call that spent nothing — nothing to account for.
@@ -124,8 +129,12 @@ type Response struct {
 	// ThoughtTokens counts reasoning tokens, which are billed as output
 	// and consume the output budget on thinking models.
 	ThoughtTokens int
+	// ToolPromptTokens counts built-in tool results fed back as input
+	// (ADR-0066) — the fourth addend of TotalTokens, structurally zero
+	// on the main loop, which enables no provider tool.
+	ToolPromptTokens int
 	// TotalTokens is the API's own totalTokenCount — the checksum for
-	// the buckets above (ADR-0057).
+	// the buckets above (ADR-0057, ADR-0066).
 	TotalTokens int
 }
 
@@ -135,7 +144,8 @@ func (r *Response) Usage() Usage {
 		return Usage{}
 	}
 	return Usage{Prompt: r.PromptTokens, Output: r.OutputTokens,
-		Thoughts: r.ThoughtTokens, Cached: r.CachedTokens, Total: r.TotalTokens}
+		Thoughts: r.ThoughtTokens, Cached: r.CachedTokens,
+		ToolPrompt: r.ToolPromptTokens, Total: r.TotalTokens}
 }
 
 // Backend is one LLM provider. onText receives streamed text deltas as

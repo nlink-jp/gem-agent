@@ -759,7 +759,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		},
 		PreToolHook: preToolHook,
 		OnUsage: func(u llm.Usage) {
-			sink.Usage(u.Prompt, u.Output, u.Thoughts, u.Cached, u.Total)
+			sink.Usage(u.Prompt, u.Output, u.Thoughts, u.Cached, u.ToolPrompt, u.Total)
 			if prog != nil {
 				prog.Send(tui.Usage{Prompt: u.Prompt, Output: u.Output, Cached: u.Cached})
 			}

@@ -60,7 +60,7 @@ func TestNopSinkIsSafe(t *testing.T) {
 	s.TurnEnd(1, time.Second, "ok")
 	s.ToolCall("t", true, "d", "why", time.Second, "ok")
 	s.Approval("t", "approved", "gate", false, "")
-	s.Usage(1, 2, 3, 4, 10)
+	s.Usage(1, 2, 3, 4, 0, 10)
 	s.Compaction(1, 2)
 	s.MediaUpload(1, "gs://x")
 	s.Shutdown()
@@ -240,5 +240,26 @@ func TestHeadersRideTheWire(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("no export arrived")
+	}
+}
+
+// ADR-0066 §3: the audit stream carries the same buckets as the
+// transcript record, tool_prompt included, so a fleet-wide figure from
+// Cloud Logging uses the same four-term arithmetic as a local one.
+func TestUsageEventCarriesEveryBucket(t *testing.T) {
+	s, rec := recordingSink(t)
+	s.Usage(1200, 900, 40, 0, 7000, 9140)
+	if len(rec.recs) != 1 {
+		t.Fatalf("records = %d, want 1", len(rec.recs))
+	}
+	attrs := attrsOf(rec.recs[0])
+	want := map[string]string{
+		"prompt_tokens": "1200", "output_tokens": "900", "thought_tokens": "40",
+		"cached_tokens": "0", "tool_prompt_tokens": "7000", "total_tokens": "9140",
+	}
+	for k, v := range want {
+		if attrs[k] != v {
+			t.Errorf("%s = %q, want %q", k, attrs[k], v)
+		}
 	}
 }

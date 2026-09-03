@@ -62,7 +62,7 @@ func logUsage(log sessionLogger, source, model string, u llm.Usage) {
 	_ = log.Log(session.KindUsage, session.UsageRecord{
 		Source: source, Model: model,
 		Prompt: u.Prompt, Output: u.Output, Thoughts: u.Thoughts,
-		Cached: u.Cached, Total: u.Total,
+		Cached: u.Cached, ToolPrompt: u.ToolPrompt, Total: u.Total,
 	})
 }
 

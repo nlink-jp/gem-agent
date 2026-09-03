@@ -1333,7 +1333,7 @@ func (a *Agent) logUsage(source string, u llm.Usage) {
 	a.logRecord(session.KindUsage, session.UsageRecord{
 		Source: source, Model: a.model,
 		Prompt: u.Prompt, Output: u.Output, Thoughts: u.Thoughts,
-		Cached: u.Cached, Total: u.Total,
+		Cached: u.Cached, ToolPrompt: u.ToolPrompt, Total: u.Total,
 	})
 }
 

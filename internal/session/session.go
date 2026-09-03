@@ -65,16 +65,21 @@ const (
 
 // UsageRecord is one model call's spend. The buckets are the ones
 // billing uses: Thoughts is separate from Output (and billed as
-// output), Cached is a discounted share of Prompt, and Total is the
-// API's own count — the checksum for the other four (ADR-0057 §2).
+// output), Cached is a discounted share of Prompt, ToolPrompt is the
+// built-in tool results fed back as input (billed as input, ADR-0066),
+// and Total is the API's own count — the checksum
+// prompt + output + thoughts + tool_prompt (ADR-0057 §2 as amended).
+// tool_prompt is written always, zero included: a missing key marks a
+// pre-0066 record, which an aggregator must derive rather than trust.
 type UsageRecord struct {
-	Source   string `json:"source"`
-	Model    string `json:"model"`
-	Prompt   int    `json:"prompt"`
-	Output   int    `json:"output"`
-	Thoughts int    `json:"thoughts"`
-	Cached   int    `json:"cached"`
-	Total    int    `json:"total"`
+	Source     string `json:"source"`
+	Model      string `json:"model"`
+	Prompt     int    `json:"prompt"`
+	Output     int    `json:"output"`
+	Thoughts   int    `json:"thoughts"`
+	Cached     int    `json:"cached"`
+	ToolPrompt int    `json:"tool_prompt"`
+	Total      int    `json:"total"`
 }
 
 // ShellContextPrefix opens the user-role message the agent injects when

@@ -238,16 +238,19 @@ func (s *Sink) Approval(tool, decision, source string, mustPrompt bool, reason s
 }
 
 // Usage carries the same buckets as the transcript's accounting record
-// (ADR-0057): thoughts bill as output and cached is a discounted share
-// of the prompt, so a fleet-wide figure computed from this stream uses
-// the same arithmetic as one computed from a local transcript. Counts
-// only — ADR-0035's metadata-only rule is untouched.
-func (s *Sink) Usage(promptTok, outputTok, thoughtTok, cachedTok, totalTok int) {
+// (ADR-0057, ADR-0066): thoughts bill as output, cached is a discounted
+// share of the prompt, and tool_prompt is built-in tool results fed
+// back as input — so a fleet-wide figure computed from this stream
+// uses the same arithmetic as one computed from a local transcript
+// (prompt + output + thoughts + tool_prompt == total). Counts only —
+// ADR-0035's metadata-only rule is untouched.
+func (s *Sink) Usage(promptTok, outputTok, thoughtTok, cachedTok, toolPromptTok, totalTok int) {
 	s.emit("model.usage",
 		attribute.Int("prompt_tokens", promptTok),
 		attribute.Int("output_tokens", outputTok),
 		attribute.Int("thought_tokens", thoughtTok),
 		attribute.Int("cached_tokens", cachedTok),
+		attribute.Int("tool_prompt_tokens", toolPromptTok),
 		attribute.Int("total_tokens", totalTok))
 }
 

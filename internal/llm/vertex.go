@@ -267,6 +267,7 @@ func accumulateChunk(chunk *genai.GenerateContentResponse, resp *Response, text 
 		resp.OutputTokens = int(chunk.UsageMetadata.CandidatesTokenCount)
 		resp.ThoughtTokens = int(chunk.UsageMetadata.ThoughtsTokenCount)
 		resp.CachedTokens = int(chunk.UsageMetadata.CachedContentTokenCount)
+		resp.ToolPromptTokens = int(chunk.UsageMetadata.ToolUsePromptTokenCount)
 		resp.TotalTokens = int(chunk.UsageMetadata.TotalTokenCount)
 	}
 	if chunk.PromptFeedback != nil && chunk.PromptFeedback.BlockReason != "" {
