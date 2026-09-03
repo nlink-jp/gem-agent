@@ -61,6 +61,7 @@ const (
 	UsageWebSearch     = "web_search"
 	UsageWebFetch      = "web_fetch"
 	UsageFileSearch    = "agentic_file_search"
+	UsageRiskbookLearn = "riskbook_learn"
 )
 
 // UsageRecord is one model call's spend. The buckets are the ones

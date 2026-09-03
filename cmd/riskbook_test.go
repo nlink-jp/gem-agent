@@ -199,3 +199,29 @@ func TestRiskbookCommandShowReloadClear(t *testing.T) {
 		t.Errorf("unknown subcommand = %q (err=%v)", out, isErr)
 	}
 }
+
+// ADR-0057 promised one usage record per model call; the learn draft
+// landed four days earlier and its sweep missed it — the in-memory
+// tally was the only trace, and it leaves with the process. Found by
+// the ADR-0066 review; pinned here so the promise holds for this call.
+func TestRiskbookLearnLeavesAnAccountingRecord(t *testing.T) {
+	r, _, _, _ := riskbookFixture(t, &draftBackend{draft: "- prefer the narrow rule"},
+		func() (bool, error) { return true, nil })
+	r.backend = &fakeBackend{resp: &llm.Response{Content: "- prefer the narrow rule",
+		PromptTokens: 500, OutputTokens: 40, ThoughtTokens: 3, TotalTokens: 543}}
+	var got []session.UsageRecord
+	r.record = func(kind string, data any) {
+		if u, ok := data.(session.UsageRecord); ok && kind == session.KindUsage {
+			got = append(got, u)
+		}
+	}
+	r.Learn(context.Background())
+	if len(got) != 1 {
+		t.Fatalf("want 1 usage record for the draft call, got %d", len(got))
+	}
+	want := session.UsageRecord{Source: session.UsageRiskbookLearn, Model: "test-lite",
+		Prompt: 500, Output: 40, Thoughts: 3, Total: 543}
+	if got[0] != want {
+		t.Errorf("record = %+v, want %+v", got[0], want)
+	}
+}

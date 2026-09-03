@@ -10,6 +10,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/riskbook"
+	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 	"github.com/nlink-jp/nlk/guard"
 )
@@ -130,7 +131,14 @@ func (r *riskbookRunner) draft(ctx context.Context, rep riskbook.Report) (string
 		return "", err
 	}
 	if r.tally != nil {
-		r.tally.add("riskbook_learn", r.modelName, resp.PromptTokens, resp.OutputTokens)
+		r.tally.add("riskbook_learn", r.modelName, resp.PromptTokens, resp.OutputTokens, resp.ToolPromptTokens)
+	}
+	// ADR-0057 promised one usage record per model call; this call
+	// landed four days before that ADR and its sweep missed it (found
+	// by the ADR-0066 review). The transcript is the accounting
+	// document — the tally above leaves with the process.
+	if r.record != nil {
+		logUsage(recordFunc(r.record), session.UsageRiskbookLearn, r.modelName, resp.Usage())
 	}
 	text := strings.TrimSpace(resp.Content)
 	if text == "" {
