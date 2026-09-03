@@ -851,7 +851,7 @@ func emptyResponseError(resp *llm.Response) error {
 		return fmt.Errorf("the model provider's content filter blocked this exchange (%s). It fires intermittently on the same request, so sending it again often works; narrowing the request, or /clear to drop large documents from the context, helps too. [model].safety adjusts the configurable categories but does not cover this one",
 			resp.BlockReason)
 	case resp.FinishReason == "MAX_TOKENS":
-		return fmt.Errorf("the model hit its output limit before answering (%d reasoning tokens spent); raise [model].max_output_tokens or ask for something narrower",
+		return fmt.Errorf("the model hit its output limit before answering (%d reasoning tokens spent); ask for something narrower, or lower [model].thinking (or pass --thinking low) so less of the limit goes to reasoning",
 			resp.ThoughtTokens)
 	case resp.FinishReason == "SAFETY":
 		return fmt.Errorf("the model stopped without answering: its response tripped a content filter (SAFETY); set [model].safety = \"relaxed\" or \"off\" if this is legitimate work, or rephrase")
