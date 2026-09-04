@@ -224,12 +224,22 @@ func (c *Client) readLoop(stdout io.ReadCloser, gen int) {
 	// waiters of THIS incarnation are covered by their per-call timeouts.
 	c.mu.Lock()
 	stale := c.gen != gen
+	var kill func()
 	if !stale {
 		c.alive = false
+		kill = c.kill
 	}
 	c.mu.Unlock()
 	if stale {
 		return
+	}
+	// The incarnation is over whichever side ended it: reap the child
+	// (a server that exited on its own stayed a zombie with both pipes
+	// open — review round 4) and, for an over-long line that ended the
+	// scan, kill the still-running server rather than orphan it beside
+	// its successor. Idempotent for an exited child.
+	if kill != nil {
+		kill()
 	}
 	c.pmu.Lock()
 	for id, ch := range c.pending {

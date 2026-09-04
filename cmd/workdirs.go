@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"golang.org/x/term"
 	"io"
 	"os"
 	"strings"
@@ -156,9 +157,11 @@ func runWorkdirsClean(cmd *cobra.Command, args []string) error {
 		len(picked), plural(len(picked), "y", "ies"), humanBytes(total))
 	if !flagWorkdirsYes {
 		// Deny on EOF and on a non-TTY, the approval gate's stance: a
-		// pipe that says nothing has not said yes.
-		if !confirmYes(cmd.InOrStdin()) {
-			fmt.Fprintln(out, "aborted — nothing deleted")
+		// pipe that says nothing has not said yes — and a pipe that says
+		// "y" has not either (ADR-0059: a non-TTY run consents only
+		// through --yes; review round 4 found the pipe was accepted).
+		if !confirmYes(cmd.InOrStdin(), workdirsStdinIsTerminal(cmd.InOrStdin())) {
+			fmt.Fprintln(out, "aborted — nothing deleted (pass --yes to consent without a terminal)")
 			return nil
 		}
 	} else {
@@ -175,7 +178,10 @@ func runWorkdirsClean(cmd *cobra.Command, args []string) error {
 }
 
 // confirmYes reads one line and accepts only an explicit yes.
-func confirmYes(in io.Reader) bool {
+func confirmYes(in io.Reader, interactive bool) bool {
+	if !interactive {
+		return false
+	}
 	line, err := bufio.NewReader(in).ReadString('\n')
 	if err != nil && line == "" {
 		return false
@@ -208,4 +214,15 @@ func plural(n int, one, many string) string {
 		return one
 	}
 	return many
+}
+
+// workdirsStdinIsTerminal decides whether a typed answer counts; tests
+// that exercise the typed path replace it, since a buffer is not a
+// terminal.
+var workdirsStdinIsTerminal = stdinIsTerminal
+
+// stdinIsTerminal reports whether in is a terminal.
+func stdinIsTerminal(in io.Reader) bool {
+	f, ok := in.(*os.File)
+	return ok && term.IsTerminal(int(f.Fd()))
 }

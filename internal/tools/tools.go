@@ -116,7 +116,14 @@ func (r *Registry) WorkDir() string { return r.workDir }
 // UseWorkDir adds dir as a second root for the file tools. It is
 // resolved the same way the project is (absolute, symlinks evaluated),
 // so containment compares like with like.
+//
+// An empty dir removes the second root: /clear (ADR-0071 §2) may end
+// up with no work directory where the previous session had one.
 func (r *Registry) UseWorkDir(dir string) error {
+	if dir == "" {
+		r.workDir = ""
+		return nil
+	}
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return err

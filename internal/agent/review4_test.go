@@ -179,3 +179,27 @@ func TestRestartDropsTheOldSessionsNotes(t *testing.T) {
 		t.Fatalf("old-session state survived Restart: notes=%d failures=%d warned=%v", len(a.lateNotices), a.compactFailures, a.warnedNoCut)
 	}
 }
+
+// Review round 4: the pre-tool hook payload carries the call as the
+// tool will receive it — without the declared purpose (ADR-0047 §2).
+func TestPreToolHookDoesNotSeeThePurpose(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c", Name: "write_file", Args: map[string]any{
+			"path": "x.txt", "content": "y", PurposeArg: "because"}}}},
+		{Content: "done"},
+	}}
+	var seen map[string]any
+	a, _ := hookAgent(t, mb, &approveAll{}, func(_ context.Context, _ string, args map[string]any) (bool, string) {
+		seen = args
+		return false, ""
+	})
+	if _, err := a.Run(context.Background(), "write", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := seen[PurposeArg]; ok {
+		t.Fatalf("the hook saw the purpose: %v", seen)
+	}
+	if seen["path"] != "x.txt" {
+		t.Fatalf("the hook did not see the real arguments: %v", seen)
+	}
+}

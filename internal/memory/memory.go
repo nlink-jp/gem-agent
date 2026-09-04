@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nlink-jp/gem-agent/internal/statedir"
 )
@@ -140,7 +141,7 @@ func Load(baseDir, projectDir string, lim Limits) ([]Memory, []string) {
 			}
 			// Only reachable by hand-editing: Save enforces the cap.
 			if len(content) > cap {
-				content = content[:cap] + fmt.Sprintf("\n[truncated: %d of %d bytes shown]", cap, len(data))
+				content = cutRunes(content, cap) + fmt.Sprintf("\n[truncated: %d of %d bytes shown]", cap, len(data))
 				notes = append(notes, fmt.Sprintf("memory %s/%s truncated", scope, n))
 			}
 			total += len(content)
@@ -264,4 +265,17 @@ func BannerLine(mems []Memory) string {
 		return ""
 	}
 	return fmt.Sprintf("memory: %d global, %d project", global, project)
+}
+
+// cutRunes truncates s to at most n bytes without splitting a UTF-8
+// sequence (review round 4: a byte cut landed mid-rune and the cached
+// prefix carried U+FFFD).
+func cutRunes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }

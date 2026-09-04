@@ -194,6 +194,11 @@ func (r *Runner) exec(ctx context.Context, h Hook, cwd string, payload any) (out
 		return outcome{}, false
 	}
 	cmd := exec.CommandContext(cctx, "/bin/sh", "-c", h.Command)
+	// A grandchild that inherits stdout keeps Run waiting after the
+	// hook itself exited or was killed at the timeout; WaitDelay bounds
+	// that wait (review round 4; tools.hardenExec does the same for
+	// shell_exec).
+	cmd.WaitDelay = hookWaitDelay
 	cmd.Dir = cwd
 	cmd.Stdin = bytes.NewReader(in)
 	var stdout, stderr bytes.Buffer
@@ -207,6 +212,10 @@ func (r *Runner) exec(ctx context.Context, h Hook, cwd string, payload any) (out
 	}
 	return out, true
 }
+
+// hookWaitDelay is how long exec waits, after the hook process ended,
+// for pipes a descendant still holds.
+const hookWaitDelay = time.Second
 
 // exitCode2 reports whether the process ended with the deny/block exit
 // code of the simple contract.

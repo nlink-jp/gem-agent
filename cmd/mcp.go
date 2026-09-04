@@ -63,7 +63,7 @@ func sanitizeToolName(s string) string {
 func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Tool) (added []string, errs []string) {
 	// The intake spills to the registry's work directory, so a result
 	// it saves is one the file tools can read back (ADR-0058).
-	intake := newMCPIntake(registry.WorkDir())
+	intake := newMCPIntake(registry.WorkDir)
 	for _, t := range list {
 		remoteName := t.Name
 		desc := "[MCP:" + client.Name() + "] " + t.Description

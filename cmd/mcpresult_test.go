@@ -15,7 +15,7 @@ func textBlock(s string) []mcp.Content { return []mcp.Content{{Type: "text", Tex
 // A result that fits is passed through untouched — the common case must
 // not gain a preview, a path, or any other ceremony.
 func TestSmallTextIsUntouched(t *testing.T) {
-	in := newMCPIntake(t.TempDir())
+	in := newMCPIntake(fixedDir(t.TempDir()))
 	out := in.render("srv", "tool", textBlock(`{"is_exit": false}`), false)
 	if out != `{"is_exit": false}` {
 		t.Errorf("out = %q", out)
@@ -27,7 +27,7 @@ func TestSmallTextIsUntouched(t *testing.T) {
 // truncation the built-in tools used to do.
 func TestOversizedTextIsSavedWhole(t *testing.T) {
 	work := t.TempDir()
-	in := newMCPIntake(work)
+	in := newMCPIntake(fixedDir(work))
 	big := strings.Repeat("A", tools.OutputCap+1)
 
 	out := in.render("rdns-lookup", "lookup_rdns", textBlock(big), false)
@@ -54,7 +54,7 @@ func TestOversizedTextIsSavedWhole(t *testing.T) {
 // model writes) can tell what is in the file.
 func TestOversizedJSONGetsAJSONName(t *testing.T) {
 	work := t.TempDir()
-	in := newMCPIntake(work)
+	in := newMCPIntake(fixedDir(work))
 	big := "[" + strings.Repeat(`"x",`, tools.OutputCap/4) + `"x"]`
 	out := in.render("srv", "tool", textBlock(big), false)
 	if !strings.HasSuffix(extractPath(t, out, work), ".json") {
@@ -66,7 +66,7 @@ func TestOversizedJSONGetsAJSONName(t *testing.T) {
 // from the content, so a repeated call does not litter the directory.
 func TestSavedFilesAreContentAddressed(t *testing.T) {
 	work := t.TempDir()
-	in := newMCPIntake(work)
+	in := newMCPIntake(fixedDir(work))
 	big := strings.Repeat("B", tools.OutputCap+1)
 
 	first := extractPath(t, in.render("srv", "tool", textBlock(big), false), work)
@@ -86,7 +86,7 @@ func TestSavedFilesAreContentAddressed(t *testing.T) {
 // history only when the model asks for it.
 func TestImageIsSavedAndPointedAtViewImage(t *testing.T) {
 	work := t.TempDir()
-	in := newMCPIntake(work)
+	in := newMCPIntake(fixedDir(work))
 	png := []byte("\x89PNG\r\n\x1a\npixels")
 
 	out := in.render("chrome-pilot", "take_screenshot", []mcp.Content{
@@ -116,7 +116,7 @@ func TestImageIsSavedAndPointedAtViewImage(t *testing.T) {
 // With nowhere to write, the model must be told plainly that part of
 // the answer is gone rather than handed a quiet truncation.
 func TestWithoutAWorkDirTheLossIsStated(t *testing.T) {
-	in := newMCPIntake("")
+	in := newMCPIntake(fixedDir(""))
 	out := in.render("srv", "tool", textBlock(strings.Repeat("C", tools.OutputCap+1)), false)
 	if !strings.Contains(out, "lost") {
 		t.Errorf("a lossy fallback must say so: %q", out)
@@ -127,7 +127,7 @@ func TestWithoutAWorkDirTheLossIsStated(t *testing.T) {
 }
 
 func TestServerErrorsStayMarked(t *testing.T) {
-	in := newMCPIntake(t.TempDir())
+	in := newMCPIntake(fixedDir(t.TempDir()))
 	out := in.render("srv", "tool", textBlock("quota exceeded"), true)
 	if !strings.HasPrefix(out, "error: ") {
 		t.Errorf("out = %q", out)
@@ -135,7 +135,7 @@ func TestServerErrorsStayMarked(t *testing.T) {
 }
 
 func TestEmptyResultIsStillAnAnswer(t *testing.T) {
-	in := newMCPIntake(t.TempDir())
+	in := newMCPIntake(fixedDir(t.TempDir()))
 	if out := in.render("srv", "tool", nil, false); out != "(no content)" {
 		t.Errorf("out = %q", out)
 	}
@@ -172,3 +172,7 @@ func extractPath(t *testing.T, out, work string) string {
 	t.Fatalf("no path under %q in %q", work, out)
 	return ""
 }
+
+// fixedDir is the intake's directory getter for tests: one directory
+// for the test's lifetime.
+func fixedDir(dir string) func() string { return func() string { return dir } }

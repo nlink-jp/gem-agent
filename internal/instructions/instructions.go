@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 // Names are the instruction files read from each directory, in the
@@ -86,7 +87,7 @@ func Load(projectDir, home, globalDir string, lim Limits) ([]File, []string) {
 			cap = remaining
 		}
 		if len(content) > cap {
-			content = content[:cap] + fmt.Sprintf("\n[truncated: %d of %d bytes shown]", cap, len(data))
+			content = cutRunes(content, cap) + fmt.Sprintf("\n[truncated: %d of %d bytes shown]", cap, len(data))
 			notes = append(notes, label+": truncated")
 		}
 		total += len(content)
@@ -175,4 +176,16 @@ func Labels(files []File) []string {
 		out = append(out, f.Label)
 	}
 	return out
+}
+
+// cutRunes truncates s to at most n bytes without splitting a UTF-8
+// sequence (review round 4).
+func cutRunes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }

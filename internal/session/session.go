@@ -155,7 +155,16 @@ func Export(id string) error {
 type Logger struct {
 	mu sync.Mutex
 	f  *os.File
+	// w is what Log writes to — f, except in tests that inject a
+	// failing writer.
+	w  io.Writer
 	id string
+	// torn is set when a write failed part-way (ENOSPC, EIO): the file
+	// ends in a fragment without its newline, and the next record would
+	// glue onto it — one invalid line that swallows a whole message on
+	// resume (review round 4; Reopen makes the same repair across
+	// processes). The next write starts with the newline.
+	torn bool
 }
 
 // DefaultDir returns the state location for session logs — under the
@@ -320,7 +329,21 @@ func (l *Logger) Log(kind string, data any) error {
 	if err != nil {
 		return fmt.Errorf("marshal session record: %w", err)
 	}
-	if _, err := l.f.Write(append(line, '\n')); err != nil {
+	w := l.w
+	if w == nil {
+		w = l.f
+	}
+	if l.torn {
+		if _, err := w.Write([]byte("\n")); err != nil {
+			return fmt.Errorf("repairing session tail: %w", err)
+		}
+		l.torn = false
+	}
+	n, err := w.Write(append(line, '\n'))
+	if err != nil {
+		// A short write left a fragment; a write that landed nothing
+		// left the file as it was. Only the fragment needs the repair.
+		l.torn = n > 0
 		return fmt.Errorf("append session record: %w", err)
 	}
 	return nil
@@ -756,7 +779,15 @@ func InUse(dir, projectDir, id string) bool {
 	if !ValidID(id) {
 		return false
 	}
-	f, err := os.Open(filepath.Join(projectSubdir(dir, projectDir), id+".jsonl"))
+	// The same lookup Reopen uses: a legacy flat transcript is resumed
+	// in place and holds its lock there (review round 4 — the probe
+	// looked only in the project subdirectory and reported a live
+	// legacy session as free).
+	path, err := findSessionFile(dir, projectDir, id)
+	if err != nil {
+		return false
+	}
+	f, err := os.Open(path)
 	if err != nil {
 		return false
 	}

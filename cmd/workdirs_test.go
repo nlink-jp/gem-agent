@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,6 +38,15 @@ func workdirsFixture(t *testing.T) (projectDir string) {
 		}
 	}
 	return project
+}
+
+// asTerminal makes the typed confirmation count for one test: the
+// harness feeds a buffer, which the real check refuses (ADR-0059).
+func asTerminal(t *testing.T) {
+	t.Helper()
+	prev := workdirsStdinIsTerminal
+	workdirsStdinIsTerminal = func(io.Reader) bool { return true }
+	t.Cleanup(func() { workdirsStdinIsTerminal = prev })
 }
 
 // run one cobra command fresh, with the given stdin, capturing stdout.
@@ -83,6 +93,17 @@ func TestWorkdirsCleanAsksAndEOFMeansNo(t *testing.T) {
 		t.Fatalf("EOF deleted something: %d dirs left", len(infos))
 	}
 
+	// A "y" arriving through a pipe is not consent (ADR-0059: a non-TTY
+	// run consents only through --yes; review round 4).
+	out = runWorkdirs(t, "y\n", "clean")
+	if !strings.Contains(out, "aborted") || !strings.Contains(out, "--yes") {
+		t.Fatalf("piped y must abort and name --yes:\n%s", out)
+	}
+	if infos, _ := workdir.List(project, ""); len(infos) != 2 {
+		t.Fatalf("piped y deleted something: %d dirs left", len(infos))
+	}
+
+	asTerminal(t)
 	out = runWorkdirs(t, "y\n", "clean")
 	if !strings.Contains(out, "deleted 20260830-000001") || !strings.Contains(out, "deleted 20260830-000002") {
 		t.Fatalf("y should delete both:\n%s", out)
@@ -115,6 +136,7 @@ func TestWorkdirsCleanNeverTouchesALiveSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	asTerminal(t)
 	out := runWorkdirs(t, "y\n", "clean")
 	if !strings.Contains(out, "skipping "+lg.ID()) {
 		t.Errorf("live session not announced as skipped:\n%s", out)

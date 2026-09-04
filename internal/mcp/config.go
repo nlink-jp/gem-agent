@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ServerConfig is one entry under "mcpServers" in .mcp.json.
@@ -89,18 +90,36 @@ func LoadConfig(path string) (servers map[string]ServerConfig, skipped []string,
 			skipped = append(skipped, name+" (no command)")
 			continue
 		}
-		sc.Command = os.ExpandEnv(sc.Command)
+		sc.Command = expandEnv(sc.Command)
 		args := make([]string, len(sc.Args))
 		for i, a := range sc.Args {
-			args[i] = os.ExpandEnv(a)
+			args[i] = expandEnv(a)
 		}
 		sc.Args = args
 		env := make(map[string]string, len(sc.Env))
 		for k, v := range sc.Env {
-			env[k] = os.ExpandEnv(v)
+			env[k] = expandEnv(v)
 		}
 		sc.Env = env
 		servers[name] = sc
 	}
 	return servers, skipped, nil
+}
+
+// expandEnv expands ${VAR} and $VAR like os.ExpandEnv, plus Claude
+// Code's ${VAR:-default} — an entry copied from a Claude Code setup
+// must keep its default rather than lose the argument (review round 4:
+// os.ExpandEnv looked up a variable literally named "VAR:-default").
+// An unset variable without a default expands to the empty string, as
+// before.
+func expandEnv(s string) string {
+	return os.Expand(s, func(name string) string {
+		if i := strings.Index(name, ":-"); i >= 0 {
+			if v, ok := os.LookupEnv(name[:i]); ok && v != "" {
+				return v
+			}
+			return name[i+2:]
+		}
+		return os.Getenv(name)
+	})
 }

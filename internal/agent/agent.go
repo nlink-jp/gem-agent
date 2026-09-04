@@ -1092,7 +1092,10 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 	// org's guards exist to catch the agent's lapses deterministically,
 	// so nothing downstream may overrule a deny.
 	if a.preToolHook != nil {
-		if deny, why := a.preToolHook(ctx, tc.Name, tc.Args); deny {
+		// The declared purpose is stripped here as everywhere else
+		// (ADR-0047 §2/§3): the hook is a judge, and the proposer's
+		// self-justification is not evidence (review round 4).
+		if deny, why := a.preToolHook(ctx, tc.Name, a.stripPurpose(tc.Name, tc.Args)); deny {
 			a.telemetry.Approval(tc.Name, "denied", "hook", false, why)
 			a.logRecord("hook_denied", map[string]any{"name": tc.Name, "reason": why})
 			// Hook text is the org's own guard speaking, but the denial

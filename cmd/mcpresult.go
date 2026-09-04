@@ -34,14 +34,15 @@ type mcpIntake struct {
 	// there is nowhere to write, and the fallback is a truncation that
 	// says so — losing part of an answer silently is the one outcome
 	// this must never produce.
-	workDir string
+	// It is read per call: /clear rotates the directory (ADR-0071 §2).
+	workDir func() string
 	// cap is the byte size above which a text block is spilled.
 	cap int
 	// previewRunes bounds the head of a spilled block shown inline.
 	previewRunes int
 }
 
-func newMCPIntake(workDir string) mcpIntake {
+func newMCPIntake(workDir func() string) mcpIntake {
 	return mcpIntake{workDir: workDir, cap: tools.OutputCap, previewRunes: 800}
 }
 
@@ -110,18 +111,19 @@ func (in mcpIntake) binary(server, tool string, b mcp.Content) string {
 // means the same answer fetched twice occupies one file rather than
 // two, and it needs no clock and no counter to stay unique.
 func (in mcpIntake) write(server, tool, ext string, data []byte) (string, error) {
-	if in.workDir == "" {
+	dir := in.workDir()
+	if dir == "" {
 		return "", fmt.Errorf("no session work directory")
 	}
 	sum := sha256.Sum256(data)
 	name := fmt.Sprintf("%s-%s-%s%s", sanitizeToolName(server), sanitizeToolName(tool), hex.EncodeToString(sum[:4]), ext)
-	path := filepath.Join(in.workDir, name)
+	path := filepath.Join(dir, name)
 	if _, err := os.Stat(path); err == nil {
 		return path, nil
 	}
 	// Temp + rename, so a reader never sees a half-written file and a
 	// crash never leaves one that looks complete.
-	tmp, err := os.CreateTemp(in.workDir, name+".tmp-")
+	tmp, err := os.CreateTemp(dir, name+".tmp-")
 	if err != nil {
 		return "", err
 	}

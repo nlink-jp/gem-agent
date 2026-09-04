@@ -359,8 +359,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	// The strategy is swapped when /clear rotates the work directory
+	// (ADR-0071 §2): the sandbox profile names the directory, so a
+	// profile built at startup denied every write to the new one.
+	shellExec := &liveExec{fn: execFn}
 
-	registry, err := tools.New(projectDir, execFn, time.Duration(cfg.Agent.ShellTimeoutSec)*time.Second)
+	registry, err := tools.New(projectDir, shellExec.run, time.Duration(cfg.Agent.ShellTimeoutSec)*time.Second)
 	if err != nil {
 		return err
 	}
@@ -506,12 +510,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	} else {
 		summaryBackend = backend.WithModel(summaryModel)
 	}
-	if err := registerSummarizeTool(registry, summaryBackend, summaryModel, sessionLog, tally); err != nil {
+	// sideLog forwards to the transcript in use: /clear swaps it
+	// (ADR-0071 §2), and a tool that captured the value at startup wrote
+	// its usage records to the closed file (review round 4).
+	sideLog := liveLog{get: func() agent.SessionLog { return sessionLog }}
+	if err := registerSummarizeTool(registry, summaryBackend, summaryModel, sideLog, tally); err != nil {
 		return err
 	}
 	// Web access (ADR-0017): grounded search on the main model, digested
 	// fetch on the lightweight one. Both egress-gated by default.
-	if err := registerWebTools(registry, backend, summaryBackend, cfg.Model.Name, summaryModel, sessionLog, tally); err != nil {
+	if err := registerWebTools(registry, backend, summaryBackend, cfg.Model.Name, summaryModel, sideLog, tally); err != nil {
 		return err
 	}
 
@@ -623,7 +631,18 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// the guards exist for the model's calls regardless of surface;
 	// context hooks run at session start and on every prompt. nil when
 	// none are configured, so the common case pays nothing.
+	// uiNotes is non-nil while a slash command runs the hooks (/clear,
+	// ADR-0071): the slash handler executes inside the TUI's Update, and
+	// Program.Send from there never returns — Bubble Tea's message
+	// channel is unbuffered and Update is its only consumer (review
+	// round 4: /clear with a session_start hook froze the TUI). Notes
+	// raised there ride back in the slash output instead.
+	var uiNotes *[]string
 	hookNotify := func(warn string) {
+		if uiNotes != nil {
+			*uiNotes = append(*uiNotes, warn)
+			return
+		}
 		if prog != nil {
 			prog.Send(tui.Attached{Notes: []string{warn}})
 			return
@@ -696,7 +715,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if err := registerAgenticSearch(registry, agenticSearchOptions{
 		backend:   backend,
 		modelName: cfg.Model.Name,
-		log:       sessionLog,
+		log:       sideLog,
 		tally:     tally,
 		sink:      sink,
 		onToolCall: func(tc llm.ToolCall) {
@@ -1018,17 +1037,31 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// the same sequence Claude Code produces. If a new transcript
 	// cannot be opened the conversation is cleared in place, as before,
 	// and the operator is told.
-	onClear := func() {
-		sessionEndHooks("clear")
-		newLog, err := openSessionLog(sessionDir, "", projectDir, cfg.Model.Name, cfg.GCP.Location, cmd.Root().Version)
-		if sessionDirErr != nil || err != nil {
+	onClear := func() []string {
+		var notes []string
+		uiNotes = &notes
+		defer func() { uiNotes = nil }()
+		note := func(format string, a ...any) { notes = append(notes, fmt.Sprintf(format, a...)) }
+		// The new transcript is opened before anything ends, so a
+		// failure leaves the session it found: cleared in place, the
+		// operator told, no session_end for an id that continues
+		// (review round 4). An unresolved state root must not be
+		// handed to Open — it resolved the project subdirectory
+		// against the working directory, the operator's project.
+		if sessionDirErr != nil {
 			ag.Reset()
-			if err != nil {
-				fmt.Fprintf(stderr, "warning: cleared in place — could not start a new session: %v\n", err)
-			}
+			note("cleared in place — could not start a new session: %v", sessionDirErr)
 			sessionHooks("clear")
-			return
+			return notes
 		}
+		newLog, err := openSessionLog(sessionDir, "", projectDir, cfg.Model.Name, cfg.GCP.Location, cmd.Root().Version)
+		if err != nil {
+			ag.Reset()
+			note("cleared in place — could not start a new session: %v", err)
+			sessionHooks("clear")
+			return notes
+		}
+		sessionEndHooks("clear")
 		ag.Restart(newLog)
 		if curLog != nil {
 			_ = curLog.Close()
@@ -1037,22 +1070,28 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		sessionLog = newLog
 		sessionPath, sessionID = newLog.Path(), newLog.ID()
 		if err := session.Export(sessionID); err != nil {
-			fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", session.EnvVar, err)
+			note("cannot export %s: %v", session.EnvVar, err)
 		}
 		hookSession = hooks.Session{ID: sessionID, TranscriptPath: sessionPath, CWD: projectDir}
 		if workDir != "" {
 			workdir.RemoveIfEmpty(workDir)
 		}
+		workDir = ""
 		if dir, err := workdir.Ensure(projectDir, sessionID); err != nil {
-			fmt.Fprintf(stderr, "warning: session work directory unavailable: %v\n", err)
-			workDir = ""
+			note("session work directory unavailable: %v", err)
 		} else {
 			workDir = dir
 			if err := os.Setenv(workdir.EnvVar, workDir); err != nil {
-				fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", workdir.EnvVar, err)
+				note("cannot export %s: %v", workdir.EnvVar, err)
 			}
 		}
-		sessionHooks("startup")
+		// Every consumer of the work directory follows it (review round
+		// 4): the file tools' second root, the sandbox profile, the MCP
+		// intake (it reads the registry), and the system prompt — a
+		// cleared conversation has no cached prefix to protect.
+		notes = append(notes, rotateWorkDir(registry, shellExec, sandboxOn, projectDir, workDir, func() { ag.SetSystem(composeSystem()) })...)
+		sessionHooks("clear")
+		return notes
 	}
 
 	// --- one-shot mode: single turn, quiet stderr, exit ---
@@ -1088,11 +1127,20 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				fmt.Fprintln(stderr, line)
 			}
 		}
+		wrote := false
 		runErr := runTurnWith(ctx, ladder, func(turnCtx context.Context) error {
-			_, err := ag.Run(turnCtx, flagPrompt, func(s string) { fmt.Fprint(cmd.OutOrStdout(), s) })
+			_, err := ag.Run(turnCtx, flagPrompt, func(s string) {
+				wrote = wrote || s != ""
+				fmt.Fprint(cmd.OutOrStdout(), s)
+			})
 			return err
 		})
-		fmt.Fprintln(cmd.OutOrStdout())
+		// stdout is model text only: a turn that produced none (blocked
+		// prompt, interrupt, backend error) leaves it empty rather than
+		// a bare newline (review round 4).
+		if wrote {
+			fmt.Fprintln(cmd.OutOrStdout())
+		}
 		if errors.Is(runErr, errInterrupted) {
 			return fmt.Errorf("interrupted")
 		}
@@ -1779,7 +1827,7 @@ type slashReloads struct {
 	skills func() string
 }
 
-func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, reload slashReloads, usage func() string, memoryInfo func() string, riskbookCmd func(args []string) (string, bool), version string, msgs *uitext.Messages, onClear func()) (output string, isErr bool, quit bool) {
+func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, reload slashReloads, usage func() string, memoryInfo func() string, riskbookCmd func(args []string) (string, bool), version string, msgs *uitext.Messages, onClear func() []string) (output string, isErr bool, quit bool) {
 	var b strings.Builder
 	fields := strings.Fields(input)
 	// The one supported subcommand shape: "/mcp reload" and
@@ -1862,7 +1910,9 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 		// clear record, so it stays resumable — and starts the next.
 		// Without it (tests), the history is cleared in place.
 		if onClear != nil {
-			onClear()
+			for _, n := range onClear() {
+				fmt.Fprintf(&b, "[⚠ %s]\n", n)
+			}
 		} else {
 			ag.Reset()
 		}
@@ -1889,4 +1939,60 @@ func firstSentence(s string) string {
 		return s[:i+1]
 	}
 	return s
+}
+
+// liveExec is the shell strategy the registry calls through, so /clear
+// can swap the sandbox profile for the new work directory (ADR-0071
+// §2) without rebuilding the registry. Guarded: an abandoned shell call
+// (ADR-0065) may still hold the old strategy while the next turn
+// starts on the new one.
+type liveExec struct {
+	mu sync.RWMutex
+	fn tools.ExecFunc
+}
+
+func (e *liveExec) run(ctx context.Context, command string) *exec.Cmd {
+	e.mu.RLock()
+	fn := e.fn
+	e.mu.RUnlock()
+	return fn(ctx, command)
+}
+
+func (e *liveExec) set(fn tools.ExecFunc) {
+	e.mu.Lock()
+	e.fn = fn
+	e.mu.Unlock()
+}
+
+// liveLog is a SessionLog that forwards to whichever transcript is in
+// use — the value /clear reassigns (ADR-0071 §2) — for the side-call
+// tools registered at startup. nil (session log disabled) fails the
+// write, which every side call already treats as best-effort.
+type liveLog struct{ get func() agent.SessionLog }
+
+func (l liveLog) Log(kind string, data any) error {
+	if lg := l.get(); lg != nil {
+		return lg.Log(kind, data)
+	}
+	return errors.New("session log disabled")
+}
+
+// rotateWorkDir points every consumer of the session work directory at
+// dir ("" for none): the file tools' second root, the sandbox profile,
+// and the system prompt. The MCP intake reads the registry, so it
+// follows on its own. Returns operator notes for what could not follow.
+func rotateWorkDir(registry *tools.Registry, shellExec *liveExec, sandboxOn bool, projectDir, dir string, setSystem func()) []string {
+	var notes []string
+	if err := registry.UseWorkDir(dir); err != nil {
+		notes = append(notes, fmt.Sprintf("file tools keep the previous work directory: %v", err))
+	}
+	if fn, err := buildExecFn(sandboxOn, projectDir, dir); err != nil {
+		notes = append(notes, fmt.Sprintf("shell commands keep the previous sandbox profile: %v", err))
+	} else {
+		shellExec.set(fn)
+	}
+	if setSystem != nil {
+		setSystem()
+	}
+	return notes
 }
