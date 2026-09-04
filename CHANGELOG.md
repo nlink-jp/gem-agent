@@ -32,6 +32,9 @@
 - `.xlsx` sheet names follow the workbook's relationships, so a
   reordered workbook keeps the right heading on each sheet
 - Truncation notes name the bytes actually shown
+- Instruction files (`AGENTS.md`, `CLAUDE.md`, …) are read through an
+  `os.Root` at their directory: a link planted there cannot pull an
+  outside file into the system prompt
 
 - `.gitignore` files are read through the confinement roots with the
   cap applied on the stream; a link where a `.gitignore` should be

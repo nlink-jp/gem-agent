@@ -159,3 +159,42 @@ func TestRenderEmpty(t *testing.T) {
 		t.Error("no files should render nothing")
 	}
 }
+
+// Review after v0.68.2 (found in the same sweep as load_skill): an
+// instruction file enters the system prompt unwrapped, so a link
+// planted where AGENTS.md should be must not read content from
+// outside its directory; a link to a sibling still resolves.
+func TestInstructionLinksStayInTheirDirectory(t *testing.T) {
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "evil.md"), []byte("OUTSIDE RULES"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	project := t.TempDir()
+	if err := os.Symlink(filepath.Join(outside, "evil.md"), filepath.Join(project, "AGENTS.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, "GEMINI.md"), []byte("inside rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("GEMINI.md", filepath.Join(project, "CLAUDE.md")); err != nil {
+		t.Fatal(err)
+	}
+	files, notes := Load(project, "", "", DefaultLimits())
+	for _, f := range files {
+		if strings.Contains(f.Content, "OUTSIDE") {
+			t.Fatalf("an instruction file was read through a link out of the project: %+v", f)
+		}
+	}
+	found := false
+	for _, f := range files {
+		if f.Content == "inside rules" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the sibling link / regular file was not loaded: %+v", files)
+	}
+	if !strings.Contains(strings.Join(notes, "\n"), "not read") {
+		t.Errorf("the refused link was not noted: %v", notes)
+	}
+}

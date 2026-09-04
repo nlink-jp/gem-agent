@@ -10,6 +10,7 @@ package instructions
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,8 +63,17 @@ func Load(projectDir, home, globalDir string, lim Limits) ([]File, []string) {
 			return
 		}
 		seenPath[path] = true
-		data, err := os.ReadFile(path)
+		// Read through an os.Root at the file's directory: an
+		// instruction file enters the system prompt unwrapped, so a
+		// link planted where AGENTS.md should be must not pull content
+		// from outside that directory (a CLAUDE.md → AGENTS.md link
+		// beside it still resolves). Capped on the stream (review
+		// after v0.68.2, the load_skill class).
+		data, size, err := readInstruction(path, lim.PerFileBytes)
 		if err != nil {
+			if !os.IsNotExist(err) {
+				notes = append(notes, label+": skipped ("+err.Error()+")")
+			}
 			return
 		}
 		content := strings.TrimSpace(string(data))
@@ -86,8 +96,9 @@ func Load(projectDir, home, globalDir string, lim Limits) ([]File, []string) {
 		if remaining := lim.TotalBytes - total; remaining < cap {
 			cap = remaining
 		}
-		if len(content) > cap {
-			content = cutRunes(content, cap) + fmt.Sprintf("\n[truncated: %d of %d bytes shown]", cap, len(data))
+		if len(content) > cap || size > int64(len(data)) {
+			cut := cutRunes(content, cap)
+			content = cut + fmt.Sprintf("\n[truncated: %d of %d bytes shown]", len(cut), size)
 			notes = append(notes, label+": truncated")
 		}
 		total += len(content)
@@ -188,4 +199,32 @@ func cutRunes(s string, n int) string {
 		n--
 	}
 	return s[:n]
+}
+
+// readInstruction reads path through an os.Root at its directory, at
+// most cap bytes, and reports the file's full size. A link that leads
+// out of the directory is refused by the root at the open.
+func readInstruction(path string, cap int) ([]byte, int64, error) {
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = root.Close() }()
+	f, err := root.Open(filepath.Base(path))
+	if err != nil {
+		if strings.Contains(err.Error(), "escapes") {
+			return nil, 0, fmt.Errorf("a link to outside its directory — not read")
+		}
+		return nil, 0, err
+	}
+	defer func() { _ = f.Close() }()
+	size := int64(0)
+	if st, err := f.Stat(); err == nil {
+		size = st.Size()
+	}
+	data, err := io.ReadAll(io.LimitReader(f, int64(cap)))
+	if err != nil {
+		return nil, 0, err
+	}
+	return data, size, nil
 }

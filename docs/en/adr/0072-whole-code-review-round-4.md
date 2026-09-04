@@ -394,6 +394,16 @@ Four on the fourth pass's diff, all held:
   the fallback for a workbook without relationships.
 - **The truncation note named the limit, not the bytes shown** (low)
   — after a rune cut the two differ; the note names the cut's length.
+- **Found in the same sweep: instruction files** — `internal/instructions`
+  read `AGENTS.md` / `CLAUDE.md` with `os.ReadFile` and no link
+  check; a link planted where `AGENTS.md` should be pulled any file
+  into the system prompt. Each is read through an `os.Root` at its
+  own directory (a `CLAUDE.md → AGENTS.md` link beside it still
+  resolves), capped on the stream; a refused link is noted. The
+  `@`-reference reader (`internal/mention`) keeps its check-then-read
+  shape: its input is operator-typed, in-session, and the swap would
+  have to land between the operator's Enter and the read — recorded,
+  not changed.
 
 ## Lessons
 

@@ -390,6 +390,9 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   candidates come from `candidateSplit` (every delimiter, not
   whitespace) — a writing command that mentions `AGENTS.md` in a
   commit message asks the operator once; that is the accepted cost.
+- **Instruction files are read through an `os.Root` at their
+  directory** (ADR-0072 §4.4) — `readInstruction`; a link out of the
+  directory is refused and noted, a sibling link resolves.
 - **Every cut is a rune cut** (ADR-0072 §4.3) — `cutRunes` in tools,
   skills, memory, instructions, `clipText` in docext: never `s[:n]`
   on text the model will see.
