@@ -12,7 +12,7 @@ func run(t *testing.T, h Hook, name string, args map[string]any) (bool, string, 
 	t.Helper()
 	var notes []string
 	r := New(Hooks{PreToolUse: []Hook{h}}, func(s string) { notes = append(notes, s) })
-	deny, why := r.Pre(context.Background(), name, t.TempDir(), args)
+	deny, why := r.Pre(context.Background(), Session{ID: "sess-1", TranscriptPath: "/tmp/sess-1.jsonl", CWD: t.TempDir()}, name, args)
 	return deny, why, notes
 }
 
@@ -104,12 +104,15 @@ func TestTimeoutFailsOpen(t *testing.T) {
 }
 
 // The payload is the Claude Code shape: the installed org guard reads
-// tool_input.command from it verbatim.
+// tool_input.command from it verbatim, and a per-session hook (agent-
+// board's claims) reads session_id (ADR-0069 addendum).
 func TestPayloadShape(t *testing.T) {
 	h := Hook{Matcher: "*", Command: `python3 -c "
 import json,sys
 p=json.load(sys.stdin)
 assert p['hook_event_name']=='PreToolUse', p
+assert p['session_id']=='sess-1', p
+assert p['transcript_path']=='/tmp/sess-1.jsonl', p
 assert p['tool_name']=='shell_exec', p
 assert p['tool_input']['command']=='gofmt -w .', p
 assert p['cwd'], p
@@ -127,7 +130,7 @@ func TestFirstDenyWins(t *testing.T) {
 		{Matcher: "*", Command: `echo '{"decision":"block","reason":"first"}'`},
 		{Matcher: "*", Command: `echo '{"decision":"block","reason":"second"}'`},
 	}}, nil)
-	deny, why := r.Pre(context.Background(), "shell_exec", t.TempDir(), nil)
+	deny, why := r.Pre(context.Background(), Session{CWD: t.TempDir()}, "shell_exec", nil)
 	if !deny || why != "first" {
 		t.Fatalf("deny=%v why=%q", deny, why)
 	}

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.65.1] - 2026-09-04
+
+### Changed — the PreToolUse hook payload carries the session (ADR-0069 addendum)
+
+- `[[hooks.pre_tool_use]]` commands now receive `session_id` and
+  `transcript_path` beside `tool_name` / `tool_input` / `cwd` (empty
+  when the session log is disabled). A hook that keeps per-session
+  state — agent-board's claims — can tie a call to its session; the
+  org guard, which reads only `tool_input.command`, is unaffected
+
 ## [0.65.0] - 2026-09-04
 
 ### Added — a loaded skill names its directory (ADR-0070 §1)

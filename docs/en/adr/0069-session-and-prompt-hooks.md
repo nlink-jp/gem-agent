@@ -85,6 +85,13 @@ message (ADR-0064), a `/skill`-expanded turn, the `-p` prompt — and
 not for slash commands or the operator's `!` shell escape, which never
 become a turn.
 
+**Addendum (same day, v0.65.1).** The `PreToolUse` payload now carries
+`session_id` and `transcript_path` too (empty when the log is
+disabled), so a hook that keeps per-session state can tie a call to its
+session — agent-board's claim enforcement needed exactly this, and
+without it refused the claimant its own file. Claude Code's PreToolUse
+carries the same identity fields, so the shape stays one contract.
+
 ### 3. Output is context or a verdict; a prompt can be refused, a session start cannot
 
 On exit 0, plain stdout is injected context; a JSON object is a

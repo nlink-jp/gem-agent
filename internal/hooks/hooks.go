@@ -110,12 +110,16 @@ func matches(matcher, name string) bool {
 }
 
 // preToolPayload is the Claude Code PreToolUse stdin shape (measured
-// contract, ADR-0044).
+// contract, ADR-0044), plus the session identity every Claude Code
+// event carries (ADR-0069 addendum): a hook that keeps per-session
+// state — agent-board's claims — needs to tie a call to its session.
 type preToolPayload struct {
-	HookEventName string         `json:"hook_event_name"`
-	ToolName      string         `json:"tool_name"`
-	ToolInput     map[string]any `json:"tool_input"`
-	CWD           string         `json:"cwd"`
+	HookEventName  string         `json:"hook_event_name"`
+	SessionID      string         `json:"session_id"`
+	TranscriptPath string         `json:"transcript_path"`
+	ToolName       string         `json:"tool_name"`
+	ToolInput      map[string]any `json:"tool_input"`
+	CWD            string         `json:"cwd"`
 }
 
 // sessionStartPayload is the Claude Code SessionStart stdin shape
@@ -199,14 +203,16 @@ func exitCode2(err error) bool {
 // Pre runs every matching pre-tool hook in order and reports the first
 // denial. Anything that is not an explicit denial — pass, non-zero
 // exit, unparseable output, timeout — lets the call proceed to the
-// normal approval ladder: hooks only ever tighten (ADR-0044 §3).
-func (r *Runner) Pre(ctx context.Context, name, cwd string, args map[string]any) (deny bool, reason string) {
+// normal approval ladder: hooks only ever tighten (ADR-0044 §3). The
+// hook runs in s.CWD and is told which session is calling.
+func (r *Runner) Pre(ctx context.Context, s Session, name string, args map[string]any) (deny bool, reason string) {
 	for _, h := range r.hooks.PreToolUse {
 		if !matches(h.Matcher, name) {
 			continue
 		}
-		out, ok := r.exec(ctx, h, cwd, preToolPayload{
-			HookEventName: "PreToolUse", ToolName: name, ToolInput: args, CWD: cwd,
+		out, ok := r.exec(ctx, h, s.CWD, preToolPayload{
+			HookEventName: "PreToolUse", SessionID: s.ID, TranscriptPath: s.TranscriptPath,
+			ToolName: name, ToolInput: args, CWD: s.CWD,
 		})
 		if !ok || out.timedOut {
 			continue // the call proceeds

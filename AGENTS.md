@@ -286,7 +286,9 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   `prompthook_test.go` pins the boundary. A prompt hook's block returns
   `ErrPromptBlocked` before anything is recorded; a session start
   cannot block. The stdin field for the typed text is `prompt` — the
-  Claude Code docs say `user_input`, the measured payload does not.
+  Claude Code docs say `user_input`, the measured payload does not. The
+  `PreToolUse` payload also carries `session_id` / `transcript_path`
+  (v0.65.1) — keep them: agent-board's claim enforcement keys on them.
 - **The declared `gem_agent_purpose` is displayed and nothing else** (ADR-0047) —
   `internal/agent/purpose.go` injects the argument into every `Mutating`
   tool's advertised schema and strips it again before `Run`, before the

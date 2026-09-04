@@ -624,7 +624,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	var preToolHook func(ctx context.Context, name string, args map[string]any) (bool, string)
 	if hookRunner != nil && len(cfg.Hooks.PreToolUse) > 0 {
 		preToolHook = func(ctx context.Context, name string, args map[string]any) (bool, string) {
-			return hookRunner.Pre(ctx, name, projectDir, args)
+			return hookRunner.Pre(ctx, hookSession, name, args)
 		}
 	}
 	var promptHook agent.PromptHook

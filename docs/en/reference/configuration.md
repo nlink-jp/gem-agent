@@ -131,6 +131,8 @@ The command receives the call as one JSON object on stdin:
 
 ```json
 {"hook_event_name": "PreToolUse",
+ "session_id": "20260904-221124",
+ "transcript_path": "/path/to/state/sessions/projects/<escaped>/20260904-221124.jsonl",
  "tool_name": "shell_exec",
  "tool_input": {"command": "sed -i '' 's/a/b/' notes.txt"},
  "cwd": "/path/to/project"}
