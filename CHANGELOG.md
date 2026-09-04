@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.64.0] - 2026-09-04
+
+### Added — session-start and prompt-submit hooks (ADR-0069)
+
+- `[[hooks.session_start]]` runs when a session starts (`source`
+  `startup`, or `resume` under `--continue`/`--resume`) and on
+  `/clear` (`clear`); an optional `matcher` selects the source.
+  `[[hooks.user_prompt_submit]]` runs before every turn that reaches
+  the model and takes no matcher. Both receive Claude Code's measured
+  stdin payload (`hook_event_name`, `session_id`, `transcript_path`,
+  `cwd`, and `source` / `prompt` — the typed text arrives under
+  `prompt`, not the documented `user_input`; checked against Claude
+  Code 2.1.226)
+- Plain stdout, or `hookSpecificOutput.additionalContext`, is injected
+  context. It reaches the model on the next turn as a data attachment
+  beside the typed input — the ADR-0055 lane: nonce-wrapped, announced
+  as quoted data, never in the system prompt (the cached prefix is
+  untouched) and never in the risk reviewer's trusted instruction
+  channel (a test pins it, as for piped stdin). Capped at 8000 runes
+  per hook with a visible cut; every injection prints one notice line
+- A `user_prompt_submit` hook refuses the prompt by exit 2 with the
+  reason on stderr or by the JSON block forms; the prompt is erased
+  (no history, no transcript, no `turn.end`) and `Run` returns
+  `ErrPromptBlocked`. A session start cannot be blocked: a block from
+  it is reported as a failed hook. Crashes, timeouts, and unparseable
+  output fail open with a notice, as for pre-tool hooks
+- Verified live in one-shot mode: both hooks fired with the measured
+  payloads, the model echoed the injected markers, and an exit-2
+  prompt hook stopped the run before any model call with an empty
+  transcript
+
 ## [0.63.1] - 2026-09-04
 
 ### Fixed — telemetry no longer probes the GCE metadata server at startup (ADR-0068)

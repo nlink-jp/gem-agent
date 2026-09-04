@@ -92,6 +92,7 @@ type Agent struct {
 	onAttach    func(atts []mention.Attachment, problems []mention.Problem)
 	onNotice    func(msg string)
 	preToolHook func(ctx context.Context, name string, args map[string]any) (bool, string)
+	promptHook  PromptHook
 
 	mu   sync.Mutex // guards auto and window (both set from the UI goroutine)
 	auto bool
@@ -227,6 +228,11 @@ type Options struct {
 	// is not an explicit deny proceeds to the normal ladder: hooks only
 	// ever tighten.
 	PreToolHook func(ctx context.Context, name string, args map[string]any) (deny bool, reason string)
+	// PromptHook, when set, sees the typed input before a turn starts
+	// (ADR-0069): it may refuse the prompt (nothing is recorded) or
+	// hand back context, which rides the turn as a data attachment —
+	// beside the typed text, never inside it (the ADR-0055 lane).
+	PromptHook PromptHook
 	// Policy is the per-tool approval policy (ADR-0008).
 	Policy policy.Policy
 	// ClipboardImage captures the clipboard image as PNG bytes for the
@@ -287,6 +293,7 @@ func New(opts Options) *Agent {
 		onAttach:    opts.OnAttach,
 		onNotice:    opts.OnNotice,
 		preToolHook: opts.PreToolHook,
+		promptHook:  opts.PromptHook,
 		auto:        opts.AutoApprove,
 		toolDefs:    defs,
 
@@ -564,6 +571,13 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 	// history the model never saw. Refuse it at the door (ADR-0021).
 	if strings.TrimSpace(input) == "" {
 		return "", fmt.Errorf("empty input")
+	}
+	// The operator's prompt hooks see the typed input before anything
+	// is recorded (ADR-0069): a block erases the prompt — no history,
+	// no transcript, no turn.end event — and injected context is
+	// queued beside the input, never merged into it.
+	if err := a.runPromptHook(ctx, input); err != nil {
+		return "", err
 	}
 	// turn.end audit event (ADR-0035): rounds, wall time, outcome.
 	turnStart := time.Now()

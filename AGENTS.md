@@ -79,6 +79,9 @@ internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery
 internal/sandbox/  SBPL profile generation, sandbox-exec wrapping
 internal/approve/  MITL gate (y/n/N/a + session allowlist; N = deny with
                    a typed reason, ADR-0060)
+internal/hooks/    operator hooks on Claude Code's measured contracts: the
+                   pre-tool floor (ADR-0044) and the session-start /
+                   prompt-submit context events (ADR-0069, data lane)
 internal/session/  JSONL transcript: logger + resume loader (ADR-0005)
 internal/repl/     paste-safe input reader (plain REPL, non-TTY fallback)
 internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate
@@ -272,6 +275,17 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   payload carries gem-agent's real tool name; only the matcher speaks both
   vocabularies. Never add an "allow" bypass: hooks tighten, the ladder
   decides.
+- **Context hooks inject DATA, never instructions or typed input**
+  (ADR-0069) — `session_start` (startup / resume / `/clear`) and
+  `user_prompt_submit` output rides the next turn as a `hook`
+  attachment through `Agent.AttachData` / `pendingAtts`, the ADR-0055
+  lane: nonce-wrapped, announced as quoted data, capped at 8000 runes.
+  Never merge it into the system prompt (the cached prefix, ADR-0018)
+  or into `turnInput` (the risk reviewer's trusted channel) —
+  `prompthook_test.go` pins the boundary. A prompt hook's block returns
+  `ErrPromptBlocked` before anything is recorded; a session start
+  cannot block. The stdin field for the typed text is `prompt` — the
+  Claude Code docs say `user_input`, the measured payload does not.
 - **The declared `gem_agent_purpose` is displayed and nothing else** (ADR-0047) —
   `internal/agent/purpose.go` injects the argument into every `Mutating`
   tool's advertised schema and strips it again before `Run`, before the

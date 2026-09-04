@@ -20,19 +20,19 @@ func TestSlashReloadSubcommands(t *testing.T) {
 		mcp:    func() string { return "MCP-RELOADED" },
 		skills: func() string { return "SKILLS-RELOADED" },
 	}
-	out, isErr, _ := slashOutput("/mcp reload", nil, nil, nil, nil, reloads, nil, nil, nil, "", en)
+	out, isErr, _ := slashOutput("/mcp reload", nil, nil, nil, nil, reloads, nil, nil, nil, "", en, nil)
 	if isErr || out != "MCP-RELOADED" {
 		t.Errorf("/mcp reload: %q isErr=%v", out, isErr)
 	}
-	out, isErr, _ = slashOutput("/skills reload", nil, nil, nil, nil, reloads, nil, nil, nil, "", en)
+	out, isErr, _ = slashOutput("/skills reload", nil, nil, nil, nil, reloads, nil, nil, nil, "", en, nil)
 	if isErr || out != "SKILLS-RELOADED" {
 		t.Errorf("/skills reload: %q isErr=%v", out, isErr)
 	}
-	if _, isErr, _ = slashOutput("/mcp restart", nil, nil, nil, nil, reloads, nil, nil, nil, "", en); !isErr {
+	if _, isErr, _ = slashOutput("/mcp restart", nil, nil, nil, nil, reloads, nil, nil, nil, "", en, nil); !isErr {
 		t.Error("unknown subcommand accepted")
 	}
 	// Reload unavailable (nil closure) reads as unknown, not a panic.
-	if _, isErr, _ = slashOutput("/skills reload", nil, nil, nil, nil, slashReloads{}, nil, nil, nil, "", en); !isErr {
+	if _, isErr, _ = slashOutput("/skills reload", nil, nil, nil, nil, slashReloads{}, nil, nil, nil, "", en, nil); !isErr {
 		t.Error("nil reload closure did not refuse")
 	}
 }

@@ -199,6 +199,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0066`](adr/0066-tool-prompt-usage-bucket.ja.md) — 4 つ目のバケツ: SDK は `totalTokenCount` を 4 つのカウントの和と定義しているのに ADR-0057 のチェックサムは 3 項だった — プローブ（主ループ）が組み込みツールを一度も有効にしないため。結果、ツールが内容を返した `web_search` / `web_fetch` の全レコードが、通るはずの検算に落ちていた。`usage` レコードは `tool_prompt` を持ち（常に書く・ゼロも含む・キーの不在が 0066 以前の印）、チェックサムは `prompt + output + thoughts + tool_prompt == total`、`model.usage` に `tool_prompt_tokens` が加わる
 - [`ADR-0067`](adr/0067-piped-stdin-wait-notice.ja.md) — パイプ stdin を待つ単発実行は、待っていると言う: `-p` は引き続き端末でない stdin を EOF まで読む（遅い生産者を打ち切らない）が、2 秒経っても開いたままの pipe には両方の対処（パイプを閉じる、または `< /dev/null` で起動）を名指しする stderr 1 行が出て、告げた待機は終わりも見える — スケジューラやハーネスが子に渡す何も流れない継承 pipe は、もうハングには見えない
 - [`ADR-0068`](adr/0068-telemetry-resource-declared-not-detected.ja.md) — テレメトリクライアントは Cloud Logging のリソースを探索せず宣言する: `backend = "gcp"` ではライブラリの Logger が GCE メタデータサーバーから取得してホストを分類しており、Mac ではそのリンクローカル取得が間欠的に 4.5〜7.2 秒の沈黙した起動を費やしていた（存在しない隣接ノードをカーネルが ARP 探索する間、ダイヤルタイムアウトが一時的エラーとして再試行される）。検出がフォールバックしていた `global` リソースを宣言し、構築はネットワークに触れず、待機は契約ではなかったので待機通知は加えない
+- [`ADR-0069`](adr/0069-session-and-prompt-hooks.ja.md) — セッション開始フックとプロンプト送信フック: `[[hooks.session_start]]`（source は `startup`・`resume`・`/clear` での `clear`。任意の `matcher`）と `[[hooks.user_prompt_submit]]`（モデルに届く全ターン）が Claude Code の実測契約で走る — 同じ stdin ペイロード、素の stdout または `hookSpecificOutput.additionalContext` が文脈、exit 2 か JSON ブロック形式がプロンプトを拒否（消去され何も記録されない）、セッション開始は決してブロックできない — その出力はタイプ入力の隣のデータ attachment としてモデルに届き（ADR-0055 のレーン、8000 rune 上限、告知あり）、system prompt にもリスク評価器の信頼された指示チャネルにも決して入らない
 
 ## History（履歴）
 

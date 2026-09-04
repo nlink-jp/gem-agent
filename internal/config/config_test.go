@@ -383,10 +383,42 @@ timeout_sec = 5
 		t.Fatalf("hooks not loaded: %+v", cfg.Hooks)
 	}
 
+	// Context hooks (ADR-0069) load beside them; a session_start hook
+	// needs no matcher.
+	ctxHooks := good + `
+[[hooks.session_start]]
+command = "/Users/you/hooks/session-context.sh"
+[[hooks.session_start]]
+matcher = "resume"
+command = "/Users/you/hooks/on-resume.sh"
+[[hooks.user_prompt_submit]]
+command = "/Users/you/hooks/turn-context.sh"
+timeout_sec = 3
+`
+	if err := os.WriteFile(path, []byte(ctxHooks), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatalf("valid context hooks rejected: %v", err)
+	}
+	if len(cfg.Hooks.SessionStart) != 2 || cfg.Hooks.SessionStart[0].Matcher != "" || cfg.Hooks.SessionStart[1].Matcher != "resume" {
+		t.Fatalf("session_start hooks not loaded: %+v", cfg.Hooks.SessionStart)
+	}
+	if len(cfg.Hooks.UserPromptSubmit) != 1 || cfg.Hooks.UserPromptSubmit[0].TimeoutSec != 3 {
+		t.Fatalf("user_prompt_submit hooks not loaded: %+v", cfg.Hooks.UserPromptSubmit)
+	}
+
 	for name, frag := range map[string]string{
 		"empty matcher":    "[[hooks.pre_tool_use]]\ncommand = \"x\"\n",
 		"empty command":    "[[hooks.pre_tool_use]]\nmatcher = \"*\"\n",
 		"negative timeout": "[[hooks.pre_tool_use]]\nmatcher = \"*\"\ncommand = \"x\"\ntimeout_sec = -1\n",
+		// Context hooks (ADR-0069): session_start's matcher is optional
+		// (it selects the source); user_prompt_submit takes none.
+		"session_start without command":  "[[hooks.session_start]]\nmatcher = \"resume\"\n",
+		"session_start negative timeout": "[[hooks.session_start]]\ncommand = \"x\"\ntimeout_sec = -1\n",
+		"prompt hook with matcher":       "[[hooks.user_prompt_submit]]\nmatcher = \"*\"\ncommand = \"x\"\n",
+		"prompt hook without command":    "[[hooks.user_prompt_submit]]\ntimeout_sec = 3\n",
 	} {
 		bad := "[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\n" + frag
 		if err := os.WriteFile(path, []byte(bad), 0o644); err != nil {

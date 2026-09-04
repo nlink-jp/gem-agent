@@ -150,6 +150,28 @@ compact_at_pct = 80
 #command = "python3 /Users/you/.claude/hooks/guard-recursive-write.py"
 #timeout_sec = 10
 
+# Context hooks (ADR-0069) — the same contract as Claude Code's
+# SessionStart and UserPromptSubmit hooks, measured. A session_start
+# hook runs when a session starts (source "startup" or "resume") and on
+# /clear (source "clear"); `matcher` is optional and selects the source.
+# A user_prompt_submit hook runs on every prompt and takes no matcher.
+# Both receive the event's JSON on stdin (session_id, transcript_path,
+# cwd, and source / prompt) and inject context by printing it: plain
+# text, or JSON with hookSpecificOutput.additionalContext. Injected
+# text rides the next turn as DATA — beside what you typed, nonce-
+# wrapped like piped stdin, never in the system prompt and never in
+# the instruction channel the risk reviewer trusts. A user_prompt_submit
+# hook may refuse the prompt (exit 2 with the reason on stderr, or the
+# JSON block forms); a session start cannot be blocked. Output is
+# capped at 8000 runes per hook; crashes and timeouts inject nothing
+# and warn. Global config only, like pre_tool_use.
+#[[hooks.session_start]]
+#command = "/Users/you/hooks/session-context.sh"
+#timeout_sec = 10
+#[[hooks.user_prompt_submit]]
+#command = "/Users/you/hooks/turn-context.sh"
+#timeout_sec = 10
+
 [mcp]
 # Connect MCP servers declared in ~/.config/gem-agent/mcp.json (global)
 # and <project>/.mcp.json (project; wins name collisions). The project

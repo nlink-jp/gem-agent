@@ -38,6 +38,15 @@ ever tighten, and a broken guard script must not brick the fallback
 tool. Hooks cover the model's calls only; the operator's own
 `!command` escape does not pass through them.
 
+Two further events, `[[hooks.session_start]]` and
+`[[hooks.user_prompt_submit]]` (ADR-0069), are not gates on a call:
+they inject context before a turn on the same Claude Code contract,
+and a prompt hook may refuse the prompt outright (erased, nothing
+recorded). Their output reaches the model as a labelled **data**
+attachment beside the typed input — never the system prompt, never
+the instruction channel the auto-mode reviewer trusts. See
+[configuration](configuration.md).
+
 ## What the call is for (ADR-0047)
 
 Every approval-gated tool carries a required `gem_agent_purpose`

@@ -595,28 +595,42 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// --- agent_info: the model's view of its own runtime (ADR-0030) ---
 	// Registered before agent.New (which caches the declarations); the
 	// snapshot closure reads `ag` lazily — the tool can only run inside
-	// Operator pre-tool hooks (ADR-0044): global config only, evaluated
-	// ahead of the approval ladder in every mode — the guards exist for
-	// the model's calls regardless of surface. nil when none are
-	// configured, so the common case pays nothing.
-	var preToolHook func(ctx context.Context, name string, args map[string]any) (bool, string)
-	if len(cfg.Hooks.PreToolUse) > 0 {
-		hs := make([]hooks.Hook, 0, len(cfg.Hooks.PreToolUse))
-		for _, e := range cfg.Hooks.PreToolUse {
-			hs = append(hs, hooks.Hook{
-				Matcher: e.Matcher, Command: e.Command,
-				Timeout: time.Duration(e.TimeoutSec) * time.Second,
-			})
+	// Operator hooks (ADR-0044 / ADR-0069): global config only. Pre-tool
+	// hooks are evaluated ahead of the approval ladder in every mode —
+	// the guards exist for the model's calls regardless of surface;
+	// context hooks run at session start and on every prompt. nil when
+	// none are configured, so the common case pays nothing.
+	hookNotify := func(warn string) {
+		if prog != nil {
+			prog.Send(tui.Attached{Notes: []string{warn}})
+			return
 		}
-		runner := hooks.New(hs, func(warn string) {
-			if prog != nil {
-				prog.Send(tui.Attached{Notes: []string{warn}})
-				return
-			}
-			fmt.Fprintf(stderr, "[⚠ %s]\n", warn)
-		})
+		fmt.Fprintf(stderr, "[⚠ %s]\n", warn)
+	}
+	var hookRunner *hooks.Runner
+	if len(cfg.Hooks.PreToolUse)+len(cfg.Hooks.SessionStart)+len(cfg.Hooks.UserPromptSubmit) > 0 {
+		hookRunner = hooks.New(hooks.Hooks{
+			PreToolUse:       hookEntries(cfg.Hooks.PreToolUse),
+			SessionStart:     hookEntries(cfg.Hooks.SessionStart),
+			UserPromptSubmit: hookEntries(cfg.Hooks.UserPromptSubmit),
+		}, hookNotify)
+	}
+	// What a context hook learns about the session (ADR-0069 §2): the
+	// transcript path only while a log is actually being written.
+	hookSession := hooks.Session{ID: sessionID, CWD: projectDir}
+	if sessionID != "" {
+		hookSession.TranscriptPath = sessionPath
+	}
+	var preToolHook func(ctx context.Context, name string, args map[string]any) (bool, string)
+	if hookRunner != nil && len(cfg.Hooks.PreToolUse) > 0 {
 		preToolHook = func(ctx context.Context, name string, args map[string]any) (bool, string) {
-			return runner.Pre(ctx, name, projectDir, args)
+			return hookRunner.Pre(ctx, name, projectDir, args)
+		}
+	}
+	var promptHook agent.PromptHook
+	if hookRunner != nil && hookRunner.HasPromptSubmit() {
+		promptHook = func(ctx context.Context, input string) (string, bool, string) {
+			return hookRunner.PromptSubmit(ctx, hookSession, input)
 		}
 	}
 
@@ -758,6 +772,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(stderr, "[⚠ %s]\n", msg)
 		},
 		PreToolHook: preToolHook,
+		PromptHook:  promptHook,
 		OnUsage: func(u llm.Usage) {
 			sink.Usage(u.Prompt, u.Output, u.Thoughts, u.Cached, u.ToolPrompt, u.Total)
 			if prog != nil {
@@ -941,6 +956,29 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// --- session-start hooks (ADR-0069): startup / resume, and /clear ---
+	// The output rides the next turn's user message as a data
+	// attachment (ADR-0055's lane): never the system prompt, so the
+	// cached request prefix (ADR-0018) is untouched, and never the
+	// typed input, which the risk evaluator trusts (ADR-0038/0054).
+	sessionHooks := func(source string) {
+		if hookRunner == nil || !hookRunner.HasSessionStart() {
+			return
+		}
+		out := hookRunner.SessionStart(ctx, hookSession, source)
+		if out == "" {
+			return
+		}
+		ag.AttachData("session_start", agent.HookAttachmentKind, out)
+		hookNotify(fmt.Sprintf("session_start hook (%s) attached %d bytes of context as data for the next turn", source, len(out)))
+	}
+	if resumedID != "" {
+		sessionHooks("resume")
+	} else {
+		sessionHooks("startup")
+	}
+	onClear := func() { sessionHooks("clear") }
+
 	// --- one-shot mode: single turn, quiet stderr, exit ---
 	if oneShot {
 		for _, n := range policyNotes {
@@ -1102,7 +1140,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 					slashReloads{mcp: reloadMCP, skills: reloadSkills},
 					func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
 					func() string { return memoryListing(memBase, projectDir) },
-					rbRunner.Command, appVersion, msgs)
+					rbRunner.Command, appVersion, msgs, onClear)
 			},
 		})
 		prog = tea.NewProgram(model)
@@ -1210,7 +1248,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				slashReloads{mcp: reloadMCP, skills: reloadSkills},
 				func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
 				func() string { return memoryListing(memBase, projectDir) },
-				rbRunner.Command, appVersion, msgs)
+				rbRunner.Command, appVersion, msgs, onClear)
 			fmt.Fprint(stderr, out)
 			if quit {
 				return nil
@@ -1668,7 +1706,7 @@ type slashReloads struct {
 	skills func() string
 }
 
-func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, reload slashReloads, usage func() string, memoryInfo func() string, riskbookCmd func(args []string) (string, bool), version string, msgs *uitext.Messages) (output string, isErr bool, quit bool) {
+func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, reload slashReloads, usage func() string, memoryInfo func() string, riskbookCmd func(args []string) (string, bool), version string, msgs *uitext.Messages, onClear func()) (output string, isErr bool, quit bool) {
 	var b strings.Builder
 	fields := strings.Fields(input)
 	// The one supported subcommand shape: "/mcp reload" and
@@ -1747,6 +1785,11 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 		b.WriteString(skillsListing(skillsList))
 	case "/clear":
 		ag.Reset()
+		// A cleared conversation is a fresh start to the operator's
+		// session-start hooks (ADR-0069 §2, source "clear").
+		if onClear != nil {
+			onClear()
+		}
 		b.WriteString(msgs.HistoryCleared)
 	case "/quit", "/exit":
 		return "bye\n", false, true

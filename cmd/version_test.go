@@ -25,7 +25,7 @@ func TestVersionLine(t *testing.T) {
 // slash path must show the build the binary was stamped with, not a
 // default.
 func TestSlashVersion(t *testing.T) {
-	out, isErr, quit := slashOutput("/version", nil, nil, nil, nil, slashReloads{}, nil, nil, nil, "v9.9.9-test", uitext.For(uitext.EN))
+	out, isErr, quit := slashOutput("/version", nil, nil, nil, nil, slashReloads{}, nil, nil, nil, "v9.9.9-test", uitext.For(uitext.EN), nil)
 	if isErr || quit {
 		t.Fatalf("isErr=%v quit=%v", isErr, quit)
 	}

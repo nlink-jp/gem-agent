@@ -173,6 +173,75 @@ deny は最終決定です — 承認階梯・自動承認・セッション all
 リポジトリに任意コマンドを実行させる経路になります。挙動とゲート順の
 中での位置は[承認と安全](approval.ja.md)を参照してください。
 
+#### コンテキストフック: `[[hooks.session_start]]` と `[[hooks.user_prompt_submit]]`
+
+もう 2 つのイベント（ADR-0069）が同じ機構と Claude Code の実測契約を
+共有しますが、コールを守るのではなく**文脈**を注入します:
+
+```toml
+[[hooks.session_start]]
+command     = "/Users/you/hooks/session-context.sh"
+timeout_sec = 10
+
+[[hooks.session_start]]
+matcher     = "resume"          # 任意: startup | resume | clear、"a|b"、"*"
+command     = "/Users/you/hooks/on-resume.sh"
+
+[[hooks.user_prompt_submit]]
+command     = "/Users/you/hooks/turn-context.sh"
+```
+
+`session_start` フックはセッション開始時に 1 回走り — `source` は
+`startup`、`--continue`/`--resume` 下では `resume` — `/clear` でも
+`source` `clear` として再び走ります。任意の `matcher` が source を
+選びます。`user_prompt_submit` フックはモデルに届く全ターン（タイプ
+したメッセージ、argv の第 1 メッセージ、`/skill` 展開されたターン、
+`-p` のプロンプト。スラッシュコマンドと `!` エスケープは対象外）の
+前に走り、`matcher` を取りません。それぞれ stdin に JSON オブジェクトを
+1 つ受け取ります:
+
+```json
+{"hook_event_name": "SessionStart",
+ "session_id": "20260904-221124",
+ "transcript_path": "/path/to/state/sessions/projects/<escaped>/20260904-221124.jsonl",
+ "cwd": "/path/to/project",
+ "source": "startup"}
+```
+
+```json
+{"hook_event_name": "UserPromptSubmit",
+ "session_id": "20260904-221124",
+ "transcript_path": "/path/to/state/sessions/projects/<escaped>/20260904-221124.jsonl",
+ "cwd": "/path/to/project",
+ "prompt": "あなたがタイプした内容"}
+```
+
+セッションログが無効のときは `session_id` と `transcript_path` を空で
+送ります。
+
+**文脈の注入** — 印字するだけです: exit 0 で stdout に素のテキスト、
+または `hookSpecificOutput.additionalContext` を持つ JSON オブジェクト
+（そのフィールドを持たない JSON オブジェクトは何も注入しません —
+それは判定であってテキストではありません）。テキストは**次のターンに
+データとして**モデルへ届きます: タイプした内容の隣に、ノンスで包まれ
+「Attached hook (session_start), quoted as data」と告げられて — system
+prompt には決して入らず、auto モードのリスクレビューアが「あなただけが
+書く」がゆえに信頼しているタイプ入力の中にも決して入りません。これは
+フックの stdout をラベル無しでモデルの文脈に置く Claude Code より厳しい
+扱いです。Claude Code から写した hooks ブロックはそのまま動き、出力が
+ラベル付きで届くだけです。出力はフック 1 つあたり 8000 rune で上限され
+切り詰めは可視で、注入のたびに 1 行が出ます（`session_start hook
+(startup) attached N bytes of context as data for the next turn`）。
+
+**プロンプトの拒否** — `user_prompt_submit` フックは、pre-tool フックが
+コールを拒否するのと同じ 2 通り — exit 2 + stderr の理由、または JSON
+ブロック形式 — でターンを止められます。プロンプトは消え — 履歴にも
+トランスクリプトにも入らず — 理由が表示されます。`session_start`
+フックはブロックできません。そこからのブロックは失敗したフックとして
+報告され、何も注入しません。pre-tool フックと同じく、クラッシュ・
+タイムアウト・解析不能な出力は警告付きで続行し何も注入しません。同じ
+理由でグローバル設定専用です。
+
 環境変数 `GEMAGENT_STATE_DIR` はテスト/訓練の隔離用に state ルート
 （sessions と memory）を差し替えます。デバッグ用に、設定ファイル外で直接読まれる
 環境変数がもう 2 つあります: `GEMAGENT_MCP_STDERR=1` は MCP サーバーの stderr を

@@ -117,7 +117,9 @@ trust-gated project loosening, a layered risk rulebook the auto-mode
 reviewer reads — hand-written or drafted from your own recorded
 answers, never skipping a gate — the Seatbelt sandbox, operator pre-tool
 hooks that run the same guard scripts Claude Code does and refuse a
-call before the ladder sees it, startup gates for
+call before the ladder sees it, session-start and prompt-submit hooks
+on the same contract whose output reaches the model as labelled data,
+startup gates for
 broad roots and first-seen projects, and nonce-tag isolation of all
 tool output — which also keeps the request prefix byte-stable for
 81–95% measured context-cache hits.

@@ -177,6 +177,76 @@ would let a cloned repository run arbitrary commands. Behaviour and
 placement in the gate order are described in
 [approval](approval.md).
 
+#### Context hooks: `[[hooks.session_start]]` and `[[hooks.user_prompt_submit]]`
+
+Two more events (ADR-0069) share the mechanism and Claude Code's
+measured contract, but inject **context** rather than guarding a call:
+
+```toml
+[[hooks.session_start]]
+command     = "/Users/you/hooks/session-context.sh"
+timeout_sec = 10
+
+[[hooks.session_start]]
+matcher     = "resume"          # optional: startup | resume | clear, "a|b", "*"
+command     = "/Users/you/hooks/on-resume.sh"
+
+[[hooks.user_prompt_submit]]
+command     = "/Users/you/hooks/turn-context.sh"
+```
+
+A `session_start` hook runs once when the session starts — `source`
+is `startup`, or `resume` under `--continue`/`--resume` — and again on
+`/clear` with `source` `clear`; its optional `matcher` selects the
+source. A `user_prompt_submit` hook runs before every turn that
+reaches the model (a typed message, the argv first message, a
+`/skill`-expanded turn, the `-p` prompt; not slash commands or the `!`
+escape) and takes no `matcher`. Each receives one JSON object on
+stdin:
+
+```json
+{"hook_event_name": "SessionStart",
+ "session_id": "20260904-221124",
+ "transcript_path": "/path/to/state/sessions/projects/<escaped>/20260904-221124.jsonl",
+ "cwd": "/path/to/project",
+ "source": "startup"}
+```
+
+```json
+{"hook_event_name": "UserPromptSubmit",
+ "session_id": "20260904-221124",
+ "transcript_path": "/path/to/state/sessions/projects/<escaped>/20260904-221124.jsonl",
+ "cwd": "/path/to/project",
+ "prompt": "what you typed"}
+```
+
+With the session log disabled, `session_id` and `transcript_path` are
+sent empty.
+
+**Injecting context** — print it: plain text on stdout with exit 0, or
+a JSON object carrying `hookSpecificOutput.additionalContext` (a JSON
+object without that field injects nothing — it is a verdict, not
+text). The text reaches the model on the **next turn as data**: beside
+what you typed, nonce-wrapped and announced as "Attached hook
+(session_start), quoted as data" — never in the system prompt, and
+never inside your typed input, which the auto-mode risk reviewer
+trusts precisely because only you write it. This is stricter than
+Claude Code, whose hooks place their stdout in the model's context
+unlabelled; a hooks block copied from Claude Code still works, its
+output simply arrives labelled. Output is capped at 8000 runes per
+hook with a visible cut, and every injection prints one line
+(`session_start hook (startup) attached N bytes of context as data for
+the next turn`).
+
+**Refusing a prompt** — a `user_prompt_submit` hook may block the turn
+the same two ways a pre-tool hook denies a call: exit 2 with the
+reason on stderr, or the JSON block forms. The prompt is erased —
+nothing enters the history or the transcript — and the reason is
+shown. A `session_start` hook cannot block; a block from it is
+reported as a failed hook and injects nothing. As with pre-tool hooks,
+a crash, a timeout, or unparseable output proceeds with a warning and
+injects nothing. Global config only, for the same reason.
+
 The `GEMAGENT_STATE_DIR` environment variable relocates the state root
 (sessions and memory) for test/drill isolation. Two more environment
 variables exist for debugging and are read directly, outside the config
