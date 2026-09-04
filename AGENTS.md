@@ -343,14 +343,21 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   open is `openRead` / `openWrite` / `statIn` on the registry's
   `projectRoot` / `workRoot` handles: a symlink swapped between the
   check and the use is refused at the open. Never add an
-  `os.Open(abs)` / `os.ReadFile(abs)` / `os.WriteFile(abs)` on a
-  resolved path; `UseWorkDir` rotates `workRoot`. Reads stream
+  `os.Open(abs)` / `os.ReadFile(abs)` / `os.WriteFile(abs)` /
+  `os.ReadDir(abs)` on a resolved path — the walks use `readDirIn`,
+  `lstatIn`, `readlinkIn`, `readFileCapped` (ADR-0072 §4.1). The
+  roots are read as one snapshot (`rootState`, under `rootsMu`);
+  `UseWorkDir` rotates `workRoot` and never closes the old one (an
+  abandoned call may hold it); a `Subset` reads its parent's roots.
+  Reads stream
   (`readWindow`, `readAllCapped`) — nothing holds a file whole before
   a cap, and size gates run before the read.
 - **An abandoned call carries its session epoch** (ADR-0072 §4) —
   `Agent.epoch` advances on `Reset` / `Restart`; the late-return
   goroutine drops its note and writes its record to the captured
-  logger when the epoch moved. `exportWorkDir("")` UNSETS the variable
+  logger when the epoch moved, and its audit event carries
+  `origin_session_id` (captured from `Sink.SessionID()` at the start;
+  after a `/clear` the resource names the new session). `exportWorkDir("")` UNSETS the variable
   — a stale value is inherited by the next MCP reconnect.
 - **The rule tier reads a command the way bash runs it** (ADR-0072
   §1.3) — `segmentSplit` includes newlines; `normalizeHeads`

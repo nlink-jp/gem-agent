@@ -1318,6 +1318,7 @@ func (a *Agent) runWithFloor(ctx context.Context, tool *tools.Tool, tc llm.ToolC
 	a.mu.Lock()
 	epoch, log := a.epoch, a.log
 	a.mu.Unlock()
+	origin := a.telemetry.SessionID()
 	go func() {
 		r := <-done
 		took := time.Since(start)
@@ -1346,8 +1347,9 @@ func (a *Agent) runWithFloor(ctx context.Context, tool *tools.Tool, tc llm.ToolC
 			_ = log.Log("tool_late_return", record)
 		}
 		// The audit trail never loses an effect that happened; after a
-		// /clear the event carries the current session's resource.
-		a.telemetry.ToolLateReturn(tc.Name, tool.Mutating, took, outcome)
+		// /clear the event's resource is the new session's, and the
+		// origin attribute says which session made the call.
+		a.telemetry.ToolLateReturn(tc.Name, tool.Mutating, took, outcome, origin)
 	}()
 	return "", floorAbandoned, nil
 }

@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -78,8 +79,19 @@ type Registry struct {
 	// resolved path and returned the lexical one, and a link swapped
 	// between check and use escaped the roots). workRoot is nil until a
 	// work directory is set.
-	projectRoot  *os.Root
-	workRoot     *os.Root
+	projectRoot *os.Root
+	workRoot    *os.Root
+	// rootsMu guards workDir and workRoot: /clear rotates them from
+	// the UI goroutine while an abandoned call (ADR-0065) may still be
+	// resolving or opening on its own goroutine. Every reader takes a
+	// consistent snapshot; a rotated-out root is never closed, so a
+	// call that snapshotted it keeps a valid handle (one descriptor
+	// per /clear, for the life of the process).
+	rootsMu sync.RWMutex
+	// parent is set on a Subset: the child reads the parent's roots,
+	// so a work directory rotated after the child was built is the
+	// child's too.
+	parent       *Registry
 	execFn       ExecFunc
 	shellTimeout time.Duration
 	tools        map[string]*Tool
@@ -126,7 +138,24 @@ func New(projectDir string, execFn ExecFunc, shellTimeout time.Duration) (*Regis
 func (r *Registry) ProjectDir() string { return r.projectDir }
 
 // WorkDir returns the session work directory, or "" when none is set.
-func (r *Registry) WorkDir() string { return r.workDir }
+func (r *Registry) WorkDir() string { return r.rootState().workDir }
+
+// rootState is the confinement roots as one consistent snapshot.
+type rootState struct {
+	projectDir  string
+	projectRoot *os.Root
+	workDir     string
+	workRoot    *os.Root
+}
+
+func (r *Registry) rootState() rootState {
+	if r.parent != nil {
+		return r.parent.rootState()
+	}
+	r.rootsMu.RLock()
+	defer r.rootsMu.RUnlock()
+	return rootState{r.projectDir, r.projectRoot, r.workDir, r.workRoot}
+}
 
 // UseWorkDir adds dir as a second root for the file tools. It is
 // resolved the same way the project is (absolute, symlinks evaluated),
@@ -135,11 +164,13 @@ func (r *Registry) WorkDir() string { return r.workDir }
 // An empty dir removes the second root: /clear (ADR-0071 §2) may end
 // up with no work directory where the previous session had one.
 func (r *Registry) UseWorkDir(dir string) error {
+	if r.parent != nil {
+		return r.parent.UseWorkDir(dir)
+	}
 	if dir == "" {
-		if r.workRoot != nil {
-			_ = r.workRoot.Close()
-		}
+		r.rootsMu.Lock()
 		r.workDir, r.workRoot = "", nil
+		r.rootsMu.Unlock()
 		return nil
 	}
 	abs, err := filepath.Abs(dir)
@@ -154,20 +185,22 @@ func (r *Registry) UseWorkDir(dir string) error {
 	if err != nil {
 		return fmt.Errorf("work directory: %w", err)
 	}
-	if r.workRoot != nil {
-		_ = r.workRoot.Close()
-	}
+	// The previous root is not closed: an abandoned call may hold it
+	// (see rootsMu).
+	r.rootsMu.Lock()
 	r.workDir, r.workRoot = real, root
+	r.rootsMu.Unlock()
 	return nil
 }
 
 // rootFor returns the os.Root that contains abs (a path resolvePath
-// accepted) and abs relative to it.
+// accepted) and abs relative to it, from one snapshot of the roots.
 func (r *Registry) rootFor(abs string) (*os.Root, string, error) {
+	st := r.rootState()
 	for _, c := range []struct {
 		dir  string
 		root *os.Root
-	}{{r.projectDir, r.projectRoot}, {r.workDir, r.workRoot}} {
+	}{{st.projectDir, st.projectRoot}, {st.workDir, st.workRoot}} {
 		if c.dir == "" || c.root == nil || !within(c.dir, abs) {
 			continue
 		}
@@ -216,6 +249,47 @@ func (r *Registry) statIn(abs string) (os.FileInfo, error) {
 	return root.Stat(rel)
 }
 
+// lstatIn lstats abs through its root.
+func (r *Registry) lstatIn(abs string) (os.FileInfo, error) {
+	root, rel, err := r.rootFor(abs)
+	if err != nil {
+		return nil, err
+	}
+	return root.Lstat(rel)
+}
+
+// readlinkIn reads the link at abs through its root.
+func (r *Registry) readlinkIn(abs string) (string, error) {
+	root, rel, err := r.rootFor(abs)
+	if err != nil {
+		return "", err
+	}
+	return root.Readlink(rel)
+}
+
+// readDirIn lists the directory at abs through its root: a directory
+// swapped for a link that leads out between the walk's check and this
+// call is refused at the open (review after v0.68.1 — the walks used
+// os.ReadDir on the lexical path).
+func (r *Registry) readDirIn(abs string) ([]os.DirEntry, error) {
+	f, err := r.openRead(abs)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return f.ReadDir(-1)
+}
+
+// readFileCapped reads at most cap bytes of abs through its root.
+func (r *Registry) readFileCapped(abs string, cap int) ([]byte, bool, error) {
+	f, err := r.openRead(abs)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = f.Close() }()
+	return readAllCapped(f, cap)
+}
+
 // readAllCapped reads at most cap bytes from f, reporting whether
 // more followed — the file is never held whole (review after v0.68.0:
 // os.ReadFile of a huge or sparse file could exhaust memory before the
@@ -233,10 +307,11 @@ func readAllCapped(f io.Reader, cap int) (data []byte, more bool, err error) {
 
 // roots returns the directories the file tools may touch.
 func (r *Registry) roots() []string {
-	if r.workDir == "" {
-		return []string{r.projectDir}
+	st := r.rootState()
+	if st.workDir == "" {
+		return []string{st.projectDir}
 	}
-	return []string{r.projectDir, r.workDir}
+	return []string{st.projectDir, st.workDir}
 }
 
 // Register adds an external tool (MCP). Name collisions are errors — a
@@ -258,7 +333,7 @@ func (r *Registry) Register(t *Tool) error {
 func (r *Registry) Subset(names ...string) (*Registry, error) {
 	sub := &Registry{
 		projectDir:   r.projectDir,
-		workDir:      r.workDir,
+		parent:       r, // roots are the parent's, rotation included
 		execFn:       r.execFn,
 		shellTimeout: r.shellTimeout,
 		tools:        map[string]*Tool{},
@@ -650,7 +725,7 @@ func (r *Registry) listFiles() *Tool {
 			if err != nil {
 				return "", err
 			}
-			entries, err := os.ReadDir(dir)
+			entries, err := r.readDirIn(dir)
 			if err != nil {
 				return "", err
 			}
@@ -806,7 +881,7 @@ func (r *Registry) writeFile() *Tool {
 			if err != nil {
 				return ""
 			}
-			info, err := os.Stat(abs)
+			info, err := r.statIn(abs)
 			if err != nil || info.IsDir() {
 				return ""
 			}

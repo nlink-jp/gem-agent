@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.68.2] - 2026-09-05
+
+### Fixed — second pass of the post-release review (ADR-0072 §4.1)
+
+- `search_files`, `list_files`, `list_tree` and `file_info` list and
+  read through `os.Root` like the other file tools: a directory
+  swapped for an escaping link after the confinement check is refused
+  at the open
+- Rotating the work directory on `/clear` no longer races an
+  abandoned call: the roots are read as one snapshot, the previous
+  root stays open for a call that holds it, and the file-search child
+  follows the rotation
+- The `tool.late_return` audit event carries `origin_session_id`, so
+  a call that completes after `/clear` is attributed to the session
+  that made it
+
 ## [0.68.1] - 2026-09-05
 
 ### Fixed — post-release review of v0.68.0 (ADR-0072 §4)

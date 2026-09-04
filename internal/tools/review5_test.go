@@ -145,3 +145,96 @@ func TestEditFileHonoursCancellation(t *testing.T) {
 		t.Fatalf("the file changed under a cancelled call: %q", data)
 	}
 }
+
+// Review after v0.68.1: the walks list and read through the roots too.
+// A directory swapped for a link that leads out between resolvePath
+// and the listing is refused at the open.
+func TestReadDirRefusesADirectorySwappedAfterTheCheck(t *testing.T) {
+	r := newRegistry(t)
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(r.ProjectDir(), "d")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	abs, err := r.resolvePath("d")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, dir); err != nil {
+		t.Fatal(err)
+	}
+	if entries, err := r.readDirIn(abs); err == nil {
+		t.Fatalf("the swapped directory was listed: %d entries", len(entries))
+	}
+	if _, _, err := r.readFileCapped(filepath.Join(abs, "secret.txt"), 1024); err == nil {
+		t.Fatal("a file behind the swapped directory was read")
+	}
+}
+
+// Review after v0.68.1: rotating the work directory while an abandoned
+// call still resolves and opens must be a consistent snapshot, not a
+// torn pair or a closed handle — exercised under the race detector.
+func TestWorkRootRotationIsSafeUnderConcurrentOpens(t *testing.T) {
+	r := newRegistry(t)
+	dirs := []string{t.TempDir(), t.TempDir()}
+	for _, d := range dirs {
+		if err := os.WriteFile(filepath.Join(d, "f.txt"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := r.UseWorkDir(dirs[0]); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			_ = r.UseWorkDir(dirs[i%2])
+		}
+		_ = r.UseWorkDir("")
+	}()
+	for i := 0; i < 200; i++ {
+		st := r.rootState()
+		if st.workDir == "" {
+			continue
+		}
+		abs := filepath.Join(st.workDir, "f.txt")
+		if _, _, err := r.readFileCapped(abs, 16); err != nil {
+			// A rotation between the snapshot and the open is the
+			// documented outcome (the path no longer sits under a
+			// root) — never a panic or a read through a closed root.
+			continue
+		}
+	}
+	<-done
+}
+
+// A Subset reads the parent's roots, rotation included.
+func TestSubsetFollowsTheParentsWorkRoot(t *testing.T) {
+	r := newRegistry(t)
+	sub, err := r.Subset("read_file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := t.TempDir()
+	if err := os.WriteFile(filepath.Join(work, "w.txt"), []byte("work"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.UseWorkDir(work); err != nil {
+		t.Fatal(err)
+	}
+	real, _ := filepath.EvalSymlinks(work)
+	if sub.WorkDir() != real {
+		t.Fatalf("subset work dir = %q, want %q", sub.WorkDir(), real)
+	}
+	out, err := run(t, sub, "read_file", map[string]any{"path": filepath.Join(real, "w.txt")})
+	if err != nil || !strings.Contains(out, "work") {
+		t.Fatalf("subset could not read the rotated work directory: %q %v", out, err)
+	}
+}

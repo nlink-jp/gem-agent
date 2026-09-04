@@ -117,15 +117,15 @@ func (r *Registry) describeFile(p string) (string, error) {
 			parent, perr := filepath.EvalSymlinks(filepath.Dir(lex))
 			if perr == nil && withinAny(r.roots(), parent) {
 				entry := filepath.Join(parent, filepath.Base(lex))
-				if lst, lerr := os.Lstat(entry); lerr == nil && lst.Mode()&os.ModeSymlink != 0 {
-					target, _ := os.Readlink(entry)
+				if lst, lerr := r.lstatIn(entry); lerr == nil && lst.Mode()&os.ModeSymlink != 0 {
+					target, _ := r.readlinkIn(entry)
 					return fmt.Sprintf("%s:\n  symlink → %s\n  target: outside the project — not inspected", p, target), nil
 				}
 			}
 		}
 		return "", err
 	}
-	lst, err := os.Lstat(abs)
+	lst, err := r.lstatIn(abs)
 	if err != nil {
 		return "", fmt.Errorf("not found")
 	}
@@ -134,7 +134,7 @@ func (r *Registry) describeFile(p string) (string, error) {
 	fmt.Fprintf(&b, "%s:", p)
 
 	if lst.Mode()&os.ModeSymlink != 0 {
-		target, _ := os.Readlink(abs)
+		target, _ := r.readlinkIn(abs)
 		fmt.Fprintf(&b, "\n  symlink → %s", target)
 		real, err := filepath.EvalSymlinks(abs)
 		if err != nil || !withinAny(r.roots(), real) {
@@ -144,13 +144,13 @@ func (r *Registry) describeFile(p string) (string, error) {
 		}
 		b.WriteString("\n  (target is inside the project; details below are the target's)")
 		abs = real
-		if lst, err = os.Stat(abs); err != nil {
+		if lst, err = r.statIn(abs); err != nil {
 			return "", err
 		}
 	}
 
 	if lst.IsDir() {
-		entries, err := os.ReadDir(abs)
+		entries, err := r.readDirIn(abs)
 		if err != nil {
 			return "", err
 		}

@@ -145,7 +145,7 @@ func (r *Registry) listTree() *Tool {
 					interrupted = true
 					return
 				}
-				items, err := os.ReadDir(dir)
+				items, err := r.readDirIn(dir)
 				if err != nil {
 					fmt.Fprintf(&b, "%s[unreadable: %s]\n", strings.Repeat("  ", level), filepath.Base(dir))
 					return
@@ -203,7 +203,7 @@ func (r *Registry) listTree() *Tool {
 						fmt.Fprintf(&b, "%s%s@\n", indent, e.Name())
 					case e.IsDir():
 						if dirsOnly {
-							fmt.Fprintf(&b, "%s%s/ (%d files)\n", indent, e.Name(), countFiles(filepath.Join(dir, e.Name())))
+							fmt.Fprintf(&b, "%s%s/ (%d files)\n", indent, e.Name(), r.countFiles(filepath.Join(dir, e.Name())))
 						} else {
 							fmt.Fprintf(&b, "%s%s/\n", indent, e.Name())
 						}
@@ -244,8 +244,8 @@ func (r *Registry) listTree() *Tool {
 
 // countFiles counts the non-directory entries of one directory, for
 // the dirs_only annotation.
-func countFiles(dir string) int {
-	items, err := os.ReadDir(dir)
+func (r *Registry) countFiles(dir string) int {
+	items, err := r.readDirIn(dir)
 	if err != nil {
 		return 0
 	}
@@ -333,7 +333,7 @@ func (r *Registry) searchFiles() *Tool {
 					interrupted = true
 					return
 				}
-				items, err := os.ReadDir(dir)
+				items, err := r.readDirIn(dir)
 				if err != nil {
 					return
 				}
@@ -374,7 +374,7 @@ func (r *Registry) searchFiles() *Tool {
 					if err != nil || info.Size() > searchFileCap || isImageExt(e.Name()) {
 						continue
 					}
-					data, err := os.ReadFile(full)
+					data, _, err := r.readFileCapped(full, searchFileCap)
 					if err != nil {
 						continue
 					}

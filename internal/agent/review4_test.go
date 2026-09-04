@@ -10,6 +10,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/session"
+	"github.com/nlink-jp/gem-agent/internal/telemetry"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
@@ -227,7 +228,8 @@ func TestLateReturnAfterRestartStaysWithTheOldSession(t *testing.T) {
 		{Content: "done"},
 	}}
 	oldLog := &safeLog{}
-	a := newFloorTestAgent(t, mb, writer, oldLog, nil)
+	sink, rec := telemetry.NewRecording()
+	a := newFloorTestAgent(t, mb, writer, oldLog, sink)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan struct{})
@@ -241,6 +243,9 @@ func TestLateReturnAfterRestartStaysWithTheOldSession(t *testing.T) {
 	}
 	newLog := &safeLog{}
 	a.Restart(newLog)
+	if err := sink.Restart(context.Background(), "new-session"); err != nil {
+		t.Fatal(err)
+	}
 	close(release)
 	deadline := time.Now().Add(3 * time.Second)
 	for !oldLog.has("tool_late_return") {
@@ -254,5 +259,19 @@ func TestLateReturnAfterRestartStaysWithTheOldSession(t *testing.T) {
 	}
 	if notes := a.takeLateNotices(); len(notes) != 0 {
 		t.Errorf("the new conversation received the old session's note: %v", notes)
+	}
+	// The audit event names the session that made the call.
+	var late *telemetry.RecordedEvent
+	for _, ev := range rec.Events() {
+		if ev.Name == "tool.late_return" {
+			e := ev
+			late = &e
+		}
+	}
+	if late == nil {
+		t.Fatal("no tool.late_return event")
+	}
+	if late.Attrs["origin_session_id"] != "recording" {
+		t.Errorf("origin_session_id = %q, want the old session", late.Attrs["origin_session_id"])
 	}
 }

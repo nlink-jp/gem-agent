@@ -50,9 +50,10 @@ type Sink struct {
 	// them when /clear starts a new session (ADR-0071 addendum), and
 	// every holder of the pointer — the agent, the riskbook runner,
 	// the deferred closers — keeps working through the same Sink.
-	mu       sync.RWMutex
-	logger   otellog.Logger
-	provider *sdklog.LoggerProvider
+	mu        sync.RWMutex
+	logger    otellog.Logger
+	provider  *sdklog.LoggerProvider
+	sessionID string // the id the resource carries; Restart replaces it
 	// label, when set, marks every event with agent=<label>: records
 	// emitted on behalf of a delegated child loop (ADR-0037). Empty for
 	// the main loop, so existing queries keep matching unchanged.
@@ -94,7 +95,7 @@ func (s *Sink) Restart(ctx context.Context, sessionID string) error {
 	}
 	s.mu.Lock()
 	old := s.provider
-	s.logger, s.provider = logger, provider
+	s.logger, s.provider, s.sessionID = logger, provider, sessionID
 	s.mu.Unlock()
 	if old != nil {
 		sctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -136,7 +137,23 @@ func New(ctx context.Context, cfg Config, gcpProject, version, sessionID, projec
 	if err != nil {
 		return nil, err
 	}
-	return &Sink{logger: logger, provider: provider, build: build}, nil
+	return &Sink{logger: logger, provider: provider, sessionID: sessionID, build: build}, nil
+}
+
+// SessionID is the session the sink's resource currently names — what
+// a call captures at its start, so a late return after a /clear can
+// say which session it belongs to. Empty for a nil sink.
+func (s *Sink) SessionID() string {
+	if s == nil {
+		return ""
+	}
+	root := s
+	if s.parent != nil {
+		root = s.parent
+	}
+	root.mu.RLock()
+	defer root.mu.RUnlock()
+	return root.sessionID
 }
 
 // newProvider builds the exporter and the resourced provider for one
@@ -295,12 +312,18 @@ func (s *Sink) ToolCall(name string, mutating bool, detail, purpose string, dur 
 // (ADR-0065 §2): the floor reported outcome=abandoned at the grace;
 // this says the call did return, when, and how. Best-effort — a
 // return after Shutdown is lost, like any event after Shutdown.
-func (s *Sink) ToolLateReturn(name string, mutating bool, dur time.Duration, outcome string) {
+//
+// originSession is the session the call started in. After a /clear the
+// sink's resource names the new session, so the event carries the
+// origin as an attribute — without it the audit trail attributed the
+// old session's effect to the new one (review after v0.68.1).
+func (s *Sink) ToolLateReturn(name string, mutating bool, dur time.Duration, outcome, originSession string) {
 	s.emit("tool.late_return",
 		attribute.String("tool", name),
 		attribute.Bool("mutating", mutating),
 		attribute.Int64("duration_ms", dur.Milliseconds()),
-		attribute.String("outcome", outcome))
+		attribute.String("outcome", outcome),
+		attribute.String("origin_session_id", originSession))
 }
 
 // Approval records who or what let a call through (or refused it):
@@ -401,7 +424,7 @@ func NewRecording() (*Sink, *Recording) {
 		return provider.Logger("recording"), provider, nil
 	}
 	logger, provider, _ := build(context.Background(), "")
-	return &Sink{logger: logger, provider: provider, build: build}, rec
+	return &Sink{logger: logger, provider: provider, sessionID: "recording", build: build}, rec
 }
 
 // loadHeaders reads the OTLP auth-header file: a flat JSON object of

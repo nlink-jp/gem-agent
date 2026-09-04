@@ -31,6 +31,15 @@ func TestRestartSwapsTheProviderUnderEveryHolder(t *testing.T) {
 	if events[1].Attrs["agent"] != "agentic_file_search" {
 		t.Errorf("sub label lost after restart: %+v", events[1])
 	}
+	if sink.SessionID() != "new-session" || sub.SessionID() != "new-session" {
+		t.Errorf("SessionID after restart = %q / %q", sink.SessionID(), sub.SessionID())
+	}
+	// A late return names the session that made the call.
+	sink.ToolLateReturn("write_file", true, 0, "ok", "recording")
+	events = rec.Events()
+	if got := events[len(events)-1].Attrs["origin_session_id"]; got != "recording" {
+		t.Errorf("origin_session_id = %q, want the captured origin", got)
+	}
 	// Nil and builder-less sinks are no-ops.
 	var nilSink *Sink
 	if err := nilSink.Restart(context.Background(), "x"); err != nil {

@@ -267,6 +267,31 @@ against the code or a probe and all seven held. Fixed in v0.68.1:
   the reverse of ADR-0071 §4a. The order follows the ADR and is pinned
   on the source.
 
+### 4.1 Second pass (2026-09-05, v0.68.2)
+
+The reviewer re-read v0.68.1 and found three remainders, all held:
+
+- **The walks still used the lexical path** — `search_files`,
+  `list_files`, `list_tree` and `file_info` listed and read with
+  `os.ReadDir` / `os.ReadFile` after `resolvePath`; a directory swapped
+  for an escaping link was walked from the unsandboxed process. Every
+  listing, stat, readlink and read in the tools package now goes
+  through the roots (`readDirIn`, `lstatIn`, `readlinkIn`,
+  `readFileCapped`), and the package has no direct `os.Open` family
+  call left on a resolved path.
+- **Work-root rotation raced an abandoned call** — `UseWorkDir` wrote
+  `workDir` / `workRoot` and closed the old root with no
+  synchronisation against a goroutine still resolving through them.
+  The roots are read as one snapshot under a lock, a rotated-out root
+  is never closed (one descriptor per `/clear`, so the call that
+  snapshotted it keeps a valid handle), and a `Subset` reads its
+  parent's roots so the file-search child follows the rotation.
+- **The late-return audit event still named the new session** — the
+  epoch fix kept the note and the transcript record with the old
+  session; the event went to the re-resourced sink. The call captures
+  the sink's session id at its start and the event carries it as
+  `origin_session_id`.
+
 ## Lessons
 
 - **Independent reviewers found what the maintainer pass did not**, for
