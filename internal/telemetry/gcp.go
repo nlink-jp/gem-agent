@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	mrpb "google.golang.org/genproto/googleapis/api/monitoredres"
 )
 
 // gcpExporter writes audit events straight into Cloud Logging of the
@@ -33,12 +34,37 @@ func newGCPExporter(ctx context.Context, project, version, sessionID, projectDir
 	}
 	// Export failures route into the same warn-once path as OTLP.
 	client.OnError = func(err error) { otel.Handle(err) }
-	logger := client.Logger(logName, logging.CommonLabels(map[string]string{
-		"service_version": version,
-		"session_id":      sessionID,
-		"project_dir":     projectDir,
-	}))
+	logger := newGCPLogger(client, project, version, sessionID, projectDir)
 	return &gcpExporter{client: client, logger: logger}, nil
+}
+
+// gcpResource is the monitored resource every entry carries: the
+// `global` resource of the operator's project. It is DECLARED, never
+// detected (ADR-0068): left to itself, the library's Logger classifies
+// the host by fetching from the GCE metadata server — a plain HTTP GET
+// to a link-local address, with the dial timeout retried as transient
+// — and on a Mac that fetch intermittently costs 4.5–7.2 s of silent
+// startup while the kernel probes for a neighbour that does not exist.
+// This value is exactly what the detection falls back to on a machine
+// that is not Google-hosted, so declaring it changes no record.
+func gcpResource(project string) *mrpb.MonitoredResource {
+	return &mrpb.MonitoredResource{
+		Type:   "global",
+		Labels: map[string]string{"project_id": project},
+	}
+}
+
+// newGCPLogger builds the entry logger with its resource declared, so
+// construction touches no network (pinned by a test that counts
+// metadata-server hits).
+func newGCPLogger(client *logging.Client, project, version, sessionID, projectDir string) *logging.Logger {
+	return client.Logger(logName,
+		logging.CommonResource(gcpResource(project)),
+		logging.CommonLabels(map[string]string{
+			"service_version": version,
+			"session_id":      sessionID,
+			"project_dir":     projectDir,
+		}))
 }
 
 // entryFromRecord maps one OTel log record to a Cloud Logging entry:

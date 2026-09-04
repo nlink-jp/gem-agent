@@ -138,7 +138,8 @@ reloadable mid-session (`/mcp reload`, `/skills reload`), with
 **[Configuration](docs/en/reference/configuration.md)** — the full
 config reference, precedence, CLI flags, content-filter behaviour,
 endpoint notes, and opt-in audit logging to Cloud Logging (default) or
-your OTLP collector (metadata only, never conversation content).
+your OTLP collector (metadata only, never conversation content, and
+nothing added to startup).
 
 Out of scope by design: RAG or vector memory, data analysis, GUI,
 non-macOS platforms.

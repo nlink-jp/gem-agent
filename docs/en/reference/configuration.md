@@ -215,7 +215,11 @@ that returned after all — ADR-0065), `approval.decision` (decision and
 which layer made it), `turn.end`, `model.usage`, `compaction`,
 `media.upload`, `integration.reload` (an in-session `/mcp reload` or
 `/skills reload` changed the tool surface — ADR-0039) — with
-service/session/project/host resource attributes. **Metadata only**: prompts, responses, file contents and
+service/session/project/host resource attributes. Cloud Logging entries
+carry the `global` monitored resource labelled with your `project_id`,
+declared rather than detected: creating the client contacts no
+network, so enabling telemetry adds nothing to startup (ADR-0068).
+**Metadata only**: prompts, responses, file contents and
 thought summaries never leave the machine through this channel; the
 local transcript stays the full record. Only your global config can
 enable telemetry or set the endpoint — a project's `.gem-agent.toml`

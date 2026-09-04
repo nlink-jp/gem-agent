@@ -121,6 +121,18 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   scheduler that hands the child an idle inherited pipe makes it wait;
   after 2 s a stderr line says so (ADR-0067). When scripting `-p` with no
   data intended, launch with `< /dev/null`.
+- **Startup must not touch the network before the first model call**
+  (ADR-0068). Cloud Logging's `client.Logger` auto-detects the host's
+  monitored resource by fetching from the GCE metadata server, and on
+  a Mac that link-local fetch intermittently cost 4.5–7.2 s of silent
+  startup (dial timeouts retried as transient while the kernel probed
+  ARP). The gcp exporter passes `logging.CommonResource` — the
+  `global` resource the detection would have fallen back to — and a
+  test counts metadata-server hits (zero for our logger, one for the
+  library's default path as the control). Keep client construction
+  lazy: `logging.NewClient` and `genai.NewClient` dial on first use.
+  If startup ever looks slow again, an env-gated per-step trace and a
+  dozen runs is what caught this; the slow mode was 3 in 12.
 - **REPL and approval gate share ONE bufio.Reader** (bufio.NewReader returns
   an existing *bufio.Reader unchanged). Wrapping os.Stdin twice strands
   buffered input — don't "simplify" this.

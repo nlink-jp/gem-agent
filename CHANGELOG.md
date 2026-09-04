@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed — telemetry no longer probes the GCE metadata server at startup (ADR-0068)
+
+- With `[telemetry].backend = "gcp"`, startup intermittently paid
+  4.5–7.2 s of silence before the banner or the one-shot stdin read
+  (measured 6 of 24 runs; the rest paid 0 ms). Traced to Cloud
+  Logging's `client.Logger`, which classifies the host by fetching
+  from the GCE metadata server: on a Mac the link-local fetch blocks
+  on the kernel's ARP probe, its 2 s dial timeout is retried as
+  transient, and the cost depends on whether the kernel's negative
+  neighbour entry is still fresh. ADC and `genai.NewClient` were never
+  involved
+- The exporter now declares the `global` monitored resource labelled
+  with `project_id` — exactly what the detection fell back to on this
+  platform — so records are unchanged and construction touches no
+  network. Measured after the fix: 12 of 12 runs reach the stdin read
+  within 16 ms
+- No wait notice is added: the wait was a library auto-detection, not
+  a contract (ADR-0033 §2 / ADR-0067 announce deliberate waits). A
+  test pins the fix by counting hits on a fake `GCE_METADATA_HOST`
+
 ## [0.63.0] - 2026-09-04
 
 ### Added — a one-shot run waiting on piped stdin says so (ADR-0067)
