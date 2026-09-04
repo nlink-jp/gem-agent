@@ -2,8 +2,16 @@
 
 ## [0.68.2] - 2026-09-05
 
-### Fixed — second pass of the post-release review (ADR-0072 §4.1)
+### Fixed — second and third passes of the post-release review (ADR-0072 §4.1, §4.2)
 
+- `.gitignore` files are read through the confinement roots with the
+  cap applied on the stream; a link where a `.gitignore` should be
+  contributes nothing
+- `search_files` skips a file that outgrew the 2 MiB cap between the
+  listing and the read instead of presenting a capped read as a
+  complete search
+- A work root rotated out by `/clear` closes when its last holder
+  releases it — no longer a descriptor leaked per `/clear`
 - `search_files`, `list_files`, `list_tree` and `file_info` list and
   read through `os.Root` like the other file tools: a directory
   swapped for an escaping link after the confinement check is refused

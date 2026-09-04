@@ -292,6 +292,28 @@ The reviewer re-read v0.68.1 and found three remainders, all held:
   the sink's session id at its start and the event carries it as
   `origin_session_id`.
 
+### 4.2 Third pass (2026-09-05, v0.68.2)
+
+Three more on the second pass's own diff, all held:
+
+- **`.gitignore` reads bypassed the roots** — `internal/ignore`
+  `Lstat`ed and `os.ReadFile`d the lexical path; a `.gitignore` (or a
+  directory above it) swapped for an escaping link between the two
+  was read from the unsandboxed process, and a swap for a huge file
+  was read whole before the 1 MiB cap. The rules take a `FileReader`;
+  the file tools pass one that stats and reads through their roots
+  with the cap applied on the stream (`gitignoreReader`).
+- **`search_files` presented a capped read as a complete search** —
+  `readFileCapped`'s `more` was discarded, so a file that outgrew the
+  2 MiB cap between the listing and the read was searched to the cap
+  and counted as searched. Such a file is skipped (`readForSearch`),
+  as an oversized one always was.
+- **A rotated-out work root was never closed** — a descriptor per
+  `/clear` for the life of the process. Roots are `rootHandle`s with
+  a holder count: acquired under the rotation lock, released after
+  the open, retired on rotation and closed by whichever of retire or
+  the last release comes second.
+
 ## Lessons
 
 - **Independent reviewers found what the maintainer pass did not**, for

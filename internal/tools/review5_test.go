@@ -238,3 +238,95 @@ func TestSubsetFollowsTheParentsWorkRoot(t *testing.T) {
 		t.Fatalf("subset could not read the rotated work directory: %q %v", out, err)
 	}
 }
+
+// Review after v0.68.2: .gitignore is read through the roots, and a
+// link where a .gitignore should be contributes nothing — content from
+// outside the project must not enter the ignore decision.
+func TestGitignoreReaderRefusesLinksAndOversize(t *testing.T) {
+	r := newRegistry(t)
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "rules"), []byte("*.go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	linked := filepath.Join(r.ProjectDir(), "linked")
+	if err := os.Mkdir(linked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "rules"), filepath.Join(linked, ".gitignore")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.gitignoreReader(filepath.Join(linked, ".gitignore"), 1<<20); err == nil {
+		t.Fatal("a symlinked .gitignore was read")
+	}
+	big := filepath.Join(r.ProjectDir(), "big")
+	if err := os.Mkdir(big, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(big, ".gitignore"), make([]byte, 2048), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.gitignoreReader(filepath.Join(big, ".gitignore"), 1024); err == nil {
+		t.Fatal("an oversized .gitignore was read")
+	}
+	if err := os.WriteFile(filepath.Join(r.ProjectDir(), ".gitignore"), []byte("*.log\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := r.gitignoreReader(filepath.Join(r.ProjectDir(), ".gitignore"), 1<<20)
+	if err != nil || string(data) != "*.log\n" {
+		t.Fatalf("a regular .gitignore was not read: %q %v", data, err)
+	}
+}
+
+// A file that exceeds the search cap is not searched at all: a
+// partial search must not be presented as a complete one.
+func TestReadForSearchSkipsOversize(t *testing.T) {
+	r := newRegistry(t)
+	p := filepath.Join(r.ProjectDir(), "grown.txt")
+	if err := os.WriteFile(p, []byte(strings.Repeat("a", searchFileCap+1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := r.readForSearch(p); ok {
+		t.Fatal("a file past the cap was searched partially")
+	}
+	if err := os.WriteFile(p, []byte("needle\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if data, ok := r.readForSearch(p); !ok || !strings.Contains(string(data), "needle") {
+		t.Fatal("a file within the cap was not read")
+	}
+}
+
+// Review after v0.68.2: a rotated-out work root closes when its last
+// holder releases it — not before (the holder is an abandoned call
+// mid-open) and not never (a descriptor per /clear).
+func TestRotatedWorkRootClosesAfterItsLastHolder(t *testing.T) {
+	r := newRegistry(t)
+	first, second := t.TempDir(), t.TempDir()
+	if err := r.UseWorkDir(first); err != nil {
+		t.Fatal(err)
+	}
+	st := r.rootState()
+	old := st.workRoot
+	_, _, release, err := r.rootFor(filepath.Join(st.workDir, "x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.UseWorkDir(second); err != nil {
+		t.Fatal(err)
+	}
+	if old.closed.Load() {
+		t.Fatal("the old root closed while a holder still had it")
+	}
+	release()
+	if !old.closed.Load() {
+		t.Fatal("the old root did not close after its last holder released it")
+	}
+	// With no holder, rotation closes immediately.
+	current := r.rootState().workRoot
+	if err := r.UseWorkDir(""); err != nil {
+		t.Fatal(err)
+	}
+	if !current.closed.Load() {
+		t.Fatal("a root with no holder was not closed on rotation")
+	}
+}

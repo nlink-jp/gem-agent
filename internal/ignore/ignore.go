@@ -17,6 +17,7 @@ package ignore
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,6 +52,43 @@ type Rules struct {
 	f      *gitignoreFile
 	off    bool
 	note   string
+	read   FileReader
+}
+
+// FileReader reads one .gitignore for the rules: path is the file's
+// absolute path, cap the most bytes a .gitignore may have. It returns
+// an error for anything that is not a regular file within cap — a
+// symlink, an oversized file, a missing one. The caller confines it:
+// the file tools pass a reader that opens through their os.Root, so
+// a .gitignore (or a directory above it) swapped for a link that
+// leads out is refused at the open rather than read from the
+// unsandboxed process (review after v0.68.2).
+type FileReader func(path string, cap int64) ([]byte, error)
+
+// osReader is the default FileReader: Lstat, then a capped read of a
+// regular file. For callers without a root (tests, the git
+// cross-check).
+func osReader(path string, cap int64) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > cap {
+		return nil, fmt.Errorf("%s: not a regular file within %d bytes", path, cap)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, cap+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > cap {
+		return nil, fmt.Errorf("%s: larger than %d bytes", path, cap)
+	}
+	return data, nil
 }
 
 // Root builds the rules for a walk rooted at walkRoot inside
@@ -61,9 +99,18 @@ type Rules struct {
 // and Note explains why — an explicit path into an ignored area means
 // the caller wants to see it.
 func Root(projectDir, walkRoot string, off bool) *Rules {
-	r := &Rules{dir: projectDir, off: off}
+	return RootWith(projectDir, walkRoot, off, osReader)
+}
+
+// RootWith is Root with the .gitignore reader supplied — the file
+// tools pass one that reads through their confinement roots.
+func RootWith(projectDir, walkRoot string, off bool, read FileReader) *Rules {
+	if read == nil {
+		read = osReader
+	}
+	r := &Rules{dir: projectDir, off: off, read: read}
 	if !off {
-		r.f = loadGitignore(projectDir)
+		r.f = loadGitignore(projectDir, read)
 	}
 	rel, err := filepath.Rel(projectDir, walkRoot)
 	if err != nil || rel == "." {
@@ -71,7 +118,7 @@ func Root(projectDir, walkRoot string, off bool) *Rules {
 	}
 	for _, name := range strings.Split(filepath.ToSlash(rel), "/") {
 		if r.Ignored(name, true) {
-			return &Rules{dir: walkRoot, off: true, note: fmt.Sprintf(
+			return &Rules{dir: walkRoot, off: true, read: read, note: fmt.Sprintf(
 				"note: %s is inside an ignored area — ignore rules are off for this walk", rel)}
 		}
 		r = r.Descend(name)
@@ -84,9 +131,9 @@ func (r *Rules) Note() string { return r.note }
 
 // Descend enters the named subdirectory, picking up its .gitignore.
 func (r *Rules) Descend(name string) *Rules {
-	child := &Rules{parent: r, dir: filepath.Join(r.dir, name), off: r.off}
+	child := &Rules{parent: r, dir: filepath.Join(r.dir, name), off: r.off, read: r.read}
 	if !r.off {
-		child.f = loadGitignore(child.dir)
+		child.f = loadGitignore(child.dir, r.read)
 	}
 	return child
 }
@@ -124,16 +171,11 @@ type gitignoreFile struct {
 	pats []pattern
 }
 
-func loadGitignore(dir string) *gitignoreFile {
-	path := filepath.Join(dir, ".gitignore")
-	// Lstat first: a symlinked .gitignore could pull content from
-	// outside the project into the decision; the walks never follow
-	// links, and neither does this.
-	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Size() > gitignoreCap {
-		return nil
-	}
-	data, err := os.ReadFile(path)
+func loadGitignore(dir string, read FileReader) *gitignoreFile {
+	// The reader refuses a symlinked .gitignore (content from outside
+	// the project must not enter the decision — the walks never follow
+	// links, and neither does this) and an oversized one.
+	data, err := read(filepath.Join(dir, ".gitignore"), gitignoreCap)
 	if err != nil {
 		return nil
 	}

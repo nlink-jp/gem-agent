@@ -6,6 +6,7 @@ package tools
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -79,14 +80,14 @@ type Registry struct {
 	// resolved path and returned the lexical one, and a link swapped
 	// between check and use escaped the roots). workRoot is nil until a
 	// work directory is set.
-	projectRoot *os.Root
-	workRoot    *os.Root
+	projectRoot *rootHandle
+	workRoot    *rootHandle
 	// rootsMu guards workDir and workRoot: /clear rotates them from
 	// the UI goroutine while an abandoned call (ADR-0065) may still be
-	// resolving or opening on its own goroutine. Every reader takes a
-	// consistent snapshot; a rotated-out root is never closed, so a
-	// call that snapshotted it keeps a valid handle (one descriptor
-	// per /clear, for the life of the process).
+	// resolving or opening on its own goroutine. A reader acquires the
+	// handle under the lock and releases it after its open; a rotated-
+	// out handle closes when its last holder releases it (review after
+	// v0.68.2 — leaving it open leaked a descriptor per /clear).
 	rootsMu sync.RWMutex
 	// parent is set on a Subset: the child reads the parent's roots,
 	// so a work directory rotated after the child was built is the
@@ -121,7 +122,7 @@ func New(projectDir string, execFn ExecFunc, shellTimeout time.Duration) (*Regis
 	}
 	r := &Registry{
 		projectDir:   real,
-		projectRoot:  projectRoot,
+		projectRoot:  &rootHandle{root: projectRoot},
 		execFn:       execFn,
 		shellTimeout: shellTimeout,
 		tools:        map[string]*Tool{},
@@ -140,12 +141,45 @@ func (r *Registry) ProjectDir() string { return r.projectDir }
 // WorkDir returns the session work directory, or "" when none is set.
 func (r *Registry) WorkDir() string { return r.rootState().workDir }
 
+// rootHandle is an os.Root with a holder count: acquire under
+// rootsMu, release after the open. retire (under rootsMu, when the
+// handle leaves the registry) closes it once no holder remains —
+// retire and release cannot both close, since a holder present at
+// retire time makes retire defer to that holder's release.
+type rootHandle struct {
+	root    *os.Root
+	refs    atomic.Int64
+	retired atomic.Bool
+	closed  atomic.Bool
+}
+
+func (h *rootHandle) acquire() { h.refs.Add(1) }
+
+func (h *rootHandle) release() {
+	if h.refs.Add(-1) == 0 && h.retired.Load() {
+		h.close()
+	}
+}
+
+func (h *rootHandle) retire() {
+	h.retired.Store(true)
+	if h.refs.Load() == 0 {
+		h.close()
+	}
+}
+
+func (h *rootHandle) close() {
+	if h.closed.CompareAndSwap(false, true) {
+		_ = h.root.Close()
+	}
+}
+
 // rootState is the confinement roots as one consistent snapshot.
 type rootState struct {
 	projectDir  string
-	projectRoot *os.Root
+	projectRoot *rootHandle
 	workDir     string
-	workRoot    *os.Root
+	workRoot    *rootHandle
 }
 
 func (r *Registry) rootState() rootState {
@@ -169,7 +203,11 @@ func (r *Registry) UseWorkDir(dir string) error {
 	}
 	if dir == "" {
 		r.rootsMu.Lock()
+		old := r.workRoot
 		r.workDir, r.workRoot = "", nil
+		if old != nil {
+			old.retire()
+		}
 		r.rootsMu.Unlock()
 		return nil
 	}
@@ -185,53 +223,67 @@ func (r *Registry) UseWorkDir(dir string) error {
 	if err != nil {
 		return fmt.Errorf("work directory: %w", err)
 	}
-	// The previous root is not closed: an abandoned call may hold it
-	// (see rootsMu).
+	// The previous handle retires: it closes when its last holder —
+	// an abandoned call mid-open — releases it (see rootHandle).
 	r.rootsMu.Lock()
-	r.workDir, r.workRoot = real, root
+	old := r.workRoot
+	r.workDir, r.workRoot = real, &rootHandle{root: root}
+	if old != nil {
+		old.retire()
+	}
 	r.rootsMu.Unlock()
 	return nil
 }
 
 // rootFor returns the os.Root that contains abs (a path resolvePath
-// accepted) and abs relative to it, from one snapshot of the roots.
-func (r *Registry) rootFor(abs string) (*os.Root, string, error) {
-	st := r.rootState()
+// accepted), abs relative to it, and the release the caller owes once
+// its open is done. The handle is acquired under the same lock that
+// rotates it, so a retire cannot slip between the choice and the use.
+func (r *Registry) rootFor(abs string) (*os.Root, string, func(), error) {
+	if r.parent != nil {
+		return r.parent.rootFor(abs)
+	}
+	r.rootsMu.RLock()
+	defer r.rootsMu.RUnlock()
 	for _, c := range []struct {
-		dir  string
-		root *os.Root
-	}{{st.projectDir, st.projectRoot}, {st.workDir, st.workRoot}} {
-		if c.dir == "" || c.root == nil || !within(c.dir, abs) {
+		dir string
+		h   *rootHandle
+	}{{r.projectDir, r.projectRoot}, {r.workDir, r.workRoot}} {
+		if c.dir == "" || c.h == nil || !within(c.dir, abs) {
 			continue
 		}
 		rel, err := filepath.Rel(c.dir, abs)
 		if err != nil {
-			return nil, "", err
+			return nil, "", nil, err
 		}
-		return c.root, rel, nil
+		c.h.acquire()
+		return c.h.root, rel, c.h.release, nil
 	}
-	return nil, "", fmt.Errorf("path escapes the project directory: %s", abs)
+	return nil, "", nil, fmt.Errorf("path escapes the project directory: %s", abs)
 }
 
 // openRead opens abs for reading through its root. os.Root resolves
 // every path component inside the root and refuses one that leads
 // out, at open time — the containment holds however the tree changes
-// between resolvePath's check and this call.
+// between resolvePath's check and this call. The returned file has
+// its own descriptor: the root may close after it.
 func (r *Registry) openRead(abs string) (*os.File, error) {
-	root, rel, err := r.rootFor(abs)
+	root, rel, release, err := r.rootFor(abs)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	return root.Open(rel)
 }
 
 // openWrite opens abs for writing (create, truncate) through its root,
 // creating missing parent directories inside the root.
 func (r *Registry) openWrite(abs string, perm os.FileMode) (*os.File, error) {
-	root, rel, err := r.rootFor(abs)
+	root, rel, release, err := r.rootFor(abs)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	if dir := filepath.Dir(rel); dir != "." {
 		if err := root.MkdirAll(dir, 0o755); err != nil {
 			return nil, err
@@ -242,29 +294,70 @@ func (r *Registry) openWrite(abs string, perm os.FileMode) (*os.File, error) {
 
 // statIn stats abs through its root.
 func (r *Registry) statIn(abs string) (os.FileInfo, error) {
-	root, rel, err := r.rootFor(abs)
+	root, rel, release, err := r.rootFor(abs)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	return root.Stat(rel)
 }
 
 // lstatIn lstats abs through its root.
 func (r *Registry) lstatIn(abs string) (os.FileInfo, error) {
-	root, rel, err := r.rootFor(abs)
+	root, rel, release, err := r.rootFor(abs)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
 	return root.Lstat(rel)
 }
 
 // readlinkIn reads the link at abs through its root.
 func (r *Registry) readlinkIn(abs string) (string, error) {
-	root, rel, err := r.rootFor(abs)
+	root, rel, release, err := r.rootFor(abs)
 	if err != nil {
 		return "", err
 	}
+	defer release()
 	return root.Readlink(rel)
+}
+
+// gitignoreReader is the ignore package's FileReader through the
+// roots: a regular file within cap, opened and read through its root,
+// so a .gitignore or a directory above it swapped for an escaping
+// link is refused at the open (review after v0.68.2).
+func (r *Registry) gitignoreReader(path string, cap int64) ([]byte, error) {
+	info, err := r.lstatIn(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > cap {
+		return nil, fmt.Errorf("%s: not a regular file within %d bytes", path, cap)
+	}
+	data, more, err := r.readFileCapped(path, int(cap))
+	if err != nil {
+		return nil, err
+	}
+	if more {
+		return nil, fmt.Errorf("%s: larger than %d bytes", path, cap)
+	}
+	return data, nil
+}
+
+// readForSearch reads a file for search_files: whole, within
+// searchFileCap, text. A file that outgrew the cap between the
+// listing and the read is not searched at all — a match past the cap
+// would be missing from a result presented as complete (review after
+// v0.68.2).
+func (r *Registry) readForSearch(abs string) ([]byte, bool) {
+	data, more, err := r.readFileCapped(abs, searchFileCap)
+	if err != nil || more {
+		return nil, false
+	}
+	if bytes.IndexByte(data[:min(len(data), binarySniff)], 0) >= 0 {
+		return nil, false // binary
+	}
+	return data, true
 }
 
 // readDirIn lists the directory at abs through its root: a directory
@@ -729,7 +822,7 @@ func (r *Registry) listFiles() *Tool {
 			if err != nil {
 				return "", err
 			}
-			rules := ignore.Root(r.projectDir, dir, false)
+			rules := ignore.RootWith(r.projectDir, dir, false, r.gitignoreReader)
 			var names []string
 			for _, e := range entries {
 				n := e.Name()

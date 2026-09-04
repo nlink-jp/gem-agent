@@ -346,9 +346,14 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   `os.Open(abs)` / `os.ReadFile(abs)` / `os.WriteFile(abs)` /
   `os.ReadDir(abs)` on a resolved path — the walks use `readDirIn`,
   `lstatIn`, `readlinkIn`, `readFileCapped` (ADR-0072 §4.1). The
-  roots are read as one snapshot (`rootState`, under `rootsMu`);
-  `UseWorkDir` rotates `workRoot` and never closes the old one (an
-  abandoned call may hold it); a `Subset` reads its parent's roots.
+  roots are `rootHandle`s with a holder count: `rootFor` acquires
+  under `rootsMu` and returns a `release` the caller owes after its
+  open; `UseWorkDir` retires the old handle, which closes when its
+  last holder releases it (ADR-0072 §4.2). A `Subset` reads its
+  parent's roots. `.gitignore` is read through the roots too —
+  `ignore.RootWith(…, r.gitignoreReader)`, never `ignore.Root` from
+  the tools; `search_files` skips a file that outgrew the cap
+  (`readForSearch`).
   Reads stream
   (`readWindow`, `readAllCapped`) — nothing holds a file whole before
   a cap, and size gates run before the read.

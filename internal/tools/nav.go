@@ -14,7 +14,6 @@ package tools
 // ignoring filters discovery, not access.
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -126,7 +125,7 @@ func (r *Registry) listTree() *Tool {
 			}
 			dirsOnly, _ := args["dirs_only"].(bool)
 			includeIgnored, _ := args["include_ignored"].(bool)
-			rules := ignore.Root(r.projectDir, abs, includeIgnored)
+			rules := ignore.RootWith(r.projectDir, abs, includeIgnored, r.gitignoreReader)
 			tally := &ignoreTally{}
 
 			var b strings.Builder
@@ -313,7 +312,7 @@ func (r *Registry) searchFiles() *Tool {
 				return "", err
 			}
 			includeIgnored, _ := args["include_ignored"].(bool)
-			rules := ignore.Root(r.projectDir, abs, includeIgnored)
+			rules := ignore.RootWith(r.projectDir, abs, includeIgnored, r.gitignoreReader)
 			tally := &ignoreTally{}
 
 			var b strings.Builder
@@ -374,12 +373,9 @@ func (r *Registry) searchFiles() *Tool {
 					if err != nil || info.Size() > searchFileCap || isImageExt(e.Name()) {
 						continue
 					}
-					data, _, err := r.readFileCapped(full, searchFileCap)
-					if err != nil {
+					data, ok := r.readForSearch(full)
+					if !ok {
 						continue
-					}
-					if bytes.IndexByte(data[:min(len(data), binarySniff)], 0) >= 0 {
-						continue // binary
 					}
 					filesScanned++
 					display := relOrDot(r.projectDir, full)
