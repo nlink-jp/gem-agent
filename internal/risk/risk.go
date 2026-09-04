@@ -308,23 +308,29 @@ func classifyCommand(command, projectDir, workDir string) Verdict {
 // persistentTokens scans every word of a writing command for a path
 // into the version-control internals or an instruction/configuration
 // file, relative to the project or absolute inside it.
+//
+// Candidates are split on every delimiter a shell or a script would
+// put around a path — whitespace, quotes, `=`, parens, commas — so
+// `--file=.git/config` and `python3 -c 'open(".git/config","w")'` both
+// yield `.git/config` (review after v0.68.2). The cost is a false
+// operator prompt on a writing command that merely mentions the
+// file (`git commit -m "update AGENTS.md"`), accepted: a prompt, not
+// a hole.
 func persistentTokens(command, projectDir string) (Verdict, bool) {
-	for _, seg := range segmentSplit.Split(command, -1) {
-		for _, tok := range strings.Fields(seg) {
-			tok = strings.Trim(tok, `"'`)
-			if tok == "" || strings.HasPrefix(tok, "-") {
-				continue
-			}
-			if i := strings.Index(tok, "="); i > 0 && !strings.ContainsAny(tok[:i], "/.") {
-				tok = tok[i+1:] // VAR=path, --flag=path
-			}
-			if v, ok := persistentTarget(projectRelative(tok, projectDir)); ok {
-				return v, true
-			}
+	for _, tok := range candidateSplit.Split(command, -1) {
+		if tok == "" || strings.HasPrefix(tok, "-") {
+			continue
+		}
+		if v, ok := persistentTarget(projectRelative(tok, projectDir)); ok {
+			return v, true
 		}
 	}
 	return Verdict{}, false
 }
+
+// candidateSplit separates the words a path could be, inside or
+// outside quotes and flag syntax.
+var candidateSplit = regexp.MustCompile("[\\s\"'`()=,;|&<>\\[\\]{}]+")
 
 // segmentSplit separates the simple commands of a shell text: pipes,
 // lists, background, and newlines — bash runs each line as a separate

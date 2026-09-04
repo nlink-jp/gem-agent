@@ -365,6 +365,36 @@ findings, all held except one that was a test-environment fact:
   apply a profile (exit 71). `sandbox.Available` probes it and the
   tests skip, so the suite is honest under a sandboxed reviewer.
 
+### 4.4 Fifth pass (2026-09-05, v0.68.2)
+
+Four on the fourth pass's diff, all held:
+
+- **`load_skill` read through the lexical path** (high) — the skill
+  directory was resolved once at discovery and every later read used
+  `os.Stat` / `os.ReadDir` / `os.ReadFile` on the joined path; a swap
+  for an escaping link read outside the skill, and the result is the
+  one tool output the agent hands the model *unwrapped* (ADR-0010 §4).
+  `Body` and `File` also read whole before the cap. Each skill holds
+  its directory as an `os.Root` from discovery; the description,
+  the body and every supporting file are read through it, capped on
+  the stream, size-gated before the read; a reload closes the
+  replaced list's roots.
+- **`--flag=path` and script strings escaped the persistent-file
+  rule** (high) — candidates were whitespace words, and a word
+  starting with `-` was skipped before its `=` was looked at.
+  Candidates are now split on every delimiter a shell or a script
+  puts around a path (whitespace, quotes, `=`, parens, commas,
+  brackets), so `--file=.git/config` and
+  `python3 -c 'open(".git/config","w")'` both yield the path. The
+  accepted cost: a writing command that merely *mentions* the file
+  (`git commit -m "update AGENTS.md"`) asks the operator once.
+- **Sheet names by position** (medium) — a reordered workbook does not
+  number its files in display order; the name now follows the
+  sheet's `r:id` through `xl/_rels/workbook.xml.rels`, position being
+  the fallback for a workbook without relationships.
+- **The truncation note named the limit, not the bytes shown** (low)
+  — after a rune cut the two differ; the note names the cut's length.
+
 ## Lessons
 
 - **Independent reviewers found what the maintainer pass did not**, for

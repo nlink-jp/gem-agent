@@ -954,6 +954,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 	reloadSkills := func() string {
 		list, notes := discoverSkills(projectDir, projectTrusted)
+		skills.CloseAll(skillsList) // the roots of the list being replaced
 		skillsList = list
 		// The skill descriptions ride the system prompt; rebuild it so
 		// the model sees the new set (the implicit-cache prefix re-warms

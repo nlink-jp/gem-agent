@@ -363,3 +363,12 @@ func TestEditFileRefusesOversize(t *testing.T) {
 		t.Fatalf("oversize edit not refused by size: %v", err)
 	}
 }
+
+// The truncation note names the bytes actually shown after the rune
+// cut, not the limit.
+func TestTruncateNoteNamesBytesShown(t *testing.T) {
+	out := truncate(strings.Repeat("あ", 10), 10) // 9 bytes fit
+	if !strings.Contains(out, "[output truncated: 9 of 30 bytes shown]") {
+		t.Errorf("note wrong: %q", out)
+	}
+}

@@ -310,3 +310,20 @@ func TestDeviceSinksAreLiterals(t *testing.T) {
 		t.Errorf("/dev/tty redirect = %v (%s), want block", v.Tier, v.Reason)
 	}
 }
+
+// Review after v0.68.2: a persistent file named in flag syntax or
+// inside a script string is still a candidate.
+func TestPersistentFilesInsideFlagsAndStrings(t *testing.T) {
+	for cmd, want := range map[string]Tier{
+		"git config --file=.git/config core.hooksPath x":  Block,
+		`python3 -c 'open(".git/config","w").write("x")'`: Block,
+		`python3 -c "open('AGENTS.md','w').write('x')"`:   Review,
+		"ruby -e 'File.write(\"CLAUDE.md\", \"x\")'":      Review,
+		"cp x --target-directory=.claude/skills/s":        Review,
+	} {
+		v := classifyShell(cmd)
+		if v.Tier != want || (want == Review && !v.OperatorOnly) {
+			t.Errorf("%q = %v operatorOnly=%v (%s), want %v operator-only", cmd, v.Tier, v.OperatorOnly, v.Reason, want)
+		}
+	}
+}

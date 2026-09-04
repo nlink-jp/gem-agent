@@ -383,6 +383,13 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   a directory; the rule tier reads both lists (`scratchFiles`,
   `devNullRedirect`). Adding a device means adding it to
   `ScratchFiles`, not widening a subpath.
+- **A skill is read through its own `os.Root`** (ADR-0072 §4.4) —
+  `readSkill` opens the root first and reads SKILL.md through it;
+  `Body` / `File` read capped through `readCapped`; `reloadSkills`
+  calls `skills.CloseAll` on the list it replaces. The persistent-file
+  candidates come from `candidateSplit` (every delimiter, not
+  whitespace) — a writing command that mentions `AGENTS.md` in a
+  commit message asks the operator once; that is the accepted cost.
 - **Every cut is a rune cut** (ADR-0072 §4.3) — `cutRunes` in tools,
   skills, memory, instructions, `clipText` in docext: never `s[:n]`
   on text the model will see.

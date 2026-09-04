@@ -243,3 +243,24 @@ func TestClipTextKeepsRunesWhole(t *testing.T) {
 		t.Errorf("clipText = %q, %q", out, note)
 	}
 }
+
+// Sheet names follow the workbook's relationships, not file order: a
+// reordered workbook lists sheet3.xml first.
+func TestExtractXlsxNamesFollowRelationships(t *testing.T) {
+	sheet := func(text string) string {
+		return `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>` + text + `</t></is></c></row></sheetData></worksheet>`
+	}
+	data := makeZip(t, map[string]string{
+		"xl/workbook.xml":            `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Later" sheetId="3" r:id="rId3"/><sheet name="Earlier" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+		"xl/_rels/workbook.xml.rels": `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="x" Target="worksheets/sheet1.xml"/><Relationship Id="rId3" Type="x" Target="/xl/worksheets/sheet3.xml"/></Relationships>`,
+		"xl/worksheets/sheet1.xml":   sheet("ONE"),
+		"xl/worksheets/sheet3.xml":   sheet("THREE"),
+	})
+	text, _, err := Extract(data, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "### sheet: Earlier\nONE") || !strings.Contains(text, "### sheet: Later\nTHREE") {
+		t.Errorf("names not matched through relationships:\n%s", text)
+	}
+}

@@ -23,6 +23,15 @@
 - `web_search` / `web_fetch` retry 429 / 5xx with backoff
 - Sandbox tests skip where `sandbox-exec` cannot apply a profile
   (a nested sandbox)
+- `load_skill` reads the skill through its own `os.Root`, capped on
+  the stream and size-gated before the read; a link out of the skill
+  directory is refused at the open
+- A persistent file named in flag syntax (`--file=.git/config`) or
+  inside a script string is a candidate too; a writing command that
+  merely mentions such a file asks the operator once
+- `.xlsx` sheet names follow the workbook's relationships, so a
+  reordered workbook keeps the right heading on each sheet
+- Truncation notes name the bytes actually shown
 
 - `.gitignore` files are read through the confinement roots with the
   cap applied on the stream; a link where a `.gitignore` should be

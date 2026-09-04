@@ -137,6 +137,7 @@ func extractXlsx(data []byte, lim Limits) (string, string, error) {
 	shared := xlsxSharedStrings(data, lim)
 
 	names := xlsxSheetNames(data, lim)
+	byMember := xlsxSheetNamesByMember(data, lim)
 	var b strings.Builder
 	// Sheets are numbered by the file that created them, not
 	// contiguously: deleting Sheet2 leaves sheet1.xml and sheet3.xml
@@ -157,8 +158,15 @@ func extractXlsx(data []byte, lim Limits) (string, string, error) {
 		if err != nil {
 			continue
 		}
+		// The name comes from the sheet's relationship (r:id →
+		// worksheets/sheetN.xml): a reordered workbook does not number
+		// its files in display order (review after v0.68.2). Position
+		// is the fallback for a workbook without relationships.
+		member := fmt.Sprintf("xl/worksheets/sheet%d.xml", n)
 		name := fmt.Sprintf("sheet%d", n)
-		if k < len(names) {
+		if nm, ok := byMember[member]; ok {
+			name = nm
+		} else if k < len(names) {
 			name = names[k]
 		}
 		fmt.Fprintf(&b, "### sheet: %s\n", name)
@@ -231,6 +239,52 @@ func xlsxSheetNames(data []byte, lim Limits) []string {
 		names = append(names, s.Name)
 	}
 	return names
+}
+
+// xlsxSheetNamesByMember maps a worksheet member path to its display
+// name through xl/_rels/workbook.xml.rels. Empty when the workbook has
+// no relationships.
+func xlsxSheetNamesByMember(data []byte, lim Limits) map[string]string {
+	raw, err := readMember(data, "xl/workbook.xml", lim.MemberBytes)
+	if err != nil {
+		return nil
+	}
+	var wb struct {
+		Sheets struct {
+			Sheet []xlsxSheetRef `xml:"sheet"`
+		} `xml:"sheets"`
+	}
+	if xml.Unmarshal(raw, &wb) != nil {
+		return nil
+	}
+	relRaw, err := readMember(data, "xl/_rels/workbook.xml.rels", lim.MemberBytes)
+	if err != nil {
+		return nil
+	}
+	var rels struct {
+		Rel []struct {
+			ID     string `xml:"Id,attr"`
+			Target string `xml:"Target,attr"`
+		} `xml:"Relationship"`
+	}
+	if xml.Unmarshal(relRaw, &rels) != nil {
+		return nil
+	}
+	target := map[string]string{}
+	for _, r := range rels.Rel {
+		t := strings.TrimPrefix(r.Target, "/")
+		if !strings.HasPrefix(t, "xl/") {
+			t = "xl/" + t
+		}
+		target[r.ID] = t
+	}
+	out := map[string]string{}
+	for _, s := range wb.Sheets.Sheet {
+		if member, ok := target[s.RID]; ok && s.RID != "" {
+			out[member] = s.Name
+		}
+	}
+	return out
 }
 
 func xlsxSheetText(b *strings.Builder, raw []byte, shared []string) {

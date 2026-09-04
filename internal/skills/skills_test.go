@@ -243,3 +243,61 @@ func TestCutRunesKeepsRunesWhole(t *testing.T) {
 		t.Errorf("cutRunes = %q", got)
 	}
 }
+
+// Review after v0.68.2: skill reads go through the skill's os.Root —
+// a link that leads out is refused at the open, a huge file is capped
+// before it is held, and the note names what was actually shown.
+func TestSkillReadsThroughItsRoot(t *testing.T) {
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.md"), []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	global := t.TempDir()
+	dir := filepath.Join(global, "s")
+	if err := os.MkdirAll(filepath.Join(dir, "references"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: s\ndescription: d\n---\n"+strings.Repeat("本文", 3000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "secret.md"), filepath.Join(dir, "references", "link.md")); err != nil {
+		t.Fatal(err)
+	}
+	huge := filepath.Join(dir, "references", "huge.txt")
+	f, err := os.Create(huge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(64 << 20); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	lim := DefaultLimits()
+	lim.MaxBody = 100
+	lim.MaxFile = 1024
+	list, _ := Discover(global, "", lim)
+	if len(list) != 1 {
+		t.Fatalf("discovered %d skills", len(list))
+	}
+	s := list[0]
+	defer s.Close()
+	if s.root == nil {
+		t.Fatal("the discovered skill holds no root")
+	}
+	if _, err := s.File("references/link.md", lim); err == nil {
+		t.Fatal("a link out of the skill directory was read")
+	}
+	if _, err := s.File("references/huge.txt", lim); err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("a 64 MiB file was not refused by size: %v", err)
+	}
+	body, err := s.Body(lim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, "[skill truncated: 99 of 18000 bytes shown]") {
+		t.Errorf("the note does not name the bytes actually shown:\n%s", body[len(body)-80:])
+	}
+	if names, err := s.File("references", lim); err != nil || !strings.Contains(names, "huge.txt") {
+		t.Errorf("directory listing through the root failed: %q %v", names, err)
+	}
+}

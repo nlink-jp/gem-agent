@@ -789,7 +789,8 @@ func truncate(s string, limit int) string {
 	if len(s) <= limit {
 		return s
 	}
-	return cutRunes(s, limit) + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", limit, len(s))
+	cut := cutRunes(s, limit)
+	return cut + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", len(cut), len(s))
 }
 
 // cutRunes truncates s to at most n bytes without splitting a UTF-8
@@ -923,7 +924,8 @@ func (r *Registry) readFile() *Tool {
 				if st, err := f.Stat(); err == nil && st.Size() > total {
 					total = st.Size()
 				}
-				out = cutRunes(content, readCap) + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", readCap, total)
+				cut := cutRunes(content, readCap)
+				out = cut + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", len(cut), total)
 			}
 			// The window note goes AFTER any truncation note, and the
 			// content itself stays raw (no line-number prefixes): numbered
