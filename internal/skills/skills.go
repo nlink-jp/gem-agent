@@ -32,6 +32,18 @@ import (
 // name is a shared constant, not a string repeated in two packages.
 const ToolName = "load_skill"
 
+// BaseDirPrefix opens the line that tells the model where a loaded
+// skill lives. It is Claude Code's wording, verbatim (ADR-0070 §1):
+// SKILL.md files are written against that sentence ("SKILL_DIR is the
+// directory containing this SKILL.md"), so the same sentence is the
+// whole of the compatibility.
+const BaseDirPrefix = "Base directory for this skill: "
+
+// BaseDirLine renders that line for one skill: the symlink-resolved
+// directory Body and File confine reads to — a place the model could
+// already read under, now named so the skill's scripts can be run.
+func BaseDirLine(s Skill) string { return BaseDirPrefix + s.Dir }
+
 // Limits bound what discovery and loading will read.
 type Limits struct {
 	MaxSkills      int // listed skills; extras are dropped with a note

@@ -127,8 +127,10 @@ stderr に 1 行出して対処を示します — 何も添付しない起動�
 **[統合](docs/ja/reference/integration.ja.md)** — ディレクトリツリーを
 遡る `AGENTS.md`/`AGENT.md`/`CLAUDE.md`/`GEMINI.md` の drop-in 読取、
 Claude Code 形式 `.mcp.json` の MCP サーバー（グローバル +
-プロジェクト）、progressive disclosure の Claude Code 形式スキル —
-どちらもセッション中に再読込可能（`/mcp reload`・`/skills reload`）、
+プロジェクト）、progressive disclosure の Claude Code 形式スキル
+（ロードした skill は Claude Code と同じく自分のディレクトリを名乗る
+ので自前のスクリプトが走る）— どちらもセッション中に再読込可能
+（`/mcp reload`・`/skills reload`）、
 `--mcp on|off` で実行単位の MCP 切替。
 
 **[設定](docs/ja/reference/configuration.ja.md)** — 設定リファレンス

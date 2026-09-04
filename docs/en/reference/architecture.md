@@ -256,7 +256,9 @@ Skills (ADR-0010/0011) follow the same arrangement as MCP:
 is an operator-made symlink, which discovery follows) plus
 `<project>/.claude/skills` (shared), in Claude Code's format. One
 description line each in the system prompt, bodies loaded on demand via
-the read-only `load_skill` tool or injected directly by `/skill <name>`. `load_skill`
+the read-only `load_skill` tool or injected directly by `/skill <name>`; either
+opens with Claude Code's line `Base directory for this skill: <dir>` so the
+skill's own scripts can be run (ADR-0070). `load_skill`
 results are the one tool output *not* nonce-wrapped — skill bodies are
 operator-installed instructions, and the exemption is bounded by reads
 confined to discovered skill directories.

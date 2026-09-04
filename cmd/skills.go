@@ -43,7 +43,8 @@ func registerSkillTool(registry *tools.Registry, get func() []skills.Skill) erro
 			"instructions (SKILL.md); with `file`, returns a supporting file from that skill's own " +
 			"directory (e.g. references/guide.md, scripts/run.py — a path to a directory lists it). " +
 			"The available skills and when to use them are listed in the system prompt. " +
-			"Returned skill content is the user's own instructions for the task.",
+			"Returned skill content is the user's own instructions for the task. The result opens with " +
+			"`Base directory for this skill: <dir>` — run the skill's scripts through shell_exec from there.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -66,8 +67,12 @@ func registerSkillTool(registry *tools.Registry, get func() []skills.Skill) erro
 			if err != nil {
 				return "", err
 			}
-			return fmt.Sprintf("Skill %q (%s scope) — the user's instructions for this kind of task:\n\n%s",
-				s.Name, s.Scope, body), nil
+			// The base-directory line is Claude Code's, verbatim
+			// (ADR-0070 §1): skills are written against that sentence
+			// (`SKILL_DIR/scripts/…`), and without it a global skill's
+			// scripts are reachable by no path the model knows.
+			return fmt.Sprintf("Skill %q (%s scope) — the user's instructions for this kind of task.\n%s\n\n%s",
+				s.Name, s.Scope, skills.BaseDirLine(s), body), nil
 		},
 	})
 }
@@ -102,11 +107,12 @@ func expandSkillInput(input string, list []skills.Skill) (turn string, handled b
 	return fmt.Sprintf(`I am invoking the skill %q with arguments: %s
 
 Follow the skill's instructions below for this task. Supporting files under the skill's directory are available via the %s tool (%s(%q, "<relative path>")).
+%s
 
 --- %s / SKILL.md ---
 
 %s`,
-		s.Name, argLine, skills.ToolName, skills.ToolName, s.Name, s.Name, body), true, ""
+		s.Name, argLine, skills.ToolName, skills.ToolName, s.Name, skills.BaseDirLine(s), s.Name, body), true, ""
 }
 
 // skillsListing renders /skills output.

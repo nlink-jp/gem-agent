@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/skills"
+	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
 func testSkillDir(t *testing.T) []skills.Skill {
@@ -42,13 +45,65 @@ func TestExpandSkillInputInjectsTheBody(t *testing.T) {
 	if !handled || errMsg != "" {
 		t.Fatalf("handled=%v err=%q", handled, errMsg)
 	}
-	for _, want := range []string{"rec.vtt --lang ja", "produce minutes", "load_skill"} {
+	for _, want := range []string{"rec.vtt --lang ja", "produce minutes", "load_skill", skills.BaseDirPrefix + list[0].Dir} {
 		if !strings.Contains(turn, want) {
 			t.Errorf("turn missing %q:\n%.300s", want, turn)
 		}
 	}
 	if strings.Contains(turn, "argument-hint") {
 		t.Error("frontmatter leaked into the turn")
+	}
+}
+
+// A SKILL.md written to Claude Code's contract says "SKILL_DIR is the
+// directory containing this SKILL.md" and runs `python3
+// SKILL_DIR/scripts/…`. Without the directory in the load result a
+// global skill's scripts are reachable by no path the model knows —
+// session 20260904-225330 went looking with `find /` (ADR-0070 §1).
+func TestLoadSkillNamesItsBaseDirectoryInClaudeCodesWords(t *testing.T) {
+	list := testSkillDir(t)
+	registry, err := tools.New(t.TempDir(), nil, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registerSkillTool(registry, func() []skills.Skill { return list }); err != nil {
+		t.Fatal(err)
+	}
+	tool, ok := registry.Get(skills.ToolName)
+	if !ok {
+		t.Fatal("load_skill not registered")
+	}
+	out, err := tool.Run(context.Background(), map[string]any{"name": "meeting-notes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := "Base directory for this skill: " + list[0].Dir
+	at := strings.Index(out, line)
+	if at < 0 {
+		t.Fatalf("load result lacks %q:\n%s", line, out)
+	}
+	if body := strings.Index(out, "produce minutes"); body < at {
+		t.Errorf("the directory line must precede the body:\n%s", out)
+	}
+	// The directory named is the symlink-resolved one reads are
+	// confined to — an absolute, existing directory holding SKILL.md.
+	if !filepath.IsAbs(list[0].Dir) {
+		t.Errorf("Dir %q is not absolute", list[0].Dir)
+	}
+	if _, err := os.Stat(filepath.Join(list[0].Dir, "SKILL.md")); err != nil {
+		t.Errorf("Dir does not hold SKILL.md: %v", err)
+	}
+	if !strings.Contains(tool.Description, skills.BaseDirPrefix) {
+		t.Error("the tool description does not tell the model to expect the directory line")
+	}
+	// A supporting-file read returns the file alone; the body is where
+	// the location is disclosed, once.
+	file, err := tool.Run(context.Background(), map[string]any{"name": "meeting-notes", "file": "SKILL.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(file, skills.BaseDirPrefix) {
+		t.Error("a supporting-file read must not prepend the directory line")
 	}
 }
 

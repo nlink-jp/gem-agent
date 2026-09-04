@@ -122,3 +122,13 @@ That exemption is bounded: `load_skill` can only read inside a
 discovered skill's directory, symlinks resolved and checked. Skill
 `scripts/` run through `shell_exec` stay under the sandbox and the
 approval gate like everything else.
+
+A loaded skill names its directory (ADR-0070): the `load_skill(name)`
+result and the `/skill <name>` turn open with Claude Code's own line
+`Base directory for this skill: <dir>` — the symlink-resolved skill
+directory, the same boundary reads are confined to. A `SKILL.md`
+written to Claude Code's contract ("`SKILL_DIR` is the directory
+containing this SKILL.md", then `python3 SKILL_DIR/scripts/…`) can be
+followed from the global skill directory as well as from a project;
+without the line, a global skill's scripts are reachable by no path the
+model knows, and it goes looking for them.

@@ -126,3 +126,13 @@ skill の内容は非信頼データとしてラップせず、**指示として
 ディレクトリ内しか読めません（シンボリックリンクも解決して検査）。
 `scripts/` を `shell_exec` で走らせる場合も sandbox と承認ゲートは
 他と同様に掛かります。
+
+ロードされた skill は自分のディレクトリを名乗ります（ADR-0070）:
+`load_skill(name)` の結果と `/skill <name>` のターンは Claude Code と
+同じ行 `Base directory for this skill: <dir>` で始まります — シンボリック
+リンク解決済みの skill ディレクトリで、読み取りが閉じ込められる境界と
+同じものです。Claude Code の契約（「`SKILL_DIR` はこの SKILL.md を含む
+ディレクトリ」、続いて `python3 SKILL_DIR/scripts/…`）で書かれた
+`SKILL.md` は、プロジェクトからだけでなくグローバル skill ディレクトリ
+からも辿れます。この行が無いとグローバル skill のスクリプトにはモデルの
+知るどのパスも届かず、モデルは探しに行きます。
