@@ -123,10 +123,12 @@ directory and the sandbox's scratch roots is *uncertain*, not safe: the
 sandbox denies writes only, so a walk from `/` reaches every mount, and
 that cost is the model tier's to weigh. Redirects to `/dev/null` (and
 `2>&1`) write nowhere and do not cost a command its safe verdict;
-redirects into the scratch roots (`TMPDIR`, `/private/tmp`, `/dev`)
-are writes the sandbox allows and are not "outside the project" — the
-rule tier reads the sandbox's own list, so the reason it shows you is
-what Seatbelt will do.
+redirects into the scratch roots (`TMPDIR`, `/private/tmp`, `/dev/fd`)
+and to the device sinks (`/dev/null`, `/dev/zero`, `/dev/stdout`,
+`/dev/stderr`, `/dev/urandom` — never `/dev` as a whole, so `/dev/tty`
+is denied) are writes the sandbox allows and are not "outside the
+project" — the rule tier reads the sandbox's own list, so the reason
+it shows you is what Seatbelt will do.
 
 The rule tier reads a command the way bash runs it (ADR-0072 §1): a
 newline separates commands like `;`; `/bin/rm`, `\rm` and `RM` are
@@ -145,7 +147,8 @@ construction like `$(…)`. `/tmp`, `/var` and `/etc` are judged as the
 there runs outside the sandbox on your next git command. A write to
 `AGENTS.md`, `AGENT.md`, `CLAUDE.md`, `GEMINI.md`, `.mcp.json`,
 `.gem-agent.toml` or anything under `.claude/` — through `write_file`,
-`edit_file`, or a shell redirect — is *uncertain* and skips tier 2:
+`edit_file`, a shell redirect, or any writing shell command that names
+the file (`cp`, `tee`, `sed -i`, …) — is *uncertain* and skips tier 2:
 the edit persists into what every later session takes instructions or
 configuration from, so the party that proposed it cannot be its judge
 (the memory rule below, applied to the same class of persistence). In

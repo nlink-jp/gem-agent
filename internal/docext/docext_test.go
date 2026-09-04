@@ -206,3 +206,40 @@ func TestExtractStopsAccumulatingPastTheTextBudget(t *testing.T) {
 		t.Error("truncation must be reported, not silent")
 	}
 }
+
+// Review after v0.68.2: worksheet numbers have gaps once a sheet was
+// deleted (sheet1.xml, sheet3.xml); every member present is extracted,
+// in numeric order, named by workbook order.
+func TestExtractXlsxWithASheetGap(t *testing.T) {
+	sheet := func(text string) string {
+		return `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>` + text + `</t></is></c></row></sheetData></worksheet>`
+	}
+	data := makeZip(t, map[string]string{
+		"xl/workbook.xml":          `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets><sheet name="first" sheetId="1"/><sheet name="third" sheetId="3"/></sheets></workbook>`,
+		"xl/worksheets/sheet1.xml": sheet("ONE"),
+		"xl/worksheets/sheet3.xml": sheet("THREE"),
+	})
+	text, _, err := Extract(data, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"### sheet: first", "ONE", "### sheet: third", "THREE"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in:\n%s", want, text)
+		}
+	}
+	if strings.Index(text, "ONE") > strings.Index(text, "THREE") {
+		t.Error("sheets out of numeric order")
+	}
+}
+
+// clipText cuts on a rune boundary.
+func TestClipTextKeepsRunesWhole(t *testing.T) {
+	out, note, err := clipText(strings.Repeat("あ", 10), 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "あ" || !strings.Contains(note, "3 of 30") {
+		t.Errorf("clipText = %q, %q", out, note)
+	}
+}

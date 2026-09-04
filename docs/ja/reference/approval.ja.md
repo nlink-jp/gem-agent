@@ -120,7 +120,9 @@ TUI を使わない plain stdin ゲートは `y`/`n`/`N`/`a`）、拒否は拒�
 のは書き込みだけなので `/` からの走査は全マウントに届き、そのコストを
 量るのはモデル層の仕事です。`/dev/null` へのリダイレクト（と `2>&1`）は
 どこにも書かず、コマンドの safe 判定を奪いません。scratch ルート
-（`TMPDIR`・`/private/tmp`・`/dev`）へのリダイレクトは sandbox が許す
+（`TMPDIR`・`/private/tmp`・`/dev/fd`）とデバイス sink（`/dev/null`・
+`/dev/zero`・`/dev/stdout`・`/dev/stderr`・`/dev/urandom` — `/dev` 全体では
+ないので `/dev/tty` は拒否）へのリダイレクトは sandbox が許す
 書き込みで「プロジェクト外」ではありません — ルール層は sandbox 自身の
 一覧を読むので、表示される理由は Seatbelt が実際にすることと一致します。
 
@@ -138,7 +140,8 @@ recursive+force はどの綴りでもフラグから読みます。git はサブ
 （ADR-0072 §1.4）。`.git/` 配下への書込は *block* — そこのフックや設定値は
 次の git コマンドで sandbox の外で走ります。`AGENTS.md`・`AGENT.md`・
 `CLAUDE.md`・`GEMINI.md`・`.mcp.json`・`.gem-agent.toml`・`.claude/` 配下への
-書込は — `write_file`・`edit_file`・シェルのリダイレクトのいずれでも —
+書込は — `write_file`・`edit_file`・シェルのリダイレクト・そのファイルを
+名指しする書込可能なシェルコマンド（`cp`・`tee`・`sed -i`…）のいずれでも —
 *不確実*で第 2 層を飛ばします: その編集は後続の全セッションが指示や設定を
 取る先に残るので、提案した当事者が裁くことはできません（下のメモリの規則を
 同じ永続化の類型に適用したもの）。auto モードでは指示ファイル編集ごとに

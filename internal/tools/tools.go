@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nlink-jp/gem-agent/internal/ignore"
 )
@@ -788,7 +789,20 @@ func truncate(s string, limit int) string {
 	if len(s) <= limit {
 		return s
 	}
-	return s[:limit] + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", limit, len(s))
+	return cutRunes(s, limit) + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", limit, len(s))
+}
+
+// cutRunes truncates s to at most n bytes without splitting a UTF-8
+// sequence (review after v0.68.2: a byte cut through a Japanese
+// character left a broken tail in what the model was sent).
+func cutRunes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // --- tools ---
@@ -909,7 +923,7 @@ func (r *Registry) readFile() *Tool {
 				if st, err := f.Stat(); err == nil && st.Size() > total {
 					total = st.Size()
 				}
-				out = content[:readCap] + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", readCap, total)
+				out = cutRunes(content, readCap) + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", readCap, total)
 			}
 			// The window note goes AFTER any truncation note, and the
 			// content itself stays raw (no line-number prefixes): numbered

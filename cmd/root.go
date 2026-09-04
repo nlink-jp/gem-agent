@@ -1727,7 +1727,7 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string) (tools.ExecFunc, er
 	// list the rule tier reads as well (ADR-0070 §2), so what it calls
 	// "outside the writable roots" is what Seatbelt will deny.
 	writeDirs = append(writeDirs, sandbox.ScratchDirs()...)
-	profile, err := sandbox.Profile(writeDirs)
+	profile, err := sandbox.Profile(writeDirs, sandbox.ScratchFiles())
 	if err != nil {
 		return nil, err
 	}

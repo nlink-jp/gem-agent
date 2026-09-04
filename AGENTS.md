@@ -371,9 +371,21 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   in any spelling; `mutatingUse` takes a read-only command's Safe away
   when its flags write or exec (`find -exec`, `sed -i`, `env cmd`);
   `tee` and `xargs` are not read-only; `awkSystemRe` matches
-  `system (` across the joined script; `aliasResolve` maps `/tmp`,
+  `system (` across the joined script; after a wrapper (`env`,
+  `time`, `nohup`, `nice`, `xargs`, `sudo`, …) every path-spelled word
+  in the segment is canonicalised too (ADR-0072 §4.3); a writing
+  command that names a persistent file in any argument gets that
+  file's verdict (`persistentTokens`); `aliasResolve` maps `/tmp`,
   `/var`, `/etc` to `/private` before any roots check. New dangerous
   forms go in with a corpus case in `internal/risk/review4_test.go`.
+- **`/dev` is never writable as a whole** (ADR-0072 §4.3) — the
+  profile allows `sandbox.ScratchFiles()` as literals and `/dev/fd` as
+  a directory; the rule tier reads both lists (`scratchFiles`,
+  `devNullRedirect`). Adding a device means adding it to
+  `ScratchFiles`, not widening a subpath.
+- **Every cut is a rune cut** (ADR-0072 §4.3) — `cutRunes` in tools,
+  skills, memory, instructions, `clipText` in docext: never `s[:n]`
+  on text the model will see.
 - **Persistent files are `OperatorOnly`** (ADR-0072 §1.4) —
   `persistentTarget` makes `.git/` writes Block and writes to
   `AGENTS.md` / `AGENT.md` / `CLAUDE.md` / `GEMINI.md` / `.mcp.json` /

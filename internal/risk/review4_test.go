@@ -245,3 +245,68 @@ func TestAwkSystemWithWhitespaceIsNotSafe(t *testing.T) {
 		t.Errorf("the word system in a string = %v (%s), want safe", v.Tier, v.Reason)
 	}
 }
+
+// Review after v0.68.2: a writing command that NAMES a persistent file
+// gets that file's verdict — not only a redirect. `cat .git/config` is
+// a read and stays Safe.
+func TestPersistentFilesNamedByAnyWritingCommand(t *testing.T) {
+	for cmd, want := range map[string]Tier{
+		"cp /tmp/evil .git/hooks/pre-commit":             Block,
+		"install -m 755 evil .git/hooks/pre-commit":      Block,
+		"echo x | tee .git/hooks/pre-commit":             Block,
+		"mv /tmp/evil .git/hooks/pre-commit":             Block,
+		"cp x " + proj + "/.git/config":                  Block,
+		"git config --file .git/config core.hooksPath x": Block,
+		"cp x AGENTS.md":                                 Review,
+		"sed -i '' s/a/b/ CLAUDE.md":                     Review,
+		"install x .claude/skills/s/SKILL.md":            Review,
+	} {
+		v := classifyShell(cmd)
+		if v.Tier != want {
+			t.Errorf("%q = %v (%s), want %v", cmd, v.Tier, v.Reason, want)
+		}
+		if want == Review && !v.OperatorOnly {
+			t.Errorf("%q must be the operator's alone", cmd)
+		}
+	}
+	for _, cmd := range []string{"cat .git/config", "cat AGENTS.md", "grep -n x .claude/settings.json", "ls .git"} {
+		if v := classifyShell(cmd); v.Tier != Safe {
+			t.Errorf("read %q = %v (%s), want safe", cmd, v.Tier, v.Reason)
+		}
+	}
+	if v := classifyShell("cp x README.md"); v.Tier != Review || v.OperatorOnly {
+		t.Errorf("an ordinary copy = %v operatorOnly=%v, want plain review", v.Tier, v.OperatorOnly)
+	}
+}
+
+// Review after v0.68.2: the word after a wrapper is a head too.
+func TestWrappersDoNotHideTheBlockedCommand(t *testing.T) {
+	for _, cmd := range []string{
+		"env /usr/bin/sudo id",
+		"time /usr/bin/git push",
+		"nohup /bin/dd if=/dev/zero of=/dev/disk0",
+		"nice -n 5 /usr/bin/git push origin main",
+		"env FOO=1 /sbin/shutdown -h now",
+		"command /bin/launchctl unload x",
+	} {
+		if v := classifyShell(cmd); v.Tier != Block {
+			t.Errorf("%q = %v (%s), want block", cmd, v.Tier, v.Reason)
+		}
+	}
+	if got := normalizeHeads("env -i /usr/bin/SUDO id"); got != "env -i sudo id" {
+		t.Errorf("normalizeHeads = %q", got)
+	}
+}
+
+// Review after v0.68.2: /dev is not writable as a whole — the sinks
+// are literals, and the terminal is not one of them.
+func TestDeviceSinksAreLiterals(t *testing.T) {
+	for _, cmd := range []string{"echo hi > /dev/null", "ls 2>/dev/null", "cat x > /dev/stderr", "ls > /dev/fd/2"} {
+		if v := classifyShell(cmd); v.Tier != Safe {
+			t.Errorf("%q = %v (%s), want safe", cmd, v.Tier, v.Reason)
+		}
+	}
+	if v := classifyShell("echo x > /dev/tty"); v.Tier != Block {
+		t.Errorf("/dev/tty redirect = %v (%s), want block", v.Tier, v.Reason)
+	}
+}

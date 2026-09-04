@@ -11,7 +11,7 @@ import (
 )
 
 func TestProfileContainsResolvedDirs(t *testing.T) {
-	p, err := Profile([]string{"/private/tmp/proj", "/private/tmp/scratch"})
+	p, err := Profile([]string{"/private/tmp/proj", "/private/tmp/scratch"}, []string{"/dev/null"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,13 +27,13 @@ func TestProfileContainsResolvedDirs(t *testing.T) {
 }
 
 func TestProfileRejectsRelativeDir(t *testing.T) {
-	if _, err := Profile([]string{"relative/path"}); err == nil {
+	if _, err := Profile([]string{"relative/path"}, nil); err == nil {
 		t.Fatal("relative dir should be rejected")
 	}
 }
 
 func TestProfileRejectsEmpty(t *testing.T) {
-	if _, err := Profile(nil); err == nil {
+	if _, err := Profile(nil, nil); err == nil {
 		t.Fatal("empty write list should be rejected")
 	}
 }
@@ -54,6 +54,9 @@ func TestSandboxExecEnforcement(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("sandbox-exec is macOS-only")
 	}
+	if err := Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here (nested sandbox?): %v", err)
+	}
 	inside, err := ResolveWriteDir(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +66,7 @@ func TestSandboxExecEnforcement(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	profile, err := Profile([]string{inside})
+	profile, err := Profile([]string{inside}, ScratchFiles())
 	if err != nil {
 		t.Fatal(err)
 	}

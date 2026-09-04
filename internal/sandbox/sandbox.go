@@ -7,6 +7,7 @@ package sandbox
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -24,7 +25,12 @@ const Executable = "/usr/bin/sandbox-exec"
 // writeDirs must be absolute; each is resolved through symlinks by the
 // caller where the path exists (Seatbelt matches on real paths — /tmp
 // must arrive as /private/tmp or the allow rule never fires).
-func Profile(writeDirs []string) (string, error) {
+//
+// writeFiles are single paths allowed as literals — the device sinks
+// (/dev/null and friends). They were a `(subpath "/dev")` until the
+// review after v0.68.2: that allowed every character device, the
+// operator's terminal included.
+func Profile(writeDirs []string, writeFiles []string) (string, error) {
 	if len(writeDirs) == 0 {
 		return "", fmt.Errorf("sandbox profile needs at least one writable directory")
 	}
@@ -39,6 +45,12 @@ func Profile(writeDirs []string) (string, error) {
 		}
 		fmt.Fprintf(&b, "    (subpath %s)\n", sbplString(filepath.Clean(dir)))
 	}
+	for _, f := range writeFiles {
+		if !filepath.IsAbs(f) {
+			return "", fmt.Errorf("sandbox write file must be absolute: %q", f)
+		}
+		fmt.Fprintf(&b, "    (literal %s)\n", sbplString(filepath.Clean(f)))
+	}
 	b.WriteString(")\n")
 	return b.String(), nil
 }
@@ -50,21 +62,42 @@ func Wrap(profile string, shell string, command string) []string {
 	return []string{Executable, "-p", profile, shell, "-c", command}
 }
 
-// ScratchDirs returns the scratch locations shell tools legitimately
-// write to — TMPDIR, /private/tmp and /dev — resolved to the real
-// paths Seatbelt matches against (/tmp arrives as /private/tmp). It is
-// the one list (ADR-0070 §2): the profile allows exactly these, and
-// the rule tier reads the same slice, so its "outside the writable
-// roots" can never disagree with what Seatbelt denies. A location that
-// does not exist on this machine is left out.
+// ScratchDirs returns the scratch directories shell tools legitimately
+// write to — TMPDIR, /private/tmp, and /dev/fd (descriptor
+// duplication) — resolved to the real paths Seatbelt matches against
+// (/tmp arrives as /private/tmp). It is the one list (ADR-0070 §2):
+// the profile allows exactly these, and the rule tier reads the same
+// slice, so its "outside the writable roots" can never disagree with
+// what Seatbelt denies. A location that does not exist on this
+// machine is left out.
 func ScratchDirs() []string {
 	var dirs []string
-	for _, d := range []string{os.TempDir(), "/private/tmp", "/dev"} {
+	for _, d := range []string{os.TempDir(), "/private/tmp", "/dev/fd"} {
 		if resolved, err := ResolveWriteDir(d); err == nil {
 			dirs = append(dirs, resolved)
 		}
 	}
 	return dirs
+}
+
+// ScratchFiles returns the device sinks a shell command may write to
+// as single files: /dev/null and its kin. The profile allows them as
+// literals and the rule tier reads the same list, so `2>/dev/null` is
+// a write the sandbox allows while `> /dev/tty` — the operator's
+// terminal — is not (review after v0.68.2: `/dev` as a whole subpath
+// allowed every character device).
+func ScratchFiles() []string {
+	return []string{"/dev/null", "/dev/zero", "/dev/random", "/dev/urandom", "/dev/stdout", "/dev/stderr", "/dev/stdin"}
+}
+
+// Available reports whether sandbox-exec can apply a profile here. A
+// process already inside a Seatbelt sandbox cannot nest one
+// (sandbox_apply: Operation not permitted, exit 71); tests skip on it.
+func Available() error {
+	if _, err := os.Stat(Executable); err != nil {
+		return err
+	}
+	return exec.Command(Executable, "-p", "(version 1)(allow default)", "/usr/bin/true").Run()
 }
 
 // ResolveWriteDir resolves a directory to the real path Seatbelt matches

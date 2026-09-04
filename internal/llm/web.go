@@ -9,6 +9,8 @@ package llm
 import (
 	"context"
 	"fmt"
+	"github.com/nlink-jp/nlk/backoff"
+	"time"
 
 	"google.golang.org/genai"
 )
@@ -49,7 +51,7 @@ func (v *Vertex) SearchWeb(ctx context.Context, query string) (string, []WebSour
 		Tools:          []*genai.Tool{{GoogleSearch: &genai.GoogleSearch{}}},
 		SafetySettings: v.safety,
 	}
-	resp, err := v.client.Models.GenerateContent(ctx, v.model,
+	resp, err := v.generateWithRetry(ctx,
 		[]*genai.Content{genai.NewContentFromText(query, genai.RoleUser)}, cfg)
 	if err != nil {
 		return "", nil, Usage{}, fmt.Errorf("grounded search: %w", err)
@@ -70,7 +72,7 @@ func (v *Vertex) FetchURL(ctx context.Context, prompt string) (string, string, U
 		Tools:          []*genai.Tool{{URLContext: &genai.URLContext{}}},
 		SafetySettings: v.safety,
 	}
-	resp, err := v.client.Models.GenerateContent(ctx, v.model,
+	resp, err := v.generateWithRetry(ctx,
 		[]*genai.Content{genai.NewContentFromText(prompt, genai.RoleUser)}, cfg)
 	if err != nil {
 		return "", "", Usage{}, fmt.Errorf("url fetch: %w", err)
@@ -139,4 +141,32 @@ func emptyReason(resp *genai.GenerateContentResponse) string {
 		return string(resp.Candidates[0].FinishReason)
 	}
 	return "no candidates"
+}
+
+// generateWithRetry is GenerateContent under the same transient-error
+// retry as the main stream (429 / 5xx, exponential backoff, the
+// context ends the wait). A single-shot side call has nothing
+// consumed to duplicate, so every attempt is safe to repeat (review
+// after v0.68.2: the web tools failed on the first rate limit).
+func (v *Vertex) generateWithRetry(ctx context.Context, contents []*genai.Content, cfg *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error) {
+	bo := backoff.New(backoff.WithBase(500*time.Millisecond), backoff.WithMax(15*time.Second))
+	var lastErr error
+	for attempt := 0; attempt < maxStreamAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-time.After(bo.Duration(attempt - 1)):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		resp, err := v.client.Models.GenerateContent(ctx, v.model, contents, cfg)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if retryCause(err) == "error" {
+			return nil, err // not transient
+		}
+	}
+	return nil, lastErr
 }

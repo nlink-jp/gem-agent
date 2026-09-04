@@ -9,9 +9,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 )
+
+// maxEditBytes bounds the file edit_file loads whole: 8 MiB covers
+// every source file and refuses the sparse or generated giant that
+// would exhaust memory.
+const maxEditBytes = 8 << 20
 
 const (
 	// editSnippetContext is how many lines around a change the success
@@ -101,14 +105,24 @@ func (r *Registry) editFile() *Tool {
 			if err != nil {
 				return "", err
 			}
+			// An edit needs the whole file in memory; a file past the
+			// cap (or a sparse one) is refused by its size before any
+			// read, and the read itself is bounded (review after
+			// v0.68.2 — io.ReadAll had no limit).
+			if info.Size() > maxEditBytes {
+				return "", fmt.Errorf("%s is %d bytes; edit_file handles files up to %d bytes — use a shell command for larger ones", p, info.Size(), maxEditBytes)
+			}
 			in, err := r.openRead(abs)
 			if err != nil {
 				return "", err
 			}
-			data, err := io.ReadAll(in)
+			data, more, err := readAllCapped(in, maxEditBytes)
 			_ = in.Close()
 			if err != nil {
 				return "", err
+			}
+			if more {
+				return "", fmt.Errorf("%s grew past %d bytes while being read — use a shell command for it", p, maxEditBytes)
 			}
 
 			content, reports, err := applyEdits(string(data), ops)
@@ -269,7 +283,7 @@ func nearMiss(content, needle string) (line int, snippet string, ok bool) {
 		end := min(i+len(needleLines), len(contentRaw))
 		quoted := strings.Join(contentRaw[i:end], "\n")
 		if len(quoted) > nearMissCap {
-			quoted = quoted[:nearMissCap] + "…"
+			quoted = cutRunes(quoted, nearMissCap) + "…"
 		}
 		return i + 1, quoted, true
 	}
@@ -331,7 +345,7 @@ func editReport(n int, content string, offset, newLen int) string {
 	to := min(len(lines), endLine+editSnippetContext+1)
 	snippet := strings.Join(lines[from:to], "\n")
 	if len(snippet) > editSnippetCap {
-		snippet = snippet[:editSnippetCap] + "…"
+		snippet = cutRunes(snippet, editSnippetCap) + "…"
 	}
 	return fmt.Sprintf("- edit %d: lines %d–%d now read:\n%s", n, startLine+1, endLine+1, snippet)
 }

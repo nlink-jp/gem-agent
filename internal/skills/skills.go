@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // ToolName is the read-only tool the model uses to load a skill's body
@@ -249,7 +250,7 @@ func (s Skill) Body(lim Limits) (string, error) {
 	_, body := splitFrontmatter(string(data))
 	body = strings.TrimSpace(body)
 	if len(body) > lim.MaxBody {
-		body = body[:lim.MaxBody] +
+		body = cutRunes(body, lim.MaxBody) +
 			fmt.Sprintf("\n\n[skill truncated: %d of %d bytes shown]", lim.MaxBody, len(body))
 	}
 	return body, nil
@@ -295,7 +296,7 @@ func (s Skill) File(rel string, lim Limits) (string, error) {
 		return "", err
 	}
 	if len(data) > lim.MaxFile {
-		return string(data[:lim.MaxFile]) +
+		return cutRunes(string(data), lim.MaxFile) +
 			fmt.Sprintf("\n\n[file truncated: %d of %d bytes shown]", lim.MaxFile, len(data)), nil
 	}
 	return string(data), nil
@@ -320,4 +321,16 @@ func PromptSection(list []Skill) string {
 		fmt.Fprintf(&b, "- %s: %s\n", s.Name, s.Description)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// cutRunes truncates s to at most n bytes without splitting a UTF-8
+// sequence (review after v0.68.2).
+func cutRunes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }

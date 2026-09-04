@@ -2,7 +2,27 @@
 
 ## [0.68.2] - 2026-09-05
 
-### Fixed — second and third passes of the post-release review (ADR-0072 §4.1, §4.2)
+### Fixed — second, third and fourth passes of the post-release review (ADR-0072 §4.1–§4.3)
+
+- A writing shell command that names `.git/…` (Block) or an
+  instruction/configuration file (operator-only Review) in any
+  argument gets that verdict — `cp`, `tee`, `install`, `mv`, `sed -i`,
+  not only a redirect; reads stay Safe
+- After a wrapper (`env`, `time`, `nohup`, `nice`, `xargs`, `sudo`, …)
+  the wrapped command is canonicalised too, so `env /usr/bin/sudo`
+  and `time /usr/bin/git push` are Block
+- The sandbox allows the device sinks (`/dev/null` and kin) as
+  literals and `/dev/fd` as a directory, never `/dev` as a whole; the
+  rule tier reads the same list, so `> /dev/tty` is Block
+- Every truncation lands on a rune boundary (tool output, `read_file`,
+  documents, skills, edit diagnostics)
+- `.xlsx` extraction takes every worksheet present in numeric order
+  instead of stopping at the first gap in the numbering
+- `edit_file` refuses a file over 8 MiB by size before reading it
+- Hooks run in their own process group and the timeout kills the group
+- `web_search` / `web_fetch` retry 429 / 5xx with backoff
+- Sandbox tests skip where `sandbox-exec` cannot apply a profile
+  (a nested sandbox)
 
 - `.gitignore` files are read through the confinement roots with the
   cap applied on the stream; a link where a `.gitignore` should be

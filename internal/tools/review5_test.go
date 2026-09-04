@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // Review after v0.68.0: the symlink check and the open are one
@@ -328,5 +329,37 @@ func TestRotatedWorkRootClosesAfterItsLastHolder(t *testing.T) {
 	}
 	if !current.closed.Load() {
 		t.Fatal("a root with no holder was not closed on rotation")
+	}
+}
+
+// Review after v0.68.2: cuts land on rune boundaries.
+func TestTruncateKeepsRunesWhole(t *testing.T) {
+	s := strings.Repeat("あ", 100) // 300 bytes
+	out := truncate(s, 10)
+	head := strings.SplitN(out, "\n", 2)[0]
+	if !utf8.ValidString(head) || head != strings.Repeat("あ", 3) {
+		t.Errorf("truncate cut through a rune: %q", head)
+	}
+	if cutRunes("ab", 5) != "ab" || cutRunes("あい", 3) != "あ" || cutRunes("あい", 2) != "" {
+		t.Error("cutRunes boundaries wrong")
+	}
+}
+
+// edit_file refuses a file past its cap by size, before any read.
+func TestEditFileRefusesOversize(t *testing.T) {
+	r := newRegistry(t)
+	p := filepath.Join(r.ProjectDir(), "huge.txt")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(maxEditBytes + 1<<20); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	tool, _ := r.Get("edit_file")
+	_, err = tool.Run(context.Background(), map[string]any{"path": "huge.txt", "old_string": "a", "new_string": "b"})
+	if err == nil || !strings.Contains(err.Error(), "edit_file handles files up to") {
+		t.Fatalf("oversize edit not refused by size: %v", err)
 	}
 }

@@ -3,12 +3,14 @@ package sandbox
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 // ScratchDirs is the one list both the profile and the rule tier read
-// (ADR-0070 §2): every entry is a real, absolute, existing directory,
-// and /dev is among them so `2>/dev/null` is a write the profile allows.
+// (ADR-0070 §2): every entry is a real, absolute, existing directory.
+// /dev/fd is among them (descriptor duplication); the device sinks are
+// ScratchFiles, allowed as literals — never /dev as a whole.
 func TestScratchDirsAreResolvedExistingDirectories(t *testing.T) {
 	dirs := ScratchDirs()
 	if len(dirs) == 0 {
@@ -27,10 +29,32 @@ func TestScratchDirsAreResolvedExistingDirectories(t *testing.T) {
 			t.Errorf("%q is not an existing directory", d)
 		}
 		if d == "/dev" {
+			t.Errorf("/dev as a whole is writable: %v", dirs)
+		}
+		if d == "/dev/fd" {
 			seenDev = true
 		}
 	}
 	if !seenDev {
-		t.Errorf("/dev missing from %v", dirs)
+		t.Errorf("/dev/fd missing from %v", dirs)
+	}
+	files := ScratchFiles()
+	if len(files) == 0 || files[0] != "/dev/null" {
+		t.Errorf("ScratchFiles = %v, want /dev/null first", files)
+	}
+}
+
+// The profile allows the device sinks as literals, never /dev as a
+// subpath (review after v0.68.2).
+func TestProfileAllowsDeviceSinksAsLiterals(t *testing.T) {
+	p, err := Profile([]string{"/private/tmp/proj"}, ScratchFiles())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(p, `(literal "/dev/null")`) {
+		t.Errorf("no /dev/null literal in:\n%s", p)
+	}
+	if strings.Contains(p, `(subpath "/dev")`) {
+		t.Errorf("/dev allowed as a whole in:\n%s", p)
 	}
 }

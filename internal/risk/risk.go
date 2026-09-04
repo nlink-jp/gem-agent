@@ -22,6 +22,10 @@ import (
 // init; Classify itself does no I/O.
 var scratchRoots = sandbox.ScratchDirs()
 
+// scratchFiles are the device sinks the profile allows as literals
+// (sandbox.ScratchFiles): a redirect to one is a write nowhere.
+var scratchFiles = sandbox.ScratchFiles()
+
 // homeDir expands a leading `~` in a walk's starting point (ADR-0070
 // §3). Empty when the home is unknown, in which case `~` is treated as
 // outside every root — the conservative reading.
@@ -234,7 +238,10 @@ func persistentTarget(rel string) (Verdict, bool) {
 		return Verdict{}, false
 	}
 	c := filepath.ToSlash(filepath.Clean(rel))
-	if c == ".git" || strings.HasPrefix(c, ".git/") || strings.Contains(c, "/.git/") {
+	if strings.HasPrefix(c, "../") || c == ".." {
+		return Verdict{}, false // outside the project: judged elsewhere
+	}
+	if c == ".git" || strings.HasPrefix(c, ".git/") || strings.Contains(c, "/.git/") || strings.HasSuffix(c, "/.git") {
 		return Verdict{Tier: Block, Reason: "writes inside the version-control internals — hooks and config there run outside the sandbox on the next git command"}, true
 	}
 	persistent := Verdict{Tier: Review, OperatorOnly: true,
@@ -287,7 +294,36 @@ func classifyCommand(command, projectDir, workDir string) Verdict {
 	if readOnlyCommand(trimmed) {
 		return Verdict{Tier: Safe, Reason: "read-only shell command"}
 	}
+	// A command that can write and names a persistent file (ADR-0072
+	// §1.4) gets that file's verdict whatever the command is — `cp`,
+	// `tee`, `install`, `sed -i`, `python3 -c` — not only a redirect
+	// (review after v0.68.2). Read-only commands were judged above:
+	// `cat .git/config` stays a read.
+	if v, ok := persistentTokens(trimmed, projectDir); ok {
+		return v
+	}
 	return Verdict{Tier: Review, Reason: "shell command with unclear effects"}
+}
+
+// persistentTokens scans every word of a writing command for a path
+// into the version-control internals or an instruction/configuration
+// file, relative to the project or absolute inside it.
+func persistentTokens(command, projectDir string) (Verdict, bool) {
+	for _, seg := range segmentSplit.Split(command, -1) {
+		for _, tok := range strings.Fields(seg) {
+			tok = strings.Trim(tok, `"'`)
+			if tok == "" || strings.HasPrefix(tok, "-") {
+				continue
+			}
+			if i := strings.Index(tok, "="); i > 0 && !strings.ContainsAny(tok[:i], "/.") {
+				tok = tok[i+1:] // VAR=path, --flag=path
+			}
+			if v, ok := persistentTarget(projectRelative(tok, projectDir)); ok {
+				return v, true
+			}
+		}
+	}
+	return Verdict{}, false
 }
 
 // segmentSplit separates the simple commands of a shell text: pipes,
@@ -315,6 +351,16 @@ func normalizeHeads(command string) string {
 	return b.String()
 }
 
+// wrappers run the command that follows them: the word after one is
+// a head too, and is canonicalised like the first (review after
+// v0.68.2: `env /usr/bin/sudo id` kept the path and slipped the
+// privilege-escalation rule).
+var wrappers = map[string]bool{
+	"env": true, "time": true, "nohup": true, "nice": true, "ionice": true,
+	"command": true, "exec": true, "builtin": true, "xargs": true, "timeout": true,
+	"caffeinate": true, "stdbuf": true, "chroot": true, "sudo": true, "doas": true,
+}
+
 func normalizeHead(seg string) string {
 	i := 0
 	for {
@@ -329,11 +375,27 @@ func normalizeHead(seg string) string {
 			return seg
 		}
 		tok := seg[i:j]
-		if strings.Contains(tok, "=") && !strings.HasPrefix(tok, "=") {
-			i = j // VAR=value prefix: the command follows
+		if (strings.Contains(tok, "=") && !strings.HasPrefix(tok, "=")) || strings.HasPrefix(tok, "-") {
+			i = j // VAR=value prefix or a wrapper's flag: the command follows
 			continue
 		}
-		return seg[:i] + canonicalName(tok) + seg[j:]
+		name := canonicalName(tok)
+		seg = seg[:i] + name + seg[j:]
+		if !wrappers[name] {
+			return seg
+		}
+		// A wrapper's segment: every path-spelled word after it is a
+		// program it may run (`nice -n 5 /usr/bin/git push`), so each
+		// is canonicalised — the rules match names, and a wrapper's own
+		// flags cannot be told from its arguments generically.
+		rest := seg[i+len(name):]
+		fields := strings.Fields(rest)
+		for _, f := range fields {
+			if strings.Contains(f, "/") || strings.HasPrefix(f, `\`) {
+				rest = strings.Replace(rest, f, canonicalName(f), 1)
+			}
+		}
+		return seg[:i+len(name)] + rest
 	}
 }
 
@@ -410,6 +472,9 @@ func redirectTarget(command, projectDir, workDir string) (Verdict, bool) {
 		}
 		if filepath.IsAbs(target) {
 			raw := filepath.Clean(target)
+			if isScratchFile(raw) {
+				continue // a device sink the profile allows as a literal
+			}
 			if !withinAnyRoot(aliasResolve(raw), writableRoots(projectDir, workDir)...) {
 				return Verdict{Tier: Block, Reason: outsideRootsReason("redirects output", workDir)}, true
 			}
@@ -423,6 +488,16 @@ func redirectTarget(command, projectDir, workDir string) (Verdict, bool) {
 		}
 	}
 	return Verdict{}, false
+}
+
+// isScratchFile reports a device sink the profile allows as a literal.
+func isScratchFile(p string) bool {
+	for _, f := range scratchFiles {
+		if p == f {
+			return true
+		}
+	}
+	return false
 }
 
 // pathAliases are macOS's top-level symlinks. Seatbelt sees the real
@@ -504,10 +579,11 @@ func hasRecursiveFlag(args []string) bool {
 	return false
 }
 
-// devNullRedirect matches redirections that write nowhere: to
-// /dev/null, or one descriptor onto another (`2>&1`). They do not make
-// a read-only command a writing one (ADR-0070 §2).
-var devNullRedirect = regexp.MustCompile(`(\d*>>?|&>)\s*/dev/null|\d>&\d`)
+// devNullRedirect matches redirections that write nowhere: to a
+// device sink (sandbox.ScratchFiles, /dev/fd/N), or one descriptor
+// onto another (`2>&1`). They do not make a read-only command a
+// writing one (ADR-0070 §2).
+var devNullRedirect = regexp.MustCompile(`(\d*>>?|&>)\s*/dev/(null|zero|stdout|stderr|stdin|fd/\d+)\b|\d>&\d`)
 
 // withinAnyRoot reports whether an absolute, cleaned path sits under
 // any non-empty root.

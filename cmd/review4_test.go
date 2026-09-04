@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/agent"
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 	"github.com/nlink-jp/gem-agent/internal/workdir"
@@ -21,8 +22,8 @@ import (
 // sandbox profile (the shell could not write to the new directory), and
 // the system prompt. Real sandbox-exec, like root_workdir_test.go.
 func TestRotateWorkDirMovesEveryConsumer(t *testing.T) {
-	if _, err := os.Stat("/usr/bin/sandbox-exec"); err != nil {
-		t.Skip("sandbox-exec not available")
+	if err := sandbox.Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
 	}
 	project := t.TempDir()
 	// NOT t.TempDir(): on macOS that is under TMPDIR, which the profile

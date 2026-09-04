@@ -236,3 +236,10 @@ func TestDiscoverFollowsAFullySymlinkedRoot(t *testing.T) {
 		t.Fatalf("linked root found %d skills, want 2", len(list))
 	}
 }
+
+// Review after v0.68.2: truncation lands on a rune boundary.
+func TestCutRunesKeepsRunesWhole(t *testing.T) {
+	if got := cutRunes("あいう", 4); got != "あ" {
+		t.Errorf("cutRunes = %q", got)
+	}
+}

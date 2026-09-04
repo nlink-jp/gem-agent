@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf8"
 )
@@ -194,10 +195,18 @@ func (r *Runner) exec(ctx context.Context, h Hook, cwd string, payload any) (out
 		return outcome{}, false
 	}
 	cmd := exec.CommandContext(cctx, "/bin/sh", "-c", h.Command)
-	// A grandchild that inherits stdout keeps Run waiting after the
-	// hook itself exited or was killed at the timeout; WaitDelay bounds
-	// that wait (review round 4; tools.hardenExec does the same for
-	// shell_exec).
+	// The hook runs in its own process group and the timeout kills the
+	// group, so a child the hook started does not outlive it as an
+	// orphan (review after v0.68.2; shell_exec's hardenExec does the
+	// same). WaitDelay bounds the wait for pipes a descendant still
+	// holds (review round 4).
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process != nil {
+			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+		return nil
+	}
 	cmd.WaitDelay = hookWaitDelay
 	cmd.Dir = cwd
 	cmd.Stdin = bytes.NewReader(in)

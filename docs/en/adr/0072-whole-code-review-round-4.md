@@ -314,6 +314,57 @@ Three more on the second pass's own diff, all held:
   the open, retired on rotation and closed by whichever of retire or
   the last release comes second.
 
+### 4.3 Fourth pass — a whole-codebase re-read (2026-09-05, v0.68.2)
+
+A reviewer re-read the whole codebase after the third pass; nine
+findings, all held except one that was a test-environment fact:
+
+- **Shell forms naming a persistent file** (high) — §1.4 covered the
+  file tools and redirects and left `cp`, `tee`, `install`, `mv`,
+  `sed -i` naming `.git/hooks/pre-commit` or `AGENTS.md` at plain
+  Review, where the model tier may approve. A writing command that
+  names such a path in any argument now gets the file's verdict
+  (`persistentTokens`); reads (`cat .git/config`) stay Safe. A path
+  hidden inside an argument string (`python3 -c "open('.git/…')"`) or
+  produced by an archive (`tar -xf`) is not a token and reaches the
+  model tier — the limit of a lexical rule. A Seatbelt deny on
+  `<project>/.git` was considered and rejected: `git commit` and
+  `git init` through `shell_exec` must write there.
+- **Wrappers hid the blocked command** (high) — `normalizeHeads`
+  canonicalised the first word only, so `env /usr/bin/sudo id`,
+  `time /usr/bin/git push`, `nohup /bin/dd …` kept their paths and
+  slipped the block rules. After a wrapper (`env`, `time`, `nohup`,
+  `nice`, `xargs`, `sudo`, …) every path-spelled word in the segment
+  is canonicalised.
+- **`/dev` was writable as a whole** (medium) — ADR-0070 §2 put `/dev`
+  in the scratch roots for `2>/dev/null`; the profile's
+  `(subpath "/dev")` allowed every character device, the operator's
+  terminal included. The sinks are `sandbox.ScratchFiles` (literals:
+  `/dev/null`, `/dev/zero`, `/dev/std{in,out,err}`, `/dev/{u,}random`)
+  plus `/dev/fd` as a directory; the rule tier reads the same list, so
+  `> /dev/tty` is now the Block Seatbelt will enforce.
+- **Byte cuts through multibyte characters** (medium) — `truncate`,
+  `read_file`'s marker, `clipText`, skill bodies and files, the edit
+  diagnostics all cut at a byte offset. They cut on a rune boundary.
+  (Whether a broken tail reaches the API as a 400 was not measured:
+  Go's JSON encoder replaces invalid bytes; the cut is wrong either
+  way.)
+- **`.xlsx` sheet numbers have gaps** (medium) — a deleted sheet
+  leaves `sheet1.xml`, `sheet3.xml`; the counting loop stopped at the
+  gap and lost every later sheet. The members present are listed and
+  taken in numeric order, like the slides.
+- **`edit_file` read without a limit** (medium) — 8 MiB cap, refused
+  by size before the read.
+- **Hooks ran outside a process group** (low) — a child the hook
+  started survived the timeout. Same `Setpgid` + group kill as
+  `shell_exec`.
+- **Web tools had no retry** (low) — `web_search` / `web_fetch` retry
+  429 / 5xx with the main stream's backoff; a single-shot call has
+  nothing consumed to duplicate.
+- **Nested sandbox tests** — a `sandbox-exec` inside a sandbox cannot
+  apply a profile (exit 71). `sandbox.Available` probes it and the
+  tests skip, so the suite is honest under a sandboxed reviewer.
+
 ## Lessons
 
 - **Independent reviewers found what the maintainer pass did not**, for

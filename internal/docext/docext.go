@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Limits bound extraction so a huge or crafted file cannot balloon
@@ -137,7 +138,12 @@ func extractXlsx(data []byte, lim Limits) (string, string, error) {
 
 	names := xlsxSheetNames(data, lim)
 	var b strings.Builder
-	for i := 1; ; i++ {
+	// Sheets are numbered by the file that created them, not
+	// contiguously: deleting Sheet2 leaves sheet1.xml and sheet3.xml
+	// (review after v0.68.2 — a counting loop stopped at the gap and
+	// silently lost every later sheet). The members present are
+	// listed and taken in numeric order, like the slides.
+	for k, n := range xlsxSheetNumbers(data) {
 		// Aggregate budget: the per-member cap bounds ONE member, but
 		// many under-cap members accumulated unbounded text before the
 		// final clip ever ran — a crafted workbook was a model-
@@ -147,13 +153,13 @@ func extractXlsx(data []byte, lim Limits) (string, string, error) {
 		if b.Len() > lim.TextBytes {
 			break
 		}
-		raw, err := readMember(data, fmt.Sprintf("xl/worksheets/sheet%d.xml", i), lim.MemberBytes)
+		raw, err := readMember(data, fmt.Sprintf("xl/worksheets/sheet%d.xml", n), lim.MemberBytes)
 		if err != nil {
-			break // sheets are numbered contiguously
+			continue
 		}
-		name := fmt.Sprintf("sheet%d", i)
-		if i-1 < len(names) {
-			name = names[i-1]
+		name := fmt.Sprintf("sheet%d", n)
+		if k < len(names) {
+			name = names[k]
 		}
 		fmt.Fprintf(&b, "### sheet: %s\n", name)
 		xlsxSheetText(&b, raw, shared)
@@ -266,6 +272,26 @@ func xlsxSheetText(b *strings.Builder, raw []byte, shared []string) {
 // --- pptx ---
 
 var slideNum = regexp.MustCompile(`^ppt/slides/slide(\d+)\.xml$`)
+var sheetNum = regexp.MustCompile(`^xl/worksheets/sheet(\d+)\.xml$`)
+
+// xlsxSheetNumbers lists the worksheet members present, in numeric
+// order.
+func xlsxSheetNumbers(data []byte) []int {
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil
+	}
+	var nums []int
+	for _, f := range zr.File {
+		if m := sheetNum.FindStringSubmatch(f.Name); m != nil {
+			if n, err := strconv.Atoi(m[1]); err == nil {
+				nums = append(nums, n)
+			}
+		}
+	}
+	sort.Ints(nums)
+	return nums
+}
 
 // extractPptx renders each slide's a:t runs as a numbered text block,
 // slides in numeric order.
@@ -353,7 +379,13 @@ func readMember(data []byte, name string, cap int64) ([]byte, error) {
 // convention).
 func clipText(text string, cap int) (string, string, error) {
 	if cap > 0 && len(text) > cap {
-		return text[:cap], fmt.Sprintf("truncated: %d of %d bytes shown", cap, len(text)), nil
+		// On a rune boundary: a byte cut through a multibyte character
+		// left a broken tail (review after v0.68.2).
+		n := cap
+		for n > 0 && !utf8.RuneStart(text[n]) {
+			n--
+		}
+		return text[:n], fmt.Sprintf("truncated: %d of %d bytes shown", n, len(text)), nil
 	}
 	return text, "", nil
 }

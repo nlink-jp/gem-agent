@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,6 +16,9 @@ import (
 func TestSandboxAllowsWritesToTheWorkDirectory(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("sandbox-exec is macOS-only")
+	}
+	if err := sandbox.Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here (nested sandbox?): %v", err)
 	}
 	project := t.TempDir()
 	work := t.TempDir()
@@ -46,6 +50,9 @@ func TestSandboxAllowsWritesToTheWorkDirectory(t *testing.T) {
 func TestSandboxWithoutAWorkDirectoryIsUnchanged(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("sandbox-exec is macOS-only")
+	}
+	if err := sandbox.Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here (nested sandbox?): %v", err)
 	}
 	project := t.TempDir()
 	outside := outsideEveryRoot(t)
@@ -88,6 +95,9 @@ func outsideEveryRoot(t *testing.T) string {
 func TestSandboxAllowsDevNull(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("sandbox-exec is macOS-only")
+	}
+	if err := sandbox.Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here (nested sandbox?): %v", err)
 	}
 	execFn, err := buildExecFn(true, t.TempDir(), "")
 	if err != nil {
