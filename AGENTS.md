@@ -53,7 +53,9 @@ internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
 internal/ignore/   ignore-aware enumeration (ADR-0052): builtin dir list + full
                    gitignore matcher (in-repo, git check-ignore cross-checked)
 internal/risk/     rule tier of the auto-approve ladder (pure, no model);
-                   its writable scratch roots come from sandbox.ScratchDirs (ADR-0070)
+                   its writable scratch roots come from sandbox.ScratchDirs (ADR-0070);
+                   reads a command the way bash runs it, and marks writes to
+                   instruction/config files OperatorOnly (ADR-0072)
 internal/policy/   per-tool approval policy (ADR-0008), pure resolver; also the
                    ADR-0045 per-command vocabulary, parsed for file compatibility
                    but not applied since ADR-0049
@@ -97,9 +99,12 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 
 - **macOS-only by design** — isolation is built on sandbox-exec (ADR-0001).
   Do not add linux/windows targets to the Makefile.
-- **Gemini 3 thought signatures** — every response Part carries an opaque
-  `ThoughtSignature` that must be echoed back on the next request; dropping it
-  fails the second tool-call round with 400 INVALID_ARGUMENT.
+- **Gemini 3 thought signatures** — a function-call response's Parts
+  carry an opaque `ThoughtSignature` that must be echoed back on the
+  next request; dropping it fails the second tool-call round with 400
+  INVALID_ARGUMENT. Text-only turns carry none on gemini-3.8-flash
+  (measured, `internal/llm/textsig_live_test.go`); the parts path
+  replays them if a model ever sends them (ADR-0072 §3).
 - **`--version` must always answer** (pinned by `cmd/root_test.go`) — a future
   Homebrew formula's `brew test` runs it.
 - **Drop-in compatibility is the point** — gem-agent reads the *target*
@@ -293,11 +298,73 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 - **Session ids are UUID v4 and `/clear` is a new session** (ADR-0071).
   `session.ValidID` accepts the legacy timestamp form too; never drop it
   (old transcripts must resume). `/clear` goes through `onClear` in
-  `cmd/root.go`: `Agent.Restart(newLog)` (no clear record), the old
-  logger closed, `curLog` / `workDir` / `hookSession` reassigned (the
-  deferred closers read the variables), env re-exported, `session_end`
-  then `session_start` hooks. Telemetry keeps the first id (its resource
-  is fixed at creation) — a known limit, stated in the docs.
+  `cmd/root.go`: the new transcript is opened FIRST (a failure leaves
+  the session it found — cleared in place, told), then `session_end`,
+  `Agent.Restart(newLog)` (no clear record), the old logger closed,
+  `curLog` / `workDir` / `hookSession` reassigned (the deferred closers
+  read the variables), env re-exported, `rotateWorkDir`, then
+  `session_start` with source `clear`. Telemetry keeps the first id
+  (its resource is fixed at creation) — a known limit, stated in the docs.
+- **The work directory has a list of consumers, and `/clear` walks it**
+  (ADR-0072 §2.1) — `rotateWorkDir` in `cmd/root.go`: the registry's
+  second root (`UseWorkDir("")` removes it), the sandbox profile
+  through `liveExec` (the registry calls the shell strategy through
+  it; never hand `tools.New` a bare `buildExecFn` result again), the
+  MCP intake (reads `registry.WorkDir` per call), and the system
+  prompt. `TestRotateWorkDirMovesEveryConsumer` runs the real sandbox
+  against both directories. The side-call tools log through `liveLog`,
+  which reads the `sessionLog` variable — a constructor that takes the
+  logger by value writes to the closed file after `/clear`.
+- **Never `Program.Send` from a slash handler** (ADR-0072 §2.2) — it
+  runs inside the TUI's `Update`, Bubble Tea's message channel is
+  unbuffered and `Update` is its only consumer, so the call never
+  returns. `hookNotify` appends to `uiNotes` while `onClear` runs and
+  the notes ride back in the slash output; anything else raised from a
+  slash path must do the same.
+- **`Restart` drops the old session's state** (ADR-0072 §2.3) —
+  `pendingAtts`, `lateNotices`, the compaction failure count and its
+  warning, and `logDead`; `Reset` keeps them (same session). The
+  logger is read under `mu` beside `logDead`: an abandoned call's
+  late-return goroutine may record while `/clear` swaps it.
+- **The attach branches key on `ran`** (ADR-0072 §1.1) — `execCall`
+  returns `(result, denied, ran)`; `view_image` / `read_document`
+  attach their bytes only when `ran` is true. Neither the gate's
+  `denied` flag nor the `error:` prefix is enough: a pre-tool hook
+  refuses before the gate with a result that carries neither.
+- **The context is re-checked after every layer of the ladder**
+  (ADR-0072 §1.2) — after the pre-tool hook and after `decideAuto`, a
+  cancelled turn returns `interrupted` instead of reaching the gate.
+- **The rule tier reads a command the way bash runs it** (ADR-0072
+  §1.3) — `segmentSplit` includes newlines; `normalizeHeads`
+  canonicalises each segment's first word (path prefix, backslash,
+  case) before the block patterns; `rmRecursiveForce` reads rm's flags
+  in any spelling; `mutatingUse` takes a read-only command's Safe away
+  when its flags write or exec (`find -exec`, `sed -i`, `env cmd`);
+  `tee` and `xargs` are not read-only; `aliasResolve` maps `/tmp`,
+  `/var`, `/etc` to `/private` before any roots check. New dangerous
+  forms go in with a corpus case in `internal/risk/review4_test.go`.
+- **Persistent files are `OperatorOnly`** (ADR-0072 §1.4) —
+  `persistentTarget` makes `.git/` writes Block and writes to
+  `AGENTS.md` / `AGENT.md` / `CLAUDE.md` / `GEMINI.md` / `.mcp.json` /
+  `.gem-agent.toml` / `.claude/` Review with `Verdict.OperatorOnly`,
+  which `decideAuto` honours exactly like the memory exclusion: the
+  model tier is never consulted. It applies to the file tools and to
+  shell redirects; do not "optimise" it back to Safe for the org's own
+  AGENTS.md edits — one prompt is the price of the evaluator not being
+  the proposer.
+- **The file-search child runs no pre-tool hook** (ADR-0072 §3) — its
+  subset is read-only and `searchDenyGate` refuses mutation; an org
+  guard keyed on reads does not see the child's. The one place hooks
+  do not run; a change needs an ADR.
+- **The approval and ask dialogs wrap to the box** (ADR-0072 §2.7) —
+  detail, purpose and reason go through `ansi.Hardwrap` at
+  `width-6` before the line budget, and the extra rows the purpose and
+  reason take come out of the detail budget; the ask dialog budgets
+  its option rows and discloses cuts. `clipLines` is the last resort,
+  never the wrap.
+- **`session_start` on `/clear` has source `clear`** (ADR-0072 §2.5) —
+  ADR-0071 §4 wrote `startup` and shipped that way; the template, the
+  reference and Claude Code say `clear`.
 - **The declared `gem_agent_purpose` is displayed and nothing else** (ADR-0047) —
   `internal/agent/purpose.go` injects the argument into every `Mutating`
   tool's advertised schema and strips it again before `Run`, before the

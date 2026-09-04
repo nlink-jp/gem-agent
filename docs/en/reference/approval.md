@@ -128,6 +128,29 @@ are writes the sandbox allows and are not "outside the project" — the
 rule tier reads the sandbox's own list, so the reason it shows you is
 what Seatbelt will do.
 
+The rule tier reads a command the way bash runs it (ADR-0072 §1): a
+newline separates commands like `;`; `/bin/rm`, `\rm` and `RM` are
+`rm`, and `rm`'s recursive-and-force is read from the flags in any
+spelling; git's global options are skipped before the subcommand, and
+`checkout … --`, `restore`, `stash drop`, `clean --force` ask like
+`push`. A read-only command is safe only in its plain form —
+`find -delete` / `-exec`, `fd -x`, `rg --pre`, `sed -i`, `awk`
+with `system(…)`, `sort -o`, `yq -i`, `env <command>` are
+*uncertain*, and `tee` and `xargs` always are; `<(…)` is dynamic
+construction like `$(…)`. `/tmp`, `/var` and `/etc` are judged as the
+`/private` paths Seatbelt sees.
+
+**Writes that later sessions trust ask you, not the model** (ADR-0072
+§1.4). A write under `.git/` is *blocked* — a hook or a config value
+there runs outside the sandbox on your next git command. A write to
+`AGENTS.md`, `AGENT.md`, `CLAUDE.md`, `GEMINI.md`, `.mcp.json`,
+`.gem-agent.toml` or anything under `.claude/` — through `write_file`,
+`edit_file`, or a shell redirect — is *uncertain* and skips tier 2:
+the edit persists into what every later session takes instructions or
+configuration from, so the party that proposed it cannot be its judge
+(the memory rule below, applied to the same class of persistence). In
+auto mode that is one prompt per instruction-file edit.
+
 **Memory writes never reach tier 2.** `save_memory` and `delete_memory`
 are Review-tier, so they would take the *uncertain* branch — but they
 are excluded from auto-approval outright and always ask, whatever the

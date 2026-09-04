@@ -67,8 +67,13 @@ Code の識別要素は固定で実測済み（2.1.226）: マシン内で一意
 `transcript_path`、`cwd`、`reason`: `clear` | `exit` | `other`）で、短い
 タイムアウト付き・非ブロッキングで走る（セッション終了は拒否できない。Claude
 Code で実測、ADR-0069 の背景）。`/clear` は旧セッションの `SessionEnd`、次いで
-新セッションの `SessionStart`（`source` `startup`）を発火する — Claude Code が
+新セッションの `SessionStart`（`source` `clear`）を発火する — Claude Code が
 生む順序と同じ。
+
+*ADR-0072 §2.5 による修正: この節は当初 source を `startup` と書いていた。
+設定テンプレート・リファレンス・Claude Code の matcher 語彙は `clear` と言い、
+v0.66.0 はこの節どおりのコードで出荷された — `matcher = "clear"` のフックは
+`/clear` で一度も発火しなかった。コードは文書に従う。*
 
 ### 5. 変わらないもの
 

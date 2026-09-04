@@ -112,7 +112,8 @@ alongside its arguments, a deny-with-reason answer (`N`) that carries
 your one-line "do this instead" to the model inside the denial itself,
 a session allowlist that never covers
 Block-tier calls, an opt-in two-tier auto-approve (rules first, model
-review second), a per-tool approval policy with scope-aware resolution and
+review second — edits to instruction and configuration files such as
+`AGENTS.md` and `.mcp.json` always ask you), a per-tool approval policy with scope-aware resolution and
 trust-gated project loosening, a layered risk rulebook the auto-mode
 reviewer reads — hand-written or drafted from your own recorded
 answers, never skipping a gate — the Seatbelt sandbox, operator pre-tool

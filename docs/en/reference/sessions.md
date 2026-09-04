@@ -167,5 +167,9 @@ timestamp ids still list and resume. `/clear` starts a new session: the
 old transcript is closed where the conversation ended and stays
 resumable by its id; a new id, transcript and work directory take over
 and are exported to children; the session hooks see a `session_end`
-(`clear`) then a `session_start` (`startup`). Telemetry keeps the id
-the process started with.
+(`clear`) then a `session_start` (`clear`). Everything that reads the
+work directory follows the new one — the sandbox profile, the file
+tools' second root, the MCP intake and the system prompt — and the
+agent's own per-session state (queued attachments, the dead-transcript
+mark) is dropped with the old session (ADR-0072 §2). Telemetry keeps
+the id the process started with.

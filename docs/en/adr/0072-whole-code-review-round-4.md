@@ -1,0 +1,261 @@
+# ADR-0072: Whole-code review round 4 — findings and fixes
+
+| Field | Value |
+|-------|-------|
+| Status | **Accepted** |
+| Date | 2026-09-05 |
+| Binds | gem-agent |
+| Decision makers | nlink-jp maintainers |
+| Triggered by | Operator: the recent feature work changed a great deal of code — read the whole of it once and inspect it |
+| Amends | ADR-0004 (rule tier), ADR-0020 §4 (generalised to instruction and configuration files), ADR-0071 §4 (the `/clear` source is `clear`) |
+
+## Context
+
+Thirty releases landed between the last whole-code review (ADR-0041,
+v0.36.1) and this one: 133 commits and 26,700 added lines, among them
+the cancellation floor (ADR-0065), the data lane (ADR-0055), the
+context hooks (ADR-0069), the skill directory and shared writable
+roots (ADR-0070), and the session identity contract (ADR-0071). The
+method was ADR-0041's: a maintainer pass over the agent loop, five
+independent reviewers in parallel (agent/llm, cmd wiring, TUI and
+diagram, security boundaries, persistence and infrastructure), `go vet`,
+the race detector over every package, `govulncheck`, `gosec` and
+`golangci-lint` — and every reviewer claim re-verified against the code
+or a probe before it counted. The machine checks were clean; every
+finding below came from reading or from a probe. Forty-one findings
+(five high), all but four fixed; the four are recorded in §3 with the
+reason.
+
+## 1. Fixed — the boundaries
+
+### 1.1 A pre-tool hook's refusal did not keep the pixels out (high)
+
+`view_image` and `read_document` attach their bytes to the tool message
+when the call was not refused. Round 2 keyed that guard on the gate's
+denial flag; a pre-tool hook (ADR-0044) refuses *before* the gate, and
+its result text carries neither the flag nor the `error:` prefix — so
+the image or PDF rode along with the refusal. `execCall` now reports
+`ran`, true only when the tool's `Run` was reached and returned on its
+own, and the attach branches key on that: a refusal from any layer —
+gate, hook, cancel floor — keeps the bytes out. A hook denial is also
+audited as `denied`, not `ok`.
+
+### 1.2 A cancel during the ladder reached the gate (medium)
+
+`execCallInner` checked the context once at entry. A Ctrl+C landing
+while a pre-tool hook ran, or during the model-tier risk review (a
+network round trip), came back as an escalation and reached
+`gate.Approve`: the TUI's auto-`n` then recorded a `gate_decision` no
+human made, and the plain REPL's prompt ate the next stdin line as its
+answer. The context is re-checked after the hook and after the ladder;
+the call is `interrupted`, as `roundIntervention` already did.
+
+### 1.3 The rule tier read the shell differently from bash (high)
+
+Probes over about 160 command strings found the rule tier's model of a
+command line too narrow in five ways. All are Review unless noted; the
+defect class is *Safe on a mutating command*, which in auto mode runs
+with no prompt and no model call.
+
+- **Newlines.** The segment splitter knew `|`, `;`, `&&`, `||`, `&` —
+  not `\n`. `ls\ntouch pwned` was Safe: the first line's head decided
+  the whole text. A newline is now a separator.
+- **Spelling.** The block patterns anchored on the bare name:
+  `/bin/rm -rf`, `\rm -rf`, `RM -rf` (the default filesystem is
+  case-insensitive), `/usr/bin/sudo`, `curl … | /bin/sh` all landed in
+  Review, where the model tier may approve. Every segment's first word
+  is canonicalised (path prefix, backslash, case) before the patterns
+  run; `rm`'s recursive-and-force is read from the flags in any
+  spelling (`-r -f`, `--recursive --force`, `-Rf`, behind `xargs` or
+  `env`); git's global options are skipped before the subcommand, and
+  `checkout … --`, `restore`, `stash drop|clear`, `clean --force` join
+  the list.
+- **Exec-capable read-only commands.** `xargs`, `env`, `find -delete`
+  / `-exec`, `fd -x`, `rg --pre`, `sed -i` and the `w` command,
+  `awk system(…)`, `sort -o`, `yq -i`, `tee` were all Safe —
+  `find . -name '*.go' | xargs sed -i '' …` is the org's own
+  guard-recursive-write case. `tee` and `xargs` leave the read-only
+  list; the others are read-only only in their plain form
+  (`mutatingUse`).
+- **Process substitution.** `cat <(rm -r x)` runs the inner command
+  under bash; `<(` and `>(` are dynamic construction.
+- **Walk starts (ADR-0070 §3).** `find $HOME`, `find ..`, `find ~user`,
+  `ls -R /` were Safe; they are Review like `find /`. Credential paths
+  gain `~/.config/gh/`, `~/.docker/config.json`, `.git-credentials`,
+  shell history, and match relative `.ssh/` and the like.
+- **`/tmp`.** `> /tmp/x` was a false Block with an untrue reason:
+  Seatbelt sees `/private/tmp`, which is a scratch root. `/tmp`, `/var`
+  and `/etc` resolve to their aliases before the roots check — the
+  ADR-0070 §2 drift, closed on the lexical side.
+
+### 1.4 Writes that persist into what later sessions trust (high)
+
+`write_file .git/hooks/pre-commit`, `.git/config`, `.mcp.json`,
+`.gem-agent.toml`, `.claude/skills/*/SKILL.md`, `AGENTS.md` were all
+Safe: a relative, non-credential path. A hook or a config value under
+`.git/` runs *outside the sandbox* on the operator's next git command;
+`.mcp.json` spawns a server unsandboxed at the next launch; a
+`.gem-agent.toml` policy removes a gate; an instruction file becomes the
+next session's system prompt. ADR-0020 §4 made memory writes Review
+with no model tier for exactly this reason — persistence lets a
+poisoned tool result reach every later session unseen — and these paths
+achieve the same persistence.
+
+Decision: writes under `.git/` are **Block** (no file tool has business
+there). Writes to `AGENTS.md`, `AGENT.md`, `CLAUDE.md`, `GEMINI.md`,
+`.mcp.json`, `.gem-agent.toml` and anything under `.claude/` are
+**Review that only the operator answers** — `Verdict.OperatorOnly`,
+which `decideAuto` honours like the memory exclusion. The rule applies
+through the file tools and through shell redirects (`echo x >
+AGENTS.md`) alike; other shell forms (`tee`, `cp`, `sed -i`) reach the
+model tier as before, since they are no longer Safe. In auto mode this
+costs one prompt per instruction-file edit — the price of the
+evaluator not being the proposer.
+
+## 2. Fixed — the seams
+
+### 2.1 `/clear` rotated the work directory for the environment only (high)
+
+ADR-0071 gave `/clear` a new session, transcript and work directory,
+and exported the new directory to children — but every consumer of the
+path was bound at startup: the sandbox profile (a shell told to write
+to `$GEMAGENT_WORK_DIR` was denied), the file tools' second root, the
+MCP intake's spill directory, and the system prompt, which named the
+old path. `rotateWorkDir` now moves them all: `Registry.UseWorkDir`
+(an empty directory removes the root), a `liveExec` the registry calls
+through so the profile can be swapped, the intake reading the registry,
+and `SetSystem` — a cleared conversation has no cached prefix to
+protect. Two more `/clear` defects went with it: the side-call tools
+(`summarize_file`, `web_search`, `web_fetch`, `agentic_file_search`)
+captured the logger by value at startup and wrote their `usage`
+records to the closed transcript (`liveLog` forwards to the variable);
+and with an unresolved state root, `session.Open("")` resolved the
+project subdirectory against the working directory and wrote a
+transcript *into the operator's project* — the root is checked first,
+and the new transcript is opened before anything ends, so a failure
+leaves the session it found.
+
+### 2.2 `/clear` with a session hook froze the TUI (high)
+
+`hookNotify` called `Program.Send`; the slash handler runs inside the
+TUI's `Update`, and Bubble Tea's message channel is unbuffered with
+`Update` as its only consumer — a `Send` from there never returns. Any
+operator with a `session_start` hook (the agent-board setup) who typed
+`/clear` in the TUI had to kill the process. Notes raised inside a
+slash command now ride back in its output (`uiNotes`); the `/clear`
+failure paths that wrote to stderr under the TUI go the same way.
+
+### 2.3 `Restart` kept the old session's state (medium)
+
+`Agent.Restart` reset the history and switched the logger, and nothing
+else: a dead-transcript mark from the old session silenced the new
+transcript entirely; a `session_start` attachment queued before the
+`/clear` rode into the new session's first turn beside the new one; an
+abandoned call's late note (ADR-0065 §2) would have been announced to a
+conversation that never made the call; the auto-compaction off-switch
+stayed off. All belong to the session that ended. The logger is read
+under the mutex beside the dead mark, since an abandoned call's
+late-return goroutine may be about to record while `/clear` swaps it.
+
+### 2.4 The second compaction saw 1,500 runes of the first summary (medium)
+
+`renderTranscript` clips every text attachment at the tool-result
+budget, and the summary a compaction leaves behind is an attachment.
+Every compaction after the first summarised a summary missing its
+tail — where the prompt puts "what is open" and "next step". The prior
+summary is rendered whole.
+
+### 2.5 `session_start` on `/clear` fired with source `startup` (medium)
+
+ADR-0071 §4 wrote `startup`; the config template, the reference
+document and Claude Code's own matcher vocabulary say `clear`. A hook
+written to the documentation (`matcher = "clear"`) never fired on the
+normal path. The code follows the documents; ADR-0071 §4 is amended.
+
+### 2.6 Persistence and children (medium / low)
+
+- A live **legacy flat-layout session** read as free: `session.InUse`
+  looked only in the project subdirectory, and `workdirs clean` would
+  have deleted its work directory. It looks where `Reopen` does.
+- A **torn diagnostic write** (ENOSPC mid-record) glued the next
+  message onto the fragment; one invalid line swallowed a whole message
+  on resume. The logger repairs the tear before its next record, as
+  `Reopen` does across processes.
+- An **MCP server that ended its own stdout** stayed a zombie with both
+  pipes open; the incarnation is reaped on EOF. `${VAR:-default}` in
+  `.mcp.json` expands as in Claude Code.
+- **Hooks**: `WaitDelay` bounds a grandchild holding stdout; the
+  pre-tool payload carries the stripped arguments (ADR-0047 §2 said
+  "everywhere" and the hook was the exception).
+- `workdirs clean` accepted a piped `y` without `--yes` (ADR-0059 said
+  it must not); `-p` printed a bare newline to stdout on a turn that
+  produced no text; memory and instruction truncation cut mid-rune.
+
+### 2.7 Dialogs and diagrams (high / medium)
+
+- The **approval box** rendered its detail unwrapped, and `clipLines`
+  cut it at the terminal edge with no marker; `edit_file`'s one-line
+  detail put `path=` past column 80 — the operator approved an edit
+  whose target they could not see. Detail, purpose and reason wrap to
+  the box, and the extra rows come out of the detail budget. The
+  **ask dialog** budgets its option rows and discloses what it cuts.
+- The **settings panel** body was hardcoded English around a catalogued
+  hint line; it reads from the catalog, as does `(no output)`.
+- **Mermaid**: a quoted label is literal (`A["read_file(path)"]` was
+  rewritten to `read_file[path]`, and the fidelity check compared the
+  drawing with the rewrite); `;` separates statements (`A-->B; B-->C`
+  drew a phantom node that passed both guards); a node id that starts
+  with `direction` or `subgraph` is a node; `<-->` counts two heads.
+  All under ADR-0042 §5's three rules — each is a syntax fact.
+
+## 3. Intentionally not changed
+
+- **A signal outside a turn skips the closers.** `signal.Notify` lives
+  in `runTurnWith`; SIGTERM/SIGHUP at the plain REPL prompt takes the
+  default action: no `session_end` hook, no telemetry flush. The
+  transcript is closed by the kernel and resumes (tail repair). A
+  process-level handler is a design change (the REPL blocks in a read),
+  recorded for a later ADR.
+- **The file-search child runs no pre-tool hook.** Its tool subset is
+  read-only (ADR-0037) and `searchDenyGate` refuses mutation; an org
+  guard keyed on reads would not see the child's. Left as is; noted in
+  AGENTS.md as the one place hooks do not run.
+- **`--o` / `--x` edges** contribute to neither the edge count nor the
+  arrowhead count, so a dropped one would pass. No field report;
+  measured drawing correctly.
+- **Text-only turns carry no thought signatures** on gemini-3.8-flash
+  (measured with and without `IncludeThoughts`;
+  `textsig_live_test.go` keeps the probe). The parts path now replays
+  them if a model ever sends them; the gotcha's "every Part" wording
+  is narrowed to what is measured.
+
+## Lessons
+
+- **Independent reviewers found what the maintainer pass did not**, for
+  the fourth round running: the hook-denial attach bypass was in the
+  maintainer's own reading, but the newline separator, the `/clear`
+  freeze and the work-directory seam were not — and each of those was a
+  shipped, operator-reachable defect. The method (ADR-0041) stands.
+- **A permission keyed on one layer's flag is a hole at every other
+  layer.** Round 2 fixed the attach guard for the gate; round 4 found
+  the same bypass one layer up. Guards that mean "the tool ran" must
+  key on that fact, not on any refuser's signature.
+- **"Follow the variable" is not enough when the consumer holds a
+  copy.** ADR-0039's live-variable rule was applied to `sessionLog` in
+  the closures and missed in three constructors; `/clear`'s work
+  directory was exported and not propagated. A rotation needs a list
+  of consumers, and a test that walks it.
+- **Persistence is the boundary, not the tool name.** ADR-0020 §4's
+  argument was about memory; it was always about any write that
+  outlives the session and is trusted by the next one.
+
+## Consequences
+
+- Auto mode asks once per edit to an instruction or configuration
+  file, and never approves a write under `.git/`.
+- The rule tier's vocabulary is larger; new dangerous forms still go in
+  `internal/risk` with a corpus test (`review4_test.go` holds this
+  round's).
+- `/clear` is a complete session boundary: transcript, work directory,
+  sandbox, file roots, intake, prompt, hooks, and the agent's own
+  per-session state.

@@ -76,7 +76,13 @@ Code's payload (`session_id`, `transcript_path`, `cwd`, `reason`:
 `clear` | `exit` | `other`) and a short timeout, non-blocking (a session
 end cannot be refused; measured on Claude Code, ADR-0069 context). `/clear`
 fires `SessionEnd` for the old session, then `SessionStart` (`source`
-`startup`) for the new one — the same sequence Claude Code produces.
+`clear`) for the new one — the same sequence Claude Code produces.
+
+*Amended by ADR-0072 §2.5: this section originally wrote `startup` for
+the source; the config template, the reference document and Claude
+Code's matcher vocabulary say `clear`, and v0.66.0 shipped with the
+code following this section — a `matcher = "clear"` hook never fired
+on `/clear`. The code now follows the documents.*
 
 ### 5. What does not change
 

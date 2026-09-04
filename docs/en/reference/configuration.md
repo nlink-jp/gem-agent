@@ -203,8 +203,11 @@ is `startup`, or `resume` under `--continue`/`--resume` — and again on
 source. A `user_prompt_submit` hook runs before every turn that
 reaches the model (a typed message, the argv first message, a
 `/skill`-expanded turn, the `-p` prompt; not slash commands or the `!`
-escape) and takes no `matcher`. Each receives one JSON object on
-stdin:
+escape) and takes no `matcher`. Every hook command runs through
+`sh -c` with the project directory as its working directory: name the
+script by an absolute path, as the examples do — a relative one would
+resolve inside the project, which is untrusted content. Each receives
+one JSON object on stdin:
 
 ```json
 {"hook_event_name": "SessionStart",

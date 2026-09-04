@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.67.0] - 2026-09-05
+
+### Fixed — whole-code review round 4 (ADR-0072)
+
+Forty-one findings from a maintainer pass, five independent reviewers,
+and the race detector; all but four fixed (the four are recorded in
+the ADR).
+
+- **Boundaries**: a pre-tool hook's refusal no longer lets `view_image`
+  / `read_document` attach their bytes anyway; a Ctrl+C during a hook
+  or the model-tier risk review no longer reaches the approval gate
+- **Rule tier**: a newline separates commands like `;`; `/bin/rm`,
+  `\rm`, `RM`, `rm -r -f`, `git -C . push`, `git checkout … --`,
+  `git restore`, `git clean -d -f` are Block; `find -delete`/`-exec`,
+  `fd -x`, `rg --pre`, `sed -i`, `awk system(…)`, `sort -o`, `yq -i`,
+  `env <cmd>`, `tee`, `xargs`, `<(…)` are no longer Safe; walks from
+  `$HOME`, `..`, `~user`, `ls -R /` are Review; more credential paths;
+  `> /tmp/x` is judged as the `/private/tmp` write Seatbelt allows
+- **Persistent files ask the operator**: writes under `.git/` are
+  Block; writes to `AGENTS.md`, `AGENT.md`, `CLAUDE.md`, `GEMINI.md`,
+  `.mcp.json`, `.gem-agent.toml`, `.claude/` skip the model tier in
+  auto mode, through the file tools and shell redirects alike
+- **`/clear`**: the sandbox profile, the file tools' second root, the
+  MCP intake and the system prompt follow the new work directory; the
+  side-call tools log to the new transcript; `session_start` fires
+  with source `clear`; a session hook that prints no longer freezes
+  the TUI; an unresolved state root no longer writes a transcript into
+  the project; the agent drops the old session's queued attachments,
+  late notes and dead-transcript mark
+- **Compaction**: the previous summary is handed to the next
+  compaction whole (it was clipped at 1,500 runes)
+- **Dialogs**: the approval box wraps detail, purpose and reason to
+  its width (`edit_file`'s path was past the edge with no marker); the
+  ask dialog budgets its option rows; the settings panel body is
+  catalogued in both languages
+- **Diagrams**: quoted labels are literal, `;` separates statements,
+  ids starting with `direction`/`subgraph` are nodes, `<-->` counts
+  two heads
+- **Persistence and children**: a live legacy flat-layout session is
+  not free for `workdirs clean`; a torn transcript write is repaired
+  before the next record; an MCP server that ends its stdout is
+  reaped; `${VAR:-default}` expands in `.mcp.json`; hooks bound the
+  wait for a grandchild holding stdout and receive the stripped
+  arguments; `workdirs clean` refuses a piped `y` without `--yes`;
+  `-p` prints no bare newline on an empty turn; memory and instruction
+  truncation cut on a rune boundary
+
 ## [0.66.0] - 2026-09-05
 
 ### Changed — the session identity contract, aligned with Claude Code (ADR-0071)

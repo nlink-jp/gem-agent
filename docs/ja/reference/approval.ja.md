@@ -124,6 +124,26 @@ TUI を使わない plain stdin ゲートは `y`/`n`/`N`/`a`）、拒否は拒�
 書き込みで「プロジェクト外」ではありません — ルール層は sandbox 自身の
 一覧を読むので、表示される理由は Seatbelt が実際にすることと一致します。
 
+ルール層はコマンドを bash が実行するとおりに読みます（ADR-0072 §1）: 改行は
+`;` と同じくコマンドの区切り。`/bin/rm`・`\rm`・`RM` は `rm` であり、`rm` の
+recursive+force はどの綴りでもフラグから読みます。git はサブコマンド前の
+グローバルオプションを飛ばし、`checkout … --`・`restore`・`stash drop`・
+`clean --force` は `push` と同じく確認になります。read-only コマンドが safe
+なのは素の形のときだけ — `find -delete`/`-exec`・`fd -x`・`rg --pre`・
+`sed -i`・`system(…)` を含む `awk`・`sort -o`・`yq -i`・`env <command>` は
+*不確実*、`tee` と `xargs` は常にそうです。`<(…)` は `$(…)` と同じ動的構築。
+`/tmp`・`/var`・`/etc` は Seatbelt が見る `/private` のパスとして判定します。
+
+**後続セッションが信頼するものへの書込は、モデルではなくあなたに確認します**
+（ADR-0072 §1.4）。`.git/` 配下への書込は *block* — そこのフックや設定値は
+次の git コマンドで sandbox の外で走ります。`AGENTS.md`・`AGENT.md`・
+`CLAUDE.md`・`GEMINI.md`・`.mcp.json`・`.gem-agent.toml`・`.claude/` 配下への
+書込は — `write_file`・`edit_file`・シェルのリダイレクトのいずれでも —
+*不確実*で第 2 層を飛ばします: その編集は後続の全セッションが指示や設定を
+取る先に残るので、提案した当事者が裁くことはできません（下のメモリの規則を
+同じ永続化の類型に適用したもの）。auto モードでは指示ファイル編集ごとに
+確認 1 回です。
+
 **メモリ書込は第 2 層に到達しません。** `save_memory`/`delete_memory` は
 Review 層なので上の「*不確実*」に該当しますが、自動承認から除外されて
 おり、評価結果によらず必ず確認に回ります（ADR-0020 §6）。評価するのは

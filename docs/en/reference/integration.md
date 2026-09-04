@@ -31,7 +31,7 @@ location like `/tmp` that you do not own.
 ## MCP servers
 
 Servers are read from two scopes, both in Claude Code `.mcp.json`
-format (stdio transport, `${VAR}` expansion) so entries move between
+format (stdio transport, `${VAR}` and `${VAR:-default}` expansion) so entries move between
 them verbatim:
 
 | Scope | Path | Use for |
