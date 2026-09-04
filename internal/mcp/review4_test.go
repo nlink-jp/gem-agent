@@ -59,7 +59,7 @@ func TestReadLoopEOFReapsTheIncarnation(t *testing.T) {
 // os.ExpandEnv looked up a variable literally named "VAR:-default".
 func TestExpandEnvDefaults(t *testing.T) {
 	t.Setenv("MCP_R4_SET", "set")
-	os.Unsetenv("MCP_R4_UNSET")
+	_ = os.Unsetenv("MCP_R4_UNSET")
 	cases := map[string]string{
 		"${MCP_R4_SET:-dflt}":   "set",
 		"${MCP_R4_UNSET:-dflt}": "dflt",
