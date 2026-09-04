@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.65.2] - 2026-09-05
+
+### Added — the session id is exported to children (ADR-0069 addendum 2)
+
+- `GEMAGENT_SESSION_ID` joins `GEMAGENT_WORK_DIR` in the environment of
+  everything the session spawns, exported before any MCP server starts.
+  `${GEMAGENT_SESSION_ID}` in an `mcp.json` args entry expands to it, so
+  a server that keeps per-session state (agent-board) is told its
+  session on its registration line
+
 ## [0.65.1] - 2026-09-04
 
 ### Changed — the PreToolUse hook payload carries the session (ADR-0069 addendum)

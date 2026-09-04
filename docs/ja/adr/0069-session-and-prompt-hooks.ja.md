@@ -87,6 +87,14 @@ agent-board の claim 強制がまさにこれを必要とし、無いと claim 
 ファイルを拒否されていた。Claude Code の PreToolUse も同じ識別フィールドを
 運ぶので、形は 1 つの契約のままである。
 
+**追記 2（2026-09-05、v0.65.2）。** セッション id は `GEMAGENT_WORK_DIR`
+（ADR-0058）と並んで `GEMAGENT_SESSION_ID` として、MCP サーバの起動前に子へ
+export される。よって `mcp.json` の args 内の `${GEMAGENT_SESSION_ID}` は
+それに展開され、セッションごとの状態を持つサーバ — agent-board の MCP 面 —
+は環境からの推測ではなく登録行で自分のセッションを告げられる（実測: 推測は
+入れ子起動で誤ったセッションを拾う）。gem-agent はそのサーバについて何も
+知らないままである。
+
 ### 3. 出力は文脈か判定。プロンプトは拒否でき、セッション開始は拒否できない
 
 exit 0 で素の stdout は注入文脈、JSON オブジェクトは判定であり、その

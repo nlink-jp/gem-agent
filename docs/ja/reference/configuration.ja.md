@@ -244,6 +244,13 @@ prompt には決して入らず、auto モードのリスクレビューアが�
 タイムアウト・解析不能な出力は警告付きで続行し何も注入しません。同じ
 理由でグローバル設定専用です。
 
+セッションが起動するすべて（シェルコマンド、MCP サーバ、フック）*へ*
+export される変数が 2 つあります: セッションの作業ディレクトリ
+`GEMAGENT_WORK_DIR`（ADR-0058）と、セッション id `GEMAGENT_SESSION_ID`
+（ADR-0069 追記 2）— `mcp.json` の args 内の `${GEMAGENT_SESSION_ID}` は
+これに展開され、セッションごとの状態を持つサーバはこうして自分のセッションを
+知らされます。
+
 環境変数 `GEMAGENT_STATE_DIR` はテスト/訓練の隔離用に state ルート
 （sessions と memory）を差し替えます。デバッグ用に、設定ファイル外で直接読まれる
 環境変数がもう 2 つあります: `GEMAGENT_MCP_STDERR=1` は MCP サーバーの stderr を

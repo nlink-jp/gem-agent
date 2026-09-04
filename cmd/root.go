@@ -275,6 +275,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			sessionLog = lg
 			sessionPath = lg.Path()
 			sessionID = lg.ID()
+			// Exported before any MCP server starts, so a registration
+			// line can hand the session to a server that keeps
+			// per-session state (ADR-0069 addendum 2).
+			if err := session.Export(sessionID); err != nil {
+				fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", session.EnvVar, err)
+			}
 			if resumedID != "" {
 				// Under the flock (Reopen holds it): the file we read
 				// is exactly the file we will append to, with no

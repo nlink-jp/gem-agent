@@ -249,6 +249,13 @@ reported as a failed hook and injects nothing. As with pre-tool hooks,
 a crash, a timeout, or unparseable output proceeds with a warning and
 injects nothing. Global config only, for the same reason.
 
+Two variables are exported *to* everything a session spawns (shell
+commands, MCP servers, hooks): `GEMAGENT_WORK_DIR`, the session's work
+directory (ADR-0058), and `GEMAGENT_SESSION_ID`, the session id
+(ADR-0069 addendum 2) — `${GEMAGENT_SESSION_ID}` in an `mcp.json` args
+entry expands to it, which is how a server that keeps per-session state
+is told its session.
+
 The `GEMAGENT_STATE_DIR` environment variable relocates the state root
 (sessions and memory) for test/drill isolation. Two more environment
 variables exist for debugging and are read directly, outside the config

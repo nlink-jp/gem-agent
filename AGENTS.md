@@ -83,7 +83,8 @@ internal/approve/  MITL gate (y/n/N/a + session allowlist; N = deny with
 internal/hooks/    operator hooks on Claude Code's measured contracts: the
                    pre-tool floor (ADR-0044) and the session-start /
                    prompt-submit context events (ADR-0069, data lane)
-internal/session/  JSONL transcript: logger + resume loader (ADR-0005)
+internal/session/  JSONL transcript: logger + resume loader (ADR-0005); GEMAGENT_SESSION_ID
+                   is exported at startup beside GEMAGENT_WORK_DIR (ADR-0069 addendum 2)
 internal/repl/     paste-safe input reader (plain REPL, non-TTY fallback)
 internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate
 internal/diagram/  mermaid → terminal box art (ADR-0042/0063): fence scanner,

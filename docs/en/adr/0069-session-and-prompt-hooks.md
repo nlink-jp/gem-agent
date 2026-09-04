@@ -92,6 +92,15 @@ session — agent-board's claim enforcement needed exactly this, and
 without it refused the claimant its own file. Claude Code's PreToolUse
 carries the same identity fields, so the shape stays one contract.
 
+**Addendum 2 (2026-09-05, v0.65.2).** The session id is exported to
+children as `GEMAGENT_SESSION_ID`, beside `GEMAGENT_WORK_DIR`
+(ADR-0058), before any MCP server starts. `${GEMAGENT_SESSION_ID}` in
+an `mcp.json` args entry therefore expands to it, and a server that
+keeps per-session state — agent-board's MCP face — is told its session
+on its registration line instead of guessing from the environment
+(measured: a guess picks the wrong session under a nested start).
+gem-agent still knows nothing about that server.
+
 ### 3. Output is context or a verdict; a prompt can be refused, a session start cannot
 
 On exit 0, plain stdout is injected context; a JSON object is a

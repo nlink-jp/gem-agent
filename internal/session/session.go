@@ -134,6 +134,22 @@ type Meta struct {
 	HasConversation bool
 }
 
+// EnvVar is the environment variable naming the running session's id.
+// Like the work directory (ADR-0058), it is exported at startup so that
+// everything the session spawns — MCP servers above all — can be told
+// which session it serves without gem-agent knowing anything about the
+// server: `${GEMAGENT_SESSION_ID}` in an mcp.json args entry expands to
+// it (ADR-0069 addendum 2, for agent-board's MCP face).
+const EnvVar = "GEMAGENT_SESSION_ID"
+
+// Export publishes id under EnvVar for child processes.
+func Export(id string) error {
+	if id == "" {
+		return nil
+	}
+	return os.Setenv(EnvVar, id)
+}
+
 // Logger appends records to one session file.
 type Logger struct {
 	mu sync.Mutex
