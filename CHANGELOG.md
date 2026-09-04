@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.63.1] - 2026-09-04
 
 ### Fixed — telemetry no longer probes the GCE metadata server at startup (ADR-0068)
 
