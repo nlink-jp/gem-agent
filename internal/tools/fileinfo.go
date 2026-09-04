@@ -176,7 +176,7 @@ func (r *Registry) describeFile(p string) (string, error) {
 	}
 	appendTimes(&b, lst)
 
-	f, err := os.Open(abs)
+	f, err := r.openRead(abs)
 	if err != nil {
 		return "", fmt.Errorf("unreadable")
 	}

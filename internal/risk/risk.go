@@ -556,6 +556,10 @@ func readOnlyCommand(command string) bool {
 	return true
 }
 
+// awkSystemRe finds awk's system() call, with any whitespace before
+// the paren.
+var awkSystemRe = regexp.MustCompile(`\bsystem\s*\(`)
+
 // sedWriteCmd finds a `w`/`W` command in a sed script — `/re/w file`,
 // `1,5w file`, the `s///w file` flag — which writes a file whatever
 // the options say. Matched against the script and file arguments
@@ -606,9 +610,14 @@ func mutatingUse(name string, args []string) bool {
 		}
 	case "awk":
 		for _, a := range args {
-			if a == "-f" || strings.HasPrefix(a, "-i") || strings.Contains(a, "system(") {
+			if a == "-f" || strings.HasPrefix(a, "-i") {
 				return true
 			}
+		}
+		// `system (…)` is valid awk: the call is matched across the
+		// joined script, not per whitespace token (review after v0.68.0).
+		if awkSystemRe.MatchString(strings.Join(args, " ")) {
+			return true
 		}
 	case "sort":
 		for _, a := range args {

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.68.1] - 2026-09-05
+
+### Fixed — post-release review of v0.68.0 (ADR-0072 §4)
+
+- The file tools open through `os.Root`: a symlink swapped between
+  the confinement check and the open no longer escapes the project
+- `read_file` streams: the line window and the 200KB cap apply as the
+  file is read, so a huge or sparse file costs bounded memory; images
+  and documents are refused by size before any read
+- `edit_file` honours cancellation before the read and before the
+  write
+- `awk 'BEGIN { system ("…") }'` (whitespace before the paren) is no
+  longer Safe
+- An abandoned call that returns after `/clear` no longer announces
+  itself to the new conversation or records into the new transcript
+- `GEMAGENT_WORK_DIR` is unset when the session has no work directory,
+  so reconnected MCP servers (and nested launches) do not inherit a
+  stale one
+- `/clear` runs the `session_end` hook before the `session.end` audit
+  event, as ADR-0071 §4a states
+
 ## [0.68.0] - 2026-09-05
 
 ### Changed — `/clear` restarts what carries the session identity (ADR-0071 addendum)

@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/session"
+	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
 // Review round 4: a view_image / read_document call refused by a
@@ -201,5 +203,56 @@ func TestPreToolHookDoesNotSeeThePurpose(t *testing.T) {
 	}
 	if seen["path"] != "x.txt" {
 		t.Fatalf("the hook did not see the real arguments: %v", seen)
+	}
+}
+
+// Review after v0.68.0: an abandoned call that returns after /clear
+// belongs to the session that made it — no note for the new
+// conversation, no tool_late_return in the new transcript.
+func TestLateReturnAfterRestartStaysWithTheOldSession(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	writer := &tools.Tool{
+		Name: "slow_write", Description: "writes, slowly, ignoring ctx",
+		Parameters: map[string]any{"type": "object", "properties": map[string]any{}},
+		Mutating:   true,
+		Run: func(ctx context.Context, args map[string]any) (string, error) {
+			started <- struct{}{}
+			<-release
+			return "written", nil
+		},
+	}
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "slow_write", Args: map[string]any{}}}},
+		{Content: "done"},
+	}}
+	oldLog := &safeLog{}
+	a := newFloorTestAgent(t, mb, writer, oldLog, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { _, _ = a.Run(ctx, "go", nil); close(done) }()
+	<-started
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the turn never returned")
+	}
+	newLog := &safeLog{}
+	a.Restart(newLog)
+	close(release)
+	deadline := time.Now().Add(3 * time.Second)
+	for !oldLog.has("tool_late_return") {
+		if time.Now().After(deadline) {
+			t.Fatal("the old transcript never received the late-return record")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if newLog.has("tool_late_return") {
+		t.Error("the new transcript received the old session's late-return record")
+	}
+	if notes := a.takeLateNotices(); len(notes) != 0 {
+		t.Errorf("the new conversation received the old session's note: %v", notes)
 	}
 }

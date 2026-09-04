@@ -338,13 +338,28 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 - **The context is re-checked after every layer of the ladder**
   (ADR-0072 §1.2) — after the pre-tool hook and after `decideAuto`, a
   cancelled turn returns `interrupted` instead of reaching the gate.
+- **The file tools open through `os.Root`** (ADR-0072 §4) —
+  `resolvePath` still answers "is this path inside the roots", but the
+  open is `openRead` / `openWrite` / `statIn` on the registry's
+  `projectRoot` / `workRoot` handles: a symlink swapped between the
+  check and the use is refused at the open. Never add an
+  `os.Open(abs)` / `os.ReadFile(abs)` / `os.WriteFile(abs)` on a
+  resolved path; `UseWorkDir` rotates `workRoot`. Reads stream
+  (`readWindow`, `readAllCapped`) — nothing holds a file whole before
+  a cap, and size gates run before the read.
+- **An abandoned call carries its session epoch** (ADR-0072 §4) —
+  `Agent.epoch` advances on `Reset` / `Restart`; the late-return
+  goroutine drops its note and writes its record to the captured
+  logger when the epoch moved. `exportWorkDir("")` UNSETS the variable
+  — a stale value is inherited by the next MCP reconnect.
 - **The rule tier reads a command the way bash runs it** (ADR-0072
   §1.3) — `segmentSplit` includes newlines; `normalizeHeads`
   canonicalises each segment's first word (path prefix, backslash,
   case) before the block patterns; `rmRecursiveForce` reads rm's flags
   in any spelling; `mutatingUse` takes a read-only command's Safe away
   when its flags write or exec (`find -exec`, `sed -i`, `env cmd`);
-  `tee` and `xargs` are not read-only; `aliasResolve` maps `/tmp`,
+  `tee` and `xargs` are not read-only; `awkSystemRe` matches
+  `system (` across the joined script; `aliasResolve` maps `/tmp`,
   `/var`, `/etc` to `/private` before any roots check. New dangerous
   forms go in with a corpus case in `internal/risk/review4_test.go`.
 - **Persistent files are `OperatorOnly`** (ADR-0072 §1.4) —

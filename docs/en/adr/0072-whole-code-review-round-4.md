@@ -229,6 +229,44 @@ normal path. The code follows the documents; ADR-0071 §4 is amended.
   them if a model ever sends them; the gotcha's "every Part" wording
   is narrowed to what is measured.
 
+## 4. Post-release review of v0.68.0 (2026-09-05)
+
+An external reviewer read the release; every claim was re-verified
+against the code or a probe and all seven held. Fixed in v0.68.1:
+
+- **`awk 'BEGIN { system ("rm -rf .") }'` was Safe** — `mutatingUse`
+  matched `system(` per whitespace token; valid awk puts a space
+  before the paren. The call is matched across the joined script.
+- **Symlink TOCTOU in the file tools** — `resolvePath` checked the
+  resolved target and returned the lexical path; a link swapped between
+  the check and the open escaped the roots, from the unsandboxed main
+  process. The registry now holds its roots as `os.Root` handles and
+  `read_file`, `write_file`, `edit_file`, `view_image`,
+  `read_document` and `file_info` open through them: the check and
+  the open are one operation, and a link that leads out is refused at
+  open time whatever changed in between.
+- **Reads held the whole file before the cap** — `read_file` read a
+  file whole and truncated to 200KB after; a huge or sparse file could
+  exhaust memory, line windows included. Reads stream: the window and
+  the cap apply as the file is read, no line is held past the cap, and
+  images and documents are refused by size before any read.
+- **`edit_file` never consulted its context** — a call the floor
+  abandoned during a slow read went on to write after the operator saw
+  "interrupted". It checks before the read and before the write.
+- **A late return after `/clear` landed in the new session** — the
+  abandoned goroutine appended its note and record at completion, to
+  whatever session was current. The call captures its session epoch
+  and logger; after a `/clear` the note is dropped, the record goes to
+  the old transcript if still open, and the audit event alone carries
+  on.
+- **A failed work directory left `GEMAGENT_WORK_DIR` set** — the MCP
+  servers reconnected next inherited the previous session's directory
+  (and at startup a nested launch inherited its parent's). The
+  variable is unset when the session has none.
+- **`/clear` emitted `session.end` before the `session_end` hook** —
+  the reverse of ADR-0071 §4a. The order follows the ADR and is pinned
+  on the source.
+
 ## Lessons
 
 - **Independent reviewers found what the maintainer pass did not**, for

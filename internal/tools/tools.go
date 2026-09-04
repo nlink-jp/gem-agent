@@ -5,9 +5,11 @@
 package tools
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -69,7 +71,15 @@ type Registry struct {
 	// model can see those paths and not open them, and it routes around
 	// the built-ins with shell redirection — which is less reviewable,
 	// not more contained.
-	workDir      string
+	workDir string
+	// projectRoot and workRoot are the roots as os.Root handles: the
+	// file tools open through them, so the symlink check and the open
+	// are one operation (review after v0.68.0: resolvePath checked the
+	// resolved path and returned the lexical one, and a link swapped
+	// between check and use escaped the roots). workRoot is nil until a
+	// work directory is set.
+	projectRoot  *os.Root
+	workRoot     *os.Root
 	execFn       ExecFunc
 	shellTimeout time.Duration
 	tools        map[string]*Tool
@@ -93,8 +103,13 @@ func New(projectDir string, execFn ExecFunc, shellTimeout time.Duration) (*Regis
 	if err != nil {
 		return nil, fmt.Errorf("project directory: %w", err)
 	}
+	projectRoot, err := os.OpenRoot(real)
+	if err != nil {
+		return nil, err
+	}
 	r := &Registry{
 		projectDir:   real,
+		projectRoot:  projectRoot,
 		execFn:       execFn,
 		shellTimeout: shellTimeout,
 		tools:        map[string]*Tool{},
@@ -121,7 +136,10 @@ func (r *Registry) WorkDir() string { return r.workDir }
 // up with no work directory where the previous session had one.
 func (r *Registry) UseWorkDir(dir string) error {
 	if dir == "" {
-		r.workDir = ""
+		if r.workRoot != nil {
+			_ = r.workRoot.Close()
+		}
+		r.workDir, r.workRoot = "", nil
 		return nil
 	}
 	abs, err := filepath.Abs(dir)
@@ -132,8 +150,85 @@ func (r *Registry) UseWorkDir(dir string) error {
 	if err != nil {
 		return fmt.Errorf("work directory: %w", err)
 	}
-	r.workDir = real
+	root, err := os.OpenRoot(real)
+	if err != nil {
+		return fmt.Errorf("work directory: %w", err)
+	}
+	if r.workRoot != nil {
+		_ = r.workRoot.Close()
+	}
+	r.workDir, r.workRoot = real, root
 	return nil
+}
+
+// rootFor returns the os.Root that contains abs (a path resolvePath
+// accepted) and abs relative to it.
+func (r *Registry) rootFor(abs string) (*os.Root, string, error) {
+	for _, c := range []struct {
+		dir  string
+		root *os.Root
+	}{{r.projectDir, r.projectRoot}, {r.workDir, r.workRoot}} {
+		if c.dir == "" || c.root == nil || !within(c.dir, abs) {
+			continue
+		}
+		rel, err := filepath.Rel(c.dir, abs)
+		if err != nil {
+			return nil, "", err
+		}
+		return c.root, rel, nil
+	}
+	return nil, "", fmt.Errorf("path escapes the project directory: %s", abs)
+}
+
+// openRead opens abs for reading through its root. os.Root resolves
+// every path component inside the root and refuses one that leads
+// out, at open time — the containment holds however the tree changes
+// between resolvePath's check and this call.
+func (r *Registry) openRead(abs string) (*os.File, error) {
+	root, rel, err := r.rootFor(abs)
+	if err != nil {
+		return nil, err
+	}
+	return root.Open(rel)
+}
+
+// openWrite opens abs for writing (create, truncate) through its root,
+// creating missing parent directories inside the root.
+func (r *Registry) openWrite(abs string, perm os.FileMode) (*os.File, error) {
+	root, rel, err := r.rootFor(abs)
+	if err != nil {
+		return nil, err
+	}
+	if dir := filepath.Dir(rel); dir != "." {
+		if err := root.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+	}
+	return root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+}
+
+// statIn stats abs through its root.
+func (r *Registry) statIn(abs string) (os.FileInfo, error) {
+	root, rel, err := r.rootFor(abs)
+	if err != nil {
+		return nil, err
+	}
+	return root.Stat(rel)
+}
+
+// readAllCapped reads at most cap bytes from f, reporting whether
+// more followed — the file is never held whole (review after v0.68.0:
+// os.ReadFile of a huge or sparse file could exhaust memory before the
+// output cap applied).
+func readAllCapped(f io.Reader, cap int) (data []byte, more bool, err error) {
+	data, err = io.ReadAll(io.LimitReader(f, int64(cap)+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if len(data) > cap {
+		return data[:cap], true, nil
+	}
+	return data, false, nil
 }
 
 // roots returns the directories the file tools may touch.
@@ -260,12 +355,22 @@ func (r *Registry) ReadImage(p string) (data []byte, mime string, err error) {
 	if !isImageExt(abs) {
 		return nil, "", fmt.Errorf("%s does not look like an image file", p)
 	}
-	data, err = os.ReadFile(abs)
+	f, err := r.openRead(abs)
 	if err != nil {
 		return nil, "", fmt.Errorf("unreadable: %w", err)
 	}
-	if len(data) > maxImageBytes {
-		return nil, "", fmt.Errorf("image is %d bytes; the limit is %d", len(data), maxImageBytes)
+	defer func() { _ = f.Close() }()
+	// The size gate runs before the read, so an oversized (or sparse)
+	// file is refused without being held in memory.
+	if st, err := f.Stat(); err == nil && st.Size() > maxImageBytes {
+		return nil, "", fmt.Errorf("image is %d bytes; the limit is %d", st.Size(), maxImageBytes)
+	}
+	data, more, err := readAllCapped(f, maxImageBytes)
+	if err != nil {
+		return nil, "", fmt.Errorf("unreadable: %w", err)
+	}
+	if more {
+		return nil, "", fmt.Errorf("image exceeds the %d byte limit", maxImageBytes)
 	}
 	mime = http.DetectContentType(data)
 	if !strings.HasPrefix(mime, "image/") {
@@ -338,6 +443,91 @@ func sliceLines(content string, start, end int) (string, string, error) {
 	}
 	note := fmt.Sprintf("\n[showing lines %d–%d of %d]", start, end, total)
 	return strings.Join(lines[start-1:end], "\n"), note, nil
+}
+
+// readWindow is sliceLines over a stream: lines are read one at a
+// time, only the requested window is kept, and no single line is held
+// beyond cap bytes (a sparse file is one enormous line). The total
+// line count in the note still needs the whole stream walked, which
+// is bounded in memory, not in time — ctx is consulted as it goes.
+func readWindow(ctx context.Context, f io.Reader, start, end, cap int) (string, string, error) {
+	if start == 0 && end == 0 {
+		// One byte past the cap, so the caller's truncate sees the
+		// overflow and marks it.
+		data, err := io.ReadAll(io.LimitReader(f, int64(cap)+1))
+		if err != nil {
+			return "", "", err
+		}
+		return string(data), "", nil
+	}
+	if start == 0 {
+		start = 1
+	}
+	if end != 0 && end < start {
+		return "", "", fmt.Errorf("end_line %d is before start_line %d", end, start)
+	}
+	br := bufio.NewReaderSize(f, 64*1024)
+	var kept []string
+	keptBytes := 0
+	total := 0
+	for {
+		if total%1024 == 0 {
+			if err := ctx.Err(); err != nil {
+				return "", "", err
+			}
+		}
+		line, err := readLineCapped(br, cap)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", "", err
+		}
+		total++
+		if total >= start && (end == 0 || total <= end) && keptBytes <= cap {
+			kept = append(kept, line)
+			keptBytes += len(line) + 1
+		}
+	}
+	if start > total {
+		return "", "", fmt.Errorf("start_line %d is beyond the end of the file (%d lines)", start, total)
+	}
+	if end == 0 || end > total {
+		end = total
+	}
+	note := fmt.Sprintf("\n[showing lines %d–%d of %d]", start, end, total)
+	return strings.Join(kept, "\n"), note, nil
+}
+
+// readLineCapped returns the next line without its newline, keeping
+// at most cap bytes of it and discarding the rest; io.EOF when no line
+// remains (a file's trailing newline does not start a phantom line —
+// the sliceLines rule).
+func readLineCapped(br *bufio.Reader, cap int) (string, error) {
+	var buf []byte
+	for {
+		chunk, err := br.ReadSlice('\n')
+		if len(buf) < cap {
+			take := chunk
+			if len(buf)+len(take) > cap {
+				take = take[:cap-len(buf)]
+			}
+			buf = append(buf, take...)
+		}
+		switch err {
+		case nil:
+			return strings.TrimSuffix(string(buf), "\n"), nil
+		case bufio.ErrBufferFull:
+			continue
+		case io.EOF:
+			if len(chunk) == 0 && len(buf) == 0 {
+				return "", io.EOF
+			}
+			return string(buf), nil
+		default:
+			return "", err
+		}
+	}
 }
 
 // --- path confinement ---
@@ -528,18 +718,31 @@ func (r *Registry) readFile() *Tool {
 			if err != nil {
 				return "", err
 			}
-			data, err := os.ReadFile(abs)
-			if err != nil {
-				return "", err
-			}
 			if isImageExt(p) {
 				return "", fmt.Errorf("%s is an image — use the view_image tool to look at it (read_file would return unusable binary)", p)
 			}
-			content, note, err := sliceLines(string(data), intArg(args, "start_line"), intArg(args, "end_line"))
+			f, err := r.openRead(abs)
 			if err != nil {
 				return "", err
 			}
-			out := truncate(content, readCap)
+			defer func() { _ = f.Close() }()
+			// Streamed, never held whole (review after v0.68.0): the
+			// window and the cap apply as the file is read, so a huge or
+			// sparse file costs bounded memory whatever its size.
+			content, note, err := readWindow(ctx, f, intArg(args, "start_line"), intArg(args, "end_line"), readCap)
+			if err != nil {
+				return "", err
+			}
+			out := content
+			if len(content) > readCap {
+				// The marker names the file's real size, which the
+				// streamed read never held.
+				total := int64(len(content))
+				if st, err := f.Stat(); err == nil && st.Size() > total {
+					total = st.Size()
+				}
+				out = content[:readCap] + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", readCap, total)
+			}
 			// The window note goes AFTER any truncation note, and the
 			// content itself stays raw (no line-number prefixes): numbered
 			// output would poison edit_file's exact-match contract the
@@ -623,7 +826,7 @@ func (r *Registry) writeFile() *Tool {
 				return "", err
 			}
 			allowShrink, _ := args["allow_shrink"].(bool)
-			if info, err := os.Stat(abs); err == nil && !info.IsDir() &&
+			if info, err := r.statIn(abs); err == nil && !info.IsDir() &&
 				info.Size() >= shrinkGuardMinBytes && !allowShrink &&
 				int64(len(content))*100 < info.Size()*shrinkGuardPct {
 				return "", fmt.Errorf("refusing to replace %s (%s) with much smaller content (%s): "+
@@ -632,10 +835,18 @@ func (r *Registry) writeFile() *Tool {
 					"shrink is intentional (file unchanged)",
 					p, sizeLabel(info.Size()), sizeLabel(int64(len(content))))
 			}
-			if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			if err := ctx.Err(); err != nil {
 				return "", err
 			}
-			if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+			f, err := r.openWrite(abs, 0o644)
+			if err != nil {
+				return "", err
+			}
+			if _, err := f.Write([]byte(content)); err != nil {
+				_ = f.Close()
+				return "", err
+			}
+			if err := f.Close(); err != nil {
 				return "", err
 			}
 			return fmt.Sprintf("wrote %d bytes to %s", len(content), p), nil

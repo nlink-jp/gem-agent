@@ -9,7 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 )
 
@@ -90,11 +90,23 @@ func (r *Registry) editFile() *Tool {
 			if err != nil {
 				return "", err
 			}
-			info, err := os.Stat(abs)
+			// Every syscall-shaped step consults ctx (ADR-0065 §1): a
+			// call the floor abandoned during a slow read must not go
+			// on to write after the operator was told "interrupted"
+			// (review after v0.68.0).
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
+			info, err := r.statIn(abs)
 			if err != nil {
 				return "", err
 			}
-			data, err := os.ReadFile(abs)
+			in, err := r.openRead(abs)
+			if err != nil {
+				return "", err
+			}
+			data, err := io.ReadAll(in)
+			_ = in.Close()
 			if err != nil {
 				return "", err
 			}
@@ -105,7 +117,18 @@ func (r *Registry) editFile() *Tool {
 				// the failing edit and carries the diagnosis.
 				return "", fmt.Errorf("%s: %w (file unchanged)", p, err)
 			}
-			if err := os.WriteFile(abs, []byte(content), info.Mode().Perm()); err != nil {
+			if err := ctx.Err(); err != nil {
+				return "", fmt.Errorf("%w (file unchanged)", err)
+			}
+			out, err := r.openWrite(abs, info.Mode().Perm())
+			if err != nil {
+				return "", err
+			}
+			if _, err := out.Write([]byte(content)); err != nil {
+				_ = out.Close()
+				return "", err
+			}
+			if err := out.Close(); err != nil {
 				return "", err
 			}
 			return fmt.Sprintf("edited %s (%d edit(s)):\n%s", p, len(ops), strings.Join(reports, "\n")), nil

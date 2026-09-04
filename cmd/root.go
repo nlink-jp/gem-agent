@@ -333,13 +333,15 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// MCP results get truncated with a note); it does not stop
 			// the session from starting.
 			fmt.Fprintf(stderr, "warning: session work directory unavailable: %v\n", err)
+			// An inherited value (a nested launch) must not stand in.
+			_ = os.Unsetenv(workdir.EnvVar)
 		} else {
 			workDir = dir
 			// Exported, not passed: this is what puts the path in front
 			// of shell_exec's child, every MCP server (internal/mcp
 			// inherits os.Environ), and every hook, without any of them
 			// needing to know gem-agent's layout.
-			if err := os.Setenv(workdir.EnvVar, workDir); err != nil {
+			if err := exportWorkDir(workDir); err != nil {
 				fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", workdir.EnvVar, err)
 			}
 			if dirs, bytes, err := workdir.Sweep(projectDir, sessionID); err == nil && dirs > 0 {
@@ -1072,10 +1074,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			sessionHooks("clear")
 			return render()
 		}
-		// The old session's audit trail closes under its own id before
-		// the sink is re-resourced for the new one (ADR-0071 addendum).
-		sink.SessionEnd()
+		// Hook first, then the audit event — the order ADR-0071 §4a
+		// states and external consumers observe; the trail closes under
+		// the old id before the sink is re-resourced for the new one.
 		sessionEndHooks("clear")
+		sink.SessionEnd()
 		ag.Restart(newLog)
 		if curLog != nil {
 			_ = curLog.Close()
@@ -1095,9 +1098,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			note("session work directory unavailable: %v", err)
 		} else {
 			workDir = dir
-			if err := os.Setenv(workdir.EnvVar, workDir); err != nil {
-				note("cannot export %s: %v", workdir.EnvVar, err)
-			}
+		}
+		// Exported or UNSET: the MCP servers reconnected below inherit
+		// the environment, and the old directory must not survive in
+		// it (review after v0.68.0).
+		if err := exportWorkDir(workDir); err != nil {
+			note("cannot export %s: %v", workdir.EnvVar, err)
 		}
 		// Every consumer of the work directory follows it (review round
 		// 4): the file tools' second root, the sandbox profile, the MCP
@@ -1965,6 +1971,16 @@ func firstSentence(s string) string {
 		return s[:i+1]
 	}
 	return s
+}
+
+// exportWorkDir publishes the session work directory to children, or
+// removes the variable when the session has none — a stale value
+// would be inherited by every process spawned afterwards.
+func exportWorkDir(dir string) error {
+	if dir == "" {
+		return os.Unsetenv(workdir.EnvVar)
+	}
+	return os.Setenv(workdir.EnvVar, dir)
 }
 
 // liveExec is the shell strategy the registry calls through, so /clear

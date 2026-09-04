@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/nlink-jp/gem-agent/internal/docext"
 )
@@ -35,7 +34,7 @@ func (r *Registry) ReadDocumentPDF(p string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := readCapped(abs, maxDocFileBytes)
+	data, err := r.readCapped(abs, maxDocFileBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -48,17 +47,25 @@ func (r *Registry) ReadDocumentPDF(p string) ([]byte, error) {
 	return data, nil
 }
 
-func readCapped(abs string, cap int64) ([]byte, error) {
-	st, err := os.Stat(abs)
+func (r *Registry) readCapped(abs string, cap int64) ([]byte, error) {
+	f, err := r.openRead(abs)
+	if err != nil {
+		return nil, fmt.Errorf("unreadable: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("unreadable: %w", err)
 	}
 	if st.Size() > cap {
 		return nil, fmt.Errorf("file is %d bytes; the document limit is %d", st.Size(), cap)
 	}
-	data, err := os.ReadFile(abs)
+	data, more, err := readAllCapped(f, int(cap))
 	if err != nil {
 		return nil, fmt.Errorf("unreadable: %w", err)
+	}
+	if more {
+		return nil, fmt.Errorf("file exceeds the document limit of %d bytes", cap)
 	}
 	return data, nil
 }
@@ -85,7 +92,7 @@ func (r *Registry) readDocument() *Tool {
 			if err != nil {
 				return "", err
 			}
-			data, err := readCapped(abs, maxDocFileBytes)
+			data, err := r.readCapped(abs, maxDocFileBytes)
 			if err != nil {
 				return "", err
 			}

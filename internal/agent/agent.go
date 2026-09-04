@@ -115,6 +115,12 @@ type Agent struct {
 	turnInput string
 	turnRound int
 
+	// epoch counts the conversations this Agent has hosted: Reset and
+	// Restart advance it, and an abandoned call's late return compares
+	// the epoch it started in — a note or a transcript record for a
+	// call the current conversation never made must not land in it
+	// (review after v0.68.0). Guarded by mu.
+	epoch int
 	// lateNotices are messages queued for the start of the next turn
 	// by abandoned MUTATING calls that completed in the background
 	// (ADR-0065 §2): the model was told "interrupted, result
@@ -339,6 +345,9 @@ func (a *Agent) Reset() {
 	a.compactedAt = 0
 	a.lastPrompt = 0
 	a.tag = guard.NewTagWithPrefix("tool_output")
+	a.mu.Lock()
+	a.epoch++
+	a.mu.Unlock()
 	a.logRecord(session.KindClear, map[string]any{"messages": cleared})
 }
 
@@ -363,6 +372,7 @@ func (a *Agent) Restart(log SessionLog) {
 	a.compactFailures = 0
 	a.warnedNoCut = false
 	a.mu.Lock()
+	a.epoch++
 	a.log = log
 	a.logDead = false
 	// An abandoned call's late note (ADR-0065 §2) answers the model's
@@ -1302,6 +1312,12 @@ func (a *Agent) runWithFloor(ctx context.Context, tool *tools.Tool, tc llm.ToolC
 	case <-grace.C:
 	}
 	a.registry.NoteAbandoned(1) // on the registry: a delegated child's count is the session's
+	// The conversation and transcript the call belongs to are the ones
+	// in force NOW; a /clear before it returns must not hand its note
+	// or its record to the next session (review after v0.68.0).
+	a.mu.Lock()
+	epoch, log := a.epoch, a.log
+	a.mu.Unlock()
 	go func() {
 		r := <-done
 		took := time.Since(start)
@@ -1310,17 +1326,27 @@ func (a *Agent) runWithFloor(ctx context.Context, tool *tools.Tool, tc llm.ToolC
 			outcome = "error"
 		}
 		a.registry.NoteAbandoned(-1)
+		record := map[string]any{
+			"name": tc.Name, "mutating": tool.Mutating, "outcome": outcome,
+			"duration_ms": took.Milliseconds(), "bytes": len(r.out),
+		}
 		a.mu.Lock()
-		if tool.Mutating {
+		sameSession := a.epoch == epoch
+		if sameSession && tool.Mutating {
 			a.lateNotices = append(a.lateNotices, fmt.Sprintf(
 				"note from gem-agent: the %s call abandoned by the interrupt completed in the background after %s with outcome %s; its result was discarded. Verify its effect before relying on it.",
 				tc.Name, took.Round(100*time.Millisecond), outcome))
 		}
 		a.mu.Unlock()
-		a.logRecord("tool_late_return", map[string]any{
-			"name": tc.Name, "mutating": tool.Mutating, "outcome": outcome,
-			"duration_ms": took.Milliseconds(), "bytes": len(r.out),
-		})
+		if sameSession {
+			a.logRecord("tool_late_return", record)
+		} else if log != nil {
+			// The old transcript, if it is still open; a closed one
+			// drops a diagnostic record, as best-effort allows.
+			_ = log.Log("tool_late_return", record)
+		}
+		// The audit trail never loses an effect that happened; after a
+		// /clear the event carries the current session's resource.
 		a.telemetry.ToolLateReturn(tc.Name, tool.Mutating, took, outcome)
 	}()
 	return "", floorAbandoned, nil

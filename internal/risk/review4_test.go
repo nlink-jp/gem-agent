@@ -229,3 +229,19 @@ func TestNormalizeHeadsTouchesOnlyHeads(t *testing.T) {
 		}
 	}
 }
+
+// Review after v0.68.0: `system (` with whitespace is valid awk.
+func TestAwkSystemWithWhitespaceIsNotSafe(t *testing.T) {
+	for _, cmd := range []string{
+		`awk 'BEGIN { system ("rm -rf .") }'`,
+		"awk 'BEGIN { system\t(\"x\") }'",
+		`awk '{ system("ls") }' file`,
+	} {
+		if v := classifyShell(cmd); v.Tier == Safe {
+			t.Errorf("%q classified safe — awk runs a program here", cmd)
+		}
+	}
+	if v := classifyShell(`awk '{ print $1 " system" }' x`); v.Tier != Safe {
+		t.Errorf("the word system in a string = %v (%s), want safe", v.Tier, v.Reason)
+	}
+}

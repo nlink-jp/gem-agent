@@ -13,6 +13,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
+	"github.com/nlink-jp/gem-agent/internal/workdir"
 )
 
 // Review round 4: /clear rotates the work directory (ADR-0071 §2), and
@@ -149,5 +150,62 @@ func TestClearOutputCarriesTheRestartReport(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
+	}
+}
+
+// Review after v0.68.0: with no work directory the variable is
+// removed, never left holding the previous session's (or a parent
+// process's) directory for the MCP servers reconnected next.
+func TestExportWorkDirUnsetsWhenNone(t *testing.T) {
+	t.Setenv(workdir.EnvVar, "/stale")
+	if err := exportWorkDir(""); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := os.LookupEnv(workdir.EnvVar); ok {
+		t.Fatalf("%s still set to %q", workdir.EnvVar, v)
+	}
+	if err := exportWorkDir("/fresh"); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv(workdir.EnvVar) != "/fresh" {
+		t.Fatal("export did not set the variable")
+	}
+}
+
+// The /clear sequence is the one ADR-0071 §4a states: session_end hook,
+// session.end audit event, the new transcript's takeover, telemetry
+// restart, MCP reconnect, session.start, session_start hook. Pinned
+// on the source, since onClear is a closure over the session.
+func TestClearSequenceMatchesTheADR(t *testing.T) {
+	src, err := os.ReadFile("root.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	start := strings.Index(body, "onClear := func() string {")
+	end := strings.Index(body[start:], "\n\t}\n")
+	if start < 0 || end < 0 {
+		t.Fatal("onClear not found")
+	}
+	body = body[start : start+end]
+	steps := []string{
+		`sessionEndHooks("clear")`,
+		"sink.SessionEnd()",
+		"ag.Restart(newLog)",
+		"sink.Restart(ctx, sessionID)",
+		"reloadMCP()",
+		"sink.SessionStart(",
+		`sessionHooks("clear")`,
+	}
+	last := -1
+	for _, s := range steps {
+		i := strings.LastIndex(body, s)
+		if i < 0 {
+			t.Fatalf("step %q missing from onClear", s)
+		}
+		if i < last {
+			t.Fatalf("step %q comes before the previous step", s)
+		}
+		last = i
 	}
 }
