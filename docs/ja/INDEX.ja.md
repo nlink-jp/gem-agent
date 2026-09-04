@@ -198,6 +198,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0065`](adr/0065-cancellation-in-process.ja.md) — キャンセルは呼び出しを終わらせる（第 2 部）: ファイル走査は context を参照して名前付きの部分結果を返し、全ツール呼び出しの下の復帰保証の床が 1 秒の猶予後に詰まった呼び出しを放棄（監査は `abandoned`・終了レシートで計数・遅延復帰は記録し変更系なら次ターンで告知・`ask_user` は除外）、3 回押しの脱出はしごが素 REPL と `-p` にも届き、終了は監査イベントの flush 中であることを告げる
 - [`ADR-0066`](adr/0066-tool-prompt-usage-bucket.ja.md) — 4 つ目のバケツ: SDK は `totalTokenCount` を 4 つのカウントの和と定義しているのに ADR-0057 のチェックサムは 3 項だった — プローブ（主ループ）が組み込みツールを一度も有効にしないため。結果、ツールが内容を返した `web_search` / `web_fetch` の全レコードが、通るはずの検算に落ちていた。`usage` レコードは `tool_prompt` を持ち（常に書く・ゼロも含む・キーの不在が 0066 以前の印）、チェックサムは `prompt + output + thoughts + tool_prompt == total`、`model.usage` に `tool_prompt_tokens` が加わる
 - [`ADR-0067`](adr/0067-piped-stdin-wait-notice.ja.md) — パイプ stdin を待つ単発実行は、待っていると言う: `-p` は引き続き端末でない stdin を EOF まで読む（遅い生産者を打ち切らない）が、2 秒経っても開いたままの pipe には両方の対処（パイプを閉じる、または `< /dev/null` で起動）を名指しする stderr 1 行が出て、告げた待機は終わりも見える — スケジューラやハーネスが子に渡す何も流れない継承 pipe は、もうハングには見えない
+- [`ADR-0068`](adr/0068-telemetry-resource-declared-not-detected.ja.md) — テレメトリクライアントは Cloud Logging のリソースを探索せず宣言する: `backend = "gcp"` ではライブラリの Logger が GCE メタデータサーバーから取得してホストを分類しており、Mac ではそのリンクローカル取得が間欠的に 4.5〜7.2 秒の沈黙した起動を費やしていた（存在しない隣接ノードをカーネルが ARP 探索する間、ダイヤルタイムアウトが一時的エラーとして再試行される）。検出がフォールバックしていた `global` リソースを宣言し、構築はネットワークに触れず、待機は契約ではなかったので待機通知は加えない
 
 ## History（履歴）
 
