@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.65.0] - 2026-09-04
+
+### Added — a loaded skill names its directory (ADR-0070 §1)
+
+- The `load_skill(name)` result and the `/skill <name>` turn open with
+  Claude Code's own line `Base directory for this skill: <dir>` — the
+  symlink-resolved skill directory, the same boundary reads are
+  confined to. A `SKILL.md` written to Claude Code's contract
+  ("`SKILL_DIR` is the directory containing this SKILL.md", then
+  `python3 SKILL_DIR/scripts/…`) now runs its scripts from gem-agent's
+  global skill directory as well as from a project. Before, nothing
+  told the model where a skill lived; in session `20260904-225330` it
+  went looking with `find / -name validate.py`, a walk of every mount
+  that only an accident of the redirect rule put in front of the
+  operator. The tool description says the line is coming; the
+  system-prompt line is unchanged (progressive disclosure holds)
+
+### Changed — a read-only walk outside the roots is Review, not Safe (ADR-0070 §3)
+
+- `find`, `fd`, `du`, `rg`, and `grep` with a recursive flag, starting
+  at `/`, `~`, or an absolute path outside the project, the session
+  work directory and the sandbox's scratch roots, now land in the
+  model tier with the reason "walks the filesystem outside the project
+  and session work directories". The sandbox denies writes only, so
+  such a walk reaches every mount; that cost is the model tier's to
+  weigh. Relative starting points and single reads (`cat /etc/hosts`,
+  `grep TODO /etc/hosts`) stay Safe; manual mode is unaffected
+  (everything already asks); Block stays the floor for the irreversible
+
+### Fixed — the rule tier's writable places are the sandbox's (ADR-0070 §2)
+
+- `2>/dev/null` was Blocked as "redirects output outside the project
+  and session work directories" although the profile has always
+  allowed writes under `/dev` — the sandbox and the rule tier each kept
+  their own list. `sandbox.ScratchDirs()` (`TMPDIR`, `/private/tmp`,
+  `/dev`) is now the one list both read: a redirect into a scratch
+  root is not "outside", and `/dev/null` / `2>&1` redirects no longer
+  cost a read-only command its Safe verdict. Nothing that can run is
+  widened; the classification catches up with Seatbelt
+
 ## [0.64.0] - 2026-09-04
 
 ### Added — session-start and prompt-submit hooks (ADR-0069)

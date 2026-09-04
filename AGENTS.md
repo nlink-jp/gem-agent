@@ -52,7 +52,8 @@ internal/tools/    built-in tools, path confinement, ExecFunc injection, Registe
 internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
 internal/ignore/   ignore-aware enumeration (ADR-0052): builtin dir list + full
                    gitignore matcher (in-repo, git check-ignore cross-checked)
-internal/risk/     rule tier of the auto-approve ladder (pure, no model)
+internal/risk/     rule tier of the auto-approve ladder (pure, no model);
+                   its writable scratch roots come from sandbox.ScratchDirs (ADR-0070)
 internal/policy/   per-tool approval policy (ADR-0008), pure resolver; also the
                    ADR-0045 per-command vocabulary, parsed for file compatibility
                    but not applied since ADR-0049
@@ -478,6 +479,26 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   we use, ignore the rest (`allowed-tools` deliberately so: honouring a
   foreign permission grant would bypass ADR-0004/0008). Never write to
   skill directories.
+- **A loaded skill names its directory in Claude Code's words**
+  (ADR-0070 §1) — `skills.BaseDirLine` renders
+  `Base directory for this skill: <dir>` at the top of the
+  `load_skill(name)` result and the `/skill` turn. SKILL.md files are
+  written against that exact sentence (`SKILL_DIR/scripts/…`); keep the
+  wording, and keep it out of the system-prompt line (the location
+  belongs with the body). Without it a global skill's scripts are
+  reachable by no path the model knows, and it went looking with
+  `find /` (session 20260904-225330).
+- **The rule tier and the sandbox share one list of writable scratch
+  roots** (ADR-0070 §2) — `sandbox.ScratchDirs()` (`TMPDIR`,
+  `/private/tmp`, `/dev`). Never add a directory to the profile in
+  `buildExecFn` or a root in `internal/risk` separately; the redirect
+  rule's reason must be what Seatbelt will do. `/dev/null` and `2>&1`
+  redirects do not cost a command its Safe verdict.
+- **Read-only is not harmless** (ADR-0070 §3) — reads are
+  `(allow default)` under the profile, so a tree walk (`find`, `fd`,
+  `du`, `rg`, recursive `grep`) from `/`, `~`, or an absolute path
+  outside the roots is Review, never Safe. Not Block: nothing is
+  destroyed; Block stays the floor for the irreversible.
 - **The session allowlist sits below the Block floor (ADR-0021)** —
   `Approver.Approve` carries `mustPrompt`, set by the agent for
   Block-tier calls and always-policy tools; both gates skip their
