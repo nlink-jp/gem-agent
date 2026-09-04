@@ -66,7 +66,7 @@ const (
 // openSettings enters the panel phase.
 func (m Model) openSettings() (tea.Model, tea.Cmd) {
 	if m.settingsData == nil {
-		return m, m.emit(m.st.errS.Render("✗ settings are unavailable in this mode"))
+		return m, m.emit(m.st.errS.Render(m.msgs.SettingsUnavailable))
 	}
 	data := *m.settingsData
 	m.settings = &data
@@ -124,7 +124,7 @@ func (m Model) cycleSetting(delta int) (tea.Model, tea.Cmd) {
 		// Read-only: say why rather than doing nothing silently.
 		detail := row.Detail
 		if detail == "" {
-			detail = "this setting cannot change mid-session — edit the config file and restart"
+			detail = m.msgs.SettingsImmutable
 		}
 		return m, m.emit(m.st.hint.Render("  " + row.Label + ": " + detail))
 	}
@@ -157,8 +157,8 @@ func (m Model) settingsView() string {
 	// scope line, the footer and the trailing newline already exceed the
 	// screen. Say so rather than overflowing it.
 	if m.height > 0 && m.height < minSettingsHeight {
-		return m.st.user.Render("settings") + "\n" +
-			m.st.hint.Render("  terminal too short — resize, or edit the config file directly")
+		return m.st.user.Render(m.msgs.SettingsTitle) + "\n" +
+			m.st.hint.Render(m.msgs.SettingsTooShort)
 	}
 	// Chrome outside the row list: this function's header and scope
 	// lines, the footer viewContent appends, its trailing newline, and
@@ -175,9 +175,9 @@ func (m Model) settingsView() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(m.st.user.Render("settings") + m.st.hint.Render(m.msgs.SettingsHint))
+	b.WriteString(m.st.user.Render(m.msgs.SettingsTitle) + m.st.hint.Render(m.msgs.SettingsHint))
 	if start > 0 {
-		b.WriteString("\n" + m.st.hint.Render(fmt.Sprintf("  … %d more above", start)))
+		b.WriteString("\n" + m.st.hint.Render(fmt.Sprintf(m.msgs.SettingsMoreAboveFmt, start)))
 	}
 	section := ""
 	for i := start; i < end; i++ {
@@ -206,14 +206,14 @@ func (m Model) settingsView() string {
 			m.st.hint.Render("("+row.Source+")"))
 	}
 	if end < len(rows) {
-		b.WriteString("\n" + m.st.hint.Render(fmt.Sprintf("  … %d more below", len(rows)-end)))
+		b.WriteString("\n" + m.st.hint.Render(fmt.Sprintf(m.msgs.SettingsMoreBelowFmt, len(rows)-end)))
 	}
 
-	scope := "global (~/.config/gem-agent/policy.toml)"
+	scope := m.msgs.SettingsScopeGlobal
 	if m.settingsScope == ScopeProject {
-		scope = "this project only — " + m.settings.ProjectDir
+		scope = fmt.Sprintf(m.msgs.SettingsScopeProjectFmt, m.settings.ProjectDir)
 	}
-	b.WriteString("\n" + m.st.hint.Render("  policy changes are saved to: ") + m.st.tool.Render(scope))
+	b.WriteString("\n" + m.st.hint.Render(m.msgs.SettingsSavedTo) + m.st.tool.Render(scope))
 	return b.String()
 }
 

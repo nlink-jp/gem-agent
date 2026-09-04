@@ -102,7 +102,17 @@ type Messages struct {
 	Bye           string // parting word on quit
 
 	// --- settings panel (TUI) ---
-	SettingsHint string // key help in the /settings title row
+	SettingsHint            string // key help in the /settings title row
+	SettingsTitle           string // panel title
+	SettingsMoreAboveFmt    string // "… %d more above" scroll marker
+	SettingsMoreBelowFmt    string // "… %d more below" scroll marker
+	SettingsImmutable       string // a read-only row was activated
+	SettingsTooShort        string // the terminal cannot hold the panel
+	SettingsSavedTo         string // label before the policy scope
+	SettingsScopeGlobal     string // the global policy file
+	SettingsScopeProjectFmt string // the project policy file (%s = project dir)
+	SettingsUnavailable     string // /settings in a mode without the panel
+	NoOutput                string // a shell command printed nothing
 
 	// --- running-status chrome (TUI, ADR-0033) ---
 	StatusThinking     string
@@ -280,7 +290,17 @@ var en = Messages{
 	ErrorPrefix:   "✗ error: ",
 	Bye:           "bye",
 
-	SettingsHint: "  ↑↓ select · ←→/Enter change · s scope · Esc close",
+	SettingsHint:            "  ↑↓ select · ←→/Enter change · s scope · Esc close",
+	SettingsTitle:           "settings",
+	SettingsMoreAboveFmt:    "  … %d more above",
+	SettingsMoreBelowFmt:    "  … %d more below",
+	SettingsImmutable:       "this setting cannot change mid-session — edit the config file and restart",
+	SettingsTooShort:        "  terminal too short — resize, or edit the config file directly",
+	SettingsSavedTo:         "  policy changes are saved to: ",
+	SettingsScopeGlobal:     "global (~/.config/gem-agent/policy.toml)",
+	SettingsScopeProjectFmt: "this project only — %s",
+	SettingsUnavailable:     "✗ settings are unavailable in this mode",
+	NoOutput:                "(no output)",
 
 	StatusThinking:          "thinking…",
 	StatusCompacting:        "compacting the conversation…",
@@ -414,7 +434,17 @@ var ja = Messages{
 	ErrorPrefix:   "✗ エラー: ",
 	Bye:           "bye",
 
-	SettingsHint: "  ↑↓ 選択 · ←→/Enter 変更 · s 保存先 · Esc 閉じる",
+	SettingsHint:            "  ↑↓ 選択 · ←→/Enter 変更 · s 保存先 · Esc 閉じる",
+	SettingsTitle:           "設定",
+	SettingsMoreAboveFmt:    "  … 上に %d 件",
+	SettingsMoreBelowFmt:    "  … 下に %d 件",
+	SettingsImmutable:       "この設定はセッション中に変更できません — 設定ファイルを編集して再起動してください",
+	SettingsTooShort:        "  端末の高さが足りません — 広げるか、設定ファイルを直接編集してください",
+	SettingsSavedTo:         "  ポリシーの保存先: ",
+	SettingsScopeGlobal:     "グローバル (~/.config/gem-agent/policy.toml)",
+	SettingsScopeProjectFmt: "このプロジェクトのみ — %s",
+	SettingsUnavailable:     "✗ このモードでは設定パネルを使えません",
+	NoOutput:                "(出力なし)",
 
 	StatusThinking:          "thinking…",
 	StatusCompacting:        "会話を圧縮中…",

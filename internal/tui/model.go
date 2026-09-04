@@ -704,7 +704,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ShellDone:
 		out := msg.Output
 		if strings.TrimSpace(out) == "" {
-			out = "(no output)"
+			out = m.msgs.NoOutput
 		}
 		interrupted := ""
 		if msg.Interrupted {
@@ -1645,7 +1645,10 @@ func clipDetail(detail string, maxLines int) (string, int) {
 		hidden = len(lines) - maxLines
 		lines = lines[:maxLines]
 	}
-	return clip(strings.Join(lines, "\n"), 600), hidden
+	// The rune clip is a backstop: the caller wraps the detail to the
+	// box and the line budget bounds it, so a working clip here would
+	// cut visible rows silently (review round 4 raised it from 600).
+	return clip(strings.Join(lines, "\n"), 4000), hidden
 }
 
 // clipLines truncates each line to width-1 display cells (ANSI-aware).
@@ -1711,7 +1714,30 @@ func (m Model) viewContent() string {
 				}
 			}
 		}
-		detail, hidden := clipDetail(req.Detail, budget)
+		// Every line of the box wraps to its inner width before the
+		// budget is applied (review round 4): clipLines cut an over-wide
+		// detail at the terminal edge with no marker, and edit_file's
+		// one-line detail put `path=` past column 80 — the operator
+		// approved an edit whose target they could not see. Same
+		// treatment the ask dialog got in round 3; the extra rows the
+		// purpose and reason take come out of the detail budget so the
+		// box stays inside the frame.
+		purposeText := m.msgs.PurposePrefix + m.purposeText(req.Purpose)
+		reasonText := ""
+		if req.Reason != "" {
+			reasonText = "⚠ " + clip(req.Reason, 200)
+		}
+		detailText := req.Detail
+		if inner := m.width - 6; m.width > 0 && inner >= 20 {
+			purposeText = ansi.Hardwrap(purposeText, inner, true)
+			reasonText = ansi.Hardwrap(reasonText, inner, true)
+			detailText = ansi.Hardwrap(detailText, inner, true)
+		}
+		budget -= strings.Count(purposeText, "\n") + strings.Count(reasonText, "\n")
+		if budget < 0 {
+			budget = 0
+		}
+		detail, hidden := clipDetail(detailText, budget)
 		body := fmt.Sprintf(m.msgs.ApprovalTitleFmt, req.Tool)
 		// The model's declared purpose (ADR-0047) frames the arguments
 		// below it: the operator's question about an innocuous-looking
@@ -1719,19 +1745,19 @@ func (m Model) viewContent() string {
 		// Always rendered — a silently absent line would be read as "the
 		// build does not have this yet" rather than "the model skipped a
 		// required field".
-		body += "\n" + m.st.tool.Render(m.msgs.PurposePrefix+m.purposeText(req.Purpose))
+		body += "\n" + m.st.tool.Render(purposeText)
 		if detail != "" {
 			body += "\n" + m.st.hint.Render(detail)
 		}
 		if hidden > 0 {
 			body += "\n" + m.st.warn.Render(fmt.Sprintf(m.msgs.ApprovalHiddenFmt, hidden))
 		}
-		if req.Reason != "" {
+		if reasonText != "" {
 			// The escalation cause gets its own accented line: in auto
 			// mode the operator's first question is "why is this asking
 			// at all?", and dim text beside the arguments does not
 			// answer it.
-			body += "\n" + m.st.warn.Render("⚠ "+clip(req.Reason, 200))
+			body += "\n" + m.st.warn.Render(reasonText)
 		}
 		if m.reasonMode {
 			// 'N' chosen (ADR-0060): the options row yields to the
@@ -1932,37 +1958,75 @@ func (m Model) askView() string {
 		inner = 20
 	}
 	qLines := strings.Split(ansi.Hardwrap(fmt.Sprintf(m.msgs.AskTitleFmt, req.Question), inner, true), "\n")
-	maxQ := maxAskQuestionLines
-	if m.height > 0 && m.height-12 < maxQ {
-		maxQ = m.height - 12
-		if maxQ < 2 {
-			maxQ = 2
+	// The options wrap too, and their rows beyond one per option come
+	// out of the question's budget (review round 4: eight long options
+	// at 80×24 pushed the title off the top with no disclosure); rows
+	// that still do not fit are cut from the END of the list, and said.
+	var optRows []string
+	for i, o := range req.Options {
+		text := fmt.Sprintf("%d) %s", i+1, o)
+		for j, l := range strings.Split(ansi.Hardwrap(text, inner-2, true), "\n") {
+			switch {
+			case j == 0 && i == m.askChoice:
+				optRows = append(optRows, m.st.selected.Render("▶ "+l))
+			case j == 0:
+				optRows = append(optRows, "  "+l)
+			default:
+				optRows = append(optRows, "     "+l)
+			}
 		}
 	}
-	hidden := 0
-	if len(qLines) > maxQ {
-		hidden = len(qLines) - maxQ
-		qLines = qLines[:maxQ]
+	// Rows the box may spend on question and options: the frame must
+	// stay inside height-1 (the bottom-pinning invariant), and the live
+	// region, the borders, the hint, the footer, the trailing newline
+	// and a margin row are spoken for.
+	avail := -1
+	if m.height > 0 {
+		liveRows := strings.Count(m.liveView(), "\n") + 1
+		avail = m.height - 1 - liveRows - 6
+	}
+	qShown := len(qLines)
+	if qShown > maxAskQuestionLines {
+		qShown = maxAskQuestionLines
+	}
+	if avail >= 0 {
+		if room := avail - len(optRows) - 1; qShown > room {
+			qShown = room
+			if qShown < 2 {
+				qShown = 2
+			}
+		}
+	}
+	hidden := len(qLines) - qShown
+	if hidden < 0 {
+		hidden = 0
+	}
+	qLines = qLines[:len(qLines)-hidden]
+	hiddenOpts := 0
+	if avail >= 0 {
+		used := len(qLines)
+		if hidden > 0 {
+			used++
+		}
+		if len(optRows) > avail-used {
+			keep := avail - used - 1 // one row for the disclosure
+			if keep < 0 {
+				keep = 0
+			}
+			hiddenOpts = len(optRows) - keep
+			optRows = optRows[:keep]
+		}
 	}
 	var b strings.Builder
 	b.WriteString(strings.Join(qLines, "\n"))
 	if hidden > 0 {
 		b.WriteString("\n" + m.st.warn.Render(fmt.Sprintf(m.msgs.AskHiddenFmt, hidden)))
 	}
-	for i, o := range req.Options {
-		text := fmt.Sprintf("%d) %s", i+1, o)
-		oLines := strings.Split(ansi.Hardwrap(text, inner-2, true), "\n")
-		for j, l := range oLines {
-			prefix := "  "
-			if j == 0 && i == m.askChoice {
-				b.WriteString("\n" + m.st.selected.Render("▶ "+l))
-				continue
-			}
-			if j > 0 {
-				prefix = "     "
-			}
-			b.WriteString("\n" + prefix + l)
-		}
+	for _, row := range optRows {
+		b.WriteString("\n" + row)
+	}
+	if hiddenOpts > 0 {
+		b.WriteString("\n" + m.st.warn.Render(fmt.Sprintf(m.msgs.AskHiddenFmt, hiddenOpts)))
 	}
 	b.WriteString("\n" + m.st.hint.Render(m.msgs.AskHint))
 	return m.liveView() + "\n" + m.st.box.Render(b.String()) + "\n" + m.footer() + "\n"

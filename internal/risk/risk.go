@@ -7,6 +7,7 @@ package risk
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -53,6 +54,13 @@ func (t Tier) String() string {
 type Verdict struct {
 	Tier   Tier
 	Reason string
+	// OperatorOnly marks a Review verdict the model tier may not answer
+	// (ADR-0072 §4): the write lands in what later sessions trust —
+	// instruction files, the runtime's own configuration — so the
+	// party that proposed it cannot also be its judge (ADR-0020 §4,
+	// applied beyond memory). The ladder hands such calls straight to
+	// the operator.
+	OperatorOnly bool
 }
 
 // blockPattern is one dangerous-shell rule.
@@ -61,14 +69,24 @@ type blockPattern struct {
 	reason string
 }
 
+// gitGlobalOpts skips the options git accepts before its subcommand
+// (`git -C dir push`, `git -c k=v push`, `git --no-pager push`): the
+// subcommand decides the verdict, wherever it sits.
+const gitGlobalOpts = `(?:(?:-C|-c|--git-dir|--work-tree|--namespace)(?:=\S+|\s+\S+)\s+|--?[A-Za-z][\w-]*\s+)*`
+
 // blockPatterns catches destructive, irreversible, or scope-escaping
 // shell commands. Matching is deliberately generous: a false Block costs
-// one approval prompt, a false Safe costs the user's data.
+// one approval prompt, a false Safe costs the user's data. They run on
+// the command with every segment's first word canonicalised
+// (normalizeHeads): a path prefix, a leading backslash and letter case
+// all invoke the same program. `rm` is judged by rmRecursiveForce,
+// which reads the flags however they are spelled.
 var blockPatterns = []blockPattern{
-	{regexp.MustCompile(`(^|[\s;&|(])rm\s+(-[a-zA-Z]*\s+)*-?[a-zA-Z]*[rR][a-zA-Z]*f|(^|[\s;&|(])rm\s+(-[a-zA-Z]*\s+)*-?[a-zA-Z]*f[a-zA-Z]*[rR]`), "recursive force delete"},
 	{regexp.MustCompile(`(^|[\s;&|(])(sudo|doas|su)\s`), "privilege escalation"},
 	{regexp.MustCompile(`(^|[\s;&|(])(dd|mkfs\S*|fdisk|diskutil|newfs\S*)\s`), "raw disk / filesystem operation"},
-	{regexp.MustCompile(`(^|[\s;&|(])git\s+(push|reset\s+--hard|clean\s+-[a-zA-Z]*f|checkout\s+--\s|branch\s+-D|rebase|filter-branch)`), "history-rewriting or remote-publishing git operation"},
+	{regexp.MustCompile(`(^|[\s;&|(])git\s+` + gitGlobalOpts +
+		`(push|reset\s+--hard|clean\s+(?:-[\w-]+\s+)*(?:-[a-zA-Z]*f[a-zA-Z]*|--force)|checkout\s+(?:[^\s;&|]+\s+)*--(?:\s|$)|restore(?:\s|$)|branch\s+-D|rebase|filter-branch|stash\s+(?:drop|clear))`),
+		"history-rewriting or remote-publishing git operation"},
 	{regexp.MustCompile(`(curl|wget|fetch)[^|;&]*\|\s*(sudo\s+)?(ba|z|k|da)?sh`), "piping a download into a shell"},
 	{regexp.MustCompile(`>\s*/dev/(sd|disk|nvme|rdisk)`), "write to a raw device"},
 	{regexp.MustCompile(`(^|[\s;&|(])chmod\s+(-[a-zA-Z]*\s+)*(777|a\+w|o\+w)`), "world-writable permissions"},
@@ -81,16 +99,23 @@ var blockPatterns = []blockPattern{
 }
 
 // credentialPaths are locations whose contents are secrets; touching
-// them is never auto-approved, read or write.
+// them is never auto-approved, read or write. Directory names match
+// with or without a leading `~/` or `/`, so a relative `.ssh/config`
+// is as much a credential as `~/.ssh/config`.
 var credentialPaths = []string{
-	"~/.ssh", "/.ssh/", "~/.aws", "/.aws/", "~/.config/gcloud", "/.config/gcloud/",
-	"~/.kube", "/.kube/", "~/.gnupg", "/.gnupg/", ".env", "id_rsa", "id_ed25519",
+	".ssh/", ".aws/", ".kube/", ".gnupg/", ".config/gcloud/", ".config/gh/",
+	".docker/config.json", ".git-credentials", ".bash_history", ".zsh_history",
+	".env", "id_rsa", "id_ed25519",
 	"credentials.json", "service-account", ".netrc", ".npmrc", ".pypirc",
 	"application_default_credentials",
 }
 
-// readOnlyCommands are shell entry points that cannot mutate state.
-// Only a command built exclusively from these is Safe.
+// readOnlyCommands are shell entry points that cannot mutate state in
+// their plain form. Only a command built exclusively from these is
+// Safe, and only when none is invoked in a form mutatingUse recognises
+// as a write or a program launch (`find -delete`, `sed -i`, `env cmd`).
+// `tee` and `xargs` are not here: one writes by definition, the other
+// runs whatever it is given.
 var readOnlyCommands = map[string]bool{
 	"ls": true, "cat": true, "head": true, "tail": true, "wc": true, "file": true,
 	"stat": true, "pwd": true, "echo": true, "which": true, "type": true,
@@ -99,7 +124,7 @@ var readOnlyCommands = map[string]bool{
 	"jq": true, "yq": true, "diff": true, "date": true, "env": true, "uname": true,
 	"df": true, "du": true, "ps": true, "top": true, "id": true, "whoami": true,
 	"true": true, "false": true, "basename": true, "dirname": true, "realpath": true,
-	"column": true, "tee": true, "xargs": true, "nl": true, "seq": true,
+	"column": true, "nl": true, "seq": true,
 }
 
 // Classify returns the logical verdict for one tool call. projectDir is
@@ -111,23 +136,29 @@ var readOnlyCommands = map[string]bool{
 // args come straight from the model.
 func Classify(toolName string, mutating bool, args map[string]any, projectDir, workDir string) Verdict {
 	if !mutating {
-		return Verdict{Safe, "read-only tool"}
+		return Verdict{Tier: Safe, Reason: "read-only tool"}
 	}
 
 	switch toolName {
 	case "write_file", "edit_file":
-		path, _ := args["path"].(string)
-		if v, blocked := classifyPath(path, projectDir, workDir); blocked {
+		p, _ := args["path"].(string)
+		if v, blocked := classifyPath(p, projectDir, workDir); blocked {
 			return v
 		}
 		// Content is not inspected here: the file tools cannot execute
 		// it, and judging intent from content is the model's job. The
 		// reason names the root that matched — recording a work-dir
 		// write as "inside the project" would be a false audit line.
-		if workDir != "" && filepath.IsAbs(path) && withinDir(workDir, filepath.Clean(path)) {
-			return Verdict{Safe, "edits a file inside the session work directory"}
+		if workDir != "" && filepath.IsAbs(p) && withinDir(workDir, filepath.Clean(p)) {
+			return Verdict{Tier: Safe, Reason: "edits a file inside the session work directory"}
 		}
-		return Verdict{Safe, "edits a file inside the project"}
+		// What the file is decides the rest (ADR-0072 §4): version
+		// control internals and the files later sessions take
+		// instructions or configuration from are not ordinary edits.
+		if v, ok := persistentTarget(projectRelative(p, projectDir)); ok {
+			return v
+		}
+		return Verdict{Tier: Safe, Reason: "edits a file inside the project"}
 
 	case "shell_exec":
 		command, _ := args["command"].(string)
@@ -137,31 +168,83 @@ func Classify(toolName string, mutating bool, args map[string]any, projectDir, w
 		// Never Safe: a persisted memory reappears in every later
 		// session's prompt, so memory is a persistence vector for
 		// injected instructions (ADR-0020 §4).
-		return Verdict{Review, "changes what the agent remembers across sessions"}
+		return Verdict{Tier: Review, Reason: "changes what the agent remembers across sessions"}
 	}
 
 	if strings.HasPrefix(toolName, "mcp__") {
 		// External server: effects are unknown to this classifier.
-		return Verdict{Review, "external MCP tool — effects unknown to the rule tier"}
+		return Verdict{Tier: Review, Reason: "external MCP tool — effects unknown to the rule tier"}
 	}
-	return Verdict{Review, "unrecognised tool"}
+	return Verdict{Tier: Review, Reason: "unrecognised tool"}
 }
 
-func classifyPath(path, projectDir, workDir string) (Verdict, bool) {
-	if path == "" {
-		return Verdict{Review, "missing path argument"}, true
+func classifyPath(p, projectDir, workDir string) (Verdict, bool) {
+	if p == "" {
+		return Verdict{Tier: Review, Reason: "missing path argument"}, true
 	}
-	if hasCredentialPath(path) {
-		return Verdict{Block, "path looks like credential material"}, true
+	if hasCredentialPath(p) {
+		return Verdict{Tier: Block, Reason: "path looks like credential material"}, true
 	}
-	if filepath.IsAbs(path) {
-		if !withinAnyRoot(filepath.Clean(path), projectDir, workDir) {
-			return Verdict{Block, outsideRootsReason("absolute path", workDir)}, true
+	if filepath.IsAbs(p) {
+		if !withinAnyRoot(filepath.Clean(p), projectDir, workDir) {
+			return Verdict{Tier: Block, Reason: outsideRootsReason("absolute path", workDir)}, true
 		}
 		return Verdict{}, false
 	}
-	if strings.Contains(path, "..") {
-		return Verdict{Block, "path escapes the project directory"}, true
+	if strings.Contains(p, "..") {
+		return Verdict{Tier: Block, Reason: "path escapes the project directory"}, true
+	}
+	return Verdict{}, false
+}
+
+// projectRelative returns p relative to the project when p is an
+// absolute path inside it, p itself when relative, and "" when p lies
+// elsewhere (the work directory, or outside — both judged before).
+func projectRelative(p, projectDir string) string {
+	if !filepath.IsAbs(p) {
+		return p
+	}
+	if projectDir == "" {
+		return ""
+	}
+	// Either spelling of a macOS alias may be the project's (the
+	// registry resolves its root; the model may type the alias).
+	for _, c := range []string{filepath.Clean(p), aliasResolve(filepath.Clean(p))} {
+		if withinDir(projectDir, c) {
+			if rel, err := filepath.Rel(projectDir, c); err == nil {
+				return rel
+			}
+		}
+	}
+	return ""
+}
+
+// persistentTarget judges a project-relative write target by what the
+// file is (ADR-0072 §4). Version-control internals are Block: a hook
+// or a config value under .git/ runs outside the sandbox on the
+// operator's next git command, and no file tool has business there.
+// The instruction files (AGENTS.md, CLAUDE.md, AGENT.md, GEMINI.md, a
+// skill under .claude/) and the runtime's own configuration
+// (.mcp.json, .gem-agent.toml, .claude/) are Review that only the
+// operator may answer: the edit persists into what every later session
+// trusts, so the evaluator-is-the-proposer objection of ADR-0020 §4
+// applies to it exactly as to memory.
+func persistentTarget(rel string) (Verdict, bool) {
+	if rel == "" {
+		return Verdict{}, false
+	}
+	c := filepath.ToSlash(filepath.Clean(rel))
+	if c == ".git" || strings.HasPrefix(c, ".git/") || strings.Contains(c, "/.git/") {
+		return Verdict{Tier: Block, Reason: "writes inside the version-control internals — hooks and config there run outside the sandbox on the next git command"}, true
+	}
+	persistent := Verdict{Tier: Review, OperatorOnly: true,
+		Reason: "changes the instructions or configuration later sessions trust — the operator decides, not the model tier"}
+	if c == ".claude" || strings.HasPrefix(c, ".claude/") || strings.Contains(c, "/.claude/") {
+		return persistent, true
+	}
+	switch path.Base(c) {
+	case ".mcp.json", ".gem-agent.toml", "AGENTS.md", "AGENT.md", "CLAUDE.md", "GEMINI.md":
+		return persistent, true
 	}
 	return Verdict{}, false
 }
@@ -169,35 +252,138 @@ func classifyPath(path, projectDir, workDir string) (Verdict, bool) {
 func classifyCommand(command, projectDir, workDir string) Verdict {
 	trimmed := strings.TrimSpace(command)
 	if trimmed == "" {
-		return Verdict{Review, "empty command"}
+		return Verdict{Tier: Review, Reason: "empty command"}
+	}
+	norm := normalizeHeads(trimmed)
+	if rmRecursiveForce(norm) {
+		return Verdict{Tier: Block, Reason: "recursive force delete"}
 	}
 	for _, p := range blockPatterns {
-		if p.re.MatchString(trimmed) {
-			return Verdict{Block, p.reason}
+		if p.re.MatchString(norm) {
+			return Verdict{Tier: Block, Reason: p.reason}
 		}
 	}
 	if hasCredentialPath(trimmed) {
-		return Verdict{Block, "references credential material"}
+		return Verdict{Tier: Block, Reason: "references credential material"}
 	}
-	if v, ok := blockedRedirect(trimmed, projectDir, workDir); ok {
+	if v, ok := redirectTarget(trimmed, projectDir, workDir); ok {
 		return v
 	}
 	// Command substitution hides the real target from any pattern rule
 	// (the agent-skeleton finding) — never Safe, let the model look.
+	// Process substitution is the same hole spelled with a paren:
+	// `cat <(rm -r x)` runs the inner command under bash.
 	if strings.Contains(trimmed, "$(") || strings.Contains(trimmed, "`") ||
-		strings.Contains(trimmed, "${") || strings.Contains(trimmed, "eval ") {
-		return Verdict{Review, "dynamic command construction"}
+		strings.Contains(trimmed, "${") || strings.Contains(trimmed, "eval ") ||
+		strings.Contains(trimmed, "<(") || strings.Contains(trimmed, ">(") {
+		return Verdict{Tier: Review, Reason: "dynamic command construction"}
 	}
 	// A read-only walk is still a walk: the sandbox denies writes only,
 	// so a `find /` reaches every mount. Never Safe outside the roots;
 	// the model tier weighs the cost (ADR-0070 §3).
 	if walksOutsideRoots(trimmed, projectDir, workDir) {
-		return Verdict{Review, outsideRootsReason("walks the filesystem", workDir)}
+		return Verdict{Tier: Review, Reason: outsideRootsReason("walks the filesystem", workDir)}
 	}
 	if readOnlyCommand(trimmed) {
-		return Verdict{Safe, "read-only shell command"}
+		return Verdict{Tier: Safe, Reason: "read-only shell command"}
 	}
-	return Verdict{Review, "shell command with unclear effects"}
+	return Verdict{Tier: Review, Reason: "shell command with unclear effects"}
+}
+
+// segmentSplit separates the simple commands of a shell text: pipes,
+// lists, background, and newlines — bash runs each line as a separate
+// command, so a newline is a separator like `;` (review round 4: a
+// command hidden after a newline inherited the first line's verdict).
+var segmentSplit = regexp.MustCompile(`\|\||&&|\||;|&|\r\n|\n|\r`)
+
+// normalizeHeads returns command with each segment's first word
+// canonicalised for the block rules: `/bin/rm`, `\rm` and `RM` (the
+// default filesystem is case-insensitive) all run rm. Only the first
+// word of a segment is touched — after any VAR=value prefixes and
+// opening parens — so an argument that merely names a program keeps
+// its spelling. Separators are kept in place, so the rules' anchors
+// still see them.
+func normalizeHeads(command string) string {
+	var b strings.Builder
+	last := 0
+	for _, loc := range segmentSplit.FindAllStringIndex(command, -1) {
+		b.WriteString(normalizeHead(command[last:loc[0]]))
+		b.WriteString(command[loc[0]:loc[1]])
+		last = loc[1]
+	}
+	b.WriteString(normalizeHead(command[last:]))
+	return b.String()
+}
+
+func normalizeHead(seg string) string {
+	i := 0
+	for {
+		for i < len(seg) && (seg[i] == ' ' || seg[i] == '\t' || seg[i] == '(') {
+			i++
+		}
+		j := i
+		for j < len(seg) && seg[j] != ' ' && seg[j] != '\t' {
+			j++
+		}
+		if i == j {
+			return seg
+		}
+		tok := seg[i:j]
+		if strings.Contains(tok, "=") && !strings.HasPrefix(tok, "=") {
+			i = j // VAR=value prefix: the command follows
+			continue
+		}
+		return seg[:i] + canonicalName(tok) + seg[j:]
+	}
+}
+
+// canonicalName is the program a token invokes, however it is spelled.
+func canonicalName(tok string) string {
+	tok = strings.TrimPrefix(tok, `\`)
+	if strings.Contains(tok, "/") {
+		tok = filepath.Base(tok)
+	}
+	return strings.ToLower(tok)
+}
+
+// rmRecursiveForce reports an rm anywhere in the command — a segment
+// head, or behind a wrapper such as xargs or env — whose flags carry
+// both recursive and force, in any spelling: `-rf`, `-fr`, `-r -f`,
+// `--recursive --force`, `-Rf`.
+func rmRecursiveForce(command string) bool {
+	for _, seg := range segmentSplit.Split(command, -1) {
+		fields := strings.Fields(seg)
+		for i, f := range fields {
+			if canonicalName(f) != "rm" {
+				continue
+			}
+			recursive, force := false, false
+			for _, a := range fields[i+1:] {
+				switch {
+				case a == "--":
+					goto done
+				case a == "--recursive":
+					recursive = true
+				case a == "--force":
+					force = true
+				case strings.HasPrefix(a, "--"):
+					// another long option
+				case strings.HasPrefix(a, "-"):
+					if strings.ContainsAny(a, "rR") {
+						recursive = true
+					}
+					if strings.Contains(a, "f") {
+						force = true
+					}
+				}
+			}
+		done:
+			if recursive && force {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // writableRoots are the places a shell command may write: the project,
@@ -206,31 +392,65 @@ func writableRoots(projectDir, workDir string) []string {
 	return append([]string{projectDir, workDir}, scratchRoots...)
 }
 
-// blockedRedirect flags output redirection to an absolute path outside
-// the writable roots (the sandbox would deny it, but escalating
-// explains why).
-func blockedRedirect(command, projectDir, workDir string) (Verdict, bool) {
-	re := regexp.MustCompile(`>>?\s*("?)(/[^\s"';|&]+)`)
-	for _, m := range re.FindAllStringSubmatch(command, -1) {
-		if !withinAnyRoot(filepath.Clean(m[2]), writableRoots(projectDir, workDir)...) {
-			return Verdict{Block, outsideRootsReason("redirects output", workDir)}, true
+// redirectRe finds the target of an output redirection, absolute or
+// relative; a descriptor duplication (`2>&1`) has no path and does not
+// match.
+var redirectRe = regexp.MustCompile(`>>?\s*("?)([^\s"';|&<>()]+)`)
+
+// redirectTarget judges where a command's output redirections land: an
+// absolute path outside the writable roots is Block (the sandbox would
+// deny it, but escalating explains why), and a target that is one of
+// the persistent files persistentTarget names gets that verdict —
+// `echo x > AGENTS.md` is the same write as write_file's.
+func redirectTarget(command, projectDir, workDir string) (Verdict, bool) {
+	for _, m := range redirectRe.FindAllStringSubmatch(command, -1) {
+		target := m[2]
+		if strings.HasPrefix(target, "&") {
+			continue // >&2
+		}
+		if filepath.IsAbs(target) {
+			raw := filepath.Clean(target)
+			if !withinAnyRoot(aliasResolve(raw), writableRoots(projectDir, workDir)...) {
+				return Verdict{Tier: Block, Reason: outsideRootsReason("redirects output", workDir)}, true
+			}
+			if v, ok := persistentTarget(projectRelative(raw, projectDir)); ok {
+				return v, true
+			}
+			continue
+		}
+		if v, ok := persistentTarget(target); ok {
+			return v, true
 		}
 	}
 	return Verdict{}, false
 }
 
-// walkers are read-only commands whose work is a tree walk from a
-// starting point given as an argument; grepFamily walks only with a
-// recursive flag.
-var walkers = map[string]bool{"find": true, "fd": true, "du": true, "rg": true}
-var grepFamily = map[string]bool{"grep": true, "egrep": true, "fgrep": true}
+// pathAliases are macOS's top-level symlinks. Seatbelt sees the real
+// path, so a lexical /tmp/x must be judged as /private/tmp/x — the
+// rule tier does no I/O to find that out (review round 4: `> /tmp/x`
+// was a false Block with an untrue reason, the ADR-0070 §2 drift).
+var pathAliases = [][2]string{{"/tmp", "/private/tmp"}, {"/var", "/private/var"}, {"/etc", "/private/etc"}}
 
-var segmentSplit = regexp.MustCompile(`\||;|&&|\|\||&`)
+func aliasResolve(p string) string {
+	for _, a := range pathAliases {
+		if p == a[0] || strings.HasPrefix(p, a[0]+"/") {
+			return a[1] + strings.TrimPrefix(p, a[0])
+		}
+	}
+	return p
+}
+
+// walkers are read-only commands whose work is a tree walk from a
+// starting point given as an argument; recursiveWhenFlagged walk only
+// with a recursive flag (`grep -r`, `ls -R`).
+var walkers = map[string]bool{"find": true, "fd": true, "du": true, "rg": true}
+var recursiveWhenFlagged = map[string]bool{"grep": true, "egrep": true, "fgrep": true, "ls": true}
 
 // walksOutsideRoots reports whether any segment of the command walks a
-// tree from `/`, `~`, or an absolute path outside the writable roots
-// (ADR-0070 §3). Relative starting points stay inside the project —
-// the command's working directory.
+// tree from `/`, `~`, `~user`, a `$VAR`, a `..`-relative path, or an
+// absolute path outside the writable roots (ADR-0070 §3). Other
+// relative starting points stay inside the project — the command's
+// working directory.
 func walksOutsideRoots(command, projectDir, workDir string) bool {
 	roots := writableRoots(projectDir, workDir)
 	for _, seg := range segmentSplit.Split(command, -1) {
@@ -238,8 +458,8 @@ func walksOutsideRoots(command, projectDir, workDir string) bool {
 		if len(fields) == 0 {
 			continue
 		}
-		head := filepath.Base(fields[0])
-		walks := walkers[head] || (grepFamily[head] && hasRecursiveFlag(fields[1:]))
+		head := canonicalName(fields[0])
+		walks := walkers[head] || (recursiveWhenFlagged[head] && hasRecursiveFlag(fields[1:]))
 		if !walks {
 			continue
 		}
@@ -254,10 +474,17 @@ func walksOutsideRoots(command, projectDir, workDir string) bool {
 					return true
 				}
 				f = filepath.Join(homeDir, strings.TrimPrefix(f, "~"))
+			case strings.HasPrefix(f, "~"):
+				return true // ~user: another account's tree
+			case strings.HasPrefix(f, "$"):
+				return true // $HOME, $PWD/..: unknown until the shell runs
 			case !filepath.IsAbs(f):
+				if c := filepath.Clean(f); c == ".." || strings.HasPrefix(c, "../") {
+					return true
+				}
 				continue
 			}
-			if !withinAnyRoot(filepath.Clean(f), roots...) {
+			if !withinAnyRoot(aliasResolve(filepath.Clean(f)), roots...) {
 				return true
 			}
 		}
@@ -284,9 +511,9 @@ var devNullRedirect = regexp.MustCompile(`(\d*>>?|&>)\s*/dev/null|\d>&\d`)
 
 // withinAnyRoot reports whether an absolute, cleaned path sits under
 // any non-empty root.
-func withinAnyRoot(path string, roots ...string) bool {
+func withinAnyRoot(p string, roots ...string) bool {
 	for _, r := range roots {
-		if r != "" && withinDir(r, path) {
+		if r != "" && withinDir(r, p) {
 			return true
 		}
 	}
@@ -304,7 +531,8 @@ func outsideRootsReason(what, workDir string) string {
 }
 
 // readOnlyCommand reports whether every segment of a pipeline/sequence
-// starts with a known read-only command and carries no redirection.
+// starts with a known read-only command, in a form that neither writes
+// nor launches a program, and carries no redirection.
 func readOnlyCommand(command string) bool {
 	command = devNullRedirect.ReplaceAllString(command, "")
 	if strings.ContainsAny(command, ">") {
@@ -320,11 +548,88 @@ func readOnlyCommand(command string) bool {
 		if strings.Contains(head, "=") {
 			return false // env assignment prefix; unclear
 		}
-		if !readOnlyCommands[filepath.Base(head)] {
+		name := canonicalName(head)
+		if !readOnlyCommands[name] || mutatingUse(name, fields[1:]) {
 			return false
 		}
 	}
 	return true
+}
+
+// sedWriteCmd finds a `w`/`W` command in a sed script — `/re/w file`,
+// `1,5w file`, the `s///w file` flag — which writes a file whatever
+// the options say. Matched against the script and file arguments
+// joined, since the shell's quoting split them into fields.
+var sedWriteCmd = regexp.MustCompile(`(^|[;{}\n])\s*[^a-zA-Z]*[wW]\s|/[wW]\s`)
+
+// mutatingUse reports whether a read-only command is invoked in a form
+// that writes or runs a program: the flag turns a search into a rewrite
+// (`sed -i`, `sort -o`, `yq -i`), a walk into a launcher (`find -exec`,
+// `fd -x`, `rg --pre`), or a printer into a runner (`env cmd`,
+// `awk 'system(…)'`). Review, not Block: the model weighs it.
+func mutatingUse(name string, args []string) bool {
+	shortHas := func(a string, letters string) bool {
+		return strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--") && strings.ContainsAny(a, letters)
+	}
+	switch name {
+	case "find":
+		for _, a := range args {
+			switch a {
+			case "-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls":
+				return true
+			}
+		}
+	case "fd":
+		for _, a := range args {
+			if a == "--exec" || a == "--exec-batch" || shortHas(a, "xX") {
+				return true
+			}
+		}
+	case "rg":
+		for _, a := range args {
+			if a == "--pre" || strings.HasPrefix(a, "--pre=") {
+				return true
+			}
+		}
+	case "sed":
+		var script []string
+		for _, a := range args {
+			if strings.HasPrefix(a, "--in-place") || shortHas(a, "i") {
+				return true
+			}
+			if !strings.HasPrefix(a, "-") {
+				script = append(script, strings.Trim(a, `"'`))
+			}
+		}
+		if sedWriteCmd.MatchString(strings.Join(script, " ")) {
+			return true
+		}
+	case "awk":
+		for _, a := range args {
+			if a == "-f" || strings.HasPrefix(a, "-i") || strings.Contains(a, "system(") {
+				return true
+			}
+		}
+	case "sort":
+		for _, a := range args {
+			if strings.HasPrefix(a, "-o") || strings.HasPrefix(a, "--output") {
+				return true
+			}
+		}
+	case "yq":
+		for _, a := range args {
+			if a == "-i" || a == "--inplace" || shortHas(a, "i") {
+				return true
+			}
+		}
+	case "env":
+		for _, a := range args {
+			if !strings.HasPrefix(a, "-") && !strings.Contains(a, "=") {
+				return true // env runs the named program
+			}
+		}
+	}
+	return false
 }
 
 func hasCredentialPath(s string) bool {

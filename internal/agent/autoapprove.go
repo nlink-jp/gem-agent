@@ -162,6 +162,13 @@ func (a *Agent) decideAuto(ctx context.Context, tc llm.ToolCall) AutoDecision {
 	if memoryWrite(tc.Name) {
 		return AutoDecision{Tier: v.Tier, Reason: "memory writes are the operator's call (ADR-0020 §4)"}
 	}
+	// The same objection, generalised (ADR-0072 §4): a write into the
+	// instruction files or the runtime's configuration persists into
+	// what every later session trusts, and the rule tier marks it as
+	// the operator's alone.
+	if v.OperatorOnly {
+		return AutoDecision{Tier: v.Tier, Reason: v.Reason}
+	}
 
 	verdict, err := a.evaluateRisk(ctx, tc)
 	if err != nil {

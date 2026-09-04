@@ -79,8 +79,11 @@ var (
 	}
 	// arrowTokRe tokenizes a flowchart statement into its arrow-bearing
 	// edges (open links --- are not counted: they draw no head).
-	arrowTokRe  = regexp.MustCompile(`-\.+->|-->|==>`)
-	edgeLabelRm = regexp.MustCompile(`\|[^|]*\|`)
+	arrowTokRe = regexp.MustCompile(`-\.+->|-->|==>`)
+	// keywordStmtRe matches the statements that declare no edge, as
+	// whole words.
+	keywordStmtRe = regexp.MustCompile(`^(subgraph|end|direction)\b`)
+	edgeLabelRm   = regexp.MustCompile(`\|[^|]*\|`)
 	// directionRe matches a `direction XX` statement — a subgraph layout
 	// hint the renderer draws as a literal node (measured v0.37.3: it
 	// also fused adjacent subgraph titles). Dropped before rendering.
@@ -251,11 +254,16 @@ func flowEdgeCount(src string) int {
 	total := 0
 	for _, line := range strings.Split(src, "\n") {
 		t := strings.TrimSpace(line)
-		if t == "" || strings.HasPrefix(t, "%%") || headerRe.MatchString(t) ||
-			strings.HasPrefix(t, "subgraph") || t == "end" || strings.HasPrefix(t, "direction") {
+		// Keyword statements are skipped by whole word: a node id that
+		// merely starts with one (`direction_check`) is a node (review
+		// round 4).
+		if t == "" || strings.HasPrefix(t, "%%") || headerRe.MatchString(t) || keywordStmtRe.MatchString(t) {
 			continue
 		}
 		t = edgeLabelRm.ReplaceAllString(t, "")
+		// A bidirectional edge draws two heads; the split below counts
+		// it once (review round 4).
+		total += strings.Count(t, "<-->")
 		segs := arrowTokRe.Split(t, -1)
 		if len(segs) < 2 {
 			continue
@@ -328,29 +336,61 @@ func prepare(k kind, body string) string {
 		return body
 	}
 	var kept []string
-	for _, line := range strings.Split(body, "\n") {
-		if presentationRe.MatchString(line) {
-			continue
-		}
-		line = classSuffixRe.ReplaceAllString(line, "")
-		line = shapeRe.ReplaceAllStringFunc(line, func(m string) string {
-			g := shapeRe.FindStringSubmatch(m)
-			for _, t := range g[3:] {
-				if t != "" {
-					return g[1] + "[" + t + "]"
-				}
+	for _, raw := range strings.Split(body, "\n") {
+		// A quoted label is literal to mermaid: nothing inside it is a
+		// shape or a separator (review round 4: `A["read_file(path)"]`
+		// was rewritten to `read_file[path]`, and the fidelity check
+		// compared the drawing with the rewrite). Quoted spans are
+		// held out while the rules run.
+		protected, quoted := holdQuotes(raw)
+		// `;` separates statements on one line (mermaid syntax); the
+		// renderer read `B[b]; B` as one node (review round 4).
+		for _, line := range strings.Split(protected, ";") {
+			if strings.TrimSpace(line) == "" || presentationRe.MatchString(line) {
+				continue
 			}
-			return m
-		})
-		for ampLabelRe.MatchString(line) {
-			line = ampLabelRe.ReplaceAllString(line, "[$1＆$2]")
+			line = classSuffixRe.ReplaceAllString(line, "")
+			line = shapeRe.ReplaceAllStringFunc(line, func(m string) string {
+				g := shapeRe.FindStringSubmatch(m)
+				for _, t := range g[3:] {
+					if t != "" {
+						return g[1] + "[" + t + "]"
+					}
+				}
+				return m
+			})
+			line = restoreQuotes(line, quoted)
+			for ampLabelRe.MatchString(line) {
+				line = ampLabelRe.ReplaceAllString(line, "[$1＆$2]")
+			}
+			for _, e := range edgeTextRes {
+				line = e.re.ReplaceAllString(line, e.out)
+			}
+			kept = append(kept, line)
 		}
-		for _, e := range edgeTextRes {
-			line = e.re.ReplaceAllString(line, e.out)
-		}
-		kept = append(kept, line)
 	}
 	return strings.Join(kept, "\n")
+}
+
+// quotedRe matches a double-quoted span; holdQuotes replaces each with
+// a placeholder the rules cannot mistake for syntax, restoreQuotes puts
+// them back.
+var quotedRe = regexp.MustCompile(`"[^"]*"`)
+
+func holdQuotes(line string) (string, []string) {
+	var held []string
+	out := quotedRe.ReplaceAllStringFunc(line, func(q string) string {
+		held = append(held, q)
+		return fmt.Sprintf("\x00%d\x00", len(held)-1)
+	})
+	return out, held
+}
+
+func restoreQuotes(line string, held []string) string {
+	for i, q := range held {
+		line = strings.ReplaceAll(line, fmt.Sprintf("\x00%d\x00", i), q)
+	}
+	return line
 }
 
 // faithful checks that every label written in the source appears in
