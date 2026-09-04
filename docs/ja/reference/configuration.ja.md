@@ -260,7 +260,9 @@ export される変数が 3 つあります: セッション id `GEMAGENT_SESSIO
 `GEMAGENT_WORK_DIR`（ADR-0058、ADR-0071 §3）— Claude Code の子が見るのと同じ
 3 つの事実です。`mcp.json` の args 内の `${GEMAGENT_SESSION_ID}` はこれに展開
 され、セッションごとの状態を持つサーバはこうして自分のセッションを知らされ
-ます。`/clear` は新セッションのために 1 つ目と 3 つ目を再 export します。
+ます。`/clear` は新セッションのために 1 つ目と 3 つ目を再 export し、MCP
+サーバーを再接続します — 旧 id を引数や環境に持って起動したサーバーは新 id で
+起動し直されます（ADR-0071 addendum）。
 
 環境変数 `GEMAGENT_STATE_DIR` はテスト/訓練の隔離用に state ルート
 （sessions と memory）を差し替えます。デバッグ用に、設定ファイル外で直接読まれる

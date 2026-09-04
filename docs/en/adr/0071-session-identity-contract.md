@@ -84,6 +84,23 @@ Code's matcher vocabulary say `clear`, and v0.66.0 shipped with the
 code following this section — a `matcher = "clear"` hook never fired
 on `/clear`. The code now follows the documents.*
 
+### 4a. Addendum (2026-09-05): `/clear` restarts what carries the identity
+
+Measured after v0.67.0: the MCP server spawned at startup with
+`${GEMAGENT_SESSION_ID}` in its arguments kept `--session <old id>`
+across `/clear`, so its claims were attributed to the old session
+while the hooks reported the new one; telemetry likewise kept the
+first id (stated then as a known limit). Operator decision: a cleared
+session is a new session, so everything that carries its identity
+restarts — the MCP servers are reconnected as `/mcp reload` does (new
+environment, new argument expansion), and the telemetry sink is
+re-resourced in place (`Sink.Restart`; holders of the pointer,
+`Sub` sinks included, follow). Order on `/clear`: `session_end` hook →
+`session.end` audit event → transcript, work directory and roots →
+`Sink.Restart` → MCP reconnect → `session.start` audit event →
+`session_start` hook. The consequence "telemetry keeps the first id"
+below no longer holds.
+
 ### 5. What does not change
 
 The per-project state layout (ADR-0022: escaped path directories,

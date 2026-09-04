@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.68.0] - 2026-09-05
+
+### Changed — `/clear` restarts what carries the session identity (ADR-0071 addendum)
+
+- The MCP servers are reconnected on `/clear` (the `/mcp reload`
+  report is printed), so a server started with `${GEMAGENT_SESSION_ID}`
+  in its arguments or environment comes back with the new id — it kept
+  the old one before, while the hooks reported the new session
+- Telemetry is re-resourced with the new id: the old session's
+  `session.end` and the new session's `session.start` carry their own
+  ids (it kept the first id before, stated as a known limit)
+
 ## [0.67.0] - 2026-09-05
 
 ### Fixed — whole-code review round 4 (ADR-0072)

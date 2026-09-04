@@ -12,6 +12,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/tools"
+	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
 // Review round 4: /clear rotates the work directory (ADR-0071 §2), and
@@ -135,3 +136,18 @@ func TestConfirmYesNeedsATerminal(t *testing.T) {
 }
 
 var _ = errors.New
+
+// /clear prints what onClear returns — the hook notes and the MCP
+// reconnection report — inside the slash output (ADR-0071 addendum).
+func TestClearOutputCarriesTheRestartReport(t *testing.T) {
+	out, isErr, quit := slashOutput("/clear", nil, nil, nil, nil, slashReloads{}, nil, nil, nil, "", uitext.For(uitext.EN),
+		func() string { return "[⚠ note]\nmcp reloaded: 1 server(s), 2 tool(s)\n" })
+	if isErr || quit {
+		t.Fatalf("isErr=%v quit=%v", isErr, quit)
+	}
+	for _, want := range []string{"[⚠ note]", "mcp reloaded: 1 server(s)", uitext.For(uitext.EN).HistoryCleared} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+}

@@ -266,7 +266,9 @@ the session's work directory (ADR-0058, ADR-0071 §3) — the same three
 facts a Claude Code child sees. `${GEMAGENT_SESSION_ID}` in an
 `mcp.json` args entry expands to it, which is how a server that keeps
 per-session state is told its session. `/clear` re-exports the first
-and third for the new session.
+and third for the new session and reconnects the MCP servers, so a
+server started with the old id in its arguments or environment is
+restarted with the new one (ADR-0071 addendum).
 
 The `GEMAGENT_STATE_DIR` environment variable relocates the state root
 (sessions and memory) for test/drill isolation. Two more environment

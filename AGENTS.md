@@ -303,8 +303,12 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   `Agent.Restart(newLog)` (no clear record), the old logger closed,
   `curLog` / `workDir` / `hookSession` reassigned (the deferred closers
   read the variables), env re-exported, `rotateWorkDir`, then
-  `session_start` with source `clear`. Telemetry keeps the first id
-  (its resource is fixed at creation) — a known limit, stated in the docs.
+  `sink.Restart` (telemetry re-resourced with the new id in place —
+  every holder of the `*Sink`, `Sub` sinks included, follows), the MCP
+  servers reconnected through `reloadMCP` (a server started with
+  `${GEMAGENT_SESSION_ID}` in its args must come back with the new id;
+  measured: the board's child kept the old one), `session.start`, and
+  `session_start` with source `clear` (ADR-0071 addendum).
 - **The work directory has a list of consumers, and `/clear` walks it**
   (ADR-0072 §2.1) — `rotateWorkDir` in `cmd/root.go`: the registry's
   second root (`UseWorkDir("")` removes it), the sandbox profile

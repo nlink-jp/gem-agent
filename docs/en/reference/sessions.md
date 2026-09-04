@@ -171,5 +171,8 @@ and are exported to children; the session hooks see a `session_end`
 work directory follows the new one — the sandbox profile, the file
 tools' second root, the MCP intake and the system prompt — and the
 agent's own per-session state (queued attachments, the dead-transcript
-mark) is dropped with the old session (ADR-0072 §2). Telemetry keeps
-the id the process started with.
+mark) is dropped with the old session (ADR-0072 §2). The MCP servers
+are reconnected (the same report `/mcp reload` prints), so a server
+that keeps per-session state sees the new id, and telemetry is
+re-resourced with it: the old session's `session.end` and the new
+one's `session.start` carry their own ids (ADR-0071 addendum).

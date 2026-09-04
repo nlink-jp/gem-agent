@@ -1037,11 +1037,22 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// the same sequence Claude Code produces. If a new transcript
 	// cannot be opened the conversation is cleared in place, as before,
 	// and the operator is told.
-	onClear := func() []string {
+	onClear := func() string {
 		var notes []string
 		uiNotes = &notes
 		defer func() { uiNotes = nil }()
 		note := func(format string, a ...any) { notes = append(notes, fmt.Sprintf(format, a...)) }
+		// The output is the slash command's: warnings first, then the
+		// MCP reconnection report (the same text /mcp reload prints).
+		var extra strings.Builder
+		render := func() string {
+			var b strings.Builder
+			for _, n := range notes {
+				fmt.Fprintf(&b, "[⚠ %s]\n", n)
+			}
+			b.WriteString(extra.String())
+			return b.String()
+		}
 		// The new transcript is opened before anything ends, so a
 		// failure leaves the session it found: cleared in place, the
 		// operator told, no session_end for an id that continues
@@ -1052,15 +1063,18 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			ag.Reset()
 			note("cleared in place — could not start a new session: %v", sessionDirErr)
 			sessionHooks("clear")
-			return notes
+			return render()
 		}
 		newLog, err := openSessionLog(sessionDir, "", projectDir, cfg.Model.Name, cfg.GCP.Location, cmd.Root().Version)
 		if err != nil {
 			ag.Reset()
 			note("cleared in place — could not start a new session: %v", err)
 			sessionHooks("clear")
-			return notes
+			return render()
 		}
+		// The old session's audit trail closes under its own id before
+		// the sink is re-resourced for the new one (ADR-0071 addendum).
+		sink.SessionEnd()
 		sessionEndHooks("clear")
 		ag.Restart(newLog)
 		if curLog != nil {
@@ -1090,8 +1104,22 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// intake (it reads the registry), and the system prompt — a
 		// cleared conversation has no cached prefix to protect.
 		notes = append(notes, rotateWorkDir(registry, shellExec, sandboxOn, projectDir, workDir, func() { ag.SetSystem(composeSystem()) })...)
+		// A cleared session restarts what carries its identity (ADR-0071
+		// addendum): telemetry is re-resourced with the new id, and the
+		// MCP servers — spawned at startup with the old id in their
+		// environment and arguments — are reconnected the way /mcp
+		// reload does, so a server keeping per-session state (the
+		// board) sees the session the hooks report. Measured: without
+		// this the board's child kept --session <old id> across /clear.
+		if err := sink.Restart(ctx, sessionID); err != nil {
+			note("telemetry keeps the previous session id: %v", err)
+		}
+		if cfg.MCP.Enabled {
+			extra.WriteString(reloadMCP())
+		}
+		sink.SessionStart(cfg.Model.Name, sandboxOn, ag.AutoApprove(), len(mcpClients))
 		sessionHooks("clear")
-		return notes
+		return render()
 	}
 
 	// --- one-shot mode: single turn, quiet stderr, exit ---
@@ -1827,7 +1855,7 @@ type slashReloads struct {
 	skills func() string
 }
 
-func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, reload slashReloads, usage func() string, memoryInfo func() string, riskbookCmd func(args []string) (string, bool), version string, msgs *uitext.Messages, onClear func() []string) (output string, isErr bool, quit bool) {
+func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, reload slashReloads, usage func() string, memoryInfo func() string, riskbookCmd func(args []string) (string, bool), version string, msgs *uitext.Messages, onClear func() string) (output string, isErr bool, quit bool) {
 	var b strings.Builder
 	fields := strings.Fields(input)
 	// The one supported subcommand shape: "/mcp reload" and
@@ -1910,9 +1938,7 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 		// clear record, so it stays resumable — and starts the next.
 		// Without it (tests), the history is cleared in place.
 		if onClear != nil {
-			for _, n := range onClear() {
-				fmt.Fprintf(&b, "[⚠ %s]\n", n)
-			}
+			b.WriteString(onClear())
 		} else {
 			ag.Reset()
 		}

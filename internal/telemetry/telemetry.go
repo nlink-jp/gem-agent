@@ -46,12 +46,62 @@ type Config struct {
 
 // Sink emits audit events. The zero/nil Sink is a no-op.
 type Sink struct {
+	// mu guards logger and provider on the root sink: Restart swaps
+	// them when /clear starts a new session (ADR-0071 addendum), and
+	// every holder of the pointer — the agent, the riskbook runner,
+	// the deferred closers — keeps working through the same Sink.
+	mu       sync.RWMutex
 	logger   otellog.Logger
 	provider *sdklog.LoggerProvider
 	// label, when set, marks every event with agent=<label>: records
 	// emitted on behalf of a delegated child loop (ADR-0037). Empty for
 	// the main loop, so existing queries keep matching unchanged.
 	label string
+	// parent is set on a Sub sink: it reads the root's current logger
+	// and provider, so a child created before a Restart follows it.
+	parent *Sink
+	// build rebuilds the exporter and provider for a session id — what
+	// New captured — so Restart can re-resource the sink in place. nil
+	// on sinks that cannot be restarted (Restart is then a no-op).
+	build func(ctx context.Context, sessionID string) (otellog.Logger, *sdklog.LoggerProvider, error)
+}
+
+// current returns the logger and provider in force, following a Sub
+// sink to its root.
+func (s *Sink) current() (otellog.Logger, *sdklog.LoggerProvider) {
+	root := s
+	if s.parent != nil {
+		root = s.parent
+	}
+	root.mu.RLock()
+	defer root.mu.RUnlock()
+	return root.logger, root.provider
+}
+
+// Restart re-resources the sink for a new session id (ADR-0071
+// addendum: /clear is a new session, so its events must carry the new
+// id like everything else the session exports). The old provider is
+// flushed and shut down; holders of the pointer, Sub sinks included,
+// continue on the new one. Nil-safe; a sink without a builder keeps
+// its resource.
+func (s *Sink) Restart(ctx context.Context, sessionID string) error {
+	if s == nil || s.build == nil {
+		return nil
+	}
+	logger, provider, err := s.build(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	old := s.provider
+	s.logger, s.provider = logger, provider
+	s.mu.Unlock()
+	if old != nil {
+		sctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = old.Shutdown(sctx)
+	}
+	return nil
 }
 
 // Nop returns the disabled sink.
@@ -62,16 +112,36 @@ func Nop() *Sink { return nil }
 // the parent's provider; call Shutdown only on the parent. Nil-safe
 // like every Sink method.
 func (s *Sink) Sub(label string) *Sink {
-	if s == nil || s.provider == nil {
+	if s == nil {
 		return s
 	}
-	return &Sink{logger: s.logger, provider: s.provider, label: label}
+	if _, provider := s.current(); provider == nil {
+		return s
+	}
+	root := s
+	if s.parent != nil {
+		root = s.parent
+	}
+	return &Sink{parent: root, label: label}
 }
 
 // New builds an OTLP-backed sink. Telemetry must never hurt the
 // session (ADR-0035 §4): export failures reach stderr once via the
 // global error handler and degrade silently after.
 func New(ctx context.Context, cfg Config, gcpProject, version, sessionID, projectDir string) (*Sink, error) {
+	build := func(ctx context.Context, sessionID string) (otellog.Logger, *sdklog.LoggerProvider, error) {
+		return newProvider(ctx, cfg, gcpProject, version, sessionID, projectDir)
+	}
+	logger, provider, err := build(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return &Sink{logger: logger, provider: provider, build: build}, nil
+}
+
+// newProvider builds the exporter and the resourced provider for one
+// session id — once at startup, and again on every /clear.
+func newProvider(ctx context.Context, cfg Config, gcpProject, version, sessionID, projectDir string) (otellog.Logger, *sdklog.LoggerProvider, error) {
 	var exp sdklog.Exporter
 	var err error
 	switch cfg.Backend {
@@ -80,7 +150,7 @@ func New(ctx context.Context, cfg Config, gcpProject, version, sessionID, projec
 	case "otlp-grpc":
 		headers, herr := loadHeaders(cfg.HeadersFile)
 		if herr != nil {
-			return nil, herr
+			return nil, nil, herr
 		}
 		opts := []otlploggrpc.Option{otlploggrpc.WithEndpoint(cfg.Endpoint)}
 		if cfg.Insecure {
@@ -93,7 +163,7 @@ func New(ctx context.Context, cfg Config, gcpProject, version, sessionID, projec
 	case "otlp-http":
 		headers, herr := loadHeaders(cfg.HeadersFile)
 		if herr != nil {
-			return nil, herr
+			return nil, nil, herr
 		}
 		opts := []otlploghttp.Option{otlploghttp.WithEndpoint(cfg.Endpoint)}
 		if cfg.Insecure {
@@ -104,10 +174,10 @@ func New(ctx context.Context, cfg Config, gcpProject, version, sessionID, projec
 		}
 		exp, err = otlploghttp.New(ctx, opts...)
 	default:
-		return nil, fmt.Errorf("[telemetry].backend must be gcp, otlp-grpc, or otlp-http (got %q)", cfg.Backend)
+		return nil, nil, fmt.Errorf("[telemetry].backend must be gcp, otlp-grpc, or otlp-http (got %q)", cfg.Backend)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("telemetry exporter: %w", err)
+		return nil, nil, fmt.Errorf("telemetry exporter: %w", err)
 	}
 
 	res, err := resource.New(ctx,
@@ -126,7 +196,7 @@ func New(ctx context.Context, cfg Config, gcpProject, version, sessionID, projec
 		sdklog.WithResource(res),
 	)
 	otel.SetErrorHandler(warnOnceHandler())
-	return &Sink{logger: provider.Logger("gem-agent"), provider: provider}, nil
+	return provider.Logger("gem-agent"), provider, nil
 }
 
 // warnOnceHandler prints the first export failure and swallows the
@@ -143,12 +213,16 @@ func warnOnceHandler() otel.ErrorHandlerFunc {
 // Shutdown flushes with a hard cap — exit must not hang on a dead
 // collector.
 func (s *Sink) Shutdown() {
-	if s == nil || s.provider == nil {
+	if s == nil {
+		return
+	}
+	_, provider := s.current()
+	if provider == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	_ = s.provider.Shutdown(ctx)
+	_ = provider.Shutdown(ctx)
 }
 
 // clip bounds attribute values: audit metadata, not payload transport.
@@ -161,7 +235,11 @@ func clip(s string, max int) string {
 }
 
 func (s *Sink) emit(name string, attrs ...attribute.KeyValue) {
-	if s == nil || s.provider == nil {
+	if s == nil {
+		return
+	}
+	logger, provider := s.current()
+	if provider == nil {
 		return
 	}
 	var rec otellog.Record
@@ -173,7 +251,7 @@ func (s *Sink) emit(name string, attrs ...attribute.KeyValue) {
 		rec.AddAttributes(attribute.String("agent", s.label))
 	}
 	rec.AddAttributes(attrs...)
-	s.logger.Emit(context.Background(), rec)
+	logger.Emit(context.Background(), rec)
 }
 
 // --- audit events (ADR-0035 §1) ---
@@ -318,8 +396,12 @@ func (r *Recording) ForceFlush(context.Context) error { return nil }
 // Recording, synchronously.
 func NewRecording() (*Sink, *Recording) {
 	rec := &Recording{}
-	provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(rec)))
-	return &Sink{logger: provider.Logger("recording"), provider: provider}, rec
+	build := func(context.Context, string) (otellog.Logger, *sdklog.LoggerProvider, error) {
+		provider := sdklog.NewLoggerProvider(sdklog.WithProcessor(sdklog.NewSimpleProcessor(rec)))
+		return provider.Logger("recording"), provider, nil
+	}
+	logger, provider, _ := build(context.Background(), "")
+	return &Sink{logger: logger, provider: provider, build: build}, rec
 }
 
 // loadHeaders reads the OTLP auth-header file: a flat JSON object of
