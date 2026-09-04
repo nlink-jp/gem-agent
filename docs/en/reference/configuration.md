@@ -240,6 +240,13 @@ hook with a visible cut, and every injection prints one line
 (`session_start hook (startup) attached N bytes of context as data for
 the next turn`).
 
+A `session_end` hook (`[[hooks.session_end]]`, no matcher) runs when the
+session ends — with `reason` `exit` — and when `/clear` closes the old
+session (`reason` `clear`, followed by the new session's `session_start`
+with `source` `startup`; ADR-0071 §2 and §4). It receives
+`hook_event_name`, `session_id`, `transcript_path`, `cwd` and `reason`;
+it cannot block and its output is ignored; a failure is a warning.
+
 **Refusing a prompt** — a `user_prompt_submit` hook may block the turn
 the same two ways a pre-tool hook denies a call: exit 2 with the
 reason on stderr, or the JSON block forms. The prompt is erased —
@@ -249,12 +256,14 @@ reported as a failed hook and injects nothing. As with pre-tool hooks,
 a crash, a timeout, or unparseable output proceeds with a warning and
 injects nothing. Global config only, for the same reason.
 
-Two variables are exported *to* everything a session spawns (shell
-commands, MCP servers, hooks): `GEMAGENT_WORK_DIR`, the session's work
-directory (ADR-0058), and `GEMAGENT_SESSION_ID`, the session id
-(ADR-0069 addendum 2) — `${GEMAGENT_SESSION_ID}` in an `mcp.json` args
-entry expands to it, which is how a server that keeps per-session state
-is told its session.
+Three variables are exported *to* everything a session spawns (shell
+commands, MCP servers, hooks): `GEMAGENT_SESSION_ID`, the session id;
+`GEMAGENT_PROJECT_DIR`, the project directory; and `GEMAGENT_WORK_DIR`,
+the session's work directory (ADR-0058, ADR-0071 §3) — the same three
+facts a Claude Code child sees. `${GEMAGENT_SESSION_ID}` in an
+`mcp.json` args entry expands to it, which is how a server that keeps
+per-session state is told its session. `/clear` re-exports the first
+and third for the new session.
 
 The `GEMAGENT_STATE_DIR` environment variable relocates the state root
 (sessions and memory) for test/drill isolation. Two more environment

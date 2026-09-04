@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.66.0] - 2026-09-05
+
+### Changed — the session identity contract, aligned with Claude Code (ADR-0071)
+
+- Session ids are UUID v4, unique on the machine (the timestamp form was
+  unique only per project). The listing shows the first eight
+  characters beside the start time; `--resume` takes a full id or an
+  unambiguous prefix. Existing timestamp-id transcripts still list and
+  resume
+- `/clear` starts a new session: the old transcript closes where the
+  conversation ended and stays resumable; a new id, transcript and work
+  directory take over, re-exported to children; hooks see
+  `session_end` (`clear`) then `session_start` (`startup`)
+- `GEMAGENT_PROJECT_DIR` is exported to children beside
+  `GEMAGENT_SESSION_ID` and `GEMAGENT_WORK_DIR`
+- `[[hooks.session_end]]` runs at session end (`exit`) and on `/clear`
+  (`clear`) with Claude Code's payload; non-blocking
+
 ## [0.65.2] - 2026-09-05
 
 ### Added — the session id is exported to children (ADR-0069 addendum 2)

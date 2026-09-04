@@ -342,6 +342,18 @@ func (a *Agent) Reset() {
 	a.logRecord(session.KindClear, map[string]any{"messages": cleared})
 }
 
+// Restart is Reset for a new session (ADR-0071 §2): the history is
+// emptied and the transcript switched to log, with no clear record —
+// the old transcript ends where the conversation ended and stays
+// resumable by its own id. Same between-turns discipline as Reset.
+func (a *Agent) Restart(log SessionLog) {
+	a.history = nil
+	a.compactedAt = 0
+	a.lastPrompt = 0
+	a.tag = guard.NewTagWithPrefix("tool_output")
+	a.log = log
+}
+
 // SetHistory replaces the conversation with a restored transcript
 // (--continue / --resume, ADR-0005). Like AddContext, it must not be
 // called while Run is in flight.

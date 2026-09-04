@@ -72,7 +72,9 @@ func runSessions(cmd *cobra.Command, args []string) error {
 func writeSessions(out io.Writer, metas []session.Meta, showProject bool) {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	for _, m := range metas {
-		row := []string{m.ID, ago(m.LastActive), humanBytes(m.Size), m.Header.Model}
+		// The id no longer carries the start time (ADR-0071 §1): the
+		// listing shows both, the id shortened to what resume accepts.
+		row := []string{session.Short(m.ID), m.Started.Local().Format("2006-01-02 15:04"), ago(m.LastActive), humanBytes(m.Size), m.Header.Model}
 		if showProject {
 			row = append(row, abbreviateHome(m.Header.Project))
 		}
@@ -80,7 +82,7 @@ func writeSessions(out io.Writer, metas []session.Meta, showProject bool) {
 		fmt.Fprintln(tw, strings.Join(row, "\t"))
 	}
 	_ = tw.Flush()
-	fmt.Fprintln(out, "\nresume with:  gem-agent --resume <id>   (or --continue for the most recent)")
+	fmt.Fprintln(out, "\nresume with:  gem-agent --resume <id or its first characters>   (or --continue for the most recent)")
 }
 
 // resolveResume finds the session --continue / --resume names and loads
@@ -102,12 +104,11 @@ func resolveResume(dir, projectDir, model, id string) (session.Meta, error) {
 		}
 		meta = latest
 	} else {
-		if !session.ValidID(id) {
-			return meta, fmt.Errorf("%q is not a session id; `gem-agent sessions` lists them (ids look like 20260819-150102)", id)
-		}
-		found, err := session.Find(dir, projectDir, id)
+		// A full id or an unambiguous prefix of one (ADR-0071 §1): the
+		// listing shows eight characters, and eight is what one types.
+		found, err := session.FindByPrefix(dir, projectDir, id)
 		if err != nil {
-			return meta, fmt.Errorf("no session %s in %s — `gem-agent sessions` lists what is there", id, dir)
+			return meta, fmt.Errorf("%v — `gem-agent sessions` lists what is there", err)
 		}
 		meta = found
 	}

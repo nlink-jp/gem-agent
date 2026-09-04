@@ -11,6 +11,7 @@ package session
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -174,14 +175,41 @@ func projectSubdir(dir, projectDir string) string {
 	return filepath.Join(dir, "projects", statedir.EscapeProject(projectDir))
 }
 
-// idPattern matches the ids Open generates and nothing else. Resume
-// accepts an id, never a path: an id that cannot contain a separator
-// cannot escape the sessions directory, and cannot name a transcript
-// somebody else placed (ADR-0005).
-var idPattern = regexp.MustCompile(`^\d{8}-\d{6}(-\d+)?$`)
+// idPattern matches the ids Open generates — a UUID v4 since ADR-0071,
+// the timestamp form before it — and nothing else. Resume accepts an
+// id, never a path: an id that cannot contain a separator cannot
+// escape the sessions directory, and cannot name a transcript somebody
+// else placed (ADR-0005).
+var idPattern = regexp.MustCompile(`^(\d{8}-\d{6}(-\d+)?|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$`)
 
 // ValidID reports whether s is a well-formed session id.
 func ValidID(s string) bool { return idPattern.MatchString(s) }
+
+// prefixPattern is what an operator may type to name a session by its
+// leading characters: hex and hyphens, four characters or more.
+var prefixPattern = regexp.MustCompile(`^[0-9a-f-]{4,}$`)
+
+// NewID returns a random UUID v4 (ADR-0071 §1): unique on the machine
+// and, for practical purposes, everywhere — the timestamp ids it
+// replaces were unique only within one project directory.
+func NewID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("session: crypto/rand unavailable: " + err.Error())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// Short returns the first eight characters of a UUID id — what the
+// listing shows and what an operator types — or a legacy id unchanged.
+func Short(id string) string {
+	if len(id) == 36 && strings.Count(id, "-") == 4 {
+		return id[:8]
+	}
+	return id
+}
 
 // Open starts a new session file named by timestamp, inside the
 // project's own subdirectory (ADR-0022). A .project marker collision —
@@ -193,14 +221,10 @@ func Open(dir, projectDir string) (*Logger, error) {
 		return nil, err
 	}
 	dir = sub
-	base := time.Now().Format("20060102-150405")
-	// O_EXCL prevents two same-second sessions from silently sharing one
-	// file; on collision, retry with a numeric suffix.
-	for i := 0; i < 100; i++ {
-		id := base
-		if i > 0 {
-			id = fmt.Sprintf("%s-%d", base, i+1)
-		}
+	// O_EXCL prevents two sessions from silently sharing one file; a
+	// UUID collision is not expected, but the loop stays honest.
+	for i := 0; i < 3; i++ {
+		id := NewID()
 		path := filepath.Join(dir, id+".jsonl")
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_EXCL, 0o600)
 		if err == nil {
@@ -533,6 +557,57 @@ func Find(dir, projectDir, id string) (Meta, error) {
 		return Meta{}, err
 	}
 	return describe(path, id)
+}
+
+// FindByPrefix resolves what an operator typed: a full id, or a prefix
+// of a UUID id that names exactly one session (ADR-0071 §1). The
+// project's own sessions are searched first, then the legacy flat
+// layout, then every other project — the last so a prefix typed in the
+// wrong project still gets the informative refusal.
+func FindByPrefix(dir, projectDir, typed string) (Meta, error) {
+	if ValidID(typed) {
+		return Find(dir, projectDir, typed)
+	}
+	if !prefixPattern.MatchString(typed) {
+		return Meta{}, fmt.Errorf("%q is not a session id or a prefix of one", typed)
+	}
+	var matches []string
+	seen := map[string]bool{}
+	add := func(d string) {
+		entries, err := os.ReadDir(d)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			id := strings.TrimSuffix(e.Name(), ".jsonl")
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") || !ValidID(id) || !strings.HasPrefix(id, typed) || seen[id] {
+				continue
+			}
+			seen[id] = true
+			matches = append(matches, id)
+		}
+	}
+	add(projectSubdir(dir, projectDir))
+	if len(matches) == 0 {
+		add(dir)
+	}
+	if len(matches) == 0 {
+		if entries, err := os.ReadDir(filepath.Join(dir, "projects")); err == nil {
+			for _, e := range entries {
+				if e.IsDir() {
+					add(filepath.Join(dir, "projects", e.Name()))
+				}
+			}
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return Meta{}, fmt.Errorf("no session starts with %q", typed)
+	case 1:
+		return Find(dir, projectDir, matches[0])
+	}
+	sort.Strings(matches)
+	return Meta{}, fmt.Errorf("%q matches %d sessions (%s…); type more characters", typed, len(matches), strings.Join(matches, ", "))
 }
 
 // findSessionFile locates one session by id: the project subdirectory

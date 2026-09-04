@@ -125,7 +125,7 @@ tool output — which also keeps the request prefix byte-stable for
 81–95% measured context-cache hits.
 
 **[Sessions](docs/en/reference/sessions.md)** — full-fidelity JSONL
-transcripts, per-project state layout, `--continue`/`--resume` with
+transcripts, per-project state layout, `--continue`/`--resume` (UUID session ids, resumable by prefix) with
 deliberate refusals (wrong directory, wrong model), automatic context
 compaction with an honest notice, the `/usage` token statement, and
 approval-gated agent memory across sessions.

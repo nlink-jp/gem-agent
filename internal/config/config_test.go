@@ -394,6 +394,8 @@ command = "/Users/you/hooks/on-resume.sh"
 [[hooks.user_prompt_submit]]
 command = "/Users/you/hooks/turn-context.sh"
 timeout_sec = 3
+[[hooks.session_end]]
+command = "/Users/you/hooks/session-end.sh"
 `
 	if err := os.WriteFile(path, []byte(ctxHooks), 0o644); err != nil {
 		t.Fatal(err)
@@ -408,6 +410,9 @@ timeout_sec = 3
 	if len(cfg.Hooks.UserPromptSubmit) != 1 || cfg.Hooks.UserPromptSubmit[0].TimeoutSec != 3 {
 		t.Fatalf("user_prompt_submit hooks not loaded: %+v", cfg.Hooks.UserPromptSubmit)
 	}
+	if len(cfg.Hooks.SessionEnd) != 1 {
+		t.Fatalf("session_end hooks not loaded: %+v", cfg.Hooks.SessionEnd)
+	}
 
 	for name, frag := range map[string]string{
 		"empty matcher":    "[[hooks.pre_tool_use]]\ncommand = \"x\"\n",
@@ -419,6 +424,8 @@ timeout_sec = 3
 		"session_start negative timeout": "[[hooks.session_start]]\ncommand = \"x\"\ntimeout_sec = -1\n",
 		"prompt hook with matcher":       "[[hooks.user_prompt_submit]]\nmatcher = \"*\"\ncommand = \"x\"\n",
 		"prompt hook without command":    "[[hooks.user_prompt_submit]]\ntimeout_sec = 3\n",
+		"session_end with matcher":       "[[hooks.session_end]]\nmatcher = \"*\"\ncommand = \"x\"\n",
+		"session_end without command":    "[[hooks.session_end]]\ntimeout_sec = 3\n",
 	} {
 		bad := "[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\n" + frag
 		if err := os.WriteFile(path, []byte(bad), 0o644); err != nil {

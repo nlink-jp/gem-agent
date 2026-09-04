@@ -147,7 +147,8 @@ func TestWriteSessionsShowsIDAndPreview(t *testing.T) {
 	var b strings.Builder
 	writeSessions(&b, metas, false)
 	out := b.String()
-	for _, want := range []string{id, "fix the parser", "gemini-x", "--resume"} {
+	// The listing shows the id shortened to what resume accepts (ADR-0071).
+	for _, want := range []string{session.Short(id), "fix the parser", "gemini-x", "--resume"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("listing is missing %q:\n%s", want, out)
 		}

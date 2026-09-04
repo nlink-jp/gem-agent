@@ -171,6 +171,12 @@ compact_at_pct = 80
 #[[hooks.user_prompt_submit]]
 #command = "/Users/you/hooks/turn-context.sh"
 #timeout_sec = 10
+# A session_end hook runs when the session ends (reason "exit") and when
+# /clear closes the old session (reason "clear"); it cannot block and its
+# output is ignored (ADR-0071).
+#[[hooks.session_end]]
+#command = "/Users/you/hooks/session-end.sh"
+#timeout_sec = 10
 
 [mcp]
 # Connect MCP servers declared in ~/.config/gem-agent/mcp.json (global)

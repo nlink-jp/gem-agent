@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -329,5 +330,35 @@ func TestHasContextHooks(t *testing.T) {
 	r := New(Hooks{SessionStart: []Hook{{Command: "true"}}}, nil)
 	if !r.HasSessionStart() || r.HasPromptSubmit() {
 		t.Error("session start not reported")
+	}
+}
+
+// SessionEnd carries the measured payload, cannot block, injects
+// nothing, and reports failures as notices (ADR-0071 §4).
+func TestSessionEndPayloadAndFailOpen(t *testing.T) {
+	log := t.TempDir() + "/end.json"
+	r, notes, s := contextRunner(t, Hooks{SessionEnd: []Hook{
+		{Command: `python3 -c "
+import json,sys
+p=json.load(sys.stdin)
+assert p['hook_event_name']=='SessionEnd', p
+assert p['session_id']=='sess-1', p
+assert p['reason']=='clear', p
+assert p['transcript_path'], p
+open('` + log + `','w').write('ran')
+print('ignored output')
+"`},
+		{Command: `echo no >&2; exit 2`},
+		{Command: `sleep 5`, Timeout: 200 * time.Millisecond},
+	}})
+	if !r.HasSessionEnd() {
+		t.Fatal("HasSessionEnd false")
+	}
+	r.SessionEnd(context.Background(), s, "clear")
+	if _, err := os.Stat(log); err != nil {
+		t.Error("hook did not run")
+	}
+	if len(*notes) != 2 {
+		t.Errorf("notes = %v", *notes)
 	}
 }

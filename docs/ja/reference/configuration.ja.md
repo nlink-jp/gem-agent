@@ -235,6 +235,13 @@ prompt には決して入らず、auto モードのリスクレビューアが�
 切り詰めは可視で、注入のたびに 1 行が出ます（`session_start hook
 (startup) attached N bytes of context as data for the next turn`）。
 
+`session_end` フック（`[[hooks.session_end]]`、matcher なし）はセッションの
+終了時 — `reason` は `exit` — と、`/clear` が旧セッションを閉じるとき
+（`reason` は `clear`。その後に新セッションの `session_start` が `source`
+`startup` で続く。ADR-0071 §2 と §4）に走ります。`hook_event_name`、
+`session_id`、`transcript_path`、`cwd`、`reason` を受け取り、ブロックできず
+出力は無視され、失敗は警告になります。
+
 **プロンプトの拒否** — `user_prompt_submit` フックは、pre-tool フックが
 コールを拒否するのと同じ 2 通り — exit 2 + stderr の理由、または JSON
 ブロック形式 — でターンを止められます。プロンプトは消え — 履歴にも
@@ -245,11 +252,12 @@ prompt には決して入らず、auto モードのリスクレビューアが�
 理由でグローバル設定専用です。
 
 セッションが起動するすべて（シェルコマンド、MCP サーバ、フック）*へ*
-export される変数が 2 つあります: セッションの作業ディレクトリ
-`GEMAGENT_WORK_DIR`（ADR-0058）と、セッション id `GEMAGENT_SESSION_ID`
-（ADR-0069 追記 2）— `mcp.json` の args 内の `${GEMAGENT_SESSION_ID}` は
-これに展開され、セッションごとの状態を持つサーバはこうして自分のセッションを
-知らされます。
+export される変数が 3 つあります: セッション id `GEMAGENT_SESSION_ID`、
+プロジェクトディレクトリ `GEMAGENT_PROJECT_DIR`、セッションの作業ディレクトリ
+`GEMAGENT_WORK_DIR`（ADR-0058、ADR-0071 §3）— Claude Code の子が見るのと同じ
+3 つの事実です。`mcp.json` の args 内の `${GEMAGENT_SESSION_ID}` はこれに展開
+され、セッションごとの状態を持つサーバはこうして自分のセッションを知らされ
+ます。`/clear` は新セッションのために 1 つ目と 3 つ目を再 export します。
 
 環境変数 `GEMAGENT_STATE_DIR` はテスト/訓練の隔離用に state ルート
 （sessions と memory）を差し替えます。デバッグ用に、設定ファイル外で直接読まれる

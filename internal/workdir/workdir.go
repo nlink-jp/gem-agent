@@ -43,6 +43,12 @@ import (
 // own directory without gem-agent knowing anything about that server.
 const EnvVar = "GEMAGENT_WORK_DIR"
 
+// ProjectEnvVar names the project directory for children (ADR-0071
+// §3): the third of the three facts a Claude Code child also sees
+// (its CLAUDE_PROJECT_DIR), beside the session id and the work
+// directory.
+const ProjectEnvVar = "GEMAGENT_PROJECT_DIR"
+
 // Ensure creates and returns the work directory for one session of one
 // project. sessionID must be a single path segment — it names a
 // directory, and a session id carrying a separator would place the

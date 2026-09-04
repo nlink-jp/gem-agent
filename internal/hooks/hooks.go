@@ -51,6 +51,7 @@ type Hooks struct {
 	PreToolUse       []Hook
 	SessionStart     []Hook
 	UserPromptSubmit []Hook
+	SessionEnd       []Hook
 }
 
 // Session identifies the running session to context hooks (ADR-0069
@@ -97,6 +98,9 @@ func (r *Runner) HasSessionStart() bool { return len(r.hooks.SessionStart) > 0 }
 // HasPromptSubmit reports whether any prompt-submit hook is configured.
 func (r *Runner) HasPromptSubmit() bool { return len(r.hooks.UserPromptSubmit) > 0 }
 
+// HasSessionEnd reports whether any session-end hook is configured.
+func (r *Runner) HasSessionEnd() bool { return len(r.hooks.SessionEnd) > 0 }
+
 // matches reports whether one matcher covers the name, in either
 // vocabulary.
 func matches(matcher, name string) bool {
@@ -130,6 +134,17 @@ type sessionStartPayload struct {
 	TranscriptPath string `json:"transcript_path"`
 	CWD            string `json:"cwd"`
 	Source         string `json:"source"`
+}
+
+// sessionEndPayload is the Claude Code SessionEnd stdin shape (measured
+// 2026-09-04: session_id, transcript_path, cwd, hook_event_name,
+// reason; ADR-0071 §4).
+type sessionEndPayload struct {
+	HookEventName  string `json:"hook_event_name"`
+	SessionID      string `json:"session_id"`
+	TranscriptPath string `json:"transcript_path"`
+	CWD            string `json:"cwd"`
+	Reason         string `json:"reason"`
 }
 
 // promptPayload is the Claude Code UserPromptSubmit stdin shape
@@ -285,6 +300,24 @@ func (r *Runner) PromptSubmit(ctx context.Context, s Session, prompt string) (ex
 		}
 	}
 	return strings.Join(parts, "\n\n"), false, ""
+}
+
+// SessionEnd runs the session-end hooks with reason ("clear" | "exit").
+// A session end cannot be blocked and injects nothing (Claude Code's
+// contract, measured): every outcome other than a clean exit 0 is a
+// notice, and output is ignored.
+func (r *Runner) SessionEnd(ctx context.Context, s Session, reason string) {
+	for _, h := range r.hooks.SessionEnd {
+		out, ok := r.exec(ctx, h, s.CWD, sessionEndPayload{
+			HookEventName: "SessionEnd", SessionID: s.ID, TranscriptPath: s.TranscriptPath, CWD: s.CWD, Reason: reason,
+		})
+		if !ok || out.timedOut {
+			continue
+		}
+		if out.err != nil {
+			r.notify(fmt.Sprintf("session_end hook %q failed (%v)", h.Command, out.err))
+		}
+	}
 }
 
 // interpret turns one context-hook outcome into injected text and/or a

@@ -258,6 +258,7 @@ type HooksConfig struct {
 	PreToolUse       []HookEntry `toml:"pre_tool_use"`
 	SessionStart     []HookEntry `toml:"session_start"`
 	UserPromptSubmit []HookEntry `toml:"user_prompt_submit"`
+	SessionEnd       []HookEntry `toml:"session_end"`
 }
 
 // HookEntry is one configured hook. For pre_tool_use, Matcher is an
@@ -443,6 +444,17 @@ func (c *Config) validate() error {
 		}
 		if h.TimeoutSec < 0 {
 			return fmt.Errorf("hooks.session_start[%d]: timeout_sec must be >= 0", i)
+		}
+	}
+	for i, h := range c.Hooks.SessionEnd {
+		if strings.TrimSpace(h.Matcher) != "" {
+			return fmt.Errorf("hooks.session_end[%d]: takes no matcher — every session end runs it", i)
+		}
+		if strings.TrimSpace(h.Command) == "" {
+			return fmt.Errorf("hooks.session_end[%d]: command is required", i)
+		}
+		if h.TimeoutSec < 0 {
+			return fmt.Errorf("hooks.session_end[%d]: timeout_sec must be >= 0", i)
 		}
 	}
 	for i, h := range c.Hooks.UserPromptSubmit {

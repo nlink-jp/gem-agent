@@ -290,6 +290,14 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   Claude Code docs say `user_input`, the measured payload does not. The
   `PreToolUse` payload also carries `session_id` / `transcript_path`
   (v0.65.1) — keep them: agent-board's claim enforcement keys on them.
+- **Session ids are UUID v4 and `/clear` is a new session** (ADR-0071).
+  `session.ValidID` accepts the legacy timestamp form too; never drop it
+  (old transcripts must resume). `/clear` goes through `onClear` in
+  `cmd/root.go`: `Agent.Restart(newLog)` (no clear record), the old
+  logger closed, `curLog` / `workDir` / `hookSession` reassigned (the
+  deferred closers read the variables), env re-exported, `session_end`
+  then `session_start` hooks. Telemetry keeps the first id (its resource
+  is fixed at creation) — a known limit, stated in the docs.
 - **The declared `gem_agent_purpose` is displayed and nothing else** (ADR-0047) —
   `internal/agent/purpose.go` injects the argument into every `Mutating`
   tool's advertised schema and strips it again before `Run`, before the

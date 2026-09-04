@@ -157,3 +157,15 @@ a capability and spent its concrete sentences on prohibitions.
   the two ways to remove one — ask the agent to forget it, or delete
   the file. It takes no arguments. A new save takes effect from the
   next session.
+
+## Session ids and `/clear` (ADR-0071)
+
+A session id is a UUID v4, unique on the machine; the listing shows its
+first eight characters beside the start time, and `--resume` accepts a
+full id or any unambiguous prefix. Transcripts recorded with the older
+timestamp ids still list and resume. `/clear` starts a new session: the
+old transcript is closed where the conversation ended and stays
+resumable by its id; a new id, transcript and work directory take over
+and are exported to children; the session hooks see a `session_end`
+(`clear`) then a `session_start` (`startup`). Telemetry keeps the id
+the process started with.

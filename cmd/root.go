@@ -261,6 +261,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	var sessionLog agent.SessionLog
 	sessionPath := "(disabled)"
 	sessionID := ""
+	// curLog is the transcript in use; /clear replaces it (ADR-0071 §2),
+	// so the exit-time close reads the variable, not a snapshot.
+	var curLog *session.Logger
+	defer func() {
+		if curLog != nil {
+			_ = curLog.Close()
+		}
+	}()
 	if sessionDirErr != nil {
 		fmt.Fprintf(stderr, "warning: session log disabled: %v\n", sessionDirErr)
 	} else {
@@ -271,7 +279,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		case err != nil:
 			fmt.Fprintf(stderr, "warning: session log disabled: %v\n", err)
 		default:
-			defer func() { _ = lg.Close() }()
+			curLog = lg
 			sessionLog = lg
 			sessionPath = lg.Path()
 			sessionID = lg.ID()
@@ -308,7 +316,17 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// That ordering is why the session block above was moved ahead of
 	// this one: the directory is keyed by session id, so a resume lands
 	// back in the directory its earlier self used.
+	// The project directory is the third fact a child sees (ADR-0071
+	// §3), beside the session id and the work directory.
+	if err := os.Setenv(workdir.ProjectEnvVar, projectDir); err != nil {
+		fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", workdir.ProjectEnvVar, err)
+	}
 	workDir := ""
+	defer func() {
+		if workDir != "" {
+			workdir.RemoveIfEmpty(workDir)
+		}
+	}()
 	if sessionID != "" {
 		if dir, err := workdir.Ensure(projectDir, sessionID); err != nil {
 			// A missing work directory degrades the session (oversized
@@ -324,7 +342,6 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			if err := os.Setenv(workdir.EnvVar, workDir); err != nil {
 				fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", workdir.EnvVar, err)
 			}
-			defer workdir.RemoveIfEmpty(workDir)
 			if dirs, bytes, err := workdir.Sweep(projectDir, sessionID); err == nil && dirs > 0 {
 				verb := "hold"
 				if dirs == 1 {
@@ -614,11 +631,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(stderr, "[⚠ %s]\n", warn)
 	}
 	var hookRunner *hooks.Runner
-	if len(cfg.Hooks.PreToolUse)+len(cfg.Hooks.SessionStart)+len(cfg.Hooks.UserPromptSubmit) > 0 {
+	if len(cfg.Hooks.PreToolUse)+len(cfg.Hooks.SessionStart)+len(cfg.Hooks.UserPromptSubmit)+len(cfg.Hooks.SessionEnd) > 0 {
 		hookRunner = hooks.New(hooks.Hooks{
 			PreToolUse:       hookEntries(cfg.Hooks.PreToolUse),
 			SessionStart:     hookEntries(cfg.Hooks.SessionStart),
 			UserPromptSubmit: hookEntries(cfg.Hooks.UserPromptSubmit),
+			SessionEnd:       hookEntries(cfg.Hooks.SessionEnd),
 		}, hookNotify)
 	}
 	// What a context hook learns about the session (ADR-0069 §2): the
@@ -983,7 +1001,59 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	} else {
 		sessionHooks("startup")
 	}
-	onClear := func() { sessionHooks("clear") }
+	// Session-end hooks (ADR-0071 §4) run when the session ends —
+	// whatever ended it — and when /clear closes the old session.
+	sessionEndHooks := func(reason string) {
+		if hookRunner == nil || !hookRunner.HasSessionEnd() {
+			return
+		}
+		hookRunner.SessionEnd(ctx, hookSession, reason)
+	}
+	defer sessionEndHooks("exit")
+
+	// /clear starts a new session (ADR-0071 §2): the old transcript is
+	// closed where the conversation ended and stays resumable by its
+	// id; a new id, transcript and work directory take over, exported
+	// to children like the first; the hooks see an end and a start —
+	// the same sequence Claude Code produces. If a new transcript
+	// cannot be opened the conversation is cleared in place, as before,
+	// and the operator is told.
+	onClear := func() {
+		sessionEndHooks("clear")
+		newLog, err := openSessionLog(sessionDir, "", projectDir, cfg.Model.Name, cfg.GCP.Location, cmd.Root().Version)
+		if sessionDirErr != nil || err != nil {
+			ag.Reset()
+			if err != nil {
+				fmt.Fprintf(stderr, "warning: cleared in place — could not start a new session: %v\n", err)
+			}
+			sessionHooks("clear")
+			return
+		}
+		ag.Restart(newLog)
+		if curLog != nil {
+			_ = curLog.Close()
+		}
+		curLog = newLog
+		sessionLog = newLog
+		sessionPath, sessionID = newLog.Path(), newLog.ID()
+		if err := session.Export(sessionID); err != nil {
+			fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", session.EnvVar, err)
+		}
+		hookSession = hooks.Session{ID: sessionID, TranscriptPath: sessionPath, CWD: projectDir}
+		if workDir != "" {
+			workdir.RemoveIfEmpty(workDir)
+		}
+		if dir, err := workdir.Ensure(projectDir, sessionID); err != nil {
+			fmt.Fprintf(stderr, "warning: session work directory unavailable: %v\n", err)
+			workDir = ""
+		} else {
+			workDir = dir
+			if err := os.Setenv(workdir.EnvVar, workDir); err != nil {
+				fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", workdir.EnvVar, err)
+			}
+		}
+		sessionHooks("startup")
+	}
 
 	// --- one-shot mode: single turn, quiet stderr, exit ---
 	if oneShot {
@@ -1787,11 +1857,14 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 	case "/skills":
 		b.WriteString(skillsListing(skillsList))
 	case "/clear":
-		ag.Reset()
-		// A cleared conversation is a fresh start to the operator's
-		// session-start hooks (ADR-0069 §2, source "clear").
+		// A cleared conversation is a new session (ADR-0071 §2): onClear
+		// closes the old transcript where the conversation ended — no
+		// clear record, so it stays resumable — and starts the next.
+		// Without it (tests), the history is cleared in place.
 		if onClear != nil {
 			onClear()
+		} else {
+			ag.Reset()
 		}
 		b.WriteString(msgs.HistoryCleared)
 	case "/quit", "/exit":
