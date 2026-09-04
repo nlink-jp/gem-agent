@@ -33,6 +33,10 @@ const (
 	// bytes, and this call should cost less than the context it buys back.
 	summaryToolClip = 1500
 	summaryTextClip = 4000
+	// summaryKind labels the attachment a compaction leaves in place of
+	// the history it replaced; renderTranscript hands it to the next
+	// summariser whole.
+	summaryKind = "summary"
 )
 
 // ErrNothingToCompact reports that no safe, useful cut exists — too few
@@ -105,7 +109,7 @@ func SummaryMessage(summary string) llm.Message {
 			"File contents shown before this point are no longer verbatim in context: re-read a file before editing it or quoting it exactly, and never rewrite an existing file from this summary alone.",
 		Attachments: []llm.Attachment{{
 			Ref:     "earlier conversation",
-			Kind:    "summary",
+			Kind:    summaryKind,
 			Content: summary,
 		}},
 	}
@@ -195,6 +199,15 @@ func renderTranscript(msgs []llm.Message) string {
 					// The summary needs the fact of the image, never the
 					// bytes (ADR-0012).
 					fmt.Fprintf(&b, "[user attached image %s (%d bytes)]\n", att.Ref, len(att.Data))
+					continue
+				}
+				if att.Kind == summaryKind {
+					// The previous compaction's summary: already the
+					// compressed form, and its tail is where "what is
+					// open / next step" lives — clipping it at the
+					// tool-result budget lost exactly that on every
+					// compaction after the first (review round 4).
+					fmt.Fprintf(&b, "[user attached %s %s] %s\n", att.Kind, att.Ref, att.Content)
 					continue
 				}
 				fmt.Fprintf(&b, "[user attached %s %s] %s\n", att.Kind, att.Ref, clip(att.Content, summaryToolClip))

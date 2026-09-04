@@ -346,12 +346,31 @@ func (a *Agent) Reset() {
 // emptied and the transcript switched to log, with no clear record —
 // the old transcript ends where the conversation ended and stays
 // resumable by its own id. Same between-turns discipline as Reset.
+//
+// What Reset keeps is dropped here, because it belongs to the session
+// that ends (review round 4): data queued for the next turn (a
+// session_start attachment from the old session must not ride into
+// the new one's first turn), the late-return notes, the compaction
+// failure count and its one-time warning, and the dead-transcript
+// mark — the file that died is closed, and the new file has failed
+// nothing yet.
 func (a *Agent) Restart(log SessionLog) {
 	a.history = nil
 	a.compactedAt = 0
 	a.lastPrompt = 0
 	a.tag = guard.NewTagWithPrefix("tool_output")
+	a.pendingAtts = nil
+	a.compactFailures = 0
+	a.warnedNoCut = false
+	a.mu.Lock()
 	a.log = log
+	a.logDead = false
+	// An abandoned call's late note (ADR-0065 §2) answers the model's
+	// own "result discarded" — a conversation that never made the
+	// call has nothing to correct; the tool_late_return record and
+	// the audit event still capture the effect.
+	a.lateNotices = nil
+	a.mu.Unlock()
 }
 
 // SetHistory replaces the conversation with a restored transcript
@@ -804,7 +823,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 				}
 			}
 			var result string
-			var denied bool
+			var denied, ran bool
 			if stopAfterRound != "" {
 				result = "error: the turn was stopped by the loop guard; not executed"
 				// Shown as proposed, never executed: the audit trail says
@@ -815,7 +834,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 				}
 				a.telemetry.ToolCall(tc.Name, mutating, callDetail, callPurpose, 0, "skipped")
 			} else {
-				result, denied = a.execCall(ctx, tc)
+				result, denied, ran = a.execCall(ctx, tc)
 			}
 			if a.onToolDone != nil {
 				a.onToolDone(tc)
@@ -835,7 +854,10 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			// separate user message after the tool round — measured a 400
 			// on the next round: Gemini requires the content following a
 			// function-call turn to consist of exactly its responses.
-			if tc.Name == tools.ViewImageName && !strings.HasPrefix(result, "error:") && !denied {
+			// Keyed on ran, not on the text and not on the gate flag
+			// alone (review round 4): a refusal from any layer keeps
+			// the bytes out.
+			if tc.Name == tools.ViewImageName && ran && !strings.HasPrefix(result, "error:") {
 				if path, _ := tc.Args["path"].(string); path != "" {
 					if data, mime, err := a.registry.ReadImage(path); err == nil {
 						msg.Attachments = []llm.Attachment{{Ref: path, Kind: "image", Data: data, MIME: mime}}
@@ -847,7 +869,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			// past the tool round). Office formats return extracted text
 			// and never reach this branch — ReadDocumentPDF refuses
 			// non-PDF bytes.
-			if tc.Name == tools.ReadDocumentName && !strings.HasPrefix(result, "error:") && !denied {
+			if tc.Name == tools.ReadDocumentName && ran && !strings.HasPrefix(result, "error:") {
 				if path, _ := tc.Args["path"].(string); path != "" {
 					if data, err := a.registry.ReadDocumentPDF(path); err == nil {
 						msg.Attachments = []llm.Attachment{{Ref: path, Kind: "document", Data: data, MIME: "application/pdf"}}
@@ -1012,10 +1034,20 @@ func deniedWithReason(reason string) string {
 // event: what ran, for how long, with what outcome. denied is
 // provenance, not content (ADR-0060 §3): true exactly when the gate
 // refused the call.
-func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) (result string, denied bool) {
+//
+// ran is true exactly when the tool's Run was reached and returned on
+// its own (review round 4): the attach branches in Run key on it, so a
+// refusal from ANY layer — the gate, a pre-tool hook, the cancel floor
+// — keeps the bytes out, whatever the refusal text looks like. The
+// round-2 fix keyed those branches on the gate's flag alone, and a
+// hook deny runs before the gate with a result that carries neither
+// the flag nor the "error:" prefix: the pixels rode along with the
+// refusal.
+func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) (result string, denied bool, ran bool) {
 	start := time.Now()
 	var floor floorState
-	result, denied, floor = a.execCallInner(ctx, tc)
+	var hookDenied bool
+	result, denied, hookDenied, floor = a.execCallInner(ctx, tc)
 	// The ADR-0065 outcomes come first: an abandoned call has no
 	// result to classify, and a cooperative return after the cancel
 	// is "interrupted" whatever its text says.
@@ -1023,7 +1055,7 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) (result string, d
 	switch {
 	case floor == floorAbandoned:
 		outcome = "abandoned"
-	case denied:
+	case denied, hookDenied:
 		outcome = "denied"
 	case floor == floorInterrupted:
 		outcome = "interrupted"
@@ -1036,21 +1068,25 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) (result string, d
 	}
 	detail, purpose := a.Describe(tc)
 	a.telemetry.ToolCall(tc.Name, mutating, detail, purpose, time.Since(start), outcome)
-	return result, denied
+	return result, denied, floor == floorRan && !denied && !hookDenied
 }
 
-func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result string, denied bool, floor floorState) {
+// execCallInner reports, beside the result, three provenance facts the
+// callers must not infer from the text: denied (the gate refused,
+// ADR-0060 §3), hookDenied (a pre-tool hook refused, ADR-0044 §2), and
+// the ADR-0065 floor state.
+func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result string, denied bool, hookDenied bool, floor floorState) {
 	// A cancelled turn must not open an approval dialog: the operator
 	// interrupted, and a prompt (worse, an 'a' answer) on behalf of a
 	// dead call is the last thing they asked for (review round 2).
 	if ctx.Err() != nil {
 		// Audited as interrupted, not error: the call never ran
 		// because the operator stopped the turn (ADR-0065 review).
-		return "error: interrupted before execution", false, floorInterrupted
+		return "error: interrupted before execution", false, false, floorInterrupted
 	}
 	tool, ok := a.registry.Get(tc.Name)
 	if !ok {
-		return fmt.Sprintf("error: unknown tool %q", tc.Name), false, floorRan
+		return fmt.Sprintf("error: unknown tool %q", tc.Name), false, false, floorRan
 	}
 	// Operator pre-tool hooks run before the ladder (ADR-0044 §2): the
 	// org's guards exist to catch the agent's lapses deterministically,
@@ -1063,7 +1099,13 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			// exemption (ADR-0060 §3) stays scoped to the gate path:
 			// hooks are configured commands whose output no one reviews
 			// at the prompt, so their words ship wrapped like any result.
-			return "denied by a pre-tool hook: " + why, false, floorRan
+			return "denied by a pre-tool hook: " + why, false, true, floorRan
+		}
+		// The hook is a process: a Ctrl+C that landed while it ran
+		// must not carry the call on to the ladder and the gate
+		// (review round 4).
+		if ctx.Err() != nil {
+			return "error: interrupted before execution", false, false, floorInterrupted
 		}
 	}
 	if a.gated(tool.Mutating, tc) {
@@ -1099,6 +1141,16 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 				// what the operator wants.
 				"key": a.learnKey(tc),
 			})
+			// The model tier is a network round trip: a cancel that
+			// landed during it comes back as "risk evaluation failed"
+			// and, without this check, escalated to the gate — the
+			// TUI's auto-'n' then recorded a gate_decision no human
+			// made, and the plain REPL's prompt ate the next stdin
+			// line as its answer (review round 4). roundIntervention
+			// already re-checks after its own model call.
+			if ctx.Err() != nil {
+				return "error: interrupted before execution", false, false, floorInterrupted
+			}
 			approved = d.Approved
 			if approved {
 				source := "auto_rule"
@@ -1152,23 +1204,23 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			a.logRecord("gate_decision", record)
 			if !ok {
 				if denyReason != "" {
-					return deniedWithReason(denyReason), true, floorRan
+					return deniedWithReason(denyReason), true, false, floorRan
 				}
-				return deniedResult, true, floorRan
+				return deniedResult, true, false, floorRan
 			}
 		}
 	}
 	out, state, err := a.runWithFloor(ctx, tool, tc)
 	if state == floorAbandoned {
-		return abandonedResult, false, state
+		return abandonedResult, false, false, state
 	}
 	if err != nil {
-		return "error: " + err.Error(), false, state
+		return "error: " + err.Error(), false, false, state
 	}
 	if out == "" {
-		return "(no output)", false, state
+		return "(no output)", false, false, state
 	}
-	return out, false, state
+	return out, false, false, state
 }
 
 // floorState says how a tool call came back through the ADR-0065
@@ -1364,13 +1416,13 @@ func (a *Agent) logUsage(source string, u llm.Usage) {
 }
 
 func (a *Agent) logRecord(kind string, data any) {
-	if a.log == nil {
-		return
-	}
+	// log is read under mu beside the dead mark: Restart swaps it
+	// from the UI goroutine while an abandoned call's late-return
+	// goroutine (ADR-0065 §2) may still be about to record.
 	a.mu.Lock()
-	dead := a.logDead
+	log, dead := a.log, a.logDead
 	a.mu.Unlock()
-	if dead {
+	if log == nil || dead {
 		return
 	}
 	// A broken session log must not kill a working session — but a
@@ -1380,7 +1432,7 @@ func (a *Agent) logRecord(kind string, data any) {
 	// computed against a list the replay does not have (ADR-0021). So a
 	// failed conversation write stops the transcript at a consistent
 	// prefix, loudly; diagnostics-only failures stay best-effort.
-	if err := a.log.Log(kind, data); err != nil {
+	if err := log.Log(kind, data); err != nil {
 		switch kind {
 		case session.KindMessage, session.KindCompaction, session.KindClear:
 			a.mu.Lock()

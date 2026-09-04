@@ -379,7 +379,7 @@ func buildContents(messages []Message) []*genai.Content {
 		}
 		switch m.Role {
 		case RoleAssistant:
-			if len(m.ToolCalls) == 0 {
+			if len(m.ToolCalls) == 0 && len(m.ThoughtPartSigs) == 0 && len(m.TextPartSig) == 0 {
 				// An empty text part violates the Part oneof and fails
 				// the whole request with 400, so a message carrying
 				// nothing is dropped rather than sent (defence in depth:
@@ -390,6 +390,13 @@ func buildContents(messages []Message) []*genai.Content {
 				contents = append(contents, genai.NewContentFromText(m.Content, genai.RoleModel))
 				continue
 			}
+			// A text-only turn that carries signatures replays them
+			// too (review round 4): the API does not require them
+			// outside function calling — a text turn sent bare was
+			// accepted live for months — but it recommends them for
+			// reasoning continuity, and the parts path below already
+			// handles a content-only message. Measured accepted:
+			// textsig_live_test.go.
 			var parts []*genai.Part
 			for _, sig := range m.ThoughtPartSigs {
 				// Empty thought text is fine: the signature is the

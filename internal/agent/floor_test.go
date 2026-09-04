@@ -99,7 +99,7 @@ func TestSessionAllowlistDoesNotLiftBlockFloor(t *testing.T) {
 		t.Fatalf("first (benign) call: %d prompts, want 1", promptsAfterFirst)
 	}
 
-	result, denied := a.execCall(context.Background(), llm.ToolCall{
+	result, denied, _ := a.execCall(context.Background(), llm.ToolCall{
 		Name: "shell_exec", Args: map[string]any{"command": "sudo whoami"},
 	})
 	if strings.Count(out.String(), "[approval]") != 2 {
