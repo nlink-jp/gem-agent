@@ -81,3 +81,21 @@ func outsideEveryRoot(t *testing.T) string {
 	}
 	return dir
 }
+
+// The rule tier now reads the sandbox's scratch list (ADR-0070 §2); the
+// profile must actually allow what that list promises — /dev/null in
+// particular, the redirect session 20260904-225330 was Blocked for.
+func TestSandboxAllowsDevNull(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-only")
+	}
+	execFn, err := buildExecFn(true, t.TempDir(), "")
+	if err != nil {
+		t.Skipf("sandbox unavailable: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := execFn(ctx, "echo ok > /dev/null && ls / 2>/dev/null >/dev/null").Run(); err != nil {
+		t.Errorf("a write to /dev/null was denied: %v", err)
+	}
+}

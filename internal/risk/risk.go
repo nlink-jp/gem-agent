@@ -6,10 +6,25 @@ package risk
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
 )
+
+// scratchRoots are the scratch locations the sandbox profile lets a
+// shell write to — read from the sandbox package, not repeated here
+// (ADR-0070 §2): the redirect rule's job is to explain what Seatbelt
+// will deny, so it has to read Seatbelt's list. Resolved once at
+// init; Classify itself does no I/O.
+var scratchRoots = sandbox.ScratchDirs()
+
+// homeDir expands a leading `~` in a walk's starting point (ADR-0070
+// §3). Empty when the home is unknown, in which case `~` is treated as
+// outside every root — the conservative reading.
+var homeDir, _ = os.UserHomeDir()
 
 // Tier is the logical verdict for one tool call.
 type Tier int
@@ -173,10 +188,22 @@ func classifyCommand(command, projectDir, workDir string) Verdict {
 		strings.Contains(trimmed, "${") || strings.Contains(trimmed, "eval ") {
 		return Verdict{Review, "dynamic command construction"}
 	}
+	// A read-only walk is still a walk: the sandbox denies writes only,
+	// so a `find /` reaches every mount. Never Safe outside the roots;
+	// the model tier weighs the cost (ADR-0070 §3).
+	if walksOutsideRoots(trimmed, projectDir, workDir) {
+		return Verdict{Review, outsideRootsReason("walks the filesystem", workDir)}
+	}
 	if readOnlyCommand(trimmed) {
 		return Verdict{Safe, "read-only shell command"}
 	}
 	return Verdict{Review, "shell command with unclear effects"}
+}
+
+// writableRoots are the places a shell command may write: the project,
+// the session work directory, and the sandbox's scratch roots.
+func writableRoots(projectDir, workDir string) []string {
+	return append([]string{projectDir, workDir}, scratchRoots...)
 }
 
 // blockedRedirect flags output redirection to an absolute path outside
@@ -185,12 +212,75 @@ func classifyCommand(command, projectDir, workDir string) Verdict {
 func blockedRedirect(command, projectDir, workDir string) (Verdict, bool) {
 	re := regexp.MustCompile(`>>?\s*("?)(/[^\s"';|&]+)`)
 	for _, m := range re.FindAllStringSubmatch(command, -1) {
-		if !withinAnyRoot(filepath.Clean(m[2]), projectDir, workDir) {
+		if !withinAnyRoot(filepath.Clean(m[2]), writableRoots(projectDir, workDir)...) {
 			return Verdict{Block, outsideRootsReason("redirects output", workDir)}, true
 		}
 	}
 	return Verdict{}, false
 }
+
+// walkers are read-only commands whose work is a tree walk from a
+// starting point given as an argument; grepFamily walks only with a
+// recursive flag.
+var walkers = map[string]bool{"find": true, "fd": true, "du": true, "rg": true}
+var grepFamily = map[string]bool{"grep": true, "egrep": true, "fgrep": true}
+
+var segmentSplit = regexp.MustCompile(`\||;|&&|\|\||&`)
+
+// walksOutsideRoots reports whether any segment of the command walks a
+// tree from `/`, `~`, or an absolute path outside the writable roots
+// (ADR-0070 §3). Relative starting points stay inside the project —
+// the command's working directory.
+func walksOutsideRoots(command, projectDir, workDir string) bool {
+	roots := writableRoots(projectDir, workDir)
+	for _, seg := range segmentSplit.Split(command, -1) {
+		fields := strings.Fields(strings.TrimSpace(seg))
+		if len(fields) == 0 {
+			continue
+		}
+		head := filepath.Base(fields[0])
+		walks := walkers[head] || (grepFamily[head] && hasRecursiveFlag(fields[1:]))
+		if !walks {
+			continue
+		}
+		for _, f := range fields[1:] {
+			if strings.HasPrefix(f, "-") {
+				continue
+			}
+			f = strings.Trim(f, `"'`)
+			switch {
+			case f == "~" || strings.HasPrefix(f, "~/"):
+				if homeDir == "" {
+					return true
+				}
+				f = filepath.Join(homeDir, strings.TrimPrefix(f, "~"))
+			case !filepath.IsAbs(f):
+				continue
+			}
+			if !withinAnyRoot(filepath.Clean(f), roots...) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasRecursiveFlag(args []string) bool {
+	for _, a := range args {
+		if a == "--recursive" || a == "--dereference-recursive" {
+			return true
+		}
+		if strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--") && strings.ContainsAny(a, "rR") {
+			return true
+		}
+	}
+	return false
+}
+
+// devNullRedirect matches redirections that write nowhere: to
+// /dev/null, or one descriptor onto another (`2>&1`). They do not make
+// a read-only command a writing one (ADR-0070 §2).
+var devNullRedirect = regexp.MustCompile(`(\d*>>?|&>)\s*/dev/null|\d>&\d`)
 
 // withinAnyRoot reports whether an absolute, cleaned path sits under
 // any non-empty root.
@@ -216,10 +306,11 @@ func outsideRootsReason(what, workDir string) string {
 // readOnlyCommand reports whether every segment of a pipeline/sequence
 // starts with a known read-only command and carries no redirection.
 func readOnlyCommand(command string) bool {
+	command = devNullRedirect.ReplaceAllString(command, "")
 	if strings.ContainsAny(command, ">") {
-		return false // any redirection writes somewhere
+		return false // any other redirection writes somewhere
 	}
-	segments := regexp.MustCompile(`\||;|&&|\|\||&`).Split(command, -1)
+	segments := segmentSplit.Split(command, -1)
 	for _, seg := range segments {
 		fields := strings.Fields(strings.TrimSpace(seg))
 		if len(fields) == 0 {

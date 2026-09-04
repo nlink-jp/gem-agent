@@ -116,6 +116,18 @@ call. Each mutating call then goes through:
    available). It must both approve *and* be confident, or the call
    asks.
 
+*Safe* is read-only **inside the roots** (ADR-0070). A tree walk —
+`find`, `fd`, `du`, `rg`, or `grep` with a recursive flag — that starts
+at `/`, `~`, or an absolute path outside the project, the session work
+directory and the sandbox's scratch roots is *uncertain*, not safe: the
+sandbox denies writes only, so a walk from `/` reaches every mount, and
+that cost is the model tier's to weigh. Redirects to `/dev/null` (and
+`2>&1`) write nowhere and do not cost a command its safe verdict;
+redirects into the scratch roots (`TMPDIR`, `/private/tmp`, `/dev`)
+are writes the sandbox allows and are not "outside the project" — the
+rule tier reads the sandbox's own list, so the reason it shows you is
+what Seatbelt will do.
+
 **Memory writes never reach tier 2.** `save_memory` and `delete_memory`
 are Review-tier, so they would take the *uncertain* branch — but they
 are excluded from auto-approval outright and always ask, whatever the
@@ -334,9 +346,11 @@ What remains, and what to check if you used it:
 ## Sandbox (ADR-0001)
 
 `shell_exec` (and `!` commands) run wrapped in macOS sandbox-exec:
-file writes restricted to the project directory, the scratch dirs
-(`TMPDIR`, `/private/tmp`) and `/dev`, enforced by Seatbelt and covered
-by a real enforcement test.
+file writes restricted to the project directory, the session work
+directory, and the scratch dirs (`TMPDIR`, `/private/tmp`, `/dev`),
+enforced by Seatbelt and covered by a real enforcement test. The
+scratch list is one function, `sandbox.ScratchDirs()`, and the rule
+tier above reads the same one (ADR-0070 §2).
 `--no-sandbox` disables the wrapper (debugging only). The sandbox
 applies in every approval mode.
 

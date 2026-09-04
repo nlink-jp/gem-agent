@@ -1565,13 +1565,10 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string) (tools.ExecFunc, er
 			writeDirs = append(writeDirs, resolved)
 		}
 	}
-	// Scratch locations shell tools legitimately write to. Resolved to
-	// real paths — Seatbelt matches post-symlink (/tmp is /private/tmp).
-	for _, d := range []string{os.TempDir(), "/private/tmp", "/dev"} {
-		if resolved, err := sandbox.ResolveWriteDir(d); err == nil {
-			writeDirs = append(writeDirs, resolved)
-		}
-	}
+	// Scratch locations shell tools legitimately write to — the one
+	// list the rule tier reads as well (ADR-0070 §2), so what it calls
+	// "outside the writable roots" is what Seatbelt will deny.
+	writeDirs = append(writeDirs, sandbox.ScratchDirs()...)
 	profile, err := sandbox.Profile(writeDirs)
 	if err != nil {
 		return nil, err

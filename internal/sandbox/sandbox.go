@@ -6,6 +6,7 @@ package sandbox
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -47,6 +48,23 @@ func Profile(writeDirs []string) (string, error) {
 // string to keep quoting semantics identical to the unsandboxed path.
 func Wrap(profile string, shell string, command string) []string {
 	return []string{Executable, "-p", profile, shell, "-c", command}
+}
+
+// ScratchDirs returns the scratch locations shell tools legitimately
+// write to — TMPDIR, /private/tmp and /dev — resolved to the real
+// paths Seatbelt matches against (/tmp arrives as /private/tmp). It is
+// the one list (ADR-0070 §2): the profile allows exactly these, and
+// the rule tier reads the same slice, so its "outside the writable
+// roots" can never disagree with what Seatbelt denies. A location that
+// does not exist on this machine is left out.
+func ScratchDirs() []string {
+	var dirs []string
+	for _, d := range []string{os.TempDir(), "/private/tmp", "/dev"} {
+		if resolved, err := ResolveWriteDir(d); err == nil {
+			dirs = append(dirs, resolved)
+		}
+	}
+	return dirs
 }
 
 // ResolveWriteDir resolves a directory to the real path Seatbelt matches
