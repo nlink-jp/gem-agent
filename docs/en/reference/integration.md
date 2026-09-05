@@ -28,6 +28,12 @@ The ancestor walk stops at your home directory: an instruction file is
 obeyed as instructions, so gem-agent will not pick one up from a shared
 location like `/tmp` that you do not own.
 
+The project's own files load only once you have trusted the project
+(ADR-0023) and only while their content matches what you trusted: a
+`git pull` that changes `AGENTS.md` asks again before the file is used
+(ADR-0074). See [approval — startup safety](approval.md) for the trust
+prompt, the pins and `gem-agent trust`.
+
 ## MCP servers
 
 Servers are read from two scopes, both in Claude Code `.mcp.json`
@@ -58,8 +64,11 @@ child (MCP has no cancel) and it respawns lazily on the next call.
 restart, config re-read, fresh tool lists — without losing the
 conversation: the recovery for a wedged server, and the way a server
 added to `mcp.json` joins a running session. It reuses the startup
-trust verdict (an untrusted project's `.mcp.json` stays unloaded;
-changing trust still takes a restart), the session approval allowlist
+trust decision with the content pins re-checked (an untrusted project's
+`.mcp.json` stays unloaded; one that changed since you trusted it is
+left out and named — `gem-agent trust --accept` or the next interactive
+start re-trusts it; granting or withdrawing trust itself still takes a
+restart), the session approval allowlist
 survives (keyed by tool name), and `--mcp off` on the command line
 skips MCP entirely for one run — what a `-p` pipeline usually wants.
 

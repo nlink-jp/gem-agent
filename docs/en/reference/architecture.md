@@ -39,7 +39,13 @@ state layout), `internal/memory` (agent memory), `internal/skills`
 (skill discovery/loading), `internal/docext` (Office text extraction),
 `internal/mediastore` (GCS media uploads), `internal/uitext` (ja/en UI
 string catalogs), `internal/telemetry` (audit-event export),
-`internal/diagram` (terminal mermaid rendering — ADR-0042/0063; a
+`internal/trustpin` (content pins of the agent-facing files and the
+persistent-file snapshot — ADR-0074), `internal/bounded` (the capped
+read/list/capture primitives every other package uses — ADR-0073 §4),
+`internal/archtest` (AST tests that pin the structural rules: path
+packages open through `os.Root`, reads are bounded, the rule tier is
+consulted in one function, every loader of project content takes the
+grant — ADR-0072/0073/0074), `internal/diagram` (terminal mermaid rendering — ADR-0042/0063; a
 view-layer rewrite hooked into the TUI's Markdown renderer. A mermaid
 fence that draws faithfully becomes box art in place; one that does
 not stays source with a one-line reader-facing note. The model is
@@ -48,7 +54,8 @@ verbatim).
 
 The agent core knows nothing about the UI. It receives an `Approver`
 interface, a set of callbacks (`OnToolCall`, `OnToolDone`, `OnUsage`, `OnNotice`,
-`OnAutoDecision`, `OnAttach`, `OnRoundLimit`), and a telemetry sink whose nil value
+`OnAutoDecision`, `OnAttach`, `OnRoundLimit`, `BeforeOperatorWrite`/`OnOperatorWrite`
+— the pair around a write the operator approved as operator-only, ADR-0074), and a telemetry sink whose nil value
 disables auditing; the TUI implements the callbacks by sending Bubble
 Tea messages, and the plain REPL by writing to stderr. That is what lets
 the same loop run under a pty, a pipe, and `-p`.
@@ -167,11 +174,25 @@ matching a blocked pattern still asks. The project scope may tighten
 anywhere and may loosen only in a directory listed in
 `[approval].trusted_projects`; ignored entries are named at startup.
 
+Every call is judged in one place, `Agent.decide` (ADR-0072 §1): it
+resolves the tool, whether the call mutates, and the verdict — the
+rule tier's tier, the operator-only floor, the lane — and every gate
+reads that result; an architecture test keeps the rule tier out of
+every other function. The rule tier judges file tools by exact target
+on the real path (a write into the files later sessions trust — the
+instruction files, `.mcp.json`, `.gem-agent.toml`, `.git` — is
+operator-only, never lifted by an allowlist or the model tier), and
+shell commands by a Block floor alone (`sudo`, `rm -rf`, `curl | sh`
+and kin) — for everything else about a command the lane decides
+(ADR-0073): a verified read-lane command is not mutating and passes no
+gate; a write-lane command is Review-tier; an operator-lane command,
+and any command without a sandbox, is operator-only.
+
 With auto-approve on (opt-in; `shift+tab` toggles it, mid-run included),
-each mutating call first passes a pure rule classifier: *safe* runs,
-*blocked* always asks, *uncertain* goes to a model evaluation that must
-both approve and be confident. Memory writes are the exception to the
-third branch: they are Review-tier but skip the evaluation entirely and
+a mutating call classified *blocked* or operator-only always asks, and an
+*uncertain* one goes to a model evaluation that must both approve and be
+confident. Memory writes are the exception to the
+evaluation branch: they are Review-tier but skip the evaluation entirely and
 always ask, because the evaluator is the party that proposed the write
 (ADR-0020 §6). Every failure path asks. The blocked tier
 is a floor the model cannot lift, and the sandbox applies in all modes.
@@ -231,6 +252,16 @@ background knowledge; `save_memory`/`delete_memory` are approval-gated
 and classified Review, never Safe — memory is a persistence vector for
 injected instructions, so the write is where the human reviews.
 
+Beside the sessions, two more things persist per project. In the
+machine-owned `policy.toml`, the trust decision of ADR-0023 carries the
+content pins of ADR-0074 — the SHA-256 of every agent-facing file the
+project provides, `pinned_at` marking the set as recorded — and the
+loaders read only what the pins allow (`cmd/pins.go`'s grant). In the
+project's state directory, `persistent.json` holds the digests of the
+persistent files under the project as the last session left them; the
+next start notes what changed since, and each session reports what it
+added or changed at `/clear` and exit (`persistent_changes`).
+
 Telemetry (ADR-0035) is the one outbound channel: with
 `[telemetry].enabled`, audit events — sessions, tool calls with
 outcomes, approval decisions, token usage — export to Cloud Logging of
@@ -249,12 +280,19 @@ defaults. Model names are always configured, never compiled in.
 Nothing per-project is required. `AGENTS.md` / `AGENT.md` / `CLAUDE.md` /
 `GEMINI.md` are collected from `~/.config/gem-agent/`, then ancestor
 directories outermost-first, then the project — the walk stops at `$HOME`,
-because an instruction file is obeyed as instructions. MCP servers come
+because an instruction file is obeyed as instructions. The project's own
+files load under the grant: the directory must be trusted (ADR-0023) and
+each file's content must match its pin (ADR-0074); a changed file is
+asked about at an interactive start and left out otherwise. The same
+grant gates `.mcp.json`, the project skills and whether
+`.gem-agent.toml` may loosen the approval policy, and it is decided
+before anything of the project is read. MCP servers come
 from `~/.config/gem-agent/mcp.json` and `<project>/.mcp.json` in Claude
 Code format; the project wins a name collision. MCP has no cancel, so a
 timed-out call kills the server child and the next call respawns it.
 `/mcp reload` and `/skills reload` (ADR-0039) re-run the startup paths
-mid-session under the startup trust verdict — tool declarations and
+mid-session under the startup trust decision with the pins re-checked
+(a file that changed since is left out and named) — tool declarations and
 the system prompt's skill section follow, and the reload is audited;
 `--mcp on|off` overrides `[mcp].enabled` per run.
 

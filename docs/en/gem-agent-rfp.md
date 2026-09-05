@@ -50,13 +50,15 @@ paragraph names them rather than owning the list, so it cannot fall behind.
 `edit_file`, `shell_exec`) plus MCP tools. Each later addition is an ADR (see
 *Admitted after v1* below), and the
 [tools reference](reference/tools.md) is the authoritative list — a second
-enumeration here would be a second thing to keep in step. The gating rule has not
-changed:
+enumeration here would be a second thing to keep in step. The gating rule, as
+amended by ADR-0073 (the shell's lane, not its text, decides):
 
 | Kind | MITL default |
 |---|---|
 | Read-only tools (navigation, reading, summarising, `agent_info`, `ask_user`) | auto-approved |
-| Mutating tools (`write_file`, `edit_file`, `shell_exec`, memory writes, web egress) | per-call approval |
+| `shell_exec` in the `read` lane (kernel-enforced: private scratch only, no network, no IPC) | auto-approved once the lane is verified at startup |
+| Mutating tools (`write_file`, `edit_file`, `shell_exec` in the `write` lane, memory writes, web egress) | per-call approval |
+| Writes into the files later sessions trust, `shell_exec` in the `operator` lane, any unsandboxed command | operator-only: the human answers, no allowlist or model tier lifts it |
 | MCP tools (from external servers) | per-call approval, never auto-approvable to Safe |
 
 The approval prompt offers "always allow in this session", which registers the tool in
@@ -126,14 +128,24 @@ max_turns = 50
 - **mcp-guardian** — can transparently wrap stdio MCP servers and adds an audit trail (opt-in)
 - **nlk** — shared library for prompt-injection isolation, JSON repair, and backoff
 
-### Security design (two layers)
+### Security design (three layers)
 
-1. **Primary defense = MITL approval gates** — write / exec / MCP require per-call
-   approval plus a session-scoped allowlist
-2. **Defense-in-depth = sandbox-exec** — `shell_exec` is wrapped in an SBPL profile
-   restricting file writes to the project directory + scratch. This is the structural
-   answer to the agent-skeleton external-review finding that heuristic path validation
-   cannot stop dynamic path construction (command substitution, etc.)
+1. **The kernel bounds reach = sandbox-exec** — `shell_exec` runs in the Seatbelt
+   lane the model declares (`read` / `write` / `operator`, ADR-0073). The `read` lane
+   writes only its private scratch and reaches neither network nor IPC; the `write`
+   lane cannot touch the files later sessions trust; the profile is verified on the
+   machine at startup. The lane, not the command's text, decides what asks. This is
+   the structural answer to the agent-skeleton external-review finding that heuristic
+   path (and text) validation cannot stop dynamic construction (command substitution,
+   etc.); text rules survive only as a Block floor that can raise a verdict, never
+   lower it
+2. **MITL approval gates within that reach** — `write`-lane commands, file writes,
+   memory writes, web egress and MCP calls ask per call, with a session-scoped
+   allowlist; writes into the instruction/configuration files, `operator`-lane and
+   unsandboxed commands are operator-only. Project trust is granted once per
+   directory (ADR-0023) and pinned to the content it covers (ADR-0074): a changed
+   `AGENTS.md`, `.mcp.json`, `.gem-agent.toml` or project skill asks again before
+   it is loaded
 3. **Isolation of tool output and file contents** — nonce-tagged XML wrapping via
    nlk/guard enforces "data, not instructions". Defensive instructions are placed at
    the top of the system prompt

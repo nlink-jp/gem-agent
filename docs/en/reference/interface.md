@@ -190,9 +190,12 @@ and when Tab cannot advance the candidates are listed:
 
 ## Shell escape
 
-`!<command>` runs a shell command directly — sandboxed like `shell_exec`
-(same timeout and output cap) but without an approval prompt, since you
-typed it yourself. The command and its output are added to the model's
+`!<command>` runs a shell command directly in the operator lane of
+`shell_exec` (ADR-0073 — the full ADR-0001 profile, same timeout and
+output cap) without an approval prompt, since you typed it yourself. It
+re-pins nothing: if the command changed a pinned file (`AGENTS.md`,
+`.mcp.json`, a project skill), the output ends with a note and the next
+interactive start asks (ADR-0074). The command and its output are added to the model's
 context, so `!git status` followed by "fix that" just works.
 
 ## The approval dialog

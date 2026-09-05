@@ -8,6 +8,11 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | オペレータ:「フラットに置くよりも、メモリの配置のようにプロジェクトごとにサブディレクトリを作るとよいかも」 |
 
+
+*ADR-0074 による修正: プロジェクト別 state ディレクトリには `persistent.json` —
+前回セッションが残した時点のプロジェクト配下の永続ファイルのダイジェスト — も置かれる
+（起動時の助言的な変化注記に使う）。*
+
 ## Context
 
 セッション transcript は `~/.local/state/gem-agent/sessions/` にフラットに

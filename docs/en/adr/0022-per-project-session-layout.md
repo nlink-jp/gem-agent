@@ -8,6 +8,11 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator: the flat transcript layout itself may be the problem — use per-project subdirectories like memory does |
 
+
+*Amended by ADR-0074: the per-project state directory also holds
+`persistent.json`, the digests of the persistent files under the project
+as the last session left them (advisory change notes at startup).*
+
 ## Context
 
 Session transcripts lived flat in `~/.local/state/gem-agent/sessions/`,

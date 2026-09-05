@@ -127,8 +127,13 @@ lane, whatever the command says:
 | lane | the kernel denies | who decides |
 |---|---|---|
 | `read` | every write except into the session's private scratch directory (`TMPDIR` points there), the shells' here-document directory `/private/var/tmp`, its own descriptors (`/dev/fd`) and the device sinks — the project, the work directory and `/private/tmp` included; the network; Mach and POSIX IPC, Apple Events, launch services (`open`), preference writes (`defaults`), NVRAM, device access, the terminal, signals to anything but the command's own children; reading the credential list (below), external and network mounts (`/Volumes`, `/Network`) and your `~/Library` except the toolchain directories (`Caches`, `Developer`, `Python`, `Go`); exported variables whose names look like tokens, keys or passwords are not in its environment; launching the IPC-capable programs (`osascript`, `open`, `launchctl`, `defaults`, `security`, `pbcopy`, `shortcuts`, `automator`, `scutil`, `networksetup`, `systemsetup`, plus `[sandbox].read_lane_deny_exec`) as a second line | nobody — a read-lane command changes nothing but its own scratch and **runs without a prompt** in every mode except under an `always` policy, like `read_file` — on a machine where the lane's denials were verified at startup (below), unless you set `[sandbox].read_lane_prompts = true` |
-| `write` | writes to the files later sessions trust (below) — which is why `git init`, `git clone` and `git remote add` (they write `.git/config` and hooks) land in the operator lane, and the refusal says so; reading credential files | the ladder above in auto mode, you in the default mode |
+| `write` | writes to the files later sessions trust (below), and renaming or removing a directory that holds one (ADR-0074 §2) — which is why `git init`, `git clone` and `git remote add` (they write `.git/config` and hooks) land in the operator lane, and the refusal says so; reading credential files | the ladder above in auto mode, you in the default mode |
 | `operator` | nothing beyond the ADR-0001 profile: the persistent files are writable, credentials readable; the terminal stays denied in every lane | **you, always** — the model tier, a session `a` and `--allow` never answer it |
+
+The lane a command ran in is recorded: the transcript's `gate_decision`
+/ `auto_decision` records carry it in the detail (`[read] <command>`),
+and telemetry's `tool.call` and `approval.decision` events carry a
+`lane` attribute (see [configuration — telemetry](configuration.md)).
 
 The credential list is a bounded set (`sandbox.CredentialFilters`):
 `~/.ssh`, `~/.aws`, `~/.kube`, `~/.gnupg`, `~/.config/gcloud`,
