@@ -5,7 +5,6 @@
 | Status | **Accepted** |
 | Date | 2026-09-05 |
 | Binds | gem-agent |
-| Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
 | Amends | ADR-0023 (project trust is per directory, once), ADR-0073 §6 (the recorded residue) |
 | Triggered by | ADR-0073 §6 residue: a persistent file in a subdirectory can be replaced by renaming its parent directory; the write lane's path rules cannot see it |
@@ -52,41 +51,70 @@ on the content itself.
 ### 1. Pin the content gem-agent consumes
 
 At the ADR-0023 trust prompt — and whenever trust is (re)granted — record
-a SHA-256 **pin** for every agent-facing file the probe lists: the
-instruction files at the project root and its ancestors, `.mcp.json`,
-`.gem-agent.toml`, and each project skill (`SKILL.md` plus a digest of the
-skill directory's file list). Pins live beside the trust record in the
-machine-owned `policy.toml` (`[projects."…"] pins = { … }`).
+a SHA-256 **pin** for every agent-facing file gem-agent consumes from the
+project root: the instruction files there (`AGENTS.md`, `AGENT.md`,
+`CLAUDE.md`, `GEMINI.md`; ancestor files are the operator's own and
+outside the gate, as in ADR-0023), `.mcp.json`, `.gem-agent.toml`, and
+each project skill, pinned as a directory: the relative path, size and
+content digest of every file under it, links by their target string.
+A consumed file is digested the way its loader reads it — through an
+`os.Root` at the project directory, so a link inside the project is
+pinned by target and content and a link leaving it is absent for both.
+Pins live beside the trust record in the machine-owned `policy.toml`
+(`[projects."…"]` gains `pinned_at` and a `[projects."…".pins]` table
+of `name = "sha256:…"`). `pinned_at` makes an empty set a recorded
+answer — a project with no agent-facing files is pinned as "nothing",
+once — rather than "never pinned".
 
-The first start of an already-trusted project after this change records
-the current content as the pins and says so (trust on first use): the
-files the operator had been loading are what they trust today.
+The first **interactive** start of an already-trusted project after this
+change records the current content as the pins and names what it pinned
+(trust on first use: the files the operator had been loading are what
+they trust today). A non-interactive start with no pins recorded loads
+as before and says that nothing is pinned yet; it records nothing, because
+recording trust nobody confirmed is what ADR-0023 §5 refuses to do.
 
-On every load — startup, `/clear`, `/mcp reload`, `/skills reload` —
-compare before consuming:
+Compare before consuming — at startup, and again at `/clear`, `/mcp
+reload` and `/skills reload`:
 
 - unchanged → load, as today;
-- changed or new → **interactive**: one prompt naming the file and a diff
-  summary (`AGENTS.md changed since you trusted it: +12 −3 lines. Trust
-  the new version? [y/N]`); `y` updates the pin, `N` leaves the file out
-  of this session; **non-interactive (`-p`)**: the changed file is not
-  loaded, one stderr line says so, the session runs bare for that file
-  (ADR-0023 §5's rule for "undecided": refuse nothing, load nothing
-  unconfirmed);
-- a file gem-agent itself wrote with the **operator's approval** (an
-  operator-lane command, an OperatorOnly `write_file`/`edit_file` the
-  operator answered) re-pins on success — the operator saw that write.
+- changed or new → at an **interactive startup**: one prompt naming the
+  file, the kind of change and its current size (`AGENTS.md changed
+  (1234 bytes) since you trusted it. trust the new content? [y/N]`); `y`
+  updates that pin, `N` leaves the file out of this session and the pin
+  as it was, so the next start asks again. **Non-interactive (`-p`)**,
+  and every mid-session re-check (`/clear`, the reloads — nobody is at a
+  prompt there): the file is not loaded, one line says so, the session
+  runs bare for that file (ADR-0023 §5's rule for "undecided": refuse
+  nothing, load nothing unconfirmed);
+- removed → nothing to load; the pin stays, so content that comes back
+  under the name is "changed", never "new";
+- a file gem-agent itself wrote with the **operator's approval** — an
+  OperatorOnly `write_file`/`edit_file` the operator answered — re-pins
+  **that one name** on success: the operator saw that write. Nothing
+  else in the set moves, and a name this session left out is not
+  re-pinned by a write into it (the operator never saw the content it
+  replaced). An operator-lane or `!` command shows its text, not its
+  effect on those files, so it re-pins nothing: what now differs is
+  named in a note and the next interactive start asks.
 
 `gem-agent trust` shows the trust state, the pins and the files that
 differ; `gem-agent trust --accept` records the current content as
-trusted — for a scripted `-p` flow after an intended edit.
+trusted — for a scripted `-p` flow after an intended edit. On an
+untrusted project `--accept` is an error: there is no trust for the pins
+to record.
+
+`.gem-agent.toml` is consumed too: its approval half may loosen the
+policy only where the operator's config names the project (ADR-0023 §4)
+*and* the file is trusted content under the pins; a changed file may
+still tighten, as an untrusted project's may. The trust decision and the
+pin check therefore run before anything of the project is read.
 
 ### 2. Close the swap for existing nested persistent files
 
 The write-lane profile adds `(deny file-write* (literal <dir>))` for the
 parent directory of every persistent file found under the project at
-profile build (bounded walk, same cap as the trust probe), and for each
-ancestor up to the project root. Rebuilt on `/clear` with the profile.
+profile build (a walk bounded at 20,000 entries that says when it was
+cut), and for each ancestor up to the project root. Rebuilt on `/clear` with the profile.
 Ordinary writes inside those directories stay allowed (probed above).
 
 ### 3. Make the irreducible residue visible
@@ -154,6 +182,31 @@ pinned set is the instruction files at the project root, `.mcp.json`,
 `.git/config` advisory through the persistent-file snapshot; the
 persistent-file walk stops at 20,000 entries and says so.
 
+## Review (2026-09-05)
+
+Two independent reviews of the implementation returned 31 findings; the
+facts were taken and the remedies decided here (CONVENTIONS: reviewers
+observe, contributors decide). Fixed in this ADR's final form: a consumed
+file that is a link was absent to the pin and present to the loader (now
+digested through the same root, link target included); an empty pin set
+read as "never pinned" (`pinned_at`); a re-pin rewrote the whole set,
+unseen files and operator-lane commands included (scoped to the one
+approved write; commands report instead); the skill grant was keyed by
+frontmatter name while the pin used the directory entry (both use the
+entry); `.gem-agent.toml` was pinned but read before the pin check (trust
+and pins now precede every project read); a non-interactive first start
+pinned silently (loads as before, records nothing); `/clear` re-checked
+the instruction files but carried the old skill list (re-discovered);
+`--accept` on an untrusted project exited 0 (error). Declined: pinning
+ancestor instruction files (they are the operator's own directories,
+outside ADR-0023's gate); a line-count diff in the prompt (the operator
+has the file; the prompt names the change and its size); asking at
+`/clear` and the reloads (the TUI owns the terminal there — the file is
+left out and named, and the next start asks). An E2E script of this work
+ran in the repository instead of its fixture and replaced `AGENTS.md`; it
+was restored, and `make check` now refuses an `AGENTS.md` without its
+sections.
+
 ## Survey of other agents (2026-09-05)
 
 No mainstream coding agent keys trust on content today: Claude Code,
@@ -166,3 +219,15 @@ exactly those files. Self-modification of settings directories is gated
 by Claude Code, Codex and Cursor (rules directories excepted). This ADR's
 pins are therefore a departure from the field, taken knowingly; the
 re-trust prompt's frequency is the cost to watch.
+
+## References
+
+- ADR-0023 — project trust is decided once per directory; §4 the
+  config-level grant, §5 the non-interactive rule this ADR follows
+- ADR-0072 §4 — check-then-use on a lexical path; the `os.Root` reads the
+  pins now mirror
+- ADR-0073 §6 — the recorded residue this ADR closes for gem-agent's own
+  consumption and makes visible for other consumers
+- `internal/trustpin`, `cmd/pins.go`, `cmd/trustcmd.go` — the
+  implementation; `internal/archtest` pins that every loader of project
+  content takes the grant

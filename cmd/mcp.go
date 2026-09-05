@@ -104,7 +104,7 @@ func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Too
 // scopes maps each connected server to "global" or "project" — kept
 // for consumers that must not treat a project-supplied server like an
 // operator-installed one (none today; /learn was, before ADR-0049).
-func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, version string, registry *tools.Registry, stderr io.Writer, projectTrusted bool) (clients []*mcp.Client, summary []string, scopes map[string]string) {
+func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, version string, registry *tools.Registry, stderr io.Writer, grant projectGrant) (clients []*mcp.Client, summary []string, scopes map[string]string) {
 	if !cfg.MCP.Enabled {
 		return nil, nil, nil
 	}
@@ -126,9 +126,10 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 		global = load(gp, "global")
 	}
 	// A server entry is a child process, so an untrusted project's
-	// .mcp.json is not read at all (ADR-0023 §2).
+	// .mcp.json is not read at all (ADR-0023 §2) — nor one whose content
+	// changed since it was trusted (ADR-0074).
 	var project map[string]mcp.ServerConfig
-	if projectTrusted {
+	if grant.mcp() {
 		project = load(filepath.Join(projectDir, ".mcp.json"), "project")
 	}
 

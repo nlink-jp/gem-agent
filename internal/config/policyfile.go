@@ -1,6 +1,8 @@
 package config
 
 import (
+	"time"
+
 	"fmt"
 	"os"
 	"path/filepath"
@@ -56,8 +58,11 @@ type ProjectPolicy struct {
 	Tools map[string]string `toml:"tools"`
 	// Pins are the SHA-256 digests of the project's agent-facing files
 	// as the operator last trusted them (ADR-0074): a changed file asks
-	// again before it is loaded.
-	Pins map[string]string `toml:"pins"`
+	// again before it is loaded. PinnedAt records that pins were taken
+	// at all (RFC 3339), so an empty set is "pinned, nothing there" and
+	// not "never pinned" (review F2).
+	Pins     map[string]string `toml:"pins"`
+	PinnedAt string            `toml:"pinned_at,omitempty"`
 	// Commands holds the per-command rules the withdrawn /learn wrote
 	// (ADR-0045 §4), keyed by policy.CommandKey. Parsed so existing
 	// files keep loading; NOT fed into the live policy since ADR-0049.
@@ -189,8 +194,9 @@ func (pf *PolicyFile) SetTrust(projectDir, trust string) {
 		// Trust withdrawn: the pins go with it — they were the content
 		// that trust covered.
 		entry.Pins = nil
+		entry.PinnedAt = ""
 	}
-	if entry.Trust == "" && len(entry.Tools) == 0 && len(entry.Commands) == 0 {
+	if entry.Trust == "" && len(entry.Tools) == 0 {
 		delete(pf.Projects, projectDir)
 		return
 	}
@@ -202,18 +208,22 @@ func (pf *PolicyFile) PinsFor(projectDir string) map[string]string {
 	return pf.Projects[projectDir].Pins
 }
 
-// SetPins replaces the recorded pins for projectDir.
+// SetPins replaces the recorded pins for projectDir and marks them
+// taken (PinnedAt), so an empty set stays distinguishable from none.
 func (pf *PolicyFile) SetPins(projectDir string, pins map[string]string) {
 	entry := pf.Projects[projectDir]
-	if len(pins) == 0 {
-		entry.Pins = nil
-	} else {
-		entry.Pins = map[string]string{}
-		for k, v := range pins {
-			entry.Pins[k] = v
-		}
+	entry.Pins = map[string]string{}
+	for k, v := range pins {
+		entry.Pins[k] = v
 	}
+	entry.PinnedAt = time.Now().UTC().Format(time.RFC3339)
 	pf.Projects[projectDir] = entry
+}
+
+// HasPins reports whether pins were ever recorded for projectDir.
+func (pf *PolicyFile) HasPins(projectDir string) bool {
+	entry := pf.Projects[projectDir]
+	return entry.PinnedAt != "" || len(entry.Pins) > 0
 }
 
 func setOrDelete(m map[string]string, key, value string) {
@@ -272,9 +282,14 @@ func (pf *PolicyFile) Save(path string) error {
 	}
 	for _, dir := range sortedProjects(pf.Projects) {
 		entry := pf.Projects[dir]
-		if entry.Trust != "" {
+		if entry.Trust != "" || entry.PinnedAt != "" {
 			fmt.Fprintf(&b, "\n[projects.%s]\n", quoteKey(dir))
-			fmt.Fprintf(&b, "trust = %s\n", quoteKey(entry.Trust))
+			if entry.Trust != "" {
+				fmt.Fprintf(&b, "trust = %s\n", quoteKey(entry.Trust))
+			}
+			if entry.PinnedAt != "" {
+				fmt.Fprintf(&b, "pinned_at = %s\n", quoteKey(entry.PinnedAt))
+			}
 		}
 		if len(entry.Tools) > 0 {
 			fmt.Fprintf(&b, "\n[projects.%s.tools]\n", quoteKey(dir))

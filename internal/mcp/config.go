@@ -131,7 +131,15 @@ func expandEnv(s string) string {
 const mcpFileCap = 1 << 20
 
 func readCapped(path string, cap int64) ([]byte, error) {
-	f, err := os.Open(path)
+	// Through an os.Root at the file's directory: a link leaving the
+	// directory is refused, as the instruction loader refuses it — the
+	// pins digest the same view (ADR-0074, review F1).
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	f, err := root.Open(filepath.Base(path))
 	if err != nil {
 		return nil, err
 	}

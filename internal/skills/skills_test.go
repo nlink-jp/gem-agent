@@ -58,6 +58,17 @@ allowed-tools: Read Write Bash(python3 *)`,
 	}
 }
 
+// Entry is the directory name — the key the content pins use — and
+// stays so when the frontmatter declares another name (review F4).
+func TestSkillEntryIsTheDirectoryName(t *testing.T) {
+	root := t.TempDir()
+	writeSkill(t, root, "dir-name", "name: declared-name\ndescription: d", "body")
+	list, _ := Discover(root, "", DefaultLimits())
+	if len(list) != 1 || list[0].Name != "declared-name" || list[0].Entry != "dir-name" {
+		t.Fatalf("list = %+v", list)
+	}
+}
+
 func TestDiscoverProjectWinsCollisions(t *testing.T) {
 	personal, project := t.TempDir(), t.TempDir()
 	writeSkill(t, personal, "deploy", "name: deploy\ndescription: global version", "P")

@@ -237,11 +237,14 @@ type Messages struct {
 	TrustItemSkillsFmt       string // %d = skill count
 	TrustQuestion            string // the [y/N] question
 	// Content pins (ADR-0074).
-	PinRecordedFmt         string // %d = files pinned
-	PinChangedFmt          string // %s = trustpin.Describe
+	PinRecordedFmt         string // %d = files pinned, %s = their names
+	PinNonePending         string // no pins yet, non-interactive: loaded as before
+	PinChangedFmt          string // %s = described change ("AGENTS.md changed (12 bytes)")
 	PinQuestion            string // the [y/N] question for one changed file
-	PinNotLoadedFmt        string // %s = name — non-interactive skip
+	PinNotLoadedFmt        string // %s = described change — not loaded
 	PinAcceptedFmt         string // %s = name
+	PinRemovedFmt          string // %s = name — gone since trusted; pin kept
+	PinPendingFmt          string // %s = described changes after an operator command
 	PersistentSinceLastFmt string // %s = comma list — changed since the previous session
 	PersistentSessionFmt   string // %s = comma list — added/changed by this session
 	// TrustDeclinedFmt is the banner note after declining: policy path.
@@ -405,11 +408,14 @@ keys:
 	TrustItemMCPFmt:          ".mcp.json (%d server(s) — each starts a child process)",
 	TrustItemSkillsFmt:       ".claude/skills/ (%d entr(y/ies) — loaded as your instructions)",
 	TrustQuestion:            "trust this project? These files will be treated as YOUR instructions and its MCP servers will run. [y/N]: ",
-	PinRecordedFmt:           "project trust: %d agent-facing file(s) pinned — a change to any of them asks before it is loaded (ADR-0074)",
+	PinRecordedFmt:           "project trust: %d agent-facing file(s) pinned — a change to any of them asks before it is loaded (ADR-0074): %s",
+	PinNonePending:           "project trust: no content pins recorded yet — the project's files load as before; an interactive start pins them, or run `gem-agent trust --accept` (ADR-0074)",
 	PinChangedFmt:            "\n%s since you trusted it.",
 	PinQuestion:              "trust the new content? [y/N]: ",
-	PinNotLoadedFmt:          "project trust: %s changed since you trusted it — not loaded this session (run interactively, or `gem-agent trust --accept`, to re-trust)",
+	PinNotLoadedFmt:          "project trust: %s since you trusted it — not loaded this session (run interactively, or `gem-agent trust --accept`, to re-trust)",
 	PinAcceptedFmt:           "project trust: %s re-trusted",
+	PinRemovedFmt:            "project trust: %s was removed since you trusted it — nothing to load; its pin is kept, so content that comes back asks",
+	PinPendingFmt:            "project trust: %s since you trusted it — that command did not re-trust it; the next interactive start asks, and until then `/clear` leaves it out (`gem-agent trust --accept` re-trusts)",
 	PersistentSinceLastFmt:   "note: changed since your previous session: %s",
 	PersistentSessionFmt:     "note: this session added or changed: %s",
 	TrustDeclinedFmt:         "project trust: declined — the project's instruction files, .mcp.json, and skills are not loaded (edit %s to re-ask)",
@@ -557,11 +563,14 @@ var ja = Messages{
 	TrustItemMCPFmt:          ".mcp.json（サーバー %d 件 — それぞれ子プロセスを起動します）",
 	TrustItemSkillsFmt:       ".claude/skills/（%d 件 — あなたへの指示として読み込まれます）",
 	TrustQuestion:            "このプロジェクトを信用しますか？ これらのファイルはあなたへの指示として扱われ、MCP サーバーが起動します。 [y/N]: ",
-	PinRecordedFmt:           "project trust: エージェント向けファイル %d 件をピン留めしました — いずれかが変わると読み込む前に確認します（ADR-0074）",
+	PinRecordedFmt:           "project trust: エージェント向けファイル %d 件をピン留めしました — いずれかが変わると読み込む前に確認します（ADR-0074）: %s",
+	PinNonePending:           "project trust: 内容のピンはまだ記録されていません — プロジェクトのファイルは従来どおり読み込みます。対話モードで起動するとピン留めされます（または `gem-agent trust --accept`）（ADR-0074）",
 	PinChangedFmt:            "\n%s — 信用した時点から変わっています。",
 	PinQuestion:              "新しい内容を信用しますか？ [y/N]: ",
-	PinNotLoadedFmt:          "project trust: %s が信用した時点から変わっています — このセッションでは読み込みません（対話モードで起動するか `gem-agent trust --accept` で再信用）",
+	PinNotLoadedFmt:          "project trust: %s — 信用した時点から変わっています。このセッションでは読み込みません（対話モードで起動するか `gem-agent trust --accept` で再信用）",
 	PinAcceptedFmt:           "project trust: %s を再信用しました",
+	PinRemovedFmt:            "project trust: %s は信用した時点から削除されています — 読み込むものはありません。ピンは残すので、戻ってきた内容は確認を求めます",
+	PinPendingFmt:            "project trust: %s — 信用した時点から変わっています。このコマンドでは再信用しません。次の対話起動で確認し、それまで `/clear` では読み込みません（`gem-agent trust --accept` で再信用）",
 	PersistentSinceLastFmt:   "note: 前回のセッション以降に変更: %s",
 	PersistentSessionFmt:     "note: このセッションが追加・変更: %s",
 	TrustDeclinedFmt:         "project trust: 拒否 — このプロジェクトの instruction ファイル・.mcp.json・skills は読み込まれません（再確認するには %s を編集）",

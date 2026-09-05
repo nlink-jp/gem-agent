@@ -1298,7 +1298,7 @@ const readLaneDeniedNote = "\n[the read lane denied an operation — the sandbox
 // clone`, `git remote add` (they write .git/config and hooks) and an
 // edit of AGENTS.md need the operator lane, and the model is told
 // rather than left to retry (agent-board review of ADR-0073).
-const writeLaneDeniedNote = "\n[the write lane denied a write — inside the project it denies only the instruction/configuration files (AGENTS.md, CLAUDE.md, .mcp.json, .gem-agent.toml, .claude/) and .git/hooks, .git/info, .git/config (so git init, clone and remote add land here), plus credential reads and anything outside the project and work directory; if the command must do that, call shell_exec again with access: \"operator\", which asks the user]"
+const writeLaneDeniedNote = "\n[the write lane denied a write — inside the project it denies only the instruction/configuration files (AGENTS.md, CLAUDE.md, .mcp.json, .gem-agent.toml, .claude/) and .git/hooks, .git/info, .git/config (so git init, clone and remote add land here), renaming or removing a directory that contains one of those files, plus credential reads and anything outside the project and work directory; if the command must do that, call shell_exec again with access: \"operator\", which asks the user]"
 
 func (r *Registry) shellExec() *Tool {
 	return &Tool{

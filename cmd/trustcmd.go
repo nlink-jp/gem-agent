@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sort"
 
@@ -50,12 +51,19 @@ func runTrust(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	return trustReport(projectDir, cfgPath, flagTrustAccept, cmd.OutOrStdout())
+}
+
+// trustReport is the trust command's body: the trust state, the pins
+// and what differs for projectDir under the config at cfgPath; with
+// accept, the current content is recorded as trusted. Untrusted with
+// accept is an error — there is no trust for the pins to record.
+func trustReport(projectDir, cfgPath string, accept bool, out io.Writer) error {
 	policyPath := config.PolicyPath(cfgPath)
 	policyFile, err := config.LoadPolicyFile(policyPath)
 	if err != nil {
 		return err
 	}
-	out := cmd.OutOrStdout()
 	trust := policyFile.TrustFor(projectDir)
 	granted := trust == config.TrustGranted
 	// [approval].trusted_projects is the stronger, hand-written grant
@@ -69,25 +77,28 @@ func runTrust(cmd *cobra.Command, _ []string) error {
 	}
 	fmt.Fprintf(out, "project: %s\ntrust: %s\n", projectDir, trust)
 	if !granted {
-		fmt.Fprintln(out, "pins apply to a trusted project only — start gem-agent interactively once to decide")
+		if accept {
+			return fmt.Errorf("this project is not trusted; pins record the content of a trusted project — start gem-agent interactively once to decide (ADR-0023)")
+		}
+		fmt.Fprintln(out, "pins: none — they record the content of a trusted project (start gem-agent interactively once to decide)")
 		return nil
 	}
 	current, notes := trustpin.Compute(projectDir)
 	for _, n := range notes {
 		fmt.Fprintf(out, "note: %s\n", n)
 	}
-	recorded := policyFile.PinsFor(projectDir)
-	if flagTrustAccept {
+	if accept {
 		if err := savePins(policyPath, projectDir, current, policyFile); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "pinned %d file(s) as trusted\n", len(current))
+		fmt.Fprintf(out, "pinned %d file(s) as trusted: %s\n", len(current), pinNames(current))
 		return nil
 	}
-	if len(recorded) == 0 {
-		fmt.Fprintln(out, "pins: none recorded yet (the next interactive start records them)")
+	if !policyFile.HasPins(projectDir) {
+		fmt.Fprintln(out, "pins: none recorded yet — the project's files load as before; the next interactive start pins them, or run `gem-agent trust --accept`")
 		return nil
 	}
+	recorded := policyFile.PinsFor(projectDir)
 	names := make([]string, 0, len(recorded))
 	for n := range recorded {
 		names = append(names, n)
@@ -98,7 +109,11 @@ func runTrust(cmd *cobra.Command, _ []string) error {
 	for _, c := range changes {
 		changed[c.Name] = c.Kind
 	}
-	fmt.Fprintf(out, "pins: %d recorded\n", len(recorded))
+	fmt.Fprintf(out, "pins: %d recorded", len(recorded))
+	if at := policyFile.Projects[projectDir].PinnedAt; at != "" {
+		fmt.Fprintf(out, " (%s)", at)
+	}
+	fmt.Fprintln(out)
 	for _, n := range names {
 		state := "unchanged"
 		if k, ok := changed[n]; ok {
@@ -111,8 +126,14 @@ func runTrust(cmd *cobra.Command, _ []string) error {
 			fmt.Fprintf(out, "  %-40s %s (not yet pinned)\n", c.Name, c.Kind)
 		}
 	}
-	if len(changes) > 0 {
-		fmt.Fprintln(out, "changed files are not loaded until re-trusted: `gem-agent trust --accept`, or answer the prompt at the next interactive start")
+	pending := 0
+	for _, c := range changes {
+		if c.Kind != "removed" {
+			pending++
+		}
+	}
+	if pending > 0 {
+		fmt.Fprintln(out, "changed or added files are not loaded until re-trusted: answer the prompt at the next interactive start, or run `gem-agent trust --accept` after an edit you intended")
 	}
 	return nil
 }

@@ -6,15 +6,32 @@
 
 - **Breaking:** a trusted project's agent-facing files — the instruction
   files at the root, `.mcp.json`, `.gem-agent.toml`, each project skill —
-  are pinned by SHA-256 beside the trust record; a file that changed
+  are pinned by SHA-256 beside the trust record (`pinned_at` and a
+  `[projects."…".pins]` table in `policy.toml`); a file that changed
   since it was trusted asks once at an interactive start (`y` re-pins,
-  `N` leaves it out), is left out with a note in a non-interactive run
-  and on `/clear` or reload, and is re-pinned on its own after a write
-  you approved as operator-only or a `!` command. The first start after
-  upgrading pins what was already being loaded. Opt out with
+  `N` leaves it out and asks again next time), is left out with a note
+  in a non-interactive run and on `/clear` or reload, and a removed one
+  keeps its pin. A `write_file`/`edit_file` you approved as
+  operator-only re-pins that one file; an operator-lane or `!` command
+  re-pins nothing and a note names what it changed. The first
+  interactive start after upgrading pins what was already being loaded
+  and lists it; a `-p` run before that loads as before and says so. A
+  changed `.gem-agent.toml` can tighten the approval policy but not
+  loosen it — the trust decision and the pin check now run before
+  anything of the project is read. Opt out with
   `[approval].pin_trusted_files = false`
 - New subcommand `gem-agent trust` (state, pins, what differs) and
-  `gem-agent trust --accept` (record the current content as trusted)
+  `gem-agent trust --accept` (record the current content as trusted;
+  an error on an untrusted project)
+- `/clear` re-discovers the project skills under the re-checked pins,
+  as it already re-read the instruction files
+- The write lane's refusal note names the parent-directory rule: a
+  directory holding one of the protected files cannot be renamed or
+  removed there either
+- `make check` refuses an `AGENTS.md` that lost its Build / Structure /
+  Gotchas sections, and an architecture test pins that every loader of
+  project content (instruction files, skills, `.mcp.json`,
+  `.gem-agent.toml`) goes through the trust-and-pins grant
 - The write lane denies renaming the parent directories of the
   persistent files present at startup (and `/clear`), so a nested
   `CLAUDE.md` or a nested repository's hooks cannot be replaced by

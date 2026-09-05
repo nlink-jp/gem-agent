@@ -187,16 +187,36 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// --- per-tool approval policy (ADR-0008) ---
-	// The project half may tighten freely and may only loosen where the
-	// operator trusted this directory: a checked-out repository must not
-	// be able to switch the gate off.
-	projectCfg, err := config.LoadProject(projectDir)
+	policyPath := config.PolicyPath(cfgPath)
+	policyFile, err := config.LoadPolicyFile(policyPath)
 	if err != nil {
 		return err
 	}
-	policyPath := config.PolicyPath(cfgPath)
-	policyFile, err := config.LoadPolicyFile(policyPath)
+
+	// --- first-run project trust (ADR-0023): does this project's own
+	// instruction files / .mcp.json / skills get loaded at all? ---
+	projectTrusted, trustNote := resolveProjectTrust(
+		cfg, policyFile, policyPath, projectDir, interactive, os.Stdin, cmd.ErrOrStderr(), msgs)
+	if trustNote != "" {
+		fmt.Fprintf(stderr, "%s\n", trustNote)
+	}
+	// Content pins (ADR-0074): trust was given to a directory; what is
+	// loaded is content, and content that changed since asks again.
+	// Decided before anything of the project is read — .gem-agent.toml
+	// below included.
+	grant := projectGrant{trusted: projectTrusted}
+	var pinNotes []string
+	grant.excluded, pinNotes = checkPins(cfg, policyFile, policyPath, projectDir, projectTrusted, interactive, os.Stdin, cmd.ErrOrStderr(), msgs)
+	for _, n := range pinNotes {
+		fmt.Fprintf(stderr, "%s\n", n)
+	}
+
+	// --- per-tool approval policy (ADR-0008) ---
+	// The project half may tighten freely and may only loosen where the
+	// operator trusted this directory and its content is what they
+	// trusted: a checked-out repository must not be able to switch the
+	// gate off.
+	projectCfg, projectMayLoosen, err := loadProjectConfig(cfg, projectDir, grant)
 	if err != nil {
 		return err
 	}
@@ -223,7 +243,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// to end. Ignoring them only ever tightens. The note tells the
 	// operator where the entries live.
 	approvalPolicy, policyNotes, err := policy.Build(
-		mergedTools, projectCfg.Approval.Tools, nil, cfg.TrustsProject(projectDir))
+		mergedTools, projectCfg.Approval.Tools, nil, projectMayLoosen)
 	if err != nil {
 		return err
 	}
@@ -231,21 +251,6 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(stderr, "note: %d learned command rule(s) in %s are not applied — /learn was withdrawn (ADR-0049); delete the [projects...commands] entries or keep them for a future version\n", n, policyPath)
 	}
 
-	// --- first-run project trust (ADR-0023): does this project's own
-	// instruction files / .mcp.json / skills get loaded at all? ---
-	projectTrusted, trustNote := resolveProjectTrust(
-		cfg, policyFile, policyPath, projectDir, interactive, os.Stdin, cmd.ErrOrStderr(), msgs)
-	if trustNote != "" {
-		fmt.Fprintf(stderr, "%s\n", trustNote)
-	}
-	// Content pins (ADR-0074): trust was given to a directory; what is
-	// loaded is content, and content that changed since asks again.
-	grant := projectGrant{trusted: projectTrusted}
-	var pinNotes []string
-	grant.excluded, pinNotes = checkPins(cfg, policyFile, policyPath, projectDir, projectTrusted, interactive, os.Stdin, cmd.ErrOrStderr(), msgs)
-	for _, n := range pinNotes {
-		fmt.Fprintf(stderr, "%s\n", n)
-	}
 	// The persistent-file snapshot (ADR-0074 §3/§4): what this session
 	// starts from, compared with what the previous session left, and
 	// compared again at the end so what the session added or changed
@@ -278,10 +283,8 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			_ = savePersistentSnapshot(persistentPath, now)
 		}
 	}
-	afterDirectShell = func() {
-		if err := repin(policyPath, projectDir, policyFile); err != nil {
-			fmt.Fprintf(stderr, "warning: could not refresh the trust pins: %v\n", err)
-		}
+	afterDirectShell = func() string {
+		return pinChangesNote(cfg, policyFile, projectDir, projectTrusted, msgs)
 	}
 	defer func() { afterDirectShell = nil }()
 
@@ -459,7 +462,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- MCP servers from the project's .mcp.json (drop-in) ---
-	mcpClients, mcpSummary, _ := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, grant.mcp())
+	mcpClients, mcpSummary, _ := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, grant)
 	defer func() {
 		for _, c := range mcpClients {
 			c.Close()
@@ -824,6 +827,15 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	composeSystem := func() string {
 		return buildSystemPrompt(projectDir, workDir, projectContext) + skills.PromptSection(skillsList) + memorySection
 	}
+	// notice puts a one-line warning in front of the operator wherever
+	// they are: the TUI's note strip when it runs, stderr otherwise.
+	notice := func(msg string) {
+		if prog != nil {
+			prog.Send(tui.Attached{Notes: []string{msg}})
+			return
+		}
+		fmt.Fprintf(stderr, "[⚠ %s]\n", msg)
+	}
 	ag = agent.New(agent.Options{
 		// Accounting only (ADR-0057): the model name that goes into
 		// this session's usage records.
@@ -843,10 +855,19 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		MediaUpload:      mediaUpload,
 		OnOperatorWrite: func(tc llm.ToolCall) {
 			// The operator approved a write into the files later
-			// sessions trust: that content is now what they trust
-			// (ADR-0074 §1).
-			if err := repin(policyPath, projectDir, policyFile); err != nil {
-				fmt.Fprintf(stderr, "warning: could not refresh the trust pins: %v\n", err)
+			// sessions trust: that content — the one file they saw
+			// written — is now what they trust (ADR-0074 §1). An
+			// operator-lane command shows its text, not its effect on
+			// those files, so it re-pins nothing; what now differs is
+			// named and the next start asks.
+			if name := pinNameForWrite(projectDir, tc); name != "" {
+				if err := repinName(policyPath, projectDir, name, policyFile, grant.excluded); err != nil {
+					notice(fmt.Sprintf("could not refresh the trust pin of %s: %v", name, err))
+				}
+				return
+			}
+			if n := pinChangesNote(cfg, policyFile, projectDir, projectTrusted, msgs); n != "" {
+				notice(n)
 			}
 		},
 		OnToolCall: func(tc llm.ToolCall) {
@@ -896,13 +917,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				fmt.Fprintln(stderr, "[⚠ "+n+"]")
 			}
 		},
-		OnNotice: func(msg string) {
-			if prog != nil {
-				prog.Send(tui.Attached{Notes: []string{msg}})
-				return
-			}
-			fmt.Fprintf(stderr, "[⚠ %s]\n", msg)
-		},
+		OnNotice:    notice,
 		PreToolHook: preToolHook,
 		PromptHook:  promptHook,
 		OnUsage: func(u llm.Usage) {
@@ -1024,7 +1039,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		for _, n := range pinNotes {
 			fmt.Fprintf(&warn, "%s\n", n)
 		}
-		mcpClients, mcpSummary, _ = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, grant.mcp())
+		mcpClients, mcpSummary, _ = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, grant)
 		ag.RefreshTools()
 		mcpTools := 0
 		for _, t := range registry.List() {
@@ -1196,6 +1211,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		projectContext, contextLabels, contextNotes = loadInstructions(projectDir, grant)
 		_ = contextLabels
 		notes = append(notes, contextNotes...)
+		// The project skills follow the same grant (review F8): one
+		// that changed during the old session is left out with the
+		// instruction files, not carried over.
+		if list, discoverNotes := discoverSkills(projectDir, grant); true {
+			notes = append(notes, discoverNotes...)
+			skills.CloseAll(skillsList)
+			skillsList = list
+		}
 		if curLog != nil {
 			_ = curLog.Close()
 		}
@@ -1961,9 +1984,11 @@ func compactNow(ctx context.Context, ag *agent.Agent, msgs *uitext.Messages, sin
 // feeds command + output into the agent history so the next turn can
 // refer to what happened.
 // afterDirectShell, when set by the running session, runs after a `!`
-// command: the operator's own shell may have written the files later
-// sessions trust, and the operator saw it — the pins follow (ADR-0074).
-var afterDirectShell func()
+// command and returns a note for the output: the operator's own shell
+// may have changed the files later sessions trust, and the command
+// line does not show that — the difference is named, the pins are not
+// moved (ADR-0074 §1).
+var afterDirectShell func() string
 
 func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Agent, command string) string {
 	tool, ok := registry.Get("shell_exec")
@@ -1976,11 +2001,13 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 	if err != nil {
 		out = "error: " + err.Error()
 	}
-	if afterDirectShell != nil {
-		afterDirectShell()
-	}
 	if strings.TrimSpace(out) == "" {
 		out = "(no output)"
+	}
+	if afterDirectShell != nil {
+		if n := afterDirectShell(); n != "" {
+			out += "\n[⚠ " + n + "]"
+		}
 	}
 	// The prefix is a shared constant: the session listing uses it to
 	// tell an injected message from one the operator typed.

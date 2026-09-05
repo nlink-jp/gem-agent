@@ -471,14 +471,20 @@ Two gates run before anything loads:
   project skill — are pinned by SHA-256 beside the trust record. On
   every start, `/clear` and reload the current content is compared:
   unchanged loads as before; a file that changed (a `git pull`, a
-  swapped parent directory, an edit in your editor) asks once, naming
-  the file — `y` re-pins it, `N` leaves it out of this session. A
-  non-interactive run leaves a changed file out and says so on stderr;
-  `gem-agent trust` shows the pins and what differs, `gem-agent trust
-  --accept` records the current content after an intended edit. A write
-  you approved as operator-only, or a `!` command, re-pins on its own.
-  The first start after this change pins what you were already
-  loading. `[approval].pin_trusted_files = false` restores the
+  swapped parent directory, an edit in your editor) asks once at an
+  interactive start, naming the file and its size — `y` re-pins it,
+  `N` leaves it out of this session and asks again next time. A
+  non-interactive run, `/clear` and the reloads leave a changed file
+  out and say so; `gem-agent trust` shows the pins and what differs,
+  `gem-agent trust --accept` records the current content after an
+  intended edit. A `write_file`/`edit_file` you approved as
+  operator-only re-pins that one file; an operator-lane or `!` command
+  re-pins nothing — a note names what it changed, and the next start
+  asks. The first interactive start after this change pins what you
+  were already loading and lists it; a `-p` run before that loads as
+  before and says nothing is pinned yet. A changed `.gem-agent.toml`
+  can still tighten the approval policy, never loosen it.
+  `[approval].pin_trusted_files = false` restores the
   directory-only trust of ADR-0023. Beside the pins, the persistent
   files under the project (the write lane's protected names, nested
   repositories' hooks included) are snapshotted: a change since your

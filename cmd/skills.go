@@ -32,7 +32,7 @@ func discoverSkills(projectDir string, grant projectGrant) ([]skills.Skill, []st
 	// out until re-trusted (ADR-0074); its root is released.
 	kept := list[:0]
 	for _, s := range list {
-		if s.Scope == "project" && !grant.skill(s.Name) {
+		if s.Scope == "project" && !grant.skill(s.Entry) {
 			s.Close()
 			continue
 		}

@@ -40,6 +40,7 @@ gem-agent                                  # interactive REPL
 gem-agent "run the tests"                  # interactive, with this as turn 1
 gem-agent -c                               # continue the last session here
 gem-agent sessions                         # list resumable sessions
+gem-agent trust                            # this project's trust state and pinned files
 gem-agent -p "summarize this repository"   # one-shot, pipe-friendly
 ```
 

@@ -45,6 +45,12 @@ JSONL トランスクリプトはログであると同時に resume の正本で
 環境変数 `GEMAGENT_STATE_DIR` は state ルート全体（sessions と
 memory）を差し替えます — テストと訓練の隔離用です。
 
+プロジェクトの transcript の隣には `persistent.json` があります（ADR-0074
+§3/§4）: プロジェクト配下の永続ファイル — write レーンの保護名（深さ問わず、
+入れ子リポジトリのフック含む）— のダイジェストで、前回セッションが残した
+状態です。次の起動はこれと比較して以後の変化を注記します（「changed since
+your previous session: …」、助言のみ）。起動・`/clear`・終了時に書き直されます。
+
 ## コンテキスト圧縮（ADR-0006）
 
 モデルのウィンドウの `[agent].compact_at_pct`（既定 80%）に達すると、
@@ -182,3 +188,11 @@ API が返すのはトークン数であって金額ではない。したがっ�
 新しい id を見ます。テレメトリも新しい id で再構成され、旧セッションの
 `session.end` と新セッションの `session.start` はそれぞれ自分の id を
 運びます（ADR-0071 addendum）。
+
+旧 transcript が閉じる前 — `/clear` と終了時 — に、プロジェクト配下の永続
+ファイルをセッション開始時の集合と比較し、差分があれば注記して transcript に
+`persistent_changes` レコード（`reason` は `clear` か `exit`、`added`・
+`changed`・`removed` の名前）を書きます — ディレクトリ差し替えが仕込める
+入れ子ファイルの可視化です（ADR-0074 §3）。新セッションは内容のピンも再照合
+します（ADR-0074）: 旧セッション中に変わった指示ファイル・`.mcp.json`・
+プロジェクトスキルは外して名指しします。

@@ -48,6 +48,13 @@ The `GEMAGENT_STATE_DIR` environment variable relocates the whole
 state root (sessions and memory) — its purpose is isolation for tests
 and drills.
 
+Beside a project's transcripts sits `persistent.json` (ADR-0074 §3/§4):
+the digests of the persistent files under the project — the write
+lane's protected names at any depth, nested repositories' hooks
+included — as the last session left them. The next start compares and
+notes what changed since ("changed since your previous session: …"),
+advisory only; it is rewritten at startup, `/clear` and exit.
+
 ## Context compaction (ADR-0006)
 
 At `[agent].compact_at_pct` of the model's window (80% by default), the
@@ -191,3 +198,13 @@ are reconnected (the same report `/mcp reload` prints), so a server
 that keeps per-session state sees the new id, and telemetry is
 re-resourced with it: the old session's `session.end` and the new
 one's `session.start` carry their own ids (ADR-0071 addendum).
+
+Before the old transcript closes — at `/clear` and at exit — the
+persistent files under the project are compared with the set the
+session started from; a difference is noted and written to the
+transcript as a `persistent_changes` record (`reason` of `clear` or
+`exit`, and the `added`, `changed` and `removed` names) — the nested
+file a directory swap can plant, made visible (ADR-0074 §3). The new
+session also re-checks the content pins (ADR-0074): an instruction
+file, `.mcp.json` or project skill that changed during the old session
+is left out and named.

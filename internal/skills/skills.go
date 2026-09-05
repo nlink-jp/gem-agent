@@ -65,6 +65,9 @@ type Skill struct {
 	Name         string
 	Description  string
 	ArgumentHint string
+	// Entry is the directory entry name under the skills root — the
+	// key the content pins use (ADR-0074); Name may differ (frontmatter).
+	Entry string
 	// Dir is the skill's own directory, symlink-resolved — the boundary
 	// Body and File confine reads to.
 	Dir string
@@ -272,6 +275,7 @@ func readSkill(dir, scope string, lim Limits) (*Skill, error) {
 	}
 	return &Skill{
 		Name:         name,
+		Entry:        filepath.Base(dir),
 		Description:  desc,
 		ArgumentHint: strings.TrimSpace(meta["argument-hint"]),
 		Dir:          realDir,

@@ -271,6 +271,27 @@ func TestOneDecisionPoint(t *testing.T) {
 	}
 }
 
+// TestProjectContentLoadsThroughGrant: what a project provides —
+// instruction files, skills, .mcp.json, .gem-agent.toml — is read by
+// exactly the cmd functions that take the projectGrant (ADR-0023 trust
+// and ADR-0074 pins together). A loader called from anywhere else would
+// bypass both (review of ADR-0074, B-1).
+func TestProjectContentLoadsThroughGrant(t *testing.T) {
+	calls := collectCalls(t, repoRoot(t), []string{"internal", "cmd"}, []string{
+		"instructions.Load", "skills.Discover", "mcp.LoadConfig", "config.LoadProject",
+	})
+	report(t, calls, map[string]string{
+		"cmd loadInstructions":  "filters the project's files by the grant",
+		"cmd discoverSkills":    "filters the project's skills by the grant",
+		"cmd connectMCPServers": "reads the project's .mcp.json only when the grant allows",
+		"cmd loadProjectConfig": "reports whether .gem-agent.toml may loosen by the grant",
+		// The ADR-0023 trust prompt counts what the project offers
+		// BEFORE trust exists; the parsed servers are counted, never
+		// started or registered.
+		"cmd probeProject": "counts .mcp.json servers for the trust prompt; nothing is loaded",
+	})
+}
+
 // importers lists the packages (repo-relative directories) whose
 // non-test files import path.
 func importers(t *testing.T, root string, dirs []string, path string) []string {

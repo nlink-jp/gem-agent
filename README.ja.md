@@ -40,6 +40,7 @@ gem-agent                                  # 対話 REPL
 gem-agent "テストを回して"                   # 対話モード、これが第1ターン
 gem-agent -c                               # ここでの最新セッションを再開
 gem-agent sessions                         # 再開可能なセッション一覧
+gem-agent trust                            # このプロジェクトの信頼状態とピン留めファイル
 gem-agent -p "このリポジトリを要約して"      # 単発実行、パイプ向け
 ```
 

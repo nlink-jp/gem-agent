@@ -57,7 +57,7 @@ func Compute(projectDir string) (Pins, []string) {
 	pins := Pins{}
 	var notes []string
 	for _, name := range append(append([]string{}, instructions.Names...), ConfigNames...) {
-		if d, ok := fileDigest(filepath.Join(projectDir, name)); ok {
+		if d, ok := consumedDigest(projectDir, name); ok {
 			pins[name] = d
 		}
 	}
@@ -219,6 +219,53 @@ func Parents(projectDir string, snap map[string]string) []string {
 	return out
 }
 
+// consumedDigest hashes a consumed file the way its loader reads it:
+// through an os.Root at the project directory, so a same-directory
+// link resolves and a link leaving the directory is refused (absent —
+// and not loaded either). A link's target string is hashed with the
+// content, so retargeting it is a change even when the bytes match
+// (review F1: a link was "absent" to the pin and present to the loader).
+func consumedDigest(projectDir, name string) (string, bool) {
+	root, err := os.OpenRoot(projectDir)
+	if err != nil {
+		return "", false
+	}
+	defer func() { _ = root.Close() }()
+	st, err := root.Lstat(name)
+	if err != nil {
+		return "", false
+	}
+	prefix := ""
+	if st.Mode()&os.ModeSymlink != 0 {
+		target, err := root.Readlink(name)
+		if err != nil {
+			return "", false
+		}
+		prefix = "link:" + target + "\x00"
+	} else if !st.Mode().IsRegular() {
+		return "", false
+	}
+	f, err := root.Open(name)
+	if err != nil {
+		return "", false
+	}
+	defer func() { _ = f.Close() }()
+	if fst, err := f.Stat(); err != nil || !fst.Mode().IsRegular() {
+		return "", false
+	}
+	data, more, err := bounded.ReadAll(f, FileCap)
+	if err != nil {
+		return "", false
+	}
+	h := sha256.New()
+	h.Write([]byte(prefix))
+	h.Write(data)
+	if more {
+		fmt.Fprintf(h, "\x00cut")
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), true
+}
+
 // fileDigest hashes one regular file, bounded at FileCap; a file past
 // the cap is hashed as its first FileCap bytes plus a marker, so it is
 // still pinned and a change past the cap still changes the size part.
@@ -292,16 +339,38 @@ func readDir(dir string, n int) ([]os.DirEntry, bool, error) {
 	return bounded.ReadDir(d, n)
 }
 
-// Describe renders a change for the operator: the name, the kind and
-// the current size when the file exists.
-func Describe(projectDir string, c Change) string {
-	size := ""
-	if st, err := os.Stat(filepath.Join(projectDir, filepath.FromSlash(c.Name))); err == nil {
-		if st.IsDir() {
-			size = " (directory)"
-		} else {
-			size = fmt.Sprintf(" (%d bytes)", st.Size())
+// Size renders the current size of a pinned name for the operator:
+// "(1234 bytes)", "(directory)" for a skill, or "" when it is gone.
+func Size(projectDir, name string) string {
+	st, err := os.Stat(filepath.Join(projectDir, filepath.FromSlash(name)))
+	if err != nil {
+		return ""
+	}
+	if st.IsDir() {
+		return "(directory)"
+	}
+	return fmt.Sprintf("(%d bytes)", st.Size())
+}
+
+// PinName maps a project-relative path a tool wrote to the pin it
+// belongs to: a root instruction or configuration file is its own pin,
+// a file inside a project skill is that skill's pin, anything else has
+// none (ADR-0074 §1: re-pin only what the operator saw).
+func PinName(rel string) string {
+	rel = filepath.ToSlash(filepath.Clean(rel))
+	for _, name := range append(append([]string{}, instructions.Names...), ConfigNames...) {
+		if rel == name {
+			return name
 		}
 	}
-	return c.Name + " " + c.Kind + strings.TrimRight(size, " ")
+	if strings.HasPrefix(rel, SkillsDir+"/") {
+		rest := strings.TrimPrefix(rel, SkillsDir+"/")
+		if i := strings.IndexByte(rest, '/'); i > 0 {
+			return SkillsDir + "/" + rest[:i]
+		}
+		if rest != "" {
+			return SkillsDir + "/" + rest
+		}
+	}
+	return ""
 }
