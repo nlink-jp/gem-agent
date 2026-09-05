@@ -129,7 +129,10 @@ Per-round details that matter:
   prompt carries the matching `{{DATA_TAG}}`. Session scope keeps the
   request prefix byte-identical so implicit caching fires (ADR-0018) —
   sound because Wrap refuses content containing the tag name. Side-calls
-  (risk eval, compaction, summaries) keep fresh per-call tags.
+  (risk eval, compaction, summaries) keep fresh per-call tags. Two
+  tool-message fields ride outside the tag by provenance — `denial`
+  (ADR-0060) and `runtime_note` (ADR-0075) — set only where `Agent.Run`
+  builds the tool message; `internal/archtest` pins that.
 - **A response with neither text nor tool calls is never stored.** An
   empty part in the history makes every later request fail with 400. A
   content-filter block retries once, then reports the reason.

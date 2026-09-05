@@ -120,7 +120,10 @@ instruction and configuration files are pinned by content so a changed
 one asks again before it is loaded), shell commands judged by
 the Seatbelt lane they declare rather than by their text (a read-lane
 command runs unasked; the write lane cannot touch `AGENTS.md` or
-`.git/config`; the operator lane is yours alone), a per-tool approval policy with scope-aware resolution and
+`.git/config`; the operator lane is yours alone), a runtime note when an
+MCP server answers three calls in a row with the same error — the model
+is told whose words the error is and to report to you rather than
+investigate — a per-tool approval policy with scope-aware resolution and
 trust-gated project loosening, a layered risk rulebook the auto-mode
 reviewer reads — hand-written or drafted from your own recorded
 answers, never skipping a gate — the Seatbelt sandbox, operator pre-tool

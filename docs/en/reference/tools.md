@@ -230,4 +230,9 @@ the layer that cannot be wrapped.
 `load_skill` (skills — see [integration](integration.md)),
 `save_memory` / `delete_memory` (agent memory — see
 [sessions](sessions.md)), and MCP tools as `mcp__<server>__<tool>`
-(see [integration](integration.md)).
+(see [integration](integration.md)). A failed MCP call says whose words
+the error is (ADR-0075): `error: MCP server "x" answered <tool> with an
+error:` for a result the server marked `isError`, `error: MCP server
+"x" rejected the call to <tool>: …` for the server's JSON-RPC error, and
+`error: gem-agent could not complete <tool> on MCP server "x": …` when
+the call itself failed (timeout, exit, transport).

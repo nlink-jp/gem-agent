@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -81,10 +82,25 @@ func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Too
 			Mutating:    true,
 			Run: func(ctx context.Context, args map[string]any) (string, error) {
 				blocks, isErr, err := client.CallTool(ctx, remoteName, args)
+				// Provenance is typed, never inferred from text (ADR-0075
+				// §1): the server's rejection travels as *mcp.RPCError
+				// inside the call error; anything else is a failure of
+				// gem-agent's own to complete the call.
 				if err != nil {
-					return "", err
+					kind, text := tools.RemoteIncomplete, err.Error()
+					var rpc *mcp.RPCError
+					if errors.As(err, &rpc) {
+						kind, text = tools.RemoteRejected, rpc.Error()
+					} else if ce := (*mcp.CallError)(nil); errors.As(err, &ce) && ce.Err != nil {
+						text = ce.Err.Error()
+					}
+					return "", &tools.RemoteError{Server: client.Name(), Tool: remoteName, Kind: kind, Text: text}
 				}
-				return intake.render(client.Name(), remoteName, blocks, isErr), nil
+				text := intake.render(client.Name(), remoteName, blocks)
+				if isErr {
+					return "", &tools.RemoteError{Server: client.Name(), Tool: remoteName, Kind: tools.RemoteResult, Text: text}
+				}
+				return text, nil
 			},
 		}
 		if err := registry.Register(tool); err != nil {

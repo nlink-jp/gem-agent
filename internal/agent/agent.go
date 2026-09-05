@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -146,6 +147,10 @@ type Agent struct {
 	loopPrevSig  string
 	loopStreak   int
 	loopOK       map[string]bool
+	// mcpFaults is the per-turn ledger of remote tools answering with
+	// one identical error text (ADR-0075 §2), keyed by registry tool
+	// name; it starts fresh with the loop guard's state.
+	mcpFaults map[string]*mcpFault
 
 	// policy is the operator's per-tool approval policy (ADR-0008). The
 	// zero value leaves every tool at the default behaviour.
@@ -685,6 +690,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 	// ADR-0040 per-turn state: the loop detector and the reviewer's
 	// activity trace start fresh with every turn.
 	a.turnCalls, a.loopPrevSig, a.loopStreak, a.loopOK = nil, "", 0, nil
+	a.mcpFaults = nil
 	// limit grows by intervention grants; the cap is the ceiling no
 	// verdict can lift (ADR-0040 §3).
 	limit := a.maxTurns
@@ -846,13 +852,14 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			}
 			var result string
 			var denied, ran bool
+			var remote *tools.RemoteError
 			if stopAfterRound != "" {
 				result = "error: the turn was stopped by the loop guard; not executed"
 				// Shown as proposed, never executed: the audit trail says
 				// so instead of going silent (review round 3).
 				a.telemetry.ToolCall(tc.Name, a.decide(tc).Mutating, callDetail, callPurpose, 0, "skipped", a.laneOf(tc))
 			} else {
-				result, denied, ran = a.execCall(ctx, tc)
+				result, denied, ran, remote = a.execCall(ctx, tc)
 			}
 			if a.onToolDone != nil {
 				a.onToolDone(tc)
@@ -866,6 +873,11 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 				// trusts this flag, so it is set only from execCall's
 				// gate-denial verdict, never inferred from the text.
 				Denial: denied,
+				// The runtime's own words about a remote tool's repeated
+				// identical failure (ADR-0075 §3): provenance again — set
+				// here from the typed error the executor returned, never
+				// from the result text. Empty for every other call.
+				RuntimeNote: a.remoteFault(tc.Name, remote, ran, round),
 			}
 			// view_image's pixels ride INSIDE the function response as a
 			// multimodal response part (ADR-0012 §5). The alternative — a
@@ -985,6 +997,13 @@ func wrapToolMessages(history []llm.Message, tag guard.Tag, instructionTools map
 						att.Kind, att.Ref)
 				}
 			}
+			// The runtime's note rides outside the tag too (ADR-0075
+			// §3): gem-agent's words, at the system prompt's trust level,
+			// after the wrapped server text. Provenance is the field; a
+			// result whose text merely looks like the note stays wrapped.
+			if out[i].RuntimeNote != "" {
+				out[i].Content += "\n\n" + out[i].RuntimeNote
+			}
 			continue
 		}
 		if len(out[i].Attachments) == 0 {
@@ -1061,11 +1080,20 @@ func deniedWithReason(reason string) string {
 // hook deny runs before the gate with a result that carries neither
 // the flag nor the "error:" prefix: the pixels rode along with the
 // refusal.
-func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) (result string, denied bool, ran bool) {
+//
+// remote is the typed failure of a remote (MCP) call (ADR-0075 §1),
+// read from the error value the tool returned — provenance for the
+// fault ledger, never inferred from the result text. Nil for every
+// other outcome.
+func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) (result string, denied bool, ran bool, remote *tools.RemoteError) {
 	start := time.Now()
 	var floor floorState
 	var hookDenied bool
-	result, denied, hookDenied, floor = a.execCallInner(ctx, tc)
+	var runErr error
+	result, denied, hookDenied, floor, runErr = a.execCallInner(ctx, tc)
+	if floor == floorRan && runErr != nil {
+		_ = errors.As(runErr, &remote)
+	}
 	// The ADR-0065 outcomes come first: an abandoned call has no
 	// result to classify, and a cooperative return after the cancel
 	// is "interrupted" whatever its text says.
@@ -1082,25 +1110,29 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) (result string, d
 	}
 	detail, purpose := a.Describe(tc)
 	a.telemetry.ToolCall(tc.Name, a.decide(tc).Mutating, detail, purpose, time.Since(start), outcome, a.laneOf(tc))
-	return result, denied, floor == floorRan && !denied && !hookDenied
+	return result, denied, floor == floorRan && !denied && !hookDenied, remote
 }
 
 // execCallInner reports, beside the result, three provenance facts the
 // callers must not infer from the text: denied (the gate refused,
 // ADR-0060 §3), hookDenied (a pre-tool hook refused, ADR-0044 §2), and
 // the ADR-0065 floor state.
-func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result string, denied bool, hookDenied bool, floor floorState) {
+//
+// runErr is the error the tool's Run returned, when it did (nil for a
+// refusal at any layer): the caller reads a remote call's provenance
+// from it with errors.As.
+func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result string, denied bool, hookDenied bool, floor floorState, runErr error) {
 	// A cancelled turn must not open an approval dialog: the operator
 	// interrupted, and a prompt (worse, an 'a' answer) on behalf of a
 	// dead call is the last thing they asked for (review round 2).
 	if ctx.Err() != nil {
 		// Audited as interrupted, not error: the call never ran
 		// because the operator stopped the turn (ADR-0065 review).
-		return "error: interrupted before execution", false, false, floorInterrupted
+		return "error: interrupted before execution", false, false, floorInterrupted, nil
 	}
 	tool, ok := a.registry.Get(tc.Name)
 	if !ok {
-		return fmt.Sprintf("error: unknown tool %q", tc.Name), false, false, floorRan
+		return fmt.Sprintf("error: unknown tool %q", tc.Name), false, false, floorRan, nil
 	}
 	// Operator pre-tool hooks run before the ladder (ADR-0044 §2): the
 	// org's guards exist to catch the agent's lapses deterministically,
@@ -1116,13 +1148,13 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			// exemption (ADR-0060 §3) stays scoped to the gate path:
 			// hooks are configured commands whose output no one reviews
 			// at the prompt, so their words ship wrapped like any result.
-			return "denied by a pre-tool hook: " + why, false, true, floorRan
+			return "denied by a pre-tool hook: " + why, false, true, floorRan, nil
 		}
 		// The hook is a process: a Ctrl+C that landed while it ran
 		// must not carry the call on to the ladder and the gate
 		// (review round 4).
 		if ctx.Err() != nil {
-			return "error: interrupted before execution", false, false, floorInterrupted
+			return "error: interrupted before execution", false, false, floorInterrupted, nil
 		}
 	}
 	d := a.decide(tc)
@@ -1131,7 +1163,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		// Refused before any gate: a call that names no lane is not a
 		// read-lane call to run unasked, nor a write-lane call to
 		// prompt about (review F7).
-		return "error: " + d.Invalid.Error(), false, false, floorRan
+		return "error: " + d.Invalid.Error(), false, false, floorRan, nil
 	}
 	if a.gated(d, tc) {
 		approved, reason := false, ""
@@ -1172,7 +1204,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			// line as its answer (review round 4). roundIntervention
 			// already re-checks after its own model call.
 			if ctx.Err() != nil {
-				return "error: interrupted before execution", false, false, floorInterrupted
+				return "error: interrupted before execution", false, false, floorInterrupted, nil
 			}
 			approved = d.Approved
 			if approved {
@@ -1229,9 +1261,9 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			a.logRecord("gate_decision", record)
 			if !ok {
 				if denyReason != "" {
-					return deniedWithReason(denyReason), true, false, floorRan
+					return deniedWithReason(denyReason), true, false, floorRan, nil
 				}
-				return deniedResult, true, false, floorRan
+				return deniedResult, true, false, floorRan, nil
 			}
 		}
 	}
@@ -1240,18 +1272,18 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 	}
 	out, state, err := a.runWithFloor(ctx, tool, tc)
 	if state == floorAbandoned {
-		return abandonedResult, false, false, state
+		return abandonedResult, false, false, state, nil
 	}
 	if err != nil {
-		return "error: " + err.Error(), false, false, state
+		return "error: " + err.Error(), false, false, state, err
 	}
 	if operatorWrite && a.onOpWrite != nil {
 		a.onOpWrite(tc)
 	}
 	if out == "" {
-		return "(no output)", false, false, state
+		return "(no output)", false, false, state, nil
 	}
-	return out, false, false, state
+	return out, false, false, state, nil
 }
 
 // floorState says how a tool call came back through the ADR-0065

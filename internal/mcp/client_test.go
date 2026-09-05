@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -368,5 +369,38 @@ func TestUndecodableContentIsReportedNotDropped(t *testing.T) {
 	}
 	if len(blocks) != 1 || blocks[0].Type != "text" || !strings.Contains(blocks[0].Text, "could not be decoded") {
 		t.Errorf("blocks = %+v, want one text block saying so", blocks)
+	}
+}
+
+// ADR-0075 §1: a server's JSON-RPC error object is the server's words,
+// delivered as a rejection rather than a result. CallTool wraps it in a
+// CallError that the adapter unwraps by type — never by matching text —
+// and a transport cause travels in the same envelope.
+func TestRPCErrorIsTypedThroughCallError(t *testing.T) {
+	f := &fakeServer{}
+	f.handler = func(f *fakeServer, method string, params json.RawMessage) ([]string, any, bool) {
+		if method == "tools/call" {
+			f.mu.Lock()
+			id := f.received[len(f.received)-1].ID.String()
+			f.mu.Unlock()
+			return []string{fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":"Invalid params"}}`, id)}, nil, false
+		}
+		r, ok := stdResult(method)
+		return nil, r, ok
+	}
+	c := newTestClient(f, 2*time.Second)
+	defer c.Close()
+
+	_, _, err := c.CallTool(context.Background(), "q", map[string]any{"x": 1})
+	var ce *CallError
+	var rpc *RPCError
+	if !errors.As(err, &ce) || !errors.As(err, &rpc) {
+		t.Fatalf("err = %v (%T) — want a CallError carrying the RPCError", err, err)
+	}
+	if ce.Server != "fake" || ce.Tool != "q" || rpc.Code != -32602 || rpc.Message != "Invalid params" || ce.Err != error(rpc) {
+		t.Errorf("CallError = %+v, RPCError = %+v", *ce, *rpc)
+	}
+	if err.Error() != "mcp fake: q: rpc error -32602: Invalid params" {
+		t.Errorf("Error() = %q — the text shape is unchanged", err.Error())
 	}
 }

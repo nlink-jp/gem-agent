@@ -41,10 +41,10 @@ func TestBlockTierSetsMustPrompt(t *testing.T) {
 	gate := &floorGate{}
 	a := newFloorAgent(t, gate, policy.Policy{})
 
-	a.execCall(context.Background(), llm.ToolCall{
+	_, _, _, _ = a.execCall(context.Background(), llm.ToolCall{
 		Name: "shell_exec", Args: map[string]any{"command": "sudo rm -rf /tmp/x"},
 	})
-	a.execCall(context.Background(), llm.ToolCall{
+	_, _, _, _ = a.execCall(context.Background(), llm.ToolCall{
 		Name: "shell_exec", Args: map[string]any{"command": "make build"},
 	})
 
@@ -68,7 +68,7 @@ func TestAlwaysPolicySetsMustPrompt(t *testing.T) {
 	}
 	gate := &floorGate{}
 	a := newFloorAgent(t, gate, pol)
-	a.execCall(context.Background(), llm.ToolCall{
+	_, _, _, _ = a.execCall(context.Background(), llm.ToolCall{
 		Name: "write_file", Args: map[string]any{"path": "x.txt", "content": "y"},
 	})
 	if len(gate.calls) != 1 || !gate.calls[0] {
@@ -91,7 +91,7 @@ func TestSessionAllowlistDoesNotLiftBlockFloor(t *testing.T) {
 	gate := approve.New(in, &out)
 	a := New(Options{Registry: reg, Gate: gate})
 
-	a.execCall(context.Background(), llm.ToolCall{
+	_, _, _, _ = a.execCall(context.Background(), llm.ToolCall{
 		Name: "shell_exec", Args: map[string]any{"command": "mkdir -p build"},
 	})
 	promptsAfterFirst := strings.Count(out.String(), "[approval]")
@@ -99,7 +99,7 @@ func TestSessionAllowlistDoesNotLiftBlockFloor(t *testing.T) {
 		t.Fatalf("first (benign) call: %d prompts, want 1", promptsAfterFirst)
 	}
 
-	result, denied, _ := a.execCall(context.Background(), llm.ToolCall{
+	result, denied, _, _ := a.execCall(context.Background(), llm.ToolCall{
 		Name: "shell_exec", Args: map[string]any{"command": "sudo whoami"},
 	})
 	if strings.Count(out.String(), "[approval]") != 2 {
@@ -109,7 +109,7 @@ func TestSessionAllowlistDoesNotLiftBlockFloor(t *testing.T) {
 		t.Errorf("denied Block-tier call: denied=%v result=%q", denied, result)
 	}
 	// And the ordinary case still benefits from 'a': no third prompt.
-	a.execCall(context.Background(), llm.ToolCall{
+	_, _, _, _ = a.execCall(context.Background(), llm.ToolCall{
 		Name: "shell_exec", Args: map[string]any{"command": "mkdir -p dist"},
 	})
 	if strings.Count(out.String(), "[approval]") != 2 {

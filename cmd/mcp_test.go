@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"strings"
 	"testing"
@@ -16,11 +17,15 @@ type stubCaller struct {
 	calls  []string
 	blocks []mcp.Content
 	isErr  bool
+	err    error
 }
 
 func (s *stubCaller) Name() string { return s.name }
 func (s *stubCaller) CallTool(ctx context.Context, tool string, args map[string]any) ([]mcp.Content, bool, error) {
 	s.calls = append(s.calls, tool)
+	if s.err != nil {
+		return nil, false, s.err
+	}
 	if s.blocks != nil {
 		return s.blocks, s.isErr, nil
 	}
@@ -78,5 +83,49 @@ func TestRegisterMCPTools(t *testing.T) {
 	noSchema, _ := reg.Get("mcp__tor-exit__no_schema")
 	if noSchema.Parameters["type"] != "object" {
 		t.Errorf("fallback schema = %v", noSchema.Parameters)
+	}
+}
+
+// ADR-0075 §1: a failed remote call reaches the executor as a typed
+// RemoteError whose kind is read from the error value — the server's
+// isError result, the server's JSON-RPC rejection carried inside the
+// client's CallError, or a cause of gem-agent's own — never from text.
+func TestAdapterTypesRemoteFailuresByProvenance(t *testing.T) {
+	cases := []struct {
+		name string
+		stub *stubCaller
+		kind tools.RemoteErrorKind
+		text string
+		head string
+	}{
+		{"isError result", &stubCaller{name: "srv", blocks: textBlock("quota exceeded"), isErr: true},
+			tools.RemoteResult, "quota exceeded", `MCP server "srv" answered q with an error:`},
+		{"rpc rejection", &stubCaller{name: "srv", err: &mcp.CallError{Server: "srv", Tool: "q", Err: &mcp.RPCError{Code: -32602, Message: "Invalid params"}}},
+			tools.RemoteRejected, "rpc error -32602: Invalid params", `MCP server "srv" rejected the call to q:`},
+		{"transport", &stubCaller{name: "srv", err: &mcp.CallError{Server: "srv", Tool: "q", Err: errors.New("tools/call timed out after 1s (server killed; it restarts on the next call)")}},
+			tools.RemoteIncomplete, "tools/call timed out after 1s (server killed; it restarts on the next call)", `gem-agent could not complete q on MCP server "srv":`},
+	}
+	for _, c := range cases {
+		reg, err := tools.New(t.TempDir(), func(ctx context.Context, cmd string) *exec.Cmd {
+			return exec.CommandContext(ctx, "/bin/true")
+		}, time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, errs := registerMCPTools(reg, c.stub, []mcp.Tool{{Name: "q", Description: "q"}}); len(errs) != 0 {
+			t.Fatalf("%s: %v", c.name, errs)
+		}
+		tool, _ := reg.Get("mcp__srv__q")
+		out, err := tool.Run(context.Background(), map[string]any{"x": 1})
+		var re *tools.RemoteError
+		if out != "" || !errors.As(err, &re) {
+			t.Fatalf("%s: out=%q err=%v — a failed remote call must come back as a RemoteError", c.name, out, err)
+		}
+		if re.Kind != c.kind || re.Text != c.text || re.Server != "srv" || re.Tool != "q" {
+			t.Errorf("%s: got %+v, want kind %v text %q", c.name, *re, c.kind, c.text)
+		}
+		if !strings.HasPrefix(re.Error(), c.head) {
+			t.Errorf("%s: rendered %q, want prefix %q", c.name, re.Error(), c.head)
+		}
 	}
 }

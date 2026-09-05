@@ -46,8 +46,11 @@ func newMCPIntake(workDir func() string) mcpIntake {
 	return mcpIntake{workDir: workDir, cap: tools.OutputCap, previewRunes: 800}
 }
 
-// render assembles the text the model receives for one call.
-func (in mcpIntake) render(server, tool string, blocks []mcp.Content, isErr bool) string {
+// render assembles the text the model receives for one call. A result
+// the server marked isError renders the same way; the adapter wraps it
+// in a tools.RemoteError and the executor says whose words it is
+// (ADR-0075 §1) — the intake stops prefixing `error:` itself.
+func (in mcpIntake) render(server, tool string, blocks []mcp.Content) string {
 	parts := make([]string, 0, len(blocks))
 	// One budget for the whole response (ADR-0072 §4.5): many blocks
 	// each under the cap used to add up without limit. A block that no
@@ -122,9 +125,6 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content, isErr bool
 	out := strings.Join(parts, "\n")
 	if out == "" {
 		out = "(no content)"
-	}
-	if isErr {
-		return "error: " + out
 	}
 	return out
 }

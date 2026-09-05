@@ -16,7 +16,7 @@ func textBlock(s string) []mcp.Content { return []mcp.Content{{Type: "text", Tex
 // not gain a preview, a path, or any other ceremony.
 func TestSmallTextIsUntouched(t *testing.T) {
 	in := newMCPIntake(fixedDir(t.TempDir()))
-	out := in.render("srv", "tool", textBlock(`{"is_exit": false}`), false)
+	out := in.render("srv", "tool", textBlock(`{"is_exit": false}`))
 	if out != `{"is_exit": false}` {
 		t.Errorf("out = %q", out)
 	}
@@ -30,7 +30,7 @@ func TestOversizedTextIsSavedWhole(t *testing.T) {
 	in := newMCPIntake(fixedDir(work))
 	big := strings.Repeat("A", tools.OutputCap+1)
 
-	out := in.render("rdns-lookup", "lookup_rdns", textBlock(big), false)
+	out := in.render("rdns-lookup", "lookup_rdns", textBlock(big))
 	if len(out) > 4000 {
 		t.Fatalf("the rendered result is %d bytes — the point was to keep it out of context", len(out))
 	}
@@ -56,7 +56,7 @@ func TestOversizedJSONGetsAJSONName(t *testing.T) {
 	work := t.TempDir()
 	in := newMCPIntake(fixedDir(work))
 	big := "[" + strings.Repeat(`"x",`, tools.OutputCap/4) + `"x"]`
-	out := in.render("srv", "tool", textBlock(big), false)
+	out := in.render("srv", "tool", textBlock(big))
 	if !strings.HasSuffix(extractPath(t, out, work), ".json") {
 		t.Errorf("a JSON body should be saved as .json: %q", out)
 	}
@@ -69,8 +69,8 @@ func TestSavedFilesAreContentAddressed(t *testing.T) {
 	in := newMCPIntake(fixedDir(work))
 	big := strings.Repeat("B", tools.OutputCap+1)
 
-	first := extractPath(t, in.render("srv", "tool", textBlock(big), false), work)
-	second := extractPath(t, in.render("srv", "tool", textBlock(big), false), work)
+	first := extractPath(t, in.render("srv", "tool", textBlock(big)), work)
+	second := extractPath(t, in.render("srv", "tool", textBlock(big)), work)
 	if first != second {
 		t.Errorf("the same content produced two files: %q and %q", first, second)
 	}
@@ -92,7 +92,7 @@ func TestImageIsSavedAndPointedAtViewImage(t *testing.T) {
 	out := in.render("chrome-pilot", "take_screenshot", []mcp.Content{
 		{Type: "text", Text: `{"page":"example.test"}`},
 		{Type: "image", Data: png, MIME: "image/png"},
-	}, false)
+	})
 
 	if !strings.Contains(out, `{"page":"example.test"}`) {
 		t.Errorf("the text block was lost: %q", out)
@@ -117,7 +117,7 @@ func TestImageIsSavedAndPointedAtViewImage(t *testing.T) {
 // the answer is gone rather than handed a quiet truncation.
 func TestWithoutAWorkDirTheLossIsStated(t *testing.T) {
 	in := newMCPIntake(fixedDir(""))
-	out := in.render("srv", "tool", textBlock(strings.Repeat("C", tools.OutputCap+1)), false)
+	out := in.render("srv", "tool", textBlock(strings.Repeat("C", tools.OutputCap+1)))
 	if !strings.Contains(out, "lost") {
 		t.Errorf("a lossy fallback must say so: %q", out)
 	}
@@ -126,17 +126,19 @@ func TestWithoutAWorkDirTheLossIsStated(t *testing.T) {
 	}
 }
 
-func TestServerErrorsStayMarked(t *testing.T) {
+// ADR-0075 §1: the intake renders a server-marked error like any text;
+// saying whose words it is (and prefixing `error:`) is the adapter's and
+// the executor's job, by provenance — the intake no longer marks it.
+func TestServerErrorsRenderUnmarked(t *testing.T) {
 	in := newMCPIntake(fixedDir(t.TempDir()))
-	out := in.render("srv", "tool", textBlock("quota exceeded"), true)
-	if !strings.HasPrefix(out, "error: ") {
+	if out := in.render("srv", "tool", textBlock("quota exceeded")); out != "quota exceeded" {
 		t.Errorf("out = %q", out)
 	}
 }
 
 func TestEmptyResultIsStillAnAnswer(t *testing.T) {
 	in := newMCPIntake(fixedDir(t.TempDir()))
-	if out := in.render("srv", "tool", nil, false); out != "(no content)" {
+	if out := in.render("srv", "tool", nil); out != "(no content)" {
 		t.Errorf("out = %q", out)
 	}
 }
@@ -187,7 +189,7 @@ func TestManySmallBlocksShareOneBudget(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		blocks = append(blocks, mcp.Content{Type: "text", Text: strings.Repeat("x", 300)})
 	}
-	out := in.render("srv", "tool", blocks, false)
+	out := in.render("srv", "tool", blocks)
 	if len(out) > in.cap+400 {
 		t.Fatalf("rendered result is %d bytes; the cap is %d", len(out), in.cap)
 	}
@@ -205,7 +207,7 @@ func TestOversizedBlockPreviewsShareTheBudget(t *testing.T) {
 	for i := range blocks {
 		blocks[i] = mcp.Content{Type: "text", Text: strings.Repeat("x", in.cap+1)}
 	}
-	out := in.render("srv", "tool", blocks, false)
+	out := in.render("srv", "tool", blocks)
 	if len(out) > in.cap+1000 {
 		t.Fatalf("rendered %d bytes for cap %d", len(out), in.cap)
 	}
@@ -223,7 +225,7 @@ func TestBinaryLeftoversAreOneLine(t *testing.T) {
 	for i := range blocks {
 		blocks[i] = mcp.Content{Type: "image", MIME: "image/png", Data: []byte("TEST-DATA")}
 	}
-	out := in.render("srv", "tool", blocks, false)
+	out := in.render("srv", "tool", blocks)
 	if len(out) > in.cap+1000 {
 		t.Fatalf("rendered %d bytes for cap %d", len(out), in.cap)
 	}
@@ -243,7 +245,7 @@ func TestExactCapBlockAndUnsavedBinaries(t *testing.T) {
 	work := t.TempDir()
 	in := newMCPIntake(fixedDir(work))
 	exact := strings.Repeat("x", in.cap)
-	out := in.render("srv", "tool", []mcp.Content{{Type: "text", Text: exact}}, false)
+	out := in.render("srv", "tool", []mcp.Content{{Type: "text", Text: exact}})
 	if out != exact {
 		t.Errorf("exact-cap block not inline: %d bytes rendered", len(out))
 	}
@@ -252,7 +254,7 @@ func TestExactCapBlockAndUnsavedBinaries(t *testing.T) {
 	for i := range blocks {
 		blocks[i] = mcp.Content{Type: "image", MIME: "image/png", Data: []byte("TEST-DATA")}
 	}
-	out = in.render("srv", "tool", blocks, false)
+	out = in.render("srv", "tool", blocks)
 	entries, _ := os.ReadDir(work)
 	if len(entries) > 1 {
 		t.Errorf("%d files written for blocks whose note could not be listed", len(entries))

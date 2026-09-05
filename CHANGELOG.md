@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added
+
+- A failed MCP call now says whose words the error is: `MCP server "x"
+  answered <tool> with an error:` for a result the server marked as an
+  error, `MCP server "x" rejected the call to <tool>:` for the
+  server's JSON-RPC error, and `gem-agent could not complete <tool> on
+  MCP server "x":` when the call itself failed. When one MCP tool
+  answers three calls in a row within a turn with the same error text —
+  reworded arguments included — a runtime note outside the nonce tag
+  tells the model that its arguments went out as written, that the
+  answer repeated, and to report to you and ask how to proceed; you see
+  one line per streak, the transcript gets an `mcp_fault` record, and
+  nothing is retried on your behalf. Until now such an error looked
+  like every other, and a model met with a transient server fault spent
+  a session investigating the runtime instead (ADR-0075)
+
 ### Changed
 
 - Skills installed for Claude Code are copied into

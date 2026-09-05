@@ -148,7 +148,9 @@ max_turns = 50
    it is loaded
 3. **Isolation of tool output and file contents** — nonce-tagged XML wrapping via
    nlk/guard enforces "data, not instructions". Defensive instructions are placed at
-   the top of the system prompt
+   the top of the system prompt. Exactly two tool results skip the wrap, by
+   provenance and never by content: a gate denial (ADR-0060) and the runtime's note
+   about a remote tool's repeated identical failure (ADR-0075)
 
 ### Protocol handling
 

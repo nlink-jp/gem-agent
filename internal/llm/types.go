@@ -79,6 +79,14 @@ type Message struct {
 	// builds resuming a transcript that carries it just wrap the denial
 	// as before.
 	Denial bool `json:"denial,omitempty"`
+	// RuntimeNote is gem-agent's own words appended to a tool result
+	// outside the nonce tag (ADR-0075 §3): what the runtime measured
+	// about a remote tool's repeated identical failure, and the action
+	// to take. Trusted by provenance exactly like Denial — set in one
+	// place, the executor — never recognized by content. Additive: an
+	// old build resuming a transcript that carries it drops the note
+	// from the replay and nothing else.
+	RuntimeNote string `json:"runtime_note,omitempty"`
 }
 
 // ToolDef describes one tool to the model.

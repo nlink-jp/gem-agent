@@ -120,6 +120,24 @@ API が返すのはトークン数であって金額ではない。したがっ�
 `tool_prompt` キーの無いレコードは ADR-0066 以前のもの: 壊れたレコード
 として扱うのではなく、チェックサムの非負の残差としてバケツを導出する。
 
+## transcript のリモート障害（ADR-0075）
+
+1 つの MCP ツールがターン内で連続 3 コールにバイト同一のエラー文を返したとき
+— 引数が何であれ — 実行器は `mcp_fault` レコードを書き、モデル向けの注記を
+付ける:
+
+    {"kind":"mcp_fault","data":{"server":"bigquery",
+     "tool":"mcp__bigquery__execute_sql_readonly","kind":"result",
+     "count":3,"round":7,"error":"Required parameter is missing: query"}}
+
+`kind` は失敗の出所 — `result`（サーバーが応答をエラーと印した）、
+`rejected`（サーバーの JSON-RPC エラーオブジェクト）、`incomplete`（gem-agent が
+コールを完了できなかった: 転送・タイムアウト・終了）— で、以降の同一応答ごとに
+カウントを更新したレコードが繰り返される。そのツールの `message` レコードは
+注記を `runtime_note` に持つ。著者が gem-agent なので（`denial` と同じ信頼）
+送信時のラップはこのフィールドをノンスタグの外側に付ける。旧ビルドがこの
+transcript を resume するとフィールドを無視し、注記なしで結果を再生する。
+
 ## エージェントメモリ（ADR-0020）
 
 エージェントは短い事実をセッションを跨いで永続化できます: 決定事項、

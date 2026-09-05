@@ -216,4 +216,9 @@ Web コンテンツは非信頼です: 要約は通常どおり nonce ラップ�
 
 `load_skill`（スキル — [統合](integration.ja.md)）、
 `save_memory` / `delete_memory`（メモリ — [セッション](sessions.ja.md)）、
-MCP ツールは `mcp__<server>__<tool>`（[統合](integration.ja.md)）。
+MCP ツールは `mcp__<server>__<tool>`（[統合](integration.ja.md)）。失敗した
+MCP コールはそのエラーが誰の言葉かを告げる（ADR-0075）: サーバーが `isError`
+と印した結果は `error: MCP server "x" answered <tool> with an error:`、
+サーバーの JSON-RPC エラーは `error: MCP server "x" rejected the call to
+<tool>: …`、コール自体が失敗した（タイムアウト・終了・転送）ときは
+`error: gem-agent could not complete <tool> on MCP server "x": …`。

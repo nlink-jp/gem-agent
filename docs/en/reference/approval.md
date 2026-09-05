@@ -99,6 +99,16 @@ an empty field is a plain deny, Esc backs out to the options; `n`
 stays the one-keystroke deny. The reason is recorded in the session
 transcript (`gate_decision`) but never exported to telemetry.
 
+A denial is one of two tool results the model receives unwrapped; the
+other is the runtime's note about a remote fault (ADR-0075). When an
+MCP tool answers three consecutive calls in a turn with the same error
+text — reworded arguments included, which the loop guard cannot see —
+the result names whose words the error is (`MCP server "x" answered …`,
+`rejected the call …`, or `gem-agent could not complete …`) and a note
+outside the nonce tag tells the model that its arguments went out as
+written, that the answer repeated, and to report to you and ask how to
+proceed. You see one line per streak; nothing is retried on your behalf.
+
 ## Auto-approve mode (ADR-0004)
 
 Off by default. shift+tab (or `/auto`) toggles it; the status line
@@ -518,7 +528,11 @@ Tool output is isolated with nonce XML tags (nlk/guard;
 session-scoped in the main loop, per-call in side-calls) — content
 returned by tools is framed as data, never instructions. Attachments
 carry the same framing; images and PDFs, which no tag can wrap, get an
-explicit statement of the same stance.
+explicit statement of the same stance. Two tool-message fields are
+trusted by provenance and skip the wrap — `denial` (ADR-0060) and
+`runtime_note` (ADR-0075) — because their author is gem-agent or you;
+both are set in one place in the executor, and a result whose text
+merely looks like one stays wrapped.
 
 The session-scoped tag has a second job: the request prefix stays
 byte-identical across rounds and turns, so Vertex's implicit caching

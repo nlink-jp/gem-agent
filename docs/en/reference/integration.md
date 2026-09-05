@@ -57,7 +57,13 @@ entry wins. `/mcp` lists the connected servers with their scope.
 ```
 
 Tools appear as `mcp__<server>__<tool>`, approval-gated (relaxable per
-tool — see [approval](approval.md)). Timed-out calls kill the server
+tool — see [approval](approval.md)). A failed call renders with its
+provenance — the server's own error, the server's rejection, or a call
+gem-agent could not complete — and a server that answers three
+consecutive calls in a turn with one identical error text gets named in
+a runtime note that asks the model to report to you instead of
+investigating (ADR-0075; see [tools](tools.md) for the three shapes and
+[sessions](sessions.md) for the `mcp_fault` record). Timed-out calls kill the server
 child (MCP has no cancel) and it respawns lazily on the next call.
 
 **`/mcp reload`** (ADR-0039) reconnects everything mid-session — full

@@ -36,6 +36,23 @@ func (e *RPCError) Error() string {
 	return fmt.Sprintf("rpc error %d: %s", e.Code, e.Message)
 }
 
+// CallError is a tools/call that did not return a result (ADR-0075 §1):
+// Err is either the server's *RPCError — the server's own words,
+// delivered as a rejection — or a cause of gem-agent's own (transport,
+// timeout, exit, framing). The adapter tells the two apart with
+// errors.As, never by matching text.
+type CallError struct {
+	Server string
+	Tool   string
+	Err    error
+}
+
+func (e *CallError) Error() string {
+	return fmt.Sprintf("mcp %s: %s: %v", e.Server, e.Tool, e.Err)
+}
+
+func (e *CallError) Unwrap() error { return e.Err }
+
 // message is a decoded JSON-RPC frame (request, response, or notification).
 type message struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -429,7 +446,7 @@ func (c *Client) CallTool(ctx context.Context, tool string, args map[string]any)
 	}
 	res, err := c.rawCall(ctx, "tools/call", map[string]any{"name": tool, "arguments": args})
 	if err != nil {
-		return nil, false, fmt.Errorf("mcp %s: %s: %w", c.name, tool, err)
+		return nil, false, &CallError{Server: c.name, Tool: tool, Err: err}
 	}
 	var out struct {
 		Content []struct {
@@ -441,7 +458,7 @@ func (c *Client) CallTool(ctx context.Context, tool string, args map[string]any)
 		IsError bool `json:"isError"`
 	}
 	if err := json.Unmarshal(res, &out); err != nil {
-		return nil, false, fmt.Errorf("mcp %s: %s result: %w", c.name, tool, err)
+		return nil, false, &CallError{Server: c.name, Tool: tool, Err: fmt.Errorf("result: %w", err)}
 	}
 	blocks := make([]Content, 0, len(out.Content))
 	for _, item := range out.Content {

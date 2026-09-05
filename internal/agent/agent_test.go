@@ -680,7 +680,7 @@ func TestExecCallRefusesAfterCancel(t *testing.T) {
 	a, _ := newAgent(t, &mockBackend{}, gate, 5)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	out, _, _ := a.execCall(ctx, llm.ToolCall{Name: "write_file", Args: map[string]any{"path": "x", "content": "y"}})
+	out, _, _, _ := a.execCall(ctx, llm.ToolCall{Name: "write_file", Args: map[string]any{"path": "x", "content": "y"}})
 	if !strings.HasPrefix(out, "error:") {
 		t.Errorf("cancelled call ran: %q", out)
 	}

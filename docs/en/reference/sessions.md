@@ -126,6 +126,26 @@ report those files as partial. A record without the `tool_prompt` key
 predates ADR-0066: derive the bucket as the non-negative remainder of
 the checksum, rather than treating the record as broken.
 
+## Remote faults in the transcript (ADR-0075)
+
+When one MCP tool answers three consecutive calls with byte-identical
+error text within a turn — whatever the arguments — the executor writes
+an `mcp_fault` record and appends a note for the model:
+
+    {"kind":"mcp_fault","data":{"server":"bigquery",
+     "tool":"mcp__bigquery__execute_sql_readonly","kind":"result",
+     "count":3,"round":7,"error":"Required parameter is missing: query"}}
+
+`kind` is the failure's provenance — `result` (the server marked its
+answer an error), `rejected` (the server's JSON-RPC error object) or
+`incomplete` (gem-agent could not complete the call: transport, timeout,
+exit) — and the record repeats on every further identical answer with
+the count updated. The tool's `message` record carries the note in
+`runtime_note`, a field the send-time wrap appends outside the nonce tag
+because its author is gem-agent (the same trust as `denial`). An older
+build resuming such a transcript ignores the field and replays the
+result without the note.
+
 ## Agent memory (ADR-0020)
 
 The agent persists short facts across sessions: decisions, preferences,
