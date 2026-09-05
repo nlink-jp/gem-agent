@@ -117,10 +117,10 @@ type Registry struct {
 	parent *Registry
 	execFn ExecFunc
 	// laneExec, when set, runs shell commands in the lane they declare;
-	// readLane reports that the read lane is kernel-enforced (the
-	// sandbox is on), so a read-lane call is non-mutating.
+	// enf is what the runtime established about the sandbox (ADR-0073
+	// §5): a read-lane call is non-mutating only when enf.ReadLane.
 	laneExec     LaneExecFunc
-	readLane     bool
+	enf          sandbox.Enforcement
 	shellTimeout time.Duration
 	tools        map[string]*Tool
 	order        []string
@@ -485,7 +485,7 @@ func (r *Registry) Subset(names ...string) (*Registry, error) {
 		parent:       r, // roots are the parent's, rotation included
 		execFn:       r.execFn,
 		laneExec:     r.laneExec,
-		readLane:     r.readLane,
+		enf:          r.enf,
 		shellTimeout: r.shellTimeout,
 		tools:        map[string]*Tool{},
 		abandoned:    r.abandoned, // shared: the child's abandoned calls are the session's
@@ -1225,21 +1225,32 @@ func sizeLabel(n int64) string {
 	}
 }
 
-// SetLaneExec installs the lane-aware runner (ADR-0073). readLane
-// says whether the read lane is kernel-enforced: true when the sandbox
-// is on, so a read-lane call runs without approval; false when it is
-// off, so every shell call is a write-lane call for the gates.
-func (r *Registry) SetLaneExec(fn LaneExecFunc, readLane bool) {
+// SetLaneExec installs the lane-aware runner (ADR-0073) and what the
+// runtime verified about the sandbox: enf.ReadLane lets a read-lane
+// call run without approval; enf.Confined false is the unconfined mode
+// the agent treats as the operator's alone.
+func (r *Registry) SetLaneExec(fn LaneExecFunc, enf sandbox.Enforcement) {
 	r.laneExec = fn
-	r.readLane = readLane
+	r.enf = enf
 }
 
-// ReadLane reports whether shell_exec has a kernel-enforced read lane.
+// ReadLane reports whether shell_exec has a verified, kernel-enforced
+// read lane.
 func (r *Registry) ReadLane() bool {
 	if r.parent != nil {
 		return r.parent.ReadLane()
 	}
-	return r.readLane
+	return r.enf.ReadLane
+}
+
+// Confined reports whether shell commands run under sandbox-exec at
+// all. A registry with no lane runner (tests) reports confined: the
+// unconfined floor is for the operator's explicit --no-sandbox.
+func (r *Registry) Confined() bool {
+	if r.parent != nil {
+		return r.parent.Confined()
+	}
+	return r.laneExec == nil || r.enf.Confined
 }
 
 // ShellLane reads the lane a shell_exec call declares; a missing or

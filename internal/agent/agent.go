@@ -838,11 +838,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 				result = "error: the turn was stopped by the loop guard; not executed"
 				// Shown as proposed, never executed: the audit trail says
 				// so instead of going silent (review round 3).
-				mutating := false
-				if t, ok := a.registry.Get(tc.Name); ok {
-					mutating = t.Mutating
-				}
-				a.telemetry.ToolCall(tc.Name, mutating, callDetail, callPurpose, 0, "skipped")
+				a.telemetry.ToolCall(tc.Name, a.decide(tc).Mutating, callDetail, callPurpose, 0, "skipped", a.laneOf(tc))
 			} else {
 				result, denied, ran = a.execCall(ctx, tc)
 			}
@@ -1073,7 +1069,7 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) (result string, d
 		outcome = "error"
 	}
 	detail, purpose := a.Describe(tc)
-	a.telemetry.ToolCall(tc.Name, a.decide(tc).Mutating, detail, purpose, time.Since(start), outcome)
+	a.telemetry.ToolCall(tc.Name, a.decide(tc).Mutating, detail, purpose, time.Since(start), outcome, a.laneOf(tc))
 	return result, denied, floor == floorRan && !denied && !hookDenied
 }
 

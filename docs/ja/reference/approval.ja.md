@@ -122,7 +122,7 @@ TUI を使わない plain stdin ゲートは `y`/`n`/`N`/`a`）、拒否は拒�
 
 | レーン | カーネルが拒むもの | 決める者 |
 |---|---|---|
-| `read` | scratch 以外への書込、ネットワーク、設定書込（`defaults`）、`sysctl` 書込、自分の子以外へのシグナル、`open`、IPC 系プログラムの起動（`osascript`・`open`・`launchctl`・`defaults`・`security`・`pbcopy`・`shortcuts`・`automator`・`scutil`・`networksetup`・`systemsetup`、加えて `[sandbox].read_lane_deny_exec`）、資格情報ファイルの読取 | 誰も — read レーンのコマンドは構成上非変更系で、`read_file` と同じく**どのモードでも確認なしで走ります** |
+| `read` | セッション専用の scratch ディレクトリ（`TMPDIR` がそこを指す）とデバイス sink 以外への全書込 — プロジェクト・作業ディレクトリ・`/private/tmp` を含む。ネットワーク。Mach/POSIX IPC・Apple Events・launch services（`open`）・設定書込（`defaults`）・NVRAM・デバイスアクセス・自分の子以外へのシグナル。第 2 線として IPC 系プログラムの起動（`osascript`・`open`・`launchctl`・`defaults`・`security`・`pbcopy`・`shortcuts`・`automator`・`scutil`・`networksetup`・`systemsetup`、加えて `[sandbox].read_lane_deny_exec`）。資格情報ファイルの読取 | 誰も — read レーンのコマンドは自分の scratch 以外を何も変えず、`read_file` と同じく**どのモードでも確認なしで走ります** — 起動時にレーンの拒否が検証された機体で（下記） |
 | `write` | 後続セッションが信頼するファイル（下記）への書込、資格情報ファイルの読取 | auto モードでは上のラダー、既定モードではあなた |
 | `operator` | ADR-0001 のプロファイル以上には何も: 永続ファイルは書込可、資格情報は読取可 | **常にあなた** — モデル層・セッションの `a`・`--allow` は決して答えません |
 
@@ -132,8 +132,22 @@ TUI を使わない plain stdin ゲートは `y`/`n`/`N`/`a`）、拒否は拒�
 します — 承認が起きるのはそこです。上の *block* パターンは全レーンで
 効きます — read レーンの `sudo` は檻が拒むとしても確認になります — そして
 それが残る唯一の文字列規則です: 見逃した綴りのコストはカーネルがいずれ
-捕まえる確認 1 回であって、穴ではありません。sandbox が無効（`--no-sandbox`
-または入れ子 sandbox）なら read レーンは無く、全 `shell_exec` が確認になります。
+捕まえる確認 1 回であって、穴ではありません。3 層には 3 つの仕事があります:
+サンドボックスはコマンドが届く範囲の上限を、モデル層はその内側で意味と整合を、
+そして *block* パターン・`operator` レーン・非封じ込め実行はモデルが何と言おうと
+あなただけのものです。
+
+**read レーンは仮定せず検証します。** 起動時に gem-agent は read レーンの
+プロファイルを `sandbox-exec` で、失敗すべきプローブ（プロジェクト書込・
+ソケット接続・他プロセスへのシグナル・`/private/tmp` 書込・拒否プログラム）と
+成功すべきプローブ 1 つに当てます。全プローブが期待どおりの機体でだけ read
+レーンのコマンドは無確認で走り、そうでなければ全 `shell_exec` が確認になり、
+バナーが理由を告げます。設定で有効なのに適用できないサンドボックスは起動
+エラーであり無言のフォールバックではありません: 非封じ込め実行を受け入れる
+なら `--no-sandbox` を明示します。**非封じ込めはレーンではなくモードです**:
+`--no-sandbox` 下では全 `shell_exec` があなたの承認事項 — モデル層は決して
+承認せず、セッションの `a` も `never` ポリシーも持ち上げません — で、監査記録は
+`lane=unconfined:<宣言>` を持ちます。
 
 **後続セッションが信頼するものへの書込は、モデルではなくあなたに確認します**
 （ADR-0072 §1.4、ADR-0073 からはカーネルが強制）。file ツールによる `.git/`

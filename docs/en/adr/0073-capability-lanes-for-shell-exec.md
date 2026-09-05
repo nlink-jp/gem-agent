@@ -60,17 +60,19 @@ decision:
 
 | lane | profile | who decides | when |
 |---|---|---|---|
-| **read** | no project or work-directory writes (scratch and the device sinks stay); `(deny network*)`; `(deny user-preference-write)`, `(deny sysctl-write)`, `(deny signal)` except self and children, `(deny lsopen)`, `(deny mach-lookup)` for the pasteboard and keychain services, `(deny process-exec)` for the IPC-capable programs (`sandbox.DefaultDenyExec`: osascript, open, launchctl, defaults, security, pbcopy, shortcuts, automator, scutil, networksetup, systemsetup; `[sandbox].read_lane_deny_exec` adds more); `(deny file-read*)` on the credential list | nobody — the cage is the decision; the call is **non-mutating by construction**, the standing of `read_file`, and runs without a prompt in every mode | the default lane |
+| **read** | may write exactly its **session-private scratch directory** (`<work dir>/scratch`, where `TMPDIR` points) and the device sinks — never the project, the work directory, `/private/tmp` or the user's `TMPDIR`; denies the side-effect **capabilities** wholesale: `network*`, `mach-lookup`, `mach-register`, `appleevent-send`, `ipc-posix*`, `iokit-open`, `system-socket`, `nvram*`, `job-creation`, `distributed-notification-post`, `user-preference-write`, `lsopen`, `signal` except self and children; `(deny file-read*)` on the credential list; and, as defence in depth only, `(deny process-exec)` for the IPC-capable programs (`sandbox.DefaultDenyExec`, extended by `[sandbox].read_lane_deny_exec`) | nobody — the cage is the decision; the call changes nothing outside its private scratch, the standing of `read_file`, and runs without a prompt in every mode **where `VerifyReadLane` passed at startup** (§5) | the default lane |
 | **write** | the ADR-0001 profile (project, work directory, scratch) **plus** `(deny file-write*)` on the persistent files (`.git/hooks`, `.git/info`, `.git/config`, `AGENTS.md`, `CLAUDE.md`, `AGENT.md`, `GEMINI.md`, `.mcp.json`, `.gem-agent.toml`, `.claude/`, at any depth under the project); credential reads stay denied | the ADR-0004 ladder as today (Block floor → model tier → human), or the human in the default mode | the model declares `access: "write"` |
 | **operator** | the ADR-0001 profile unchanged: persistent files writable, credentials readable | the operator only — an OperatorOnly floor the model tier, a session `a` and a `--allow` grant never lift | the model declares `access: "operator"`; the `!command` route, which the operator typed, runs here |
 
-The tool gains one argument, `access` (`read` when missing). It is **not
-a gate input**: declaring `read` can only tighten the cage, declaring
-`write` or `operator` can only add scrutiny. A false declaration gains
-nothing — the property ADR-0047 demands of a declaration (shown, never
-trusted). A command the read lane refused comes back with its exit status
-and one line naming the wider lane to ask for; a missing declaration is
-not punished, it runs in the tightest cage.
+The tool gains one argument, `access` (`read` when missing). It is an
+**untrusted request for capability, and the request alone grants
+nothing**: declaring `read` selects the tightest cage, declaring `write`
+or `operator` routes the call to the gate that may grant the wider one.
+A false declaration gains nothing — the property ADR-0047 demands of a
+declaration (shown, never trusted). A command the read lane refused
+comes back with its exit status and one line naming the wider lane to
+ask for; a missing declaration is not punished, it runs in the tightest
+cage.
 
 The read lane running unasked in the default mode is a loosening of the
 ADR-0001 contract as written ("every `shell_exec` prompts") and was the
@@ -126,10 +128,77 @@ tools refuse is impossible by construction, not by review.
   `Agent.decide`, whose `Decision` (mutating or not, verdict, floor) is what
   `gated`, the allowlist floor and the auto ladder read.
 
+### 5. Design review and revisions (2026-09-05)
+
+An independent reviewer read the draft and set four conditions; each
+changed the design before acceptance.
+
+**Three layers, three jobs.** The draft's "a missed pattern costs a
+prompt, never a cage" was too broad, and the roles are now explicit:
+
+| layer | decides |
+|---|---|
+| the sandbox | the upper bound of capability and reach — what the command can touch at all |
+| the model tier | consistency with the request, meaning, side effects, uncertainty — within that bound |
+| the operator-only policy | what no model approval lifts: the Block floor (`rm -rf`, `sudo`, `git push`, credential paths…) in every lane, the operator lane, unconfined execution |
+
+A write-lane command may write the project; that does not make a
+recursive force-delete inside the project the model's to approve. The
+floor is the third layer, and it stays.
+
+**Capabilities, not programs.** The draft made a program list part of
+the read lane's safety argument. It is not: the read lane denies the
+capability families the kernel names (`mach-lookup`, `mach-register`,
+`appleevent-send`, `ipc-posix*`, `iokit-open`, `system-socket`, `nvram*`,
+`job-creation`, `distributed-notification-post`, `user-preference-write`,
+`lsopen`, `network*`, `signal`, `file-write*`), and the program list is
+defence in depth that makes a refusal legible. The first probe of Apple
+Events had used `get name` of an application, which sends no event; a
+real event (`tell application "System Events" to get name of first
+process`) *is* stopped by `(deny appleevent-send)`. `sysctl-write` was
+left out because `uname` and node's allocator use it; `ps` runs under
+no Seatbelt profile at all, which predates this ADR.
+
+**What "non-mutating" means.** A read-lane command may change its
+session-private scratch directory and the device sinks, nothing else.
+The shared `/private/tmp` and the user's `TMPDIR` are denied; `TMPDIR`
+is pointed at the private directory for read-lane commands.
+
+**Unconfined is a mode, not a lane.** With `--no-sandbox`, or when
+`sandbox-exec` cannot apply a profile, an approval buys none of the
+lane's constraints. So: a sandbox that is configured on but cannot apply
+here is a startup error naming `--no-sandbox`, never a silent fallback;
+under `--no-sandbox` every `shell_exec` is OperatorOnly — the model tier
+never approves it, a session `a` and a `never` policy never lift it —
+and the audit record carries `lane=unconfined:<declared>` so the
+approved lane and the applied profile are recorded together.
+
+**The read lane is verified, not assumed.** At startup (and again when
+`/clear` rotates the work directory) `VerifyReadLane` runs the real
+profile under `sandbox-exec` against probes that must fail — a project
+write, a socket connect, a signal to another process, a write into
+`/private/tmp`, launching a denied program — and one that must succeed.
+The unasked read lane exists only where every probe behaved; otherwise
+every `shell_exec` asks and the banner says why.
+
+**Behaviour tests beside the AST tests.** The architecture tests pin
+where the primitives are called; they do not prove the call is right.
+So: `TestReadLaneCorpus` runs the old text-tier corpus — redirects,
+`tee`, `sed -i`, `find -exec`, `xargs`, `env`, `awk system()`, `$(…)`,
+python and perl file writes, `dd`, `install`, `mv`, `cp`, `truncate`,
+`chmod`, `ln`, `git init`, `/dev/tcp`, a python socket, a
+CoreFoundation preference write, `kill` — against the read lane and
+asserts the project file is byte-for-byte untouched; `TestVerifyReadLane`
+refuses an allow-everything profile; the agent's
+`TestDecisionBoundaryIsModeIndependent` checks lane × command × policy
+give one answer; `TestUnconfinedShellIsTheOperatorsAlone` pins the mode.
+
 ## Consequences
 
-- Class A ends as a class. A new shell spelling cannot open a hole; the
-  worst it can do is make the Block floor miss a prompt.
+- Class A cannot reopen through a spelling: a new way to write the shell
+  text changes nothing about what the kernel denies. What remains
+  reviewable is the capability list itself and the scratch semantics —
+  a short, documented set, which is the point.
 - Two holes the regex tier was covering close for real: `defaults write`
   (not a file write) and every IPC-capable program reached by a spelling
   the regex did not list.
@@ -156,4 +225,10 @@ tools refuse is impossible by construction, not by review.
   scratch list was the pattern; the persistent and credential lists follow
   it.
 - **Close a class with a test that names the class**, not with the fourth
-  fix of an instance. `internal/archtest` is that test for B, C and E.
+  fix of an instance. `internal/archtest` is that test for B, C and E —
+  and a static test needs a behaviour test beside it (`TestReadLaneCorpus`).
+- **Probe the real capability, not a look-alike.** `get name` of an
+  application sends no Apple Event; the first probe concluded the wrong
+  rule from it. A probe input must exercise the path it claims to test.
+- **A claim about the kernel is checked at startup**, on the machine it
+  runs on. `VerifyReadLane` is what lets "runs unasked" be said at all.

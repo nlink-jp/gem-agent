@@ -125,7 +125,7 @@ lane, whatever the command says:
 
 | lane | the kernel denies | who decides |
 |---|---|---|
-| `read` | writes outside the scratch locations, the network, preference writes (`defaults`), `sysctl` writes, signals to anything but the command's own children, `open`, and launching the IPC-capable programs (`osascript`, `open`, `launchctl`, `defaults`, `security`, `pbcopy`, `shortcuts`, `automator`, `scutil`, `networksetup`, `systemsetup`, plus `[sandbox].read_lane_deny_exec`); reading credential files | nobody — a read-lane command is non-mutating by construction and **runs without a prompt in every mode**, like `read_file` |
+| `read` | every write except into the session's private scratch directory (`TMPDIR` points there) and the device sinks — the project, the work directory and `/private/tmp` included; the network; Mach and POSIX IPC, Apple Events, launch services (`open`), preference writes (`defaults`), NVRAM, device access, signals to anything but the command's own children; launching the IPC-capable programs (`osascript`, `open`, `launchctl`, `defaults`, `security`, `pbcopy`, `shortcuts`, `automator`, `scutil`, `networksetup`, `systemsetup`, plus `[sandbox].read_lane_deny_exec`) as a second line; reading credential files | nobody — a read-lane command changes nothing but its own scratch and **runs without a prompt in every mode**, like `read_file` — on a machine where the lane's denials were verified at startup (below) |
 | `write` | writes to the files later sessions trust (below); reading credential files | the ladder above in auto mode, you in the default mode |
 | `operator` | nothing beyond the ADR-0001 profile: the persistent files are writable, credentials readable | **you, always** — the model tier, a session `a` and `--allow` never answer it |
 
@@ -136,9 +136,24 @@ for; the model re-issues it with `access: "write"`, which is where the
 approval happens. The *blocked* patterns above still apply in every
 lane — a `sudo` in the read lane asks even though the cage would refuse
 it — and they are the only text rule left: a spelling they miss costs a
-prompt the kernel catches anyway, never a hole. With the sandbox off
-(`--no-sandbox`, or a nested sandbox) there is no read lane, and every
-`shell_exec` asks.
+prompt the kernel catches anyway, never a hole. The three layers have
+three jobs: the sandbox bounds what a command can reach, the model tier
+judges meaning and consistency inside that bound, and the *blocked*
+patterns, the `operator` lane and unconfined execution are the
+operator's alone whatever the model thinks.
+
+**The read lane is verified, not assumed.** At startup gem-agent runs
+the read-lane profile under `sandbox-exec` against probes that must fail
+(a project write, a socket connect, a signal to another process, a
+`/private/tmp` write, a denied program) and one that must succeed; only
+where every probe behaves does a read-lane command run unasked.
+Otherwise every `shell_exec` asks and the banner says why. A sandbox
+that is configured on but cannot apply here is a startup error, not a
+silent fallback: pass `--no-sandbox` to accept unconfined execution
+explicitly. **Unconfined is a mode, not a lane**: under `--no-sandbox`
+every `shell_exec` is yours to approve — the model tier never approves
+it, and neither a session `a` nor a `never` policy lifts it — and the
+audit record carries `lane=unconfined:<declared>`.
 
 **Writes that later sessions trust ask you, not the model** (ADR-0072
 §1.4, enforced by the kernel since ADR-0073). A write under `.git/`

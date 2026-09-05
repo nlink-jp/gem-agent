@@ -366,9 +366,20 @@ func runREPL(cmd *cobra.Command, args []string) error {
 
 	// --- shell execution strategy (ADR-0001 defense-in-depth) ---
 	sandboxOn := cfg.Sandbox.Enabled && !flagNoSandbox
-	execFn, err := buildExecFn(sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec)
+	if sandboxOn {
+		// Fail closed (ADR-0073 §5): a sandbox that cannot apply here
+		// (a nested Seatbelt) must not degrade silently into unconfined
+		// execution — the operator says --no-sandbox, or nothing runs.
+		if err := sandbox.Available(); err != nil {
+			return fmt.Errorf("the sandbox cannot be applied here (%v); every shell command would run unconfined — pass --no-sandbox to accept that explicitly", err)
+		}
+	}
+	execFn, enforcement, laneNotes, err := buildExecFn(sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec)
 	if err != nil {
 		return err
+	}
+	for _, n := range laneNotes {
+		fmt.Fprintf(stderr, "warning: %s\n", n)
 	}
 	// The strategy is swapped when /clear rotates the work directory
 	// (ADR-0071 §2): the sandbox profile names the directory, so a
@@ -379,10 +390,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	// The lanes (ADR-0073): with the sandbox on, a read-lane command is
-	// kernel-confined and runs without approval; with it off there is
-	// no read lane and every shell call is gated.
-	registry.SetLaneExec(shellExec.run, sandboxOn)
+	// The lanes (ADR-0073): a read-lane command runs without approval
+	// only where the read lane's denials were verified on this machine;
+	// with the sandbox off every shell call is the operator's alone.
+	registry.SetLaneExec(shellExec.run, enforcement)
 	if workDir != "" {
 		// The file tools get the work directory as a second root, so a
 		// result the intake saved is one read_file can read back. Without
@@ -1150,7 +1161,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		go resolveWindow()
 		if !sandboxOn {
-			fmt.Fprintln(stderr, "sandbox: DISABLED — shell commands run unconfined, and every shell_exec asks (no read lane)")
+			fmt.Fprintln(stderr, "sandbox: DISABLED — shell commands run unconfined; every shell_exec needs your approval, and auto mode, a session allowlist and policy do not lift that")
 		}
 		// Piped stdin becomes a nonce-wrapped data attachment
 		// (ADR-0055) — never prompt text: the -p string alone is the
@@ -1198,6 +1209,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 
 	// --- banner ---
 	sandboxLine := "sandbox: enabled (shell lanes: read runs unasked, write and operator ask)"
+	if sandboxOn && !registry.ReadLane() {
+		sandboxLine = "sandbox: enabled (read lane unverified on this machine — every shell_exec asks)"
+	}
 	if !sandboxOn {
 		sandboxLine = "sandbox: DISABLED — shell commands run unconfined"
 	}
@@ -1715,17 +1729,20 @@ func runTurnWith(parent context.Context, ladder *interruptLadder, fn func(ctx co
 	return err
 }
 
-// buildExecFn returns the shell execution strategy: sandbox-exec
-// wrapped in the profile of the declared lane (ADR-0073) when the
-// sandbox is on, direct bash — one lane, every call gated — otherwise.
-func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string) (tools.LaneExecFunc, error) {
+// buildExecFn returns the shell execution strategy and what could be
+// established about it (ADR-0073 §5): with the sandbox on, one profile
+// per lane and a read lane enabled only when VerifyReadLane passed on
+// this machine (notes say why when it did not); with the sandbox off,
+// direct bash and Confined=false — the unconfined mode the agent gates
+// as the operator's alone.
+func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
 	if !sandboxOn {
 		return func(ctx context.Context, command string, _ sandbox.Lane) *exec.Cmd {
 			return exec.CommandContext(ctx, shell, "-c", command)
-		}, nil
+		}, sandbox.Enforcement{}, nil, nil
 	}
 	if _, err := os.Stat(sandbox.Executable); err != nil {
-		return nil, fmt.Errorf("%s not found (gem-agent is macOS-only); use --no-sandbox to bypass at your own risk", sandbox.Executable)
+		return nil, sandbox.Enforcement{}, nil, fmt.Errorf("%s not found (gem-agent is macOS-only); use --no-sandbox to bypass at your own risk", sandbox.Executable)
 	}
 	spec := sandbox.Spec{ProjectDir: projectDir, DenyExec: append(append([]string{}, sandbox.DefaultDenyExec...), denyExec...)}
 	if workDir != "" {
@@ -1738,18 +1755,61 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string) 
 	if home, err := os.UserHomeDir(); err == nil {
 		spec.Home = home
 	}
+	var notes []string
+	// The read lane's private scratch: under the work directory when
+	// there is one, a fresh temporary directory otherwise. TMPDIR points
+	// there for read-lane commands, so what such a command may change
+	// is exactly this directory and the device sinks.
+	if scratch, err := readScratchDir(spec.WorkDir); err != nil {
+		notes = append(notes, fmt.Sprintf("read lane disabled: no private scratch directory (%v); every shell_exec asks", err))
+	} else {
+		spec.ReadScratch = scratch
+	}
 	profiles := map[sandbox.Lane]string{}
 	for _, lane := range []sandbox.Lane{sandbox.LaneRead, sandbox.LaneWrite, sandbox.LaneOperator} {
 		p, err := sandbox.LaneProfile(lane, spec)
 		if err != nil {
-			return nil, err
+			return nil, sandbox.Enforcement{}, nil, err
 		}
 		profiles[lane] = p
 	}
+	enf := sandbox.Enforcement{Confined: true, ReadLane: spec.ReadScratch != ""}
+	if enf.ReadLane {
+		// The claim is checked, not assumed: a read-lane call runs
+		// unasked only where the kernel demonstrably denies what the
+		// lane says it denies.
+		if err := sandbox.VerifyReadLane(profiles[sandbox.LaneRead], spec); err != nil {
+			enf.ReadLane = false
+			notes = append(notes, fmt.Sprintf("read lane disabled: %v; every shell_exec asks", err))
+		}
+	}
+	scratch := spec.ReadScratch
 	return func(ctx context.Context, command string, lane sandbox.Lane) *exec.Cmd {
 		argv := sandbox.Wrap(profiles[lane], shell, command)
-		return exec.CommandContext(ctx, argv[0], argv[1:]...)
-	}, nil
+		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		if lane == sandbox.LaneRead && scratch != "" {
+			cmd.Env = append(os.Environ(), "TMPDIR="+scratch, "TMP="+scratch, "TEMP="+scratch)
+		}
+		return cmd
+	}, enf, notes, nil
+}
+
+// readScratchDir creates the read lane's private scratch directory:
+// <workDir>/scratch, or a fresh temporary directory when the session
+// has no work directory.
+func readScratchDir(workDir string) (string, error) {
+	if workDir != "" {
+		dir := filepath.Join(workDir, "scratch")
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return "", err
+		}
+		return sandbox.ResolveWriteDir(dir)
+	}
+	dir, err := os.MkdirTemp("", "gem-agent-read-scratch-")
+	if err != nil {
+		return "", err
+	}
+	return sandbox.ResolveWriteDir(dir)
 }
 
 // compactNow runs a manual /compact and renders the outcome. "Nothing
@@ -2045,10 +2105,12 @@ func rotateWorkDir(registry *tools.Registry, shellExec *liveExec, sandboxOn bool
 	if err := registry.UseWorkDir(dir); err != nil {
 		notes = append(notes, fmt.Sprintf("file tools keep the previous work directory: %v", err))
 	}
-	if fn, err := buildExecFn(sandboxOn, projectDir, dir, denyExec); err != nil {
+	if fn, enf, laneNotes, err := buildExecFn(sandboxOn, projectDir, dir, denyExec); err != nil {
 		notes = append(notes, fmt.Sprintf("shell commands keep the previous sandbox profile: %v", err))
 	} else {
 		shellExec.set(fn)
+		registry.SetLaneExec(shellExec.run, enf)
+		notes = append(notes, laneNotes...)
 	}
 	if setSystem != nil {
 		setSystem()

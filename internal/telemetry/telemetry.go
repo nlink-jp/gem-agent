@@ -300,14 +300,22 @@ func (s *Sink) TurnEnd(rounds int, dur time.Duration, errClass string) {
 // (ADR-0047), recorded so the log can answer "why did it try that?"
 // long after the thought stream that carried the motivation is gone.
 // Empty when the model omitted it — the absence is part of the record.
-func (s *Sink) ToolCall(name string, mutating bool, detail, purpose string, dur time.Duration, outcome string) {
-	s.emit("tool.call",
+func (s *Sink) ToolCall(name string, mutating bool, detail, purpose string, dur time.Duration, outcome, lane string) {
+	attrs := []attribute.KeyValue{
 		attribute.String("tool", name),
 		attribute.Bool("mutating", mutating),
 		attribute.String("detail", clip(detail, 300)),
 		attribute.String("purpose", clip(purpose, 300)),
 		attribute.Int64("duration_ms", dur.Milliseconds()),
-		attribute.String("outcome", outcome))
+		attribute.String("outcome", outcome),
+	}
+	if lane != "" {
+		// The lane the shell command ran in and whether the sandbox
+		// applied it (ADR-0073 §5: the approved lane and the applied
+		// profile are recorded together — "unconfined:write" says both).
+		attrs = append(attrs, attribute.String("lane", lane))
+	}
+	s.emit("tool.call", attrs...)
 }
 
 // ToolLateReturn closes the audit gap behind an abandoned call

@@ -97,12 +97,12 @@ func TestSandboxExecEnforcement(t *testing.T) {
 // lane must carry; the live test below checks that Seatbelt enforces
 // them.
 func TestLaneProfiles(t *testing.T) {
-	spec := Spec{ProjectDir: "/private/tmp/proj", WorkDir: "/private/tmp/work", Home: "/Users/op", DenyExec: []string{"osascript"}}
+	spec := Spec{ProjectDir: "/private/tmp/proj", WorkDir: "/private/tmp/work", Home: "/Users/op", DenyExec: []string{"osascript"}, ReadScratch: "/private/tmp/work/scratch"}
 	read, err := LaneProfile(LaneRead, spec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"(deny network*)", "(deny user-preference-write)", "(deny signal)", "(deny process-exec", `/osascript"`, `(subpath "/Users/op/.ssh")`, `\.env`} {
+	for _, want := range []string{"(deny network*)", "(deny mach-lookup)", "(deny appleevent-send)", "(deny ipc-posix*)", "(deny iokit-open)", "(deny user-preference-write)", "(deny lsopen)", "(deny signal)", "(deny process-exec", `/osascript"`, `(subpath "/Users/op/.ssh")`, `\.env`, "(allow file-write*\n    (subpath \"/private/tmp/work/scratch\")"} {
 		if !strings.Contains(read, want) {
 			t.Errorf("read lane lacks %q:\n%s", want, read)
 		}
@@ -112,6 +112,9 @@ func TestLaneProfiles(t *testing.T) {
 	}
 	if strings.Contains(read, "(allow file-write*\n    (subpath \"/private/tmp/proj\")") {
 		t.Error("read lane must not allow project writes")
+	}
+	if strings.Contains(read, `(subpath "/private/tmp")`) || strings.Contains(read, "(deny sysctl-write)") {
+		t.Error("read lane must not allow the shared scratch roots, and must not deny sysctl-write (uname needs it)")
 	}
 	write, err := LaneProfile(LaneWrite, spec)
 	if err != nil {
@@ -200,14 +203,19 @@ func TestLaneEnforcement(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	spec := Spec{ProjectDir: proj, Home: fakeHome, DenyExec: DefaultDenyExec}
+	scratch, _ := ResolveWriteDir(t.TempDir())
+	spec := Spec{ProjectDir: proj, Home: fakeHome, DenyExec: DefaultDenyExec, ReadScratch: scratch}
 	run := func(lane Lane, command string) error {
 		profile, err := LaneProfile(lane, spec)
 		if err != nil {
 			t.Fatal(err)
 		}
 		argv := Wrap(profile, "/bin/bash", command)
-		return exec.CommandContext(ctx, argv[0], argv[1:]...).Run()
+		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		if lane == LaneRead {
+			cmd.Env = append(os.Environ(), "TMPDIR="+scratch)
+		}
+		return cmd.Run()
 	}
 	agents := filepath.Join(proj, "AGENTS.md")
 	cases := []struct {
@@ -219,6 +227,8 @@ func TestLaneEnforcement(t *testing.T) {
 		{LaneRead, "cat " + agents, true, "read lane reads the project"},
 		{LaneRead, "echo x > " + filepath.Join(proj, "new.txt"), false, "read lane denies a project write"},
 		{LaneRead, "echo x > /dev/null", true, "read lane allows the device sink"},
+		{LaneRead, `echo x > "$TMPDIR/probe" && rm "$TMPDIR/probe"`, true, "read lane allows its private scratch"},
+		{LaneRead, "echo x > /private/tmp/gem-agent-lane-probe-$$", false, "read lane denies the shared /private/tmp"},
 		{LaneRead, "cat " + filepath.Join(fakeHome, ".ssh/id_rsa"), false, "read lane denies a credential read"},
 		{LaneRead, "cat " + filepath.Join(proj, ".env"), false, "read lane denies .env"},
 		{LaneRead, "cat " + filepath.Join(proj, ".env.example"), true, "read lane allows the .env template"},
@@ -253,7 +263,7 @@ func TestLaneEnforcement(t *testing.T) {
 	if !strings.HasPrefix(tmpProj, "/private/") && !strings.HasPrefix(tmpProj, os.TempDir()) {
 		t.Skip("TempDir is not under a scratch root")
 	}
-	tmpSpec := Spec{ProjectDir: tmpProj, Home: fakeHome}
+	tmpSpec := Spec{ProjectDir: tmpProj, Home: fakeHome, ReadScratch: scratch}
 	profile, err := LaneProfile(LaneRead, tmpSpec)
 	if err != nil {
 		t.Fatal(err)
@@ -262,8 +272,136 @@ func TestLaneEnforcement(t *testing.T) {
 	if err := exec.CommandContext(ctx, argv[0], argv[1:]...).Run(); err == nil {
 		t.Error("read lane wrote into a project that lives under a scratch root")
 	}
-	argv = Wrap(profile, "/bin/bash", "echo x > "+filepath.Join(os.TempDir(), "gem-agent-lane-probe-"+filepath.Base(tmpProj))+" && rm "+filepath.Join(os.TempDir(), "gem-agent-lane-probe-"+filepath.Base(tmpProj)))
-	if err := exec.CommandContext(ctx, argv[0], argv[1:]...).Run(); err != nil {
-		t.Errorf("read lane denied a scratch write beside the project: %v", err)
+}
+
+// TestReadLaneCorpus is the old shell corpus moved from the text tier
+// to the kernel (design review of ADR-0073): every spelling that once
+// needed a regex to catch — redirects, tee, sed -i, find -exec, xargs,
+// env, awk system(), command substitution, python, dd, install, mv,
+// truncate, chmod — is tried against the read lane, and the project
+// file must be untouched afterwards. The capability, not the command
+// name, is what the lane denies.
+func TestReadLaneCorpus(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-only")
+	}
+	if err := Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory")
+	}
+	proj, err := os.MkdirTemp(home, ".gem-agent-corpus-test-")
+	if err != nil {
+		t.Skip("cannot create a directory under home")
+	}
+	defer func() { _ = os.RemoveAll(proj) }()
+	proj, _ = ResolveWriteDir(proj)
+	target := filepath.Join(proj, "f.txt")
+	if err := os.WriteFile(target, []byte("keep\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scratch, _ := ResolveWriteDir(t.TempDir())
+	profile, err := LaneProfile(LaneRead, Spec{ProjectDir: proj, Home: filepath.Join(proj, "nohome"), ReadScratch: scratch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	q := shellQuote(target)
+	corpus := []string{
+		"echo x > " + q,
+		"echo x >> " + q,
+		"echo x | tee " + q,
+		"sed -i '' s/keep/gone/ " + q,
+		"find " + shellQuote(proj) + " -name f.txt -exec rm {} \\;",
+		"find " + shellQuote(proj) + " -name f.txt -delete",
+		"echo " + q + " | xargs rm",
+		"env rm " + q,
+		"awk 'BEGIN{system(\"rm " + target + "\")}'",
+		"$(echo rm) " + q,
+		"python3 -c 'open(" + shellQuote(target) + ",\"w\").write(\"x\")'",
+		"perl -e 'open(F,\">\",\"" + target + "\"); print F 1'",
+		"dd if=/dev/zero of=" + q + " bs=1 count=1",
+		"install -m 600 /dev/null " + q,
+		"mv " + q + " " + shellQuote(target+".moved"),
+		"cp /etc/hosts " + q,
+		"truncate -s 0 " + q,
+		"chmod 000 " + q,
+		"ln -sf /etc/hosts " + q,
+		"touch " + shellQuote(filepath.Join(proj, "new.txt")),
+		"mkdir " + shellQuote(filepath.Join(proj, "newdir")),
+		"cd " + shellQuote(proj) + " && git init -q .",
+	}
+	for _, command := range corpus {
+		argv := Wrap(profile, "/bin/bash", command)
+		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		cmd.Env = append(os.Environ(), "TMPDIR="+scratch)
+		_ = cmd.Run() // failing is the point; the assertion is on the file
+		got, err := os.ReadFile(target)
+		if err != nil || string(got) != "keep\n" {
+			t.Errorf("%q changed the project file: %q %v", command, got, err)
+			_ = os.WriteFile(target, []byte("keep\n"), 0o600)
+		}
+		if st, err := os.Stat(target); err == nil && st.Mode().Perm() != 0o600 {
+			t.Errorf("%q changed the mode: %v", command, st.Mode())
+			_ = os.Chmod(target, 0o600)
+		}
+	}
+	entries, _ := os.ReadDir(proj)
+	if len(entries) != 1 {
+		t.Errorf("the read lane created entries in the project: %v", entries)
+	}
+	// Other implementation paths for the network and preferences.
+	for _, command := range []string{
+		"exec 3<>/dev/tcp/127.0.0.1/9",
+		"python3 -c 'import socket; s=socket.socket(); s.settimeout(2); s.connect((\"127.0.0.1\",9))'",
+		"python3 -c 'import ctypes,ctypes.util; cf=ctypes.CDLL(ctypes.util.find_library(\"CoreFoundation\")); cf.CFStringCreateWithCString.restype=ctypes.c_void_p; s=lambda x: ctypes.c_void_p(cf.CFStringCreateWithCString(None,x.encode(),0x08000100)); cf.CFPreferencesSetAppValue(s(\"k\"),s(\"v\"),s(\"com.nlink.gem-agent.lanetest\")); import sys; sys.exit(0 if cf.CFPreferencesAppSynchronize(s(\"com.nlink.gem-agent.lanetest\")) else 1)'",
+		"kill -0 1",
+	} {
+		argv := Wrap(profile, "/bin/bash", command)
+		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		cmd.Env = append(os.Environ(), "TMPDIR="+scratch)
+		if err := cmd.Run(); err == nil {
+			t.Errorf("%q succeeded in the read lane", command)
+		}
+	}
+}
+
+// TestVerifyReadLane: the real read profile passes; a profile that
+// allows everything is refused, so an environment where the kernel
+// does not deny what the lane claims never gets an unasked read lane.
+func TestVerifyReadLane(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-only")
+	}
+	if err := Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory")
+	}
+	proj, err := os.MkdirTemp(home, ".gem-agent-verify-test-")
+	if err != nil {
+		t.Skip("cannot create a directory under home")
+	}
+	defer func() { _ = os.RemoveAll(proj) }()
+	proj, _ = ResolveWriteDir(proj)
+	scratch, _ := ResolveWriteDir(t.TempDir())
+	spec := Spec{ProjectDir: proj, Home: filepath.Join(proj, "nohome"), DenyExec: DefaultDenyExec, ReadScratch: scratch}
+	profile, err := LaneProfile(LaneRead, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyReadLane(profile, spec); err != nil {
+		t.Errorf("the real read lane failed verification: %v", err)
+	}
+	if err := VerifyReadLane("(version 1)(allow default)", spec); err == nil {
+		t.Error("an allow-everything profile passed verification")
+	}
+	if entries, _ := os.ReadDir(proj); len(entries) != 0 {
+		t.Errorf("verification left files in the project: %v", entries)
 	}
 }

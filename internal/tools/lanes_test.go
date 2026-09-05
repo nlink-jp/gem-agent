@@ -35,7 +35,7 @@ func TestShellLaneDecidesMutation(t *testing.T) {
 	r.SetLaneExec(func(ctx context.Context, c string, lane sandbox.Lane) *exec.Cmd {
 		lanes = append(lanes, lane)
 		return exec.CommandContext(ctx, "/bin/bash", "-c", c)
-	}, true)
+	}, sandbox.Enforcement{Confined: true, ReadLane: true})
 	if tool.MutatesFor(read) || tool.MutatesFor(bare) {
 		t.Error("a read-lane call with a kernel-enforced read lane must not mutate")
 	}
@@ -75,7 +75,7 @@ func TestReadLaneDenialIsExplained(t *testing.T) {
 	}
 	r.SetLaneExec(func(ctx context.Context, c string, lane sandbox.Lane) *exec.Cmd {
 		return exec.CommandContext(ctx, "/bin/bash", "-c", c)
-	}, true)
+	}, sandbox.Enforcement{Confined: true, ReadLane: true})
 	tool, _ := r.Get(ShellExecName)
 	out, err := tool.Run(context.Background(), map[string]any{"command": "echo 'x: Operation not permitted' >&2; exit 1"})
 	if err != nil {

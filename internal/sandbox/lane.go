@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -67,16 +68,22 @@ type Spec struct {
 	Home string
 	// DenyExec names programs the read lane may not launch, by name or
 	// absolute path (DefaultDenyExec plus the operator's additions).
+	// Defence in depth behind the capability denials, not their basis.
 	DenyExec []string
+	// ReadScratch is the session-private directory the read lane may
+	// write; the runner points TMPDIR at it. Empty means the read lane
+	// may write nothing but the device sinks.
+	ReadScratch string
 }
 
 // DefaultDenyExec are the IPC-capable programs the read lane refuses to
-// launch: each reaches a side effect through a Mach service rather
-// than a file write or a socket, so no file or network rule sees it —
-// and on this macOS not even an appleevent-send deny stops osascript,
-// while a process-exec deny on the binary does (ADR-0073 probe).
-// The kernel matches the real binary at exec, so `/usr/bin/osascript`,
-// `\osascript` and `OSASCRIPT` are one program here.
+// launch — defence in depth behind readLaneDenies, which already deny
+// the Mach, Apple Event and launch-services capabilities these programs
+// use. The list is not what makes the lane safe (design review of
+// ADR-0073: a program list is a regex by another name); it makes a
+// refusal legible (`Operation not permitted` at exec, not a crash
+// inside the program). The kernel matches the real binary at exec, so
+// `/usr/bin/osascript`, `\osascript` and `OSASCRIPT` are one program.
 var DefaultDenyExec = []string{
 	"osascript", "open", "launchctl", "defaults", "security", "pbcopy",
 	"shortcuts", "automator", "scutil", "networksetup", "systemsetup",
@@ -193,11 +200,33 @@ func envTemplate(base string) bool {
 	return false
 }
 
-// readLaneServices are the Mach services whose lookup the read lane
-// denies: the pasteboard and the keychain daemons — side effects that
-// travel over IPC, not files.
-var readLaneServices = []string{
-	"com.apple.pasteboard.1", "com.apple.SecurityServer", "com.apple.securityd.xpc",
+// readLaneDenies are the capability families the read lane denies
+// wholesale (ADR-0073 §1, revised after design review): the basis of
+// "non-mutating" is the kernel's list of side-effect operations, not a
+// list of programs. Each entry is an SBPL operation; together with
+// file-write* (below) and network* they cover files, sockets, Mach and
+// POSIX IPC, Apple Events, devices, launch services, preferences, NVRAM
+// and job control. Probed on macOS 26: git, go, python, node, swift,
+// perl, ruby, make, tar, xcodebuild -version and codesign still run
+// under all of them; `ps` does not run under any Seatbelt profile at
+// all (pre-existing since ADR-0001), and `sysctl-write` was left out
+// because uname and node's allocator use it.
+var readLaneDenies = []string{
+	"network*", "mach-lookup", "mach-register", "appleevent-send", "ipc-posix*",
+	"iokit-open", "system-socket", "nvram*", "job-creation",
+	"distributed-notification-post", "user-preference-write", "lsopen",
+}
+
+// Enforcement is what the runtime could establish about the sandbox
+// (ADR-0073 §5): Confined means sandbox-exec applies the lane profiles
+// to every shell command; ReadLane means the read lane's denials were
+// verified on this machine at startup (VerifyReadLane), so a read-lane
+// call may run unasked. Confined && !ReadLane gates every call as a
+// write-lane call; !Confined is the unconfined mode — every call is
+// the operator's alone.
+type Enforcement struct {
+	Confined bool
+	ReadLane bool
 }
 
 // resolveDenyExec turns program names into the real binary paths the
@@ -248,19 +277,22 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 	if spec.ProjectDir == "" {
 		return "", fmt.Errorf("sandbox profile needs a project directory")
 	}
-	writeDirs := []string{}
-	if lane != LaneRead {
+	var writeDirs []string
+	if lane == LaneRead {
+		// What a read-lane command may change: its session-private
+		// scratch directory (TMPDIR is pointed there) and the device
+		// sinks — never the shared /private/tmp or the user's TMPDIR,
+		// which other processes read (design review: "non-mutating"
+		// must say what change is permitted).
+		if spec.ReadScratch != "" {
+			writeDirs = append(writeDirs, spec.ReadScratch)
+		}
+	} else {
 		writeDirs = append(writeDirs, spec.ProjectDir)
 		if spec.WorkDir != "" {
 			writeDirs = append(writeDirs, spec.WorkDir)
 		}
-	}
-	writeDirs = append(writeDirs, ScratchDirs()...)
-	if len(writeDirs) == 0 {
-		// A machine with no scratch location at all: the read lane
-		// still needs one allow rule to be well-formed. /dev/null is
-		// the literal; the list stays empty.
-		writeDirs = nil
+		writeDirs = append(writeDirs, ScratchDirs()...)
 	}
 	var b strings.Builder
 	base, err := profileBody(writeDirs, ScratchFiles())
@@ -290,27 +322,20 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 		b.WriteString(")\n")
 		return b.String(), nil
 	}
-	// The read lane's side-effect denials. The project and the work
-	// directory are denied by name after the scratch allow: a project
-	// checked out under /private/tmp sits inside a scratch root, and
-	// the read lane must not write it for that reason (live E2E of
-	// ADR-0073 — the first probe project was under TMPDIR).
+	// The read lane's side-effect denials, by capability. The project
+	// and the work directory are denied by name after the scratch allow
+	// too: a project checked out under /private/tmp sits inside a
+	// scratch root (live E2E of ADR-0073).
 	b.WriteString("(deny file-write*\n")
 	fmt.Fprintf(&b, "    (subpath %s)\n", sbplString(filepath.Clean(spec.ProjectDir)))
-	if spec.WorkDir != "" {
+	if spec.WorkDir != "" && (spec.ReadScratch == "" || !within(spec.WorkDir, spec.ReadScratch)) {
 		fmt.Fprintf(&b, "    (subpath %s)\n", sbplString(filepath.Clean(spec.WorkDir)))
 	}
 	b.WriteString(")\n")
-	b.WriteString("(deny network*)\n")
-	b.WriteString("(deny user-preference-write)\n")
-	b.WriteString("(deny sysctl-write)\n")
-	b.WriteString("(deny signal)\n(allow signal (target self) (target children))\n")
-	b.WriteString("(deny lsopen)\n")
-	b.WriteString("(deny mach-lookup\n")
-	for _, s := range readLaneServices {
-		fmt.Fprintf(&b, "    (global-name %s)\n", sbplString(s))
+	for _, op := range readLaneDenies {
+		fmt.Fprintf(&b, "(deny %s)\n", op)
 	}
-	b.WriteString(")\n")
+	b.WriteString("(deny signal)\n(allow signal (target self) (target children))\n")
 	if progs := resolveDenyExec(spec.DenyExec); len(progs) > 0 {
 		b.WriteString("(deny process-exec\n")
 		for _, p := range progs {
@@ -335,4 +360,60 @@ func DeniedHint(output string) bool {
 		}
 	}
 	return false
+}
+
+// within reports whether p is dir or under it.
+func within(dir, p string) bool {
+	dir, p = filepath.Clean(dir), filepath.Clean(p)
+	return p == dir || strings.HasPrefix(p, dir+string(filepath.Separator))
+}
+
+// VerifyReadLane runs the read-lane profile against probes that must
+// fail — a project write, a socket connect, a signal to another
+// process, launching a denied program — and one that must succeed (a
+// scratch write), under real sandbox-exec (ADR-0073 §5). A read-lane
+// call runs unasked only where this passed at startup: the lane is a
+// claim about this machine's kernel, and the claim is checked, not
+// assumed. The returned error names the first expectation that failed.
+func VerifyReadLane(profile string, spec Spec) error {
+	if err := Available(); err != nil {
+		return fmt.Errorf("sandbox-exec cannot apply a profile here: %w", err)
+	}
+	probe := func(command string) error {
+		argv := Wrap(profile, "/bin/bash", command)
+		cmd := exec.Command(argv[0], argv[1:]...)
+		if spec.ReadScratch != "" {
+			cmd.Env = append(os.Environ(), "TMPDIR="+spec.ReadScratch)
+		}
+		return cmd.Run()
+	}
+	mustFail := []struct{ what, command string }{
+		{"a write into the project", "echo x > " + shellQuote(filepath.Join(spec.ProjectDir, ".gem-agent-lane-probe"))},
+		{"a socket connect", "exec 3<>/dev/tcp/127.0.0.1/9"},
+		{"a signal to another process", "kill -0 1"},
+		{"a write into the shared temporary directory", "echo x > /private/tmp/.gem-agent-lane-probe-$$"},
+	}
+	if len(spec.DenyExec) > 0 {
+		mustFail = append(mustFail, struct{ what, command string }{"launching a denied program", "/usr/bin/osascript -e 'return 1'"})
+	}
+	for _, m := range mustFail {
+		if err := probe(m.command); err == nil {
+			_ = os.Remove(filepath.Join(spec.ProjectDir, ".gem-agent-lane-probe"))
+			return fmt.Errorf("the read lane allowed %s", m.what)
+		}
+	}
+	if spec.ReadScratch != "" {
+		if err := probe(`echo x > "$TMPDIR/.gem-agent-lane-probe" && rm "$TMPDIR/.gem-agent-lane-probe"`); err != nil {
+			return fmt.Errorf("the read lane cannot write its own scratch directory: %w", err)
+		}
+	}
+	if err := probe("/usr/bin/true"); err != nil {
+		return fmt.Errorf("the read lane cannot run a program: %w", err)
+	}
+	return nil
+}
+
+// shellQuote single-quotes s for bash.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

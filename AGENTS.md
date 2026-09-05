@@ -394,6 +394,18 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   `bounded.ReadAll` returns exactly `cap` bytes with `more`; use
   `bounded.TrimIncompleteRune` (or `CutRunes` on a longer buffer) before
   showing a cut
+- **The read lane is a verified claim, and unconfined is a mode**
+  (ADR-0073 §5) — `sandbox.Enforcement{Confined, ReadLane}` is what the
+  runtime established: `buildExecFn` runs `VerifyReadLane` and turns the
+  read lane off (with a note) when any probe misbehaves; a sandbox that
+  is on but cannot apply is a startup error, never a fallback;
+  `--no-sandbox` makes every shell call OperatorOnly in `Agent.decide`
+  (`registry.Confined()` false). The read lane's denials are capability
+  families (`readLaneDenies`), not the program list — the list is
+  defence in depth. Do not add `sysctl-write` (uname, node) and do not
+  expect `ps` to run under any profile. Read-lane commands get
+  `TMPDIR=<work dir>/scratch`; a probe of Apple Events must send a real
+  event (`get name` of an application does not)
 - **`/dev` is never writable as a whole** (ADR-0072 §4.3) — the
   profile allows `sandbox.ScratchFiles()` as literals and `/dev/fd` as
   a directory; the rule tier reads both lists (`scratchFiles`,

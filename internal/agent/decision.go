@@ -36,5 +36,27 @@ func (a *Agent) decide(tc llm.ToolCall) Decision {
 	}
 	mutating := tool.MutatesFor(tc.Args)
 	v := risk.Classify(tc.Name, mutating, tc.Args, a.registry.ProjectDir(), a.registry.WorkDir())
+	if tc.Name == tools.ShellExecName && !a.registry.Confined() && v.Tier != risk.Block {
+		// Unconfined mode (--no-sandbox): the approval buys none of the
+		// lane's constraints, so it is not an ordinary write-lane call
+		// (ADR-0073 §5) — the operator alone approves, and neither the
+		// model tier, a session allowlist nor a policy lifts it.
+		v = risk.Verdict{Tier: risk.Review, OperatorOnly: true,
+			Reason: "unconfined shell (the sandbox is off): no lane bounds this command — the operator decides, not the model tier"}
+	}
 	return Decision{Tool: tool, Mutating: mutating, Verdict: v}
+}
+
+// laneOf names the lane a shell call runs in for the audit record —
+// "read", "write", "operator", prefixed "unconfined:" when no sandbox
+// applies it — and "" for any other tool.
+func (a *Agent) laneOf(tc llm.ToolCall) string {
+	if tc.Name != tools.ShellExecName {
+		return ""
+	}
+	lane := tools.ShellLane(tc.Args).String()
+	if !a.registry.Confined() {
+		return "unconfined:" + lane
+	}
+	return lane
 }

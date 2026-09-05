@@ -37,7 +37,7 @@ func TestRotateWorkDirMovesEveryConsumer(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	execFn, err := buildExecFn(true, project, oldWork, nil)
+	execFn, enf, _, err := buildExecFn(true, project, oldWork, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestRotateWorkDirMovesEveryConsumer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registry.SetLaneExec(shellExec.run, true)
+	registry.SetLaneExec(shellExec.run, enf)
 	if err := registry.UseWorkDir(oldWork); err != nil {
 		t.Fatal(err)
 	}

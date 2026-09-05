@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
@@ -17,7 +18,17 @@ func laneAgent(t *testing.T, mb *mockBackend, gate Approver, readLane bool) *Age
 	a, reg := policyAgent(t, mb, gate, nil)
 	reg.SetLaneExec(func(ctx context.Context, c string, _ sandbox.Lane) *exec.Cmd {
 		return exec.CommandContext(ctx, "/bin/bash", "-c", c)
-	}, readLane)
+	}, sandbox.Enforcement{Confined: true, ReadLane: readLane})
+	return a
+}
+
+// unconfinedAgent is laneAgent with the sandbox off (--no-sandbox).
+func unconfinedAgent(t *testing.T, mb *mockBackend, gate Approver, policyTools map[string]string) *Agent {
+	t.Helper()
+	a, reg := policyAgent(t, mb, gate, policyTools)
+	reg.SetLaneExec(func(ctx context.Context, c string, _ sandbox.Lane) *exec.Cmd {
+		return exec.CommandContext(ctx, "/bin/bash", "-c", c)
+	}, sandbox.Enforcement{})
 	return a
 }
 
@@ -125,5 +136,84 @@ func TestDecisionIsOneReading(t *testing.T) {
 	d = a.decide(llm.ToolCall{Name: "no_such_tool"})
 	if d.Tool != nil || !d.Mutating {
 		t.Errorf("unknown tool decision = %+v", d)
+	}
+}
+
+// ADR-0073 §5: with the sandbox off no lane bounds the command, so a
+// shell call is the operator's alone in every lane — a `never` policy
+// (the --allow grant) does not lift it, and the audit record says
+// "unconfined:".
+func TestUnconfinedShellIsTheOperatorsAlone(t *testing.T) {
+	for _, access := range []string{"", "read", "write"} {
+		mb := &mockBackend{responses: []*llm.Response{
+			{ToolCalls: []llm.ToolCall{laneCall("echo hi", access)}},
+			{Content: "done"},
+		}}
+		gate := &laneGate{}
+		a := unconfinedAgent(t, mb, gate, map[string]string{"shell_exec": "never"})
+		if _, err := a.Run(context.Background(), "run it", nil); err != nil {
+			t.Fatal(err)
+		}
+		if len(gate.asked) != 1 || !gate.mustPrompt[0] {
+			t.Errorf("unconfined %q lane under a never policy: asked=%v mustPrompt=%v", access, gate.asked, gate.mustPrompt)
+		}
+		d := a.decide(laneCall("echo hi", access))
+		if !d.Verdict.OperatorOnly || !d.Mutating {
+			t.Errorf("unconfined decision = %+v", d)
+		}
+		if got := a.laneOf(laneCall("echo hi", access)); !strings.HasPrefix(got, "unconfined:") {
+			t.Errorf("laneOf = %q", got)
+		}
+	}
+	// The Block floor still outranks the unconfined verdict.
+	a := unconfinedAgent(t, &mockBackend{}, &laneGate{}, nil)
+	if d := a.decide(laneCall("sudo id", "read")); d.Verdict.Tier.String() != "block" {
+		t.Errorf("floor under unconfined = %+v", d)
+	}
+}
+
+// The boundary does not move with the mode (design review of ADR-0073,
+// class E): the same Decision is read in the default mode, under a
+// never policy and by the auto ladder, so for every lane × command the
+// floor, the mutation flag and the gate agree.
+func TestDecisionBoundaryIsModeIndependent(t *testing.T) {
+	type want struct{ mutating, floor bool }
+	cases := []struct {
+		command, access string
+		want            want
+	}{
+		{"ls", "read", want{false, false}},
+		{"ls", "", want{false, false}},
+		{"echo hi > f", "write", want{true, false}},
+		{"ls", "operator", want{true, true}},
+		{"sudo id", "read", want{false, true}},
+		{"rm -rf x", "write", want{true, true}},
+		{"cat ~/.ssh/id_rsa", "read", want{false, true}},
+	}
+	for _, policyTools := range []map[string]string{nil, {"shell_exec": "never"}} {
+		a := laneAgent(t, &mockBackend{}, &laneGate{}, true)
+		if policyTools != nil {
+			a, _ = policyAgent(t, &mockBackend{}, &laneGate{}, policyTools)
+			a.registry.SetLaneExec(func(ctx context.Context, c string, _ sandbox.Lane) *exec.Cmd {
+				return exec.CommandContext(ctx, "/bin/bash", "-c", c)
+			}, sandbox.Enforcement{Confined: true, ReadLane: true})
+		}
+		for _, c := range cases {
+			tc := laneCall(c.command, c.access)
+			d := a.decide(tc)
+			if d.Mutating != c.want.mutating || d.Floor() != c.want.floor {
+				t.Errorf("policy=%v %q/%q: mutating=%v floor=%v, want %+v", policyTools, c.command, c.access, d.Mutating, d.Floor(), c.want)
+			}
+			// gated: the default mode gates a mutating call or a floor;
+			// a never policy gates a floor only.
+			gated := a.gated(d, tc)
+			wantGated := d.Mutating || d.Floor()
+			if policyTools != nil {
+				wantGated = d.Floor()
+			}
+			if gated != wantGated {
+				t.Errorf("policy=%v %q/%q: gated=%v, want %v", policyTools, c.command, c.access, gated, wantGated)
+			}
+		}
 	}
 }

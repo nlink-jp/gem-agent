@@ -23,7 +23,7 @@ func TestRestartSwapsTheProviderUnderEveryHolder(t *testing.T) {
 		t.Fatal("a Sub created before Restart still points at the old provider")
 	}
 	sink.SessionStart("m", true, false, 0)
-	sub.ToolCall("read_file", false, "x", "why", 0, "ok")
+	sub.ToolCall("read_file", false, "x", "why", 0, "ok", "")
 	events := rec.Events()
 	if len(events) != 2 {
 		t.Fatalf("got %d events after restart, want 2: %+v", len(events), events)

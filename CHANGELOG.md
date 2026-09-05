@@ -31,6 +31,17 @@
   listing was cut; the clipboard capture and the piped stdin are bounded
 - New config key `[sandbox].read_lane_deny_exec`; the banner says when
   the sandbox is off that every `shell_exec` will ask
+- After design review: the read lane denies capability families
+  (`mach-lookup`, `appleevent-send`, `ipc-posix*`, `iokit-open`,
+  `system-socket`, `nvram*`, `job-creation`, `user-preference-write`,
+  `lsopen`, …) rather than relying on a program list; it may write only
+  its session-private scratch directory (`TMPDIR` points there), never
+  `/private/tmp`; it is verified under real `sandbox-exec` at startup
+  and switched off with a note where any probe misbehaves; a sandbox
+  that cannot apply is a startup error naming `--no-sandbox`; under
+  `--no-sandbox` every `shell_exec` is the operator's alone and the
+  audit record says `unconfined:`; the old shell corpus lives on as a
+  kernel-level behaviour test (`TestReadLaneCorpus`)
 
 ### Fixed — pre-release verification of the ADR-0072 fixes (§4.1–§4.9, formerly staged as 0.68.2)
 
