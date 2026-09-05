@@ -152,8 +152,9 @@ The credential list is a bounded set (`sandbox.CredentialFilters`):
 `~/.pypirc`, `~/.vault-token`, `~/.claude.json`, and anywhere `.env`
 (not its `.example`/`.sample`/`.template`/`.dist` twins), `id_rsa` and
 kin, `credentials.json`, `*service-account*.json`,
-`application_default_credentials.json`. A secret stored elsewhere is
-readable in the read and write lanes, and in the write lane can leave
+`application_default_credentials.json`. A secret stored elsewhere — a
+token in `~/.config/<tool>/config.toml`, say (ADR-0076) — is readable in
+the read and write lanes, and in the write lane can leave
 over the network — the model tier is the judge there, and under a
 `never` policy nobody is.
 

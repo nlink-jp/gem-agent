@@ -8,6 +8,13 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator, reviewing v0.6.0: reading `.claude` directly invites environment mixing — and MCP is separated while skills are not |
 
+*Amended by ADR-0076: the symlink of §3 is withdrawn. `~/.claude` has
+been on the credential list since ADR-0073 and Seatbelt matches the
+resolved path, so a linked skill's scripts fail in the read and write
+lanes; a skill installed for Claude Code is copied into the global
+directory instead. Discovery still follows symlinks to directories the
+lanes can read.*
+
 ## Context
 
 ADR-0010 pointed the personal skill scope straight at

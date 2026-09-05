@@ -114,13 +114,18 @@ gem-agent は **Claude Code の skill 形式をそのまま読みます** — �
 
 `~/.claude/` は読みません — あれは Claude Code の生きた環境であり、
 暗黙に相続すると主系の環境が変わるたびに副系の挙動が変わります。
-**共有は自分で張る symlink** で、skill 単位でも丸ごとでも可能です
-（探索はリンクを辿ります）:
+Claude Code 向けにインストール済みの skill は、グローバルディレクトリへ
+**コピー**します:
 
 ```sh
-ln -s ~/.claude/skills/meeting-notes ~/.config/gem-agent/skills/meeting-notes
-ln -s ~/.claude/skills ~/.config/gem-agent/skills   # 全部共有
+cp -R ~/.claude/skills/meeting-notes ~/.config/gem-agent/skills/meeting-notes
 ```
+
+リンクは張らないこと: `~/.claude` はシェルのレーンが読めない資格情報の
+置き場で、カーネルは解決後のパスで照合するため、リンクした skill は
+探索はされてもスクリプトが `Operation not permitted` で失敗します
+（ADR-0076）。レーンが読めるディレクトリへの symlink は従来どおり
+探索が辿ります。
 
 frontmatter は最小限（`name` / `description` / `argument-hint`）だけ
 読み、`allowed-tools` は無視します — gem-agent には自前の承認モデルが

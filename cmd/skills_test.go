@@ -137,9 +137,10 @@ func TestSkillsListingShowsUsageAndInstallPathsWhenEmpty(t *testing.T) {
 		}
 	}
 	empty := skillsListing(nil)
-	// The empty state must teach both the install location and the
-	// sharing recipe — the knowledge is needed exactly when it is missing.
-	for _, want := range []string{"~/.config/gem-agent/skills", "ln -s ~/.claude/skills"} {
+	// The empty state must teach both the install location and the copy
+	// command (ADR-0076: never a link into ~/.claude) — the knowledge is
+	// needed exactly when it is missing.
+	for _, want := range []string{"~/.config/gem-agent/skills", "cp -R ~/.claude/skills"} {
 		if !strings.Contains(empty, want) {
 			t.Errorf("empty listing missing %q:\n%s", want, empty)
 		}

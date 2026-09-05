@@ -8,6 +8,12 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | v0.6.0 を確認したオペレータ:「.claude を直接見ると環境混在問題が発生しそう。MCP は分離しているのに skill は分離されていないのもよくない」 |
 
+*ADR-0076 による修正: §3 の symlink は撤回。`~/.claude` は ADR-0073 以来
+資格情報一覧にあり、Seatbelt は解決後のパスで照合するため、リンクした
+skill のスクリプトは read/write レーンで失敗する。Claude Code 向けの
+skill はグローバルディレクトリへコピーする。レーンが読めるディレクトリへの
+symlink は従来どおり探索が辿る。*
+
 ## Context
 
 ADR-0010 は個人スコープを `~/.claude/skills/` — Claude Code 自身の生きた

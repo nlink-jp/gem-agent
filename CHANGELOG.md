@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Skills installed for Claude Code are copied into
+  `~/.config/gem-agent/skills`, not linked: `~/.claude` has been a
+  credential store the shell lanes cannot read since v0.69.0, and the
+  kernel matches the resolved path, so a linked skill was discovered but
+  its scripts failed with `Operation not permitted`. The `/skills` empty
+  state and the integration reference print the copy command in place of
+  the `ln -s` recipe. If you linked, replace the link with a copy
+  (ADR-0076, which also records why the configuration home is not denied
+  to the lanes)
+
 ## [0.70.3] - 2026-09-05
 
 ### Changed

@@ -146,7 +146,8 @@ TUI を使わない plain stdin ゲートは `y`/`n`/`N`/`a`）、拒否は拒�
 `~/.pypirc`・`~/.vault-token`・`~/.claude.json`、および場所を問わず `.env`
 （`.example`/`.sample`/`.template`/`.dist` は除く）・`id_rsa` 類・`credentials.json`・
 `*service-account*.json`・`application_default_credentials.json`。それ以外に
-置かれた秘密は read/write レーンで読め、write レーンではネットワークで外へ
+置かれた秘密 — たとえば `~/.config/<tool>/config.toml` のトークン（ADR-0076）— は
+read/write レーンで読め、write レーンではネットワークで外へ
 出せます — そこの判定者はモデル層で、`never` ポリシー下では誰もいません。
 
 偽の宣言は何も得ません: `read` は檻を狭めるだけ、`write`・`operator` は

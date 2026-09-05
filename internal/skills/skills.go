@@ -4,8 +4,10 @@
 // (~/.config/gem-agent/skills/), because format compatibility is
 // drop-in while location sharing is coupling — reading another tool's
 // live environment means the fallback's behaviour changes whenever the
-// primary's does. Sharing with Claude Code is an operator-made symlink,
-// which discovery follows. The project scope
+// primary's does. A skill installed for Claude Code is copied in, not
+// linked (ADR-0076: ~/.claude is denied to the shell lanes and the
+// kernel resolves a link); discovery follows symlinks to readable
+// locations. The project scope
 // (<project>/.claude/skills/) is shared on purpose: a repository is the
 // project's environment, not either tool's.
 //
@@ -162,9 +164,10 @@ var namePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 // scopes merge. Either directory may be absent — skills are optional
 // everywhere.
 //
-// Symlinked entries are followed: a skill shared from Claude Code's
-// directory by `ln -s` is discovered like a real one, and the read
-// confinement downstream applies to the resolved directory (ADR-0011).
+// Symlinked entries are followed and resolved, and the read confinement
+// downstream applies to the resolved directory (ADR-0011). A link into
+// ~/.claude is discovered too, but the shell lanes cannot read it —
+// the operator copies instead (ADR-0076).
 func Discover(globalDir, projectDir string, lim Limits) ([]Skill, []string) {
 	var notes []string
 	byName := map[string]Skill{}

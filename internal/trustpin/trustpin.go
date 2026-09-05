@@ -74,7 +74,7 @@ func Compute(projectDir string) (Pins, []string) {
 			if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 				continue
 			}
-			// A shared skill is a symlinked directory (ADR-0011 §3):
+			// A skill directory may be a symlink (Discover follows it):
 			// the walk starts from the resolved target, as Discover
 			// reads it. Links inside are recorded by target, not followed.
 			if real, err := filepath.EvalSymlinks(dir); err == nil {

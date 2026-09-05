@@ -488,6 +488,13 @@ a new hook) is an architecture change and takes the same rows as a
   and operator lanes, `/dev/fd` as a directory; the read lane allows
   `/dev/fd` too (descriptors the command already holds). Adding a device
   means adding it to `ScratchFiles`, not widening a subpath.
+- **Skills are copied into `~/.config/gem-agent/skills`, never linked
+  from `~/.claude`** (ADR-0076) — `~/.claude` is on the credential list
+  and Seatbelt matches the resolved path, so a linked skill's scripts
+  fail in the read and write lanes. Discovery still follows symlinks;
+  the recommendation is what changed. The configuration home itself is
+  not denied to the lanes: the same ADR records why (one deny bred four
+  re-allow rules — the kernel sees the syscall, not the intent).
 - **A skill is read through its own `os.Root`** (ADR-0072 §4.4) —
   `readSkill` opens the root first and reads SKILL.md through it;
   `Body` / `File` read capped through `readCapped`; `reloadSkills`

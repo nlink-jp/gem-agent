@@ -111,13 +111,18 @@ location sharing would be coupling:
 
 `~/.claude/` is never read — that is Claude Code's live environment,
 and inheriting it implicitly would change the fallback's behaviour
-whenever the primary's environment changes. **Sharing is a symlink you
-make**, per skill or wholesale (discovery follows links):
+whenever the primary's environment changes. A skill installed for
+Claude Code is **copied** into the global directory:
 
 ```sh
-ln -s ~/.claude/skills/meeting-notes ~/.config/gem-agent/skills/meeting-notes
-ln -s ~/.claude/skills ~/.config/gem-agent/skills   # share everything
+cp -R ~/.claude/skills/meeting-notes ~/.config/gem-agent/skills/meeting-notes
 ```
+
+Do not link it: `~/.claude` is a credential store the shell lanes cannot
+read, and the kernel matches the resolved path, so a linked skill is
+discovered but its scripts fail with `Operation not permitted`
+(ADR-0076). Discovery still follows a symlink to a directory the lanes
+can read.
 
 Frontmatter is read minimally (`name`, `description`, `argument-hint`);
 `allowed-tools` is ignored — gem-agent has its own approval model, and

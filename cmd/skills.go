@@ -15,8 +15,9 @@ import (
 // Code's format from gem-agent's own global directory plus the shared
 // project one. ~/.claude is never read — that is Claude Code's live
 // environment, and inheriting it implicitly would couple the fallback's
-// behaviour to the primary's (the operator shares individual skills, or
-// everything, with a symlink instead).
+// behaviour to the primary's. A skill installed there is copied in, not
+// linked: ~/.claude is on the credential list and the kernel resolves
+// the link, so a linked skill's scripts fail in the lanes (ADR-0076).
 func discoverSkills(projectDir string, grant projectGrant) ([]skills.Skill, []string) {
 	global := ""
 	if home, err := os.UserHomeDir(); err == nil {
@@ -149,10 +150,9 @@ func skillsListing(list []skills.Skill) string {
 		return "no skills installed — gem-agent reads Claude Code's skill format from:\n" +
 			"  ~/.config/gem-agent/skills/<name>/SKILL.md  (global: gem-agent's own, every project)\n" +
 			"  <project>/.claude/skills/<name>/SKILL.md    (project: shared with Claude Code)\n" +
-			"skills-series zips unpack straight into the global directory. To share\n" +
-			"skills already installed for Claude Code, link them in — per skill or all:\n" +
-			"  ln -s ~/.claude/skills/<name> ~/.config/gem-agent/skills/<name>\n" +
-			"  ln -s ~/.claude/skills ~/.config/gem-agent/skills\n"
+			"skills-series zips unpack straight into the global directory. A skill\n" +
+			"installed for Claude Code is copied in, not linked:\n" +
+			"  cp -R ~/.claude/skills/<name> ~/.config/gem-agent/skills/<name>\n"
 	}
 	var b strings.Builder
 	for _, s := range list {
