@@ -135,6 +135,15 @@ The lane a command ran in is recorded: the transcript's `gate_decision`
 and telemetry's `tool.call` and `approval.decision` events carry a
 `lane` attribute (see [configuration — telemetry](configuration.md)).
 
+Both lanes are verified on your machine at startup and at `/clear`, with
+control runs: the read lane must deny a project write, a socket, a
+signal and the terminal; the write lane must deny a write under an
+instruction file's name and a write outside the project, and allow an
+ordinary one. A read lane that fails asks for every command; a write
+lane that fails makes the session **unconfined** — every shell command
+is yours to answer, and the banner says which expectation failed.
+`/status` shows the measured state.
+
 The credential list is a bounded set (`sandbox.CredentialFilters`):
 `~/.ssh`, `~/.aws`, `~/.kube`, `~/.gnupg`, `~/.config/gcloud`,
 `~/.config/gh`, `~/.gemini`, `~/.codex`, `~/.claude`, `~/.azure`,

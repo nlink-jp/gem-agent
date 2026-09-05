@@ -393,6 +393,50 @@ func TestReadLaneCorpus(t *testing.T) {
 // TestVerifyReadLane: the real read profile passes; a profile that
 // allows everything is refused, so an environment where the kernel
 // does not deny what the lane claims never gets an unasked read lane.
+// The write lane is a verified claim too (ADR-0073 §7): the real profile
+// passes, an allow-everything profile — what a stubbed or foreign
+// sandbox-exec amounts to — fails, and nothing of the project is left
+// behind by the probes.
+func TestVerifyWriteLane(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-only")
+	}
+	if err := Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory")
+	}
+	proj, err := os.MkdirTemp(home, ".gem-agent-verify-write-test-")
+	if err != nil {
+		t.Skip("cannot create a directory under home")
+	}
+	defer func() { _ = os.RemoveAll(proj) }()
+	proj, _ = ResolveWriteDir(proj)
+	// Home is the real one here: the outside probe lives under it.
+	spec := Spec{ProjectDir: proj, Home: home}
+	profile, err := LaneProfile(LaneWrite, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyWriteLane(profile, spec); err != nil {
+		t.Errorf("the real write lane failed verification: %v", err)
+	}
+	if err := VerifyWriteLane("(version 1)(allow default)", spec); err == nil {
+		t.Error("an allow-everything profile passed verification")
+	}
+	if err := VerifyWriteLane("(version 1)(deny default)", spec); err == nil {
+		t.Error("a deny-everything profile passed verification")
+	}
+	entries, _ := os.ReadDir(proj)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".gem-agent-lane-probe-") {
+			t.Errorf("probe left behind: %s", e.Name())
+		}
+	}
+}
+
 func TestVerifyReadLane(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("sandbox-exec is macOS-only")

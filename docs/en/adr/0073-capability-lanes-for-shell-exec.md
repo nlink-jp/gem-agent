@@ -301,6 +301,33 @@ the operator's own git command); credential locations outside the list
 are readable and, in the write lane, sendable — the model tier or the
 operator is the judge there.
 
+### 7. Confinement is measured too (2026-09-05, after v0.70.2)
+
+§5 made the read lane a verified claim and left `Confined` — the fact
+that sandbox-exec applies any cage at all — to the configuration: the
+binary exists, the profiles compile, therefore confined. Reports of
+unofficial ports (the source rebuilt for WSL without the sandbox) showed
+the gap: a build that stubs the sandbox-exec check, or a foreign
+`sandbox-exec` that ignores its profile, passes as confined, fails the
+read-lane probes, and runs every command as a *write-lane* call — Review
+tier, approvable by the model tier in auto mode — with no kernel behind
+it. That is weaker than `--no-sandbox`, which is operator-only.
+
+`VerifyWriteLane` now runs at startup and on `/clear` beside
+`VerifyReadLane`: under the real write-lane profile, a write under an
+instruction file's name inside the project and a write directly under
+the operator's home (the one place this lane always denies that is
+neither project, work directory nor scratch) must fail, each after a
+control run that succeeds unsandboxed; an ordinary project write and
+running a program must succeed. Probe files are created exclusively
+under random names and removed. If any expectation fails, the session is
+**unconfined**: `Enforcement{}` — every shell command is the operator's
+to answer, the banner says why, and the commands stay wrapped (a cage
+that half-works is still in the way). `/status` reports the measured
+state, not the setting. This is the last valve for a build nobody here
+verified: the protection degrades to the human, never silently to the
+model.
+
 ## Alternatives considered
 
 - **Keep the text tier and add the missing spellings.** Rejected: the

@@ -467,11 +467,15 @@ a new hook) is an architecture change and takes the same rows as a
   repository**: one did, and committed a two-line `AGENTS.md`
   (review of ADR-0074, F-01) — `make check` now refuses an AGENTS.md
   without its Gotchas.
-- **The read lane is a verified claim, and unconfined is a mode**
-  (ADR-0073 §5) — `sandbox.Enforcement{Confined, ReadLane}` is what the
-  runtime established: `buildExecFn` runs `VerifyReadLane` and turns the
-  read lane off (with a note) when any probe misbehaves; a sandbox that
-  is on but cannot apply is a startup error, never a fallback;
+- **Both lanes are verified claims, and unconfined is a mode**
+  (ADR-0073 §5/§7) — `sandbox.Enforcement{Confined, ReadLane}` is what the
+  runtime measured: `buildExecFn` runs `VerifyReadLane` (read lane off
+  with a note when a probe misbehaves) and `VerifyWriteLane` (the whole
+  session unconfined — `Enforcement{}` — when the write lane's denials
+  cannot be confirmed: a stubbed sandbox check or a foreign
+  `sandbox-exec` degrades to "every command asks the human", never to
+  the model tier). Never set `Confined` from configuration. A sandbox
+  that is on but cannot apply is a startup error, never a fallback;
   `--no-sandbox` makes every shell call OperatorOnly in `Agent.decide`
   (`registry.Confined()` false). The read lane's denials are capability
   families (`readLaneDenies`), not the program list — the list is

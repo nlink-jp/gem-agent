@@ -771,7 +771,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			AutoApprove:    ag.AutoApprove(),
 			AutoCompact:    ag.AutoCompact(),
 			CompactAtPct:   cfg.Agent.CompactAtPct,
-			SandboxOn:      sandboxOn,
+			SandboxOn:      enforcement.Confined,
 			ProjectDir:     projectDir,
 			SessionID:      sessionID,
 			WorkDir:        workDir,
@@ -1875,6 +1875,13 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, 
 	if _, err := os.Stat(sandbox.Executable); err != nil {
 		return nil, sandbox.Enforcement{}, nil, fmt.Errorf("%s not found (gem-agent is macOS-only); use --no-sandbox to bypass at your own risk", sandbox.Executable)
 	}
+	// The profile's anchors must be the path the kernel reports —
+	// symlinks resolved (/var → /private/var): a regex anchored on the
+	// unresolved spelling protects nothing, which the verification below
+	// would then report as an unconfined write lane.
+	if real, err := sandbox.ResolveWriteDir(projectDir); err == nil {
+		projectDir = real
+	}
 	spec := sandbox.Spec{ProjectDir: projectDir, DenyExec: append(append([]string{}, sandbox.DefaultDenyExec...), denyExec...), PersistentParents: persistentParents}
 	if workDir != "" {
 		// The session work directory (ADR-0058). A shell command told to
@@ -1913,6 +1920,16 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, 
 			enf.ReadLane = false
 			notes = append(notes, fmt.Sprintf("read lane disabled: %v; every shell_exec asks", err))
 		}
+	}
+	// Confinement itself is measured, not assumed (ADR-0073 §7): where
+	// the write lane's denials cannot be confirmed — a sandbox-exec that
+	// applies no cage, a build that stubbed it — the session runs as
+	// unconfined, and every shell command is the operator's to answer.
+	// The commands stay wrapped: a cage that half-works is still in
+	// the way.
+	if err := sandbox.VerifyWriteLane(profiles[sandbox.LaneWrite], spec); err != nil {
+		enf = sandbox.Enforcement{}
+		notes = append(notes, fmt.Sprintf("sandbox unverified: %v — shell commands run as unconfined: every one asks you", err))
 	}
 	scratch := spec.ReadScratch
 	return func(ctx context.Context, command string, lane sandbox.Lane) *exec.Cmd {

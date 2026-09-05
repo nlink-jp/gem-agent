@@ -92,7 +92,10 @@ purpose:
   programs, and runs unasked; `write` allows the project and work
   directory but denies the persistent files; `operator` is the ADR-0001
   profile. The rule tier no longer reads shell text beyond a Block
-  floor — the kernel decides. `cmd.Dir` is the project. `--no-sandbox`
+  floor — the kernel decides. `cmd.Dir` is the project. Both lanes are
+  verified with real probes and control runs at startup; a machine
+  where the write lane's denials cannot be confirmed runs unconfined
+  (every shell command asks) and says so. `--no-sandbox`
   removes this layer (and the read lane) and says so in the banner.
 
 ## One turn

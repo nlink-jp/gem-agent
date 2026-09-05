@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Security:** confinement is now measured, not assumed. Beside the
+  read lane, the write lane is verified at startup and at `/clear` with
+  real probes and control runs (a write under an instruction file's
+  name and a write outside the project must be denied; an ordinary
+  project write must succeed). Where a probe fails — a `sandbox-exec`
+  that applies no cage, a build that stubbed the check — the session
+  runs unconfined: every shell command asks you, the banner names the
+  failed expectation, and `/status` shows the measured state. Until now
+  such a build passed as confined and ran commands at the
+  model-approvable tier with no kernel behind them
+
 ## [0.70.2] - 2026-09-05
 
 ### Fixed

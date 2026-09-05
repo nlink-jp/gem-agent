@@ -148,7 +148,8 @@ credential or `~/Library` reads; runs without a prompt where the lane
 was verified at startup), `write` (the project and the work directory
 writable, network allowed, the instruction/configuration files and
 `.git` itself, hooks and config denied, credential reads denied;
-approval-gated) or `operator` (the full ADR-0001 profile; you always
+approval-gated; verified at startup too — where its denials cannot be
+confirmed the session runs unconfined and every command asks you) or `operator` (the full ADR-0001 profile; you always
 decide). Every lane detaches the command from your terminal. `ps` and
 `top` run under no Seatbelt profile. Enforcement is covered by a real
 Seatbelt test over the three profiles. Timeout and output cap, exit

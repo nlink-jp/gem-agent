@@ -585,6 +585,82 @@ func VerifyReadLane(profile string, spec Spec) error {
 	return nil
 }
 
+// VerifyWriteLane runs the write-lane profile against probes that must
+// fail — a write outside the project and the work directory, a write
+// under an instruction file's name inside the project — and two that
+// must succeed (an ordinary write into the project, running a program),
+// under real sandbox-exec; each must-fail probe first runs without the
+// sandbox as its control. Confinement is what this measured, never what
+// the configuration says (ADR-0073 §5, extended to the write lane in
+// §7): a machine, or a build, where sandbox-exec is present but applies
+// no cage is unconfined, and every shell command asks the operator. The
+// probe files are created exclusively under random names and removed.
+func VerifyWriteLane(profile string, spec Spec) error {
+	if err := Available(); err != nil {
+		return fmt.Errorf("sandbox-exec cannot apply a profile here: %w", err)
+	}
+	// The outside probe lives directly under the operator's home: the one
+	// place the write lane always denies that is neither the project,
+	// the work directory nor a scratch root (/private/tmp is scratch in
+	// this lane). A project that contains home has no outside to probe;
+	// the persistent-name probe below still tells a cage from none.
+	outsideProbe := ""
+	if spec.Home != "" && !within(spec.ProjectDir, spec.Home) {
+		f, err := os.CreateTemp(spec.Home, ".gem-agent-lane-probe-*")
+		if err != nil {
+			return fmt.Errorf("cannot create a probe file under home: %w", err)
+		}
+		outsideProbe = f.Name()
+		_ = f.Close()
+		defer func() { _ = os.Remove(outsideProbe) }()
+	}
+	probeDir, err := os.MkdirTemp(spec.ProjectDir, ".gem-agent-lane-probe-*")
+	if err != nil {
+		return fmt.Errorf("cannot create a probe directory in the project: %w", err)
+	}
+	persistent := filepath.Join(probeDir, "AGENTS.md")
+	plain := filepath.Join(probeDir, "plain")
+	defer func() {
+		_ = os.Remove(persistent)
+		_ = os.Remove(plain)
+		_ = os.Remove(probeDir)
+	}()
+	run := func(sandboxed bool, command string) error {
+		var cmd *exec.Cmd
+		if sandboxed {
+			argv := Wrap(profile, "/bin/bash", command)
+			cmd = exec.Command(argv[0], argv[1:]...)
+		} else {
+			cmd = exec.Command("/bin/bash", "-c", command)
+		}
+		return cmd.Run()
+	}
+	mustFail := []struct{ what, command, created string }{
+		{"a write under an instruction file's name", "echo x > " + shellQuote(persistent), persistent},
+	}
+	if outsideProbe != "" {
+		mustFail = append(mustFail, struct{ what, command, created string }{"a write outside the project", "echo x > " + shellQuote(outsideProbe), ""})
+	}
+	for _, m := range mustFail {
+		if err := run(false, m.command); err != nil {
+			return fmt.Errorf("the control run of %s failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", m.what, err)
+		}
+		if m.created != "" {
+			_ = os.Remove(m.created)
+		}
+		if err := run(true, m.command); err == nil {
+			return fmt.Errorf("the write lane allowed %s", m.what)
+		}
+	}
+	if err := run(true, "echo x > "+shellQuote(plain)); err != nil {
+		return fmt.Errorf("the write lane cannot write an ordinary project file: %w", err)
+	}
+	if err := run(true, "/usr/bin/true"); err != nil {
+		return fmt.Errorf("the write lane cannot run a program: %w", err)
+	}
+	return nil
+}
+
 // shellQuote single-quotes s for bash.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
