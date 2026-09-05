@@ -68,6 +68,22 @@ fi
 count=$(echo "$en_keys" | wc -l | tr -d ' ')
 echo "OK: docs/en and docs/ja are in mirror sync (${count} files)."
 
+# --- AGENTS.md keeps its sections ---------------------------------------
+# An E2E script once ran in this repository instead of its fixture and
+# replaced AGENTS.md with a two-line stub; the commit went through. The
+# file that briefs every agent must keep the sections AGENTS.md promises.
+agents_errors=0
+for heading in "## Build / test" "## Structure" "## Gotchas"; do
+    if ! grep -q "^${heading}\$" AGENTS.md; then
+        echo "ERROR: AGENTS.md lost its '${heading}' section" >&2
+        agents_errors=$((agents_errors + 1))
+    fi
+done
+if [ "$agents_errors" -ne 0 ]; then
+    exit 1
+fi
+echo "OK: AGENTS.md keeps its sections."
+
 # --- ADR index completeness and order ---------------------------------
 # Every ADR file must be listed in its language's INDEX, and the listed
 # entries must be in ascending order. Both failure modes shipped: an
