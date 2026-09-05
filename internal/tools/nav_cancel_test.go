@@ -71,7 +71,13 @@ func TestNavUninterruptedRunsCarryNoFooter(t *testing.T) {
 // it doubles as the synchronisation point — cancels, then releases
 // the read with EOF. The walk must come back at its very next check
 // without touching the directory that sorts after the stall.
-func TestSearchFilesStopsMidWalkOnCancel(t *testing.T) {
+// A FIFO in the tree is not opened for reading at all (ADR-0072 §4.8):
+// with no writer, a plain open blocked past any cancel. The walk skips
+// it as "not a regular file" and finishes on its own — the old form of
+// this test used the FIFO to stall the walk and cancel mid-file, which
+// the refusal makes impossible to stage; the cancel checks before every
+// directory read and file read stay pinned by the tests above.
+func TestSearchFilesSkipsAFIFOWithoutBlocking(t *testing.T) {
 	r := newRegistry(t)
 	dir := r.ProjectDir()
 	for _, d := range []string{"a", "b"} {
@@ -79,8 +85,7 @@ func TestSearchFilesStopsMidWalkOnCancel(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	fifo := filepath.Join(dir, "a", "stall.txt")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+	if err := syscall.Mkfifo(filepath.Join(dir, "a", "stall.txt"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 20; i++ {
@@ -89,57 +94,30 @@ func TestSearchFilesStopsMidWalkOnCancel(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	tool, _ := r.Get("search_files")
-	type result struct {
-		out string
-		err error
-	}
-	done := make(chan result, 1)
+	done := make(chan string, 1)
 	go func() {
-		out, err := tool.Run(ctx, map[string]any{"pattern": "needle", "literal": true})
-		done <- result{out, err}
+		out, _ := tool.Run(context.Background(), map[string]any{"pattern": "needle", "literal": true})
+		done <- out
 	}()
-
-	// Blocks until the walk has the FIFO open for reading. Bounded: if
-	// a future walk skips FIFOs the reader never comes, and this test
-	// must fail, not hang the package.
-	type opened struct {
-		w   *os.File
-		err error
-	}
-	writer := make(chan opened, 1)
-	go func() {
-		w, err := os.OpenFile(fifo, os.O_WRONLY, 0)
-		writer <- opened{w, err}
-	}()
-	var w *os.File
 	select {
-	case o := <-writer:
-		if o.err != nil {
-			t.Fatal(o.err)
-		}
-		w = o.w
-	case <-time.After(5 * time.Second):
-		t.Fatal("the walk never opened the FIFO — does search_files still read non-regular files?")
-	}
-	cancel()
-	_ = w.Close() // EOF: the stalled read returns, the walk sees the cancel
-
-	select {
-	case res := <-done:
-		if res.err != nil {
-			t.Fatal(res.err)
-		}
-		if !strings.Contains(res.out, "[interrupted after 1 files scanned — results above are partial]") {
-			t.Errorf("cut not named after the stalled file:\n%s", res.out)
-		}
-		if strings.Contains(res.out, "b/f00.go") {
-			t.Errorf("walk continued past the cancel into b/:\n%s", res.out)
+	case out := <-done:
+		if !strings.Contains(out, "20 matches in 20 files") {
+			t.Errorf("the regular files were not all searched:\n%s", out)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("the walk did not return after the cancel")
+		t.Fatal("the walk blocked on the FIFO")
+	}
+	// read_file refuses it too, promptly.
+	rf, _ := r.Get("read_file")
+	errc := make(chan error, 1)
+	go func() { _, err := rf.Run(context.Background(), map[string]any{"path": "a/stall.txt"}); errc <- err }()
+	select {
+	case err := <-errc:
+		if err == nil || !strings.Contains(err.Error(), "not a regular file") {
+			t.Errorf("read_file on a FIFO: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("read_file blocked on the FIFO")
 	}
 }

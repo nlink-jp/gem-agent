@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -450,5 +451,74 @@ func TestBoundedOutputKeepsRunesWhole(t *testing.T) {
 	s := b.String()
 	if !utf8.ValidString(s) || !strings.HasPrefix(s, "あ\n[output truncated: 3 of 9 bytes shown]") {
 		t.Errorf("String = %q", s)
+	}
+}
+
+// ADR-0072 §4.8: a cut line ends on a rune boundary for 2-, 3- and
+// 4-byte characters wherever the cap lands.
+func TestReadLineCappedKeepsRunesWhole(t *testing.T) {
+	for _, ch := range []string{"é", "あ", "😀"} {
+		line := strings.Repeat(ch, 50)
+		for cap := len(ch) * 10; cap < len(ch)*10+len(ch); cap++ {
+			got, cut, err := readLineCapped(bufio.NewReader(strings.NewReader(line+"\n")), cap)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !cut || !utf8.ValidString(got) || len(got) > cap {
+				t.Errorf("%q cap %d: got %q cut=%v", ch, cap, got, cut)
+			}
+		}
+	}
+	got, cut, _ := readLineCapped(bufio.NewReader(strings.NewReader("short\n")), 100)
+	if got != "short" || cut {
+		t.Errorf("short line = %q cut=%v", got, cut)
+	}
+}
+
+// ADR-0072 §4.8: HEIC/HEIF is identified by its ftyp box; a forged
+// extension, a truncated header and a bad box length are refused.
+func TestHEIFSniff(t *testing.T) {
+	ftyp := func(size int, brands ...string) []byte {
+		b := []byte{byte(size >> 24), byte(size >> 16), byte(size >> 8), byte(size), 'f', 't', 'y', 'p'}
+		for _, br := range brands {
+			b = append(b, []byte(br)...)
+		}
+		for len(b) < size {
+			b = append(b, 0)
+		}
+		return append(b, make([]byte, 64)...)
+	}
+	if m := heifMIME(ftyp(24, "heic", "\x00\x00\x00\x00", "mif1", "heic")); m != "image/heic" {
+		t.Errorf("heic = %q", m)
+	}
+	if m := heifMIME(ftyp(20, "mif1", "\x00\x00\x00\x00", "heif")); m != "image/heif" {
+		t.Errorf("heif = %q", m)
+	}
+	if m := heifMIME(ftyp(20, "isom", "\x00\x00\x00\x00", "mp41")); m != "" {
+		t.Errorf("mp4 brand accepted as %q", m)
+	}
+	if m := heifMIME([]byte("\x00\x00\x00\x18ftypheic")); m != "" {
+		t.Errorf("truncated header accepted as %q", m)
+	}
+	bad := append([]byte{0x7f, 0xff, 0xff, 0x00, 'f', 't', 'y', 'p', 'h', 'e', 'i', 'c', 0, 0, 0, 0}, make([]byte, 64)...)
+	if m := heifMIME(bad); m != "" {
+		t.Errorf("bad box length accepted as %q", m)
+	}
+	if m := heifMIME([]byte("not an image at all, just text.....")); m != "" {
+		t.Errorf("text accepted as %q", m)
+	}
+	// Through the tool, with the sniff in place of the extension.
+	r := newRegistry(t)
+	if err := os.WriteFile(filepath.Join(r.ProjectDir(), "p.heic"), ftyp(24, "heic", "\x00\x00\x00\x00", "mif1", "heic"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, mime, err := r.ReadImage("p.heic"); err != nil || mime != "image/heic" {
+		t.Errorf("ReadImage(heic) = %q, %v", mime, err)
+	}
+	if err := os.WriteFile(filepath.Join(r.ProjectDir(), "fake.heic"), []byte("plain text pretending"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.ReadImage("fake.heic"); err == nil {
+		t.Error("a forged .heic was accepted")
 	}
 }

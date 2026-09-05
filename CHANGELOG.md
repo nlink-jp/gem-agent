@@ -61,6 +61,16 @@
   previews count against the response budget; `.pptx` `r:id` is read
   by namespace; startup directory scans are bounded; the bounded shell
   output cuts on a rune boundary
+- `osascript … with administrator privileges` is Block; `git branch`
+  deleting with force in any spelling is Block; GNU sed's `e` command
+  and `e` flag are not Safe
+- An `@fifo` (or any non-regular file) is refused promptly instead of
+  blocking the open; the file tools do the same
+- A cut long line in a windowed `read_file` ends on a rune boundary
+- HEIC/HEIF attachments are identified by their ftyp box, as the
+  supported-format list promised
+- An MCP response over the frame cap is reported as that, not as the
+  server exiting
 - Residuals: the media upload streams the file `@` opened through its
   root instead of reopening a path; non-text MCP blocks past the
   budget are one line, not a note each; `workdirs` says when its

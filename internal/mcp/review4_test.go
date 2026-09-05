@@ -110,3 +110,38 @@ func TestListToolsRefusesARepeatingCursor(t *testing.T) {
 		t.Fatalf("err = %v, want the repeated-cursor refusal", err)
 	}
 }
+
+// ADR-0072 §4.8: a response line over the frame cap is reported as
+// that, not as "server exited".
+func TestOverlongLineIsNamedAsTheCause(t *testing.T) {
+	outR, outW := io.Pipe()
+	inR, inW := io.Pipe()
+	spawn := func() (io.WriteCloser, io.ReadCloser, func(), error) {
+		go func() {
+			sc := bufio.NewScanner(inR)
+			for sc.Scan() {
+				var msg struct {
+					ID     *json.Number `json:"id"`
+					Method string       `json:"method"`
+				}
+				if json.Unmarshal(sc.Bytes(), &msg) != nil || msg.ID == nil {
+					continue
+				}
+				if msg.Method == "tools/list" {
+					huge := strings.Repeat("x", scannerMax+10)
+					_, _ = outW.Write([]byte(`{"jsonrpc":"2.0","id":` + string(*msg.ID) + `,"result":{"tools":[],"pad":"` + huge + "\"}}\n"))
+					return
+				}
+				resp, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": *msg.ID, "result": map[string]any{"protocolVersion": "1", "capabilities": map[string]any{}, "serverInfo": map[string]any{"name": "t"}}})
+				_, _ = outW.Write(append(resp, '\n'))
+			}
+		}()
+		return inW, outR, func() { _ = inR.Close(); _ = outW.Close() }, nil
+	}
+	c := newClient("big", spawn, 10*time.Second, "test")
+	defer c.Close()
+	_, err := c.ListTools(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "frame cap") {
+		t.Fatalf("err = %v, want the frame-cap cause", err)
+	}
+}

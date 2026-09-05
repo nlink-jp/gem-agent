@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"unicode"
 	"unicode/utf8"
 
@@ -314,10 +315,14 @@ func attachImage(ref, projectDir string, lim Limits, images *int) (Attachment, e
 		return Attachment{}, fmt.Errorf("image is %d bytes; the limit is %d", len(data), lim.ImageBytes)
 	}
 	// Sniff the real type: the extension gated the route, the bytes
-	// decide the claim. http.DetectContentType knows the image magics.
+	// decide the claim. http.DetectContentType knows the common image
+	// magics; HEIC/HEIF is identified by its ftyp box (ADR-0072 §4.8).
 	mime := http.DetectContentType(data)
 	if !strings.HasPrefix(mime, "image/") {
-		return Attachment{}, fmt.Errorf("not an image (detected %s)", mime)
+		mime = heifMIME(data)
+	}
+	if mime == "" {
+		return Attachment{}, fmt.Errorf("not an image (detected %s)", http.DetectContentType(data))
 	}
 	*images++
 	return Attachment{Ref: ref, Kind: "image", Bytes: len(data), Data: data, MIME: mime}, nil
@@ -480,9 +485,32 @@ func openConfined(abs string, roots ...string) (*os.File, error) {
 		if err != nil {
 			return nil, err
 		}
-		return root.Open(rel)
+		return openRegular(func(flag int) (*os.File, error) { return root.OpenFile(rel, flag, 0) })
 	}
-	return os.Open(abs)
+	return openRegular(func(flag int) (*os.File, error) { return os.OpenFile(abs, flag, 0) })
+}
+
+// openRegular opens for reading without blocking and admits only a
+// regular file or a directory, checked on the opened descriptor: an
+// `@fifo` with no writer blocked the open past any cancel (ADR-0072
+// §4.8). O_NONBLOCK does not change how a regular file reads, and is
+// cleared afterwards.
+func openRegular(open func(flag int) (*os.File, error)) (*os.File, error) {
+	f, err := open(os.O_RDONLY | syscall.O_NONBLOCK)
+	if err != nil {
+		return nil, err
+	}
+	st, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if !st.Mode().IsRegular() && !st.IsDir() {
+		_ = f.Close()
+		return nil, fmt.Errorf("not a regular file (%s)", st.Mode().Type())
+	}
+	_ = syscall.SetNonblock(int(f.Fd()), false)
+	return f, nil
 }
 
 // readBounded reads abs whole only when its size is within cap — the
@@ -675,4 +703,30 @@ func readDirCapped(abs string, n int, roots ...string) ([]os.DirEntry, error) {
 		return nil, err
 	}
 	return entries, nil
+}
+
+// heifMIME identifies a HEIF/HEIC file by its ftyp box — box length
+// checked against the data, brand from the major brand or the
+// compatible list — or "" (the same rule as the view_image tool).
+func heifMIME(data []byte) string {
+	if len(data) < 16 || string(data[4:8]) != "ftyp" {
+		return ""
+	}
+	size := int(uint32(data[0])<<24 | uint32(data[1])<<16 | uint32(data[2])<<8 | uint32(data[3]))
+	if size < 16 || size > len(data) || size%4 != 0 {
+		return ""
+	}
+	brands := []string{string(data[8:12])}
+	for i := 16; i+4 <= size; i += 4 {
+		brands = append(brands, string(data[i:i+4]))
+	}
+	for _, b := range brands {
+		switch b {
+		case "heic", "heix", "hevc", "hevx", "heim", "heis":
+			return "image/heic"
+		case "mif1", "msf1", "heif":
+			return "image/heif"
+		}
+	}
+	return ""
 }

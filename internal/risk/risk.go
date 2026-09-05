@@ -87,6 +87,10 @@ const gitGlobalOpts = `(?:(?:-C|-c|--git-dir|--work-tree|--namespace)(?:=\S+|\s+
 // which reads the flags however they are spelled.
 var blockPatterns = []blockPattern{
 	{regexp.MustCompile(`(^|[\s;&|(])(sudo|doas|su)\s`), "privilege escalation"},
+	// AppleScript's administrator prompt is the same escalation by
+	// another door (ADR-0072 §4.8); a plain osascript stays Review —
+	// scripting the desktop is the model tier's to weigh, not a floor.
+	{regexp.MustCompile(`(?i)with\s+administrator\s+privileges`), "privilege escalation (administrator privileges)"},
 	{regexp.MustCompile(`(^|[\s;&|(])(dd|mkfs\S*|fdisk|diskutil|newfs\S*)\s`), "raw disk / filesystem operation"},
 	{regexp.MustCompile(`(^|[\s;&|(])git\s+` + gitGlobalOpts +
 		`(push|reset\s+--hard|clean\s+(?:-[\w-]+\s+)*(?:-[a-zA-Z]*f[a-zA-Z]*|--force)|checkout\s+(?:[^\s;&|]+\s+)*--(?:\s|$)|restore(?:\s|$)|branch\s+-D|rebase|filter-branch|stash\s+(?:drop|clear))`),
@@ -264,6 +268,9 @@ func classifyCommand(command, projectDir, workDir string) Verdict {
 	norm := normalizeHeads(trimmed)
 	if rmRecursiveForce(norm) {
 		return Verdict{Tier: Block, Reason: "recursive force delete"}
+	}
+	if gitBranchForceDelete(norm) {
+		return Verdict{Tier: Block, Reason: "history-rewriting or remote-publishing git operation"}
 	}
 	for _, p := range blockPatterns {
 		if p.re.MatchString(norm) {
@@ -465,6 +472,59 @@ func rmRecursiveForce(command string) bool {
 	return false
 }
 
+// gitBranchForceDelete reports `git branch` deleting with force in any
+// spelling — `-D`, `-d -f`, `-f -d`, `-df`, `--delete --force` (ADR-0072
+// §4.8: the pattern knew `-D` alone).
+func gitBranchForceDelete(command string) bool {
+	for _, seg := range segmentSplit.Split(command, -1) {
+		fields := strings.Fields(seg)
+		for i, f := range fields {
+			if canonicalName(f) != "git" {
+				continue
+			}
+			rest := fields[i+1:]
+			// Skip git's global options to the subcommand.
+			for len(rest) > 0 && strings.HasPrefix(rest[0], "-") {
+				if (rest[0] == "-C" || rest[0] == "-c") && len(rest) > 1 {
+					rest = rest[2:]
+					continue
+				}
+				rest = rest[1:]
+			}
+			if len(rest) == 0 || rest[0] != "branch" {
+				continue
+			}
+			del, force := false, false
+			for _, a := range rest[1:] {
+				switch {
+				case a == "--":
+					goto done
+				case a == "--delete":
+					del = true
+				case a == "--force":
+					force = true
+				case strings.HasPrefix(a, "--"):
+				case strings.HasPrefix(a, "-"):
+					if strings.Contains(a, "D") {
+						del, force = true, true
+					}
+					if strings.Contains(a, "d") {
+						del = true
+					}
+					if strings.Contains(a, "f") {
+						force = true
+					}
+				}
+			}
+		done:
+			if del && force {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // writableRoots are the places a shell command may write: the project,
 // the session work directory, and the sandbox's scratch roots.
 func writableRoots(projectDir, workDir string) []string {
@@ -653,6 +713,117 @@ func readOnlyCommand(command string) bool {
 // the paren.
 var awkSystemRe = regexp.MustCompile(`\bsystem\s*\(`)
 
+// sedExecutes reports a GNU sed script that runs a program: the `e`
+// command (`1e id`, `e whoami`) or the `e` flag of a substitution
+// (`s/x/y/e`, `s#x#y#ge`, any delimiter). A script whose s-command
+// cannot be parsed is treated as executing — the unknown is not Safe
+// (ADR-0072 §4.8).
+func sedExecutes(script string) bool {
+	for _, cmd := range splitSedCommands(script) {
+		c := strings.TrimLeft(cmd, " \t")
+		// Strip an address: numbers, $, ranges, /re/ with any escaping.
+		c = strings.TrimLeft(stripSedAddress(c), " \t")
+		if c == "" {
+			continue
+		}
+		if c[0] == 'e' && (len(c) == 1 || c[1] == ' ' || c[1] == '\t') {
+			return true
+		}
+		if c[0] == 's' && len(c) > 1 {
+			delim := c[1]
+			parts := splitSedDelim(c[2:], delim)
+			if len(parts) < 3 {
+				return true // unparseable substitution: not Safe
+			}
+			if strings.ContainsRune(parts[2], 'e') {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// splitSedCommands splits a sed script on `;` and newlines outside a
+// substitution's pattern/replacement.
+func splitSedCommands(script string) []string {
+	var out []string
+	var cur strings.Builder
+	depth := 0 // inside an s command's delimited parts
+	var delim byte
+	esc := false
+	for i := 0; i < len(script); i++ {
+		ch := script[i]
+		switch {
+		case esc:
+			esc = false
+		case ch == '\\':
+			esc = true
+		case depth > 0 && ch == delim:
+			depth--
+		case depth == 0 && (ch == ';' || ch == '\n'):
+			out = append(out, cur.String())
+			cur.Reset()
+			continue
+		case depth == 0 && ch == 's' && i+1 < len(script) && (cur.Len() == 0 || strings.TrimSpace(stripSedAddress(cur.String())) == ""):
+			delim = script[i+1]
+			depth = 2 // pattern and replacement close with two delimiters
+			cur.WriteByte(ch)
+			cur.WriteByte(delim)
+			i++
+			continue
+		}
+		cur.WriteByte(ch)
+	}
+	out = append(out, cur.String())
+	return out
+}
+
+// stripSedAddress removes a leading address (`1`, `$`, `1,5`, `/re/`).
+func stripSedAddress(c string) string {
+	i := 0
+	for i < len(c) {
+		switch {
+		case c[i] >= '0' && c[i] <= '9', c[i] == '$', c[i] == ',', c[i] == ' ', c[i] == '~', c[i] == '!':
+			i++
+		case c[i] == '/':
+			j := i + 1
+			for j < len(c) && c[j] != '/' {
+				if c[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			i = j + 1
+		default:
+			return c[i:]
+		}
+	}
+	return ""
+}
+
+// splitSedDelim splits the body of an s command on its unescaped
+// delimiter: pattern, replacement, flags.
+func splitSedDelim(body string, delim byte) []string {
+	var parts []string
+	var cur strings.Builder
+	for i := 0; i < len(body); i++ {
+		if body[i] == '\\' && i+1 < len(body) {
+			cur.WriteByte(body[i])
+			cur.WriteByte(body[i+1])
+			i++
+			continue
+		}
+		if body[i] == delim && len(parts) < 2 {
+			parts = append(parts, cur.String())
+			cur.Reset()
+			continue
+		}
+		cur.WriteByte(body[i])
+	}
+	parts = append(parts, cur.String())
+	return parts
+}
+
 // sedWriteCmd finds a `w`/`W` command in a sed script — `/re/w file`,
 // `1,5w file`, the `s///w file` flag — which writes a file whatever
 // the options say. Matched against the script and file arguments
@@ -698,7 +869,8 @@ func mutatingUse(name string, args []string) bool {
 				script = append(script, strings.Trim(a, `"'`))
 			}
 		}
-		if sedWriteCmd.MatchString(strings.Join(script, " ")) {
+		joined := strings.Join(script, " ")
+		if sedWriteCmd.MatchString(joined) || sedExecutes(joined) {
 			return true
 		}
 	case "awk":

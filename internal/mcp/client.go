@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -64,13 +65,17 @@ type Client struct {
 	timeout time.Duration
 	version string
 
-	mu     sync.Mutex // lifecycle state
-	wmu    sync.Mutex // stdin writes (reader goroutine also writes replies)
-	stdin  io.WriteCloser
-	kill   func()
-	alive  bool
-	gen    int // spawn generation; read loops of dead incarnations must not touch newer state
-	nextID int64
+	mu    sync.Mutex // lifecycle state
+	wmu   sync.Mutex // stdin writes (reader goroutine also writes replies)
+	stdin io.WriteCloser
+	kill  func()
+	alive bool
+	gen   int // spawn generation; read loops of dead incarnations must not touch newer state
+	// endCause says why the current incarnation's read loop ended
+	// (scanner error — the frame cap — or plain EOF), for the waiters
+	// it fails (ADR-0072 §4.8).
+	endCause string
+	nextID   int64
 
 	pmu     sync.Mutex
 	pending map[int64]chan message
@@ -161,6 +166,7 @@ func (c *Client) ensureStarted(ctx context.Context) error {
 	c.stdin = stdin
 	c.kill = kill
 	c.alive = true
+	c.endCause = ""
 	c.gen++
 	gen := c.gen
 	c.mu.Unlock()
@@ -233,11 +239,19 @@ func (c *Client) readLoop(stdout io.ReadCloser, gen int) {
 	// loop draining after kill-and-respawn must not close the pending
 	// channels (e.g. the fresh initialize) of its successor. Stale
 	// waiters of THIS incarnation are covered by their per-call timeouts.
+	cause := "server exited"
+	if err := scanner.Err(); err != nil {
+		cause = "server stream ended: " + err.Error()
+		if errors.Is(err, bufio.ErrTooLong) {
+			cause = fmt.Sprintf("server sent a response line over the %d-byte frame cap", scannerMax)
+		}
+	}
 	c.mu.Lock()
 	stale := c.gen != gen
 	var kill func()
 	if !stale {
 		c.alive = false
+		c.endCause = cause
 		kill = c.kill
 	}
 	c.mu.Unlock()
@@ -315,7 +329,13 @@ func (c *Client) rawCall(ctx context.Context, method string, params any) (json.R
 	select {
 	case msg, ok := <-ch:
 		if !ok {
-			return nil, fmt.Errorf("server exited during %s", method)
+			c.mu.Lock()
+			cause := c.endCause
+			c.mu.Unlock()
+			if cause == "" {
+				cause = "server exited"
+			}
+			return nil, fmt.Errorf("%s during %s", cause, method)
 		}
 		if msg.Error != nil {
 			return nil, msg.Error

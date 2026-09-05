@@ -274,7 +274,31 @@ func (r *Registry) openRead(abs string) (*os.File, error) {
 		return nil, err
 	}
 	defer release()
-	return root.Open(rel)
+	return openRegular(func(flag int) (*os.File, error) { return root.OpenFile(rel, flag, 0) })
+}
+
+// openRegular opens for reading without blocking and admits only a
+// regular file or a directory, checked on the opened descriptor: a
+// FIFO with no writer blocks a plain open for ever, past any context,
+// and a device would block the read (ADR-0072 §4.8). O_NONBLOCK does
+// not change how a regular file reads; it is cleared afterwards so a
+// pipe-shaped consumer downstream is not surprised.
+func openRegular(open func(flag int) (*os.File, error)) (*os.File, error) {
+	f, err := open(os.O_RDONLY | syscall.O_NONBLOCK)
+	if err != nil {
+		return nil, err
+	}
+	st, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if !st.Mode().IsRegular() && !st.IsDir() {
+		_ = f.Close()
+		return nil, fmt.Errorf("not a regular file (%s)", st.Mode().Type())
+	}
+	_ = syscall.SetNonblock(int(f.Fd()), false)
+	return f, nil
 }
 
 // openWrite opens abs for writing (create, truncate) through its root,
@@ -520,6 +544,42 @@ var imageExts = map[string]bool{
 
 func isImageExt(p string) bool { return imageExts[strings.ToLower(filepath.Ext(p))] }
 
+// sniffImage returns the image MIME the bytes prove, or "" — the
+// magics http.DetectContentType knows plus HEIC/HEIF, which it does
+// not (ADR-0072 §4.8: the advertised format was refused). A HEIF file
+// is an ISO BMFF whose first box is `ftyp` with a HEIF brand; the box
+// length and the brand list are checked, not just the four letters.
+func sniffImage(data []byte) string {
+	if mime := http.DetectContentType(data); strings.HasPrefix(mime, "image/") {
+		return mime
+	}
+	return heifMIME(data)
+}
+
+// heifMIME identifies a HEIF/HEIC file by its ftyp box, or "".
+func heifMIME(data []byte) string {
+	if len(data) < 16 || string(data[4:8]) != "ftyp" {
+		return ""
+	}
+	size := int(uint32(data[0])<<24 | uint32(data[1])<<16 | uint32(data[2])<<8 | uint32(data[3]))
+	if size < 16 || size > len(data) || size%4 != 0 {
+		return "" // a box that does not fit its file is not a file
+	}
+	brands := []string{string(data[8:12])}
+	for i := 16; i+4 <= size; i += 4 {
+		brands = append(brands, string(data[i:i+4]))
+	}
+	for _, b := range brands {
+		switch b {
+		case "heic", "heix", "hevc", "hevx", "heim", "heis":
+			return "image/heic"
+		case "mif1", "msf1", "heif":
+			return "image/heif"
+		}
+	}
+	return ""
+}
+
 // maxImageBytes bounds one attached image. An oversized image is
 // refused whole — a truncated PNG is not a smaller picture, it is a
 // broken file.
@@ -553,9 +613,9 @@ func (r *Registry) ReadImage(p string) (data []byte, mime string, err error) {
 	if more {
 		return nil, "", fmt.Errorf("image exceeds the %d byte limit", maxImageBytes)
 	}
-	mime = http.DetectContentType(data)
-	if !strings.HasPrefix(mime, "image/") {
-		return nil, "", fmt.Errorf("not an image (detected %s)", mime)
+	mime = sniffImage(data)
+	if mime == "" {
+		return nil, "", fmt.Errorf("not an image (detected %s)", http.DetectContentType(data))
 	}
 	return data, mime, nil
 }
@@ -703,6 +763,14 @@ func readWindowLines(ctx context.Context, f io.Reader, start, end, cap int) (str
 // does not start a phantom line — the sliceLines rule).
 func readLineCapped(br *bufio.Reader, cap int) (line string, cut bool, err error) {
 	var buf []byte
+	finish := func() string {
+		if cut {
+			// The cut landed on a byte; drop an incomplete trailing rune
+			// (ADR-0072 §4.8 — a Japanese line ended in a broken byte).
+			buf = trimIncompleteRune(buf)
+		}
+		return strings.TrimSuffix(string(buf), "\n")
+	}
 	for {
 		chunk, err := br.ReadSlice('\n')
 		if len(buf) < cap {
@@ -717,18 +785,32 @@ func readLineCapped(br *bufio.Reader, cap int) (line string, cut bool, err error
 		}
 		switch err {
 		case nil:
-			return strings.TrimSuffix(string(buf), "\n"), cut, nil
+			return finish(), cut, nil
 		case bufio.ErrBufferFull:
 			continue
 		case io.EOF:
 			if len(chunk) == 0 && len(buf) == 0 {
 				return "", false, io.EOF
 			}
-			return string(buf), cut, nil
+			return finish(), cut, nil
 		default:
 			return "", false, err
 		}
 	}
+}
+
+// trimIncompleteRune removes a UTF-8 sequence the cut left unfinished
+// at the end of b.
+func trimIncompleteRune(b []byte) []byte {
+	for i := len(b) - 1; i >= 0 && i >= len(b)-utf8.UTFMax; i-- {
+		if utf8.RuneStart(b[i]) {
+			if !utf8.FullRune(b[i:]) {
+				return b[:i]
+			}
+			return b
+		}
+	}
+	return b
 }
 
 // --- path confinement ---

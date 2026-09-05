@@ -511,6 +511,42 @@ paths, all held:
   every consumer shows it (`+`, "more than"), and the named cleanup
   stats the directory itself.
 
+### 4.8 Ninth pass — a consolidated request (2026-09-05, v0.68.2)
+
+A consolidated list from two reviewers: seven to fix, one deferred
+(a windowed `read_file` still walks to EOF for the line count — a
+design trade, left), one withdrawn (newlines in SBPL paths: measured
+fine). All seven held:
+
+- **`osascript … with administrator privileges` was Review** — the
+  AppleScript administrator prompt is privilege escalation and is
+  Block, matched case- and whitespace-insensitively across the
+  command. Policy stated: a plain `osascript` stays Review; scripting
+  the desktop is the model tier's to weigh.
+- **`@fifo` blocked past any cancel** — a plain open of a FIFO with
+  no writer never returns. Every read open (`@` attachments, the
+  file tools, directory listings) is `O_NONBLOCK` and admits only a
+  regular file or a directory, checked on the opened descriptor;
+  the flag is cleared afterwards. The old mid-walk cancellation test
+  used a FIFO as its stall and is replaced by the refusal.
+- **`git branch -d -f` and friends were Review** — the pattern knew
+  `-D`. The branch flags are parsed: delete and force in any order,
+  spelling or cluster.
+- **GNU sed's `e` command and `e` flag were Safe** — `1e id`,
+  `s/x/y/e`, any delimiter, any flag order. A small sed parser finds
+  them; an s-command it cannot parse is not Safe either.
+- **A cut long line ended mid-rune** — `readLineCapped` drops an
+  incomplete trailing sequence; tested at every offset for 2-, 3-
+  and 4-byte characters.
+- **HEIC/HEIF, advertised, was refused** — `http.DetectContentType`
+  does not know them. The ftyp box is checked (length within the
+  data, HEIF brand in the major or compatible list); a forged
+  extension, a truncated header and a bad box length are refused.
+  `view_image` and `@` share the rule.
+- **An over-long MCP line read as "server exited"** — the read
+  loop's `scanner.Err()` is kept as the incarnation's end cause and
+  named to the waiter.
+
 ## Lessons
 
 - **Independent reviewers found what the maintainer pass did not**, for

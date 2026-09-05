@@ -355,3 +355,58 @@ func TestLineContinuationDoesNotHidePersistentPaths(t *testing.T) {
 		t.Errorf("continued AGENTS.md = %v operatorOnly=%v, want operator-only review", v.Tier, v.OperatorOnly)
 	}
 }
+
+// ADR-0072 §4.8: the AppleScript administrator prompt is privilege
+// escalation; a plain osascript stays Review.
+func TestAdministratorPrivilegesAreBlocked(t *testing.T) {
+	for _, cmd := range []string{
+		`osascript -e 'do shell script "id" with administrator privileges'`,
+		"osascript -e 'do shell script \"id\"' -e 'with  administrator\tprivileges'",
+		"osascript -e 'do shell script \"id\" With Administrator Privileges'",
+		"osascript -e 'do shell script \"id\" with administrator\nprivileges'",
+	} {
+		if v := classifyShell(cmd); v.Tier != Block {
+			t.Errorf("%q = %v (%s), want block", cmd, v.Tier, v.Reason)
+		}
+	}
+	if v := classifyShell(`osascript -e 'display notification "hi"'`); v.Tier != Review {
+		t.Errorf("plain osascript = %v, want review", v.Tier)
+	}
+}
+
+// ADR-0072 §4.8: a forced branch delete in any spelling.
+func TestGitBranchForceDeleteSpellings(t *testing.T) {
+	for _, cmd := range []string{
+		"git branch -D feature", "git branch -d -f feature", "git branch -f -d feature",
+		"git branch -df feature", "git branch -fd feature", "git branch --delete --force feature",
+		"git branch --force --delete feature", "git -C . branch -d -f feature",
+	} {
+		if v := classifyShell(cmd); v.Tier != Block {
+			t.Errorf("%q = %v (%s), want block", cmd, v.Tier, v.Reason)
+		}
+	}
+	for _, cmd := range []string{"git branch", "git branch -a", "git branch -d merged", "git branch -f feature origin/feature", "git branch --list"} {
+		if v := classifyShell(cmd); v.Tier == Block {
+			t.Errorf("%q blocked (%s)", cmd, v.Reason)
+		}
+	}
+}
+
+// ADR-0072 §4.8: GNU sed runs programs through the e command and the
+// e flag; neither is Safe, whatever the delimiter or flag order.
+func TestSedExecutionIsNotSafe(t *testing.T) {
+	for _, cmd := range []string{
+		"sed '1e id' file.txt", "sed 'e whoami' file.txt", "sed 's/foo/bar/e' file.txt",
+		"sed 's/foo/printf X/ge' f", "sed 's#foo#printf X#e' f", "sed -n '/x/e' f",
+		"sed '1,3e id' f", "sed 's|a|b|;e id' f", "sed 's/a/b' f", // unparseable s: not Safe
+	} {
+		if v := classifyShell(cmd); v.Tier == Safe {
+			t.Errorf("%q classified safe (%s)", cmd, v.Reason)
+		}
+	}
+	for _, cmd := range []string{"sed -n '1,5p' f", "sed 's/e/x/g' f", "sed 's/foo/bar/' f", "sed '/e/d' f", "sed 's#a/e#b#' f", "sed -e 's/a/b/' -e '/x/p' f"} {
+		if v := classifyShell(cmd); v.Tier != Safe {
+			t.Errorf("%q = %v (%s), want safe", cmd, v.Tier, v.Reason)
+		}
+	}
+}

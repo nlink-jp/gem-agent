@@ -408,6 +408,13 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   reintroduce a path parameter the callee reopens. `workdir.List`
   returns `(infos, more, err)` and `Info.Partial`; every consumer
   renders the cut.
+- **Read opens are `O_NONBLOCK` and admit regular files and
+  directories only** (ADR-0072 §4.8) — `openRegular` in tools and
+  mention; a FIFO or device is refused on the opened descriptor.
+  Never add a plain `Open` on a model- or operator-named path. HEIC
+  is sniffed by `heifMIME` (ftyp box, length-checked) in both
+  packages; keep them identical. `osascript` alone is Review by
+  policy — only `with administrator privileges` is the Block.
 - **Every cut is a rune cut** (ADR-0072 §4.3) — `cutRunes` in tools,
   skills, memory, instructions, `clipText` in docext: never `s[:n]`
   on text the model will see.

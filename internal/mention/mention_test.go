@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
@@ -512,5 +514,39 @@ func TestUploadUsesTheVerifiedFile(t *testing.T) {
 	}
 	if captured != "MEDIA-SENTINEL" {
 		t.Fatalf("upload read %q, want the verified file's bytes", captured)
+	}
+}
+
+// ADR-0072 §4.8: an @fifo with no writer is refused promptly, not
+// waited on; a HEIC attachment is identified by its ftyp box.
+func TestFIFOIsRefusedAndHEICAccepted(t *testing.T) {
+	project, _ := filepath.EvalSymlinks(t.TempDir())
+	if err := syscall.Mkfifo(filepath.Join(project, "pipe.txt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	heic := []byte{0, 0, 0, 24, 'f', 't', 'y', 'p', 'h', 'e', 'i', 'c', 0, 0, 0, 0, 'm', 'i', 'f', '1', 'h', 'e', 'i', 'c'}
+	heic = append(heic, make([]byte, 64)...)
+	if err := os.WriteFile(filepath.Join(project, "shot.heic"), heic, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	type res struct {
+		atts     []Attachment
+		problems []Problem
+	}
+	done := make(chan res, 1)
+	go func() {
+		a, p := Expand(context.Background(), "@pipe.txt @shot.heic", project, "", DefaultLimits())
+		done <- res{a, p}
+	}()
+	select {
+	case r := <-done:
+		if len(r.problems) != 1 || r.problems[0].Ref != "pipe.txt" {
+			t.Errorf("problems = %+v, want the FIFO refused", r.problems)
+		}
+		if len(r.atts) != 1 || r.atts[0].MIME != "image/heic" {
+			t.Errorf("atts = %+v, want the HEIC attached", r.atts)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Expand blocked on the FIFO")
 	}
 }
