@@ -328,15 +328,46 @@ func persistentTokens(command, projectDir string) (Verdict, bool) {
 	// the next character: `.g''it/config` and `.git\/config` both run
 	// as .git/config (ADR-0072 §4.5). The quotes and backslashes are
 	// removed before the split, so the words are what the shell sees.
-	for _, tok := range candidateSplit.Split(shellUnquote.Replace(command), -1) {
-		if tok == "" || strings.HasPrefix(tok, "-") {
-			continue
+	for _, seg := range segmentSplit.Split(shellUnquote.Replace(command), -1) {
+		if gitReadOnlySegment(seg) {
+			continue // `git log -- .git` reads history; nothing is written
 		}
-		if v, ok := persistentTarget(projectRelative(tok, projectDir)); ok {
-			return v, true
+		for _, tok := range candidateSplit.Split(seg, -1) {
+			if tok == "" || strings.HasPrefix(tok, "-") {
+				continue
+			}
+			if v, ok := persistentTarget(projectRelative(tok, projectDir)); ok {
+				return v, true
+			}
 		}
 	}
 	return Verdict{}, false
+}
+
+// gitReadOnly are git subcommands that write nothing to the tree or
+// the repository; a persistent path among their arguments is a
+// pathspec, not a target (pre-release review: `git log -- .git` was
+// Block).
+var gitReadOnly = map[string]bool{
+	"log": true, "diff": true, "show": true, "status": true, "grep": true, "blame": true,
+	"ls-files": true, "ls-tree": true, "rev-parse": true, "describe": true, "shortlog": true,
+	"cat-file": true, "show-ref": true, "rev-list": true, "name-rev": true, "count-objects": true,
+}
+
+func gitReadOnlySegment(seg string) bool {
+	fields := strings.Fields(seg)
+	if len(fields) == 0 || canonicalName(fields[0]) != "git" {
+		return false
+	}
+	rest := fields[1:]
+	for len(rest) > 0 && strings.HasPrefix(rest[0], "-") {
+		if (rest[0] == "-C" || rest[0] == "-c") && len(rest) > 1 {
+			rest = rest[2:]
+			continue
+		}
+		rest = rest[1:]
+	}
+	return len(rest) > 0 && gitReadOnly[rest[0]]
 }
 
 // candidateSplit separates the words a path could be, inside or
@@ -693,7 +724,11 @@ func readOnlyCommand(command string) bool {
 	}
 	segments := segmentSplit.Split(command, -1)
 	for _, seg := range segments {
-		fields := strings.Fields(strings.TrimSpace(seg))
+		// Shell words, not whitespace fields: a quoted sed script is
+		// one argument to sed and must reach mutatingUse whole
+		// (pre-release review — `'w /etc/passwd'` arrived as two
+		// pieces and the write command lost its trailing space).
+		fields := shellWords(seg)
 		if len(fields) == 0 {
 			return false
 		}
@@ -707,6 +742,58 @@ func readOnlyCommand(command string) bool {
 		}
 	}
 	return true
+}
+
+// shellWords splits one simple command into the words the shell would
+// pass: whitespace separates, single and double quotes group (and are
+// removed), a backslash outside single quotes escapes the next byte.
+// Unbalanced quotes run to the end of the segment.
+func shellWords(seg string) []string {
+	var words []string
+	var cur strings.Builder
+	inWord, single, double := false, false, false
+	flush := func() {
+		if inWord {
+			words = append(words, cur.String())
+			cur.Reset()
+			inWord = false
+		}
+	}
+	for i := 0; i < len(seg); i++ {
+		ch := seg[i]
+		switch {
+		case single:
+			if ch == '\'' {
+				single = false
+			} else {
+				cur.WriteByte(ch)
+			}
+		case double:
+			if ch == '"' {
+				double = false
+			} else if ch == '\\' && i+1 < len(seg) {
+				i++
+				cur.WriteByte(seg[i])
+			} else {
+				cur.WriteByte(ch)
+			}
+		case ch == '\'':
+			single, inWord = true, true
+		case ch == '"':
+			double, inWord = true, true
+		case ch == '\\' && i+1 < len(seg):
+			i++
+			cur.WriteByte(seg[i])
+			inWord = true
+		case ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r':
+			flush()
+		default:
+			cur.WriteByte(ch)
+			inWord = true
+		}
+	}
+	flush()
+	return words
 }
 
 // awkSystemRe finds awk's system() call, with any whitespace before
@@ -860,18 +947,58 @@ func mutatingUse(name string, args []string) bool {
 			}
 		}
 	case "sed":
-		var script []string
-		for _, a := range args {
-			if strings.HasPrefix(a, "--in-place") || shortHas(a, "i") {
+		// The scripts are what -e/--expression name, glued or not, or
+		// the first operand when none does; everything after is a file
+		// operand and never enters the parse (pre-release review: a
+		// filename with an `e` read as an s-command flag, and a glued
+		// `-e'w file'` / `--expression=` / `--file=` slipped past the
+		// bare-token scan as an opaque flag).
+		var scripts []string
+		explicit := false
+		for i := 0; i < len(args); i++ {
+			a := args[i]
+			switch {
+			case a == "-e" || a == "--expression":
+				explicit = true
+				if i+1 < len(args) {
+					scripts = append(scripts, args[i+1])
+					i++
+				}
+			case strings.HasPrefix(a, "--expression="):
+				explicit = true
+				scripts = append(scripts, strings.TrimPrefix(a, "--expression="))
+			case a == "-f" || a == "--file" || strings.HasPrefix(a, "--file=") || (strings.HasPrefix(a, "-f") && !strings.HasPrefix(a, "--")):
+				return true // a script file: unreadable here, so not Safe
+			case strings.HasPrefix(a, "--in-place"):
 				return true
-			}
-			if !strings.HasPrefix(a, "-") {
-				script = append(script, strings.Trim(a, `"'`))
+			case strings.HasPrefix(a, "--"):
+			case strings.HasPrefix(a, "-"):
+				// A short cluster: i is in-place; e means the script
+				// follows (glued or as the next word); f means a file.
+				cluster := a[1:]
+				if strings.ContainsAny(cluster, "if") {
+					return true
+				}
+				if j := strings.IndexByte(cluster, 'e'); j >= 0 {
+					explicit = true
+					if rest := cluster[j+1:]; rest != "" {
+						scripts = append(scripts, rest)
+					} else if i+1 < len(args) {
+						scripts = append(scripts, args[i+1])
+						i++
+					}
+				}
+			default:
+				if !explicit && len(scripts) == 0 {
+					scripts = append(scripts, a)
+				}
 			}
 		}
-		joined := strings.Join(script, " ")
-		if sedWriteCmd.MatchString(joined) || sedExecutes(joined) {
-			return true
+		for _, sc := range scripts {
+			sc = strings.Trim(sc, `"'`)
+			if sedWriteCmd.MatchString(sc) || sedExecutes(sc) {
+				return true
+			}
 		}
 	case "awk":
 		for _, a := range args {
@@ -902,6 +1029,24 @@ func mutatingUse(name string, args []string) bool {
 				return true // env runs the named program
 			}
 		}
+	case "uniq":
+		// uniq INPUT OUTPUT overwrites its second operand (pre-release
+		// review).
+		operands := 0
+		for _, a := range args {
+			if !strings.HasPrefix(a, "-") {
+				operands++
+			}
+		}
+		if operands >= 2 {
+			return true
+		}
+	case "date":
+		for _, a := range args {
+			if strings.HasPrefix(a, "-s") || strings.HasPrefix(a, "--set") {
+				return true // sets the clock
+			}
+		}
 	}
 	return false
 }
@@ -909,11 +1054,41 @@ func mutatingUse(name string, args []string) bool {
 func hasCredentialPath(s string) bool {
 	lower := strings.ToLower(s)
 	for _, p := range credentialPaths {
+		if p == ".env" {
+			if envCredential(lower) {
+				return true
+			}
+			continue
+		}
 		if strings.Contains(lower, p) {
 			return true
 		}
 	}
 	return false
+}
+
+// envCredential reports a `.env` reference that is a credential file:
+// `.env`, `.env.local`, `.env.production` — not the committed
+// templates `.env.example` / `.env.sample` / `.env.template` /
+// `.env.dist` (pre-release review: `cat .env.example` was Block).
+func envCredential(lower string) bool {
+	for i := 0; ; {
+		j := strings.Index(lower[i:], ".env")
+		if j < 0 {
+			return false
+		}
+		rest := lower[i+j+4:]
+		template := false
+		for _, suffix := range []string{".example", ".sample", ".template", ".dist"} {
+			if strings.HasPrefix(rest, suffix) {
+				template = true
+			}
+		}
+		if !template {
+			return true
+		}
+		i += j + 4
+	}
 }
 
 func withinDir(base, p string) bool {

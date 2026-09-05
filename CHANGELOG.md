@@ -64,6 +64,12 @@
 - A `never` policy or a one-shot `--allow` grant no longer lifts the
   operator-only floor: writing `AGENTS.md` under `--allow write_file
   --auto` is denied with the reason instead of running
+- sed scripts given as `-e'…'`, `--expression=…` or `--file=…` are
+  parsed like the plain form (they were opaque flags, and `w` / `e`
+  inside them ran Safe); a file operand's letters are no longer read
+  as s-command flags; `uniq IN OUT` and `date -s` are not Safe;
+  `.env.example`-style templates are not credentials; read-only git
+  subcommands naming `.git` are reads
 - `osascript … with administrator privileges` is Block; `git branch`
   deleting with force in any spelling is Block; GNU sed's `e` command
   and `e` flag are not Safe

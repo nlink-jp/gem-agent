@@ -410,3 +410,64 @@ func TestSedExecutionIsNotSafe(t *testing.T) {
 		}
 	}
 }
+
+// Pre-release review (ADR-0072 §4.9): sed scripts reach the parser in
+// every spelling, and file operands never do.
+func TestSedScriptsInEveryFlagSpelling(t *testing.T) {
+	for _, cmd := range []string{
+		"sed --expression='w /etc/passwd' file", "sed --expression='1e id' file",
+		"sed --expression='s/a/b/e' file", "sed -e'w outfile' file", "sed --file=script.sed file",
+		"sed -fscript.sed file", "sed -ne 's/a/b/e' file", "sed -n -e '1e id' file",
+	} {
+		if v := classifyShell(cmd); v.Tier == Safe {
+			t.Errorf("%q classified safe (%s)", cmd, v.Reason)
+		}
+	}
+	// A filename's letters are not s-command flags.
+	for _, cmd := range []string{"sed 's/a/b/' notes.txt", "sed 's/foo/bar/' server.log", "sed 's/a/b/g' file.txt", "sed -e 's/a/b/' file.txt other.txt", "sed -n '1,5p' new.txt"} {
+		if v := classifyShell(cmd); v.Tier != Safe {
+			t.Errorf("%q = %v (%s), want safe", cmd, v.Tier, v.Reason)
+		}
+	}
+}
+
+// uniq's second operand is written; date -s sets the clock.
+func TestUniqOutputAndDateSetAreNotSafe(t *testing.T) {
+	for cmd, want := range map[string]Tier{
+		"uniq input.txt AGENTS.md": Review, "uniq input.txt /etc/evil": Review, "uniq a .git/config": Block,
+		"date -s '2020-01-01'": Review,
+	} {
+		v := classifyShell(cmd)
+		if v.Tier != want {
+			t.Errorf("%q = %v (%s), want %v", cmd, v.Tier, v.Reason, want)
+		}
+	}
+	for _, cmd := range []string{"uniq -c input.txt", "sort x | uniq", "date", "date +%Y"} {
+		if v := classifyShell(cmd); v.Tier != Safe {
+			t.Errorf("%q = %v (%s), want safe", cmd, v.Tier, v.Reason)
+		}
+	}
+}
+
+// Committed .env templates are not credentials; read-only git
+// subcommands naming .git are reads.
+func TestBenignReadsAreNotFloors(t *testing.T) {
+	for _, cmd := range []string{"cat .env.example", "cat .env.sample", "diff .env.example .env.template"} {
+		if v := classifyShell(cmd); v.Tier != Safe {
+			t.Errorf("%q = %v (%s), want safe", cmd, v.Tier, v.Reason)
+		}
+	}
+	for _, cmd := range []string{"cat .env", "cat .env.local", "cat .env.production", "cp .env.example .env"} {
+		if v := classifyShell(cmd); v.Tier != Block {
+			t.Errorf("%q = %v (%s), want block", cmd, v.Tier, v.Reason)
+		}
+	}
+	for _, cmd := range []string{"git log --oneline -- .git", "git diff -- AGENTS.md", "git show HEAD:AGENTS.md", "git -C . status .git"} {
+		if v := classifyShell(cmd); v.Tier == Block || v.OperatorOnly {
+			t.Errorf("read-only %q = %v operatorOnly=%v (%s)", cmd, v.Tier, v.OperatorOnly, v.Reason)
+		}
+	}
+	if v := classifyShell("git add AGENTS.md"); v.Tier != Review || !v.OperatorOnly {
+		t.Errorf("git add AGENTS.md = %v operatorOnly=%v, want operator-only review", v.Tier, v.OperatorOnly)
+	}
+}

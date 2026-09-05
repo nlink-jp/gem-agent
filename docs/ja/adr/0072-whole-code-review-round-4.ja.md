@@ -486,6 +486,19 @@ ADR-0071 §4 を修正する。
 - 実機確認が通ったもの: root 層経由の `read_file`、auto モードの `write_file`
   → `edit_file` → `shell_exec`、MCP 再接続付きの `/clear`（board の子が新
   セッション id に移り、22 サーバー / 191 ツールが再接続）。
+- **ルール層レビュワー**（全件プローブで確認）: `sed --expression='w
+  /etc/passwd'`・`sed -e'w file'`・`sed --file=x` が Safe — sed のガードは
+  空白区切りの素のトークンしか読まず、結合形や `=` 連結のスクリプトは不透明な
+  フラグだった。またファイルオペランドの文字が s コマンドのフラグとして解析
+  された（`sed 's/a/b/' notes.txt` は Review、`… main.go` は Safe）。read-only
+  コマンドはシェルの語（引用符を尊重）に分割し、sed の引数は `-e`/`--expression`/
+  `-f`/`--file` をあらゆる綴りで解析し、スクリプトだけがパーサに届く。`uniq IN
+  OUT` は第 2 オペランドに書き、`date -s` は時計を設定: どちらも Safe から外す。
+  偽の床 2 つを除去: `.env.example` / `.sample` / `.template` / `.dist` は
+  資格情報でなく、read-only の git サブコマンド（`log`・`diff`・`show`・
+  `status`…）が `.git` や指示ファイルを名指しするのは pathspec であって書込では
+  ない。パーサ堅牢性（空・引用符不均衡・非 UTF-8・140 KB スクリプト）: panic
+  なし、線形時間。
 
 ## 教訓
 

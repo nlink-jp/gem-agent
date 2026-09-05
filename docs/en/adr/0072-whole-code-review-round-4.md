@@ -565,6 +565,21 @@ review-driven passes above and is recorded here.
   → `edit_file` → `shell_exec` in auto mode; `/clear` with MCP
   reconnect (the board's child moved to the new session id, 22
   servers / 191 tools reconnected).
+- **Rule-tier reviewer** (all confirmed by probe): `sed
+  --expression='w /etc/passwd'`, `sed -e'w file'`, `sed --file=x` were
+  Safe — the sed guard read only bare, space-split tokens, so a glued
+  or `=`-joined script was an opaque flag; and a file operand's
+  letters were parsed as s-command flags (`sed 's/a/b/' notes.txt` was
+  Review, `… main.go` Safe). Read-only commands are now split into
+  shell words (quotes respected), sed's arguments are parsed for
+  `-e`/`--expression`/`-f`/`--file` in every spelling, and only the
+  scripts reach the parser. `uniq IN OUT` writes its second operand
+  and `date -s` sets the clock: both leave Safe. Two false floors
+  removed: `.env.example` / `.sample` / `.template` / `.dist` are
+  not credentials, and a read-only git subcommand (`log`, `diff`,
+  `show`, `status`, …) naming `.git` or an instruction file is a
+  pathspec, not a write. Parser robustness (empty, unbalanced quotes,
+  non-UTF-8, 140 KB scripts): no panic, linear time.
 
 ## Lessons
 
