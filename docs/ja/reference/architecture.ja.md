@@ -35,7 +35,9 @@ tools パッケージが持つのはプロジェクトディレクトリだけ�
 `internal/memory`（エージェントメモリ）、`internal/skills`（skill 探索/読込）、
 `internal/docext`（Office テキスト抽出）、`internal/mediastore`（GCS メディア
 アップロード）、`internal/uitext`（ja/en UI 文字列カタログ）、
-`internal/telemetry`（監査イベントのエクスポート）、`internal/trustpin`
+`internal/telemetry`（監査イベントのエクスポート）、`internal/hooks`（Claude Code の
+実測契約に沿う操作者フック — ADR-0044/0069/0071）、`internal/workdir`（state ルート
+配下のセッション別作業ディレクトリ — ADR-0058）、`internal/trustpin`
 （エージェント向けファイルの内容ピンと永続ファイル snapshot — ADR-0074）、
 `internal/bounded`（他の全パッケージが使う上限付き読取/列挙/取得の原始関数 —
 ADR-0073 §4）、`internal/archtest`（構造規則を固定する AST テスト: パスを扱う

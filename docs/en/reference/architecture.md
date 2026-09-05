@@ -38,8 +38,10 @@ ADR-0052), `internal/session`
 state layout), `internal/memory` (agent memory), `internal/skills`
 (skill discovery/loading), `internal/docext` (Office text extraction),
 `internal/mediastore` (GCS media uploads), `internal/uitext` (ja/en UI
-string catalogs), `internal/telemetry` (audit-event export),
-`internal/trustpin` (content pins of the agent-facing files and the
+string catalogs), `internal/telemetry` (audit-event export), `internal/hooks` (operator
+hooks on Claude Code's measured contracts — ADR-0044/0069/0071),
+`internal/workdir` (the per-session work directory under the state root —
+ADR-0058), `internal/trustpin` (content pins of the agent-facing files and the
 persistent-file snapshot — ADR-0074), `internal/bounded` (the capped
 read/list/capture primitives every other package uses — ADR-0073 §4),
 `internal/archtest` (AST tests that pin the structural rules: path
