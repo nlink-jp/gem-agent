@@ -70,6 +70,24 @@ func TestEmptyPinSetIsRecorded(t *testing.T) {
 	}
 }
 
+// A project trusted through the operator's config has pins and no trust
+// key; resetting a project tool policy or command rule to default must
+// not delete the entry and its pins with it (verification A).
+func TestPinsSurviveToolPolicyReset(t *testing.T) {
+	pf := &PolicyFile{Tools: map[string]string{}, Projects: map[string]ProjectPolicy{}}
+	pf.SetPins("/p", map[string]string{"AGENTS.md": "sha256:aa"})
+	pf.Set("/p", "write_file", "always")
+	pf.Set("/p", "write_file", "")
+	if !pf.HasPins("/p") || pf.PinsFor("/p")["AGENTS.md"] != "sha256:aa" {
+		t.Fatalf("Set back to default dropped the pins: %+v", pf.Projects["/p"])
+	}
+	pf.SetCommand("/p", "git status", "never")
+	pf.SetCommand("/p", "git status", "")
+	if !pf.HasPins("/p") {
+		t.Fatalf("SetCommand back to default dropped the pins: %+v", pf.Projects["/p"])
+	}
+}
+
 func TestPinsRoundTripAndFollowTrust(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "policy.toml")
 	pf := &PolicyFile{Tools: map[string]string{}, Projects: map[string]ProjectPolicy{}}

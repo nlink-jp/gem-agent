@@ -406,8 +406,12 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   before and says so) — `pinned_at` is the "recorded" marker, so an
   empty set is an answer, not "never pinned".
   Re-pin only what the operator saw: an approved OperatorOnly
-  `write_file`/`edit_file` re-pins that one name; an operator-lane or
-  `!` command re-pins nothing and reports what it changed. **Never run
+  `write_file`/`edit_file` re-pins that one name, and only when
+  `pinIsCurrent` held as the write began (`BeforeOperatorWrite` /
+  `OnOperatorWrite` pair, `writeGuard`); an operator-lane or `!`
+  command re-pins nothing and reports the pins that now differ. Pins
+  are edited under the policy-file lock (`mutatePins`), never saved
+  from a snapshot. **Never run
   an E2E script whose project directory could be empty inside this
   repository**: one did, and committed a two-line `AGENTS.md`
   (review of ADR-0074, F-01) — `make check` now refuses an AGENTS.md

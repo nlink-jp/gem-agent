@@ -195,7 +195,7 @@ func TestClearSequenceMatchesTheADR(t *testing.T) {
 		"sink.SessionEnd()",
 		"ag.Restart(newLog)",
 		"sink.Restart(ctx, sessionID)",
-		"reloadMCP()",
+		"reconnectMCP(false)",
 		"sink.SessionStart(",
 		`sessionHooks("clear")`,
 	}

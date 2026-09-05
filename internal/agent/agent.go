@@ -85,15 +85,16 @@ type Agent struct {
 	system   string
 	maxTurns int
 
-	onToolCall  func(tc llm.ToolCall)
-	onUsage     func(u llm.Usage)
-	telemetry   *telemetry.Sink
-	onAuto      func(tc llm.ToolCall, d AutoDecision)
-	onOpWrite   func(tc llm.ToolCall)
-	onAttach    func(atts []mention.Attachment, problems []mention.Problem)
-	onNotice    func(msg string)
-	preToolHook func(ctx context.Context, name string, args map[string]any) (bool, string)
-	promptHook  PromptHook
+	onToolCall    func(tc llm.ToolCall)
+	onUsage       func(u llm.Usage)
+	telemetry     *telemetry.Sink
+	onAuto        func(tc llm.ToolCall, d AutoDecision)
+	onOpWrite     func(tc llm.ToolCall)
+	beforeOpWrite func(tc llm.ToolCall)
+	onAttach      func(atts []mention.Attachment, problems []mention.Problem)
+	onNotice      func(msg string)
+	preToolHook   func(ctx context.Context, name string, args map[string]any) (bool, string)
+	promptHook    PromptHook
 
 	mu   sync.Mutex // guards auto and window (both set from the UI goroutine)
 	auto bool
@@ -220,11 +221,14 @@ type Options struct {
 	// OnAutoDecision, when set, observes each auto-mode verdict so the
 	// UI can show what ran without asking, and why.
 	OnAutoDecision func(tc llm.ToolCall, d AutoDecision)
-	// OnOperatorWrite, when set, is told after a call the operator
+	// BeforeOperatorWrite, when set, is told that a call the operator
 	// approved as OperatorOnly — a write into the files later sessions
-	// trust — ran to completion (ADR-0074 §1): the content pins are
-	// refreshed, because the operator saw that write.
-	OnOperatorWrite func(tc llm.ToolCall)
+	// trust — is about to run; OnOperatorWrite, when set, is told that
+	// it ran to completion (ADR-0074 §1). The pair lets the runtime
+	// compare the file before and after: the operator saw the write,
+	// not what had happened to the file before it.
+	BeforeOperatorWrite func(tc llm.ToolCall)
+	OnOperatorWrite     func(tc llm.ToolCall)
 	// OnAttach, when set, reports what an @-reference pulled in (and
 	// what it could not) so the operator sees it landed.
 	OnAttach func(atts []mention.Attachment, problems []mention.Problem)
@@ -292,23 +296,24 @@ type Options struct {
 func New(opts Options) *Agent {
 	defs, purposeTools := toolDefs(opts.Registry)
 	return &Agent{
-		backend:     opts.Backend,
-		registry:    opts.Registry,
-		gate:        opts.Gate,
-		log:         opts.Log,
-		model:       opts.Model,
-		system:      opts.System,
-		maxTurns:    opts.MaxTurns,
-		onToolCall:  opts.OnToolCall,
-		onUsage:     opts.OnUsage,
-		onAuto:      opts.OnAutoDecision,
-		onOpWrite:   opts.OnOperatorWrite,
-		onAttach:    opts.OnAttach,
-		onNotice:    opts.OnNotice,
-		preToolHook: opts.PreToolHook,
-		promptHook:  opts.PromptHook,
-		auto:        opts.AutoApprove,
-		toolDefs:    defs,
+		backend:       opts.Backend,
+		registry:      opts.Registry,
+		gate:          opts.Gate,
+		log:           opts.Log,
+		model:         opts.Model,
+		system:        opts.System,
+		maxTurns:      opts.MaxTurns,
+		onToolCall:    opts.OnToolCall,
+		onUsage:       opts.OnUsage,
+		onAuto:        opts.OnAutoDecision,
+		onOpWrite:     opts.OnOperatorWrite,
+		beforeOpWrite: opts.BeforeOperatorWrite,
+		onAttach:      opts.OnAttach,
+		onNotice:      opts.OnNotice,
+		preToolHook:   opts.PreToolHook,
+		promptHook:    opts.PromptHook,
+		auto:          opts.AutoApprove,
+		toolDefs:      defs,
 
 		purposeTools: purposeTools,
 
@@ -1229,6 +1234,9 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 				return deniedResult, true, false, floorRan
 			}
 		}
+	}
+	if operatorWrite && a.beforeOpWrite != nil {
+		a.beforeOpWrite(tc)
 	}
 	out, state, err := a.runWithFloor(ctx, tool, tc)
 	if state == floorAbandoned {

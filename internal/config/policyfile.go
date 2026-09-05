@@ -133,12 +133,19 @@ func (pf *PolicyFile) Set(projectDir, tool, decision string) {
 	}
 	setOrDelete(entry.Tools, tool, decision)
 	// The entry survives with no tools when it still carries a trust
-	// decision (ADR-0023) or learned command rules (ADR-0045).
-	if len(entry.Tools) == 0 && len(entry.Commands) == 0 && entry.Trust == "" {
+	// decision (ADR-0023), learned command rules (ADR-0045) or content
+	// pins (ADR-0074 — a project trusted through the operator's config
+	// has pins and no trust key; "back to default" must not drop them).
+	if entry.empty() {
 		delete(pf.Projects, projectDir)
 		return
 	}
 	pf.Projects[projectDir] = entry
+}
+
+// empty reports whether the entry records nothing worth keeping.
+func (e ProjectPolicy) empty() bool {
+	return len(e.Tools) == 0 && len(e.Commands) == 0 && e.Trust == "" && len(e.Pins) == 0 && e.PinnedAt == ""
 }
 
 // CommandsFor returns the per-command rules recorded for projectDir
@@ -171,8 +178,8 @@ func (pf *PolicyFile) SetCommand(projectDir, key, decision string) {
 	}
 	setOrDelete(entry.Commands, key, decision)
 	// The entry survives with nothing in it only while it carries a
-	// trust decision (ADR-0023).
-	if len(entry.Commands) == 0 && len(entry.Tools) == 0 && entry.Trust == "" {
+	// trust decision (ADR-0023) or content pins (ADR-0074).
+	if entry.empty() {
 		delete(pf.Projects, projectDir)
 		return
 	}

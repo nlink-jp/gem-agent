@@ -461,16 +461,18 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// --- MCP servers from the project's .mcp.json (drop-in) ---
-	mcpClients, mcpSummary, _ := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, grant)
-	defer func() {
-		for _, c := range mcpClients {
-			c.Close()
-		}
-	}()
+	// --- project instruction files (drop-in: AGENTS.md and friends,
+	// including ancestor directories, exactly as other agents read them)
+	// Read here, with the skills, before any process the project names
+	// (an MCP server) starts: the pins were digested moments ago, and
+	// the gap between digest and read is kept to this (ADR-0074).
+	projectContext, contextLabels, contextNotes := loadInstructions(projectDir, grant)
+	for _, n := range contextNotes {
+		fmt.Fprintf(stderr, "warning: instructions %s\n", n)
+	}
 
 	// --- skills: Claude Code's skill library, read as-is (ADR-0010) ---
-	// skillsList and mcpSummary/mcpClients above are reassigned by the
+	// skillsList and mcpSummary/mcpClients below are reassigned by the
 	// /skills reload and /mcp reload closures (ADR-0039); every consumer
 	// reads the variables through a closure, so updates propagate. The
 	// single-writer discipline holds because a slash command cannot run
@@ -483,6 +485,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if err := registerSkillTool(registry, func() []skills.Skill { return skillsList }); err != nil {
 		return err
 	}
+
+	// --- MCP servers from the project's .mcp.json (drop-in) ---
+	mcpClients, mcpSummary, _ := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, grant)
+	defer func() {
+		for _, c := range mcpClients {
+			c.Close()
+		}
+	}()
 
 	// --- agent memory: facts persisted across sessions (ADR-0020) ---
 	// A missing home disables memory with a warning; the runtime must
@@ -605,13 +615,6 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// fetch on the lightweight one. Both egress-gated by default.
 	if err := registerWebTools(registry, backend, summaryBackend, cfg.Model.Name, summaryModel, sideLog, tally); err != nil {
 		return err
-	}
-
-	// --- project instruction files (drop-in: AGENTS.md and friends,
-	// including ancestor directories, exactly as other agents read them)
-	projectContext, contextLabels, contextNotes := loadInstructions(projectDir, grant)
-	for _, n := range contextNotes {
-		fmt.Fprintf(stderr, "warning: instructions %s\n", n)
 	}
 
 	// The TUI needs a real terminal on both ends (ADR-0002); piped use
@@ -827,6 +830,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	composeSystem := func() string {
 		return buildSystemPrompt(projectDir, workDir, projectContext) + skills.PromptSection(skillsList) + memorySection
 	}
+	// writes pairs the agent's before/after hooks around an
+	// operator-approved write (ADR-0074 §1).
+	writes := &writeGuard{}
 	// notice puts a one-line warning in front of the operator wherever
 	// they are: the TUI's note strip when it runs, stderr otherwise.
 	notice := func(msg string) {
@@ -853,14 +859,26 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		Telemetry:        sink,
 		ClipboardImage:   clipboardImage,
 		MediaUpload:      mediaUpload,
+		BeforeOperatorWrite: func(tc llm.ToolCall) {
+			if name := pinNameForWrite(projectDir, tc); name != "" {
+				writes.begin(tc, name, pinIsCurrent(policyFile, projectDir, name))
+			}
+		},
 		OnOperatorWrite: func(tc llm.ToolCall) {
 			// The operator approved a write into the files later
 			// sessions trust: that content — the one file they saw
-			// written — is now what they trust (ADR-0074 §1). An
-			// operator-lane command shows its text, not its effect on
-			// those files, so it re-pins nothing; what now differs is
-			// named and the next start asks.
+			// written — is now what they trust (ADR-0074 §1), provided
+			// the file was still what its pin records when the write
+			// began; a file that had drifted before is left for the
+			// next start to ask about. An operator-lane command shows
+			// its text, not its effect on those files, so it re-pins
+			// nothing; what now differs is named and the next start
+			// asks.
 			if name := pinNameForWrite(projectDir, tc); name != "" {
+				if !writes.end(tc, name) {
+					notice(fmt.Sprintf(msgs.PinStaleWriteFmt, name))
+					return
+				}
 				if err := repinName(policyPath, projectDir, name, policyFile, grant.excluded); err != nil {
 					notice(fmt.Sprintf("could not refresh the trust pin of %s: %v", name, err))
 				}
@@ -1020,7 +1038,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// verdict — a reload can never widen what the trust gate allowed.
 	// They run only between turns (slash commands cannot be queued), so
 	// reassigning the captured variables is single-writer safe.
-	reloadMCP := func() string {
+	// reconnectMCP is /mcp reload; /clear calls it after its own pin
+	// check, so recheck is false there and the note is not printed twice.
+	reconnectMCP := func(recheck bool) string {
 		if !cfg.MCP.Enabled {
 			return msgs.MCPDisabled
 		}
@@ -1034,10 +1054,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// A changed .mcp.json is re-checked against its pin first
 		// (ADR-0074); mid-session there is nobody at a prompt, so a
 		// change is left out and named.
-		var pinNotes []string
-		grant.excluded, pinNotes = checkPins(cfg, policyFile, policyPath, projectDir, projectTrusted, false, nil, &warn, msgs)
-		for _, n := range pinNotes {
-			fmt.Fprintf(&warn, "%s\n", n)
+		if recheck {
+			var pinNotes []string
+			grant.excluded, pinNotes = checkPins(cfg, policyFile, policyPath, projectDir, projectTrusted, false, nil, &warn, msgs)
+			for _, n := range pinNotes {
+				fmt.Fprintf(&warn, "%s\n", n)
+			}
 		}
 		mcpClients, mcpSummary, _ = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, grant)
 		ag.RefreshTools()
@@ -1062,6 +1084,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		return b.String()
 	}
+	reloadMCP := func() string { return reconnectMCP(true) }
 	reloadSkills := func() string {
 		var pinNotes []string
 		grant.excluded, pinNotes = checkPins(cfg, policyFile, policyPath, projectDir, projectTrusted, false, nil, io.Discard, msgs)
@@ -1260,7 +1283,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			note("telemetry keeps the previous session id: %v", err)
 		}
 		if cfg.MCP.Enabled {
-			extra.WriteString(reloadMCP())
+			extra.WriteString(reconnectMCP(false))
 		}
 		sink.SessionStart(cfg.Model.Name, sandboxOn, ag.AutoApprove(), len(mcpClients))
 		sessionHooks("clear")

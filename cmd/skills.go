@@ -29,14 +29,31 @@ func discoverSkills(projectDir string, grant projectGrant) ([]skills.Skill, []st
 	}
 	list, notes := skills.Discover(global, projectDir, skills.DefaultLimits())
 	// A project skill whose content changed since it was trusted stays
-	// out until re-trusted (ADR-0074); its root is released.
+	// out until re-trusted (ADR-0074); its root is released. The
+	// operator's own global skill of the same name, which the project
+	// one had overridden, comes back in its place: project content that
+	// changed must not switch off a skill the operator wrote
+	// (verification G).
 	kept := list[:0]
+	shadowed := map[string]bool{}
 	for _, s := range list {
 		if s.Scope == "project" && !grant.skill(s.Entry) {
+			shadowed[s.Name] = true
 			s.Close()
 			continue
 		}
 		kept = append(kept, s)
+	}
+	if len(shadowed) > 0 && global != "" {
+		globals, _ := skills.Discover(global, "", skills.DefaultLimits())
+		for _, g := range globals {
+			if shadowed[g.Name] {
+				kept = append(kept, g)
+				notes = append(notes, fmt.Sprintf("skill %q: the project version is not loaded (changed since trusted); your global one is", g.Name))
+				continue
+			}
+			g.Close()
+		}
 	}
 	return kept, notes
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/nlink-jp/gem-agent/internal/bounded"
 	"github.com/nlink-jp/gem-agent/internal/config"
@@ -84,11 +85,7 @@ func checkPins(cfg *config.Config, policyFile *config.PolicyFile, policyPath, pr
 	if len(changes) == 0 {
 		return nil, notes
 	}
-	next := trustpin.Pins{}
-	for k, v := range recorded {
-		next[k] = v
-	}
-	accepted := false
+	var accepted []string
 	excluded = map[string]bool{}
 	for _, c := range changes {
 		if c.Kind == "removed" {
@@ -103,16 +100,20 @@ func checkPins(cfg *config.Config, policyFile *config.PolicyFile, policyPath, pr
 			ok = strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes")
 		}
 		if ok {
-			next[c.Name] = current[c.Name]
-			accepted = true
+			accepted = append(accepted, c.Name)
 			notes = append(notes, fmt.Sprintf(msgs.PinAcceptedFmt, c.Name))
 		} else {
 			excluded[c.Name] = true
 			notes = append(notes, fmt.Sprintf(msgs.PinNotLoadedFmt, describeChange(projectDir, c)))
 		}
 	}
-	if accepted {
-		if err := savePins(policyPath, projectDir, next, policyFile); err != nil {
+	if len(accepted) > 0 {
+		err := mutatePins(policyPath, projectDir, policyFile, func(pins trustpin.Pins) {
+			for _, n := range accepted {
+				pins[n] = current[n]
+			}
+		})
+		if err != nil {
 			notes = append(notes, fmt.Sprintf("could not record the pins: %v", err))
 		}
 	}
@@ -177,16 +178,56 @@ func repinName(policyPath, projectDir, name string, policyFile *config.PolicyFil
 		return nil
 	}
 	current, _ := trustpin.Compute(projectDir)
-	next := trustpin.Pins{}
-	for k, v := range policyFile.PinsFor(projectDir) {
-		next[k] = v
+	return mutatePins(policyPath, projectDir, policyFile, func(pins trustpin.Pins) {
+		if d, ok := current[name]; ok {
+			pins[name] = d
+		} else {
+			delete(pins, name)
+		}
+	})
+}
+
+// pinIsCurrent reports whether name's content is what its pin records
+// right now — the check made before an operator-approved write runs:
+// a file that had already drifted (a `! git pull`, an editor) is not
+// re-pinned by a later approved edit, because the operator saw the edit
+// and not the drift (verification B). A name with no pin and no file
+// is current: the write creates it, and the operator sees all of it.
+func pinIsCurrent(policyFile *config.PolicyFile, projectDir, name string) bool {
+	current, _ := trustpin.Compute(projectDir)
+	return current[name] == policyFile.PinsFor(projectDir)[name]
+}
+
+// writeGuard carries the pre-write answer of pinIsCurrent from the
+// agent's BeforeOperatorWrite hook to its OnOperatorWrite hook, keyed
+// by tool call. Tool calls run one at a time, but the map keeps the
+// pairing explicit rather than positional.
+type writeGuard struct {
+	mu      sync.Mutex
+	current map[string]bool
+}
+
+func writeKey(tc llm.ToolCall, name string) string { return tc.ID + "\x00" + name }
+
+func (g *writeGuard) begin(tc llm.ToolCall, name string, current bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.current == nil {
+		g.current = map[string]bool{}
 	}
-	if d, ok := current[name]; ok {
-		next[name] = d
-	} else {
-		delete(next, name)
-	}
-	return savePins(policyPath, projectDir, next, policyFile)
+	g.current[writeKey(tc, name)] = current
+}
+
+// end returns whether the pinned content was current when the write
+// began; an unknown call (no begin) is not current — the conservative
+// answer, which leaves the pin alone.
+func (g *writeGuard) end(tc llm.ToolCall, name string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	k := writeKey(tc, name)
+	current, ok := g.current[k]
+	delete(g.current, k)
+	return ok && current
 }
 
 // pinChangesNote reports, after an operator-lane command or a `!`
@@ -218,8 +259,32 @@ func repin(policyPath, projectDir string, policyFile *config.PolicyFile) error {
 	return savePins(policyPath, projectDir, current, policyFile)
 }
 
+// savePins records pins as the whole set — trust on first use and
+// `gem-agent trust --accept`, where the operator's statement is "what
+// is there now is what I trust".
 func savePins(policyPath, projectDir string, pins trustpin.Pins, policyFile *config.PolicyFile) error {
+	return mutatePins(policyPath, projectDir, policyFile, func(recorded trustpin.Pins) {
+		for k := range recorded {
+			delete(recorded, k)
+		}
+		for k, v := range pins {
+			recorded[k] = v
+		}
+	})
+}
+
+// mutatePins edits the recorded pins under the policy file's lock: fn
+// receives the set as the file holds it at that moment and edits it in
+// place, so two sessions on one project cannot revert each other's
+// pins with a snapshot taken outside the lock (verification C). The
+// in-memory copy follows the file.
+func mutatePins(policyPath, projectDir string, policyFile *config.PolicyFile, fn func(pins trustpin.Pins)) error {
 	fresh, err := config.MutatePolicyFile(policyPath, func(pf *config.PolicyFile) {
+		pins := trustpin.Pins{}
+		for k, v := range pf.PinsFor(projectDir) {
+			pins[k] = v
+		}
+		fn(pins)
 		pf.SetPins(projectDir, pins)
 	})
 	if err != nil {

@@ -12,8 +12,9 @@
   `N` leaves it out and asks again next time), is left out with a note
   in a non-interactive run and on `/clear` or reload, and a removed one
   keeps its pin. A `write_file`/`edit_file` you approved as
-  operator-only re-pins that one file; an operator-lane or `!` command
-  re-pins nothing and a note names what it changed. The first
+  operator-only re-pins that one file, provided it was unchanged when
+  the write began; an operator-lane or `!` command re-pins nothing and
+  a note names the pinned files that now differ. The first
   interactive start after upgrading pins what was already being loaded
   and lists it; a `-p` run before that loads as before and says so. A
   changed `.gem-agent.toml` can tighten the approval policy but not
@@ -24,7 +25,11 @@
   `gem-agent trust --accept` (record the current content as trusted;
   an error on an untrusted project)
 - `/clear` re-discovers the project skills under the re-checked pins,
-  as it already re-read the instruction files
+  as it already re-read the instruction files; a project skill left out
+  gives back your global skill of the same name it had overridden
+- Pins survive resetting a project tool policy to default in
+  `/settings`, are edited under the policy file's lock, and the
+  instruction files and skills are read before any MCP server starts
 - The write lane's refusal note names the parent-directory rule: a
   directory holding one of the protected files cannot be renamed or
   removed there either

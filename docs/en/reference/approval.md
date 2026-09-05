@@ -478,8 +478,9 @@ Two gates run before anything loads:
   out and say so; `gem-agent trust` shows the pins and what differs,
   `gem-agent trust --accept` records the current content after an
   intended edit. A `write_file`/`edit_file` you approved as
-  operator-only re-pins that one file; an operator-lane or `!` command
-  re-pins nothing — a note names what it changed, and the next start
+  operator-only re-pins that one file, provided it was unchanged when
+  the write began; an operator-lane or `!` command re-pins nothing — a
+  note names the pinned files that now differ, and the next start
   asks. The first interactive start after this change pins what you
   were already loading and lists it; a `-p` run before that loads as
   before and says nothing is pinned yet. A changed `.gem-agent.toml`

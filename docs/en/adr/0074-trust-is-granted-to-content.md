@@ -55,7 +55,7 @@ a SHA-256 **pin** for every agent-facing file gem-agent consumes from the
 project root: the instruction files there (`AGENTS.md`, `AGENT.md`,
 `CLAUDE.md`, `GEMINI.md`; ancestor files are the operator's own and
 outside the gate, as in ADR-0023), `.mcp.json`, `.gem-agent.toml`, and
-each project skill, pinned as a directory: the relative path, size and
+each project skill, pinned as a directory: the relative path and
 content digest of every file under it, links by their target string.
 A consumed file is digested the way its loader reads it — through an
 `os.Root` at the project directory, so a link inside the project is
@@ -90,11 +90,14 @@ reload` and `/skills reload`:
   under the name is "changed", never "new";
 - a file gem-agent itself wrote with the **operator's approval** — an
   OperatorOnly `write_file`/`edit_file` the operator answered — re-pins
-  **that one name** on success: the operator saw that write. Nothing
-  else in the set moves, and a name this session left out is not
-  re-pinned by a write into it (the operator never saw the content it
-  replaced). An operator-lane or `!` command shows its text, not its
-  effect on those files, so it re-pins nothing: what now differs is
+  **that one name** on success, and only when the file was still what
+  its pin records as the write began: the operator saw that write, not
+  a drift before it (a `! git pull` followed by an approved one-line
+  edit would otherwise pin the whole pulled file). Nothing else in the
+  set moves, and a name this session left out is not re-pinned by a
+  write into it (the operator never saw the content it replaced). An
+  operator-lane or `!` command shows its text, not its effect on those
+  files, so it re-pins nothing: the pinned files that now differ are
   named in a note and the next interactive start asks.
 
 `gem-agent trust` shows the trust state, the pins and the files that
@@ -206,6 +209,23 @@ left out and named, and the next start asks). An E2E script of this work
 ran in the repository instead of its fixture and replaced `AGENTS.md`; it
 was restored, and `make check` now refuses an `AGENTS.md` without its
 sections.
+
+A third pass verified the fixes (all confirmed) and found seven more,
+all taken: resetting a project tool policy to default deleted the entry
+and its pins for a project trusted through the config (the entry now
+survives while it carries pins); an approved edit re-pinned a file that
+had drifted before it (the agent now announces the write before it runs,
+and the pin is compared then); pins were rewritten from a snapshot taken
+outside the policy file's lock (edited under it); the settings panel
+rebound its policy-file pointer and left the session's copy stale;
+instruction files and skills were read after the MCP servers started
+(read first now); `/clear` printed the pin note twice; an excluded
+project skill took the operator's global skill of the same name with it
+(the global one comes back). Left as recorded: the gap between digesting
+a file and reading it is now the few calls between them, with nothing
+of the project running in between — closing it fully means the loaders
+returning the digest of the bytes they read, a change kept for when a
+reader outside this order appears.
 
 ## Survey of other agents (2026-09-05)
 

@@ -291,8 +291,15 @@ func TestOperatorWriteIsReported(t *testing.T) {
 		{Content: "done"},
 	}}
 	_, reg := newAgent(t, mb, &approveAll{}, 5)
+	var before []string
 	a := New(Options{Backend: mb, Registry: reg, Gate: &approveAll{}, System: "s", MaxTurns: 5,
-		OnOperatorWrite: func(tc llm.ToolCall) { reported = append(reported, tc.Args["path"].(string)) }})
+		BeforeOperatorWrite: func(tc llm.ToolCall) { before = append(before, tc.Args["path"].(string)) },
+		OnOperatorWrite: func(tc llm.ToolCall) {
+			if len(before) != len(reported)+1 {
+				t.Errorf("OnOperatorWrite before BeforeOperatorWrite: before=%v reported=%v", before, reported)
+			}
+			reported = append(reported, tc.Args["path"].(string))
+		}})
 	if _, err := a.Run(context.Background(), "write", nil); err != nil {
 		t.Fatal(err)
 	}

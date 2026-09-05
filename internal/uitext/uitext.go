@@ -245,6 +245,7 @@ type Messages struct {
 	PinAcceptedFmt         string // %s = name
 	PinRemovedFmt          string // %s = name — gone since trusted; pin kept
 	PinPendingFmt          string // %s = described changes after an operator command
+	PinStaleWriteFmt       string // %s = name — had drifted before the approved write; not re-pinned
 	PersistentSinceLastFmt string // %s = comma list — changed since the previous session
 	PersistentSessionFmt   string // %s = comma list — added/changed by this session
 	// TrustDeclinedFmt is the banner note after declining: policy path.
@@ -416,6 +417,7 @@ keys:
 	PinAcceptedFmt:           "project trust: %s re-trusted",
 	PinRemovedFmt:            "project trust: %s was removed since you trusted it — nothing to load; its pin is kept, so content that comes back asks",
 	PinPendingFmt:            "project trust: %s since you trusted it — that command did not re-trust it; the next interactive start asks, and until then `/clear` leaves it out (`gem-agent trust --accept` re-trusts)",
+	PinStaleWriteFmt:         "project trust: %s had already changed since you trusted it when this write ran — the write is not re-trusted; the next interactive start asks (`gem-agent trust --accept` re-trusts)",
 	PersistentSinceLastFmt:   "note: changed since your previous session: %s",
 	PersistentSessionFmt:     "note: this session added or changed: %s",
 	TrustDeclinedFmt:         "project trust: declined — the project's instruction files, .mcp.json, and skills are not loaded (edit %s to re-ask)",
@@ -571,6 +573,7 @@ var ja = Messages{
 	PinAcceptedFmt:           "project trust: %s を再信用しました",
 	PinRemovedFmt:            "project trust: %s は信用した時点から削除されています — 読み込むものはありません。ピンは残すので、戻ってきた内容は確認を求めます",
 	PinPendingFmt:            "project trust: %s — 信用した時点から変わっています。このコマンドでは再信用しません。次の対話起動で確認し、それまで `/clear` では読み込みません（`gem-agent trust --accept` で再信用）",
+	PinStaleWriteFmt:         "project trust: %s はこの書込の前から信用した時点と変わっていました — この書込では再信用しません。次の対話起動で確認します（`gem-agent trust --accept` で再信用）",
 	PersistentSinceLastFmt:   "note: 前回のセッション以降に変更: %s",
 	PersistentSessionFmt:     "note: このセッションが追加・変更: %s",
 	TrustDeclinedFmt:         "project trust: 拒否 — このプロジェクトの instruction ファイル・.mcp.json・skills は読み込まれません（再確認するには %s を編集）",
