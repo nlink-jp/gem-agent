@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.69.0] - unreleased
+## [0.69.0] - 2026-09-05
 
 ### Changed — capability lanes for `shell_exec` (ADR-0073)
 
