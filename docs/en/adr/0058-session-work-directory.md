@@ -9,6 +9,11 @@
 | Triggered by | Operator: "shouldn't a session have a work directory of its own, separate from the project, with the sandbox spanning both?" |
 | Amends | ADR-0001 (sandbox write roots), ADR-0012 §4 (where file-mediated MCP output lands), ADR-0020/0022 (state layout) |
 
+*Amended by ADR-0075: the intake no longer prefixes a server-reported
+error with `error:` itself; the MCP adapter returns a typed
+`RemoteError` and the executor renders the failure with its provenance.
+Budget and spill are unchanged.*
+
 ## Context
 
 Two facts, found while designing the work directory, turned out to

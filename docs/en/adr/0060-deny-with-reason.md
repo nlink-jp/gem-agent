@@ -8,6 +8,12 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator proposal: "when denying, let me optionally type why — `n` stays instant, `N` opens a reason field" |
 
+*Amended by ADR-0075: `runtime_note` is the second tool-message field
+trusted by provenance — the runtime's own words about a remote tool's
+repeated identical failure, set in the same executor and appended
+outside the nonce tag. Recognising it by content stays rejected for the
+reason §3 gives.*
+
 ## Context
 
 A gate denial today sends the model one fixed sentence: *"Tool

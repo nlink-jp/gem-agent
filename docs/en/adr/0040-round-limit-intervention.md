@@ -8,6 +8,11 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator, from a session log: a healthy 50-round research turn was killed mid-pipeline by max_turns, and the error's advice (/clear) would have destroyed the recoverable work; a bare counter spoils capable agentic models — combine loop detection and a third-party progress review |
 
+*Amended by ADR-0075: the loop guard gains a sibling detector — the
+same error text returned by one MCP tool for different arguments, which
+the identical-call signature cannot see. It speaks in the function
+response and never stops the turn; the round ladder stays the ceiling.*
+
 ## Context
 
 `[agent].max_turns` was a guillotine: round 50 arrived and the turn
