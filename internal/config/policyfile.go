@@ -54,6 +54,10 @@ type ProjectPolicy struct {
 	// "" while unasked. Deleting the key re-asks on the next start.
 	Trust string            `toml:"trust,omitempty"`
 	Tools map[string]string `toml:"tools"`
+	// Pins are the SHA-256 digests of the project's agent-facing files
+	// as the operator last trusted them (ADR-0074): a changed file asks
+	// again before it is loaded.
+	Pins map[string]string `toml:"pins"`
 	// Commands holds the per-command rules the withdrawn /learn wrote
 	// (ADR-0045 §4), keyed by policy.CommandKey. Parsed so existing
 	// files keep loading; NOT fed into the live policy since ADR-0049.
@@ -181,9 +185,33 @@ func (pf *PolicyFile) TrustFor(projectDir string) string {
 func (pf *PolicyFile) SetTrust(projectDir, trust string) {
 	entry := pf.Projects[projectDir]
 	entry.Trust = trust
-	if entry.Trust == "" && len(entry.Tools) == 0 {
+	if entry.Trust == "" {
+		// Trust withdrawn: the pins go with it — they were the content
+		// that trust covered.
+		entry.Pins = nil
+	}
+	if entry.Trust == "" && len(entry.Tools) == 0 && len(entry.Commands) == 0 {
 		delete(pf.Projects, projectDir)
 		return
+	}
+	pf.Projects[projectDir] = entry
+}
+
+// PinsFor returns the recorded pins for projectDir (nil when none).
+func (pf *PolicyFile) PinsFor(projectDir string) map[string]string {
+	return pf.Projects[projectDir].Pins
+}
+
+// SetPins replaces the recorded pins for projectDir.
+func (pf *PolicyFile) SetPins(projectDir string, pins map[string]string) {
+	entry := pf.Projects[projectDir]
+	if len(pins) == 0 {
+		entry.Pins = nil
+	} else {
+		entry.Pins = map[string]string{}
+		for k, v := range pins {
+			entry.Pins[k] = v
+		}
 	}
 	pf.Projects[projectDir] = entry
 }
@@ -251,6 +279,10 @@ func (pf *PolicyFile) Save(path string) error {
 		if len(entry.Tools) > 0 {
 			fmt.Fprintf(&b, "\n[projects.%s.tools]\n", quoteKey(dir))
 			writeTools(&b, entry.Tools)
+		}
+		if len(entry.Pins) > 0 {
+			fmt.Fprintf(&b, "\n[projects.%s.pins]\n", quoteKey(dir))
+			writeTools(&b, entry.Pins)
 		}
 		if len(entry.Commands) > 0 {
 			fmt.Fprintf(&b, "\n[projects.%s.commands]\n", quoteKey(dir))

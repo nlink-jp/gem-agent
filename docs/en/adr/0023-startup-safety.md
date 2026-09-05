@@ -8,6 +8,10 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator: confirm before starting in / or ~; ask before trusting a new project's AGENTS.md/CLAUDE.md/GEMINI.md/AGENT.md |
 
+*Amended by ADR-0074: the trust this ADR grants to a directory is now
+paired with content pins — the files it covers are digested when trusted,
+and a changed one asks again before it is loaded.*
+
 ## Context
 
 Two startup gaps. First, the working directory becomes the confinement

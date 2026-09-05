@@ -76,6 +76,12 @@ type Spec struct {
 	// write; the runner points TMPDIR at it. Empty means the read lane
 	// may write nothing but the device sinks.
 	ReadScratch string
+	// PersistentParents are the directories that contain a persistent
+	// file (and their ancestors below the project root): the write lane
+	// denies operations on those directory entries themselves — rename,
+	// unlink — so a nested AGENTS.md cannot be replaced by swapping its
+	// parent (ADR-0074 §2). Writes inside them stay allowed.
+	PersistentParents []string
 }
 
 // DefaultDenyExec are the IPC-capable programs the read lane refuses to
@@ -379,6 +385,11 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 		b.WriteString("(deny file-write*\n")
 		for _, f := range PersistentFiles(spec.ProjectDir) {
 			fmt.Fprintf(&b, "    %s\n", f)
+		}
+		for _, p := range spec.PersistentParents {
+			if within(spec.ProjectDir, p) && filepath.Clean(p) != filepath.Clean(spec.ProjectDir) {
+				fmt.Fprintf(&b, "    (literal %s)\n", sbplString(filepath.Clean(p)))
+			}
 		}
 		b.WriteString(")\n")
 		return b.String(), nil

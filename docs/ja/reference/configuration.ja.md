@@ -74,6 +74,7 @@ insecure = false            # otlp-* のみ
 
 [approval]
 # trusted_projects = ["/path/to/repo"]  # プロジェクト全体の信頼 — 下の注意を参照
+pin_trusted_files = true   # デフォルト。false = 信頼したディレクトリは中身が何であれ信頼されたまま（ADR-0074）
 [approval.tools]
 # "mcp__tor-exit-lookup__*" = "never"   # ツール別ポリシー — approval.ja.md 参照
 ```
@@ -287,6 +288,7 @@ export される変数が 3 つあります: セッション id `GEMAGENT_SESSIO
 | `--mcp <on\|off>` | この実行だけ `[mcp].enabled` を上書き — `off` は全 MCP サーバー起動をスキップ。`-p` パイプラインが通常求めるもの（ADR-0039） |
 | `--no-sandbox` | Seatbelt ラップの無効化（デバッグ専用）— 全 `shell_exec` があなたの承認事項になり、ポリシーも auto モードも持ち上げない（ADR-0073 §5） |
 | `sessions` | 再開可能なセッション一覧 |
+| `trust` | このプロジェクトの信頼状態とピン留めファイルを表示。`--accept` で現在の内容を信頼済みとして記録（ADR-0074） |
 
 ## テレメトリ（ADR-0035）
 

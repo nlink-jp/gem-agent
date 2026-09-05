@@ -236,6 +236,14 @@ type Messages struct {
 	TrustItemMCPFmt          string // %d = server count
 	TrustItemSkillsFmt       string // %d = skill count
 	TrustQuestion            string // the [y/N] question
+	// Content pins (ADR-0074).
+	PinRecordedFmt         string // %d = files pinned
+	PinChangedFmt          string // %s = trustpin.Describe
+	PinQuestion            string // the [y/N] question for one changed file
+	PinNotLoadedFmt        string // %s = name — non-interactive skip
+	PinAcceptedFmt         string // %s = name
+	PersistentSinceLastFmt string // %s = comma list — changed since the previous session
+	PersistentSessionFmt   string // %s = comma list — added/changed by this session
 	// TrustDeclinedFmt is the banner note after declining: policy path.
 	TrustDeclinedFmt string
 	TrustUndecided   string // non-interactive, undecided: ran bare
@@ -397,6 +405,13 @@ keys:
 	TrustItemMCPFmt:          ".mcp.json (%d server(s) — each starts a child process)",
 	TrustItemSkillsFmt:       ".claude/skills/ (%d entr(y/ies) — loaded as your instructions)",
 	TrustQuestion:            "trust this project? These files will be treated as YOUR instructions and its MCP servers will run. [y/N]: ",
+	PinRecordedFmt:           "project trust: %d agent-facing file(s) pinned — a change to any of them asks before it is loaded (ADR-0074)",
+	PinChangedFmt:            "\n%s since you trusted it.",
+	PinQuestion:              "trust the new content? [y/N]: ",
+	PinNotLoadedFmt:          "project trust: %s changed since you trusted it — not loaded this session (run interactively, or `gem-agent trust --accept`, to re-trust)",
+	PinAcceptedFmt:           "project trust: %s re-trusted",
+	PersistentSinceLastFmt:   "note: changed since your previous session: %s",
+	PersistentSessionFmt:     "note: this session added or changed: %s",
 	TrustDeclinedFmt:         "project trust: declined — the project's instruction files, .mcp.json, and skills are not loaded (edit %s to re-ask)",
 	TrustUndecided:           "project trust: undecided (non-interactive) — the project's instruction files, .mcp.json, and skills are not loaded; run interactively once to decide",
 	ReasonFSRoot:             "the filesystem root",
@@ -542,6 +557,13 @@ var ja = Messages{
 	TrustItemMCPFmt:          ".mcp.json（サーバー %d 件 — それぞれ子プロセスを起動します）",
 	TrustItemSkillsFmt:       ".claude/skills/（%d 件 — あなたへの指示として読み込まれます）",
 	TrustQuestion:            "このプロジェクトを信用しますか？ これらのファイルはあなたへの指示として扱われ、MCP サーバーが起動します。 [y/N]: ",
+	PinRecordedFmt:           "project trust: エージェント向けファイル %d 件をピン留めしました — いずれかが変わると読み込む前に確認します（ADR-0074）",
+	PinChangedFmt:            "\n%s — 信用した時点から変わっています。",
+	PinQuestion:              "新しい内容を信用しますか？ [y/N]: ",
+	PinNotLoadedFmt:          "project trust: %s が信用した時点から変わっています — このセッションでは読み込みません（対話モードで起動するか `gem-agent trust --accept` で再信用）",
+	PinAcceptedFmt:           "project trust: %s を再信用しました",
+	PersistentSinceLastFmt:   "note: 前回のセッション以降に変更: %s",
+	PersistentSessionFmt:     "note: このセッションが追加・変更: %s",
 	TrustDeclinedFmt:         "project trust: 拒否 — このプロジェクトの instruction ファイル・.mcp.json・skills は読み込まれません（再確認するには %s を編集）",
 	TrustUndecided:           "project trust: 未決定（非対話） — このプロジェクトの instruction ファイル・.mcp.json・skills は読み込まれません。対話モードで一度起動して決定してください",
 	ReasonFSRoot:             "ファイルシステムのルート",

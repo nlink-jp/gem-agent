@@ -465,6 +465,28 @@ Two gates run before anything loads:
   Non-interactive runs in an undecided project run bare (nothing of
   the project's loaded, note on stderr, nothing recorded) so
   read-only `-p` pipelines over fresh clones keep working.
+- **Trust is given to content, not to the directory name** (ADR-0074).
+  When you trust a project, the files that trust covers — the
+  instruction files at the root, `.mcp.json`, `.gem-agent.toml`, each
+  project skill — are pinned by SHA-256 beside the trust record. On
+  every start, `/clear` and reload the current content is compared:
+  unchanged loads as before; a file that changed (a `git pull`, a
+  swapped parent directory, an edit in your editor) asks once, naming
+  the file — `y` re-pins it, `N` leaves it out of this session. A
+  non-interactive run leaves a changed file out and says so on stderr;
+  `gem-agent trust` shows the pins and what differs, `gem-agent trust
+  --accept` records the current content after an intended edit. A write
+  you approved as operator-only, or a `!` command, re-pins on its own.
+  The first start after this change pins what you were already
+  loading. `[approval].pin_trusted_files = false` restores the
+  directory-only trust of ADR-0023. Beside the pins, the persistent
+  files under the project (the write lane's protected names, nested
+  repositories' hooks included) are snapshotted: a change since your
+  previous session is noted at startup, and what a session added or
+  changed is noted at `/clear` and exit and recorded in the transcript —
+  the nested-file swap ADR-0073 cannot deny by path is made visible,
+  and the write lane denies renaming the parent directories of the
+  persistent files that exist at startup.
 
 ## Untrusted-content isolation (ADR-0018)
 

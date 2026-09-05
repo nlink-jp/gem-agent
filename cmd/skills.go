@@ -17,17 +17,28 @@ import (
 // environment, and inheriting it implicitly would couple the fallback's
 // behaviour to the primary's (the operator shares individual skills, or
 // everything, with a symlink instead).
-func discoverSkills(projectDir string, projectTrusted bool) ([]skills.Skill, []string) {
+func discoverSkills(projectDir string, grant projectGrant) ([]skills.Skill, []string) {
 	global := ""
 	if home, err := os.UserHomeDir(); err == nil {
 		global = filepath.Join(home, ".config", "gem-agent", "skills")
 	}
 	// Skill bodies load as the operator's own instructions (ADR-0010),
 	// so an untrusted project contributes none (ADR-0023 §2).
-	if !projectTrusted {
+	if !grant.trusted {
 		projectDir = ""
 	}
-	return skills.Discover(global, projectDir, skills.DefaultLimits())
+	list, notes := skills.Discover(global, projectDir, skills.DefaultLimits())
+	// A project skill whose content changed since it was trusted stays
+	// out until re-trusted (ADR-0074); its root is released.
+	kept := list[:0]
+	for _, s := range list {
+		if s.Scope == "project" && !grant.skill(s.Name) {
+			s.Close()
+			continue
+		}
+		kept = append(kept, s)
+	}
+	return kept, notes
 }
 
 // registerSkillTool adds load_skill to the registry. Read-only and

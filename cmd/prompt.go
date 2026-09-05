@@ -14,23 +14,24 @@ import (
 // returns the prompt section plus the labels for the banner. When the
 // project is untrusted (ADR-0023), its OWN files are excluded — the
 // ancestor and global files stay: a clone cannot plant those.
-func loadInstructions(projectDir string, projectTrusted bool) (section string, labels []string, notes []string) {
+func loadInstructions(projectDir string, grant projectGrant) (section string, labels []string, notes []string) {
 	home, _ := os.UserHomeDir()
 	globalDir := ""
 	if home != "" {
 		globalDir = filepath.Join(home, ".config", "gem-agent")
 	}
 	files, notes := instructions.Load(projectDir, home, globalDir, instructions.DefaultLimits())
-	if !projectTrusted {
-		kept := files[:0]
-		for _, f := range files {
-			if filepath.Dir(f.Path) == filepath.Clean(projectDir) {
-				continue
-			}
-			kept = append(kept, f)
+	// The project's own files load only as far as the grant says: not
+	// at all when untrusted, and not a file whose content changed since
+	// it was trusted (ADR-0074).
+	kept := files[:0]
+	for _, f := range files {
+		if filepath.Dir(f.Path) == filepath.Clean(projectDir) && !grant.instruction(filepath.Base(f.Path)) {
+			continue
 		}
-		files = kept
+		kept = append(kept, f)
 	}
+	files = kept
 	return instructions.Render(files), instructions.Labels(files), notes
 }
 

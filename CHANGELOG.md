@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.70.0] - unreleased
+
+### Changed — trust is granted to content, not to a path (ADR-0074)
+
+- **Breaking:** a trusted project's agent-facing files — the instruction
+  files at the root, `.mcp.json`, `.gem-agent.toml`, each project skill —
+  are pinned by SHA-256 beside the trust record; a file that changed
+  since it was trusted asks once at an interactive start (`y` re-pins,
+  `N` leaves it out), is left out with a note in a non-interactive run
+  and on `/clear` or reload, and is re-pinned on its own after a write
+  you approved as operator-only or a `!` command. The first start after
+  upgrading pins what was already being loaded. Opt out with
+  `[approval].pin_trusted_files = false`
+- New subcommand `gem-agent trust` (state, pins, what differs) and
+  `gem-agent trust --accept` (record the current content as trusted)
+- The write lane denies renaming the parent directories of the
+  persistent files present at startup (and `/clear`), so a nested
+  `CLAUDE.md` or a nested repository's hooks cannot be replaced by
+  swapping the directory
+- The persistent files under the project are snapshotted: a change since
+  the previous session is noted at startup; what a session added or
+  changed is noted at `/clear` and exit and recorded as
+  `persistent_changes` in the transcript
+
 ## [0.69.0] - 2026-09-05
 
 ### Changed — capability lanes for `shell_exec` (ADR-0073)

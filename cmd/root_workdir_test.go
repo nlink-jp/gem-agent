@@ -26,7 +26,7 @@ func TestSandboxAllowsWritesToTheWorkDirectory(t *testing.T) {
 	// already allows. A test for "outside" has to be outside.
 	outside := outsideEveryRoot(t)
 
-	execFn, _, _, err := buildExecFn(true, project, work, nil)
+	execFn, _, _, err := buildExecFn(true, project, work, nil, nil)
 	if err != nil {
 		t.Skipf("sandbox unavailable: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestSandboxWithoutAWorkDirectoryIsUnchanged(t *testing.T) {
 	}
 	project := t.TempDir()
 	outside := outsideEveryRoot(t)
-	execFn, _, _, err := buildExecFn(true, project, "", nil)
+	execFn, _, _, err := buildExecFn(true, project, "", nil, nil)
 	if err != nil {
 		t.Skipf("sandbox unavailable: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestSandboxAllowsDevNull(t *testing.T) {
 	if err := sandbox.Available(); err != nil {
 		t.Skipf("sandbox-exec cannot apply a profile here (nested sandbox?): %v", err)
 	}
-	execFn, _, _, err := buildExecFn(true, t.TempDir(), "", nil)
+	execFn, _, _, err := buildExecFn(true, t.TempDir(), "", nil, nil)
 	if err != nil {
 		t.Skipf("sandbox unavailable: %v", err)
 	}

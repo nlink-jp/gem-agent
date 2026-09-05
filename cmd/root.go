@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/trustpin"
+
 	"github.com/nlink-jp/gem-agent/internal/bounded"
 
 	"bufio"
@@ -236,6 +238,52 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if trustNote != "" {
 		fmt.Fprintf(stderr, "%s\n", trustNote)
 	}
+	// Content pins (ADR-0074): trust was given to a directory; what is
+	// loaded is content, and content that changed since asks again.
+	grant := projectGrant{trusted: projectTrusted}
+	var pinNotes []string
+	grant.excluded, pinNotes = checkPins(cfg, policyFile, policyPath, projectDir, projectTrusted, interactive, os.Stdin, cmd.ErrOrStderr(), msgs)
+	for _, n := range pinNotes {
+		fmt.Fprintf(stderr, "%s\n", n)
+	}
+	// The persistent-file snapshot (ADR-0074 §3/§4): what this session
+	// starts from, compared with what the previous session left, and
+	// compared again at the end so what the session added or changed
+	// is said — the parent directories it names are denied by name in
+	// the write lane.
+	persistentSnap, persistentCut := trustpin.Snapshot(projectDir)
+	if persistentCut {
+		fmt.Fprintf(stderr, "note: the persistent-file scan stopped at %d entries; the report below and the write lane's parent denials cover what it reached\n", trustpin.WalkEntries)
+	}
+	persistentPath, persistentPathErr := persistentStateFile(projectDir)
+	if persistentPathErr == nil {
+		if prev := loadPersistentSnapshot(persistentPath); prev != nil {
+			if a, c, r := trustpin.SnapshotDiff(prev, persistentSnap); len(a)+len(c)+len(r) > 0 {
+				fmt.Fprintf(stderr, msgs.PersistentSinceLastFmt+"\n", describeSnapshotDiff(a, c, r))
+			}
+		}
+		_ = savePersistentSnapshot(persistentPath, persistentSnap)
+	}
+	reportPersistent := func(reason string, log func(kind string, data any) error) {
+		now, _ := trustpin.Snapshot(projectDir)
+		a, c, r := trustpin.SnapshotDiff(persistentSnap, now)
+		if len(a)+len(c)+len(r) > 0 {
+			fmt.Fprintf(stderr, msgs.PersistentSessionFmt+"\n", describeSnapshotDiff(a, c, r))
+			if log != nil {
+				_ = log("persistent_changes", map[string]any{"reason": reason, "added": a, "changed": c, "removed": r})
+			}
+		}
+		persistentSnap = now
+		if persistentPathErr == nil {
+			_ = savePersistentSnapshot(persistentPath, now)
+		}
+	}
+	afterDirectShell = func() {
+		if err := repin(policyPath, projectDir, policyFile); err != nil {
+			fmt.Fprintf(stderr, "warning: could not refresh the trust pins: %v\n", err)
+		}
+	}
+	defer func() { afterDirectShell = nil }()
 
 	// --- session transcript: the log, and the resume source (ADR-0005) ---
 	if flagContinue && flagResume != "" {
@@ -375,7 +423,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("the sandbox cannot be applied here (%v); every shell command would run unconfined — pass --no-sandbox to accept that explicitly", err)
 		}
 	}
-	execFn, enforcement, laneNotes, err := buildExecFn(sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec)
+	execFn, enforcement, laneNotes, err := buildExecFn(sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec, trustpin.Parents(projectDir, persistentSnap))
 	if err != nil {
 		return err
 	}
@@ -411,7 +459,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- MCP servers from the project's .mcp.json (drop-in) ---
-	mcpClients, mcpSummary, _ := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, projectTrusted)
+	mcpClients, mcpSummary, _ := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, grant.mcp())
 	defer func() {
 		for _, c := range mcpClients {
 			c.Close()
@@ -424,7 +472,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// reads the variables through a closure, so updates propagate. The
 	// single-writer discipline holds because a slash command cannot run
 	// while a turn is in flight.
-	skillsList, skillNotes := discoverSkills(projectDir, projectTrusted)
+	skillsList, skillNotes := discoverSkills(projectDir, grant)
 	defer func() { skills.CloseAll(skillsList) }() // reads the variable: reloads replace it
 	for _, n := range skillNotes {
 		fmt.Fprintf(stderr, "warning: %s\n", n)
@@ -558,7 +606,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 
 	// --- project instruction files (drop-in: AGENTS.md and friends,
 	// including ancestor directories, exactly as other agents read them)
-	projectContext, contextLabels, contextNotes := loadInstructions(projectDir, projectTrusted)
+	projectContext, contextLabels, contextNotes := loadInstructions(projectDir, grant)
 	for _, n := range contextNotes {
 		fmt.Fprintf(stderr, "warning: instructions %s\n", n)
 	}
@@ -733,7 +781,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			SkillCount:     len(skillsList),
 			MemoryOn:       memBase != "",
 			MediaBucket:    cfg.GCP.Bucket != "",
-			ProjectTrusted: projectTrusted,
+			ProjectTrusted: grant.trusted,
 		}
 	}); err != nil {
 		return err
@@ -793,6 +841,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		Telemetry:        sink,
 		ClipboardImage:   clipboardImage,
 		MediaUpload:      mediaUpload,
+		OnOperatorWrite: func(tc llm.ToolCall) {
+			// The operator approved a write into the files later
+			// sessions trust: that content is now what they trust
+			// (ADR-0074 §1).
+			if err := repin(policyPath, projectDir, policyFile); err != nil {
+				fmt.Fprintf(stderr, "warning: could not refresh the trust pins: %v\n", err)
+			}
+		},
 		OnToolCall: func(tc llm.ToolCall) {
 			// Describe, not CallDetail+CallPurpose: only the agent knows
 			// which tools it added the purpose field to, and a tool that
@@ -960,7 +1016,15 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// Warnings go into the command output: under the TUI a stderr
 		// write would corrupt the display.
 		var warn bytes.Buffer
-		mcpClients, mcpSummary, _ = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, projectTrusted)
+		// A changed .mcp.json is re-checked against its pin first
+		// (ADR-0074); mid-session there is nobody at a prompt, so a
+		// change is left out and named.
+		var pinNotes []string
+		grant.excluded, pinNotes = checkPins(cfg, policyFile, policyPath, projectDir, projectTrusted, false, nil, &warn, msgs)
+		for _, n := range pinNotes {
+			fmt.Fprintf(&warn, "%s\n", n)
+		}
+		mcpClients, mcpSummary, _ = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, grant.mcp())
 		ag.RefreshTools()
 		mcpTools := 0
 		for _, t := range registry.List() {
@@ -984,7 +1048,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return b.String()
 	}
 	reloadSkills := func() string {
-		list, notes := discoverSkills(projectDir, projectTrusted)
+		var pinNotes []string
+		grant.excluded, pinNotes = checkPins(cfg, policyFile, policyPath, projectDir, projectTrusted, false, nil, io.Discard, msgs)
+		notes := append([]string{}, pinNotes...)
+		list, discoverNotes := discoverSkills(projectDir, grant)
+		notes = append(notes, discoverNotes...)
 		skills.CloseAll(skillsList) // the roots of the list being replaced
 		skillsList = list
 		// The skill descriptions ride the system prompt; rebuild it so
@@ -1063,6 +1131,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		hookRunner.SessionEnd(ctx, hookSession, reason)
 	}
 	defer sessionEndHooks("exit")
+	defer reportPersistent("exit", func(kind string, data any) error {
+		if sessionLog == nil {
+			return nil
+		}
+		return sessionLog.Log(kind, data)
+	})
 
 	// /clear starts a new session (ADR-0071 §2): the old transcript is
 	// closed where the conversation ended and stays resumable by its
@@ -1110,8 +1184,18 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// states and external consumers observe; the trail closes under
 		// the old id before the sink is re-resourced for the new one.
 		sessionEndHooks("clear")
+		reportPersistent("clear", func(kind string, data any) error { return curLog.Log(kind, data) })
 		sink.SessionEnd()
 		ag.Restart(newLog)
+		// The new session re-checks the pins (ADR-0074): a file that
+		// changed during the old one is left out, and the system prompt
+		// is composed from what the grant allows.
+		var pinNotes []string
+		grant.excluded, pinNotes = checkPins(cfg, policyFile, policyPath, projectDir, projectTrusted, false, nil, io.Discard, msgs)
+		notes = append(notes, pinNotes...)
+		projectContext, contextLabels, contextNotes = loadInstructions(projectDir, grant)
+		_ = contextLabels
+		notes = append(notes, contextNotes...)
 		if curLog != nil {
 			_ = curLog.Close()
 		}
@@ -1141,7 +1225,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// 4): the file tools' second root, the sandbox profile, the MCP
 		// intake (it reads the registry), and the system prompt — a
 		// cleared conversation has no cached prefix to protect.
-		notes = append(notes, rotateWorkDir(registry, shellExec, sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec, cfg.Sandbox.ReadLanePrompts, func() { ag.SetSystem(composeSystem()) })...)
+		notes = append(notes, rotateWorkDir(registry, shellExec, sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec, cfg.Sandbox.ReadLanePrompts, trustpin.Parents(projectDir, persistentSnap), func() { ag.SetSystem(composeSystem()) })...)
 		// A cleared session restarts what carries its identity (ADR-0071
 		// addendum): telemetry is re-resourced with the new id, and the
 		// MCP servers — spawned at startup with the old id in their
@@ -1744,7 +1828,7 @@ func runTurnWith(parent context.Context, ladder *interruptLadder, fn func(ctx co
 // this machine (notes say why when it did not); with the sandbox off,
 // direct bash and Confined=false — the unconfined mode the agent gates
 // as the operator's alone.
-func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
+func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, persistentParents []string) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
 	if !sandboxOn {
 		return func(ctx context.Context, command string, _ sandbox.Lane) *exec.Cmd {
 			return exec.CommandContext(ctx, shell, "-c", command)
@@ -1753,7 +1837,7 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string) 
 	if _, err := os.Stat(sandbox.Executable); err != nil {
 		return nil, sandbox.Enforcement{}, nil, fmt.Errorf("%s not found (gem-agent is macOS-only); use --no-sandbox to bypass at your own risk", sandbox.Executable)
 	}
-	spec := sandbox.Spec{ProjectDir: projectDir, DenyExec: append(append([]string{}, sandbox.DefaultDenyExec...), denyExec...)}
+	spec := sandbox.Spec{ProjectDir: projectDir, DenyExec: append(append([]string{}, sandbox.DefaultDenyExec...), denyExec...), PersistentParents: persistentParents}
 	if workDir != "" {
 		// The session work directory (ADR-0058). A shell command told to
 		// put its output in $GEMAGENT_WORK_DIR has to be able to.
@@ -1876,6 +1960,11 @@ func compactNow(ctx context.Context, ag *agent.Agent, msgs *uitext.Messages, sin
 // exit-status surfacing — no approval prompt: the user typed it), and
 // feeds command + output into the agent history so the next turn can
 // refer to what happened.
+// afterDirectShell, when set by the running session, runs after a `!`
+// command: the operator's own shell may have written the files later
+// sessions trust, and the operator saw it — the pins follow (ADR-0074).
+var afterDirectShell func()
+
 func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Agent, command string) string {
 	tool, ok := registry.Get("shell_exec")
 	if !ok {
@@ -1886,6 +1975,9 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 	out, err := tool.Run(ctx, map[string]any{"command": command, "access": sandbox.LaneOperator.String()})
 	if err != nil {
 		out = "error: " + err.Error()
+	}
+	if afterDirectShell != nil {
+		afterDirectShell()
 	}
 	if strings.TrimSpace(out) == "" {
 		out = "(no output)"
@@ -2145,12 +2237,12 @@ func (l liveLog) Log(kind string, data any) error {
 // dir ("" for none): the file tools' second root, the sandbox profile,
 // and the system prompt. The MCP intake reads the registry, so it
 // follows on its own. Returns operator notes for what could not follow.
-func rotateWorkDir(registry *tools.Registry, shellExec *liveExec, sandboxOn bool, projectDir, dir string, denyExec []string, readLanePrompts bool, setSystem func()) []string {
+func rotateWorkDir(registry *tools.Registry, shellExec *liveExec, sandboxOn bool, projectDir, dir string, denyExec []string, readLanePrompts bool, persistentParents []string, setSystem func()) []string {
 	var notes []string
 	if err := registry.UseWorkDir(dir); err != nil {
 		notes = append(notes, fmt.Sprintf("file tools keep the previous work directory: %v", err))
 	}
-	if fn, enf, laneNotes, err := buildExecFn(sandboxOn, projectDir, dir, denyExec); err != nil {
+	if fn, enf, laneNotes, err := buildExecFn(sandboxOn, projectDir, dir, denyExec, persistentParents); err != nil {
 		notes = append(notes, fmt.Sprintf("shell commands keep the previous sandbox profile: %v", err))
 	} else {
 		shellExec.set(fn)

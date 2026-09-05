@@ -113,6 +113,10 @@ auto_compact = true
 compact_at_pct = 80
 
 [approval]
+# Trust is given to content (ADR-0074): a trusted project's agent-facing
+# files are pinned by digest, and a changed one asks again before it is
+# loaded. false restores directory-only trust.
+#pin_trusted_files = true
 # Per-tool approval policy (ADR-0008). Two values:
 #   "always" — always ask, in every mode (an operator-set floor that
 #              auto-approve cannot lift)

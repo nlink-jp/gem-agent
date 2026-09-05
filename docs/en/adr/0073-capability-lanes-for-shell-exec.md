@@ -228,7 +228,7 @@ that changed the design or closed a hole:
   root and its ancestors, so this reaches nested `.claude/`, nested
   repositories' hooks and other agents' nested `CLAUDE.md`; the
   structural fix — recording digests of the persistent files and
-  refusing a changed one until the operator confirms — is a follow-up.
+  refusing a changed one until the operator confirms — is ADR-0074.
   The project's own parent directory is never writable in the write
   lane, so the whole-project swap the live E2E environment allowed is
   closed.

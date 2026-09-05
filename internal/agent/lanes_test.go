@@ -279,3 +279,24 @@ func TestFileToolVerdictFollowsTheLink(t *testing.T) {
 		t.Errorf("ordinary new file = %+v", d.Verdict)
 	}
 }
+
+// ADR-0074 §1: a write the operator approved as OperatorOnly reports
+// itself after running, so the pins can follow; an allowlisted or
+// ordinary write does not.
+func TestOperatorWriteIsReported(t *testing.T) {
+	var reported []string
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c", Name: "write_file", Args: map[string]any{"path": "AGENTS.md", "content": "rules\n"}}}},
+		{ToolCalls: []llm.ToolCall{{ID: "d", Name: "write_file", Args: map[string]any{"path": "plain.txt", "content": "x\n"}}}},
+		{Content: "done"},
+	}}
+	_, reg := newAgent(t, mb, &approveAll{}, 5)
+	a := New(Options{Backend: mb, Registry: reg, Gate: &approveAll{}, System: "s", MaxTurns: 5,
+		OnOperatorWrite: func(tc llm.ToolCall) { reported = append(reported, tc.Args["path"].(string)) }})
+	if _, err := a.Run(context.Background(), "write", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(reported) != 1 || reported[0] != "AGENTS.md" {
+		t.Errorf("operator writes reported = %v, want [AGENTS.md]", reported)
+	}
+}

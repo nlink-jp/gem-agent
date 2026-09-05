@@ -528,3 +528,55 @@ func TestScrubEnvAndHintTail(t *testing.T) {
 		t.Error("a refusal at the tail must be recognised")
 	}
 }
+
+// ADR-0074 §2: the write lane denies renaming the parent directory of a
+// persistent file (the swap that replaced sub/CLAUDE.md under an
+// unchanged name), while ordinary writes inside it stay allowed.
+func TestWriteLaneDeniesPersistentParents(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-only")
+	}
+	if err := Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory")
+	}
+	proj, err := os.MkdirTemp(home, ".gem-agent-parents-test-")
+	if err != nil {
+		t.Skip("cannot create a directory under home")
+	}
+	defer func() { _ = os.RemoveAll(proj) }()
+	proj, _ = ResolveWriteDir(proj)
+	if err := os.MkdirAll(filepath.Join(proj, "sub/deep"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(proj, "sub/deep/CLAUDE.md"), []byte("rules\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	spec := Spec{ProjectDir: proj, Home: filepath.Join(proj, "nohome"),
+		PersistentParents: []string{filepath.Join(proj, "sub/deep"), filepath.Join(proj, "sub")}}
+	profile, err := LaneProfile(LaneWrite, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	run := func(command string) error {
+		argv := Wrap(profile, "/bin/bash", command)
+		return exec.CommandContext(ctx, argv[0], argv[1:]...).Run()
+	}
+	if err := run("mv " + shellQuote(filepath.Join(proj, "sub")) + " " + shellQuote(filepath.Join(proj, "sub.old"))); err == nil {
+		t.Error("the write lane renamed a persistent file's parent")
+	}
+	if err := run("mv " + shellQuote(filepath.Join(proj, "sub/deep")) + " " + shellQuote(filepath.Join(proj, "sub/deep.old"))); err == nil {
+		t.Error("the write lane renamed a persistent file's direct parent")
+	}
+	if err := run("echo ok > " + shellQuote(filepath.Join(proj, "sub/deep/other.txt")) + " && mkdir " + shellQuote(filepath.Join(proj, "sub/deep/more"))); err != nil {
+		t.Errorf("ordinary writes inside a protected parent failed: %v", err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(proj, "sub/deep/CLAUDE.md")); string(got) != "rules\n" {
+		t.Errorf("CLAUDE.md changed: %q", got)
+	}
+}

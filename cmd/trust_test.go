@@ -172,14 +172,14 @@ func TestLoadInstructionsExcludesUntrustedProject(t *testing.T) {
 
 	// home = parent so the ancestor walk includes it.
 	t.Setenv("HOME", parent)
-	section, _, _ := loadInstructions(project, false)
+	section, _, _ := loadInstructions(project, projectGrant{})
 	if strings.Contains(section, "CLONE INSTRUCTIONS") {
 		t.Error("untrusted project's own instructions were injected")
 	}
 	if !strings.Contains(section, "workspace rules") {
 		t.Error("ancestor instructions lost — the gate must only cover the project's own files")
 	}
-	section, _, _ = loadInstructions(project, true)
+	section, _, _ = loadInstructions(project, projectGrant{trusted: true})
 	if !strings.Contains(section, "CLONE INSTRUCTIONS") {
 		t.Error("trusted project's instructions missing")
 	}

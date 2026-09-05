@@ -67,6 +67,12 @@ type ApprovalConfig struct {
 	// written by the operator, and cloning a repository must not be able
 	// to switch the gate off (ADR-0008 §4).
 	TrustedProjects []string `toml:"trusted_projects"`
+	// PinTrustedFiles keys project trust on content (ADR-0074): the
+	// agent-facing files are digested when trusted and a changed one
+	// asks again before it is loaded. Default true; false restores the
+	// ADR-0023 behaviour (a trusted directory stays trusted whatever
+	// its files come to contain).
+	PinTrustedFiles bool `toml:"pin_trusted_files"`
 }
 
 // ProjectConfig is <project>/.gem-agent.toml — the project-scoped half
@@ -310,6 +316,7 @@ func defaults() Config {
 		GCP:       GCPConfig{Location: "global"},
 		Model:     ModelConfig{Safety: "default"},
 		Sandbox:   SandboxConfig{Enabled: true},
+		Approval:  ApprovalConfig{PinTrustedFiles: true},
 		Agent:     AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120, AutoCompact: true, CompactAtPct: 80},
 		MCP:       MCPConfig{Enabled: true, CallTimeoutSec: 60},
 		TUI:       TUIConfig{Theme: "auto", Language: "auto", ShowThoughts: true},
@@ -433,6 +440,7 @@ var trackedKeys = []string{
 	"model.name", "model.context_window", "model.safety", "model.summary",
 	"model.thinking", "gcp.bucket",
 	"sandbox.enabled", "sandbox.read_lane_deny_exec", "sandbox.read_lane_prompts",
+	"approval.pin_trusted_files",
 	"agent.max_turns", "agent.shell_timeout_sec", "agent.auto_approve",
 	"agent.auto_compact", "agent.compact_at_pct",
 	"mcp.enabled", "mcp.call_timeout_sec",

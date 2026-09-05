@@ -40,3 +40,29 @@ func TestPolicyFileTrustRoundTrip(t *testing.T) {
 		t.Error("cleared entry lingers")
 	}
 }
+
+// ADR-0074: pins ride the project entry, survive a save/load, and go
+// when trust is withdrawn.
+func TestPinsRoundTripAndFollowTrust(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "policy.toml")
+	pf := &PolicyFile{Tools: map[string]string{}, Projects: map[string]ProjectPolicy{}}
+	pf.SetTrust("/p", TrustGranted)
+	pf.SetPins("/p", map[string]string{"AGENTS.md": "sha256:aa", ".claude/skills/x": "sha256:bb"})
+	if err := pf.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	back, err := LoadPolicyFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := back.PinsFor("/p"); got["AGENTS.md"] != "sha256:aa" || got[".claude/skills/x"] != "sha256:bb" {
+		t.Errorf("pins after reload: %v", got)
+	}
+	if back.TrustFor("/p") != TrustGranted {
+		t.Errorf("trust after reload: %q", back.TrustFor("/p"))
+	}
+	back.SetTrust("/p", "")
+	if back.PinsFor("/p") != nil {
+		t.Error("pins survived trust withdrawal")
+	}
+}

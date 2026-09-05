@@ -89,6 +89,7 @@ type Agent struct {
 	onUsage     func(u llm.Usage)
 	telemetry   *telemetry.Sink
 	onAuto      func(tc llm.ToolCall, d AutoDecision)
+	onOpWrite   func(tc llm.ToolCall)
 	onAttach    func(atts []mention.Attachment, problems []mention.Problem)
 	onNotice    func(msg string)
 	preToolHook func(ctx context.Context, name string, args map[string]any) (bool, string)
@@ -219,6 +220,11 @@ type Options struct {
 	// OnAutoDecision, when set, observes each auto-mode verdict so the
 	// UI can show what ran without asking, and why.
 	OnAutoDecision func(tc llm.ToolCall, d AutoDecision)
+	// OnOperatorWrite, when set, is told after a call the operator
+	// approved as OperatorOnly — a write into the files later sessions
+	// trust — ran to completion (ADR-0074 §1): the content pins are
+	// refreshed, because the operator saw that write.
+	OnOperatorWrite func(tc llm.ToolCall)
 	// OnAttach, when set, reports what an @-reference pulled in (and
 	// what it could not) so the operator sees it landed.
 	OnAttach func(atts []mention.Attachment, problems []mention.Problem)
@@ -296,6 +302,7 @@ func New(opts Options) *Agent {
 		onToolCall:  opts.OnToolCall,
 		onUsage:     opts.OnUsage,
 		onAuto:      opts.OnAutoDecision,
+		onOpWrite:   opts.OnOperatorWrite,
 		onAttach:    opts.OnAttach,
 		onNotice:    opts.OnNotice,
 		preToolHook: opts.PreToolHook,
@@ -1114,6 +1121,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		}
 	}
 	d := a.decide(tc)
+	operatorWrite := false // approved by the operator's own answer to an OperatorOnly call
 	if d.Invalid != nil {
 		// Refused before any gate: a call that names no lane is not a
 		// read-lane call to run unasked, nor a write-lane call to
@@ -1185,6 +1193,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			if fromAllowlist {
 				source = "allowlist"
 			}
+			operatorWrite = ok && d.Verdict.OperatorOnly && !fromAllowlist
 			a.telemetry.Approval(tc.Name, decision, "gate", mustPrompt, reason, a.laneOf(tc))
 			// The transcript record (ADR-0045 §7) survives /learn's
 			// withdrawal (ADR-0049 §2): telemetry is opt-in and
@@ -1227,6 +1236,9 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 	}
 	if err != nil {
 		return "error: " + err.Error(), false, false, state
+	}
+	if operatorWrite && a.onOpWrite != nil {
+		a.onOpWrite(tc)
 	}
 	if out == "" {
 		return "(no output)", false, false, state

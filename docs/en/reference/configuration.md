@@ -75,6 +75,7 @@ insecure = false            # otlp-* only
 
 [approval]
 # trusted_projects = ["/path/to/repo"]  # full project trust — see the warning below
+pin_trusted_files = true   # default; false = a trusted directory stays trusted whatever its files contain (ADR-0074)
 [approval.tools]
 # "mcp__tor-exit-lookup__*" = "never"   # per-tool policy — see approval.md
 ```
@@ -294,6 +295,7 @@ used to measure box art under a CJK locale.
 | `--mcp <on\|off>` | override `[mcp].enabled` for this run — `off` skips every MCP server spawn, which is what a `-p` pipeline usually wants (ADR-0039) |
 | `--no-sandbox` | disable the Seatbelt wrapper (debugging only) — every `shell_exec` then needs your approval and no policy or auto mode lifts that (ADR-0073 §5) |
 | `sessions` | list resumable sessions |
+| `trust` | show this project's trust state and pinned files; `--accept` records the current content as trusted (ADR-0074) |
 
 ## Telemetry (ADR-0035)
 
