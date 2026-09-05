@@ -79,8 +79,31 @@ type Skill struct {
 	root *os.Root
 }
 
-// skillDirEntryCap bounds a skill directory listing.
-const skillDirEntryCap = 2000
+// skillDirEntryCap bounds a skill directory listing; skillScanCap
+// bounds the scan of a skills root at startup (review after v0.68.2,
+// R12 — os.ReadDir held every entry).
+const (
+	skillDirEntryCap = 2000
+	skillScanCap     = 1000
+)
+
+// readDirBounded lists at most n entries of dir, reporting whether
+// there were more.
+func readDirBounded(dir string, n int) ([]os.DirEntry, bool, error) {
+	d, err := os.Open(dir)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = d.Close() }()
+	entries, err := d.ReadDir(n + 1)
+	if err != nil && err != io.EOF {
+		return nil, false, err
+	}
+	if len(entries) > n {
+		return entries[:n], true, nil
+	}
+	return entries, false, nil
+}
 
 // skillReadCap bounds one read of a skill file at discovery and in
 // Body: the frontmatter and body of any real SKILL.md fit in it; a
@@ -151,9 +174,12 @@ func Discover(globalDir, projectDir string, lim Limits) ([]Skill, []string) {
 	order := []string{}
 
 	scan := func(root, scope string) {
-		entries, err := os.ReadDir(root)
+		entries, more, err := readDirBounded(root, skillScanCap)
 		if err != nil {
 			return // absent is the normal case, not an error
+		}
+		if more {
+			notes = append(notes, fmt.Sprintf("%s holds more than %d entries; only the first %d were scanned for skills", root, skillScanCap, skillScanCap))
 		}
 		for _, e := range entries {
 			dir := filepath.Join(root, e.Name())

@@ -254,9 +254,9 @@ func Expand(ctx context.Context, text, projectDir, workDir string, lim Limits) (
 
 		var att Attachment
 		if info.IsDir() {
-			att, err = attachDir(ref, abs, lim)
+			att, err = attachDir(ref, abs, projectDir, workDir, lim)
 		} else {
-			att, err = attachFile(ref, abs, projectDir, perFile)
+			att, err = attachFile(ref, abs, projectDir, workDir, perFile)
 		}
 		if err != nil {
 			problems = append(problems, Problem{ref, err.Error()})
@@ -426,8 +426,8 @@ func resolveImagePath(projectDir, ref string) (string, error) {
 	return real, nil
 }
 
-func attachFile(ref, abs, projectDir string, cap int) (Attachment, error) {
-	f, err := openConfined(abs, projectDir)
+func attachFile(ref, abs, projectDir, workDir string, cap int) (Attachment, error) {
+	f, err := openConfined(abs, projectDir, workDir)
 	if err != nil {
 		return Attachment{}, fmt.Errorf("unreadable")
 	}
@@ -450,19 +450,24 @@ func attachFile(ref, abs, projectDir string, cap int) (Attachment, error) {
 	return Attachment{Ref: ref, Kind: "file", Content: content, Bytes: len(content)}, nil
 }
 
-// openConfined opens abs for reading. A path inside the project goes
-// through an os.Root at the project, so a link swapped between the
-// resolve and the open is refused (the file tools' rule); a path
-// elsewhere — the operator-typed image, document and media grants —
-// is opened directly.
-func openConfined(abs, projectDir string) (*os.File, error) {
-	if projectDir != "" && within(projectDir, abs) {
-		root, err := os.OpenRoot(projectDir)
+// openConfined opens abs for reading. A path inside the project or the
+// session work directory goes through an os.Root at that root, so a
+// link swapped between the resolve and the open is refused (the file
+// tools' rule); a path elsewhere — the operator-typed image, document
+// and media grants — is opened directly. The work directory was
+// missing here at first and its text references opened bare (review
+// after v0.68.2, R05).
+func openConfined(abs string, roots ...string) (*os.File, error) {
+	for _, dir := range roots {
+		if dir == "" || !within(dir, abs) {
+			continue
+		}
+		root, err := os.OpenRoot(dir)
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = root.Close() }()
-		rel, err := filepath.Rel(projectDir, abs)
+		rel, err := filepath.Rel(dir, abs)
 		if err != nil {
 			return nil, err
 		}
@@ -505,10 +510,11 @@ func cutRunes(s string, n int) string {
 	return s[:n]
 }
 
-func attachDir(ref, abs string, lim Limits) (Attachment, error) {
-	// Bounded listing (ADR-0072 §4.5): one entry past the display cap
-	// is enough to say "more".
-	entries, err := readDirCapped(abs, lim.DirEntries+1)
+func attachDir(ref, abs, projectDir, workDir string, lim Limits) (Attachment, error) {
+	// Bounded listing through the root (ADR-0072 §4.5): one entry past
+	// the display cap is enough to say "more" — how many more is not
+	// known, and is not claimed.
+	entries, err := readDirCapped(abs, lim.DirEntries+1, projectDir, workDir)
 	if err != nil {
 		return Attachment{}, fmt.Errorf("unreadable")
 	}
@@ -521,10 +527,9 @@ func attachDir(ref, abs string, lim Limits) (Attachment, error) {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	total := len(names)
-	if total > lim.DirEntries {
+	if len(names) > lim.DirEntries {
 		names = names[:lim.DirEntries]
-		names = append(names, fmt.Sprintf("[%d more entries not shown]", total-lim.DirEntries))
+		names = append(names, fmt.Sprintf("[more than %d entries — the rest not shown]", lim.DirEntries))
 	}
 	content := strings.Join(names, "\n")
 	if content == "" {
@@ -598,7 +603,7 @@ func Complete(projectDir, prefix string, max int) []string {
 	if err != nil {
 		return nil
 	}
-	entries, err := readDirCapped(abs, completionEntryCap)
+	entries, err := readDirCapped(abs, completionEntryCap, projectDir)
 	if err != nil {
 		return nil
 	}
@@ -648,9 +653,10 @@ func CommonPrefix(candidates []string) string {
 // completionEntryCap bounds a directory read for Tab completion.
 const completionEntryCap = 2000
 
-// readDirCapped lists at most n entries of a directory.
-func readDirCapped(abs string, n int) ([]os.DirEntry, error) {
-	d, err := os.Open(abs)
+// readDirCapped lists at most n entries of a directory, opened through
+// its confinement root.
+func readDirCapped(abs string, n int, roots ...string) ([]os.DirEntry, error) {
+	d, err := openConfined(abs, roots...)
 	if err != nil {
 		return nil, err
 	}

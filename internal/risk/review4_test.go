@@ -344,3 +344,14 @@ func TestShellQuotingDoesNotHidePersistentPaths(t *testing.T) {
 		}
 	}
 }
+
+// R03: a backslash-newline is bash's line continuation — the joined
+// path is what runs.
+func TestLineContinuationDoesNotHidePersistentPaths(t *testing.T) {
+	if v := classifyShell("cp evil .g\\\nit/config"); v.Tier != Block {
+		t.Errorf("continued .git/config = %v (%s), want block", v.Tier, v.Reason)
+	}
+	if v := classifyShell("cp evil AGE\\\nNTS.md"); v.Tier != Review || !v.OperatorOnly {
+		t.Errorf("continued AGENTS.md = %v operatorOnly=%v, want operator-only review", v.Tier, v.OperatorOnly)
+	}
+}

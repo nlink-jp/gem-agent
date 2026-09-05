@@ -430,3 +430,52 @@ func TestAttachmentsAreBoundedAndRuneSafe(t *testing.T) {
 		t.Fatalf("ja.txt not attached: %+v %+v", atts, problems)
 	}
 }
+
+// R05: a work-directory text reference opens through the work root — a
+// link swapped in after the resolve is refused.
+func TestWorkDirAttachmentOpensThroughItsRoot(t *testing.T) {
+	project, _ := filepath.EvalSymlinks(t.TempDir())
+	work, _ := filepath.EvalSymlinks(t.TempDir())
+	outside, _ := filepath.EvalSymlinks(t.TempDir())
+	p := filepath.Join(work, "note.txt")
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(p, []byte("ordinary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secret, []byte("OUTSIDE-SENTINEL"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	abs, err := resolve(project, work, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(p, p+".original"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, p); err != nil {
+		t.Fatal(err)
+	}
+	if att, err := attachFile(p, abs, project, work, 1024); err == nil {
+		t.Fatalf("work-dir reference read outside its root: %q", att.Content)
+	}
+}
+
+// R12: an omission the listing did not count is not reported as a
+// count.
+func TestDirectoryOmissionIsNotACount(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 5; i++ {
+		if err := os.WriteFile(filepath.Join(dir, "f"+string(rune('a'+i))), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lim := DefaultLimits()
+	lim.DirEntries = 2
+	att, err := attachDir("dir", dir, "", "", lim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(att.Content, "1 more entries") || !strings.Contains(att.Content, "more than 2 entries") {
+		t.Errorf("omission wording wrong: %q", att.Content)
+	}
+}

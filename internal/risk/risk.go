@@ -337,8 +337,11 @@ func persistentTokens(command, projectDir string) (Verdict, bool) {
 // (shellUnquote), never treated as separators.
 var candidateSplit = regexp.MustCompile("[\\s`()=,;|&<>\\[\\]{}]+")
 
-// shellUnquote removes the quoting bash would consume.
-var shellUnquote = strings.NewReplacer(`'`, "", `"`, "", "\\", "")
+// shellUnquote removes the quoting bash would consume: a backslash-
+// newline (line continuation) vanishes whole — first, so the newline
+// does not survive as a separator — then quotes and escaping
+// backslashes.
+var shellUnquote = strings.NewReplacer("\\\n", "", "\\\r\n", "", `'`, "", `"`, "", "\\", "")
 
 // segmentSplit separates the simple commands of a shell text: pipes,
 // lists, background, and newlines — bash runs each line as a separate

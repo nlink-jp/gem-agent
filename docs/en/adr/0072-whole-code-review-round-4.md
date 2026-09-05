@@ -463,6 +463,33 @@ findings, all held:
 
 Every item has a regression test.
 
+### 4.6 Seventh pass — the fixed-baseline re-check (2026-09-05, v0.68.2)
+
+The reviewer re-checked the fourteen items of §4.5 against `97b241e`
+with an overlay of failing tests: nine confirmed fixed, five partly
+remaining, two regressions from the fixes. All seven held:
+
+- **R03** — a backslash-newline is bash's line continuation;
+  `shellUnquote` removed the backslash and left the newline as a
+  separator. The continuation is removed whole, first.
+- **N01** (regression) — `columnIndex("ZZZZZZZ1")` asked for billions
+  of empty cells, and the padding ignored the text budget. A reference
+  past XFD is not a column; the budget is checked between rows.
+- **R05** — `openConfined` knew the project root only; a work-directory
+  text reference opened bare and a swapped link read outside. Both
+  roots are passed, for files and directory listings.
+- **R06** — spill previews of oversized blocks were not charged to the
+  response budget. Every rendered piece is paid from it; what does not
+  fit is saved together.
+- **R09** — the `r:id` attribute was read without its namespace, so
+  `id` matched too and attribute order decided. Read by namespace.
+- **R12** — the startup scans (skills root, trust probe, work
+  directories) still listed whole; the `@directory` omission claimed
+  a count it did not know; `list_tree` counts dropped `more`. All
+  bounded; unknown remainders say "more than", counts say "+".
+- **N02** (regression) — `boundedOutput` sliced by byte before the
+  rune cut. The whole kept buffer goes to the cut.
+
 ## Lessons
 
 - **Independent reviewers found what the maintainer pass did not**, for

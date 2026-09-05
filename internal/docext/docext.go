@@ -126,7 +126,10 @@ func extractDocx(data []byte, lim Limits) (string, string, error) {
 type xlsxSheetRef struct {
 	Name string `xml:"name,attr"`
 	ID   string `xml:"sheetId,attr"`
-	RID  string `xml:"id,attr"`
+	// The relationship id is read with its namespace: a bare "id"
+	// matched sheetId-like attributes too, and attribute order decided
+	// which won (review after v0.68.2, R09).
+	RID string `xml:"http://schemas.openxmlformats.org/officeDocument/2006/relationships id,attr"`
 }
 
 // extractXlsx renders every worksheet as tab-separated rows under a
@@ -170,7 +173,7 @@ func extractXlsx(data []byte, lim Limits) (string, string, error) {
 			name = names[k]
 		}
 		fmt.Fprintf(&b, "### sheet: %s\n", name)
-		xlsxSheetText(&b, raw, shared)
+		xlsxSheetText(&b, raw, shared, lim.TextBytes)
 		b.WriteByte('\n')
 	}
 	if b.Len() == 0 {
@@ -270,7 +273,12 @@ func xlsxSheetNamesByMember(data []byte, lim Limits) map[string]string {
 	return out
 }
 
-func xlsxSheetText(b *strings.Builder, raw []byte, shared []string) {
+// maxXlsxColumns is the sheet width the format allows (XFD): a cell
+// reference past it is not a position (review after v0.68.2, N01 — a
+// crafted reference asked for billions of empty cells).
+const maxXlsxColumns = 16384
+
+func xlsxSheetText(b *strings.Builder, raw []byte, shared []string, textBudget int) {
 	var sheet struct {
 		Rows []struct {
 			Cells []struct {
@@ -288,14 +296,19 @@ func xlsxSheetText(b *strings.Builder, raw []byte, shared []string) {
 		return
 	}
 	for _, row := range sheet.Rows {
+		// The aggregate text budget is checked between rows too: the
+		// empty-column padding can multiply a small XML many times.
+		if textBudget > 0 && b.Len() > textBudget {
+			return
+		}
 		vals := make([]string, 0, len(row.Cells))
 		col := 0
 		for _, c := range row.Cells {
 			// Empty cells are not stored: the r attribute says where a
 			// stored cell sits, and the gap before it is kept as empty
 			// columns so A1 and C1 do not become neighbours (ADR-0072
-			// §4.5).
-			if want := columnIndex(c.R); want > col {
+			// §4.5). A reference past the sheet's width is ignored.
+			if want := columnIndex(c.R); want > col && want < maxXlsxColumns {
 				for ; col < want; col++ {
 					vals = append(vals, "")
 				}
@@ -335,6 +348,9 @@ func columnIndex(ref string) int {
 		}
 		n = n*26 + int(r-'A'+1)
 		seen = true
+		if n > maxXlsxColumns {
+			return -1 // past XFD: not a column
+		}
 	}
 	if !seen {
 		return -1
@@ -357,7 +373,7 @@ func pptxSlideOrder(data []byte, lim Limits, present []int) []int {
 	}
 	var pres struct {
 		IDs []struct {
-			RID string `xml:"id,attr"`
+			RID string `xml:"http://schemas.openxmlformats.org/officeDocument/2006/relationships id,attr"`
 		} `xml:"sldIdLst>sldId"`
 	}
 	if xml.Unmarshal(raw, &pres) != nil || len(pres.IDs) == 0 {

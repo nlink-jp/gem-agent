@@ -309,3 +309,41 @@ func TestPptxDisplayOrder(t *testing.T) {
 		t.Errorf("slides not in presentation order:\n%s", text)
 	}
 }
+
+// N01: a cell reference past XFD is not a column, and padding never
+// runs past the text budget.
+func TestColumnExpansionIsBounded(t *testing.T) {
+	if n := columnIndex("ZZZZZZZ1"); n != -1 {
+		t.Errorf("columnIndex(ZZZZZZZ1) = %d, want -1", n)
+	}
+	if n := columnIndex("XFD1"); n != 16383 {
+		t.Errorf("columnIndex(XFD1) = %d, want 16383", n)
+	}
+	var b strings.Builder
+	raw := []byte("<worksheet><sheetData>" + strings.Repeat(`<row><c r="XFD1"><v>1</v></c></row>`, 200) + "</sheetData></worksheet>")
+	xlsxSheetText(&b, raw, nil, 20000)
+	if b.Len() > 20000+16384*2 {
+		t.Errorf("padding ran past the budget: %d bytes", b.Len())
+	}
+}
+
+// R09: the relationship id is read by namespace, whatever the attribute
+// order.
+func TestPptxOrderIsAttributeOrderIndependent(t *testing.T) {
+	slide := func(s string) string {
+		return `<?xml version="1.0"?><p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sp><a:t>` + s + `</a:t></p:sp></p:sld>`
+	}
+	data := makeZip(t, map[string]string{
+		"ppt/presentation.xml":            `<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId r:id="rId3" id="257"/><p:sldId r:id="rId1" id="256"/></p:sldIdLst></p:presentation>`,
+		"ppt/_rels/presentation.xml.rels": `<Relationships><Relationship Id="rId1" Target="slides/slide1.xml"/><Relationship Id="rId3" Target="slides/slide3.xml"/></Relationships>`,
+		"ppt/slides/slide1.xml":           slide("FIRST-FILE"),
+		"ppt/slides/slide3.xml":           slide("THIRD-FILE"),
+	})
+	text, _, err := extractPptx(data, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Index(text, "THIRD-FILE") > strings.Index(text, "FIRST-FILE") {
+		t.Errorf("r:id before id reversed the order:\n%s", text)
+	}
+}

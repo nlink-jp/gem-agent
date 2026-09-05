@@ -84,7 +84,12 @@ func probeProject(projectDir string) projectOffering {
 		// error, declining hides the file entirely.
 		o.HasMCP = true
 	}
-	if entries, err := os.ReadDir(filepath.Join(projectDir, ".claude", "skills")); err == nil {
+	if entries, more, err := readDirBounded(filepath.Join(projectDir, ".claude", "skills"), trustProbeCap); err == nil {
+		if more {
+			// A scan cut short still counts as an offering: the prompt
+			// must not read a huge directory as "nothing to trust".
+			o.Skills++
+		}
 		// Count entries that look like skills (a dir with SKILL.md),
 		// not raw directory entries — .DS_Store and stray files
 		// inflated the number shown in a security prompt (review
@@ -200,4 +205,25 @@ func readLineUnbuffered(in io.Reader) string {
 		}
 	}
 	return b.String()
+}
+
+// trustProbeCap bounds the trust probe's directory scans: an untrusted
+// project's directory size is not the probe's to load whole (review
+// after v0.68.2, R12).
+const trustProbeCap = 1000
+
+func readDirBounded(dir string, n int) ([]os.DirEntry, bool, error) {
+	d, err := os.Open(dir)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = d.Close() }()
+	entries, err := d.ReadDir(n + 1)
+	if err != nil && err != io.EOF {
+		return nil, false, err
+	}
+	if len(entries) > n {
+		return entries[:n], true, nil
+	}
+	return entries, false, nil
 }

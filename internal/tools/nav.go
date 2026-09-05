@@ -205,7 +205,12 @@ func (r *Registry) listTree() *Tool {
 						fmt.Fprintf(&b, "%s%s@\n", indent, e.Name())
 					case e.IsDir():
 						if dirsOnly {
-							fmt.Fprintf(&b, "%s%s/ (%d files)\n", indent, e.Name(), r.countFiles(filepath.Join(dir, e.Name())))
+							n, more := r.countFiles(filepath.Join(dir, e.Name()))
+							plus := ""
+							if more {
+								plus = "+" // the listing stopped at DirEntryCap: a lower bound
+							}
+							fmt.Fprintf(&b, "%s%s/ (%d%s files)\n", indent, e.Name(), n, plus)
 						} else {
 							fmt.Fprintf(&b, "%s%s/\n", indent, e.Name())
 						}
@@ -246,10 +251,10 @@ func (r *Registry) listTree() *Tool {
 
 // countFiles counts the non-directory entries of one directory, for
 // the dirs_only annotation.
-func (r *Registry) countFiles(dir string) int {
-	items, _, err := r.readDirIn(dir)
+func (r *Registry) countFiles(dir string) (int, bool) {
+	items, more, err := r.readDirIn(dir)
 	if err != nil {
-		return 0
+		return 0, false
 	}
 	n := 0
 	for _, e := range items {
@@ -257,7 +262,7 @@ func (r *Registry) countFiles(dir string) int {
 			n++
 		}
 	}
-	return n
+	return n, more
 }
 
 func (r *Registry) searchFiles() *Tool {

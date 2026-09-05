@@ -195,3 +195,21 @@ func TestManySmallBlocksShareOneBudget(t *testing.T) {
 		t.Fatalf("blocks past the budget were not saved together:\n%s", out)
 	}
 }
+
+// R06: previews of oversized blocks are paid from the response budget
+// too — a hundred of them stay within one cap.
+func TestOversizedBlockPreviewsShareTheBudget(t *testing.T) {
+	work := t.TempDir()
+	in := newMCPIntake(fixedDir(work))
+	blocks := make([]mcp.Content, 100)
+	for i := range blocks {
+		blocks[i] = mcp.Content{Type: "text", Text: strings.Repeat("x", in.cap+1)}
+	}
+	out := in.render("srv", "tool", blocks, false)
+	if len(out) > in.cap+1000 {
+		t.Fatalf("rendered %d bytes for cap %d", len(out), in.cap)
+	}
+	if !strings.Contains(out, "more text block(s)") {
+		t.Fatal("the remainder was not saved together")
+	}
+}

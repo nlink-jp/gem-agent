@@ -441,3 +441,14 @@ func TestDirectoryListingsAreBounded(t *testing.T) {
 		t.Errorf("list_files did not disclose the cut: %q", out[len(out)-120:])
 	}
 }
+
+// N02: the bounded shell output cuts on a rune boundary and counts
+// complete characters.
+func TestBoundedOutputKeepsRunesWhole(t *testing.T) {
+	b := &boundedOutput{limit: 4}
+	_, _ = b.Write([]byte("あいう"))
+	s := b.String()
+	if !utf8.ValidString(s) || !strings.HasPrefix(s, "あ\n[output truncated: 3 of 9 bytes shown]") {
+		t.Errorf("String = %q", s)
+	}
+}

@@ -55,24 +55,39 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content, isErr bool
 	// one, so the inline text never exceeds one cap.
 	budget := in.cap
 	var rest []string // text blocks past the budget, saved together
+	spend := func(piece string) bool {
+		// Every rendered piece — inline text, a spill preview and its
+		// path, a binary note, the separator — is paid from the one
+		// budget (review after v0.68.2, R06: previews of oversized
+		// blocks were free, and a hundred of them dwarfed the cap).
+		if len(piece)+1 > budget {
+			return false
+		}
+		budget -= len(piece) + 1
+		parts = append(parts, piece)
+		return true
+	}
 	for _, b := range blocks {
 		if b.Type == "text" || (b.Type == "" && len(b.Data) == 0) {
-			switch {
-			case len(rest) == 0 && len(b.Text) > in.cap:
-				// One oversized block: saved whole with its preview.
-				parts = append(parts, in.spillText(server, tool, b.Text))
-			case len(rest) == 0 && len(b.Text) <= budget:
-				budget -= len(b.Text)
-				parts = append(parts, b.Text)
-			default:
-				// Past the budget: the remaining text blocks go to one
-				// file, without previews — a preview per block is how
-				// many small blocks slipped past the cap.
+			if len(rest) > 0 {
 				rest = append(rest, b.Text)
+				continue
 			}
+			if len(b.Text) <= budget && spend(b.Text) {
+				continue
+			}
+			if len(b.Text) > in.cap {
+				if piece := in.spillText(server, tool, b.Text); spend(piece) {
+					continue
+				}
+			}
+			rest = append(rest, b.Text)
 			continue
 		}
-		parts = append(parts, in.binary(server, tool, b))
+		piece := in.binary(server, tool, b)
+		if !spend(piece) {
+			parts = append(parts, fmt.Sprintf("[%s content (%d bytes) — past the response budget, not saved]", b.Type, len(b.Data)))
+		}
 	}
 	if len(rest) > 0 {
 		parts = append(parts, in.spillRest(server, tool, rest))

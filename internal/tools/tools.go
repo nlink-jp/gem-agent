@@ -856,7 +856,10 @@ func (b *boundedOutput) String() string {
 	if len(b.buf) <= b.limit {
 		return string(b.buf)
 	}
-	cut := cutRunes(string(b.buf[:b.limit]), b.limit)
+	// The whole kept buffer (limit+1 bytes) goes to cutRunes, which
+	// lands the cut on a rune boundary at or before the limit; slicing
+	// first split a character and left cutRunes nothing to fix.
+	cut := cutRunes(string(b.buf), b.limit)
 	return cut + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", len(cut), b.total)
 }
 

@@ -26,6 +26,7 @@ package workdir
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -104,11 +105,19 @@ func List(projectDir, excludeSessionID string) ([]Info, error) {
 		return nil, err
 	}
 	base := filepath.Join(root, statedir.EscapeProject(projectDir), "work")
-	entries, err := os.ReadDir(base)
+	d, err := os.Open(base)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
 	if err != nil {
+		return nil, err
+	}
+	// Bounded: the state root is the machine's, but a long-lived
+	// install accumulates, and the startup scan must not hold every
+	// entry (review after v0.68.2, R12).
+	entries, err := d.ReadDir(ListCap)
+	_ = d.Close()
+	if err != nil && err != io.EOF {
 		return nil, err
 	}
 	var infos []Info
@@ -183,9 +192,17 @@ func Remove(projectDir, sessionID string) error {
 // a directory that still holds anything, which is what makes it safe to
 // do without asking.
 func RemoveIfEmpty(dir string) {
-	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) > 0 {
+	d, err := os.Open(dir)
+	if err != nil {
+		return
+	}
+	entries, err := d.ReadDir(1) // one entry is enough to say "not empty"
+	_ = d.Close()
+	if (err != nil && err != io.EOF) || len(entries) > 0 {
 		return
 	}
 	_ = os.Remove(dir)
 }
+
+// ListCap bounds the work directories List reads at startup.
+const ListCap = 10000

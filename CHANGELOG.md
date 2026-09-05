@@ -54,6 +54,13 @@
   directory listings are bounded and say so
 - Skill roots are closed on override, on the skill-count cut, and at
   exit
+- Re-check fixes: a backslash-newline continuation does not hide a
+  persistent path; spreadsheet cell references past XFD are ignored
+  and empty-column padding stays within the text budget; work-directory
+  `@` references open through the work root; oversized MCP block
+  previews count against the response budget; `.pptx` `r:id` is read
+  by namespace; startup directory scans are bounded; the bounded shell
+  output cuts on a rune boundary
 
 - `.gitignore` files are read through the confinement roots with the
   cap applied on the stream; a link where a `.gitignore` should be
