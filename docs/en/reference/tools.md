@@ -142,15 +142,17 @@ Operator-side attachment routes for both live in
 ## `shell_exec`
 
 Runs a shell command wrapped in macOS sandbox-exec in the lane the
-model declares with `access` (ADR-0073): `read` (default — no writes
-outside scratch, no network, no preference writes, no IPC-capable
-programs, no credential reads; runs without a prompt), `write` (the
-project and the work directory writable, network allowed, the
-instruction/configuration files and `.git` hooks/config denied;
+model declares with `access` (ADR-0073): `read` (default — writes only
+its private scratch, no network, no IPC, no preference writes, no
+credential or `~/Library` reads; runs without a prompt where the lane
+was verified at startup), `write` (the project and the work directory
+writable, network allowed, the instruction/configuration files and
+`.git` itself, hooks and config denied, credential reads denied;
 approval-gated) or `operator` (the full ADR-0001 profile; you always
-decide). Enforcement is covered by a real Seatbelt test over the three
-profiles. Timeout and output cap, exit status surfaced, and a read-lane
-refusal comes back with the lane to ask for. The `!command` input route
+decide). Every lane detaches the command from your terminal. `ps` and
+`top` run under no Seatbelt profile. Enforcement is covered by a real
+Seatbelt test over the three profiles. Timeout and output cap, exit
+status surfaced, and a refusal comes back with the lane to ask for. The `!command` input route
 runs in the operator lane without the prompt because you typed it (see
 [interface](interface.md)). See [approval](approval.md) for what each
 lane denies.

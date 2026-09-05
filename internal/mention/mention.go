@@ -263,6 +263,7 @@ func Expand(ctx context.Context, text, projectDir, workDir string, lim Limits) (
 		// skipped with a reason rather than attached.
 		remaining := lim.TotalBytes - total
 		if remaining < minUsefulBytes {
+			_ = f.Close() // review A-01: this continue leaked the descriptor
 			problems = append(problems, Problem{ref, "skipped: attachment budget exhausted"})
 			continue
 		}

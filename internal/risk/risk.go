@@ -177,7 +177,12 @@ func classifyShell(args map[string]any, mutating bool) Verdict {
 	case lane == sandbox.LaneRead && !mutating:
 		return Verdict{Tier: Safe, Reason: "read lane: the sandbox denies writes outside scratch, the network, preference writes, signals to other processes and IPC-capable programs"}
 	case lane == sandbox.LaneRead:
-		return Verdict{Tier: Review, Reason: "shell command with no read lane to run in (the sandbox is off) — the model tier weighs it"}
+		// Declared read, but this session has no unasked read lane: the
+		// sandbox is off, its read lane failed verification, or the
+		// operator asked for read-lane prompts. The command still runs
+		// under the read profile where there is one; the ladder or the
+		// operator decides (review V7: the reason once said "off").
+		return Verdict{Tier: Review, Reason: "read lane declared, but read-lane commands ask in this session — the model tier weighs it"}
 	}
 	return Verdict{Tier: Review, Reason: "write lane: writes the project and the work directory, reaches the network — the model tier weighs it"}
 }

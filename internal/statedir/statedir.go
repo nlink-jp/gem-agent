@@ -7,6 +7,8 @@
 package statedir
 
 import (
+	"errors"
+
 	"github.com/nlink-jp/gem-agent/internal/bounded"
 
 	"fmt"
@@ -53,6 +55,11 @@ const Marker = ".project"
 func MarkerMatches(dir, projectDir string) (bool, string) {
 	data, err := readMarker(filepath.Join(dir, Marker))
 	if err != nil {
+		if errors.Is(err, errMarkerOversized) {
+			// Not a marker at all: nothing here has a claim on the
+			// project (review A-09 — it read as a 64 KiB owner name).
+			return false, fmt.Sprintf("state dir %s has an oversized %s marker — not trusted", dir, Marker)
+		}
 		return true, ""
 	}
 	recorded := strings.TrimSpace(string(data))
@@ -124,6 +131,15 @@ func readMarker(path string) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
-	data, _, err := bounded.ReadAll(f, markerCap)
-	return data, err
+	data, more, err := bounded.ReadAll(f, markerCap)
+	if err != nil {
+		return nil, err
+	}
+	if more {
+		return nil, errMarkerOversized
+	}
+	return data, nil
 }
+
+// errMarkerOversized marks a marker file past markerCap.
+var errMarkerOversized = errors.New("marker larger than the cap")

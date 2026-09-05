@@ -47,6 +47,7 @@ name = "<gemini model id>"
 [sandbox]
 enabled = true             # デフォルト。無効なら read レーンが無く全 shell_exec が確認（ADR-0073）
 # read_lane_deny_exec = ["docker"]   # read レーンが起動できないプログラムを組み込み一覧に追加
+# read_lane_prompts = false  # true で read レーンのコマンドも確認する（檻はそのまま）
 
 [agent]
 max_turns = 50             # デフォルト。介入チェックポイントで、延長は 3 倍まで（ADR-0040）
@@ -284,7 +285,7 @@ export される変数が 3 つあります: セッション id `GEMAGENT_SESSIO
 | `--thinking <level>` | この実行だけ `[model].thinking` を上書き: `minimal`\|`low`\|`medium`\|`high`、または `default` で設定済みレベルをクリア（対応レベルはモデル依存 — ADR-0025） |
 | `--config <path>` | 別の設定ファイルを使う |
 | `--mcp <on\|off>` | この実行だけ `[mcp].enabled` を上書き — `off` は全 MCP サーバー起動をスキップ。`-p` パイプラインが通常求めるもの（ADR-0039） |
-| `--no-sandbox` | Seatbelt ラップの無効化（デバッグ専用） |
+| `--no-sandbox` | Seatbelt ラップの無効化（デバッグ専用）— 全 `shell_exec` があなたの承認事項になり、ポリシーも auto モードも持ち上げない（ADR-0073 §5） |
 | `sessions` | 再開可能なセッション一覧 |
 
 ## テレメトリ（ADR-0035）
@@ -297,9 +298,11 @@ Explorer でのログ名は `gem-agent`（`logging.googleapis.com` の有効化
 バックエンドは代わりに自前のコレクタへ OpenTelemetry ログレコードを
 送ります。イベント: `session.start/end`・`tool.call`
 （名前・切詰め詳細・所要・結果 — `ok`・`error`・`denied`・`skipped`・
-`interrupted`・`abandoned`）・`tool.late_return`（放棄された呼び出しが
-結局戻った — ADR-0065）・`approval.decision`（判定とどの層が
-決めたか）・`turn.end`・`model.usage`・`compaction`・`media.upload`・
+`interrupted`・`abandoned` — と `shell_exec` の `lane`: `read`・`write`・
+`operator`、sandbox が裏付けないときは `unverified:`・`unconfined:` 接頭）・
+`tool.late_return`（放棄された呼び出しが結局戻った — ADR-0065。
+`origin_session_id` を持つ）・`approval.decision`（判定とどの層が
+決めたか、レーン）・`turn.end`・`model.usage`・`compaction`・`media.upload`・
 `integration.reload`（セッション中の `/mcp reload` / `/skills reload`
 がツール面を変えた — ADR-0039）—
 サービス/セッション/プロジェクト/ホストのリソース属性付き。

@@ -51,7 +51,7 @@ func TestRotateWorkDirMovesEveryConsumer(t *testing.T) {
 		t.Fatal(err)
 	}
 	systemRebuilt := false
-	notes := rotateWorkDir(registry, shellExec, true, project, newWork, nil, func() { systemRebuilt = true })
+	notes := rotateWorkDir(registry, shellExec, true, project, newWork, nil, false, func() { systemRebuilt = true })
 	if len(notes) != 0 {
 		t.Fatalf("rotation raised notes: %v", notes)
 	}
@@ -73,7 +73,7 @@ func TestRotateWorkDirMovesEveryConsumer(t *testing.T) {
 		t.Error("sandbox still allows the old work directory")
 	}
 	// No work directory at all: the second root is removed, not kept.
-	if notes := rotateWorkDir(registry, shellExec, true, project, "", nil, nil); len(notes) != 0 {
+	if notes := rotateWorkDir(registry, shellExec, true, project, "", nil, false, nil); len(notes) != 0 {
 		t.Fatalf("rotation to none raised notes: %v", notes)
 	}
 	if registry.WorkDir() != "" {

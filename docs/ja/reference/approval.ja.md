@@ -85,7 +85,8 @@ purpose なしで届いたコールもそのまま実行でき、プロンプト
 このセッション中は許可、`p` = ポリシーに永続化（`p` は TUI の回答で、
 TUI を使わない plain stdin ゲートは `y`/`n`/`N`/`a`）、拒否は拒否側に
 倒れます。`a` は危険側には届きません: Block 判定のコール（sudo・再帰
-削除・クレデンシャルパス等）と "always" ポリシーのツールは以後も必ず
+削除・クレデンシャルパス等）、操作者専用の書込（指示・設定ファイル、
+`operator` シェルレーン）と "always" ポリシーのツールは以後も必ず
 確認します（ADR-0021）。
 
 `N` は**理由を添えて拒否**します（ADR-0060）: 1 行の入力欄が開き、
@@ -122,17 +123,30 @@ TUI を使わない plain stdin ゲートは `y`/`n`/`N`/`a`）、拒否は拒�
 
 | レーン | カーネルが拒むもの | 決める者 |
 |---|---|---|
-| `read` | セッション専用の scratch ディレクトリ（`TMPDIR` がそこを指す）とデバイス sink 以外への全書込 — プロジェクト・作業ディレクトリ・`/private/tmp` を含む。ネットワーク。Mach/POSIX IPC・Apple Events・launch services（`open`）・設定書込（`defaults`）・NVRAM・デバイスアクセス・自分の子以外へのシグナル。第 2 線として IPC 系プログラムの起動（`osascript`・`open`・`launchctl`・`defaults`・`security`・`pbcopy`・`shortcuts`・`automator`・`scutil`・`networksetup`・`systemsetup`、加えて `[sandbox].read_lane_deny_exec`）。資格情報ファイルの読取 | 誰も — read レーンのコマンドは自分の scratch 以外を何も変えず、`read_file` と同じく**どのモードでも確認なしで走ります** — 起動時にレーンの拒否が検証された機体で（下記） |
+| `read` | セッション専用の scratch ディレクトリ（`TMPDIR` がそこを指す）・シェルのヒアドキュメント用 `/private/var/tmp`・自分の記述子（`/dev/fd`）・デバイス sink 以外への全書込 — プロジェクト・作業ディレクトリ・`/private/tmp` を含む。ネットワーク。Mach/POSIX IPC・Apple Events・launch services（`open`）・設定書込（`defaults`）・NVRAM・デバイスアクセス・端末・自分の子以外へのシグナル。資格情報一覧（下記）・外部/ネットワークマウント（`/Volumes`・`/Network`）・ツールチェーン用（`Caches`・`Developer`・`Python`・`Go`）を除く `~/Library` の読取。トークン・キー・パスワードらしい名前の環境変数は環境に入りません。第 2 線として IPC 系プログラムの起動（`osascript`・`open`・`launchctl`・`defaults`・`security`・`pbcopy`・`shortcuts`・`automator`・`scutil`・`networksetup`・`systemsetup`、加えて `[sandbox].read_lane_deny_exec`） | 誰も — read レーンのコマンドは自分の scratch 以外を何も変えず、`read_file` と同じく `always` ポリシー下を除く**どのモードでも確認なしで走ります** — 起動時にレーンの拒否が検証された機体で（下記）、`[sandbox].read_lane_prompts = true` を設定していなければ |
 | `write` | 後続セッションが信頼するファイル（下記）への書込 — そのため `.git/config` とフックを書く `git init`・`git clone`・`git remote add` は operator レーンの仕事になり、拒否がそう告げます。資格情報ファイルの読取 | auto モードでは上のラダー、既定モードではあなた |
-| `operator` | ADR-0001 のプロファイル以上には何も: 永続ファイルは書込可、資格情報は読取可 | **常にあなた** — モデル層・セッションの `a`・`--allow` は決して答えません |
+| `operator` | ADR-0001 のプロファイル以上には何も: 永続ファイルは書込可、資格情報は読取可。端末はどのレーンでも拒否 | **常にあなた** — モデル層・セッションの `a`・`--allow` は決して答えません |
+
+資格情報一覧は有限集合です（`sandbox.CredentialFilters`）: `~/.ssh`・`~/.aws`・
+`~/.kube`・`~/.gnupg`・`~/.config/gcloud`・`~/.config/gh`・`~/.gemini`・`~/.codex`・
+`~/.claude`・`~/.azure`・`~/.terraform.d`・`~/Library/Keychains`・
+`~/.docker/config.json`・`~/.git-credentials`・シェル履歴・`~/.netrc`・`~/.npmrc`・
+`~/.pypirc`・`~/.vault-token`・`~/.claude.json`、および場所を問わず `.env`
+（`.example`/`.sample`/`.template`/`.dist` は除く）・`id_rsa` 類・`credentials.json`・
+`*service-account*.json`・`application_default_credentials.json`。それ以外に
+置かれた秘密は read/write レーンで読め、write レーンではネットワークで外へ
+出せます — そこの判定者はモデル層で、`never` ポリシー下では誰もいません。
 
 偽の宣言は何も得ません: `read` は檻を狭めるだけ、`write`・`operator` は
 審査を増やすだけです。read レーンが拒んだコマンドは exit status と、求める
 べきレーンを名指しする 1 行を返し、モデルは `access: "write"` で再発行
 します — 承認が起きるのはそこです。上の *block* パターンは全レーンで
 効きます — read レーンの `sudo` は檻が拒むとしても確認になります — そして
-それが残る唯一の文字列規則です: 見逃した綴りのコストはカーネルがいずれ
-捕まえる確認 1 回であって、穴ではありません。3 層には 3 つの仕事があります:
+それが残る唯一の文字列規則です。read レーンでは見逃した綴りのコストは
+カーネルがいずれ捕まえる確認 1 回であって穴ではありません。write レーンでは
+カーネルが縛るのは*どこに*書けるかであり、その内側で*何をするか*やネットワークで
+何を送るかではないので、見逃した確認を捕まえるのはモデル層 — `never` ポリシー
+下では誰も — です（ツール別ポリシーの節を参照）。3 層には 3 つの仕事があります:
 サンドボックスはコマンドが届く範囲の上限を、モデル層はその内側で意味と整合を、
 そして *block* パターン・`operator` レーン・非封じ込め実行はモデルが何と言おうと
 あなただけのものです。
@@ -142,9 +156,12 @@ TUI を使わない plain stdin ゲートは `y`/`n`/`N`/`a`）、拒否は拒�
 ソケット接続・他プロセスへのシグナル・`/private/tmp` 書込・拒否プログラム）と
 成功すべきプローブ 1 つに当てます。全プローブが期待どおりの機体でだけ read
 レーンのコマンドは無確認で走り、そうでなければ全 `shell_exec` が確認になり、
-バナーが理由を告げます。設定で有効なのに適用できないサンドボックスは起動
+バナーが理由を告げます。ソケットとシグナルのプローブはまずサンドボックス無しの
+対照実行で成功を確かめるので、無関係な理由で失敗したプローブが拒否として
+通ることはありません。設定で有効なのに適用できないサンドボックスは起動
 エラーであり無言のフォールバックではありません: 非封じ込め実行を受け入れる
-なら `--no-sandbox` を明示します。**非封じ込めはレーンではなくモードです**:
+なら `--no-sandbox` を明示します。セッション作業ディレクトリが無いとき read
+レーンの scratch は終了時に削除される一時ディレクトリです。**非封じ込めはレーンではなくモードです**:
 `--no-sandbox` 下では全 `shell_exec` があなたの承認事項 — モデル層は決して
 承認せず、セッションの `a` も `never` ポリシーも持ち上げません — で、監査記録は
 `lane=unconfined:<宣言>` を持ちます。
@@ -237,9 +254,11 @@ global のどのルールにも勝ち、同一スコープ内では完全一致�
 より優先。単独の `"*"` は拒否します — 全ゲートの無効化が 1 文字で
 到達できてはいけません。
 
-**`"never"` は「何でも実行」ではありません。** 呼び出しごとに効果が
-変わるツール（`shell_exec`）では、ルール層の block パターンは引き続き
-聞きます。
+**`"never"` は「何でも実行」ではありません — ただし `shell_exec` では
+それに近づきます。** ルール層の block パターンと operator レーンは引き続き
+聞きますが、それ以外の write レーンのコマンドはネットワーク込みで無人で走り、
+カーネルが縛るのは書ける場所だけです。read レーンのコマンドは元から無確認です。
+`shell_exec` に `never` を付けるのは auto モードを武装してもよい場面だけに。
 
 プロジェクト側は `<project>/.gem-agent.toml` に独自ポリシーを持てます
 （`gem-agent.example.project.toml` 参照）。**向きが重要**です:
@@ -308,8 +327,14 @@ stdin は読みません。端末でない stdin は EOF まで読みます — 
 
 ここでの `--auto` の意味に注意: 人間がどこにもいない以上、Review 層
 のコールの唯一の裁定者はモデル評価器です。非信頼コンテンツを読み
-つつ egress 能力のあるツールを持つパイプラインでは、一般の階梯を
-武装するより `--allow` でツールを名指してください。
+つつ egress 能力のある MCP ツールを持つパイプラインでは、一般の階梯を
+武装するより `--allow` でツールを名指してください。`shell_exec` では順序が
+逆です: `--allow shell_exec` はモデル層を外し write レーンの全コマンド
+（ネットワーク込み）を無人で走らせ、`--auto` はモデル層を判定者として
+残します。単発モードのレーン別: 検証済み read レーンはフラグ無しで走り、
+write レーンは `--allow shell_exec` か `--auto` が要り、operator レーンは
+フラグに関わらず拒否（聞く相手がいない）、`--no-sandbox` 下では全
+`shell_exec` が拒否です。
 
 ## リスクルールブック（ADR-0050）
 
@@ -377,12 +402,17 @@ v0.46.0 から v0.47.0 の間、記録されたゲート判断から承認ルー
 
 `shell_exec` はモデルが宣言したレーンのプロファイルで macOS sandbox-exec に
 ラップされます（各レーンが拒むものは上の auto-approve 節）。`!` コマンドは
-あなたが打ったので operator レーンで走ります。どのレーンもファイル書込を
-プロジェクトディレクトリ・セッション作業ディレクトリ・scratch（`TMPDIR`・
-`/private/tmp`・`/dev/fd` とデバイス sink）に制限し、Seatbelt が強制、
-3 プロファイルをプローブ（`AGENTS.md`・`.git/config` へのリダイレクト・
-`mv`・`sed -i`・`rm`・`git config`、資格情報の読取、`osascript`、子への
-`kill`）に当てる実強制テストが覆います。scratch・永続ファイル・資格情報の
+あなたが打ったので operator レーンで走ります。write と operator レーンは
+ファイル書込をプロジェクトディレクトリ・セッション作業ディレクトリ・scratch
+（`TMPDIR`・`/private/tmp`・`/dev/fd` とデバイス sink）に、read レーンは専用
+scratch・`/private/var/tmp`・`/dev/fd`・sink に制限します。どのレーンも
+コマンドを制御端末の無い独自セッションで走らせ端末デバイスを拒否するので、
+コマンドが gem-agent のプロンプトに打ち込むことはできません。各規則は
+Seatbelt が強制し、3 プロファイルをプローブ（リダイレクト・`mv`・`sed -i`・
+`rm`・`git config`・`.git` の差し替え、資格情報の読取、`osascript`、
+`/dev/tty`、子への `kill`、ヒアドキュメント）に当てる実強制テストが覆います。
+`ps` と `top` はどの Seatbelt プロファイルでも走りません。`sysctl -w` は
+レーンでは拒否しません（元々 root 専用です）。scratch・永続ファイル・資格情報の
 一覧はそれぞれ `internal/sandbox` の関数 1 つで、プロファイルと file ツールの
 判定が読みます（ADR-0070 §2・ADR-0073 §3）。`--no-sandbox` はラップの無効化
 （デバッグ専用）— read レーンも無くなり、全 `shell_exec` が確認になります。

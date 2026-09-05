@@ -1098,7 +1098,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		// (ADR-0047 §2/§3): the hook is a judge, and the proposer's
 		// self-justification is not evidence (review round 4).
 		if deny, why := a.preToolHook(ctx, tc.Name, a.stripPurpose(tc.Name, tc.Args)); deny {
-			a.telemetry.Approval(tc.Name, "denied", "hook", false, why)
+			a.telemetry.Approval(tc.Name, "denied", "hook", false, why, a.laneOf(tc))
 			a.logRecord("hook_denied", map[string]any{"name": tc.Name, "reason": why})
 			// Hook text is the org's own guard speaking, but the denial
 			// exemption (ADR-0060 §3) stays scoped to the gate path:
@@ -1114,6 +1114,12 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		}
 	}
 	d := a.decide(tc)
+	if d.Invalid != nil {
+		// Refused before any gate: a call that names no lane is not a
+		// read-lane call to run unasked, nor a write-lane call to
+		// prompt about (review F7).
+		return "error: " + d.Invalid.Error(), false, false, floorRan
+	}
 	if a.gated(d, tc) {
 		approved, reason := false, ""
 		// The floor (ADR-0021 §5): a Block-tier call, an OperatorOnly
@@ -1137,7 +1143,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 				a.onAuto(tc, d)
 			}
 			a.logRecord("auto_decision", map[string]any{
-				"name": tc.Name, "approved": d.Approved,
+				"name": tc.Name, "approved": d.Approved, "lane": a.laneOf(tc),
 				"tier": d.Tier.String(), "reason": d.Reason, "model": d.ModelConsulted,
 				// The learner reads this to tell an escalation the
 				// operator then approved from a call the ladder passed
@@ -1161,7 +1167,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 				if d.ModelConsulted {
 					source = "auto_model"
 				}
-				a.telemetry.Approval(tc.Name, "approved", source, mustPrompt, d.Reason)
+				a.telemetry.Approval(tc.Name, "approved", source, mustPrompt, d.Reason, a.laneOf(tc))
 			} else {
 				reason = EscalationReason(d)
 			}
@@ -1179,7 +1185,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			if fromAllowlist {
 				source = "allowlist"
 			}
-			a.telemetry.Approval(tc.Name, decision, "gate", mustPrompt, reason)
+			a.telemetry.Approval(tc.Name, decision, "gate", mustPrompt, reason, a.laneOf(tc))
 			// The transcript record (ADR-0045 §7) survives /learn's
 			// withdrawal (ADR-0049 §2): telemetry is opt-in and
 			// off-machine, and any future learning design needs a local
@@ -1198,6 +1204,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			record := map[string]any{
 				"name": tc.Name, "decision": decision, "must_prompt": mustPrompt,
 				"key": a.learnKey(tc), "detail": clip(detail, 300), "source": source,
+				"lane": a.laneOf(tc),
 			}
 			// The operator's own words about their own decision — the
 			// strongest evidence ADR-0045 stores. Local record only:

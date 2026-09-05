@@ -8,6 +8,11 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | エージェントループ実装（開発 Phase 1）の前に `shell_exec` の隔離方式を決める必要がある |
 
+*ADR-0073 による修正: 1 つのプロファイルはコール単位で選ばれ同じ機構で
+強制される 3 レーン（read・write・operator）になった。起動時に検証された
+read レーンの `shell_exec` は非変更系で MITL の確認なしに走る。非封じ込め
+実行（`--no-sandbox`）は劣化した既定ではなく操作者専用のモード。*
+
 ## Context
 
 gem-agent は LLM が提案したシェルコマンドをオペレータのマシン上で実行する。

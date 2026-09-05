@@ -78,7 +78,6 @@ internal/workdir/  per-session work directory (ADR-0058): layout under the state
                    confirmation-gated, never a live session's directory
 cmd/workdirs.go    `workdirs` list + `clean` (ADR-0059): the remedy the startup note points at
 internal/telemetry/ opt-in audit events (ADR-0035): metadata only, Cloud Logging or OTLP, Sub(label) for child agents
-internal/diagram/  terminal mermaid rendering (ADR-0042): translate / fit / verify, TUI only
 cmd/settings.go    /settings panel content + edits (ADR-0009)
 internal/mention/  @-reference parsing, project-confined resolution, completion
 internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery
@@ -379,7 +378,7 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   flag" rule back: if a lane lets something through that it should not,
   fix the profile (and extend `TestLaneEnforcement`), never the regex.
   A read-lane call is non-mutating (`Tool.MutatesWith`) only when the
-  registry has a kernel-enforced read lane (`SetLaneExec(fn, true)`).
+  registry has a verified read lane (`SetLaneExec(fn, sandbox.Enforcement{Confined: true, ReadLane: true})`).
 - **One list, three enforcers** (ADR-0073 §3) — `sandbox.PersistentFiles`
   / `PersistentFile` and `sandbox.CredentialFilters` / `CredentialPath`
   are read by the profile builder and by the file tools' verdict;
@@ -407,17 +406,14 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   `TMPDIR=<work dir>/scratch`; a probe of Apple Events must send a real
   event (`get name` of an application does not)
 - **`/dev` is never writable as a whole** (ADR-0072 §4.3) — the
-  profile allows `sandbox.ScratchFiles()` as literals and `/dev/fd` as
-  a directory; the rule tier reads both lists (`scratchFiles`,
-  `devNullRedirect`). Adding a device means adding it to
-  `ScratchFiles`, not widening a subpath.
+  profiles allow `sandbox.ScratchFiles()` as literals and, in the write
+  and operator lanes, `/dev/fd` as a directory; the read lane allows
+  `/dev/fd` too (descriptors the command already holds). Adding a device
+  means adding it to `ScratchFiles`, not widening a subpath.
 - **A skill is read through its own `os.Root`** (ADR-0072 §4.4) —
   `readSkill` opens the root first and reads SKILL.md through it;
   `Body` / `File` read capped through `readCapped`; `reloadSkills`
-  calls `skills.CloseAll` on the list it replaces. The persistent-file
-  candidates come from `candidateSplit` (every delimiter, not
-  whitespace) — a writing command that mentions `AGENTS.md` in a
-  commit message asks the operator once; that is the accepted cost.
+  calls `skills.CloseAll` on the list it replaces.
 - **Instruction files are read through an `os.Root` at their
   directory** (ADR-0072 §4.4) — `readInstruction`; a link out of the
   directory is refused and noted, a sibling link resolves.
@@ -426,13 +422,12 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   `gated()` keeps it under a `never` policy / a one-shot `--allow`
   grant (found live: `--allow write_file --auto` wrote AGENTS.md).
   Any new place that reads `v.Tier == risk.Block` must read
-  `|| v.OperatorOnly` beside it. Process
-  output is bounded as it arrives (`boundedOutput` in tools,
-  `boundedBuffer` in hooks) — never `CombinedOutput` on a command the
-  model wrote. `readDirIn` returns `(entries, more, err)`: every
-  caller renders `more`. Project files read before the trust prompt
-  go through `readCapped` (1 MiB). The risk tier's persistent-file
-  candidates come from `shellUnquote` + `candidateSplit`.
+  `|| v.OperatorOnly` beside it — or better, read `Decision.Floor()`.
+  Process output is bounded as it arrives (`bounded.Writer` in tools
+  and hooks) — never `CombinedOutput` on a command the model wrote.
+  `readDirIn` returns `(entries, more, err)`: every caller renders
+  `more`. Project files read before the trust prompt go through
+  `readCapped` (1 MiB).
 - **The media upload takes the opened file** (ADR-0072 §4.7) —
   `mention.Limits.UploadMedia` and `agent.Options.MediaUpload` receive
   `*os.File` (opened through the root) plus the reference name;

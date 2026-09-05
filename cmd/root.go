@@ -325,6 +325,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", workdir.ProjectEnvVar, err)
 	}
 	workDir := ""
+	defer removeFallbackScratch()
 	defer func() {
 		if workDir != "" {
 			workdir.RemoveIfEmpty(workDir)
@@ -377,6 +378,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	execFn, enforcement, laneNotes, err := buildExecFn(sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec)
 	if err != nil {
 		return err
+	}
+	if cfg.Sandbox.ReadLanePrompts {
+		// The operator's opt-out (ADR-0073 §5): read-lane commands keep
+		// their cage and their prompt.
+		enforcement.ReadLane = false
 	}
 	for _, n := range laneNotes {
 		fmt.Fprintf(stderr, "warning: %s\n", n)
@@ -1135,7 +1141,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// 4): the file tools' second root, the sandbox profile, the MCP
 		// intake (it reads the registry), and the system prompt — a
 		// cleared conversation has no cached prefix to protect.
-		notes = append(notes, rotateWorkDir(registry, shellExec, sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec, func() { ag.SetSystem(composeSystem()) })...)
+		notes = append(notes, rotateWorkDir(registry, shellExec, sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec, cfg.Sandbox.ReadLanePrompts, func() { ag.SetSystem(composeSystem()) })...)
 		// A cleared session restarts what carries its identity (ADR-0071
 		// addendum): telemetry is re-resourced with the new id, and the
 		// MCP servers — spawned at startup with the old id in their
@@ -1211,6 +1217,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	sandboxLine := "sandbox: enabled (shell lanes: read runs unasked, write and operator ask)"
 	if sandboxOn && !registry.ReadLane() {
 		sandboxLine = "sandbox: enabled (read lane unverified on this machine — every shell_exec asks)"
+		if cfg.Sandbox.ReadLanePrompts {
+			sandboxLine = "sandbox: enabled (read_lane_prompts: read-lane commands ask too)"
+		}
 	}
 	if !sandboxOn {
 		sandboxLine = "sandbox: DISABLED — shell commands run unconfined"
@@ -1787,8 +1796,15 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string) 
 	return func(ctx context.Context, command string, lane sandbox.Lane) *exec.Cmd {
 		argv := sandbox.Wrap(profiles[lane], shell, command)
 		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-		if lane == sandbox.LaneRead && scratch != "" {
-			cmd.Env = append(os.Environ(), "TMPDIR="+scratch, "TMP="+scratch, "TEMP="+scratch)
+		if lane == sandbox.LaneRead {
+			// The read lane runs unasked: it does not get the operator's
+			// exported secrets to print (review F-07), and its
+			// temporary directory is the private scratch.
+			env := sandbox.ScrubEnv(os.Environ())
+			if scratch != "" {
+				env = append(env, "TMPDIR="+scratch, "TMP="+scratch, "TEMP="+scratch)
+			}
+			cmd.Env = env
 		}
 		return cmd
 	}, enf, notes, nil
@@ -1805,11 +1821,40 @@ func readScratchDir(workDir string) (string, error) {
 		}
 		return sandbox.ResolveWriteDir(dir)
 	}
+	// One fallback per process, reused across /clear and removed at
+	// exit (review F-08/A-12: a new one per rotation leaked).
+	fallbackScratchMu.Lock()
+	defer fallbackScratchMu.Unlock()
+	if fallbackScratch != "" {
+		return fallbackScratch, nil
+	}
 	dir, err := os.MkdirTemp("", "gem-agent-read-scratch-")
 	if err != nil {
 		return "", err
 	}
-	return sandbox.ResolveWriteDir(dir)
+	resolved, err := sandbox.ResolveWriteDir(dir)
+	if err != nil {
+		return "", err
+	}
+	fallbackScratch = resolved
+	return resolved, nil
+}
+
+var (
+	fallbackScratchMu sync.Mutex
+	fallbackScratch   string
+)
+
+// removeFallbackScratch deletes the process's fallback scratch
+// directory, if one was created — a directory this process made under
+// its own temporary root, named by its full path.
+func removeFallbackScratch() {
+	fallbackScratchMu.Lock()
+	defer fallbackScratchMu.Unlock()
+	if fallbackScratch != "" && strings.Contains(filepath.Base(fallbackScratch), "gem-agent-read-scratch-") {
+		_ = os.RemoveAll(fallbackScratch)
+		fallbackScratch = ""
+	}
 }
 
 // compactNow runs a manual /compact and renders the outcome. "Nothing
@@ -2100,7 +2145,7 @@ func (l liveLog) Log(kind string, data any) error {
 // dir ("" for none): the file tools' second root, the sandbox profile,
 // and the system prompt. The MCP intake reads the registry, so it
 // follows on its own. Returns operator notes for what could not follow.
-func rotateWorkDir(registry *tools.Registry, shellExec *liveExec, sandboxOn bool, projectDir, dir string, denyExec []string, setSystem func()) []string {
+func rotateWorkDir(registry *tools.Registry, shellExec *liveExec, sandboxOn bool, projectDir, dir string, denyExec []string, readLanePrompts bool, setSystem func()) []string {
 	var notes []string
 	if err := registry.UseWorkDir(dir); err != nil {
 		notes = append(notes, fmt.Sprintf("file tools keep the previous work directory: %v", err))
@@ -2109,6 +2154,9 @@ func rotateWorkDir(registry *tools.Registry, shellExec *liveExec, sandboxOn bool
 		notes = append(notes, fmt.Sprintf("shell commands keep the previous sandbox profile: %v", err))
 	} else {
 		shellExec.set(fn)
+		if readLanePrompts {
+			enf.ReadLane = false
+		}
 		registry.SetLaneExec(shellExec.run, enf)
 		notes = append(notes, laneNotes...)
 	}

@@ -217,3 +217,42 @@ func TestDecisionBoundaryIsModeIndependent(t *testing.T) {
 		}
 	}
 }
+
+// Review F1: the approval detail leads with the lane, so a write-lane,
+// an operator-lane, an unverified and an unconfined run read
+// differently in the box and in the gate_decision record.
+func TestDescribeLeadsWithTheLane(t *testing.T) {
+	a := laneAgent(t, &mockBackend{}, &laneGate{}, true)
+	for _, c := range []struct{ access, want string }{
+		{"", "[read] ls"}, {"read", "[read] ls"}, {"write", "[write] ls"}, {"operator", "[operator] ls"}, {"bogus", "[invalid] ls"},
+	} {
+		if detail, _ := a.Describe(laneCall("ls", c.access)); detail != c.want {
+			t.Errorf("access %q: detail = %q, want %q", c.access, detail, c.want)
+		}
+	}
+	a = laneAgent(t, &mockBackend{}, &laneGate{}, false)
+	if detail, _ := a.Describe(laneCall("ls", "")); detail != "[unverified:read] ls" {
+		t.Errorf("unverified detail = %q", detail)
+	}
+	a = unconfinedAgent(t, &mockBackend{}, &laneGate{}, nil)
+	if detail, _ := a.Describe(laneCall("ls", "write")); detail != "[unconfined:write] ls" {
+		t.Errorf("unconfined detail = %q", detail)
+	}
+	// Review F7: an access value that names no lane is refused before
+	// any gate — neither run unasked nor prompted about.
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{laneCall("ls", "bogus")}},
+		{Content: "done"},
+	}}
+	gate := &laneGate{}
+	a = laneAgent(t, mb, gate, true)
+	if _, err := a.Run(context.Background(), "run it", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.asked) != 0 {
+		t.Errorf("an invalid lane reached the gate: %v", gate.asked)
+	}
+	if d := a.decide(laneCall("ls", "bogus")); d.Invalid == nil || !d.Mutating {
+		t.Errorf("invalid lane decision = %+v", d)
+	}
+}

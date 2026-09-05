@@ -8,6 +8,12 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | The `shell_exec` isolation mechanism must be chosen before the agent loop is implemented (development Phase 1) |
 
+*Amended by ADR-0073: the one profile became three lanes — read, write,
+operator — chosen per call and enforced by the same mechanism; a
+read-lane `shell_exec`, verified at startup, is non-mutating and runs
+without the MITL prompt; unconfined execution (`--no-sandbox`) is an
+operator-only mode rather than a degraded default.*
+
 ## Context
 
 gem-agent executes LLM-proposed shell commands on the operator's machine. An

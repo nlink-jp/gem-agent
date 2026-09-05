@@ -56,7 +56,8 @@ func TestHookOutputIsBounded(t *testing.T) {
 	if !ran {
 		t.Fatal("hook did not run")
 	}
-	if len(out.stdout) > hookStdoutCap {
-		t.Fatalf("stdout held %d bytes; the cap is %d", len(out.stdout), hookStdoutCap)
+	// The kept bytes plus the one-line note that says they were cut.
+	if len(out.stdout) > hookStdoutCap+120 || !strings.Contains(out.stdout, "[hook output truncated: ") {
+		t.Fatalf("stdout held %d bytes without a cut note; the cap is %d", len(out.stdout), hookStdoutCap)
 	}
 }

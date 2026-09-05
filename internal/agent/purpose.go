@@ -188,6 +188,12 @@ func (a *Agent) declaredPurpose(tc llm.ToolCall) string {
 func (a *Agent) Describe(tc llm.ToolCall) (detail, purpose string) {
 	stripped := llm.ToolCall{Name: tc.Name, Args: a.stripPurpose(tc.Name, tc.Args)}
 	detail = CallDetail(stripped)
+	// The lane leads a shell command's detail (review F1: the approval
+	// box and the ⚙ line showed the command alone, so a write-lane, an
+	// operator-lane and an unconfined run looked the same).
+	if lane := a.laneOf(tc); lane != "" {
+		detail = "[" + lane + "] " + detail
+	}
 	// A tool's display annotation (ADR-0051) rides the detail so the
 	// approval dialog and the gate_decision record both carry it —
 	// e.g. write_file's "replaces existing file: 42KB → 8KB".

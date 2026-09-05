@@ -87,8 +87,9 @@ Mutating tools ask before running (the dialog itself is described in
 the session, `p` persists never-ask to the policy file (`p` is a TUI
 answer; the plain-stdin gate used when the TUI is off offers
 `y`/`n`/`N`/`a`), deny fails closed. `a` never covers the dangerous cases: Block-tier calls (sudo,
-recursive deletes, credential paths, …) and tools pinned to `"always"`
-by policy keep asking regardless (ADR-0021).
+recursive deletes, credential paths, …), operator-only writes (the
+instruction and configuration files, the `operator` shell lane) and
+tools pinned to `"always"` by policy keep asking regardless (ADR-0021).
 
 `N` denies **with a typed reason** (ADR-0060): a one-line field opens,
 and what you type rides back to the model inside the denial itself —
@@ -125,9 +126,22 @@ lane, whatever the command says:
 
 | lane | the kernel denies | who decides |
 |---|---|---|
-| `read` | every write except into the session's private scratch directory (`TMPDIR` points there) and the device sinks — the project, the work directory and `/private/tmp` included; the network; Mach and POSIX IPC, Apple Events, launch services (`open`), preference writes (`defaults`), NVRAM, device access, signals to anything but the command's own children; launching the IPC-capable programs (`osascript`, `open`, `launchctl`, `defaults`, `security`, `pbcopy`, `shortcuts`, `automator`, `scutil`, `networksetup`, `systemsetup`, plus `[sandbox].read_lane_deny_exec`) as a second line; reading credential files | nobody — a read-lane command changes nothing but its own scratch and **runs without a prompt in every mode**, like `read_file` — on a machine where the lane's denials were verified at startup (below) |
+| `read` | every write except into the session's private scratch directory (`TMPDIR` points there), the shells' here-document directory `/private/var/tmp`, its own descriptors (`/dev/fd`) and the device sinks — the project, the work directory and `/private/tmp` included; the network; Mach and POSIX IPC, Apple Events, launch services (`open`), preference writes (`defaults`), NVRAM, device access, the terminal, signals to anything but the command's own children; reading the credential list (below), external and network mounts (`/Volumes`, `/Network`) and your `~/Library` except the toolchain directories (`Caches`, `Developer`, `Python`, `Go`); exported variables whose names look like tokens, keys or passwords are not in its environment; launching the IPC-capable programs (`osascript`, `open`, `launchctl`, `defaults`, `security`, `pbcopy`, `shortcuts`, `automator`, `scutil`, `networksetup`, `systemsetup`, plus `[sandbox].read_lane_deny_exec`) as a second line | nobody — a read-lane command changes nothing but its own scratch and **runs without a prompt** in every mode except under an `always` policy, like `read_file` — on a machine where the lane's denials were verified at startup (below), unless you set `[sandbox].read_lane_prompts = true` |
 | `write` | writes to the files later sessions trust (below) — which is why `git init`, `git clone` and `git remote add` (they write `.git/config` and hooks) land in the operator lane, and the refusal says so; reading credential files | the ladder above in auto mode, you in the default mode |
-| `operator` | nothing beyond the ADR-0001 profile: the persistent files are writable, credentials readable | **you, always** — the model tier, a session `a` and `--allow` never answer it |
+| `operator` | nothing beyond the ADR-0001 profile: the persistent files are writable, credentials readable; the terminal stays denied in every lane | **you, always** — the model tier, a session `a` and `--allow` never answer it |
+
+The credential list is a bounded set (`sandbox.CredentialFilters`):
+`~/.ssh`, `~/.aws`, `~/.kube`, `~/.gnupg`, `~/.config/gcloud`,
+`~/.config/gh`, `~/.gemini`, `~/.codex`, `~/.claude`, `~/.azure`,
+`~/.terraform.d`, `~/Library/Keychains`, `~/.docker/config.json`,
+`~/.git-credentials`, the shell histories, `~/.netrc`, `~/.npmrc`,
+`~/.pypirc`, `~/.vault-token`, `~/.claude.json`, and anywhere `.env`
+(not its `.example`/`.sample`/`.template`/`.dist` twins), `id_rsa` and
+kin, `credentials.json`, `*service-account*.json`,
+`application_default_credentials.json`. A secret stored elsewhere is
+readable in the read and write lanes, and in the write lane can leave
+over the network — the model tier is the judge there, and under a
+`never` policy nobody is.
 
 A false declaration gains nothing: `read` can only tighten the cage,
 `write` and `operator` only add scrutiny. A command the read lane
@@ -135,8 +149,12 @@ refused returns its exit status and one line naming the lane to ask
 for; the model re-issues it with `access: "write"`, which is where the
 approval happens. The *blocked* patterns above still apply in every
 lane — a `sudo` in the read lane asks even though the cage would refuse
-it — and they are the only text rule left: a spelling they miss costs a
-prompt the kernel catches anyway, never a hole. The three layers have
+it — and they are the only text rule left. In the read lane a spelling
+they miss costs a prompt the kernel catches anyway, never a hole; in
+the write lane the kernel bounds *where* a command may write, not
+*what* it does inside that bound or sends over the network, so there
+the missed prompt is the model tier's to catch — and under a `never`
+policy nobody's (see the per-tool policy section). The three layers have
 three jobs: the sandbox bounds what a command can reach, the model tier
 judges meaning and consistency inside that bound, and the *blocked*
 patterns, the `operator` lane and unconfined execution are the
@@ -147,10 +165,13 @@ the read-lane profile under `sandbox-exec` against probes that must fail
 (a project write, a socket connect, a signal to another process, a
 `/private/tmp` write, a denied program) and one that must succeed; only
 where every probe behaves does a read-lane command run unasked.
-Otherwise every `shell_exec` asks and the banner says why. A sandbox
-that is configured on but cannot apply here is a startup error, not a
-silent fallback: pass `--no-sandbox` to accept unconfined execution
-explicitly. **Unconfined is a mode, not a lane**: under `--no-sandbox`
+Otherwise every `shell_exec` asks and the banner says why. The socket
+and signal probes are checked against an unsandboxed control run first,
+so a probe that fails for an unrelated reason cannot pass as a denial.
+A sandbox that is configured on but cannot apply here is a startup
+error, not a silent fallback: pass `--no-sandbox` to accept unconfined
+execution explicitly. Without a session work directory the read lane's
+scratch is a fresh temporary directory removed at exit. **Unconfined is a mode, not a lane**: under `--no-sandbox`
 every `shell_exec` is yours to approve — the model tier never approves
 it, and neither a session `a` nor a `never` policy lifts it — and the
 audit record carries `lane=unconfined:<declared>`.
@@ -250,8 +271,12 @@ scope, exact names win over wildcards. A bare `"*"` is rejected —
 switching off every gate at once should not be reachable by a
 one-character entry.
 
-**`"never"` is not "run anything."** For a tool whose effect varies per
-call — `shell_exec` — the rule tier's blocked patterns still ask.
+**`"never"` is not "run anything" — but for `shell_exec` it is close.**
+The rule tier's blocked patterns still ask, and the operator lane
+still asks; every other write-lane command then runs unattended, the
+network included, with the kernel bounding only where it may write.
+Read-lane commands were unasked already. Set `never` on `shell_exec`
+only where you would also arm auto mode.
 
 A project can carry its own policy in `<project>/.gem-agent.toml` (see
 `gem-agent.example.project.toml`), and **direction matters**:
@@ -320,8 +345,15 @@ an idle inherited pipe are the case this catches.
 
 Note what `--auto` means here: with no human anywhere, the model
 evaluator is the sole arbiter of Review-tier calls. For a pipeline
-that reads untrusted content and holds an egress-capable tool, prefer
-`--allow` with the exact tools over arming the general ladder.
+that reads untrusted content and holds an egress-capable MCP tool,
+prefer `--allow` with the exact tools over arming the general ladder.
+For `shell_exec` the order is the reverse: `--allow shell_exec` removes
+the model tier and runs every write-lane command (network included)
+unattended, while `--auto` keeps the model tier as the judge. Per
+lane in one-shot mode: a verified read lane runs with no flag at all;
+the write lane needs `--allow shell_exec` or `--auto`; the operator
+lane is denied whatever the flags (nobody to ask); under
+`--no-sandbox` every `shell_exec` is denied.
 
 ## The risk rulebook (ADR-0050)
 
@@ -392,13 +424,18 @@ What remains, and what to check if you used it:
 `shell_exec` runs wrapped in macOS sandbox-exec under the profile of
 the lane the model declared (see the auto-approve section above for
 what each lane denies); `!` commands run in the operator lane because
-you typed them. Every lane confines file writes to the project
-directory, the session work directory and the scratch dirs (`TMPDIR`,
-`/private/tmp`, `/dev/fd` and the device sinks), enforced by Seatbelt
+you typed them. The write and operator lanes confine file writes to
+the project directory, the session work directory and the scratch dirs
+(`TMPDIR`, `/private/tmp`, `/dev/fd` and the device sinks); the read
+lane to its private scratch, `/private/var/tmp`, `/dev/fd` and the
+sinks. Every lane runs the command in its own session with no
+controlling terminal and denies the terminal devices, so a command
+cannot type into gem-agent's prompt. Each rule is enforced by Seatbelt
 and covered by a real enforcement test that runs the three profiles
-against the probes (redirect, `mv`, `sed -i`, `rm`, `git config`
-onto `AGENTS.md` and `.git/config`, credential reads, `osascript`, a
-child `kill`). The scratch, persistent-file and credential lists are
+against the probes (redirect, `mv`, `sed -i`, `rm`, `git config`, a
+`.git` swap, credential reads, `osascript`, `/dev/tty`, a child `kill`,
+here-documents). `ps` and `top` run under no Seatbelt profile at all;
+`sysctl -w` is not denied by the lanes (root-only anyway). The scratch, persistent-file and credential lists are
 each one function in `internal/sandbox`, read by the profile and by
 the file tools' verdict (ADR-0070 §2, ADR-0073 §3). `--no-sandbox`
 disables the wrapper (debugging only) — and with it the read lane, so

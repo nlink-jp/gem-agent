@@ -25,7 +25,6 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
-	"unicode/utf8"
 
 	"github.com/nlink-jp/gem-agent/internal/ignore"
 )
@@ -805,7 +804,7 @@ func readLineCapped(br *bufio.Reader, cap int) (line string, cut bool, err error
 		if cut {
 			// The cut landed on a byte; drop an incomplete trailing rune
 			// (ADR-0072 §4.8 — a Japanese line ended in a broken byte).
-			buf = trimIncompleteRune(buf)
+			buf = bounded.TrimIncompleteRune(buf)
 		}
 		return strings.TrimSuffix(string(buf), "\n")
 	}
@@ -838,20 +837,6 @@ func readLineCapped(br *bufio.Reader, cap int) (line string, cut bool, err error
 			return "", false, err
 		}
 	}
-}
-
-// trimIncompleteRune removes a UTF-8 sequence the cut left unfinished
-// at the end of b.
-func trimIncompleteRune(b []byte) []byte {
-	for i := len(b) - 1; i >= 0 && i >= len(b)-utf8.UTFMax; i-- {
-		if utf8.RuneStart(b[i]) {
-			if !utf8.FullRune(b[i:]) {
-				return b[:i]
-			}
-			return b
-		}
-	}
-	return b
 }
 
 // --- path confinement ---
@@ -1230,27 +1215,37 @@ func sizeLabel(n int64) string {
 // call run without approval; enf.Confined false is the unconfined mode
 // the agent treats as the operator's alone.
 func (r *Registry) SetLaneExec(fn LaneExecFunc, enf sandbox.Enforcement) {
+	// Under rootsMu like the roots: /clear rotates from the UI goroutine
+	// while an abandoned call may still be reading (review F6).
+	r.rootsMu.Lock()
 	r.laneExec = fn
 	r.enf = enf
+	r.rootsMu.Unlock()
+}
+
+// laneState reads the runner and the enforcement under the lock.
+func (r *Registry) laneState() (LaneExecFunc, sandbox.Enforcement) {
+	if r.parent != nil {
+		return r.parent.laneState()
+	}
+	r.rootsMu.RLock()
+	defer r.rootsMu.RUnlock()
+	return r.laneExec, r.enf
 }
 
 // ReadLane reports whether shell_exec has a verified, kernel-enforced
 // read lane.
 func (r *Registry) ReadLane() bool {
-	if r.parent != nil {
-		return r.parent.ReadLane()
-	}
-	return r.enf.ReadLane
+	_, enf := r.laneState()
+	return enf.ReadLane
 }
 
 // Confined reports whether shell commands run under sandbox-exec at
 // all. A registry with no lane runner (tests) reports confined: the
 // unconfined floor is for the operator's explicit --no-sandbox.
 func (r *Registry) Confined() bool {
-	if r.parent != nil {
-		return r.parent.Confined()
-	}
-	return r.laneExec == nil || r.enf.Confined
+	fn, enf := r.laneState()
+	return fn == nil || enf.Confined
 }
 
 // ShellLane reads the lane a shell_exec call declares; a missing or
@@ -1279,11 +1274,11 @@ func (r *Registry) shellExec() *Tool {
 	return &Tool{
 		Name: ShellExecName,
 		Description: "Run a shell command (bash) with the project root as the working directory. " +
-			"The OS sandbox enforces the lane you declare with `access`: \"read\" (default; runs without approval — " +
-			"no writes outside scratch, no network, no preference writes, no osascript/open/launchctl/defaults/security/pbcopy), " +
-			"\"write\" (may write the project and the work directory and reach the network; approval-gated), " +
-			"\"operator\" (may also write AGENTS.md/CLAUDE.md/.mcp.json/.claude/ and .git hooks or config, and read credential files; the user always decides). " +
-			"A command that fails in the read lane with 'Operation not permitted' needs a wider lane, not a retry. " +
+			"The OS sandbox enforces the lane you declare with `access`. " +
+			"Declare \"read\" (default) for inspection — ls, cat, grep, git status/diff/log, jq — it runs without approval and can write only its own temporary directory ($TMPDIR): no project or work-directory writes, no network, no IPC or system settings. " +
+			"Declare \"write\" up front for anything that builds, tests, installs, commits, writes files or uses the network (build and test tools write their caches); it may write the project and $GEMAGENT_WORK_DIR and is approval-gated. " +
+			"Declare \"operator\" only when the command must change AGENTS.md/CLAUDE.md/.mcp.json/.claude/ or .git hooks/config (git init, clone, remote add), or read credential files; the user always decides. " +
+			"A command refused in a lane with 'Operation not permitted' needs the wider lane it names, not a retry. " +
 			"Output is truncated when large; the exit status is reported when non-zero.",
 		Parameters: map[string]any{
 			"type": "object",
@@ -1303,8 +1298,13 @@ func (r *Registry) shellExec() *Tool {
 		Mutating: true,
 		MutatesWith: func(args map[string]any) bool {
 			// A read-lane call changes nothing the kernel lets it change —
-			// when the kernel is there to enforce that.
-			return ShellLane(args) != sandbox.LaneRead || !r.ReadLane()
+			// when the kernel is there to enforce that. An access value
+			// that names no lane is not a read-lane call (review F7).
+			access, _ := args["access"].(string)
+			if lane, err := sandbox.ParseLane(access); err != nil || lane != sandbox.LaneRead {
+				return true
+			}
+			return !r.ReadLane()
 		},
 		Run: func(ctx context.Context, args map[string]any) (string, error) {
 			command, ok := strArg(args, "command")
@@ -1319,8 +1319,8 @@ func (r *Registry) shellExec() *Tool {
 			cctx, cancel := context.WithTimeout(ctx, r.shellTimeout)
 			defer cancel()
 			var cmd *exec.Cmd
-			if r.laneExec != nil {
-				cmd = r.laneExec(cctx, command, lane)
+			if laneExec, _ := r.laneState(); laneExec != nil {
+				cmd = laneExec(cctx, command, lane)
 			} else {
 				cmd = r.execFn(cctx, command)
 			}
@@ -1353,10 +1353,12 @@ func (r *Registry) shellExec() *Tool {
 					// failed commands into false positives.
 					result += fmt.Sprintf("\n[exit status %d]", exitErr.ExitCode())
 					if r.Confined() && sandbox.DeniedHint(result) {
-						switch {
-						case lane == sandbox.LaneRead && r.ReadLane():
+						// The read profile applies whether or not the lane
+						// was verified for unasked runs (review A-11).
+						switch lane {
+						case sandbox.LaneRead:
 							result += readLaneDeniedNote
-						case lane == sandbox.LaneWrite:
+						case sandbox.LaneWrite:
 							result += writeLaneDeniedNote
 						}
 					}
@@ -1388,7 +1390,12 @@ func hardenExec(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
-	cmd.SysProcAttr.Setpgid = true
+	// Setsid, not Setpgid: a new session drops the controlling
+	// terminal, so /dev/tty does not resolve for the command and no
+	// keystroke can be injected into the operator's terminal (ADR-0073
+	// review F-01). The child still leads its own process group (pgid
+	// = pid), so the group kill below is unchanged.
+	cmd.SysProcAttr.Setsid = true
 	cmd.Cancel = func() error {
 		if cmd.Process != nil {
 			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)

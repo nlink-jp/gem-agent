@@ -59,7 +59,7 @@ func TestNopSinkIsSafe(t *testing.T) {
 	s.SessionEnd()
 	s.TurnEnd(1, time.Second, "ok")
 	s.ToolCall("t", true, "d", "why", time.Second, "ok", "")
-	s.Approval("t", "approved", "gate", false, "")
+	s.Approval("t", "approved", "gate", false, "", "")
 	s.Usage(1, 2, 3, 4, 0, 10)
 	s.Compaction(1, 2)
 	s.MediaUpload(1, "gs://x")
@@ -71,7 +71,7 @@ func TestNopSinkIsSafe(t *testing.T) {
 func TestEventsCarryAuditAttributes(t *testing.T) {
 	s, rec := recordingSink(t)
 	s.ToolCall("shell_exec", true, "command=make build", "why", 1500*time.Millisecond, "ok", "")
-	s.Approval("write_file", "denied", "gate", true, "blocked by rule")
+	s.Approval("write_file", "denied", "gate", true, "blocked by rule", "")
 	s.TurnEnd(3, 2*time.Second, "interrupted")
 
 	if len(rec.recs) != 3 {

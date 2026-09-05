@@ -339,13 +339,18 @@ func (s *Sink) ToolLateReturn(name string, mutating bool, dur time.Duration, out
 // Approval records who or what let a call through (or refused it):
 // source is operator / allowlist / policy_never / auto_rule /
 // auto_model.
-func (s *Sink) Approval(tool, decision, source string, mustPrompt bool, reason string) {
-	s.emit("approval.decision",
+func (s *Sink) Approval(tool, decision, source string, mustPrompt bool, reason, lane string) {
+	attrs := []attribute.KeyValue{
 		attribute.String("tool", tool),
 		attribute.String("decision", decision),
 		attribute.String("source", source),
 		attribute.Bool("must_prompt", mustPrompt),
-		attribute.String("reason", clip(reason, 200)))
+		attribute.String("reason", clip(reason, 200)),
+	}
+	if lane != "" {
+		attrs = append(attrs, attribute.String("lane", lane))
+	}
+	s.emit("approval.decision", attrs...)
 }
 
 // Usage carries the same buckets as the transcript's accounting record

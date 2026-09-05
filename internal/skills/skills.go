@@ -27,7 +27,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"unicode/utf8"
 )
 
 // ToolName is the read-only tool the model uses to load a skill's body
@@ -97,12 +96,12 @@ func readDirBounded(dir string, n int) ([]os.DirEntry, bool, error) {
 		return nil, false, err
 	}
 	defer func() { _ = d.Close() }()
-	entries, err := d.ReadDir(n + 1)
-	if err != nil && err != io.EOF {
+	entries, more, err := bounded.ReadDir(d, n)
+	if err != nil {
 		return nil, false, err
 	}
-	if len(entries) > n {
-		return entries[:n], true, nil
+	if more {
+		return entries, true, nil
 	}
 	return entries, false, nil
 }
@@ -345,15 +344,19 @@ func (s Skill) Body(lim Limits) (string, error) {
 		return "", err
 	}
 	defer release()
-	data, _, err := readCapped(root, "SKILL.md", skillReadCap)
+	data, more, err := readCapped(root, "SKILL.md", skillReadCap)
 	if err != nil {
 		return "", err
 	}
 	_, body := splitFrontmatter(string(data))
 	body = strings.TrimSpace(body)
-	if len(body) > lim.MaxBody {
+	if len(body) > lim.MaxBody || more {
 		cut := cutRunes(body, lim.MaxBody)
-		body = cut + fmt.Sprintf("\n\n[skill truncated: %d of %d bytes shown]", len(cut), len(body))
+		total := fmt.Sprintf("%d", len(body))
+		if more {
+			total = fmt.Sprintf("more than %d", skillReadCap) // the file outgrew the read cap (review A-08)
+		}
+		body = cut + fmt.Sprintf("\n\n[skill truncated: %d of %s bytes shown]", len(cut), total)
 	}
 	return body, nil
 }
@@ -418,7 +421,8 @@ func (s Skill) File(rel string, lim Limits) (string, error) {
 		return "", err
 	}
 	if more {
-		cut := cutRunes(string(data), lim.MaxFile)
+		// Exactly MaxFile bytes: trim a rune the cut broke (review A-08).
+		cut := string(bounded.TrimIncompleteRune(data))
 		return cut + fmt.Sprintf("\n\n[file truncated: %d bytes shown of a file past the %d-byte limit]", len(cut), lim.MaxFile), nil
 	}
 	return string(data), nil
@@ -446,13 +450,7 @@ func PromptSection(list []Skill) string {
 }
 
 // cutRunes truncates s to at most n bytes without splitting a UTF-8
-// sequence (review after v0.68.2).
+// sequence (internal/bounded is the one implementation).
 func cutRunes(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n]
+	return string(bounded.CutRunes([]byte(s), n))
 }

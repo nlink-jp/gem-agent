@@ -48,6 +48,7 @@ name = "<gemini model id>"
 [sandbox]
 enabled = true             # default; off = no read lane, every shell_exec asks (ADR-0073)
 # read_lane_deny_exec = ["docker"]   # programs the read lane may not launch, added to the built-in list
+# read_lane_prompts = false  # true keeps the approval prompt for read-lane commands (the cage still applies)
 
 [agent]
 max_turns = 50             # default; an intervention checkpoint, extensions up to 3× (ADR-0040)
@@ -291,7 +292,7 @@ used to measure box art under a CJK locale.
 | `--thinking <level>` | override `[model].thinking` for this run: `minimal`\|`low`\|`medium`\|`high`, or `default` to clear a configured level (model-dependent — ADR-0025) |
 | `--config <path>` | use another config file |
 | `--mcp <on\|off>` | override `[mcp].enabled` for this run — `off` skips every MCP server spawn, which is what a `-p` pipeline usually wants (ADR-0039) |
-| `--no-sandbox` | disable the Seatbelt wrapper (debugging only) |
+| `--no-sandbox` | disable the Seatbelt wrapper (debugging only) — every `shell_exec` then needs your approval and no policy or auto mode lifts that (ADR-0073 §5) |
 | `sessions` | list resumable sessions |
 
 ## Telemetry (ADR-0035)
@@ -304,9 +305,11 @@ infrastructure, log name `gem-agent` in the Logs Explorer (needs
 `otlp-grpc` / `otlp-http` backends send OpenTelemetry log records to
 your own collector instead. Events: `session.start/end`, `tool.call` (name,
 clipped detail, duration, outcome — `ok`, `error`, `denied`, `skipped`,
-`interrupted`, `abandoned`), `tool.late_return` (an abandoned call
-that returned after all — ADR-0065), `approval.decision` (decision and
-which layer made it), `turn.end`, `model.usage`, `compaction`,
+`interrupted`, `abandoned` — and for `shell_exec` the `lane`: `read`,
+`write`, `operator`, prefixed `unverified:` or `unconfined:` when the
+sandbox did not back it), `tool.late_return` (an abandoned call
+that returned after all — ADR-0065; carries `origin_session_id`),
+`approval.decision` (decision, which layer made it, and the lane), `turn.end`, `model.usage`, `compaction`,
 `media.upload`, `integration.reload` (an in-session `/mcp reload` or
 `/skills reload` changed the tool surface — ADR-0039) — with
 service/session/project/host resource attributes. Cloud Logging entries

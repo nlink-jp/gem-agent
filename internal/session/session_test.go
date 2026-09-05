@@ -343,10 +343,10 @@ func TestListFiltersByProjectAndSortsNewestFirst(t *testing.T) {
 		}
 	}
 
-	if _, ok, err := Latest(dir, "/nowhere"); err != nil || ok {
+	if _, ok, _, err := Latest(dir, "/nowhere"); err != nil || ok {
 		t.Errorf("Latest for an unknown project: ok=%v err=%v", ok, err)
 	}
-	if _, ok, err := Latest(dir, "/proj"); err != nil || !ok {
+	if _, ok, _, err := Latest(dir, "/proj"); err != nil || !ok {
 		t.Errorf("Latest for a known project: ok=%v err=%v", ok, err)
 	}
 }
@@ -408,7 +408,7 @@ func TestListSkipsSessionsWithNoConversation(t *testing.T) {
 	if len(metas) != 1 || metas[0].ID != real.ID() {
 		t.Fatalf("List = %+v, want only %s", metas, real.ID())
 	}
-	latest, ok, err := Latest(dir, "/proj")
+	latest, ok, _, err := Latest(dir, "/proj")
 	if err != nil || !ok || latest.ID != real.ID() {
 		t.Errorf("Latest = %s (ok=%v, err=%v), want %s — an empty transcript must not shadow the real one",
 			latest.ID, ok, err, real.ID())

@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,10 +18,11 @@ import (
 type Lane int
 
 const (
-	// LaneRead: no writes outside the scratch locations, no network,
-	// no preference/sysctl writes, no signals beyond the command's own
-	// children, no IPC-capable programs, no credential reads. A command
-	// here is non-mutating by construction — the standing of read_file.
+	// LaneRead: no writes outside its private scratch, no network, no
+	// IPC, no preference writes, no signals beyond the command's own
+	// children, no credential or private-library reads. What it may
+	// change is its scratch directory and the device sinks — the
+	// standing of read_file.
 	LaneRead Lane = iota
 	// LaneWrite: the project and the work directory are writable, minus
 	// the files later sessions trust (PersistentFiles); credential
@@ -103,6 +105,10 @@ func PersistentFiles(projectDir string) []string {
 	// subdirectory's AGENTS.md persist just the same.
 	anchor := "^" + p + "/(.*/)?"
 	return []string{
+		// The .git entry itself: renaming it away and back with planted
+		// hooks, or replacing it with a `gitdir:` pointer file, moves
+		// the hooks the operator's next commit runs (review F-02).
+		fmt.Sprintf(`(regex #"%s\.git$")`, anchor),
 		fmt.Sprintf(`(regex #"%s\.git/(hooks|info)(/|$)")`, anchor),
 		fmt.Sprintf(`(regex #"%s\.git/config(\.lock)?$")`, anchor),
 		fmt.Sprintf(`(regex #"%s\.claude(/|$)")`, anchor),
@@ -121,6 +127,9 @@ func PersistentFile(rel string) bool {
 			return true
 		}
 	}
+	if filepath.Base(c) == ".git" {
+		return true
+	}
 	if i := strings.Index(c+"/", ".git/"); i >= 0 && (i == 0 || c[i-1] == '/') {
 		rest := c[i+len(".git/"):]
 		if rest == "config" || rest == "config.lock" || rest == "hooks" || rest == "info" ||
@@ -137,11 +146,25 @@ func PersistentFile(rel string) bool {
 
 // credentialDirs are the home-relative directories whose contents are
 // secrets; credentialFiles the home-relative files.
-var credentialDirs = []string{".ssh", ".aws", ".kube", ".gnupg", ".config/gcloud", ".config/gh"}
-var credentialFiles = []string{".docker/config.json", ".git-credentials", ".bash_history", ".zsh_history", ".netrc", ".npmrc", ".pypirc"}
+var credentialDirs = []string{
+	".ssh", ".aws", ".kube", ".gnupg", ".config/gcloud", ".config/gh",
+	// Agent and cloud token stores (review F-07, V5).
+	".gemini", ".codex", ".claude", ".azure", ".terraform.d", "Library/Keychains",
+}
+
+// homeOnlyDirs are credentialDirs names that also occur inside projects
+// with another meaning (`.claude/` holds a project's skills): the path
+// rule matches them only under a home directory, as the profile does.
+var homeOnlyDirs = map[string]bool{".claude": true, ".gemini": true, ".codex": true}
+
+var homePrefixRe = regexp.MustCompile(`^(~|/users/[^/]+|/home/[^/]+|/var/root)/`)
+var credentialFiles = []string{
+	".docker/config.json", ".git-credentials", ".bash_history", ".zsh_history",
+	".netrc", ".npmrc", ".pypirc", ".vault-token", ".claude.json",
+}
 
 // credentialNames are file names that are secrets wherever they sit.
-var credentialNames = `(\.env(\.[^/]*)?|id_rsa|id_ed25519|id_ecdsa|id_dsa|credentials\.json|[^/]*service-account[^/]*\.json|application_default_credentials\.json)`
+var credentialNames = `(\.env(\.[^/]*)?|id_rsa|id_ed25519|id_ecdsa|id_dsa|\.?credentials\.json|[^/]*service-account[^/]*\.json|application_default_credentials\.json)`
 
 // CredentialFilters returns the SBPL file-read filters for credential
 // material under home and by name anywhere, and the re-allow for the
@@ -168,12 +191,22 @@ func CredentialFilters(home string) (deny []string, allow []string) {
 func CredentialPath(p string) bool {
 	lower := strings.ToLower(filepath.ToSlash(p))
 	for _, d := range credentialDirs {
+		if homeOnlyDirs[d] {
+			if m := homePrefixRe.FindString(lower); m != "" {
+				rest := lower[len(m):]
+				if rest == strings.ToLower(d) || strings.HasPrefix(rest, strings.ToLower(d)+"/") {
+					return true
+				}
+			}
+			continue
+		}
+		d = strings.ToLower(d)
 		if strings.Contains(lower, d+"/") || strings.HasSuffix(lower, d) {
 			return true
 		}
 	}
 	for _, f := range credentialFiles {
-		if strings.HasSuffix(lower, f) {
+		if strings.HasSuffix(lower, strings.ToLower(f)) {
 			return true
 		}
 	}
@@ -183,7 +216,7 @@ func CredentialPath(p string) bool {
 		return true
 	case base == "id_rsa", base == "id_ed25519", base == "id_ecdsa", base == "id_dsa":
 		return true
-	case base == "credentials.json", base == "application_default_credentials.json":
+	case base == "credentials.json", base == ".credentials.json", base == "application_default_credentials.json":
 		return true
 	case strings.Contains(base, "service-account") && strings.HasSuffix(base, ".json"):
 		return true
@@ -216,6 +249,15 @@ var readLaneDenies = []string{
 	"iokit-open", "system-socket", "nvram*", "job-creation",
 	"distributed-notification-post", "user-preference-write", "lsopen",
 }
+
+// readLaneReadDenies are the trees a read-lane command may not read
+// beyond the credential list (design review V2/V5): external and
+// network mounts — a walk from `/` reaching every share was the cost
+// ADR-0070 §3 named — and the user's Library, which holds mail,
+// messages, cookies and token stores; the toolchain directories under
+// it are re-allowed (readLaneReadAllows).
+var readLaneReadDenies = []string{"/Volumes", "/Network"}
+var readLaneLibraryAllows = []string{"Library/Caches", "Library/Developer", "Library/Python", "Library/Go"}
 
 // Enforcement is what the runtime could establish about the sandbox
 // (ADR-0073 §5): Confined means sandbox-exec applies the lane profiles
@@ -287,12 +329,24 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 		if spec.ReadScratch != "" {
 			writeDirs = append(writeDirs, spec.ReadScratch)
 		}
+		// Descriptors the command already holds (`> /dev/fd/1`,
+		// `>(…)`): no new reach (review F-06).
+		writeDirs = append(writeDirs, "/dev/fd")
 	} else {
 		writeDirs = append(writeDirs, spec.ProjectDir)
 		if spec.WorkDir != "" {
 			writeDirs = append(writeDirs, spec.WorkDir)
 		}
-		writeDirs = append(writeDirs, ScratchDirs()...)
+		for _, d := range ScratchDirs() {
+			// A scratch root that contains the project (a checkout under
+			// /private/tmp) would let the write lane rename the project
+			// itself away and back with new instruction files (review
+			// F-03/W19): the project's parent is never writable.
+			if within(d, spec.ProjectDir) {
+				continue
+			}
+			writeDirs = append(writeDirs, d)
+		}
 	}
 	var b strings.Builder
 	base, err := profileBody(writeDirs, ScratchFiles())
@@ -300,6 +354,13 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 		return "", err
 	}
 	b.WriteString(base)
+	// Every lane: the operator's terminal is not the command's. A child
+	// that keeps the controlling tty can inject keystrokes with
+	// TIOCSTI on a read-only /dev/tty (review F-01 — write was denied,
+	// ioctl and read were not); the runner also puts the command in
+	// its own session, so /dev/tty does not resolve at all.
+	b.WriteString("(deny file-ioctl\n    (literal \"/dev/tty\")\n    (regex #\"^/dev/ttys[0-9]+$\")\n    (literal \"/dev/ptmx\")\n)\n")
+	b.WriteString("(deny file-read*\n    (literal \"/dev/tty\")\n    (regex #\"^/dev/ttys[0-9]+$\")\n)\n")
 	if lane == LaneOperator {
 		return b.String(), nil
 	}
@@ -335,6 +396,29 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 	for _, op := range readLaneDenies {
 		fmt.Fprintf(&b, "(deny %s)\n", op)
 	}
+	// Reach: external/network mounts and the user's Library are not
+	// the project (design review V2). The system shells (bash 3.2, zsh,
+	// sh) create their here-document files under /private/var/tmp
+	// whatever TMPDIR says (review F-05; probed: no name pattern
+	// narrower than the directory lets them through), so that one
+	// shared, sticky directory stays writable — the documented
+	// exception to "nothing shared".
+	b.WriteString("(deny file-read*\n")
+	for _, d := range readLaneReadDenies {
+		fmt.Fprintf(&b, "    (subpath %s)\n", sbplString(d))
+	}
+	if spec.Home != "" {
+		fmt.Fprintf(&b, "    (subpath %s)\n", sbplString(filepath.Join(filepath.Clean(spec.Home), "Library")))
+	}
+	b.WriteString(")\n")
+	if spec.Home != "" {
+		b.WriteString("(allow file-read*\n")
+		for _, d := range readLaneLibraryAllows {
+			fmt.Fprintf(&b, "    (subpath %s)\n", sbplString(filepath.Join(filepath.Clean(spec.Home), d)))
+		}
+		b.WriteString(")\n")
+	}
+	b.WriteString("(allow file-write* (subpath \"/private/var/tmp\"))\n")
 	b.WriteString("(deny signal)\n(allow signal (target self) (target children))\n")
 	if progs := resolveDenyExec(spec.DenyExec); len(progs) > 0 {
 		b.WriteString("(deny process-exec\n")
@@ -350,6 +434,12 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 // refused it — the read lane's signature — so the tool can tell the
 // model which lane to ask for instead of leaving it to guess.
 func DeniedHint(output string) bool {
+	// The tail only: a refusal ends the output; a "permission denied"
+	// quoted in the middle of a log the command printed is not one
+	// (review F-10).
+	if len(output) > 400 {
+		output = output[len(output)-400:]
+	}
 	lower := strings.ToLower(output)
 	for _, s := range []string{
 		// Go and Python spell the errno in lower case ("open x: operation
@@ -372,45 +462,88 @@ func within(dir, p string) bool {
 }
 
 // VerifyReadLane runs the read-lane profile against probes that must
-// fail — a project write, a socket connect, a signal to another
-// process, launching a denied program — and one that must succeed (a
-// scratch write), under real sandbox-exec (ADR-0073 §5). A read-lane
-// call runs unasked only where this passed at startup: the lane is a
-// claim about this machine's kernel, and the claim is checked, not
-// assumed. The returned error names the first expectation that failed.
+// fail — a project write, a write into the shared temporary directory,
+// a socket connect to a listener this process opens, a signal to this
+// process, opening the terminal, launching a denied program — and two
+// that must succeed (a scratch write, running a program), under real
+// sandbox-exec (ADR-0073 §5). Each must-fail probe is first run
+// without the sandbox and must succeed there, so a probe that fails
+// for an unrelated reason cannot count as a denial (review F-04/V1:
+// `kill -0 1` and a connect to a closed port fail for any user). A
+// read-lane call runs unasked only where this passed at startup. The
+// returned error names the first expectation that failed.
 func VerifyReadLane(profile string, spec Spec) error {
 	if err := Available(); err != nil {
 		return fmt.Errorf("sandbox-exec cannot apply a profile here: %w", err)
 	}
-	probe := func(command string) error {
-		argv := Wrap(profile, "/bin/bash", command)
-		cmd := exec.Command(argv[0], argv[1:]...)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return fmt.Errorf("cannot open a loopback listener for the network probe: %w", err)
+	}
+	defer func() { _ = ln.Close() }()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+	projectProbe := filepath.Join(spec.ProjectDir, ".gem-agent-lane-probe")
+	sharedProbe := filepath.Join("/private/tmp", fmt.Sprintf(".gem-agent-lane-probe-%d", os.Getpid()))
+	cleanup := func() {
+		_ = os.Remove(projectProbe)
+		_ = os.Remove(sharedProbe)
+	}
+	defer cleanup()
+	run := func(sandboxed bool, command string) error {
+		var cmd *exec.Cmd
+		if sandboxed {
+			argv := Wrap(profile, "/bin/bash", command)
+			cmd = exec.Command(argv[0], argv[1:]...)
+		} else {
+			cmd = exec.Command("/bin/bash", "-c", command)
+		}
 		if spec.ReadScratch != "" {
 			cmd.Env = append(os.Environ(), "TMPDIR="+spec.ReadScratch)
 		}
 		return cmd.Run()
 	}
 	mustFail := []struct{ what, command string }{
-		{"a write into the project", "echo x > " + shellQuote(filepath.Join(spec.ProjectDir, ".gem-agent-lane-probe"))},
-		{"a socket connect", "exec 3<>/dev/tcp/127.0.0.1/9"},
-		{"a signal to another process", "kill -0 1"},
-		{"a write into the shared temporary directory", "echo x > /private/tmp/.gem-agent-lane-probe-$$"},
+		{"a write into the project", "echo x > " + shellQuote(projectProbe)},
+		{"a write into the shared temporary directory", "echo x > " + shellQuote(sharedProbe)},
+		{"a socket connect", fmt.Sprintf("exec 3<>/dev/tcp/127.0.0.1/%d", port)},
+		{"a signal to its parent process", "kill -0 $PPID"},
 	}
 	if len(spec.DenyExec) > 0 {
 		mustFail = append(mustFail, struct{ what, command string }{"launching a denied program", "/usr/bin/osascript -e 'return 1'"})
 	}
 	for _, m := range mustFail {
-		if err := probe(m.command); err == nil {
-			_ = os.Remove(filepath.Join(spec.ProjectDir, ".gem-agent-lane-probe"))
+		// The control: the same probe succeeds outside the sandbox, so a
+		// failure inside is the sandbox's doing.
+		if err := run(false, m.command); err != nil {
+			cleanup()
+			return fmt.Errorf("the control run of %s failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", m.what, err)
+		}
+		cleanup()
+		if err := run(true, m.command); err == nil {
 			return fmt.Errorf("the read lane allowed %s", m.what)
 		}
 	}
+	// The terminal: no control — the runner detaches the command from
+	// the operator's terminal, so the open must fail whatever the
+	// environment (review F-01).
+	if err := run(true, "exec 3</dev/tty"); err == nil {
+		return fmt.Errorf("the read lane allowed opening the terminal")
+	}
 	if spec.ReadScratch != "" {
-		if err := probe(`echo x > "$TMPDIR/.gem-agent-lane-probe" && rm "$TMPDIR/.gem-agent-lane-probe"`); err != nil {
+		if err := run(true, `echo x > "$TMPDIR/.gem-agent-lane-probe" && rm "$TMPDIR/.gem-agent-lane-probe"`); err != nil {
 			return fmt.Errorf("the read lane cannot write its own scratch directory: %w", err)
 		}
 	}
-	if err := probe("/usr/bin/true"); err != nil {
+	if err := run(true, "/usr/bin/true"); err != nil {
 		return fmt.Errorf("the read lane cannot run a program: %w", err)
 	}
 	return nil
@@ -419,4 +552,26 @@ func VerifyReadLane(profile string, spec Spec) error {
 // shellQuote single-quotes s for bash.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// secretEnvRe names environment variables a read-lane command does not
+// inherit: the operator's exported tokens, keys and passwords. The
+// read lane runs unasked and its output reaches the model, so what a
+// bare `env` prints is bounded here (review F-07). Everything else —
+// PATH, HOME, LANG, the toolchain variables — passes through.
+var secretEnvRe = regexp.MustCompile(`(?i)(token|secret|passw|api[_-]?key|credential|private[_-]?key|access[_-]?key|auth)`)
+
+// ScrubEnv returns env without the variables secretEnvRe names.
+func ScrubEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		name := kv
+		if i := strings.IndexByte(kv, '='); i >= 0 {
+			name = kv[:i]
+		}
+		if strings.HasPrefix(name, "GEMAGENT_") || !secretEnvRe.MatchString(name) {
+			out = append(out, kv)
+		}
+	}
+	return out
 }

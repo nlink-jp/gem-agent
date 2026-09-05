@@ -243,6 +243,10 @@ type SandboxConfig struct {
 	// ReadLaneDenyExec adds programs the read lane may not launch, by
 	// name or absolute path, to sandbox.DefaultDenyExec (ADR-0073).
 	ReadLaneDenyExec []string `toml:"read_lane_deny_exec"`
+	// ReadLanePrompts keeps the approval prompt for read-lane commands
+	// (ADR-0073 §5 — the opt-out from "runs unasked"): the kernel cage
+	// still applies, the operator is asked as for any other call.
+	ReadLanePrompts bool `toml:"read_lane_prompts"`
 }
 
 // AgentConfig holds agent-loop tunables.
@@ -428,7 +432,7 @@ var trackedKeys = []string{
 	"gcp.project", "gcp.location",
 	"model.name", "model.context_window", "model.safety", "model.summary",
 	"model.thinking", "gcp.bucket",
-	"sandbox.enabled", "sandbox.read_lane_deny_exec",
+	"sandbox.enabled", "sandbox.read_lane_deny_exec", "sandbox.read_lane_prompts",
 	"agent.max_turns", "agent.shell_timeout_sec", "agent.auto_approve",
 	"agent.auto_compact", "agent.compact_at_pct",
 	"mcp.enabled", "mcp.call_timeout_sec",

@@ -147,8 +147,8 @@ func TestGateDecisionIsRecordedWithItsKey(t *testing.T) {
 	// The detail is the evidence /learn shows the operator; the purpose
 	// is gem-agent's field and is not part of what ran (ADR-0047 §2).
 	detail, _ := rec["detail"].(string)
-	if detail != "make build" {
-		t.Errorf("detail = %q, want the command line alone", detail)
+	if detail != "[unverified:read] make build" {
+		t.Errorf("detail = %q, want the lane then the command line", detail)
 	}
 }
 

@@ -177,9 +177,10 @@ approved lane and the applied profile are recorded together.
 `/clear` rotates the work directory) `VerifyReadLane` runs the real
 profile under `sandbox-exec` against probes that must fail — a project
 write, a socket connect, a signal to another process, a write into
-`/private/tmp`, launching a denied program — and one that must succeed.
-The unasked read lane exists only where every probe behaved; otherwise
-every `shell_exec` asks and the banner says why.
+`/private/tmp`, launching a denied program — and two that must succeed
+(a scratch write, running a program). The unasked read lane exists only
+where every probe behaved; otherwise every `shell_exec` asks and the
+banner says why.
 
 **Two edge cases from the agent-board review.** `git init`, `git clone`
 and `git remote add` write `.git/config` and `.git/hooks`, so they fail
@@ -202,6 +203,106 @@ asserts the project file is byte-for-byte untouched; `TestVerifyReadLane`
 refuses an allow-everything profile; the agent's
 `TestDecisionBoundaryIsModeIndependent` checks lane × command × policy
 give one answer; `TestUnconfinedShellIsTheOperatorsAlone` pins the mode.
+
+### 6. Independent verification pass (2026-09-05) and revisions
+
+Four fresh-context reviewers read the implementation (sandbox layer with
+real probes; the decision path with a 450-row mode × lane matrix; the
+bounded-I/O migration and every documentation claim; the design against
+the organisation's recorded lessons). Thirty-eight findings; the ones
+that changed the design or closed a hole:
+
+- **The terminal was reachable (high).** A child kept the operator's
+  controlling terminal; `/dev/tty` opened read-only and `TIOCSTI`
+  typed into gem-agent's own prompt — `!command`, `/auto`, a `y` — from
+  the read lane. Every lane now denies `file-ioctl` and `file-read*` on
+  the tty devices, and the runner starts the command in its own session
+  (`Setsid`), so `/dev/tty` does not resolve at all; verification opens
+  it and expects failure.
+- **`.git` itself (high).** The write lane denied writes *under* `.git`
+  but not renaming `.git` away and back with planted hooks, or replacing
+  it with a `gitdir:` pointer file. The `.git` entry joins the persistent
+  list. **Residue, recorded:** a persistent file in a *subdirectory* can
+  still be replaced by swapping its parent directory (a rename checks the
+  directory's own path only). gem-agent reads instruction files at the
+  root and its ancestors, so this reaches nested `.claude/`, nested
+  repositories' hooks and other agents' nested `CLAUDE.md`; the
+  structural fix — recording digests of the persistent files and
+  refusing a changed one until the operator confirms — is a follow-up.
+  The project's own parent directory is never writable in the write
+  lane, so the whole-project swap the live E2E environment allowed is
+  closed.
+- **Verification was vacuous in two probes.** `kill -0 1` and a connect
+  to port 9 fail for any non-root user, sandbox or not. The probes now
+  connect to a loopback listener this process opens and signal its own
+  parent, and each must-fail probe first *succeeds* in an unsandboxed
+  control run.
+- **Read reach (design review V2).** The read lane bounded writes but
+  read every mount — the walk from `/` that ADR-0070 §3 had made Review
+  ran unasked. It now denies `/Volumes`, `/Network` and `~/Library`
+  (toolchain directories excepted); this ADR reverses ADR-0070 §3 for
+  the read lane knowingly: the kernel, not a text rule, bounds the walk.
+- **The read lane's environment.** A bare `env` printed the operator's
+  exported tokens into the transcript. Variables whose names look like
+  tokens, keys or passwords are not inherited by read-lane commands.
+- **Here-documents.** The system shells create here-document files under
+  `/private/var/tmp` whatever `TMPDIR` says (no narrower rule than the
+  directory lets them through — probed); that one shared directory is
+  the documented exception to "nothing shared", beside `/dev/fd` for the
+  command's own descriptors.
+- **The lane in front of the operator.** The approval box, the ⚙ line,
+  the `gate_decision`/`auto_decision` records and the
+  `approval.decision` telemetry now lead with the lane
+  (`[write] cmd`, `[unverified:read] cmd`, `[unconfined:write] cmd`); an
+  `access` value that names no lane is refused before any gate instead
+  of passing as read.
+- **Under a `never` policy or `--allow shell_exec`** the write lane runs
+  unattended with the network — the reference documentation had said the
+  opposite and advised `--allow` over `--auto` for shell; corrected. The
+  behaviour is ADR-0008's: `never` is the operator's explicit loosening.
+- **An opt-out.** `[sandbox].read_lane_prompts = true` keeps the prompt
+  for read-lane commands (the cage still applies) — the compatibility
+  option the breaking-change process asks for.
+- **The architecture tests** resolve imports, so an alias, a dot-import,
+  a function value or a variable named `bounded` cannot hide a call; only
+  `internal/agent` may import the rule tier.
+- **Bounded I/O residue**: a descriptor leaked on `@` budget exhaustion;
+  exactly-cap instruction, memory and skill files were cut mid-rune;
+  `--continue` guessed on a cut session listing; hook output was cut
+  silently. All fixed.
+
+Recorded, not changed: `ps`/`top` run under no Seatbelt profile; pty
+allocation (`script`, `expect`) fails in every lane; `.gitmodules` and
+`.gitattributes` are writable in the write lane (neither executes without
+the operator's own git command); credential locations outside the list
+are readable and, in the write lane, sendable — the model tier or the
+operator is the judge there.
+
+## Alternatives considered
+
+- **Keep the text tier and add the missing spellings.** Rejected: the
+  domain is unbounded (nine passes, twenty findings, two re-finds).
+- **A program deny-list as the read lane's basis.** Rejected after
+  design review: a program list is a regex by another name; the
+  capability families are the basis, the list a second line.
+- **Keep every `shell_exec` prompting in the default mode.** Rejected by
+  the operator: the kernel is a stronger guarantee than the prompt was,
+  and the prompt on `ls` is what drove sessions into auto mode. Offered
+  instead as `[sandbox].read_lane_prompts`.
+- **Keep ADR-0070 §3's walk-from-`/` rule as an escalation-only text
+  rule.** Rejected in favour of bounding the read reach in the kernel
+  (`/Volumes`, `/Network`, `~/Library`).
+- **Container isolation.** Out of scope: gem-agent is macOS-only and
+  runs the operator's own toolchain; Seatbelt is the platform's cage.
+
+## References
+
+- ADR-0001 (sandbox mechanism), ADR-0004 (the ladder), ADR-0008 (`never`
+  / `always`), ADR-0047 (declarations shown, never trusted), ADR-0053
+  (`--allow`), ADR-0070 §2 (one shared list), ADR-0072 (the findings)
+- Apple Seatbelt SBPL operations as probed on macOS 26 (§Context, §5, §6)
+- Independent review reports of 2026-09-05 (four reviewers; kept outside
+  the repository)
 
 ## Consequences
 

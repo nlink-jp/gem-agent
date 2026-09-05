@@ -4,8 +4,10 @@
 
 ### Changed — capability lanes for `shell_exec` (ADR-0073)
 
-- `shell_exec` takes an `access` argument — `read` (default), `write`
-  or `operator` — and macOS Seatbelt enforces that lane: the read lane
+- **Breaking:** `shell_exec` takes an `access` argument — `read`
+  (default), `write` or `operator` — and macOS Seatbelt enforces that
+  lane; a read-lane command runs without a prompt even in the default
+  approval mode (opt out with `[sandbox].read_lane_prompts = true`): the read lane
   denies writes outside scratch, the network, preference writes,
   signals to other processes, `open`, the IPC-capable programs
   (osascript, launchctl, defaults, security, pbcopy, …) and credential
@@ -46,21 +48,43 @@
   and `git remote add` write `.git/config` and hooks and land there);
   the denial hint matches Go's lower-case "operation not permitted", so
   a build refused its cache in the read lane is pointed at the write lane
+- After the independent verification pass (ADR-0073 §5): every lane runs
+  the command in its own session and denies the terminal devices (a
+  read-lane command could type into gem-agent's prompt through
+  `TIOCSTI`); the write lane denies renaming or replacing `.git` itself
+  and never makes the project's parent directory writable; the read lane
+  denies `/Volumes`, `/Network` and `~/Library` (toolchain directories
+  excepted), does not inherit exported variables that look like tokens
+  or keys, and may write `/private/var/tmp` (the shells' here-document
+  directory) and its own descriptors; the credential list gains
+  `~/.gemini`, `~/.codex`, `~/.claude`, `~/.azure`, `~/.terraform.d`,
+  `~/Library/Keychains`, `~/.vault-token`, `~/.claude.json`; the startup
+  verification uses a loopback listener and the parent process as
+  probes with an unsandboxed control run; the approval box, the
+  `gate_decision`/`auto_decision` records and `approval.decision`
+  telemetry name the lane (`[write] cmd`, `[unverified:read] cmd`,
+  `[unconfined:write] cmd`); an `access` value that names no lane is
+  refused before any gate; the architecture tests see through import
+  aliases, dot-imports and function values; `@` attachment budget
+  exhaustion no longer leaks a descriptor; an exactly-cap `AGENTS.md`,
+  memory or skill file is cut on a rune boundary with the right count;
+  `--continue` refuses to guess when the session listing is cut; hook
+  output says when it was cut
 
 ### Fixed — pre-release verification of the ADR-0072 fixes (§4.1–§4.9, formerly staged as 0.68.2)
 
+The text-tier rules those passes added for shell commands (persistent
+files named in arguments, sed/awk/uniq/date parsing, quoting and
+line-continuation tricks) were superseded by the lanes above and are
+not listed; what remains below is what still holds.
+
 ### Fixed — second, third and fourth passes of the post-release review (ADR-0072 §4.1–§4.3)
 
-- A writing shell command that names `.git/…` (Block) or an
-  instruction/configuration file (operator-only Review) in any
-  argument gets that verdict — `cp`, `tee`, `install`, `mv`, `sed -i`,
-  not only a redirect; reads stay Safe
 - After a wrapper (`env`, `time`, `nohup`, `nice`, `xargs`, `sudo`, …)
   the wrapped command is canonicalised too, so `env /usr/bin/sudo`
   and `time /usr/bin/git push` are Block
 - The sandbox allows the device sinks (`/dev/null` and kin) as
-  literals and `/dev/fd` as a directory, never `/dev` as a whole; the
-  rule tier reads the same list, so `> /dev/tty` is Block
+  literals and `/dev/fd` as a directory, never `/dev` as a whole
 - Every truncation lands on a rune boundary (tool output, `read_file`,
   documents, skills, edit diagnostics)
 - `.xlsx` extraction takes every worksheet present in numeric order
@@ -73,9 +97,6 @@
 - `load_skill` reads the skill through its own `os.Root`, capped on
   the stream and size-gated before the read; a link out of the skill
   directory is refused at the open
-- A persistent file named in flag syntax (`--file=.git/config`) or
-  inside a script string is a candidate too; a writing command that
-  merely mentions such a file asks the operator once
 - `.xlsx` sheet names follow the workbook's relationships, so a
   reordered workbook keeps the right heading on each sheet
 - Truncation notes name the bytes actually shown
@@ -85,8 +106,6 @@
 - An operator-only write (`AGENTS.md`, `.mcp.json`, …) is never
   answered by the session allowlist
 - The trust prompt counts symlinked project skills
-- Shell quoting (`.g''it/config`, `\.git/…`) does not hide a
-  persistent path from the rule tier
 - `shell_exec` and hook output are bounded as they arrive
 - `@` attachments are size-gated on the open descriptor, read bounded
   through the project root, and cut on a rune boundary
@@ -101,8 +120,7 @@
   directory listings are bounded and say so
 - Skill roots are closed on override, on the skill-count cut, and at
   exit
-- Re-check fixes: a backslash-newline continuation does not hide a
-  persistent path; spreadsheet cell references past XFD are ignored
+- Re-check fixes: spreadsheet cell references past XFD are ignored
   and empty-column padding stays within the text budget; work-directory
   `@` references open through the work root; oversized MCP block
   previews count against the response budget; `.pptx` `r:id` is read
@@ -117,15 +135,9 @@
   the cap renders inline; non-text MCP blocks that would not be listed
   are not saved; the `workdirs` command, the MCP result budget and the
   `osascript` policy are documented in the reference
-- sed scripts given as `-e'…'`, `--expression=…` or `--file=…` are
-  parsed like the plain form (they were opaque flags, and `w` / `e`
-  inside them ran Safe); a file operand's letters are no longer read
-  as s-command flags; `uniq IN OUT` and `date -s` are not Safe;
-  `.env.example`-style templates are not credentials; read-only git
-  subcommands naming `.git` are reads
 - `osascript … with administrator privileges` is Block; `git branch`
-  deleting with force in any spelling is Block; GNU sed's `e` command
-  and `e` flag are not Safe
+  deleting with force in any spelling is Block; `.env.example`-style
+  templates are not credentials
 - An `@fifo` (or any non-regular file) is refused promptly instead of
   blocking the open; the file tools do the same
 - A cut long line in a windowed `read_file` ends on a rune boundary

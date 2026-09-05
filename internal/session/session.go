@@ -658,6 +658,9 @@ func FindByPrefix(dir, projectDir, typed string) (Meta, error) {
 		}
 		return Meta{}, fmt.Errorf("no session starts with %q", typed)
 	case 1:
+		if cut {
+			return Meta{}, fmt.Errorf("%q matches %s among the first %d listed, but the listing was cut — type the full id", typed, matches[0], ListCap)
+		}
 		return Find(dir, projectDir, matches[0])
 	}
 	sort.Strings(matches)
@@ -679,7 +682,12 @@ func findSessionFile(dir, projectDir, id string) (string, error) {
 			return p, nil
 		}
 	}
-	if entries, _, err := readDirCapped(filepath.Join(dir, "projects")); err == nil {
+	if entries, cut, err := readDirCapped(filepath.Join(dir, "projects")); err == nil {
+		defer func() {
+			if cut && err != nil {
+				err = fmt.Errorf("%w (the project listing was cut at %d entries)", err, ListCap)
+			}
+		}()
 		for _, e := range entries {
 			if !e.IsDir() {
 				continue
@@ -694,12 +702,14 @@ func findSessionFile(dir, projectDir, id string) (string, error) {
 }
 
 // Latest returns the most recent session for a project, if any.
-func Latest(dir, projectDir string) (Meta, bool, error) {
-	metas, _, err := List(dir, projectDir)
+func Latest(dir, projectDir string) (meta Meta, found bool, more bool, err error) {
+	// more reports a cut listing: the newest of the first ListCap
+	// entries is not necessarily the latest session (review A-04).
+	metas, more, err := List(dir, projectDir)
 	if err != nil || len(metas) == 0 {
-		return Meta{}, false, err
+		return Meta{}, false, more, err
 	}
-	return metas[0], true, nil
+	return metas[0], true, more, nil
 }
 
 // describe reads a session's header and first user message without

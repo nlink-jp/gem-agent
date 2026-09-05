@@ -66,6 +66,32 @@ func collectCalls(t *testing.T, root string, dirs []string, patterns []string) [
 				return err
 			}
 			rel, _ := filepath.Rel(root, filepath.Dir(path))
+			// Imports are resolved to their real package names, so an
+			// alias (`stdos "os"`) or a dot-import cannot hide a call;
+			// the `bounded` exemption applies only where the file
+			// imports internal/bounded under that name (review F2).
+			names := map[string]string{} // local name -> canonical name
+			dot := map[string]bool{}     // canonical names imported with a dot
+			importsBounded := false
+			for _, im := range f.Imports {
+				pathv := strings.Trim(im.Path.Value, `"`)
+				canon := pathv[strings.LastIndex(pathv, "/")+1:]
+				if pathv == "os/exec" {
+					canon = "exec"
+				}
+				local := canon
+				if im.Name != nil {
+					local = im.Name.Name
+				}
+				if local == "." {
+					dot[canon] = true
+					continue
+				}
+				if pathv == "github.com/nlink-jp/gem-agent/internal/bounded" && local == "bounded" {
+					importsBounded = true
+				}
+				names[local] = canon
+			}
 			for _, decl := range f.Decls {
 				fd, ok := decl.(*ast.FuncDecl)
 				if !ok || fd.Body == nil {
@@ -75,26 +101,50 @@ func collectCalls(t *testing.T, root string, dirs []string, patterns []string) [
 				if fd.Recv != nil && len(fd.Recv.List) > 0 {
 					fn = recvName(fd.Recv.List[0].Type) + "." + fn
 				}
-				ast.Inspect(fd.Body, func(n ast.Node) bool {
-					ce, ok := n.(*ast.CallExpr)
-					if !ok {
-						return true
-					}
-					sel, ok := ce.Fun.(*ast.SelectorExpr)
-					if !ok {
-						return true
-					}
-					callee := "." + sel.Sel.Name
-					if id, ok := sel.X.(*ast.Ident); ok {
-						if id.Name == "bounded" {
-							return true // the primitive itself
-						}
-						callee = id.Name + "." + sel.Sel.Name
-					}
+				record := func(callee string, pos token.Pos) {
 					for _, p := range patterns {
-						if callee == p || (strings.HasPrefix(p, ".") && strings.HasSuffix(callee, p)) {
-							calls = append(calls, call{pkg: filepath.ToSlash(rel), fn: fn, callee: callee, pos: fset.Position(ce.Pos())})
-							break
+						// `pkg.Func` patterns match a package-level
+						// reference exactly; `.Method` patterns match a
+						// method call by name, never `pkg.Method`.
+						if callee == p || (strings.HasPrefix(p, ".") && strings.HasPrefix(callee, ".") && callee == p) {
+							calls = append(calls, call{pkg: filepath.ToSlash(rel), fn: fn, callee: callee, pos: fset.Position(pos)})
+							return
+						}
+					}
+				}
+				ast.Inspect(fd.Body, func(n ast.Node) bool {
+					switch x := n.(type) {
+					case *ast.SelectorExpr:
+						// A package-level function referenced through an
+						// import, called or taken as a value
+						// (`f := risk.Classify`), resolved through the
+						// import table so an alias cannot hide it.
+						if id, ok := x.X.(*ast.Ident); ok {
+							if canon, ok := names[id.Name]; ok {
+								if canon == "bounded" && importsBounded {
+									return true // the primitive itself
+								}
+								record(canon+"."+x.Sel.Name, x.Pos())
+							}
+						}
+					case *ast.CallExpr:
+						// A method call on anything else: only the method
+						// name is known (`cmd.CombinedOutput()`); a field
+						// named the same (`usage.Output`) is not a call
+						// and is not recorded.
+						if sel, ok := x.Fun.(*ast.SelectorExpr); ok {
+							if id, ok := sel.X.(*ast.Ident); ok {
+								if _, isImport := names[id.Name]; isImport {
+									return true // handled as a SelectorExpr
+								}
+							}
+							record("."+sel.Sel.Name, x.Pos())
+						}
+						if id, ok := x.Fun.(*ast.Ident); ok {
+							// A dot-imported function used bare (`ReadAll(r)`).
+							for canon := range dot {
+								record(canon+"."+id.Name, x.Pos())
+							}
 						}
 					}
 					return true
@@ -201,8 +251,61 @@ func TestReadsAreBounded(t *testing.T) {
 // (ADR-0072 §1.1, §4.5, §4.9 — three re-implementations of the floors,
 // each missing one).
 func TestOneDecisionPoint(t *testing.T) {
-	calls := collectCalls(t, repoRoot(t), []string{"internal/agent", "cmd", "internal/tui", "internal/approve"}, []string{"risk.Classify"})
-	report(t, calls, map[string]string{
+	root := repoRoot(t)
+	calls := collectCalls(t, root, []string{"internal", "cmd"}, []string{"risk.Classify"})
+	var kept []call
+	for _, c := range calls {
+		if c.pkg == "internal/risk" {
+			continue // the package itself
+		}
+		kept = append(kept, c)
+	}
+	report(t, kept, map[string]string{
 		"internal/agent Agent.decide": "the one decision point",
 	})
+	// And no package but the agent's may import the rule tier at all.
+	for _, imp := range importers(t, root, []string{"internal", "cmd"}, "github.com/nlink-jp/gem-agent/internal/risk") {
+		if imp != "internal/agent" && imp != "internal/risk" {
+			t.Errorf("%s imports internal/risk — the rule tier is read through Agent.decide only", imp)
+		}
+	}
+}
+
+// importers lists the packages (repo-relative directories) whose
+// non-test files import path.
+func importers(t *testing.T, root string, dirs []string, path string) []string {
+	fset := token.NewFileSet()
+	seen := map[string]bool{}
+	var out []string
+	for _, dir := range dirs {
+		abs := filepath.Join(root, dir)
+		err := filepath.WalkDir(abs, func(p string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+				return nil
+			}
+			f, err := parser.ParseFile(fset, p, nil, parser.ImportsOnly)
+			if err != nil {
+				return err
+			}
+			for _, im := range f.Imports {
+				if strings.Trim(im.Path.Value, `"`) == path {
+					rel, _ := filepath.Rel(root, filepath.Dir(p))
+					rel = filepath.ToSlash(rel)
+					if !seen[rel] {
+						seen[rel] = true
+						out = append(out, rel)
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

@@ -73,12 +73,16 @@ name = "gemini-3.8-flash"
 # Wrap shell_exec in macOS sandbox-exec (ADR-0001, ADR-0073): the lane
 # the model declares — read, write or operator — is enforced by the
 # kernel. Leave enabled unless you are debugging the sandbox itself;
-# with it off there is no read lane and every shell_exec asks.
+# with it off every shell_exec is yours to approve — no policy or auto
+# mode lifts that.
 enabled = true
 # Programs the read lane may not launch, added to the built-in list
 # (osascript, open, launchctl, defaults, security, pbcopy, shortcuts,
 # automator, scutil, networksetup, systemsetup). Names or absolute paths.
 #read_lane_deny_exec = ["docker", "/usr/local/bin/terraform"]
+# Keep the approval prompt for read-lane commands too (the kernel cage
+# still applies; only "runs unasked" is given up).
+#read_lane_prompts = false
 
 [agent]
 # Round budget for one turn. Reaching it is an intervention, not a

@@ -15,6 +15,8 @@
 package hooks
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -22,7 +24,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -215,11 +216,11 @@ func (r *Runner) exec(ctx context.Context, h Hook, cwd string, payload any) (out
 	// without end exhausted memory before its timeout. The deny JSON
 	// and the context output are small by contract; the caps are
 	// generous for them and a ceiling for everything else.
-	stdout, stderr := &boundedBuffer{limit: hookStdoutCap}, &boundedBuffer{limit: hookStderrCap}
+	stdout, stderr := bounded.NewWriter(hookStdoutCap), bounded.NewWriter(hookStderrCap)
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 
 	runErr := cmd.Run()
-	out := outcome{stdout: stdout.String(), stderr: stderr.String(), err: runErr}
+	out := outcome{stdout: capped(stdout), stderr: capped(stderr), err: runErr}
 	if cctx.Err() == context.DeadlineExceeded {
 		out.timedOut = true
 		r.notify(fmt.Sprintf("hook %q timed out after %s", h.Command, timeout))
@@ -239,30 +240,15 @@ const (
 	hookStderrCap = 64 << 10
 )
 
-// boundedBuffer keeps the first limit bytes written and drops the rest.
-type boundedBuffer struct {
-	mu    sync.Mutex
-	buf   []byte
-	limit int
-}
-
-func (b *boundedBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if room := b.limit - len(b.buf); room > 0 {
-		if len(p) > room {
-			b.buf = append(b.buf, p[:room]...)
-		} else {
-			b.buf = append(b.buf, p...)
-		}
+// capped renders a hook stream: the kept bytes, cut whole-rune, with
+// the cut said (review A-14 — the fourth private copy of the bounded
+// writer dropped silently and split runes).
+func capped(w *bounded.Writer) string {
+	data, more := w.Bytes()
+	if !more {
+		return string(data)
 	}
-	return len(p), nil
-}
-
-func (b *boundedBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return string(b.buf)
+	return string(data) + fmt.Sprintf("\n[hook output truncated: %d of %d bytes kept]", len(data), w.Total())
 }
 
 // exitCode2 reports whether the process ended with the deny/block exit

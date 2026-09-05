@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 )
 
 // Names are the instruction files read from each directory, in the
@@ -191,15 +190,9 @@ func Labels(files []File) []string {
 }
 
 // cutRunes truncates s to at most n bytes without splitting a UTF-8
-// sequence (review round 4).
+// sequence (internal/bounded is the one implementation).
 func cutRunes(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n]
+	return string(bounded.CutRunes([]byte(s), n))
 }
 
 // readInstruction reads path through an os.Root at its directory, at
@@ -223,9 +216,14 @@ func readInstruction(path string, cap int) ([]byte, int64, error) {
 	if st, err := f.Stat(); err == nil {
 		size = st.Size()
 	}
-	data, _, err := bounded.ReadAll(f, cap)
+	data, more, err := bounded.ReadAll(f, cap)
 	if err != nil {
 		return nil, 0, err
+	}
+	if more {
+		// Exactly cap bytes may end mid-rune (review A-02: a Japanese
+		// AGENTS.md reached the system prompt with a broken tail).
+		data = bounded.TrimIncompleteRune(data)
 	}
 	return data, size, nil
 }

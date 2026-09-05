@@ -148,6 +148,23 @@ carrying on.
 Also fails if the approval dialog in 4a cannot be answered without typing
 letters.
 
+**4c — the lanes (ADR-0073).** Ask for something that only reads:
+
+> list the files here with ls -la
+
+**Fails if** it asks: a verified read lane runs unasked, and the ⚙ line
+reads `[read] ls -la`. Then ask for a write that must escalate:
+
+> run: echo hi > "$GEMAGENT_WORK_DIR/drill.txt"
+
+**Fails if** the first attempt runs in the read lane and the model does
+not come back with `access: "write"` (the refusal names the lane), or if
+the approval box for the second attempt does not lead with `[write]`.
+Last, from the operator side: `!echo x > AGENTS.md` must be refused by
+nothing (you typed it — operator lane), and asking the model to do the
+same must land in an operator-only prompt whose detail leads with
+`[operator]`. Revert what changed.
+
 ### 5. One-shot in a pipe (1 min)
 
 ```sh

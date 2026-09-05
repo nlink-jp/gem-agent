@@ -147,7 +147,9 @@ only as placeholders.
 
 ## Approval
 
-Mutating tools (`write_file`, `edit_file`, `shell_exec`,
+Mutating tools (`write_file`, `edit_file`, `shell_exec` in its write
+and operator lanes — a verified read-lane command is non-mutating and
+passes no gate —
 `save_memory`/`delete_memory`, `web_search`/`web_fetch` — the query and
 the URL are egress — and every MCP tool) pass the gate. `y`
 allows once, `a` allows that tool for the session, `n`/Esc denies; a
@@ -173,9 +175,9 @@ third branch: they are Review-tier but skip the evaluation entirely and
 always ask, because the evaluator is the party that proposed the write
 (ADR-0020 §6). Every failure path asks. The blocked tier
 is a floor the model cannot lift, and the sandbox applies in all modes.
-For a turn's first rounds the model evaluation also sees the operator's
-typed request as wrapped evidence (ADR-0038) — misalignment escalates;
-later rounds keep the call-only view byte-identically. MCP calls
+On every evaluation the model tier also sees the operator's typed
+request as wrapped evidence (ADR-0038, the round cutoff removed by
+ADR-0054) — misalignment escalates. MCP calls
 additionally carry the tool's server-published self-description as
 wrapped evidence (ADR-0046) — a claim, never a fact; a self-arguing
 description escalates.

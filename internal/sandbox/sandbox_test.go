@@ -144,7 +144,7 @@ func TestLaneProfiles(t *testing.T) {
 }
 
 func TestPersistentAndCredentialRulesAgree(t *testing.T) {
-	for _, rel := range []string{"AGENTS.md", "sub/CLAUDE.md", ".git/hooks/pre-commit", ".git/config", "vendor/x/.git/config.lock", ".claude/skills/a/SKILL.md", ".mcp.json", "docs/.gem-agent.toml"} {
+	for _, rel := range []string{"AGENTS.md", "sub/CLAUDE.md", ".git", "sub/.git", ".git/hooks/pre-commit", ".git/config", "vendor/x/.git/config.lock", ".claude/skills/a/SKILL.md", ".mcp.json", "docs/.gem-agent.toml"} {
 		if !PersistentFile(rel) {
 			t.Errorf("%q not persistent", rel)
 		}
@@ -154,12 +154,12 @@ func TestPersistentAndCredentialRulesAgree(t *testing.T) {
 			t.Errorf("%q wrongly persistent", rel)
 		}
 	}
-	for _, p := range []string{"~/.ssh/id_rsa", ".env", ".env.local", "/x/credentials.json", "~/.aws/credentials", "sa-service-account.json", "~/.netrc"} {
+	for _, p := range []string{"~/.ssh/id_rsa", ".env", ".env.local", "/x/credentials.json", "~/.aws/credentials", "sa-service-account.json", "~/.netrc", "~/.gemini/oauth_creds.json", "~/.claude/.credentials.json", "~/.claude.json", "~/Library/Keychains/login.keychain-db"} {
 		if !CredentialPath(p) {
 			t.Errorf("%q not credential", p)
 		}
 	}
-	for _, p := range []string{".env.example", "environment.go", "README.md", "src/main.go", ".envrc-notes.md"} {
+	for _, p := range []string{".env.example", "environment.go", "README.md", "src/main.go", ".envrc-notes.md", ".claude/skills/x/SKILL.md", "docs/.gemini/notes.md"} {
 		if CredentialPath(p) {
 			t.Errorf("%q wrongly credential", p)
 		}
@@ -196,7 +196,12 @@ func TestLaneEnforcement(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for name, body := range map[string]string{"AGENTS.md": "rules\n", ".git/config": "cfg\n", "home/.ssh/id_rsa": "secret\n", ".env": "K=v\n", ".env.example": "K=\n"} {
+	for _, d := range []string{"home/Library/Cookies", "home/Library/Caches", "home/.gemini"} {
+		if err := os.MkdirAll(filepath.Join(proj, d), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, body := range map[string]string{"AGENTS.md": "rules\n", ".git/config": "cfg\n", "home/.ssh/id_rsa": "secret\n", ".env": "K=v\n", ".env.example": "K=\n", "home/Library/Cookies/x": "c\n", "home/Library/Caches/x": "c\n", "home/.gemini/oauth_creds.json": "{}\n"} {
 		if err := os.WriteFile(filepath.Join(proj, name), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -242,6 +247,17 @@ func TestLaneEnforcement(t *testing.T) {
 		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/index"), true, "write lane allows ordinary .git writes"},
 		{LaneWrite, "cat " + filepath.Join(fakeHome, ".ssh/id_rsa"), false, "write lane denies a credential read"},
 		{LaneWrite, "cd " + shellQuote(proj) + " && git init -q .", false, "write lane denies git init (it writes .git/config and hooks) — agent-board review"},
+		{LaneWrite, "cd " + shellQuote(proj) + " && mv .git .git-old", false, "write lane denies renaming .git away (review F-02)"},
+		{LaneWrite, "cd " + shellQuote(proj) + " && mkdir -p sub " + shellQuote(filepath.Join(scratch, "evil/hooks")) + " && mv " + shellQuote(filepath.Join(scratch, "evil")) + " sub/.git", false, "write lane denies moving a prepared .git into the project (review F-02)"},
+		{LaneWrite, "cd " + shellQuote(proj) + " && rm -rf .git && echo 'gitdir: /tmp/evil' > .git", false, "write lane denies a gitdir pointer file (review F-02)"},
+		{LaneRead, "exec 3</dev/tty", false, "read lane denies opening the terminal (review F-01)"},
+		{LaneWrite, "exec 3</dev/tty", false, "write lane denies opening the terminal (review F-01)"},
+		{LaneOperator, "exec 3</dev/tty", false, "operator lane denies opening the terminal (review F-01)"},
+		{LaneRead, "cat <<'EOF'\nhere\nEOF", true, "read lane runs a here-document (review F-05)"},
+		{LaneRead, "echo x > /dev/fd/1", true, "read lane writes its own descriptors (review F-06)"},
+		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, "Library/Cookies/x")), false, "read lane denies the user's Library (design review V2)"},
+		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, "Library/Caches/x")), true, "read lane allows toolchain caches under Library"},
+		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, ".gemini/oauth_creds.json")), false, "read lane denies agent token stores (review F-07)"},
 		{LaneOperator, "cd " + shellQuote(proj) + " && git init -q . && test -f .git/config", true, "operator lane allows git init"},
 		{LaneOperator, "cat " + filepath.Join(fakeHome, ".ssh/id_rsa"), true, "operator lane allows a credential read"},
 		{LaneOperator, "echo ok > " + agents, true, "operator lane allows AGENTS.md"},
@@ -257,6 +273,9 @@ func TestLaneEnforcement(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(agents); string(got) != "ok\n" {
 		t.Errorf("AGENTS.md = %q: the write lane changed it or the operator lane could not", got)
+	}
+	if st, err := os.Stat(filepath.Join(proj, ".git")); err != nil || !st.IsDir() {
+		t.Errorf(".git is no longer the repository directory: %v %v", st, err)
 	}
 	// A project under a scratch root (a checkout in /private/tmp) is
 	// still not writable in the read lane: the deny by name follows the
@@ -405,5 +424,28 @@ func TestVerifyReadLane(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(proj); len(entries) != 0 {
 		t.Errorf("verification left files in the project: %v", entries)
+	}
+}
+
+// Review F-07 / F-10: the read lane's environment carries no exported
+// secrets, and the denial hint reads the tail of the output only.
+func TestScrubEnvAndHintTail(t *testing.T) {
+	env := ScrubEnv([]string{"PATH=/bin", "HOME=/Users/x", "GITHUB_TOKEN=abc", "AWS_SECRET_ACCESS_KEY=k", "GEMAGENT_SESSION_ID=s", "MY_API_KEY=z", "GOFLAGS=-mod=mod", "OPENAI_api_key=q"})
+	got := strings.Join(env, " ")
+	for _, gone := range []string{"GITHUB_TOKEN", "AWS_SECRET", "MY_API_KEY", "OPENAI_api_key"} {
+		if strings.Contains(got, gone) {
+			t.Errorf("%s survived the scrub: %v", gone, env)
+		}
+	}
+	for _, kept := range []string{"PATH=", "HOME=", "GEMAGENT_SESSION_ID", "GOFLAGS"} {
+		if !strings.Contains(got, kept) {
+			t.Errorf("%s was scrubbed: %v", kept, env)
+		}
+	}
+	if DeniedHint("grep: permission denied appears in this log line\n" + strings.Repeat("ok\n", 300) + "[exit status 1]") {
+		t.Error("a denial quoted early in a long output must not read as the lane's refusal")
+	}
+	if !DeniedHint(strings.Repeat("ok\n", 300) + "/bin/bash: x: Operation not permitted\n[exit status 1]") {
+		t.Error("a refusal at the tail must be recognised")
 	}
 }

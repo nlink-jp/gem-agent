@@ -98,12 +98,17 @@ func writeSessions(out io.Writer, metas []session.Meta, showProject bool) {
 func resolveResume(dir, projectDir, model, id string) (session.Meta, error) {
 	var meta session.Meta
 	if id == "" {
-		latest, ok, err := session.Latest(dir, projectDir)
+		latest, ok, more, err := session.Latest(dir, projectDir)
 		if err != nil {
 			return meta, err
 		}
 		if !ok {
 			return meta, fmt.Errorf("no previous session recorded for %s — start one without --continue", projectDir)
+		}
+		if more {
+			// The newest of a cut listing is not the latest session
+			// (review A-04): name one instead of guessing.
+			return meta, fmt.Errorf("more than %d session files — --continue cannot tell which is latest; pass --resume <id>", session.ListCap)
 		}
 		meta = latest
 	} else {
