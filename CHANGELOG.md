@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.70.0] - unreleased
+## [0.70.0] - 2026-09-05
 
 ### Changed — trust is granted to content, not to a path (ADR-0074)
 
