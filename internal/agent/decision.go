@@ -48,7 +48,23 @@ func (a *Agent) decide(tc llm.ToolCall) Decision {
 		}
 	}
 	mutating := tool.MutatesFor(tc.Args)
-	v := risk.Classify(tc.Name, mutating, tc.Args, a.registry.ProjectDir(), a.registry.WorkDir())
+	args := tc.Args
+	if tc.Name == "write_file" || tc.Name == "edit_file" {
+		// Judge what the file IS by its real name: a link named
+		// `notes.md` pointing at `AGENTS.md` is an AGENTS.md write
+		// (final review R2). An unresolvable path keeps its spelling
+		// and fails at the open as before.
+		if p, ok := tc.Args["path"].(string); ok {
+			if real, err := a.registry.RealPath(p); err == nil && real != "" {
+				args = make(map[string]any, len(tc.Args))
+				for k, v := range tc.Args {
+					args[k] = v
+				}
+				args["path"] = real
+			}
+		}
+	}
+	v := risk.Classify(tc.Name, mutating, args, a.registry.ProjectDir(), a.registry.WorkDir())
 	if tc.Name == tools.ShellExecName && !a.registry.Confined() && v.Tier != risk.Block {
 		// Unconfined mode (--no-sandbox): the approval buys none of the
 		// lane's constraints, so it is not an ordinary write-lane call

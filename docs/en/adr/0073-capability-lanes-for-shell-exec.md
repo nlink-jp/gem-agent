@@ -271,6 +271,29 @@ that changed the design or closed a hole:
   `--continue` guessed on a cut session listing; hook output was cut
   silently. All fixed.
 
+The reviewer's consolidated final report (three items, none an
+end-to-end attack) closed the pass:
+
+- **R1 — the verification probe wrote a fixed name.** A pre-existing
+  `.gem-agent-lane-probe` in the project — a symlink, say — was written
+  through by the unsandboxed control run and then removed. The probes
+  now write only into files this process created exclusively
+  (`O_EXCL`, random names) and remove only those.
+- **R2 — a persistent file behind another name.** `write_file` on
+  `notes.md`, a symlink or hard link to `AGENTS.md`, was Safe by name and
+  wrote through the link. Two changes, both structural: the verdict is
+  taken on the real path (`Registry.RealPath`, symlinks resolved inside
+  the roots), and the file tools never write in place — they create a
+  new file beside the target and rename it over the name, so a write
+  never lands in an inode reached through another name (a hard link
+  gets a fresh file; the linked original keeps its bytes).
+- **R3 — a state directory under a shared root.** With the work
+  directory placed under `/private/var/tmp`, the read lane's
+  here-document allow covered it. The project and the work directory
+  are now denied by name *after* every shared allow, and only the
+  private scratch is re-allowed last; a work directory under a shared
+  root is pinned by test.
+
 Recorded, not changed: `ps`/`top` run under no Seatbelt profile; pty
 allocation (`script`, `expect`) fails in every lane; `.gitmodules` and
 `.gitattributes` are writable in the write lane (neither executes without

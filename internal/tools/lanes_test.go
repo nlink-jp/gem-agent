@@ -2,7 +2,9 @@ package tools
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -100,5 +102,54 @@ func TestReadLaneDenialIsExplained(t *testing.T) {
 	out, _ = tool.Run(context.Background(), map[string]any{"command": "echo plain failure >&2; exit 2"})
 	if strings.Contains(out, "read lane denied") {
 		t.Errorf("an ordinary failure must not be blamed on the lane: %q", out)
+	}
+}
+
+// Final review R2: a write through a link named like an ordinary file
+// must not change the persistent file the link points at — the write
+// replaces the name with a fresh regular file.
+func TestWriteNeverLandsInALinkedInode(t *testing.T) {
+	r, err := New(t.TempDir(), nil, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proj := r.ProjectDir()
+	agents := filepath.Join(proj, "AGENTS.md")
+	if err := os.WriteFile(agents, []byte("rules\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("AGENTS.md", filepath.Join(proj, "sym.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(agents, filepath.Join(proj, "hard.md")); err != nil {
+		t.Fatal(err)
+	}
+	wf, _ := r.Get("write_file")
+	for _, name := range []string{"sym.md", "hard.md"} {
+		if _, err := wf.Run(context.Background(), map[string]any{"path": name, "content": "pwned\n", "allow_shrink": true}); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got, _ := os.ReadFile(agents); string(got) != "rules\n" {
+			t.Fatalf("writing %s changed AGENTS.md: %q", name, got)
+		}
+		if st, err := os.Lstat(filepath.Join(proj, name)); err != nil || !st.Mode().IsRegular() {
+			t.Errorf("%s is not a fresh regular file after the write: %v %v", name, st, err)
+		}
+	}
+	if err := os.Symlink("AGENTS.md", filepath.Join(proj, "sym2.md")); err != nil {
+		t.Fatal(err)
+	}
+	ef, _ := r.Get("edit_file")
+	if _, err := ef.Run(context.Background(), map[string]any{"path": "sym2.md", "old_string": "rules", "new_string": "gone"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(agents); string(got) != "rules\n" {
+		t.Errorf("edit_file through a link changed AGENTS.md: %q", got)
+	}
+	if err := os.Symlink("AGENTS.md", filepath.Join(proj, "sym3.md")); err != nil {
+		t.Fatal(err)
+	}
+	if real, err := r.RealPath("sym3.md"); err != nil || filepath.Base(real) != "AGENTS.md" {
+		t.Errorf("RealPath(sym3.md) = %q %v, want AGENTS.md", real, err)
 	}
 }

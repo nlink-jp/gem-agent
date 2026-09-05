@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -254,5 +256,26 @@ func TestDescribeLeadsWithTheLane(t *testing.T) {
 	}
 	if d := a.decide(laneCall("ls", "bogus")); d.Invalid == nil || !d.Mutating {
 		t.Errorf("invalid lane decision = %+v", d)
+	}
+}
+
+// Final review R2: a write_file to a link named like an ordinary file
+// is judged by what it points at.
+func TestFileToolVerdictFollowsTheLink(t *testing.T) {
+	a := laneAgent(t, &mockBackend{}, &laneGate{}, true)
+	proj := a.registry.ProjectDir()
+	if err := os.WriteFile(filepath.Join(proj, "AGENTS.md"), []byte("rules\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("AGENTS.md", filepath.Join(proj, "notes.md")); err != nil {
+		t.Fatal(err)
+	}
+	d := a.decide(llm.ToolCall{Name: "write_file", Args: map[string]any{"path": "notes.md", "content": "x"}})
+	if !d.Verdict.OperatorOnly {
+		t.Errorf("write through a link to AGENTS.md = %+v, want operator-only", d.Verdict)
+	}
+	d = a.decide(llm.ToolCall{Name: "write_file", Args: map[string]any{"path": "plain.md", "content": "x"}})
+	if d.Verdict.OperatorOnly || d.Floor() {
+		t.Errorf("ordinary new file = %+v", d.Verdict)
 	}
 }

@@ -45,12 +45,17 @@ func TestOpenRefusesALinkSwappedAfterTheCheck(t *testing.T) {
 		_ = f.Close()
 		t.Fatal("the swapped link was opened for reading")
 	}
-	if f, err := r.openWrite(abs, 0o644); err == nil {
-		_ = f.Close()
-		t.Fatal("the swapped link was opened for writing")
+	// A write replaces the name with a fresh file inside the root; the
+	// link's target outside is never opened (ADR-0073 final review R2:
+	// writes never land in an inode reached through another name).
+	if err := r.replaceFile(abs, 0o644, []byte("inside")); err != nil {
+		t.Fatalf("replace through the swapped link: %v", err)
 	}
 	if data, _ := os.ReadFile(secret); string(data) != "outside" {
 		t.Fatal("the outside file was touched")
+	}
+	if st, err := os.Lstat(link); err != nil || !st.Mode().IsRegular() {
+		t.Fatalf("the link was not replaced by a regular file: %v %v", st, err)
 	}
 }
 

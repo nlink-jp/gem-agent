@@ -422,8 +422,87 @@ func TestVerifyReadLane(t *testing.T) {
 	if err := VerifyReadLane("(version 1)(allow default)", spec); err == nil {
 		t.Error("an allow-everything profile passed verification")
 	}
-	if entries, _ := os.ReadDir(proj); len(entries) != 0 {
+	// Final review R1: a pre-existing file with the old fixed probe
+	// name — here a symlink to a project file — is neither written
+	// through nor removed.
+	target := filepath.Join(proj, "keep.txt")
+	if err := os.WriteFile(target, []byte("keep\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("keep.txt", filepath.Join(proj, ".gem-agent-lane-probe")); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyReadLane(profile, spec); err != nil {
+		t.Errorf("verification failed with a bystander link present: %v", err)
+	}
+	if got, _ := os.ReadFile(target); string(got) != "keep\n" {
+		t.Errorf("verification wrote through a pre-existing link: %q", got)
+	}
+	if _, err := os.Lstat(filepath.Join(proj, ".gem-agent-lane-probe")); err != nil {
+		t.Errorf("verification removed a file it did not create: %v", err)
+	}
+	if entries, _ := os.ReadDir(proj); len(entries) != 2 {
 		t.Errorf("verification left files in the project: %v", entries)
+	}
+}
+
+// Final review R3: a work directory placed under the shells' shared
+// here-document directory is still denied in the read lane, and its
+// scratch subdirectory is still allowed.
+func TestReadLaneDeniesAWorkDirUnderASharedRoot(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-only")
+	}
+	if err := Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory")
+	}
+	proj, err := os.MkdirTemp(home, ".gem-agent-r3-test-")
+	if err != nil {
+		t.Skip("cannot create a directory under home")
+	}
+	defer func() { _ = os.RemoveAll(proj) }()
+	proj, _ = ResolveWriteDir(proj)
+	work, err := os.MkdirTemp("/private/var/tmp", "gem-agent-r3-work-")
+	if err != nil {
+		t.Skip("cannot create a directory under /private/var/tmp")
+	}
+	defer func() { _ = os.RemoveAll(work) }()
+	work, _ = ResolveWriteDir(work)
+	scratch := filepath.Join(work, "scratch")
+	if err := os.MkdirAll(scratch, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "result.txt"), []byte("keep\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec := Spec{ProjectDir: proj, WorkDir: work, Home: filepath.Join(proj, "nohome"), ReadScratch: scratch}
+	profile, err := LaneProfile(LaneRead, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	run := func(command string) error {
+		argv := Wrap(profile, "/bin/bash", command)
+		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		cmd.Env = append(os.Environ(), "TMPDIR="+scratch)
+		return cmd.Run()
+	}
+	if err := run("echo pwned > " + shellQuote(filepath.Join(work, "result.txt"))); err == nil {
+		t.Error("read lane wrote a work-directory file under /private/var/tmp")
+	}
+	if got, _ := os.ReadFile(filepath.Join(work, "result.txt")); string(got) != "keep\n" {
+		t.Errorf("work file changed: %q", got)
+	}
+	if err := run(`echo x > "$TMPDIR/ok" && rm "$TMPDIR/ok"`); err != nil {
+		t.Errorf("read lane denied its own scratch under the work directory: %v", err)
+	}
+	if err := run("cat <<'EOF'\nhere\nEOF"); err != nil {
+		t.Errorf("here-document failed: %v", err)
 	}
 }
 

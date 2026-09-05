@@ -328,18 +328,56 @@ func openRegular(open func(flag int) (*os.File, error)) (*os.File, error) {
 
 // openWrite opens abs for writing (create, truncate) through its root,
 // creating missing parent directories inside the root.
-func (r *Registry) openWrite(abs string, perm os.FileMode) (*os.File, error) {
+// replaceFile writes data to abs by creating a new file beside it and
+// renaming it into place, through the root. A write never lands in an
+// inode reached through another name: a hard link or a symlink named
+// `notes.md` that points at `AGENTS.md` gets a fresh regular file, and
+// `AGENTS.md` keeps its bytes (ADR-0073 final review R2 — the
+// name-based verdict was Safe, and the in-place write went through the
+// link). perm applies to the new file.
+func (r *Registry) replaceFile(abs string, perm os.FileMode, data []byte) error {
 	root, rel, release, err := r.rootFor(abs)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer release()
-	if dir := filepath.Dir(rel); dir != "." {
+	dir := filepath.Dir(rel)
+	if dir != "." {
 		if err := root.MkdirAll(dir, 0o755); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return root.OpenFile(rel, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	tmp := filepath.Join(dir, fmt.Sprintf(".%s.gem-agent-%d.tmp", filepath.Base(rel), os.Getpid()))
+	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = root.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = root.Remove(tmp)
+		return err
+	}
+	if err := root.Rename(tmp, rel); err != nil {
+		_ = root.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+// RealPath resolves p as the file tools will open it — inside the
+// roots, symlinks followed on the existing part — so a verdict about
+// what the file IS is taken on the real name, not the spelling (final
+// review R2: `notes.md` → `AGENTS.md`).
+func (r *Registry) RealPath(p string) (string, error) {
+	abs, err := r.resolvePath(p)
+	if err != nil {
+		return "", err
+	}
+	return resolveExisting(abs)
 }
 
 // statIn stats abs through its root.
@@ -1182,15 +1220,7 @@ func (r *Registry) writeFile() *Tool {
 			if err := ctx.Err(); err != nil {
 				return "", err
 			}
-			f, err := r.openWrite(abs, 0o644)
-			if err != nil {
-				return "", err
-			}
-			if _, err := f.Write([]byte(content)); err != nil {
-				_ = f.Close()
-				return "", err
-			}
-			if err := f.Close(); err != nil {
+			if err := r.replaceFile(abs, 0o644, []byte(content)); err != nil {
 				return "", err
 			}
 			return fmt.Sprintf("wrote %d bytes to %s", len(content), p), nil

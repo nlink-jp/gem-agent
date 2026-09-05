@@ -70,6 +70,13 @@
   memory or skill file is cut on a rune boundary with the right count;
   `--continue` refuses to guess when the session listing is cut; hook
   output says when it was cut
+- Final review: the startup probes write only into files gem-agent
+  created exclusively (a pre-existing file of the probe's name was
+  written through and removed); `write_file`/`edit_file` judge a path by
+  its real target and write by create-and-rename, so a link named like
+  an ordinary file cannot carry a write into `AGENTS.md`; a work
+  directory placed under `/private/var/tmp` is denied in the read lane
+  like any other
 
 ### Fixed — pre-release verification of the ADR-0072 fixes (§4.1–§4.9, formerly staged as 0.68.2)
 

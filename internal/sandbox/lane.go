@@ -383,18 +383,25 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 		b.WriteString(")\n")
 		return b.String(), nil
 	}
-	// The read lane's side-effect denials, by capability. The project
-	// and the work directory are denied by name after the scratch allow
-	// too: a project checked out under /private/tmp sits inside a
-	// scratch root (live E2E of ADR-0073).
+	// The read lane's side-effect denials, by capability.
+	for _, op := range readLaneDenies {
+		fmt.Fprintf(&b, "(deny %s)\n", op)
+	}
+	// The shells' here-document directory is a shared allow, so the
+	// project and the work directory are denied by name AFTER it — a
+	// project or a state directory placed under /private/tmp or
+	// /private/var/tmp sits inside a shared root (live E2E; final
+	// review R3) — and the private scratch, which lives inside the work
+	// directory, is re-allowed last. Seatbelt is last-match-wins.
+	b.WriteString("(allow file-write* (subpath \"/private/var/tmp\"))\n")
 	b.WriteString("(deny file-write*\n")
 	fmt.Fprintf(&b, "    (subpath %s)\n", sbplString(filepath.Clean(spec.ProjectDir)))
-	if spec.WorkDir != "" && (spec.ReadScratch == "" || !within(spec.WorkDir, spec.ReadScratch)) {
+	if spec.WorkDir != "" {
 		fmt.Fprintf(&b, "    (subpath %s)\n", sbplString(filepath.Clean(spec.WorkDir)))
 	}
 	b.WriteString(")\n")
-	for _, op := range readLaneDenies {
-		fmt.Fprintf(&b, "(deny %s)\n", op)
+	if spec.ReadScratch != "" {
+		fmt.Fprintf(&b, "(allow file-write* (subpath %s))\n", sbplString(filepath.Clean(spec.ReadScratch)))
 	}
 	// Reach: external/network mounts and the user's Library are not
 	// the project (design review V2). The system shells (bash 3.2, zsh,
@@ -418,7 +425,6 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 		}
 		b.WriteString(")\n")
 	}
-	b.WriteString("(allow file-write* (subpath \"/private/var/tmp\"))\n")
 	b.WriteString("(deny signal)\n(allow signal (target self) (target children))\n")
 	if progs := resolveDenyExec(spec.DenyExec); len(progs) > 0 {
 		b.WriteString("(deny process-exec\n")
@@ -491,8 +497,23 @@ func VerifyReadLane(profile string, spec Spec) error {
 		}
 	}()
 	port := ln.Addr().(*net.TCPAddr).Port
-	projectProbe := filepath.Join(spec.ProjectDir, ".gem-agent-lane-probe")
-	sharedProbe := filepath.Join("/private/tmp", fmt.Sprintf(".gem-agent-lane-probe-%d", os.Getpid()))
+	// The probe targets are files this process creates exclusively
+	// (O_EXCL, random names) and removes afterwards: a fixed name could
+	// collide with the project's own file or follow a planted symlink
+	// (final review R1 — the control run overwrote a link's target).
+	projectFile, err := os.CreateTemp(spec.ProjectDir, ".gem-agent-lane-probe-*")
+	if err != nil {
+		return fmt.Errorf("cannot create a probe file in the project: %w", err)
+	}
+	projectProbe := projectFile.Name()
+	_ = projectFile.Close()
+	sharedFile, err := os.CreateTemp("/private/tmp", ".gem-agent-lane-probe-*")
+	if err != nil {
+		_ = os.Remove(projectProbe)
+		return fmt.Errorf("cannot create a probe file in /private/tmp: %w", err)
+	}
+	sharedProbe := sharedFile.Name()
+	_ = sharedFile.Close()
 	cleanup := func() {
 		_ = os.Remove(projectProbe)
 		_ = os.Remove(sharedProbe)
@@ -522,12 +543,11 @@ func VerifyReadLane(profile string, spec Spec) error {
 	}
 	for _, m := range mustFail {
 		// The control: the same probe succeeds outside the sandbox, so a
-		// failure inside is the sandbox's doing.
+		// failure inside is the sandbox's doing. The write probes write
+		// into the files created above, never anywhere else.
 		if err := run(false, m.command); err != nil {
-			cleanup()
 			return fmt.Errorf("the control run of %s failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", m.what, err)
 		}
-		cleanup()
 		if err := run(true, m.command); err == nil {
 			return fmt.Errorf("the read lane allowed %s", m.what)
 		}
