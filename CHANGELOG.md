@@ -14,6 +14,9 @@
   failed expectation, and `/status` shows the measured state. Until now
   such a build passed as confined and ran commands at the
   model-approvable tier with no kernel behind them
+- README gains a "Supported platform" section: what verified and
+  unverified mean at startup, and that a copy rebuilt for another
+  platform has no kernel sandbox behind it and is unsupported
 
 ## [0.70.2] - 2026-09-05
 

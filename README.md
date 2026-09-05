@@ -155,6 +155,28 @@ nothing added to startup).
 Out of scope by design: RAG or vector memory, data analysis, GUI,
 non-macOS platforms.
 
+## Supported platform
+
+gem-agent is built, signed and tested for macOS on Apple Silicon only,
+and the protections described above rest on macOS's kernel sandbox
+(`sandbox-exec`). At every start gem-agent measures that sandbox with
+real probes; the result decides how commands are treated:
+
+- **verified** — the startup banner shows no sandbox warning: read-lane
+  commands run unasked, write-lane commands ask, and the kernel bounds
+  both.
+- **unverified** — the banner says `sandbox unverified: …` or
+  `sandbox: DISABLED`: every shell command asks you before it runs, and
+  nothing else stands between the command and your machine. `/status`
+  shows which state you are in.
+
+A copy of the source rebuilt for another platform (Linux, WSL, Windows)
+has no kernel sandbox behind it. If it starts without the warning above,
+its sandbox check was altered and its behaviour is not the one this
+README describes — treat it as unverified whatever it prints. Such builds
+are not supported here; the tests under `internal/sandbox` are the bar
+any port has to meet.
+
 ## Build
 
 ```sh
