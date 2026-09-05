@@ -393,6 +393,14 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 - **Instruction files are read through an `os.Root` at their
   directory** (ADR-0072 §4.4) — `readInstruction`; a link out of the
   directory is refused and noted, a sibling link resolves.
+- **OperatorOnly is a floor like Block** (ADR-0072 §4.5) — it sets
+  `mustPrompt`, so the session allowlist never answers it. Process
+  output is bounded as it arrives (`boundedOutput` in tools,
+  `boundedBuffer` in hooks) — never `CombinedOutput` on a command the
+  model wrote. `readDirIn` returns `(entries, more, err)`: every
+  caller renders `more`. Project files read before the trust prompt
+  go through `readCapped` (1 MiB). The risk tier's persistent-file
+  candidates come from `shellUnquote` + `candidateSplit`.
 - **Every cut is a rune cut** (ADR-0072 §4.3) — `cutRunes` in tools,
   skills, memory, instructions, `clipText` in docext: never `s[:n]`
   on text the model will see.

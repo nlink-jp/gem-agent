@@ -263,4 +263,49 @@ func TestExtractXlsxNamesFollowRelationships(t *testing.T) {
 	if !strings.Contains(text, "### sheet: Earlier\nONE") || !strings.Contains(text, "### sheet: Later\nTHREE") {
 		t.Errorf("names not matched through relationships:\n%s", text)
 	}
+	if strings.Index(text, "### sheet: Later") > strings.Index(text, "### sheet: Earlier") {
+		t.Errorf("display order not followed (workbook lists Later first):\n%s", text)
+	}
+}
+
+// ADR-0072 §4.5: sheets come in the workbook's display order, empty
+// columns keep their place, and rich inline strings are joined.
+func TestXlsxDisplayOrderCellsAndRichStrings(t *testing.T) {
+	data := makeZip(t, map[string]string{
+		"xl/workbook.xml":            `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Later" sheetId="3" r:id="rId3"/><sheet name="Earlier" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+		"xl/_rels/workbook.xml.rels": `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="x" Target="worksheets/sheet1.xml"/><Relationship Id="rId3" Type="x" Target="worksheets/sheet3.xml"/></Relationships>`,
+		"xl/worksheets/sheet1.xml":   `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c><c r="C1" t="inlineStr"><is><r><t>ri</t></r><r><t>ch</t></r></is></c></row></sheetData></worksheet>`,
+		"xl/worksheets/sheet3.xml":   `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>THREE</t></is></c></row></sheetData></worksheet>`,
+	})
+	text, _, err := Extract(data, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Index(text, "### sheet: Later") > strings.Index(text, "### sheet: Earlier") {
+		t.Errorf("sheets not in display order:\n%s", text)
+	}
+	if !strings.Contains(text, "a\t\trich") {
+		t.Errorf("empty column not kept or rich string not joined:\n%s", text)
+	}
+}
+
+// Slides come in the presentation's order, not the member numbers'.
+func TestPptxDisplayOrder(t *testing.T) {
+	slide := func(s string) string {
+		return `<?xml version="1.0"?><p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:sp><a:t>` + s + `</a:t></p:sp></p:sld>`
+	}
+	data := makeZip(t, map[string]string{
+		"[Content_Types].xml":             `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>`,
+		"ppt/presentation.xml":            `<?xml version="1.0"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId id="257" r:id="rId3"/><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>`,
+		"ppt/_rels/presentation.xml.rels": `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="x" Target="slides/slide1.xml"/><Relationship Id="rId3" Type="x" Target="slides/slide3.xml"/></Relationships>`,
+		"ppt/slides/slide1.xml":           slide("FIRST-FILE"),
+		"ppt/slides/slide3.xml":           slide("THIRD-FILE"),
+	})
+	text, _, err := extractPptx(data, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Index(text, "THIRD-FILE") > strings.Index(text, "FIRST-FILE") {
+		t.Errorf("slides not in presentation order:\n%s", text)
+	}
 }

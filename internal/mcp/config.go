@@ -6,6 +6,7 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,7 +69,7 @@ func Merge(global, project map[string]ServerConfig) (merged map[string]ServerCon
 // owned by another tool, so unknown keys are ignored rather than
 // rejected — the strict-decode rule applies to our own config only.
 func LoadConfig(path string) (servers map[string]ServerConfig, skipped []string, err error) {
-	data, err := os.ReadFile(path)
+	data, err := readCapped(path, mcpFileCap)
 	if os.IsNotExist(err) {
 		return map[string]ServerConfig{}, nil, nil
 	}
@@ -122,4 +123,24 @@ func expandEnv(s string) string {
 		}
 		return os.Getenv(name)
 	})
+}
+
+// mcpFileCap bounds a .mcp.json read: the project's one is read before
+// the trust prompt (ADR-0072 §4.5).
+const mcpFileCap = 1 << 20
+
+func readCapped(path string, cap int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, cap+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > cap {
+		return nil, fmt.Errorf("%s is larger than %d bytes", path, cap)
+	}
+	return data, nil
 }

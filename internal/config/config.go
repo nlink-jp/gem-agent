@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,7 +96,13 @@ func LoadProject(dir string) (*ProjectConfig, error) {
 		}
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	md, err := toml.DecodeFile(path, &cfg)
+	// Untrusted input read before the trust prompt (ADR-0072 §4.5): a
+	// bounded read, then the decode — never the file whole.
+	raw, err := readCapped(path, ProjectFileCap)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	md, err := toml.Decode(string(raw), &cfg)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
@@ -537,4 +544,26 @@ func (c *Config) validate() error {
 		return fmt.Errorf("[model].context_window must not be negative")
 	}
 	return nil
+}
+
+// ProjectFileCap bounds a project-supplied config file (.gem-agent.toml,
+// .mcp.json): both are read before the operator has said whether to
+// trust the directory, so their size is not the directory's to choose.
+const ProjectFileCap = 1 << 20
+
+// readCapped reads path up to cap bytes and refuses a longer file.
+func readCapped(path string, cap int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, cap+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > cap {
+		return nil, fmt.Errorf("larger than %d bytes", cap)
+	}
+	return data, nil
 }

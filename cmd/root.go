@@ -395,6 +395,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// single-writer discipline holds because a slash command cannot run
 	// while a turn is in flight.
 	skillsList, skillNotes := discoverSkills(projectDir, projectTrusted)
+	defer func() { skills.CloseAll(skillsList) }() // reads the variable: reloads replace it
 	for _, n := range skillNotes {
 		fmt.Fprintf(stderr, "warning: %s\n", n)
 	}

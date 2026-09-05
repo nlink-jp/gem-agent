@@ -150,9 +150,12 @@ func (r *Registry) describeFile(p string) (string, error) {
 	}
 
 	if lst.IsDir() {
-		entries, err := r.readDirIn(abs)
+		entries, more, err := r.readDirIn(abs)
 		if err != nil {
 			return "", err
+		}
+		if more {
+			fmt.Fprintf(&b, "\n  (more than %d entries — counts below cover the first %d)", DirEntryCap, DirEntryCap)
 		}
 		files, dirs, total := 0, 0, int64(0)
 		for _, e := range entries {

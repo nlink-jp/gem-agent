@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -255,7 +256,7 @@ func Expand(ctx context.Context, text, projectDir, workDir string, lim Limits) (
 		if info.IsDir() {
 			att, err = attachDir(ref, abs, lim)
 		} else {
-			att, err = attachFile(ref, abs, perFile)
+			att, err = attachFile(ref, abs, projectDir, perFile)
 		}
 		if err != nil {
 			problems = append(problems, Problem{ref, err.Error()})
@@ -293,9 +294,11 @@ func attachImage(ref, projectDir string, lim Limits, images *int) (Attachment, e
 		if rerr != nil {
 			return Attachment{}, rerr
 		}
-		data, err = os.ReadFile(abs)
+		// Size on the open descriptor, before the read (ADR-0072
+		// §4.5): the file was read whole and measured after.
+		data, err = readBounded(abs, projectDir, lim.ImageBytes)
 		if err != nil {
-			return Attachment{}, fmt.Errorf("unreadable")
+			return Attachment{}, err
 		}
 	}
 	if len(data) == 0 {
@@ -328,12 +331,9 @@ func attachDocument(ref, projectDir string, lim Limits) (Attachment, error) {
 	// The Office branch read the file with NO size cap while the PDF
 	// branch capped — an inconsistent missing guard on the same path
 	// (review round 2). 32MiB mirrors read_document's file cap.
-	if info, err := os.Stat(abs); err == nil && info.Size() > 32*1024*1024 {
-		return Attachment{}, fmt.Errorf("document is %d bytes; the limit is %d", info.Size(), 32*1024*1024)
-	}
-	data, err := os.ReadFile(abs)
+	data, err := readBounded(abs, projectDir, 32*1024*1024)
 	if err != nil {
-		return Attachment{}, fmt.Errorf("unreadable")
+		return Attachment{}, err
 	}
 	if bytes.HasPrefix(data, []byte("%PDF-")) {
 		cap := lim.DocumentBytes
@@ -386,9 +386,9 @@ func attachMedia(ctx context.Context, ref, projectDir string, lim Limits) (Attac
 		// file. Name both remedies.
 		return Attachment{}, fmt.Errorf("media is %d bytes; the inline limit is %d — split the file, or set [gcp].bucket to route media through your GCS bucket", info.Size(), cap)
 	}
-	data, err := os.ReadFile(abs)
+	data, err := readBounded(abs, projectDir, cap)
 	if err != nil {
-		return Attachment{}, fmt.Errorf("unreadable")
+		return Attachment{}, err
 	}
 	if strings.HasPrefix(http.DetectContentType(data), "text/") {
 		return Attachment{}, fmt.Errorf("not a media file (plain text under a media extension)")
@@ -426,21 +426,89 @@ func resolveImagePath(projectDir, ref string) (string, error) {
 	return real, nil
 }
 
-func attachFile(ref, abs string, cap int) (Attachment, error) {
-	data, err := os.ReadFile(abs)
+func attachFile(ref, abs, projectDir string, cap int) (Attachment, error) {
+	f, err := openConfined(abs, projectDir)
+	if err != nil {
+		return Attachment{}, fmt.Errorf("unreadable")
+	}
+	defer func() { _ = f.Close() }()
+	size := int64(0)
+	if st, err := f.Stat(); err == nil {
+		size = st.Size()
+	}
+	// Bounded read and a rune-boundary cut (ADR-0072 §4.5): the file
+	// was read whole and sliced by byte.
+	data, err := io.ReadAll(io.LimitReader(f, int64(cap)+1))
 	if err != nil {
 		return Attachment{}, fmt.Errorf("unreadable")
 	}
 	content := string(data)
 	if len(content) > cap {
-		content = content[:cap] +
-			fmt.Sprintf("\n[truncated: %d of %d bytes shown]", cap, len(data))
+		cut := cutRunes(content, cap)
+		content = cut + fmt.Sprintf("\n[truncated: %d of %d bytes shown]", len(cut), size)
 	}
 	return Attachment{Ref: ref, Kind: "file", Content: content, Bytes: len(content)}, nil
 }
 
+// openConfined opens abs for reading. A path inside the project goes
+// through an os.Root at the project, so a link swapped between the
+// resolve and the open is refused (the file tools' rule); a path
+// elsewhere — the operator-typed image, document and media grants —
+// is opened directly.
+func openConfined(abs, projectDir string) (*os.File, error) {
+	if projectDir != "" && within(projectDir, abs) {
+		root, err := os.OpenRoot(projectDir)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = root.Close() }()
+		rel, err := filepath.Rel(projectDir, abs)
+		if err != nil {
+			return nil, err
+		}
+		return root.Open(rel)
+	}
+	return os.Open(abs)
+}
+
+// readBounded reads abs whole only when its size is within cap — the
+// size is taken on the open descriptor, and the read is limited to
+// cap+1 so a file that grew meanwhile is refused, never held.
+func readBounded(abs, projectDir string, cap int) ([]byte, error) {
+	f, err := openConfined(abs, projectDir)
+	if err != nil {
+		return nil, fmt.Errorf("unreadable")
+	}
+	defer func() { _ = f.Close() }()
+	if st, err := f.Stat(); err == nil && st.Size() > int64(cap) {
+		return nil, fmt.Errorf("file is %d bytes; the limit is %d", st.Size(), cap)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, int64(cap)+1))
+	if err != nil {
+		return nil, fmt.Errorf("unreadable")
+	}
+	if len(data) > cap {
+		return nil, fmt.Errorf("file exceeds the %d byte limit", cap)
+	}
+	return data, nil
+}
+
+// cutRunes truncates s to at most n bytes without splitting a UTF-8
+// sequence.
+func cutRunes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
 func attachDir(ref, abs string, lim Limits) (Attachment, error) {
-	entries, err := os.ReadDir(abs)
+	// Bounded listing (ADR-0072 §4.5): one entry past the display cap
+	// is enough to say "more".
+	entries, err := readDirCapped(abs, lim.DirEntries+1)
 	if err != nil {
 		return Attachment{}, fmt.Errorf("unreadable")
 	}
@@ -530,7 +598,7 @@ func Complete(projectDir, prefix string, max int) []string {
 	if err != nil {
 		return nil
 	}
-	entries, err := os.ReadDir(abs)
+	entries, err := readDirCapped(abs, completionEntryCap)
 	if err != nil {
 		return nil
 	}
@@ -575,4 +643,21 @@ func CommonPrefix(candidates []string) string {
 		}
 	}
 	return prefix
+}
+
+// completionEntryCap bounds a directory read for Tab completion.
+const completionEntryCap = 2000
+
+// readDirCapped lists at most n entries of a directory.
+func readDirCapped(abs string, n int) ([]os.DirEntry, error) {
+	d, err := os.Open(abs)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = d.Close() }()
+	entries, err := d.ReadDir(n)
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+	return entries, nil
 }

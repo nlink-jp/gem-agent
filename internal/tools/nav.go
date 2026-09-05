@@ -144,10 +144,13 @@ func (r *Registry) listTree() *Tool {
 					interrupted = true
 					return
 				}
-				items, err := r.readDirIn(dir)
+				items, more, err := r.readDirIn(dir)
 				if err != nil {
 					fmt.Fprintf(&b, "%s[unreadable: %s]\n", strings.Repeat("  ", level), filepath.Base(dir))
 					return
+				}
+				if more {
+					fmt.Fprintf(&b, "%s[%s has more than %d entries — the rest is not walked]\n", strings.Repeat("  ", level), filepath.Base(dir), DirEntryCap)
 				}
 				sort.Slice(items, func(i, j int) bool { return items[i].Name() < items[j].Name() })
 
@@ -244,7 +247,7 @@ func (r *Registry) listTree() *Tool {
 // countFiles counts the non-directory entries of one directory, for
 // the dirs_only annotation.
 func (r *Registry) countFiles(dir string) int {
-	items, err := r.readDirIn(dir)
+	items, _, err := r.readDirIn(dir)
 	if err != nil {
 		return 0
 	}
@@ -317,6 +320,7 @@ func (r *Registry) searchFiles() *Tool {
 
 			var b strings.Builder
 			totalMatches, filesHit, filesScanned, filteredOut, shownLines := 0, 0, 0, 0, 0
+			unwalked := 0 // directories cut at DirEntryCap
 			capped := false
 			interrupted := false
 			var walk func(dir string, rules *ignore.Rules)
@@ -332,9 +336,12 @@ func (r *Registry) searchFiles() *Tool {
 					interrupted = true
 					return
 				}
-				items, err := r.readDirIn(dir)
+				items, more, err := r.readDirIn(dir)
 				if err != nil {
 					return
+				}
+				if more {
+					unwalked++
 				}
 				sort.Slice(items, func(i, j int) bool { return items[i].Name() < items[j].Name() })
 				for _, e := range items {
@@ -447,6 +454,9 @@ func (r *Registry) searchFiles() *Tool {
 				// it for a resume); the cut is named, never silent.
 				out += fmt.Sprintf("\n[interrupted after %d files scanned — results above are partial]", filesScanned)
 			}
+			if unwalked > 0 {
+				out += fmt.Sprintf("\n[%d director%s had more than %d entries — the rest of each was not searched]", unwalked, plural(unwalked, "y", "ies"), DirEntryCap)
+			}
 			if s := tally.summary(); s != "" {
 				out += "\n" + s
 			}
@@ -475,4 +485,11 @@ func clipRunes(s string, limit int) string {
 		return string(r[:limit]) + "…"
 	}
 	return s
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }

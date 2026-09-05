@@ -210,3 +210,26 @@ func TestClearSequenceMatchesTheADR(t *testing.T) {
 		last = i
 	}
 }
+
+// ADR-0072 §4.5: the trust probe counts a symlinked skill directory the
+// way discovery loads it — a project whose skills are all links used to
+// count as offering none, and was trusted without a prompt.
+func TestTrustProbeCountsSymlinkedSkills(t *testing.T) {
+	real := filepath.Join(t.TempDir(), "realskill")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(real, "SKILL.md"), []byte("---\nname: s\ndescription: d\n---\nbody"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	project := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(project, ".claude", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(project, ".claude", "skills", "s")); err != nil {
+		t.Fatal(err)
+	}
+	if o := probeProject(project); o.Skills != 1 {
+		t.Fatalf("probe counted %d skills, want 1 (the symlinked one)", o.Skills)
+	}
+}

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -170,7 +171,7 @@ func TestReadDirRefusesADirectorySwappedAfterTheCheck(t *testing.T) {
 	if err := os.Symlink(outside, dir); err != nil {
 		t.Fatal(err)
 	}
-	if entries, err := r.readDirIn(abs); err == nil {
+	if entries, _, err := r.readDirIn(abs); err == nil {
 		t.Fatalf("the swapped directory was listed: %d entries", len(entries))
 	}
 	if _, _, err := r.readFileCapped(filepath.Join(abs, "secret.txt"), 1024); err == nil {
@@ -370,5 +371,73 @@ func TestTruncateNoteNamesBytesShown(t *testing.T) {
 	out := truncate(strings.Repeat("あ", 10), 10) // 9 bytes fit
 	if !strings.Contains(out, "[output truncated: 9 of 30 bytes shown]") {
 		t.Errorf("note wrong: %q", out)
+	}
+}
+
+// ADR-0072 §4.5: shell_exec holds one cap's worth of output however
+// much the command prints; the note names the real total.
+func TestShellExecOutputIsBoundedAsItArrives(t *testing.T) {
+	r := newRegistry(t)
+	out, err := run(t, r, "shell_exec", map[string]any{"command": "yes | head -c 3000000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) > OutputCap+200 {
+		t.Fatalf("output is %d bytes; the cap is %d", len(out), OutputCap)
+	}
+	if !strings.Contains(out, "of 3000000 bytes shown]") {
+		t.Errorf("note does not name the real total: %q", out[len(out)-80:])
+	}
+	b := &boundedOutput{limit: 4}
+	n, _ := b.Write([]byte("abcdefgh"))
+	if n != 8 {
+		t.Errorf("Write must accept everything: %d", n)
+	}
+	if s := b.String(); !strings.HasPrefix(s, "abcd\n[output truncated: 4 of 8 bytes shown]") {
+		t.Errorf("String = %q", s)
+	}
+}
+
+// A line longer than the cap is shown cut, and the reader is told.
+func TestReadWindowReportsCutLines(t *testing.T) {
+	r := newRegistry(t)
+	p := filepath.Join(r.ProjectDir(), "long.txt")
+	if err := os.WriteFile(p, []byte(strings.Repeat("x", readCap+100)+"\nshort\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := run(t, r, "read_file", map[string]any{"path": "long.txt", "start_line": float64(1), "end_line": float64(2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "1 line(s) longer than") {
+		t.Errorf("the cut line was not disclosed: %q", out[len(out)-120:])
+	}
+}
+
+// A directory listing is bounded before it is held.
+func TestDirectoryListingsAreBounded(t *testing.T) {
+	r := newRegistry(t)
+	dir := filepath.Join(r.ProjectDir(), "many")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i <= DirEntryCap; i++ {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%05d", i)), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, more, err := r.readDirIn(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != DirEntryCap || !more {
+		t.Fatalf("got %d entries more=%v, want %d and more", len(entries), more, DirEntryCap)
+	}
+	out, err := run(t, r, "list_files", map[string]any{"path": "many"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "the listing stopped there") {
+		t.Errorf("list_files did not disclose the cut: %q", out[len(out)-120:])
 	}
 }

@@ -49,12 +49,33 @@ func newMCPIntake(workDir func() string) mcpIntake {
 // render assembles the text the model receives for one call.
 func (in mcpIntake) render(server, tool string, blocks []mcp.Content, isErr bool) string {
 	parts := make([]string, 0, len(blocks))
+	// One budget for the whole response (ADR-0072 §4.5): many blocks
+	// each under the cap used to add up without limit. A block that no
+	// longer fits the remaining budget is spilled like an oversized
+	// one, so the inline text never exceeds one cap.
+	budget := in.cap
+	var rest []string // text blocks past the budget, saved together
 	for _, b := range blocks {
 		if b.Type == "text" || (b.Type == "" && len(b.Data) == 0) {
-			parts = append(parts, in.text(server, tool, b.Text))
+			switch {
+			case len(rest) == 0 && len(b.Text) > in.cap:
+				// One oversized block: saved whole with its preview.
+				parts = append(parts, in.spillText(server, tool, b.Text))
+			case len(rest) == 0 && len(b.Text) <= budget:
+				budget -= len(b.Text)
+				parts = append(parts, b.Text)
+			default:
+				// Past the budget: the remaining text blocks go to one
+				// file, without previews — a preview per block is how
+				// many small blocks slipped past the cap.
+				rest = append(rest, b.Text)
+			}
 			continue
 		}
 		parts = append(parts, in.binary(server, tool, b))
+	}
+	if len(rest) > 0 {
+		parts = append(parts, in.spillRest(server, tool, rest))
 	}
 	out := strings.Join(parts, "\n")
 	if out == "" {
@@ -66,12 +87,22 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content, isErr bool
 	return out
 }
 
-// text keeps a block inline when it fits, and spills it when it does
-// not.
-func (in mcpIntake) text(server, tool, s string) string {
-	if len(s) <= in.cap {
-		return s
+// spillRest saves the text blocks past the response budget as one file
+// and tells the model where, with no preview.
+func (in mcpIntake) spillRest(server, tool string, texts []string) string {
+	joined := strings.Join(texts, "\n")
+	path, err := in.write(server, tool, ".txt", []byte(joined))
+	if err != nil {
+		return fmt.Sprintf("[%d more text block(s), %d bytes, past the response budget and not saved (%v) — narrow the call and ask again]",
+			len(texts), len(joined), err)
 	}
+	return fmt.Sprintf("[%d more text block(s), %d bytes — past the response budget, saved whole. Read them, or narrow the call and ask again: read_file %s]",
+		len(texts), len(joined), path)
+}
+
+// spillText saves a block to the work directory and returns a preview
+// with the path.
+func (in mcpIntake) spillText(server, tool, s string) string {
 	ext := ".txt"
 	if t := strings.TrimSpace(s); strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[") {
 		ext = ".json"

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -210,8 +211,12 @@ func (r *Runner) exec(ctx context.Context, h Hook, cwd string, payload any) (out
 	cmd.WaitDelay = hookWaitDelay
 	cmd.Dir = cwd
 	cmd.Stdin = bytes.NewReader(in)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	// Bounded as it arrives (ADR-0072 §4.5): a hook that printed
+	// without end exhausted memory before its timeout. The deny JSON
+	// and the context output are small by contract; the caps are
+	// generous for them and a ceiling for everything else.
+	stdout, stderr := &boundedBuffer{limit: hookStdoutCap}, &boundedBuffer{limit: hookStderrCap}
+	cmd.Stdout, cmd.Stderr = stdout, stderr
 
 	runErr := cmd.Run()
 	out := outcome{stdout: stdout.String(), stderr: stderr.String(), err: runErr}
@@ -225,6 +230,40 @@ func (r *Runner) exec(ctx context.Context, h Hook, cwd string, payload any) (out
 // hookWaitDelay is how long exec waits, after the hook process ended,
 // for pipes a descendant still holds.
 const hookWaitDelay = time.Second
+
+// hookStdoutCap / hookStderrCap bound what a hook's streams may leave
+// in memory: the deny JSON and 8000 runes of context fit many times
+// over.
+const (
+	hookStdoutCap = 1 << 20
+	hookStderrCap = 64 << 10
+)
+
+// boundedBuffer keeps the first limit bytes written and drops the rest.
+type boundedBuffer struct {
+	mu    sync.Mutex
+	buf   []byte
+	limit int
+}
+
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if room := b.limit - len(b.buf); room > 0 {
+		if len(p) > room {
+			b.buf = append(b.buf, p[:room]...)
+		} else {
+			b.buf = append(b.buf, p...)
+		}
+	}
+	return len(p), nil
+}
+
+func (b *boundedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return string(b.buf)
+}
 
 // exitCode2 reports whether the process ended with the deny/block exit
 // code of the simple contract.

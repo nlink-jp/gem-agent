@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -44,5 +45,18 @@ func TestTimeoutKillsTheHooksChildren(t *testing.T) {
 	if err := syscall.Kill(pid, 0); err == nil {
 		_ = syscall.Kill(pid, syscall.SIGKILL)
 		t.Fatalf("the hook's child (pid %d) outlived the timeout", pid)
+	}
+}
+
+// ADR-0072 §4.5: a hook's output is bounded as it arrives.
+func TestHookOutputIsBounded(t *testing.T) {
+	h := Hook{Matcher: "*", Command: `head -c 5000000 /dev/zero | tr '\0' 'a'; echo`, Timeout: 5 * time.Second}
+	r := New(Hooks{PreToolUse: []Hook{h}}, nil)
+	out, ran := r.exec(context.Background(), h, t.TempDir(), map[string]any{"x": 1})
+	if !ran {
+		t.Fatal("hook did not run")
+	}
+	if len(out.stdout) > hookStdoutCap {
+		t.Fatalf("stdout held %d bytes; the cap is %d", len(out.stdout), hookStdoutCap)
 	}
 }

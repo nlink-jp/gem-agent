@@ -436,3 +436,15 @@ command = "/Users/you/hooks/session-end.sh"
 		}
 	}
 }
+
+// ADR-0072 §4.5: a project config is untrusted input read before the
+// trust prompt; an oversized one is refused, never parsed.
+func TestLoadProjectRefusesOversizeFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ProjectFileName), make([]byte, ProjectFileCap+1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadProject(dir); err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("oversize project config accepted: %v", err)
+	}
+}

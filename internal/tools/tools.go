@@ -364,15 +364,27 @@ func (r *Registry) readForSearch(abs string) ([]byte, bool) {
 // readDirIn lists the directory at abs through its root: a directory
 // swapped for a link that leads out between the walk's check and this
 // call is refused at the open (review after v0.68.1 — the walks used
-// os.ReadDir on the lexical path).
-func (r *Registry) readDirIn(abs string) ([]os.DirEntry, error) {
+// os.ReadDir on the lexical path). At most DirEntryCap entries are
+// returned; more reports that the directory had more (ADR-0072 §4.5 —
+// ReadDir(-1) allocated every entry before any cap).
+func (r *Registry) readDirIn(abs string) (entries []os.DirEntry, more bool, err error) {
 	f, err := r.openRead(abs)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer func() { _ = f.Close() }()
-	return f.ReadDir(-1)
+	entries, err = f.ReadDir(DirEntryCap + 1)
+	if err != nil && err != io.EOF {
+		return nil, false, err
+	}
+	if len(entries) > DirEntryCap {
+		return entries[:DirEntryCap], true, nil
+	}
+	return entries, false, nil
 }
+
+// DirEntryCap bounds one directory listing the tools hold in memory.
+const DirEntryCap = 10000
 
 // readFileCapped reads at most cap bytes of abs through its root.
 func (r *Registry) readFileCapped(abs string, cap int) ([]byte, bool, error) {
@@ -620,59 +632,76 @@ func sliceLines(content string, start, end int) (string, string, error) {
 // line count in the note still needs the whole stream walked, which
 // is bounded in memory, not in time — ctx is consulted as it goes.
 func readWindow(ctx context.Context, f io.Reader, start, end, cap int) (string, string, error) {
+	content, note, cutLines, err := readWindowLines(ctx, f, start, end, cap)
+	if err != nil {
+		return "", "", err
+	}
+	if cutLines > 0 {
+		// A line longer than the cap is shown cut; the reader is told
+		// (ADR-0072 §4.5 — the cut was silent).
+		note += fmt.Sprintf("\n[%d line(s) longer than %d bytes were cut]", cutLines, cap)
+	}
+	return content, note, nil
+}
+
+func readWindowLines(ctx context.Context, f io.Reader, start, end, cap int) (string, string, int, error) {
 	if start == 0 && end == 0 {
 		// One byte past the cap, so the caller's truncate sees the
 		// overflow and marks it.
 		data, err := io.ReadAll(io.LimitReader(f, int64(cap)+1))
 		if err != nil {
-			return "", "", err
+			return "", "", 0, err
 		}
-		return string(data), "", nil
+		return string(data), "", 0, nil
 	}
 	if start == 0 {
 		start = 1
 	}
 	if end != 0 && end < start {
-		return "", "", fmt.Errorf("end_line %d is before start_line %d", end, start)
+		return "", "", 0, fmt.Errorf("end_line %d is before start_line %d", end, start)
 	}
 	br := bufio.NewReaderSize(f, 64*1024)
 	var kept []string
 	keptBytes := 0
 	total := 0
+	cutLines := 0
 	for {
 		if total%1024 == 0 {
 			if err := ctx.Err(); err != nil {
-				return "", "", err
+				return "", "", 0, err
 			}
 		}
-		line, err := readLineCapped(br, cap)
+		line, cut, err := readLineCapped(br, cap)
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return "", "", err
+			return "", "", 0, err
 		}
 		total++
 		if total >= start && (end == 0 || total <= end) && keptBytes <= cap {
 			kept = append(kept, line)
 			keptBytes += len(line) + 1
+			if cut {
+				cutLines++
+			}
 		}
 	}
 	if start > total {
-		return "", "", fmt.Errorf("start_line %d is beyond the end of the file (%d lines)", start, total)
+		return "", "", 0, fmt.Errorf("start_line %d is beyond the end of the file (%d lines)", start, total)
 	}
 	if end == 0 || end > total {
 		end = total
 	}
 	note := fmt.Sprintf("\n[showing lines %d–%d of %d]", start, end, total)
-	return strings.Join(kept, "\n"), note, nil
+	return strings.Join(kept, "\n"), note, cutLines, nil
 }
 
 // readLineCapped returns the next line without its newline, keeping
-// at most cap bytes of it and discarding the rest; io.EOF when no line
-// remains (a file's trailing newline does not start a phantom line —
-// the sliceLines rule).
-func readLineCapped(br *bufio.Reader, cap int) (string, error) {
+// at most cap bytes of it and discarding the rest — cut reports that a
+// cut happened; io.EOF when no line remains (a file's trailing newline
+// does not start a phantom line — the sliceLines rule).
+func readLineCapped(br *bufio.Reader, cap int) (line string, cut bool, err error) {
 	var buf []byte
 	for {
 		chunk, err := br.ReadSlice('\n')
@@ -680,21 +709,24 @@ func readLineCapped(br *bufio.Reader, cap int) (string, error) {
 			take := chunk
 			if len(buf)+len(take) > cap {
 				take = take[:cap-len(buf)]
+				cut = true
 			}
 			buf = append(buf, take...)
+		} else if len(strings.TrimSuffix(string(chunk), "\n")) > 0 {
+			cut = true
 		}
 		switch err {
 		case nil:
-			return strings.TrimSuffix(string(buf), "\n"), nil
+			return strings.TrimSuffix(string(buf), "\n"), cut, nil
 		case bufio.ErrBufferFull:
 			continue
 		case io.EOF:
 			if len(chunk) == 0 && len(buf) == 0 {
-				return "", io.EOF
+				return "", false, io.EOF
 			}
-			return string(buf), nil
+			return string(buf), cut, nil
 		default:
-			return "", err
+			return "", false, err
 		}
 	}
 }
@@ -793,6 +825,41 @@ func truncate(s string, limit int) string {
 	return cut + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", len(cut), len(s))
 }
 
+// boundedOutput is an io.Writer that keeps the first limit bytes and
+// counts the rest, so a process may print without end and the tool
+// holds one cap's worth. String renders what was kept with the
+// truncation note the whole-output path would have produced.
+type boundedOutput struct {
+	mu    sync.Mutex
+	buf   []byte
+	limit int
+	total int64
+}
+
+func (b *boundedOutput) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	n := len(p)
+	b.total += int64(n)
+	if room := b.limit + 1 - len(b.buf); room > 0 {
+		if len(p) > room {
+			p = p[:room]
+		}
+		b.buf = append(b.buf, p...)
+	}
+	return n, nil // the writer accepts everything; it keeps a cap's worth
+}
+
+func (b *boundedOutput) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.buf) <= b.limit {
+		return string(b.buf)
+	}
+	cut := cutRunes(string(b.buf[:b.limit]), b.limit)
+	return cut + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", len(cut), b.total)
+}
+
 // cutRunes truncates s to at most n bytes without splitting a UTF-8
 // sequence (review after v0.68.2: a byte cut through a Japanese
 // character left a broken tail in what the model was sent).
@@ -833,7 +900,7 @@ func (r *Registry) listFiles() *Tool {
 			if err != nil {
 				return "", err
 			}
-			entries, err := r.readDirIn(dir)
+			entries, more, err := r.readDirIn(dir)
 			if err != nil {
 				return "", err
 			}
@@ -858,6 +925,9 @@ func (r *Registry) listFiles() *Tool {
 			if total > listCap {
 				names = names[:listCap]
 				names = append(names, fmt.Sprintf("[%d more entries not shown]", total-listCap))
+			}
+			if more {
+				names = append(names, fmt.Sprintf("[the directory has more than %d entries — the listing stopped there]", DirEntryCap))
 			}
 			if len(names) == 0 {
 				return "(empty directory)", nil
@@ -1077,8 +1147,13 @@ func (r *Registry) shellExec() *Tool {
 			cmd := r.execFn(cctx, command)
 			cmd.Dir = r.projectDir
 			hardenExec(cmd)
-			out, err := cmd.CombinedOutput()
-			result := truncate(string(out), OutputCap)
+			// The output is bounded as it arrives (ADR-0072 §4.5):
+			// CombinedOutput held everything until exit, so a command
+			// printing without end exhausted memory before the cap ran.
+			out := &boundedOutput{limit: OutputCap}
+			cmd.Stdout, cmd.Stderr = out, out
+			err := cmd.Run()
+			result := out.String()
 			if cctx.Err() == context.DeadlineExceeded {
 				return result + fmt.Sprintf("\n[command timed out after %s]", r.shellTimeout), nil
 			}

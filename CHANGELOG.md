@@ -35,6 +35,25 @@
 - Instruction files (`AGENTS.md`, `CLAUDE.md`, …) are read through an
   `os.Root` at their directory: a link planted there cannot pull an
   outside file into the system prompt
+- An operator-only write (`AGENTS.md`, `.mcp.json`, …) is never
+  answered by the session allowlist
+- The trust prompt counts symlinked project skills
+- Shell quoting (`.g''it/config`, `\.git/…`) does not hide a
+  persistent path from the rule tier
+- `shell_exec` and hook output are bounded as they arrive
+- `@` attachments are size-gated on the open descriptor, read bounded
+  through the project root, and cut on a rune boundary
+- MCP results have one budget per response (many small blocks no
+  longer add up past the cap); MCP servers run in their own process
+  group; tool-list pagination is bounded; `.gem-agent.toml` and `.mcp.json` are read through a 1 MiB
+  cap before parsing
+- `.xlsx` / `.pptx` extraction follows the document's display order;
+  empty spreadsheet columns keep their place and rich inline strings
+  are joined
+- Windowed `read_file` says how many over-long lines were cut;
+  directory listings are bounded and say so
+- Skill roots are closed on override, on the skill-count cut, and at
+  exit
 
 - `.gitignore` files are read through the confinement roots with the
   cap applied on the stream; a link where a `.gitignore` should be

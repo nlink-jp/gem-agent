@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -81,6 +82,10 @@ type Client struct {
 func NewStdio(name string, cfg ServerConfig, timeout time.Duration, clientVersion string) *Client {
 	spawn := func() (io.WriteCloser, io.ReadCloser, func(), error) {
 		cmd := exec.Command(cfg.Command, cfg.Args...)
+		// Its own process group, killed as a group (ADR-0072 §4.5): a
+		// wrapper's child — the server behind an npx or uvx launcher —
+		// outlived a timeout that killed only the direct child.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		cmd.Env = os.Environ()
 		for k, v := range cfg.Env {
 			cmd.Env = append(cmd.Env, k+"="+v)
@@ -99,9 +104,15 @@ func NewStdio(name string, cfg ServerConfig, timeout time.Duration, clientVersio
 		if err := cmd.Start(); err != nil {
 			return nil, nil, nil, fmt.Errorf("start %s: %w", cfg.Command, err)
 		}
+		var once sync.Once
 		kill := func() {
-			_ = cmd.Process.Kill()
-			go func() { _ = cmd.Wait() }() // reap; also unblocks pipe reads
+			// Once: shutdown and the read loop's EOF both reach here,
+			// and Wait may run only once per process.
+			once.Do(func() {
+				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+				_ = cmd.Process.Kill()
+				go func() { _ = cmd.Wait() }() // reap; also unblocks pipe reads
+			})
 		}
 		return stdin, stdout, kill, nil
 	}
@@ -327,7 +338,18 @@ func (c *Client) ListTools(ctx context.Context) ([]Tool, error) {
 	}
 	var all []Tool
 	cursor := ""
-	for {
+	seen := map[string]bool{}
+	for pages := 0; ; pages++ {
+		// Bounds on a foreign server's pagination (ADR-0072 §4.5): a
+		// cursor that repeats, too many pages, or too many tools ends
+		// the listing with the server's name, not a 30-second wait.
+		if pages >= maxToolListPages {
+			return nil, fmt.Errorf("mcp %s: tools/list ran past %d pages", c.name, maxToolListPages)
+		}
+		if cursor != "" && seen[cursor] {
+			return nil, fmt.Errorf("mcp %s: tools/list repeated cursor %q", c.name, cursor)
+		}
+		seen[cursor] = true
 		params := map[string]any{}
 		if cursor != "" {
 			params["cursor"] = cursor
@@ -344,12 +366,21 @@ func (c *Client) ListTools(ctx context.Context) ([]Tool, error) {
 			return nil, fmt.Errorf("mcp %s: tools/list result: %w", c.name, err)
 		}
 		all = append(all, page.Tools...)
+		if len(all) > maxToolListTools {
+			return nil, fmt.Errorf("mcp %s: tools/list returned more than %d tools", c.name, maxToolListTools)
+		}
 		if page.NextCursor == "" {
 			return all, nil
 		}
 		cursor = page.NextCursor
 	}
 }
+
+// maxToolListPages / maxToolListTools bound a server's tool listing.
+const (
+	maxToolListPages = 100
+	maxToolListTools = 5000
+)
 
 // Content is one block of a tool result. MCP servers may answer with
 // more than text — an image, audio, a resource — and this type carries

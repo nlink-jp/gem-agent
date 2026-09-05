@@ -327,3 +327,20 @@ func TestPersistentFilesInsideFlagsAndStrings(t *testing.T) {
 		}
 	}
 }
+
+// ADR-0072 §4.5: quoting and escaping that bash consumes do not hide
+// a persistent path.
+func TestShellQuotingDoesNotHidePersistentPaths(t *testing.T) {
+	for cmd, want := range map[string]Tier{
+		`cp evil .g''it/config`:          Block,
+		`cp evil .git\/config`:           Block,
+		`cp evil \.git/hooks/pre-commit`: Block,
+		`mv evil \AGENTS.md`:             Review,
+		`cp evil "AGE"'NTS'.md`:          Review,
+	} {
+		v := classifyShell(cmd)
+		if v.Tier != want || (want == Review && !v.OperatorOnly) {
+			t.Errorf("%q = %v operatorOnly=%v (%s), want %v", cmd, v.Tier, v.OperatorOnly, v.Reason, want)
+		}
+	}
+}

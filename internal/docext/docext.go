@@ -139,12 +139,12 @@ func extractXlsx(data []byte, lim Limits) (string, string, error) {
 	names := xlsxSheetNames(data, lim)
 	byMember := xlsxSheetNamesByMember(data, lim)
 	var b strings.Builder
-	// Sheets are numbered by the file that created them, not
-	// contiguously: deleting Sheet2 leaves sheet1.xml and sheet3.xml
-	// (review after v0.68.2 — a counting loop stopped at the gap and
-	// silently lost every later sheet). The members present are
-	// listed and taken in numeric order, like the slides.
-	for k, n := range xlsxSheetNumbers(data) {
+	// Sheets come in the workbook's display order — the sheets array
+	// of workbook.xml, each resolved to its member through the
+	// relationships (ADR-0072 §4.5); a member the workbook does not
+	// reference follows, in numeric order. Numbers alone have gaps
+	// (a deleted sheet) and do not follow a reorder.
+	for k, n := range xlsxSheetOrder(data, lim) {
 		// Aggregate budget: the per-member cap bounds ONE member, but
 		// many under-cap members accumulated unbounded text before the
 		// final clip ever ran — a crafted workbook was a model-
@@ -257,6 +257,202 @@ func xlsxSheetNamesByMember(data []byte, lim Limits) map[string]string {
 	if xml.Unmarshal(raw, &wb) != nil {
 		return nil
 	}
+	target := xlsxRelTargets(data, lim)
+	if target == nil {
+		return nil
+	}
+	out := map[string]string{}
+	for _, s := range wb.Sheets.Sheet {
+		if member, ok := target[s.RID]; ok && s.RID != "" {
+			out[member] = s.Name
+		}
+	}
+	return out
+}
+
+func xlsxSheetText(b *strings.Builder, raw []byte, shared []string) {
+	var sheet struct {
+		Rows []struct {
+			Cells []struct {
+				R  string `xml:"r,attr"`
+				T  string `xml:"t,attr"`
+				V  string `xml:"v"`
+				IS struct {
+					T    string   `xml:"t"`
+					Runs []string `xml:"r>t"`
+				} `xml:"is"`
+			} `xml:"c"`
+		} `xml:"sheetData>row"`
+	}
+	if xml.Unmarshal(raw, &sheet) != nil {
+		return
+	}
+	for _, row := range sheet.Rows {
+		vals := make([]string, 0, len(row.Cells))
+		col := 0
+		for _, c := range row.Cells {
+			// Empty cells are not stored: the r attribute says where a
+			// stored cell sits, and the gap before it is kept as empty
+			// columns so A1 and C1 do not become neighbours (ADR-0072
+			// §4.5).
+			if want := columnIndex(c.R); want > col {
+				for ; col < want; col++ {
+					vals = append(vals, "")
+				}
+			}
+			col++
+			switch c.T {
+			case "s": // shared-string index
+				if i, err := strconv.Atoi(c.V); err == nil && i >= 0 && i < len(shared) {
+					vals = append(vals, shared[i])
+					continue
+				}
+				vals = append(vals, c.V)
+			case "inlineStr":
+				// A rich inline string carries its text in runs.
+				if len(c.IS.Runs) > 0 {
+					vals = append(vals, strings.Join(c.IS.Runs, ""))
+				} else {
+					vals = append(vals, c.IS.T)
+				}
+			default: // numbers, booleans, formula results
+				vals = append(vals, c.V)
+			}
+		}
+		b.WriteString(strings.Join(vals, "\t"))
+		b.WriteByte('\n')
+	}
+}
+
+// columnIndex converts a cell reference's column letters (A1 → 0,
+// C7 → 2, AA1 → 26) to a zero-based index; -1 when absent.
+func columnIndex(ref string) int {
+	n := 0
+	seen := false
+	for _, r := range ref {
+		if r < 'A' || r > 'Z' {
+			break
+		}
+		n = n*26 + int(r-'A'+1)
+		seen = true
+	}
+	if !seen {
+		return -1
+	}
+	return n - 1
+}
+
+// --- pptx ---
+
+var slideNum = regexp.MustCompile(`^ppt/slides/slide(\d+)\.xml$`)
+var sheetNum = regexp.MustCompile(`^xl/worksheets/sheet(\d+)\.xml$`)
+
+// pptxSlideOrder orders slide numbers as the presentation shows them:
+// p:sldIdLst entries resolved through ppt/_rels/presentation.xml.rels,
+// then any slide member the list does not reference, numerically.
+func pptxSlideOrder(data []byte, lim Limits, present []int) []int {
+	raw, err := readMember(data, "ppt/presentation.xml", lim.MemberBytes)
+	if err != nil {
+		return present
+	}
+	var pres struct {
+		IDs []struct {
+			RID string `xml:"id,attr"`
+		} `xml:"sldIdLst>sldId"`
+	}
+	if xml.Unmarshal(raw, &pres) != nil || len(pres.IDs) == 0 {
+		return present
+	}
+	relRaw, err := readMember(data, "ppt/_rels/presentation.xml.rels", lim.MemberBytes)
+	if err != nil {
+		return present
+	}
+	var rels struct {
+		Rel []struct {
+			ID     string `xml:"Id,attr"`
+			Target string `xml:"Target,attr"`
+		} `xml:"Relationship"`
+	}
+	if xml.Unmarshal(relRaw, &rels) != nil {
+		return present
+	}
+	target := map[string]string{}
+	for _, r := range rels.Rel {
+		t := strings.TrimPrefix(r.Target, "/")
+		if !strings.HasPrefix(t, "ppt/") {
+			t = "ppt/" + t
+		}
+		target[r.ID] = t
+	}
+	memberNum := map[string]int{}
+	for _, n := range present {
+		memberNum[fmt.Sprintf("ppt/slides/slide%d.xml", n)] = n
+	}
+	var order []int
+	used := map[int]bool{}
+	for _, id := range pres.IDs {
+		if member, ok := target[id.RID]; ok {
+			if n, ok := memberNum[member]; ok && !used[n] {
+				order = append(order, n)
+				used[n] = true
+			}
+		}
+	}
+	for _, n := range present {
+		if !used[n] {
+			order = append(order, n)
+		}
+	}
+	return order
+}
+
+// xlsxSheetOrder is the display order of the worksheet members: the
+// workbook's sheets array through the relationships first, then any
+// member it does not reference, numerically.
+func xlsxSheetOrder(data []byte, lim Limits) []int {
+	present := xlsxSheetNumbers(data)
+	byMember := xlsxSheetNamesByMember(data, lim)
+	if len(byMember) == 0 {
+		return present
+	}
+	// The workbook's order: parse the sheets array once more, in order.
+	raw, err := readMember(data, "xl/workbook.xml", lim.MemberBytes)
+	if err != nil {
+		return present
+	}
+	var wb struct {
+		Sheets struct {
+			Sheet []xlsxSheetRef `xml:"sheet"`
+		} `xml:"sheets"`
+	}
+	if xml.Unmarshal(raw, &wb) != nil {
+		return present
+	}
+	memberNum := map[string]int{}
+	for _, n := range present {
+		memberNum[fmt.Sprintf("xl/worksheets/sheet%d.xml", n)] = n
+	}
+	relTarget := xlsxRelTargets(data, lim)
+	var order []int
+	used := map[int]bool{}
+	for _, s := range wb.Sheets.Sheet {
+		if member, ok := relTarget[s.RID]; ok {
+			if n, ok := memberNum[member]; ok && !used[n] {
+				order = append(order, n)
+				used[n] = true
+			}
+		}
+	}
+	for _, n := range present {
+		if !used[n] {
+			order = append(order, n)
+		}
+	}
+	return order
+}
+
+// xlsxRelTargets maps a relationship id to its member path.
+func xlsxRelTargets(data []byte, lim Limits) map[string]string {
 	relRaw, err := readMember(data, "xl/_rels/workbook.xml.rels", lim.MemberBytes)
 	if err != nil {
 		return nil
@@ -278,55 +474,8 @@ func xlsxSheetNamesByMember(data []byte, lim Limits) map[string]string {
 		}
 		target[r.ID] = t
 	}
-	out := map[string]string{}
-	for _, s := range wb.Sheets.Sheet {
-		if member, ok := target[s.RID]; ok && s.RID != "" {
-			out[member] = s.Name
-		}
-	}
-	return out
+	return target
 }
-
-func xlsxSheetText(b *strings.Builder, raw []byte, shared []string) {
-	var sheet struct {
-		Rows []struct {
-			Cells []struct {
-				T  string `xml:"t,attr"`
-				V  string `xml:"v"`
-				IS struct {
-					T string `xml:"t"`
-				} `xml:"is"`
-			} `xml:"c"`
-		} `xml:"sheetData>row"`
-	}
-	if xml.Unmarshal(raw, &sheet) != nil {
-		return
-	}
-	for _, row := range sheet.Rows {
-		vals := make([]string, 0, len(row.Cells))
-		for _, c := range row.Cells {
-			switch c.T {
-			case "s": // shared-string index
-				if i, err := strconv.Atoi(c.V); err == nil && i >= 0 && i < len(shared) {
-					vals = append(vals, shared[i])
-					continue
-				}
-				vals = append(vals, c.V)
-			case "inlineStr":
-				vals = append(vals, c.IS.T)
-			default: // numbers, booleans, formula results
-				vals = append(vals, c.V)
-			}
-		}
-		b.WriteString(strings.Join(vals, "\t"))
-		b.WriteByte('\n')
-	}
-}
-
-// --- pptx ---
-
-var slideNum = regexp.MustCompile(`^ppt/slides/slide(\d+)\.xml$`)
-var sheetNum = regexp.MustCompile(`^xl/worksheets/sheet(\d+)\.xml$`)
 
 // xlsxSheetNumbers lists the worksheet members present, in numeric
 // order.
@@ -366,6 +515,10 @@ func extractPptx(data []byte, lim Limits) (string, string, error) {
 		return "", "", fmt.Errorf("no slides found")
 	}
 	sort.Ints(nums)
+	// Display order: presentation.xml's sldIdLst through the
+	// relationships (ADR-0072 §4.5); a slide the list does not name
+	// follows numerically.
+	nums = pptxSlideOrder(data, lim, nums)
 	var b strings.Builder
 	for _, n := range nums {
 		// Same aggregate budget as xlsx (review round 2): slides that

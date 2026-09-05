@@ -275,3 +275,37 @@ func TestLateReturnAfterRestartStaysWithTheOldSession(t *testing.T) {
 		t.Errorf("origin_session_id = %q, want the old session", late.Attrs["origin_session_id"])
 	}
 }
+
+// allowlistGate answers from a session allowlist unless the call must
+// prompt; it records which it did.
+type allowlistGate struct{ prompted, allowlisted []string }
+
+func (g *allowlistGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
+	if mustPrompt {
+		g.prompted = append(g.prompted, name+" "+detail)
+		return true, false, ""
+	}
+	g.allowlisted = append(g.allowlisted, name+" "+detail)
+	return true, true, ""
+}
+
+// ADR-0072 §4.5: OperatorOnly is a floor like Block — an earlier 'a'
+// for write_file must not answer a write to AGENTS.md.
+func TestOperatorOnlyIsNotAnsweredByTheAllowlist(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "write_file", Args: map[string]any{"path": "notes.md", "content": "x"}}}},
+		{ToolCalls: []llm.ToolCall{{ID: "c2", Name: "write_file", Args: map[string]any{"path": "AGENTS.md", "content": "x"}}}},
+		{Content: "done"},
+	}}
+	gate := &allowlistGate{}
+	a, _ := newAgent(t, mb, gate, 5)
+	if _, err := a.Run(context.Background(), "write", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.allowlisted) != 1 || !strings.Contains(gate.allowlisted[0], "notes.md") {
+		t.Errorf("the ordinary write should have been the allowlist's: %v", gate.allowlisted)
+	}
+	if len(gate.prompted) != 1 || !strings.Contains(gate.prompted[0], "AGENTS.md") {
+		t.Errorf("the instruction-file write must prompt: %v", gate.prompted)
+	}
+}

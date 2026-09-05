@@ -1129,7 +1129,10 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		// live — not inside the gates.
 		mustPrompt := a.callPolicy(tc) == policy.AlwaysAsk
 		if !mustPrompt && tool.Mutating {
-			if v := risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir(), a.registry.WorkDir()); v.Tier == risk.Block {
+			// OperatorOnly is a floor like Block (ADR-0072 §4.5): the
+			// write persists into what later sessions trust, so an
+			// earlier 'a' for the same tool must not answer it either.
+			if v := risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir(), a.registry.WorkDir()); v.Tier == risk.Block || v.OperatorOnly {
 				mustPrompt = true
 				// Shown on the prompt, so the operator sees why an
 				// earlier 'a' did not stick — and the deny-default that

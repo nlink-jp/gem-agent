@@ -91,10 +91,15 @@ func probeProject(projectDir string) projectOffering {
 		// round 2; over-reporting was the safe direction, but a wrong
 		// count in a trust prompt invites doubt about the rest of it).
 		for _, e := range entries {
-			if !e.IsDir() {
+			// os.Stat, as skills.Discover does: a symlinked skill
+			// directory reports IsDir()=false on the DirEntry, and a
+			// project whose skills are all links counted as offering
+			// none — and was trusted without a prompt (ADR-0072 §4.5).
+			dir := filepath.Join(projectDir, ".claude", "skills", e.Name())
+			if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 				continue
 			}
-			if st, err := os.Stat(filepath.Join(projectDir, ".claude", "skills", e.Name(), "SKILL.md")); err == nil && !st.IsDir() {
+			if st, err := os.Stat(filepath.Join(dir, "SKILL.md")); err == nil && !st.IsDir() {
 				o.Skills++
 			}
 		}

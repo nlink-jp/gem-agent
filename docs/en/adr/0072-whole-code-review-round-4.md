@@ -405,6 +405,64 @@ Four on the fourth pass's diff, all held:
   have to land between the operator's Enter and the read — recorded,
   not changed.
 
+### 4.5 Sixth pass — a fixed-baseline whole-repository review (2026-09-05, v0.68.2)
+
+Two reviewers read HEAD `e572994` across the whole repository (one
+of them noting that the earlier passes had been diff-centred, which
+is why the same class surfaced in a new place each time). Seventeen
+findings, all held:
+
+- **OperatorOnly could be answered by the session allowlist** (high) —
+  `mustPrompt` covered Block and `always` only; an earlier `a` for
+  `write_file` answered a write to `AGENTS.md`. OperatorOnly is a
+  floor like Block.
+- **A symlinked project skill escaped the trust prompt** (high) — the
+  probe counted `DirEntry.IsDir()`, discovery followed `os.Stat`; a
+  project whose skills were all links offered "nothing" and was
+  trusted silently. The probe stats like discovery.
+- **Shell quoting hid a persistent path** (high) — `.g''it/config`,
+  `.git\/config`, `\.git/…` are `.git/config` to bash. Quotes and
+  backslashes are removed before the candidate split.
+- **`shell_exec` held all output before the cap** (high) —
+  `CombinedOutput`; a bounded writer keeps one cap's worth and counts
+  the rest. Hook output the same (`boundedBuffer`).
+- **`@` attachments read whole before the gate** (medium) — images
+  sized after the read, documents and media `Stat`ted then read, text
+  cut by byte. Every attachment opens once (an `os.Root` at the
+  project for in-project refs), sizes on the descriptor, reads
+  bounded, cuts on a rune.
+- **MCP results capped per block, not per response** (medium) — many
+  blocks each under the cap added up without limit. One budget per
+  response: a block that no longer fits is spilled like an oversized
+  one.
+- **MCP children outside a process group; kill called twice** (medium)
+  — `Setpgid` and a group kill, once.
+- **MCP tool-list pagination unbounded** (medium) — a repeated cursor,
+  100 pages or 5000 tools end the listing with the server's name.
+- **XLSX / PPTX in member-number order** (medium) — the workbook's
+  sheets array and the presentation's `sldIdLst`, resolved through
+  their relationships, give the display order; unreferenced members
+  follow numerically.
+- **XLSX lost empty columns and rich inline strings** (medium) — the
+  `r` attribute places each stored cell; `<is><r><t>` runs are joined.
+- **A long line in a windowed `read_file` was cut silently** (medium)
+  — the note says how many lines were cut.
+- **Directory listings unbounded** (medium) — `readDirIn` returns at
+  most 10,000 entries and says when there were more; `list_files`,
+  `list_tree`, `search_files`, `file_info` disclose it; skill
+  directories, `@directory` and completion have their own caps.
+- **Project config parsed before trust, unbounded** (medium) —
+  `.gem-agent.toml` and `.mcp.json` are read through a 1 MiB cap
+  before parsing.
+- **Skill roots leaked on override, on the MaxSkills cut, and at
+  exit** (low, second reviewer) — closed in each case.
+- **Backslash before a persistent path** (low, second reviewer) —
+  covered by the unquoting above.
+- **The `@` text attachment's byte cut** (low, second reviewer) —
+  covered by the attachment rewrite above.
+
+Every item has a regression test.
+
 ## Lessons
 
 - **Independent reviewers found what the maintainer pass did not**, for

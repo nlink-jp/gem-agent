@@ -79,6 +79,9 @@ type Skill struct {
 	root *os.Root
 }
 
+// skillDirEntryCap bounds a skill directory listing.
+const skillDirEntryCap = 2000
+
 // skillReadCap bounds one read of a skill file at discovery and in
 // Body: the frontmatter and body of any real SKILL.md fit in it; a
 // sparse or generated giant does not reach memory.
@@ -171,6 +174,7 @@ func Discover(globalDir, projectDir string, lim Limits) ([]Skill, []string) {
 			}
 			if prev, exists := byName[s.Name]; exists {
 				notes = append(notes, fmt.Sprintf("skill %q: %s overrides %s", s.Name, s.Scope, prev.Scope))
+				prev.Close() // the overridden skill's root (review after v0.68.2)
 			} else {
 				order = append(order, s.Name)
 			}
@@ -186,6 +190,9 @@ func Discover(globalDir, projectDir string, lim Limits) ([]Skill, []string) {
 	sort.Strings(order)
 	if len(order) > lim.MaxSkills {
 		notes = append(notes, fmt.Sprintf("%d skills found; listing the first %d", len(order), lim.MaxSkills))
+		for _, name := range order[lim.MaxSkills:] {
+			byName[name].Close() // dropped from the list: its root goes too
+		}
 		order = order[:lim.MaxSkills]
 	}
 	out := make([]Skill, 0, len(order))
@@ -366,13 +373,17 @@ func (s Skill) File(rel string, lim Limits) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		entries, err := d.ReadDir(-1)
+		entries, err := d.ReadDir(skillDirEntryCap + 1)
 		_ = d.Close()
-		if err != nil {
+		if err != nil && err != io.EOF {
 			return "", err
 		}
 		names := make([]string, 0, len(entries))
-		for _, e := range entries {
+		for i, e := range entries {
+			if i == skillDirEntryCap {
+				names = append(names, fmt.Sprintf("[more than %d entries — listing stopped]", skillDirEntryCap))
+				break
+			}
 			names = append(names, e.Name())
 		}
 		return strings.Join(names, "\n"), nil

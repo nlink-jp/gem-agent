@@ -317,7 +317,11 @@ func classifyCommand(command, projectDir, workDir string) Verdict {
 // file (`git commit -m "update AGENTS.md"`), accepted: a prompt, not
 // a hole.
 func persistentTokens(command, projectDir string) (Verdict, bool) {
-	for _, tok := range candidateSplit.Split(command, -1) {
+	// bash concatenates adjacent quoted pieces and a backslash escapes
+	// the next character: `.g''it/config` and `.git\/config` both run
+	// as .git/config (ADR-0072 §4.5). The quotes and backslashes are
+	// removed before the split, so the words are what the shell sees.
+	for _, tok := range candidateSplit.Split(shellUnquote.Replace(command), -1) {
 		if tok == "" || strings.HasPrefix(tok, "-") {
 			continue
 		}
@@ -329,8 +333,12 @@ func persistentTokens(command, projectDir string) (Verdict, bool) {
 }
 
 // candidateSplit separates the words a path could be, inside or
-// outside quotes and flag syntax.
-var candidateSplit = regexp.MustCompile("[\\s\"'`()=,;|&<>\\[\\]{}]+")
+// outside flag syntax; quotes and backslashes are removed beforehand
+// (shellUnquote), never treated as separators.
+var candidateSplit = regexp.MustCompile("[\\s`()=,;|&<>\\[\\]{}]+")
+
+// shellUnquote removes the quoting bash would consume.
+var shellUnquote = strings.NewReplacer(`'`, "", `"`, "", "\\", "")
 
 // segmentSplit separates the simple commands of a shell text: pipes,
 // lists, background, and newlines — bash runs each line as a separate

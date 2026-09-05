@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func projectWith(t *testing.T, files map[string]string) string {
@@ -378,5 +379,54 @@ func TestNoWorkDirKeepsTheOneRootWording(t *testing.T) {
 	_, problems := Expand(context.Background(), "@"+filepath.Join(outside, "x.txt"), t.TempDir(), "", DefaultLimits())
 	if len(problems) != 1 || problems[0].Reason != "outside the project directory" {
 		t.Fatalf("got %v", problems)
+	}
+}
+
+// ADR-0072 §4.5: attachments are size-gated on the open descriptor
+// and read bounded; text is cut on a rune boundary with the real size
+// in the note.
+func TestAttachmentsAreBoundedAndRuneSafe(t *testing.T) {
+	project, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	huge := filepath.Join(project, "huge.png")
+	f, err := os.Create(huge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(64 << 20); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	if err := os.WriteFile(filepath.Join(project, "ja.txt"), []byte(strings.Repeat("あ", 1000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lim := DefaultLimits()
+	lim.PerFileBytes = 100
+	atts, problems := Expand(context.Background(), "@huge.png @ja.txt", project, "", lim)
+	for _, p := range problems {
+		if p.Ref == "huge.png" && !strings.Contains(p.Reason, "limit") {
+			t.Errorf("oversize image refused for the wrong reason: %s", p.Reason)
+		}
+	}
+	found := false
+	for _, a := range atts {
+		if a.Ref == "huge.png" {
+			t.Fatal("the oversize image was attached")
+		}
+		if a.Ref == "ja.txt" {
+			found = true
+			head := strings.SplitN(a.Content, "\n", 2)[0]
+			if !utf8.ValidString(head) || head != strings.Repeat("あ", 33) {
+				t.Errorf("text cut through a rune: %q", head)
+			}
+			if !strings.Contains(a.Content, "[truncated: 99 of 3000 bytes shown]") {
+				t.Errorf("note wrong: %q", a.Content)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("ja.txt not attached: %+v %+v", atts, problems)
 	}
 }

@@ -176,3 +176,22 @@ func extractPath(t *testing.T, out, work string) string {
 // fixedDir is the intake's directory getter for tests: one directory
 // for the test's lifetime.
 func fixedDir(dir string) func() string { return func() string { return dir } }
+
+// ADR-0072 §4.5: many blocks each under the cap share one budget per
+// response — the inline text never exceeds one cap.
+func TestManySmallBlocksShareOneBudget(t *testing.T) {
+	work := t.TempDir()
+	in := newMCPIntake(fixedDir(work))
+	in.cap = 1000
+	var blocks []mcp.Content
+	for i := 0; i < 20; i++ {
+		blocks = append(blocks, mcp.Content{Type: "text", Text: strings.Repeat("x", 300)})
+	}
+	out := in.render("srv", "tool", blocks, false)
+	if len(out) > in.cap+400 {
+		t.Fatalf("rendered result is %d bytes; the cap is %d", len(out), in.cap)
+	}
+	if !strings.Contains(out, "17 more text block(s)") || !strings.Contains(out, "read_file") {
+		t.Fatalf("blocks past the budget were not saved together:\n%s", out)
+	}
+}
