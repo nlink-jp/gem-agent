@@ -565,17 +565,25 @@ func heifMIME(data []byte) string {
 	if size < 16 || size > len(data) || size%4 != 0 {
 		return "" // a box that does not fit its file is not a file
 	}
-	brands := []string{string(data[8:12])}
-	for i := 16; i+4 <= size; i += 4 {
-		brands = append(brands, string(data[i:i+4]))
-	}
-	for _, b := range brands {
-		switch b {
-		case "heic", "heix", "hevc", "hevx", "heim", "heis":
-			return "image/heic"
-		case "mif1", "msf1", "heif":
+	// The major brand decides (pre-release review: an AVIF or an MP4
+	// carrying mif1 in its compatible list read as HEIF). Only a
+	// generic major brand (mif1) defers to the compatible list, and
+	// then only to the HEIC brands.
+	major := string(data[8:12])
+	switch major {
+	case "heic", "heix", "hevc", "hevx", "heim", "heis":
+		return "image/heic"
+	case "heif", "mif1":
+		for i := 16; i+4 <= size; i += 4 {
+			switch string(data[i : i+4]) {
+			case "heic", "heix", "hevc", "hevx", "heim", "heis":
+				return "image/heic"
+			}
+		}
+		if major == "heif" {
 			return "image/heif"
 		}
+		return "image/heif"
 	}
 	return ""
 }
@@ -692,7 +700,7 @@ func sliceLines(content string, start, end int) (string, string, error) {
 // line count in the note still needs the whole stream walked, which
 // is bounded in memory, not in time — ctx is consulted as it goes.
 func readWindow(ctx context.Context, f io.Reader, start, end, cap int) (string, string, error) {
-	content, note, cutLines, err := readWindowLines(ctx, f, start, end, cap)
+	content, note, cutLines, dropped, err := readWindowLines(ctx, f, start, end, cap)
 	if err != nil {
 		return "", "", err
 	}
@@ -701,34 +709,39 @@ func readWindow(ctx context.Context, f io.Reader, start, end, cap int) (string, 
 		// (ADR-0072 §4.5 — the cut was silent).
 		note += fmt.Sprintf("\n[%d line(s) longer than %d bytes were cut]", cutLines, cap)
 	}
+	if dropped > 0 {
+		// Lines of the window past the cap are not shown; said here,
+		// whatever the caller's byte marker does (pre-release review:
+		// a window landing exactly on the cap dropped lines silently).
+		note += fmt.Sprintf("\n[%d more line(s) of the window not shown — the %d-byte cap was reached]", dropped, cap)
+	}
 	return content, note, nil
 }
 
-func readWindowLines(ctx context.Context, f io.Reader, start, end, cap int) (string, string, int, error) {
+func readWindowLines(ctx context.Context, f io.Reader, start, end, cap int) (content, note string, cutLines, dropped int, err error) {
 	if start == 0 && end == 0 {
 		// One byte past the cap, so the caller's truncate sees the
 		// overflow and marks it.
 		data, err := io.ReadAll(io.LimitReader(f, int64(cap)+1))
 		if err != nil {
-			return "", "", 0, err
+			return "", "", 0, 0, err
 		}
-		return string(data), "", 0, nil
+		return string(data), "", 0, 0, nil
 	}
 	if start == 0 {
 		start = 1
 	}
 	if end != 0 && end < start {
-		return "", "", 0, fmt.Errorf("end_line %d is before start_line %d", end, start)
+		return "", "", 0, 0, fmt.Errorf("end_line %d is before start_line %d", end, start)
 	}
 	br := bufio.NewReaderSize(f, 64*1024)
 	var kept []string
 	keptBytes := 0
 	total := 0
-	cutLines := 0
 	for {
 		if total%1024 == 0 {
 			if err := ctx.Err(); err != nil {
-				return "", "", 0, err
+				return "", "", 0, 0, err
 			}
 		}
 		line, cut, err := readLineCapped(br, cap)
@@ -736,10 +749,14 @@ func readWindowLines(ctx context.Context, f io.Reader, start, end, cap int) (str
 			break
 		}
 		if err != nil {
-			return "", "", 0, err
+			return "", "", 0, 0, err
 		}
 		total++
-		if total >= start && (end == 0 || total <= end) && keptBytes <= cap {
+		if total >= start && (end == 0 || total <= end) {
+			if keptBytes > cap {
+				dropped++ // in the window, past the cap: counted, not shown
+				continue
+			}
 			kept = append(kept, line)
 			keptBytes += len(line) + 1
 			if cut {
@@ -748,13 +765,13 @@ func readWindowLines(ctx context.Context, f io.Reader, start, end, cap int) (str
 		}
 	}
 	if start > total {
-		return "", "", 0, fmt.Errorf("start_line %d is beyond the end of the file (%d lines)", start, total)
+		return "", "", 0, 0, fmt.Errorf("start_line %d is beyond the end of the file (%d lines)", start, total)
 	}
 	if end == 0 || end > total {
 		end = total
 	}
-	note := fmt.Sprintf("\n[showing lines %d–%d of %d]", start, end, total)
-	return strings.Join(kept, "\n"), note, cutLines, nil
+	note = fmt.Sprintf("\n[showing lines %d–%d of %d]", start, end, total)
+	return strings.Join(kept, "\n"), note, cutLines, dropped, nil
 }
 
 // readLineCapped returns the next line without its newline, keeping
@@ -773,14 +790,17 @@ func readLineCapped(br *bufio.Reader, cap int) (line string, cut bool, err error
 	}
 	for {
 		chunk, err := br.ReadSlice('\n')
+		// The newline is not payload: a complete line of exactly cap
+		// bytes is whole (pre-release review — it was reported cut).
+		payload := strings.TrimSuffix(string(chunk), "\n")
 		if len(buf) < cap {
-			take := chunk
+			take := payload
 			if len(buf)+len(take) > cap {
 				take = take[:cap-len(buf)]
 				cut = true
 			}
 			buf = append(buf, take...)
-		} else if len(strings.TrimSuffix(string(chunk), "\n")) > 0 {
+		} else if len(payload) > 0 {
 			cut = true
 		}
 		switch err {
@@ -789,7 +809,7 @@ func readLineCapped(br *bufio.Reader, cap int) (line string, cut bool, err error
 		case bufio.ErrBufferFull:
 			continue
 		case io.EOF:
-			if len(chunk) == 0 && len(buf) == 0 {
+			if len(chunk) == 0 && len(buf) == 0 && !cut {
 				return "", false, io.EOF
 			}
 			return finish(), cut, nil

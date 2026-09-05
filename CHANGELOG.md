@@ -64,6 +64,12 @@
 - A `never` policy or a one-shot `--allow` grant no longer lifts the
   operator-only floor: writing `AGENTS.md` under `--allow write_file
   --auto` is denied with the reason instead of running
+- A windowed `read_file` says how many lines of the window the cap left
+  out; a complete line of exactly the cap is not reported cut; HEIF
+  detection goes by the major brand; a first MCP text block of exactly
+  the cap renders inline; non-text MCP blocks that would not be listed
+  are not saved; the `workdirs` command, the MCP result budget and the
+  `osascript` policy are documented in the reference
 - sed scripts given as `-e'…'`, `--expression=…` or `--file=…` are
   parsed like the plain form (they were opaque flags, and `w` / `e`
   inside them ran Safe); a file operand's letters are no longer read

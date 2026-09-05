@@ -716,17 +716,18 @@ func heifMIME(data []byte) string {
 	if size < 16 || size > len(data) || size%4 != 0 {
 		return ""
 	}
-	brands := []string{string(data[8:12])}
-	for i := 16; i+4 <= size; i += 4 {
-		brands = append(brands, string(data[i:i+4]))
-	}
-	for _, b := range brands {
-		switch b {
-		case "heic", "heix", "hevc", "hevx", "heim", "heis":
-			return "image/heic"
-		case "mif1", "msf1", "heif":
-			return "image/heif"
+	major := string(data[8:12])
+	switch major {
+	case "heic", "heix", "hevc", "hevx", "heim", "heis":
+		return "image/heic"
+	case "heif", "mif1":
+		for i := 16; i+4 <= size; i += 4 {
+			switch string(data[i : i+4]) {
+			case "heic", "heix", "hevc", "hevx", "heim", "heis":
+				return "image/heic"
+			}
 		}
+		return "image/heif"
 	}
 	return ""
 }

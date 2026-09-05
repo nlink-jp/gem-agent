@@ -80,6 +80,19 @@ gem-agent の中核要件は drop-in 互換です: プロジェクトが他の
 }
 ```
 
+### 大きな結果
+
+ツール結果は応答 1 つの予算（ツール出力と同じ 200 KB 上限）の中でモデルに
+渡されます。収まらないテキストブロックはセッション作業ディレクトリに丸ごと
+保存され、先頭とパスに置き換わります（`… [N bytes — too large to hold inline,
+so the whole result is saved. Read it, or narrow the call and ask again:
+read_file <path>]`）。予算を超えたブロックはまとめて 1 ファイルに保存され
+1 行で告げられます（`[N more text block(s), M bytes — past the response
+budget, saved whole …]`）。画像などのバイナリブロックは保存して指し示す
+（`use view_image on that path`）だけでインラインには入れません。予算を超えた
+ものは保存も個別掲載もせず、件数を 1 行で示します。作業ディレクトリが無ければ
+損失を明示します。
+
 ## スキル（ADR-0010・ADR-0011）
 
 gem-agent は **Claude Code の skill 形式をそのまま読みます** — ただし

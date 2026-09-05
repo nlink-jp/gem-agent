@@ -235,3 +235,29 @@ func TestBinaryLeftoversAreOneLine(t *testing.T) {
 		t.Errorf("%d files saved for blocks past the budget", len(entries))
 	}
 }
+
+// Pre-release review: a first block of exactly the cap renders inline
+// as it always did; a non-text block whose note would not fit is not
+// written to disk.
+func TestExactCapBlockAndUnsavedBinaries(t *testing.T) {
+	work := t.TempDir()
+	in := newMCPIntake(fixedDir(work))
+	exact := strings.Repeat("x", in.cap)
+	out := in.render("srv", "tool", []mcp.Content{{Type: "text", Text: exact}}, false)
+	if out != exact {
+		t.Errorf("exact-cap block not inline: %d bytes rendered", len(out))
+	}
+	in.cap = 170
+	blocks := make([]mcp.Content, 500)
+	for i := range blocks {
+		blocks[i] = mcp.Content{Type: "image", MIME: "image/png", Data: []byte("TEST-DATA")}
+	}
+	out = in.render("srv", "tool", blocks, false)
+	entries, _ := os.ReadDir(work)
+	if len(entries) > 1 {
+		t.Errorf("%d files written for blocks whose note could not be listed", len(entries))
+	}
+	if !strings.Contains(out, "0 saved in the work directory") && strings.Contains(out, "saved in the work directory but not listed") {
+		t.Errorf("blocks were saved without being listed:\n%s", out)
+	}
+}

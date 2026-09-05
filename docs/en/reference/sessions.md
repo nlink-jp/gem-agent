@@ -158,6 +158,21 @@ a capability and spent its concrete sentences on prohibitions.
   the file. It takes no arguments. A new save takes effect from the
   next session.
 
+## Work directories: `gem-agent workdirs` (ADR-0058, ADR-0059)
+
+Every session gets a work directory under the state root (exported
+as `GEMAGENT_WORK_DIR`); oversized MCP results and scratch output land
+there. At startup a note counts the earlier sessions' directories
+(`N earlier session work directories hold 12 MB here`); nothing is
+deleted automatically. `gem-agent workdirs` lists them with age, file
+count and size, and `gem-agent workdirs clean [id…]` deletes after a
+typed confirmation (`--yes` without a terminal), never a running
+session's. The scans are bounded: the listing stops at 10,000
+sessions and says so, a directory's count stops at 50,000 files and
+shows as `N+`, and the startup note shows `N+` / `12 MB+` when its
+numbers are lower bounds. `workdirs clean <id>` finds a session the
+cut listing did not reach.
+
 ## Session ids and `/clear` (ADR-0071)
 
 A session id is a UUID v4, unique on the machine; the listing shows its

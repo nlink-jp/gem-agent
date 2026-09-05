@@ -107,9 +107,10 @@ switched over without waiting — the change applies from the next tool
 call. Each mutating call then goes through:
 
 1. **Rule tier** (no model call): *safe* → runs; *blocked* → always
-   asks (`rm -rf`, `sudo`, `git push`, download-piped-to-shell, disk
-   writes, credential paths, anything outside the project and the
-   session work directory…);
+   asks (`rm -rf`, `sudo`, `osascript … with administrator privileges`,
+   `git push`, download-piped-to-shell, disk writes, credential paths,
+   anything outside the project and the session work directory…; a
+   plain `osascript` is *uncertain*, not blocked);
    *uncertain* → tier 2.
 2. **Model tier**: a separate evaluation round judges the proposed call
    (delivered to it as nonce-wrapped untrusted data, with no tools

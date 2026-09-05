@@ -522,3 +522,54 @@ func TestHEIFSniff(t *testing.T) {
 		t.Error("a forged .heic was accepted")
 	}
 }
+
+// Pre-release review: a window landing exactly on the cap says how
+// many of its lines were not shown; a complete line of exactly cap
+// bytes is not reported cut.
+func TestWindowDropsAreDisclosedAndExactLinesAreWhole(t *testing.T) {
+	var lines []string
+	for i := 0; i < 20; i++ {
+		lines = append(lines, strings.Repeat("x", 9)) // 10 bytes with the newline
+	}
+	content, note, err := readWindow(context.Background(), strings.NewReader(strings.Join(lines, "\n")+"\n"), 1, 20, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(content) > 110 { // one line past the cap is kept so the caller's byte marker fires
+		t.Errorf("content is %d bytes for cap 100", len(content))
+	}
+	if !strings.Contains(note, "more line(s) of the window not shown") {
+		t.Errorf("dropped lines not disclosed: %q", note)
+	}
+	got, cut, err := readLineCapped(bufio.NewReader(strings.NewReader(strings.Repeat("y", 100)+"\n")), 100)
+	if err != nil || cut || len(got) != 100 {
+		t.Errorf("exact-cap line: len=%d cut=%v err=%v", len(got), cut, err)
+	}
+}
+
+// The major brand decides HEIF: an AVIF or MP4 carrying mif1 in its
+// compatible list is not HEIF.
+func TestHEIFMajorBrandDecides(t *testing.T) {
+	box := func(major string, compat ...string) []byte {
+		size := 16 + 4*len(compat)
+		b := []byte{byte(size >> 24), byte(size >> 16), byte(size >> 8), byte(size), 'f', 't', 'y', 'p'}
+		b = append(b, []byte(major)...)
+		b = append(b, 0, 0, 0, 0)
+		for _, c := range compat {
+			b = append(b, []byte(c)...)
+		}
+		return append(b, make([]byte, 64)...)
+	}
+	if m := heifMIME(box("avif", "mif1", "miaf")); m != "" {
+		t.Errorf("avif read as %q", m)
+	}
+	if m := heifMIME(box("isom", "mif1", "mp41")); m != "" {
+		t.Errorf("mp4 read as %q", m)
+	}
+	if m := heifMIME(box("mif1", "heic")); m != "image/heic" {
+		t.Errorf("mif1+heic = %q", m)
+	}
+	if m := heifMIME(box("heic", "mif1")); m != "image/heic" {
+		t.Errorf("heic = %q", m)
+	}
+}

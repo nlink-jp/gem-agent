@@ -346,16 +346,18 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", workdir.EnvVar, err)
 			}
 			if dirs, bytes, more, err := workdir.Sweep(projectDir, sessionID); err == nil && dirs > 0 {
-				verb := "hold"
-				if dirs == 1 {
-					verb = "holds"
-				}
 				plus := ""
 				if more {
 					plus = "+" // the startup scan was cut: a lower bound
 				}
+				verb, noun := "hold", plural(dirs, "y", "ies")
+				if dirs == 1 && !more {
+					verb = "holds"
+				} else if more {
+					noun = "ies" // "1+ directories": a lower bound reads plural
+				}
 				fmt.Fprintf(stderr, "note: %d%s earlier session work director%s %s %s%s here — review with 'gem-agent workdirs' (nothing is deleted automatically)\n",
-					dirs, plus, plural(dirs, "y", "ies"), verb, humanBytes(bytes), plus)
+					dirs, plus, noun, verb, humanBytes(bytes), plus)
 			}
 		}
 	}

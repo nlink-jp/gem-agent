@@ -580,6 +580,38 @@ review-driven passes above and is recorded here.
   `show`, `status`, …) naming `.git` or an instruction file is a
   pathspec, not a write. Parser robustness (empty, unbalanced quotes,
   non-UTF-8, 140 KB scripts): no panic, linear time.
+- **File-layer reviewer**: a windowed `read_file` whose kept bytes
+  landed exactly on the cap dropped the rest of the window silently
+  (the marker keyed on content length) — the window note now counts
+  the lines not shown; a complete line of exactly cap bytes was
+  reported cut (the newline was counted) — fixed; `heifMIME` read an
+  AVIF or MP4 carrying `mif1` in its compatible list as HEIF — the
+  major brand decides, and only a generic `mif1`/`heif` major defers
+  to the compatible list. Recorded, not changed: a project symlink
+  pointing into the work directory is refused by `@` and `read_file`
+  (the root is chosen by the lexical path; `file_info` still describes
+  it) — rare, and the refusal is the safe side; the ignore rules'
+  `rel` computation for a work-directory walk is pre-existing.
+  Descriptor lifecycle (roots, files, `/dev/fd` counts across
+  hundreds of cycles), `O_NONBLOCK` on darwin, `Subset` rotation, and
+  every ordinary-use path were probed and found correct.
+- **cmd/mcp/docext reviewer**: a first MCP text block of exactly the
+  cap was charged a separator it does not need and lost its inline
+  rendering — the first piece pays none; a non-text block whose note
+  would not fit was still written to disk before being counted as
+  unlisted — the note is sized before the write (its path is
+  content-addressed) and nothing is saved that will not be listed;
+  the startup note's grammar with `1+`; the metadata-server control
+  test failed under `-count>1` (detection is memoised) — it runs once
+  per process. Documented for the user for the first time: the MCP
+  result budget and spill lines (integration reference), the
+  `workdirs` command and its cut notices (sessions reference), the
+  `osascript` policy (approval reference). Recorded, not changed: a
+  stale read loop closing a successor's `initialize` channel is a
+  window the sequential runtime does not open (pre-existing shape);
+  an over-1 MiB `.gem-agent.toml` refuses to start while an over-cap
+  `.mcp.json` is skipped with a warning — both announced, both
+  defensible.
 
 ## Lessons
 

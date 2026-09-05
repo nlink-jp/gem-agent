@@ -58,13 +58,19 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content, isErr bool
 	leftBinary, savedUnlisted := 0, 0
 	spend := func(piece string) bool {
 		// Every rendered piece — inline text, a spill preview and its
-		// path, a binary note, the separator — is paid from the one
-		// budget (review after v0.68.2, R06: previews of oversized
-		// blocks were free, and a hundred of them dwarfed the cap).
-		if len(piece)+1 > budget {
+		// path, a binary note — is paid from the one budget, plus the
+		// separator before it (review after v0.68.2, R06: previews of
+		// oversized blocks were free, and a hundred of them dwarfed the
+		// cap). The first piece pays no separator, so a block of exactly
+		// the cap still renders inline as it always did.
+		sep := 0
+		if len(parts) > 0 {
+			sep = 1
+		}
+		if len(piece)+sep > budget {
 			return false
 		}
-		budget -= len(piece) + 1
+		budget -= len(piece) + sep
 		parts = append(parts, piece)
 		return true
 	}
@@ -77,7 +83,9 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content, isErr bool
 			if len(b.Text) <= budget && spend(b.Text) {
 				continue
 			}
-			if len(b.Text) > in.cap {
+			if len(b.Text) > in.cap || len(parts) == 0 {
+				// Oversized, or the first block that does not fit: the
+				// preview path, so the reader sees its head.
 				if piece := in.spillText(server, tool, b.Text); spend(piece) {
 					continue
 				}
@@ -87,8 +95,11 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content, isErr bool
 		}
 		// A non-text block past the budget is neither saved nor
 		// described one by one (review after v0.68.2, R06: a note per
-		// block was itself unbounded); the leftovers are one line.
-		if budget < minBinaryNote {
+		// block was itself unbounded); the leftovers are one line. The
+		// note's length is known before the write — the path is
+		// content-addressed — so nothing is saved that will not be
+		// listed (pre-release review).
+		if len(b.Data) == 0 || len(in.binaryNote(server, tool, b, in.pathFor(server, tool, extForMIME(b.MIME, b.Type), b.Data)))+1 > budget {
 			leftBinary++
 			continue
 		}
@@ -117,10 +128,6 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content, isErr bool
 	}
 	return out
 }
-
-// minBinaryNote is the room a binary block's note needs; below it the
-// block is counted as a leftover without being saved.
-const minBinaryNote = 160
 
 // spillRest saves the text blocks past the response budget as one file
 // and tells the model where, with no preview.
@@ -166,10 +173,24 @@ func (in mcpIntake) binary(server, tool string, b mcp.Content) string {
 	if err != nil {
 		return fmt.Sprintf("[%s content (%d bytes, %s) could not be saved: %v]", b.Type, len(b.Data), b.MIME, err)
 	}
+	return in.binaryNote(server, tool, b, path)
+}
+
+// binaryNote is what the model reads for a saved non-text block; the
+// same text is sized before the write so the response budget can
+// refuse the block without saving it.
+func (in mcpIntake) binaryNote(_, _ string, b mcp.Content, path string) string {
 	if b.Type == "image" {
 		return fmt.Sprintf("[image saved at %s (%d bytes, %s) — use view_image on that path to look at it]", path, len(b.Data), b.MIME)
 	}
 	return fmt.Sprintf("[%s content saved at %s (%d bytes, %s)]", b.Type, path, len(b.Data), b.MIME)
+}
+
+// pathFor is the content-addressed path a block would be saved at.
+func (in mcpIntake) pathFor(server, tool, ext string, data []byte) string {
+	sum := sha256.Sum256(data)
+	name := fmt.Sprintf("%s-%s-%s%s", sanitizeToolName(server), sanitizeToolName(tool), hex.EncodeToString(sum[:4]), ext)
+	return filepath.Join(in.workDir(), name)
 }
 
 // write puts data in the session work directory under a name derived
@@ -181,9 +202,8 @@ func (in mcpIntake) write(server, tool, ext string, data []byte) (string, error)
 	if dir == "" {
 		return "", fmt.Errorf("no session work directory")
 	}
-	sum := sha256.Sum256(data)
-	name := fmt.Sprintf("%s-%s-%s%s", sanitizeToolName(server), sanitizeToolName(tool), hex.EncodeToString(sum[:4]), ext)
-	path := filepath.Join(dir, name)
+	path := in.pathFor(server, tool, ext, data)
+	name := filepath.Base(path)
 	if _, err := os.Stat(path); err == nil {
 		return path, nil
 	}

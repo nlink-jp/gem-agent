@@ -62,8 +62,20 @@ func TestGCPLoggerNeverProbesTheMetadataServer(t *testing.T) {
 	// fake host is what the library would reach. Detection is memoised
 	// process-wide, so this must stay the package's first Logger
 	// built without CommonResource.
-	client.Logger("control")
+	// Detection is memoised process-wide: a second run in the same
+	// process (-count, a race sweep) cannot observe the probe again, so
+	// the control leg runs once per process.
+	if !metadataControlRan {
+		metadataControlRan = true
+		client.Logger("control")
+	} else {
+		return
+	}
 	if hits.Load() == 0 {
 		t.Fatal("control: the library's resource detection never reached GCE_METADATA_HOST, so this test can no longer observe the probe it guards against — revisit it against the current cloud.google.com/go/logging")
 	}
 }
+
+// metadataControlRan records that the library's own detection path has
+// run in this process (see the control leg above).
+var metadataControlRan bool

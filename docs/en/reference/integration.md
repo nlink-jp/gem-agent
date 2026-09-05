@@ -75,6 +75,20 @@ a stdio MCP server, so the opt-in is just a `.mcp.json` entry:
 }
 ```
 
+### Large results
+
+A tool result is handed to the model within one response budget
+(the same 200 KB cap as tool output). A text block that does not fit
+is saved whole in the session work directory and replaced by its head
+and the path (`… [N bytes — too large to hold inline, so the whole
+result is saved. Read it, or narrow the call and ask again: read_file
+<path>]`); blocks past the budget are saved together in one file and
+announced in one line (`[N more text block(s), M bytes — past the
+response budget, saved whole …]`). Images and other binary blocks are
+saved and pointed at (`use view_image on that path`), never inlined;
+those past the budget are neither saved nor listed one by one — one
+line names how many. Without a work directory the loss is stated.
+
 ## Skills (ADR-0010, ADR-0011)
 
 gem-agent reads **Claude Code's skill format, as-is** — from its own
