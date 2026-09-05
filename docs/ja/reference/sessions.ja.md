@@ -127,13 +127,15 @@ API が返すのはトークン数であって金額ではない。したがっ�
 付ける:
 
     {"kind":"mcp_fault","data":{"server":"bigquery",
-     "tool":"mcp__bigquery__execute_sql_readonly","kind":"result",
+     "tool":"mcp__bigquery__execute_sql_readonly","kind":"result","sent":true,
      "count":3,"round":7,"error":"Required parameter is missing: query"}}
 
 `kind` は失敗の出所 — `result`（サーバーが応答をエラーと印した）、
 `rejected`（サーバーの JSON-RPC エラーオブジェクト）、`incomplete`（gem-agent が
-コールを完了できなかった: 転送・タイムアウト・終了）— で、以降の同一応答ごとに
-カウントを更新したレコードが繰り返される。そのツールの `message` レコードは
+コールを完了できなかった: 転送・タイムアウト・終了）— で、`sent` はコールの引数が
+そもそもサーバーへ書き出されたか（サーバーが起動しない・書き込めないときは
+false）を言い、以降の同一応答ごとにカウントを更新したレコードが繰り返される。
+そのツールの `message` レコードは
 注記を `runtime_note` に持つ。著者が gem-agent なので（`denial` と同じ信頼）
 送信時のラップはこのフィールドをノンスタグの外側に付ける。旧ビルドがこの
 transcript を resume するとフィールドを無視し、注記なしで結果を再生する。

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (draft for review) |
+| Status | **Accepted** (2026-09-06; §3 shipped in v0.71.0, §1 by operator decision the same day) |
 | Date | 2026-09-06 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

@@ -49,6 +49,12 @@ type RemoteError struct {
 	Tool   string
 	Kind   RemoteErrorKind
 	Text   string
+	// Sent records whether the call's arguments were written to the
+	// server. True for every result and rejection (the server answered
+	// the call); for an incomplete call it separates a timeout or exit
+	// after the request left from a server that could not be started
+	// or written to — the note says only what happened.
+	Sent bool
 }
 
 // Error renders the failure with its provenance; the executor adds the

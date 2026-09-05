@@ -736,9 +736,13 @@ a new hook) is an architecture change and takes the same rows as a
 - **A failed MCP call is a typed `tools.RemoteError`, never a string**
   (ADR-0075) — the adapter maps the server's `isError` result, the
   server's JSON-RPC error (an `*mcp.RPCError` inside `*mcp.CallError`)
-  and a transport cause to three kinds; the executor reads the kind
-  with `errors.As`, renders the provenance, and counts identical texts
-  per tool per turn (`remoteFault`). `llm.Message.RuntimeNote` and
+  and a transport cause to three kinds, and carries `Sent` — whether
+  the call's arguments were written to the server; an `RPCError` from a
+  call that was never sent is the server refusing to start, not a
+  rejection of the call. The executor reads the kind with `errors.As`,
+  renders the provenance, and counts identical texts per tool per turn
+  (`remoteFault`); the note has a variant for calls that never left.
+  `llm.Message.RuntimeNote` and
   `Denial` are the two provenance fields the wrap trusts — set only in
   `Agent.Run`; `TestProvenanceFieldsAreSetOnce` fails anywhere else.
   The note names the registry tool name, not the server's.

@@ -397,10 +397,65 @@ func TestRPCErrorIsTypedThroughCallError(t *testing.T) {
 	if !errors.As(err, &ce) || !errors.As(err, &rpc) {
 		t.Fatalf("err = %v (%T) — want a CallError carrying the RPCError", err, err)
 	}
-	if ce.Server != "fake" || ce.Tool != "q" || rpc.Code != -32602 || rpc.Message != "Invalid params" || ce.Err != error(rpc) {
-		t.Errorf("CallError = %+v, RPCError = %+v", *ce, *rpc)
+	if ce.Server != "fake" || ce.Tool != "q" || !ce.Sent || rpc.Code != -32602 || rpc.Message != "Invalid params" || ce.Err != error(rpc) {
+		t.Errorf("CallError = %+v, RPCError = %+v — a rejection of a sent call", *ce, *rpc)
 	}
 	if err.Error() != "mcp fake: q: rpc error -32602: Invalid params" {
 		t.Errorf("Error() = %q — the text shape is unchanged", err.Error())
+	}
+}
+
+// ADR-0075 §1 (pre-release review A-1): a server that refuses to start —
+// its initialize answered with a JSON-RPC error — has not rejected the
+// call; the call was never sent. CallError says so, and the RPCError is
+// still reachable as the cause.
+func TestInitializeRefusalIsNotSent(t *testing.T) {
+	f := &fakeServer{}
+	f.handler = func(f *fakeServer, method string, params json.RawMessage) ([]string, any, bool) {
+		if method == "initialize" {
+			f.mu.Lock()
+			id := f.received[len(f.received)-1].ID.String()
+			f.mu.Unlock()
+			return []string{fmt.Sprintf(`{"jsonrpc":"2.0","id":%s,"error":{"code":-32600,"message":"unsupported protocol"}}`, id)}, nil, false
+		}
+		r, ok := stdResult(method)
+		return nil, r, ok
+	}
+	c := newTestClient(f, 2*time.Second)
+	defer c.Close()
+
+	_, _, err := c.CallTool(context.Background(), "q", map[string]any{"x": 1})
+	var ce *CallError
+	var rpc *RPCError
+	if !errors.As(err, &ce) || !errors.As(err, &rpc) {
+		t.Fatalf("err = %v (%T) — want a CallError carrying the initialize RPCError", err, err)
+	}
+	if ce.Sent {
+		t.Errorf("Sent = true for a call whose server never started: %+v", *ce)
+	}
+	if rpc.Code != -32600 || !strings.Contains(ce.Err.Error(), "initialize") {
+		t.Errorf("cause = %v — must name initialize and carry the server's code", ce.Err)
+	}
+	if strings.HasPrefix(ce.Err.Error(), "mcp fake:") {
+		t.Errorf("cause repeats the server name the adapter already shows: %q", ce.Err.Error())
+	}
+}
+
+// A result the server answered but the client could not decode was sent.
+func TestUndecodableResultIsSent(t *testing.T) {
+	f := &fakeServer{}
+	f.handler = func(f *fakeServer, method string, params json.RawMessage) ([]string, any, bool) {
+		if method == "tools/call" {
+			return nil, "not an object", true
+		}
+		r, ok := stdResult(method)
+		return nil, r, ok
+	}
+	c := newTestClient(f, 2*time.Second)
+	defer c.Close()
+	_, _, err := c.CallTool(context.Background(), "q", nil)
+	var ce *CallError
+	if !errors.As(err, &ce) || !ce.Sent || !strings.HasPrefix(ce.Err.Error(), "result:") {
+		t.Errorf("err = %v — want a sent CallError whose cause is the decode failure", err)
 	}
 }

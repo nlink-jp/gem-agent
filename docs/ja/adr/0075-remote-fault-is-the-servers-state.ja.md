@@ -83,9 +83,13 @@
 オブジェクト（`-32602 Invalid params` など — これもサーバーの言葉だが、結果では
 なくエラーとして届く）、そしてランタイム失敗（転送・タイムアウト・終了・
 フレーミング）。MCP アダプタは全失敗を型付きの値 `*tools.RemoteError{Server,
-Tool, Kind, Text}` として `Run` のエラー戻りで返し、`mcp.Client.CallTool` は
-自身の失敗を型付きの `*mcp.CallError` で包むので、アダプタは文字列照合なしに
-`*mcp.RPCError` と転送原因を区別できる。実行器は `errors.As` で検出し
+Tool, Kind, Text, Sent}` として `Run` のエラー戻りで返し、`mcp.Client.CallTool` は
+自身のあらゆる失敗 — 起動しないサーバーも含む — を型付きの `*mcp.CallError` で
+包むので、アダプタは文字列照合なしに `*mcp.RPCError` と転送原因を区別できる。
+`Sent` はコールの引数がそもそもサーバーへ書き出されたかというクライアントの事実:
+拒絶とは送出されたコールをサーバーが拒むことであり、`initialize` に答える
+`RPCError` はサーバーが起動を拒んだのであって、そのコールは未完了かつ未送出
+（リリース前レビュー、§5）。実行器は `errors.As` で検出し
 （`RoundLimitError` の ADR-0040 規則）、監査 outcome と添付ガードが検査する
 `error:` 接頭辞を保って描画する:
 
@@ -143,13 +147,21 @@ intake（`mcpIntake.render`）は予算と退避の役目を保ち、自分で `
 > the user what you asked and what the server answered, and ask how to
 > proceed.
 
-gem-agent がコールを完了できなかった場合:
+送出したコールを gem-agent が完了できなかった場合:
 
 > gem-agent: 3 calls in a row to mcp__bigquery__execute_sql_readonly
 > could not be completed, each failing the same way (the result above
 > says how). gem-agent sent each call's arguments exactly as you wrote
 > them. Tell the user what you asked and what happened, and ask how to
 > proceed.
+
+コールがサーバーに届かなかった場合（サーバーが起動しない、書き込めない）、
+注記は送出を主張しない:
+
+> gem-agent: 3 calls in a row to mcp__bigquery__execute_sql_readonly
+> could not be completed — each failed before the call reached the
+> server (the result above says how). Tell the user what you asked and
+> what happened, and ask how to proceed.
 
 どちらの注記も誰の責任かを言わない。ランタイムが計測したのは 2 つの事実 —
 引数は無改変で出た、答えは繰り返された — で、レビュー（§5）は初稿の判定
@@ -163,7 +175,7 @@ gem-agent がコールを完了できなかった場合:
 
 `-p` では尋ねる相手がいない。モデルの報告がターンを終える — 拒否と同じ
 （ADR-0060）。`--auto` では操作者がいて報告を読む。transcript には閾値到達時と
-以降のヒットごとに `mcp_fault` レコード `{server, tool, kind, count, round,
+以降のヒットごとに `mcp_fault` レコード `{server, tool, kind, sent, count, round,
 error}`（error は切詰め）が入り、注記の効果をリリース後に測れる（§5、論点 2）。
 操作者には連続 1 回につき閾値で通知 1 行。テレメトリは不変: `tool.call` は
 既にコール毎の `outcome=error` を持つ。
@@ -209,6 +221,26 @@ fresh context の検証者によるコード検証つきレビュー（Seatbelt 
   下がるほど増える）。中段は v1 では無し。`mcp_fault` レコードが round を持ち、
   注記の効果を先に測る。ランタイム失敗も数え、専用の注記を持つ。
 
+リリース前の実装に対する 2 度目の独立パスが加えたもの:
+
+- **`Sent`。** `CallTool` は起動失敗を包まずに返していたため、`initialize` を
+  JSON-RPC エラーで拒むサーバーは「rejected the call」と描画され、3 回の再起動の
+  後に注記は引数を送ったと言った — 一度も出ていないのに。クライアントのあらゆる
+  失敗は `Sent` 付きの `CallError` で運ばれ、拒絶は送出されたコールを要し、未完了
+  の注記には送出を主張しない変種がある。テストは起動拒否・未書込のリクエスト・
+  復号できない結果を覆う。
+- **文言。** 承認リファレンスと RFP は「ラップを免除されるツール結果はちょうど
+  2 つ」と言っていたが、skill 本文も免除され（ADR-0010）、注記は結果を
+  アンラップしない — ラップされた結果の後に付く。どちらもそう言うよう改めた。
+- **resume。** 出所フィールドは transcript から `json.Unmarshal` で戻り、
+  アーキテクチャテストはそれを見ない。transcript は state ディレクトリにあり、
+  全レーンの書込到達範囲と file ツールのルートの外なので、これは ADR-0060 §3 が
+  `denial` について既に受け入れたクラスであって新しいものではない — 次の読者が
+  再発見しないようここに記す。
+- 記録のみ・変更なし: 起動失敗の原因文は phase を保つ（`initialize: rpc error …`）。
+  操作者通知は英語のみで `make labels` の走査外（エージェント層の通知すべてと
+  同じ）。CHANGELOG は ADR を引く（0.1.0 以来の全項目と同じ）。
+
 ## 検討した代替案
 
 - **エラー反復についてのプロンプト規則** — 却下。契機のない規則は発火せず
@@ -234,7 +266,9 @@ fresh context の検証者によるコード検証つきレビュー（Seatbelt 
   再生から注記が消えるだけで、安全性に影響なし。
 - カウンタはエージェント内でループガードのターン単位状態の隣に住み、毎ターン
   初期化される。
-- `mcp_fault` transcript レコードと、連続 1 回につき操作者通知 1 行。
+- `mcp_fault` transcript レコード（`sent` を含む）と、連続 1 回につき操作者通知
+  1 行。resume した transcript は両出所フィールドを書かれたまま復元する —
+  state ディレクトリは全レーンと全 file ツールの到達範囲の外（§5）。
 - テスト: カウンタ（行と別の文でリセット、拒否では不変、3 で発火し 4 でも
   発火、ツール単位）、ラップ（フィールドが設定されたときだけ注記がタグ外に
   乗る。注記と同文のツール結果はラップされたまま）、3 形の描画と `errors.As`

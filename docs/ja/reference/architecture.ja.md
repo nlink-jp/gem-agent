@@ -274,8 +274,8 @@ MCP にキャンセルは無いので、タイムアウトした呼び出しは�
 実行単位で `[mcp].enabled` を上書きする。
 
 skill（ADR-0010/0011）は MCP と同じ配置に従う: `~/.config/gem-agent/skills`
-（gem-agent 自身の置き場。Claude Code との共有はオペレータが張る symlink で、
-探索はそれを辿る）+ `<project>/.claude/skills`（共有）を Claude Code の形式で
+（gem-agent 自身の置き場。Claude Code 向けの skill はリンクせずコピーする —
+ADR-0076）+ `<project>/.claude/skills`（共有）を Claude Code の形式で
 読む。システムプロンプトには 1 件 1 行、本文は読み取り専用ツール `load_skill`
 で必要時に読むか `/skill <name>` で直接注入する。どちらも Claude Code と同じ行
 `Base directory for this skill: <dir>` で始まり、skill 自身のスクリプトを走らせられる

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
 	"testing"
@@ -95,15 +96,23 @@ func TestAdapterTypesRemoteFailuresByProvenance(t *testing.T) {
 		name string
 		stub *stubCaller
 		kind tools.RemoteErrorKind
+		sent bool
 		text string
 		head string
 	}{
 		{"isError result", &stubCaller{name: "srv", blocks: textBlock("quota exceeded"), isErr: true},
-			tools.RemoteResult, "quota exceeded", `MCP server "srv" answered q with an error:`},
-		{"rpc rejection", &stubCaller{name: "srv", err: &mcp.CallError{Server: "srv", Tool: "q", Err: &mcp.RPCError{Code: -32602, Message: "Invalid params"}}},
-			tools.RemoteRejected, "rpc error -32602: Invalid params", `MCP server "srv" rejected the call to q:`},
-		{"transport", &stubCaller{name: "srv", err: &mcp.CallError{Server: "srv", Tool: "q", Err: errors.New("tools/call timed out after 1s (server killed; it restarts on the next call)")}},
-			tools.RemoteIncomplete, "tools/call timed out after 1s (server killed; it restarts on the next call)", `gem-agent could not complete q on MCP server "srv":`},
+			tools.RemoteResult, true, "quota exceeded", `MCP server "srv" answered q with an error:`},
+		{"rpc rejection", &stubCaller{name: "srv", err: &mcp.CallError{Server: "srv", Tool: "q", Sent: true, Err: &mcp.RPCError{Code: -32602, Message: "Invalid params"}}},
+			tools.RemoteRejected, true, "rpc error -32602: Invalid params", `MCP server "srv" rejected the call to q:`},
+		{"transport after send", &stubCaller{name: "srv", err: &mcp.CallError{Server: "srv", Tool: "q", Sent: true, Err: errors.New("tools/call timed out after 1s (server killed; it restarts on the next call)")}},
+			tools.RemoteIncomplete, true, "tools/call timed out after 1s (server killed; it restarts on the next call)", `gem-agent could not complete q on MCP server "srv":`},
+		// The server refused to start: its initialize answered with an
+		// RPCError, but the call itself was never sent — not a rejection
+		// of the call (pre-release review A-1).
+		{"initialize refused", &stubCaller{name: "srv", err: &mcp.CallError{Server: "srv", Tool: "q", Err: fmt.Errorf("initialize: %w", &mcp.RPCError{Code: -32600, Message: "unsupported protocol"})}},
+			tools.RemoteIncomplete, false, "initialize: rpc error -32600: unsupported protocol", `gem-agent could not complete q on MCP server "srv":`},
+		{"not running", &stubCaller{name: "srv", err: &mcp.CallError{Server: "srv", Tool: "q", Err: errors.New("mcp srv: server not running")}},
+			tools.RemoteIncomplete, false, "mcp srv: server not running", `gem-agent could not complete q on MCP server "srv":`},
 	}
 	for _, c := range cases {
 		reg, err := tools.New(t.TempDir(), func(ctx context.Context, cmd string) *exec.Cmd {
@@ -121,8 +130,8 @@ func TestAdapterTypesRemoteFailuresByProvenance(t *testing.T) {
 		if out != "" || !errors.As(err, &re) {
 			t.Fatalf("%s: out=%q err=%v — a failed remote call must come back as a RemoteError", c.name, out, err)
 		}
-		if re.Kind != c.kind || re.Text != c.text || re.Server != "srv" || re.Tool != "q" {
-			t.Errorf("%s: got %+v, want kind %v text %q", c.name, *re, c.kind, c.text)
+		if re.Kind != c.kind || re.Sent != c.sent || re.Text != c.text || re.Server != "srv" || re.Tool != "q" {
+			t.Errorf("%s: got %+v, want kind %v sent %v text %q", c.name, *re, c.kind, c.sent, c.text)
 		}
 		if !strings.HasPrefix(re.Error(), c.head) {
 			t.Errorf("%s: rendered %q, want prefix %q", c.name, re.Error(), c.head)

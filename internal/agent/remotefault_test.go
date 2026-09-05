@@ -206,7 +206,7 @@ func TestRemoteFaultIsPerTool(t *testing.T) {
 
 // A failure gem-agent could not complete counts too, under its own note.
 func TestRemoteFaultIncompleteNote(t *testing.T) {
-	e := &tools.RemoteError{Server: "bigquery", Tool: "execute_sql_readonly", Kind: tools.RemoteIncomplete,
+	e := &tools.RemoteError{Server: "bigquery", Tool: "execute_sql_readonly", Kind: tools.RemoteIncomplete, Sent: true,
 		Text: "tools/call timed out after 30s (server killed; it restarts on the next call)"}
 	mb := &mockBackend{responses: []*llm.Response{
 		{ToolCalls: []llm.ToolCall{remoteCall("c1", faultTool, "select 1")}},
@@ -224,8 +224,8 @@ func TestRemoteFaultIncompleteNote(t *testing.T) {
 		t.Errorf("rendered %q", msgs[2].Content)
 	}
 	note := msgs[2].RuntimeNote
-	if !strings.Contains(note, "could not be completed") || strings.Contains(note, "answered") || strings.Contains(note, e.Text) {
-		t.Errorf("note = %q — the incomplete variant, without the cause repeated outside the tag", note)
+	if !strings.Contains(note, "could not be completed") || !strings.Contains(note, "sent each call's arguments") || strings.Contains(note, "answered") || strings.Contains(note, e.Text) {
+		t.Errorf("note = %q — the incomplete-after-send variant, without the cause repeated outside the tag", note)
 	}
 }
 
@@ -316,5 +316,104 @@ func TestRuntimeNoteRidesOutsideTheTagByProvenance(t *testing.T) {
 	}
 	if strings.Contains(note, "ADR-") {
 		t.Errorf("the note cites a design document: %q", note)
+	}
+}
+
+// dataLog keeps every record's data, for asserting the mcp_fault fields.
+type dataLog struct {
+	records []struct {
+		kind string
+		data any
+	}
+}
+
+func (l *dataLog) Log(kind string, data any) error {
+	l.records = append(l.records, struct {
+		kind string
+		data any
+	}{kind, data})
+	return nil
+}
+
+// A call that never reached the server (the server would not start, or
+// could not be written to) gets the third variant: no claim that the
+// arguments were sent (pre-release review A-1/A-2). The record carries
+// the provenance, the sent fact, the count and the round.
+func TestRemoteFaultNotSentNoteAndRecord(t *testing.T) {
+	e := &tools.RemoteError{Server: "bigquery", Tool: "execute_sql_readonly", Kind: tools.RemoteIncomplete, Sent: false,
+		Text: "initialize: rpc error -32600: unsupported protocol"}
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{remoteCall("c1", faultTool, "select 1")}},
+		{ToolCalls: []llm.ToolCall{remoteCall("c2", faultTool, "select 2")}},
+		{ToolCalls: []llm.ToolCall{remoteCall("c3", faultTool, "select 3")}},
+		{Content: "done"},
+	}}
+	reg, err := tools.New(t.TempDir(), func(ctx context.Context, command string) *exec.Cmd {
+		return exec.CommandContext(ctx, "/bin/true")
+	}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := &dataLog{}
+	a := New(Options{Backend: mb, Registry: reg, Gate: &approveAll{}, System: "test system", MaxTurns: 20, Log: log})
+	scriptRemote(t, reg, faultTool, e, e, e)
+	if _, err := a.Run(context.Background(), "q", nil); err != nil {
+		t.Fatal(err)
+	}
+	note := toolMessages(a)[2].RuntimeNote
+	if !strings.Contains(note, "before the call reached the server") || strings.Contains(note, "sent each call's arguments") {
+		t.Errorf("note = %q — a call that was never sent must not be described as sent", note)
+	}
+	var rec map[string]any
+	for _, r := range log.records {
+		if r.kind == "mcp_fault" {
+			rec = r.data.(map[string]any)
+		}
+	}
+	if rec == nil {
+		t.Fatal("no mcp_fault record")
+	}
+	if rec["server"] != "bigquery" || rec["tool"] != faultTool || rec["kind"] != "incomplete" || rec["sent"] != false ||
+		rec["count"] != 3 || rec["error"] != e.Text {
+		t.Errorf("mcp_fault record = %v", rec)
+	}
+	if r, ok := rec["round"].(int); !ok || r < 2 {
+		t.Errorf("round = %v — the third call is at least round 2", rec["round"])
+	}
+}
+
+// A pre-tool hook's refusal, like a gate denial, is not an outcome of
+// the server: the streak resumes on the next answer (ADR-0075 §2).
+func TestRemoteFaultIgnoresHookDenials(t *testing.T) {
+	e := serverErr("Required parameter is missing: query")
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{remoteCall("c1", faultTool, "select 1")}},
+		{ToolCalls: []llm.ToolCall{remoteCall("c2", faultTool, "select 2")}},
+		{ToolCalls: []llm.ToolCall{remoteCall("c3", faultTool, "select 3")}}, // hook refuses
+		{ToolCalls: []llm.ToolCall{remoteCall("c4", faultTool, "select 4")}},
+		{Content: "done"},
+	}}
+	reg, err := tools.New(t.TempDir(), func(ctx context.Context, command string) *exec.Cmd {
+		return exec.CommandContext(ctx, "/bin/true")
+	}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	a := New(Options{Backend: mb, Registry: reg, Gate: &approveAll{}, System: "test system", MaxTurns: 20,
+		PreToolHook: func(ctx context.Context, name string, args map[string]any) (bool, string) {
+			calls++
+			return calls == 3, "not now"
+		}})
+	scriptRemote(t, reg, faultTool, e, e, e)
+	if _, err := a.Run(context.Background(), "q", nil); err != nil {
+		t.Fatal(err)
+	}
+	msgs := toolMessages(a)
+	if len(msgs) != 4 || !strings.HasPrefix(msgs[2].Content, "denied by a pre-tool hook") || msgs[2].RuntimeNote != "" {
+		t.Fatalf("the third call was not a hook refusal: %+v", msgs[2])
+	}
+	if !strings.Contains(msgs[3].RuntimeNote, "3 times in a row") {
+		t.Errorf("note after the hook refusal = %q — the refusal must leave the streak of two intact", msgs[3].RuntimeNote)
 	}
 }

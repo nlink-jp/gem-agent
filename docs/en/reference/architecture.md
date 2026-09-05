@@ -308,8 +308,8 @@ the system prompt's skill section follow, and the reload is audited;
 `--mcp on|off` overrides `[mcp].enabled` per run.
 
 Skills (ADR-0010/0011) follow the same arrangement as MCP:
-`~/.config/gem-agent/skills` (gem-agent's own; sharing with Claude Code
-is an operator-made symlink, which discovery follows) plus
+`~/.config/gem-agent/skills` (gem-agent's own; a skill installed for
+Claude Code is copied in, not linked — ADR-0076) plus
 `<project>/.claude/skills` (shared), in Claude Code's format. One
 description line each in the system prompt, bodies loaded on demand via
 the read-only `load_skill` tool or injected directly by `/skill <name>`; either

@@ -39,13 +39,51 @@ func (e *RPCError) Error() string {
 // CallError is a tools/call that did not return a result (ADR-0075 §1):
 // Err is either the server's *RPCError — the server's own words,
 // delivered as a rejection — or a cause of gem-agent's own (transport,
-// timeout, exit, framing). The adapter tells the two apart with
-// errors.As, never by matching text.
+// timeout, exit, framing). Sent records whether the tools/call request
+// with the model's arguments was written to the server: false when the
+// server could not be started (its initialize may itself have been
+// refused with an RPCError — that is not a rejection of the call) or
+// the request could not be written. The adapter reads both facts by
+// type, never by matching text.
 type CallError struct {
 	Server string
 	Tool   string
 	Err    error
+	Sent   bool
 }
+
+// startError is an ensureStarted failure: the server could not be
+// spawned (Phase ""), or refused initialize or the initialized
+// notification. Its text is the one ListTools always showed; CallTool
+// hands the adapter the cause under the server's name instead.
+type startError struct {
+	Server string
+	Phase  string
+	Err    error
+}
+
+func (e *startError) Error() string {
+	if e.Phase == "" {
+		return fmt.Sprintf("mcp %s: %v", e.Server, e.Err)
+	}
+	return fmt.Sprintf("mcp %s: %s: %v", e.Server, e.Phase, e.Err)
+}
+
+func (e *startError) Unwrap() error { return e.Err }
+
+// cause is the failure without the server's name, the phase kept.
+func (e *startError) cause() error {
+	if e.Phase == "" {
+		return e.Err
+	}
+	return fmt.Errorf("%s: %w", e.Phase, e.Err)
+}
+
+// notSentError marks a request that never reached the server's stdin.
+type notSentError struct{ err error }
+
+func (e *notSentError) Error() string { return e.err.Error() }
+func (e *notSentError) Unwrap() error { return e.err }
 
 func (e *CallError) Error() string {
 	return fmt.Sprintf("mcp %s: %s: %v", e.Server, e.Tool, e.Err)
@@ -180,7 +218,7 @@ func (c *Client) ensureStarted(ctx context.Context) error {
 	stdin, stdout, kill, err := c.spawn()
 	if err != nil {
 		c.mu.Unlock()
-		return fmt.Errorf("mcp %s: %w", c.name, err)
+		return &startError{Server: c.name, Err: err}
 	}
 	c.stdin = stdin
 	c.kill = kill
@@ -199,13 +237,13 @@ func (c *Client) ensureStarted(ctx context.Context) error {
 	}
 	if _, err := c.rawCall(ctx, "initialize", initParams); err != nil {
 		c.shutdown()
-		return fmt.Errorf("mcp %s: initialize: %w", c.name, err)
+		return &startError{Server: c.name, Phase: "initialize", Err: err}
 	}
 	if err := c.send(map[string]any{
 		"jsonrpc": "2.0", "method": "notifications/initialized", "params": map[string]any{},
 	}, -1); err != nil {
 		c.shutdown()
-		return fmt.Errorf("mcp %s: initialized notification: %w", c.name, err)
+		return &startError{Server: c.name, Phase: "initialized notification", Err: err}
 	}
 	return nil
 }
@@ -339,7 +377,7 @@ func (c *Client) rawCall(ctx context.Context, method string, params any) (json.R
 		c.pmu.Lock()
 		delete(c.pending, id)
 		c.pmu.Unlock()
-		return nil, err
+		return nil, &notSentError{err: err}
 	}
 
 	tctx, cancel := context.WithTimeout(ctx, c.timeout)
@@ -439,14 +477,25 @@ type Content struct {
 // and this package knows nothing about where that is.
 func (c *Client) CallTool(ctx context.Context, tool string, args map[string]any) ([]Content, bool, error) {
 	if err := c.ensureStarted(ctx); err != nil {
-		return nil, false, err
+		// Not sent: the call never left. The adapter shows the cause
+		// under the server's name, so the start failure is handed over
+		// without the name and with its phase (initialize, spawn).
+		var se *startError
+		if errors.As(err, &se) {
+			err = se.cause()
+		}
+		return nil, false, &CallError{Server: c.name, Tool: tool, Err: err}
 	}
 	if args == nil {
 		args = map[string]any{}
 	}
 	res, err := c.rawCall(ctx, "tools/call", map[string]any{"name": tool, "arguments": args})
 	if err != nil {
-		return nil, false, &CallError{Server: c.name, Tool: tool, Err: err}
+		var ns *notSentError
+		if errors.As(err, &ns) {
+			return nil, false, &CallError{Server: c.name, Tool: tool, Err: ns.err}
+		}
+		return nil, false, &CallError{Server: c.name, Tool: tool, Err: err, Sent: true}
 	}
 	var out struct {
 		Content []struct {
@@ -458,7 +507,7 @@ func (c *Client) CallTool(ctx context.Context, tool string, args map[string]any)
 		IsError bool `json:"isError"`
 	}
 	if err := json.Unmarshal(res, &out); err != nil {
-		return nil, false, &CallError{Server: c.name, Tool: tool, Err: fmt.Errorf("result: %w", err)}
+		return nil, false, &CallError{Server: c.name, Tool: tool, Err: fmt.Errorf("result: %w", err), Sent: true}
 	}
 	blocks := make([]Content, 0, len(out.Content))
 	for _, item := range out.Content {

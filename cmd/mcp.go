@@ -87,18 +87,24 @@ func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Too
 				// inside the call error; anything else is a failure of
 				// gem-agent's own to complete the call.
 				if err != nil {
-					kind, text := tools.RemoteIncomplete, err.Error()
-					var rpc *mcp.RPCError
-					if errors.As(err, &rpc) {
-						kind, text = tools.RemoteRejected, rpc.Error()
-					} else if ce := (*mcp.CallError)(nil); errors.As(err, &ce) && ce.Err != nil {
-						text = ce.Err.Error()
+					re := &tools.RemoteError{Server: client.Name(), Tool: remoteName, Kind: tools.RemoteIncomplete, Text: err.Error()}
+					var ce *mcp.CallError
+					if errors.As(err, &ce) && ce.Err != nil {
+						re.Text, re.Sent = ce.Err.Error(), ce.Sent
 					}
-					return "", &tools.RemoteError{Server: client.Name(), Tool: remoteName, Kind: kind, Text: text}
+					// A rejection is the server refusing THIS call. An
+					// RPCError from a call that was never sent is the
+					// server refusing to start (initialize) — the call
+					// is incomplete, and the cause says why.
+					var rpc *mcp.RPCError
+					if re.Sent && errors.As(err, &rpc) {
+						re.Kind, re.Text = tools.RemoteRejected, rpc.Error()
+					}
+					return "", re
 				}
 				text := intake.render(client.Name(), remoteName, blocks)
 				if isErr {
-					return "", &tools.RemoteError{Server: client.Name(), Tool: remoteName, Kind: tools.RemoteResult, Text: text}
+					return "", &tools.RemoteError{Server: client.Name(), Tool: remoteName, Kind: tools.RemoteResult, Text: text, Sent: true}
 				}
 				return text, nil
 			},

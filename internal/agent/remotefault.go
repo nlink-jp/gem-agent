@@ -50,7 +50,7 @@ func (a *Agent) remoteFault(name string, remote *tools.RemoteError, ran bool, ro
 		return ""
 	}
 	a.logRecord("mcp_fault", map[string]any{
-		"server": remote.Server, "tool": name, "kind": remote.Kind.String(),
+		"server": remote.Server, "tool": name, "kind": remote.Kind.String(), "sent": remote.Sent,
 		"count": f.count, "round": round, "error": clip(remote.Text, 300),
 	})
 	if f.count == mcpFaultThreshold {
@@ -71,6 +71,10 @@ func remoteFaultNote(name string, remote *tools.RemoteError, count int) string {
 		return fmt.Sprintf("gem-agent: MCP server %q has answered %s with this same error %d times in a row. gem-agent sent each call's arguments to the server exactly as you wrote them, removing only its own %s field. Tell the user what you asked and what the server answered, and ask how to proceed.",
 			remote.Server, name, count, PurposeArg)
 	}
-	return fmt.Sprintf("gem-agent: %d calls in a row to %s could not be completed, each failing the same way (the result above says how). gem-agent sent each call's arguments exactly as you wrote them. Tell the user what you asked and what happened, and ask how to proceed.",
+	if remote.Sent {
+		return fmt.Sprintf("gem-agent: %d calls in a row to %s could not be completed, each failing the same way (the result above says how). gem-agent sent each call's arguments exactly as you wrote them. Tell the user what you asked and what happened, and ask how to proceed.",
+			count, name)
+	}
+	return fmt.Sprintf("gem-agent: %d calls in a row to %s could not be completed — each failed before the call reached the server (the result above says how). Tell the user what you asked and what happened, and ask how to proceed.",
 		count, name)
 }

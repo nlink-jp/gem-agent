@@ -95,10 +95,15 @@ result; the server's JSON-RPC error object (`-32602 Invalid params`
 and kin — the server's words too, delivered as an error, not a
 result); and a runtime failure (transport, timeout, exit, framing).
 The MCP adapter returns every failure as a typed value,
-`*tools.RemoteError{Server, Tool, Kind, Text}`, through `Run`'s error
-return, and `mcp.Client.CallTool` wraps its own failures in a typed
-`*mcp.CallError` so the adapter can tell an `*mcp.RPCError` from a
-transport cause without matching text. The executor detects the value
+`*tools.RemoteError{Server, Tool, Kind, Text, Sent}`, through `Run`'s
+error return, and `mcp.Client.CallTool` wraps every failure of its own
+in a typed `*mcp.CallError` — including a server that would not start —
+so the adapter can tell an `*mcp.RPCError` from a transport cause
+without matching text. `Sent` is the client's fact whether the call's
+arguments were written to the server at all: a rejection is the server
+refusing a call that was sent; an `RPCError` answering `initialize` is
+the server refusing to start, and the call is incomplete and unsent
+(pre-release review, §5). The executor detects the value
 with `errors.As` — the ADR-0040 rule for `RoundLimitError` — and
 renders it, keeping the `error:` prefix the audit outcome and the
 attach guards test:
@@ -164,13 +169,21 @@ the server-supplied name. Where the server spoke (result or rejection):
 > the user what you asked and what the server answered, and ask how to
 > proceed.
 
-Where gem-agent could not complete the call:
+Where gem-agent could not complete a call it had sent:
 
 > gem-agent: 3 calls in a row to mcp__bigquery__execute_sql_readonly
 > could not be completed, each failing the same way (the result above
 > says how). gem-agent sent each call's arguments exactly as you wrote
 > them. Tell the user what you asked and what happened, and ask how to
 > proceed.
+
+Where the call never reached the server (the server would not start,
+or could not be written to), the note claims no sending:
+
+> gem-agent: 3 calls in a row to mcp__bigquery__execute_sql_readonly
+> could not be completed — each failed before the call reached the
+> server (the result above says how). Tell the user what you asked and
+> what happened, and ask how to proceed.
 
 Neither note says whose fault it is. The runtime measured two facts —
 the arguments left unchanged, the answer repeated — and the review (§5)
@@ -188,7 +201,7 @@ action are the whole instruction.
 In `-p` there is nobody to ask; the model's report ends the turn, as a
 denial does (ADR-0060). In `--auto` the operator is present and reads
 the report. The transcript gets an `mcp_fault` record `{server, tool,
-kind, count, round, error}` (error clipped) at the threshold and on
+kind, sent, count, round, error}` (error clipped) at the threshold and on
 every further hit, so the note's effect can be measured after release
 (§5, decision point 2); the operator sees one notice per streak at the
 threshold. Telemetry is unchanged: `tool.call` already carries
@@ -243,6 +256,31 @@ and behaviour claim re-run, produced these changes to the first draft:
   round so the note's effect can be measured first. Runtime failures
   are counted, under their own note.
 
+A second independent pass over the implementation, before release,
+added:
+
+- **`Sent`.** `CallTool` returned a start failure unwrapped, so a server
+  refusing `initialize` with a JSON-RPC error rendered as "rejected the
+  call" and, after three restarts, the note said the arguments had been
+  sent — they had never left. Every failure of the client now travels in
+  `CallError` with `Sent`; a rejection requires a sent call; the
+  incomplete note has a variant that claims no sending. Tests cover the
+  start refusal, the unwritten request and the undecodable result.
+- **Wording.** The approval reference and the RFP said "exactly two
+  tool results skip the wrap"; skill bodies skip it too (ADR-0010), and
+  the note does not unwrap the result — it is appended after the
+  wrapped result. Both now say so.
+- **Resume.** The provenance fields come back from the transcript
+  through `json.Unmarshal`, which the architecture test does not see.
+  The transcript lives in the state directory, outside every lane's
+  write reach and outside the file tools' roots, so this is the class
+  ADR-0060 §3 already accepted for `denial`, not a new one — recorded
+  here so the next reader does not rediscover it.
+- Recorded, not changed: a start failure's cause still carries the
+  phase (`initialize: rpc error …`); the operator notice is English-only
+  and outside `make labels`' walk, like every agent-level notice; the
+  CHANGELOG cites the ADR, as every entry since 0.1.0 does.
+
 ## Alternatives considered
 
 - **A prompt rule about repeated errors** — rejected. A rule without a
@@ -272,7 +310,10 @@ and behaviour claim re-run, produced these changes to the first draft:
   the field: the note is missing from the replay, safety unaffected.
 - The counter lives in the agent beside the loop guard's per-turn
   state and starts fresh with every turn.
-- The `mcp_fault` transcript record and one operator notice per streak.
+- The `mcp_fault` transcript record (`sent` included) and one operator
+  notice per streak. A resumed transcript restores both provenance
+  fields as written — the state directory is outside every lane's and
+  every file tool's reach (§5).
 - Tests: the counter (reset on rows and on a different text, untouched
   by a denial, fires at 3 and again at 4, per tool); the wrap (the note
   rides outside the tag exactly when the field is set; a tool result

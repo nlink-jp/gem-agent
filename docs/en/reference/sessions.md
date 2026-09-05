@@ -133,14 +133,16 @@ error text within a turn — whatever the arguments — the executor writes
 an `mcp_fault` record and appends a note for the model:
 
     {"kind":"mcp_fault","data":{"server":"bigquery",
-     "tool":"mcp__bigquery__execute_sql_readonly","kind":"result",
+     "tool":"mcp__bigquery__execute_sql_readonly","kind":"result","sent":true,
      "count":3,"round":7,"error":"Required parameter is missing: query"}}
 
 `kind` is the failure's provenance — `result` (the server marked its
 answer an error), `rejected` (the server's JSON-RPC error object) or
 `incomplete` (gem-agent could not complete the call: transport, timeout,
-exit) — and the record repeats on every further identical answer with
-the count updated. The tool's `message` record carries the note in
+exit) — `sent` says whether the call's arguments were written to the
+server at all (false when the server would not start or could not be
+written to), and the record repeats on every further identical answer
+with the count updated. The tool's `message` record carries the note in
 `runtime_note`, a field the send-time wrap appends outside the nonce tag
 because its author is gem-agent (the same trust as `denial`). An older
 build resuming such a transcript ignores the field and replays the
