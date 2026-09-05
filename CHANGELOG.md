@@ -10,6 +10,16 @@
   help state the fact and the next command, nothing else. An
   architecture test now fails on any operator- or model-facing string
   literal that cites an ADR number
+- The first label read-through (`make labels`) reworded 44 lines: the
+  approval buttons say "allow this session (a)" / "allow permanently
+  (p)" and the key hints list `p`; the trust prompt and notes say
+  "trusted files" and carry their verb in each language; errors name
+  the next step (`--resume` in the right directory, `--model`,
+  `/skills`, the clipboard shortcut, the config key to fix); the
+  `--resume` flag renders as `--resume string` again; work-directory
+  counts read "3 dir(s)" instead of assembled word fragments; one term
+  each for sessions, risk rules, auto-approve and the summary model;
+  Japanese status and heartbeat lines are Japanese
 
 ### Changed
 

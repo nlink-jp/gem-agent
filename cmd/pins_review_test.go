@@ -21,7 +21,7 @@ func TestCheckPinsWithoutPinsIsInteractiveOnly(t *testing.T) {
 	msgs := uitext.For(uitext.EN)
 	var out bytes.Buffer
 	ex, notes := checkPins(cfg, pf, policyPath, proj, true, false, nil, &out, msgs)
-	if ex != nil || len(notes) != 1 || !strings.Contains(notes[0], "no pins recorded") {
+	if ex != nil || len(notes) != 1 || !strings.Contains(notes[0], "recorded yet") {
 		t.Fatalf("non-interactive first use: excluded=%v notes=%v", ex, notes)
 	}
 	if pf.HasPins(proj) {
@@ -48,7 +48,7 @@ func TestCheckPinsEmptySetIsRecorded(t *testing.T) {
 	}
 	msgs := uitext.For(uitext.EN)
 	var out bytes.Buffer
-	if _, notes := checkPins(cfg, pf, policyPath, proj, true, true, strings.NewReader(""), &out, msgs); len(notes) != 1 || !strings.Contains(notes[0], "pinned 0 file(s)") {
+	if _, notes := checkPins(cfg, pf, policyPath, proj, true, true, strings.NewReader(""), &out, msgs); len(notes) != 1 || !strings.Contains(notes[0], "0 file(s) recorded") {
 		t.Fatalf("empty project first use: %v", notes)
 	}
 	disk, err := config.LoadPolicyFile(policyPath)
@@ -200,7 +200,7 @@ func TestTrustReport(t *testing.T) {
 		t.Errorf("no pins: err=%v out=%q", err, out.String())
 	}
 	out.Reset()
-	if err := trustReport(proj, cfgPath, true, &out); err != nil || !strings.Contains(out.String(), "pinned 2 file(s): .mcp.json, AGENTS.md") {
+	if err := trustReport(proj, cfgPath, true, &out); err != nil || !strings.Contains(out.String(), "2 file(s) recorded as trusted: .mcp.json, AGENTS.md") {
 		t.Errorf("--accept: err=%v out=%q", err, out.String())
 	}
 	if err := os.WriteFile(filepath.Join(proj, "AGENTS.md"), []byte("v2\n"), 0o644); err != nil {
@@ -211,7 +211,7 @@ func TestTrustReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := out.String()
-	if !strings.Contains(s, "pins: 2 recorded (") || !strings.Contains(s, "AGENTS.md") || !strings.Contains(s, "changed") || !strings.Contains(s, "not loaded until re-trusted") {
+	if !strings.Contains(s, "trusted files: 2 recorded (") || !strings.Contains(s, "AGENTS.md") || !strings.Contains(s, "changed") || !strings.Contains(s, "not loaded until re-trusted") {
 		t.Errorf("report = %q", s)
 	}
 	_ = pf

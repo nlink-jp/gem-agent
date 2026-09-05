@@ -116,7 +116,7 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 			return nil
 		}
 		for _, s := range skipped {
-			fmt.Fprintf(stderr, "warning: skipping %s MCP server %s\n", scope, s)
+			fmt.Fprintf(stderr, "warning: %s MCP server skipped: %s\n", scope, s)
 		}
 		return servers
 	}

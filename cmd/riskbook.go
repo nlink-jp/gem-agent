@@ -125,7 +125,7 @@ func (r *riskbookRunner) draft(ctx context.Context, rep riskbook.Report) (string
 	tag := guard.NewTagWithPrefix("decision_record")
 	wrapped, err := tag.Wrap(riskbook.RenderEnumeration(rep))
 	if err != nil {
-		return "", fmt.Errorf("isolation failed: %w", err)
+		return "", fmt.Errorf("the decision records contain text that looks like a prompt tag — write the rules by hand (%w)", err)
 	}
 	prompt := fmt.Sprintf(riskbookLearnPrompt, r.langName, 3000)
 	resp, err := r.backend.ChatStream(ctx, tag.Expand(prompt),

@@ -45,8 +45,8 @@ var workdirsCleanCmd = &cobra.Command{
 session is not currently running when no ids are given.
 
 The exact list — ids, sizes, total — is printed and confirmed before
-anything is removed; EOF or anything but 'y' aborts. A directory whose
-session holds its transcript open (a live gem-agent) is skipped.`,
+anything is removed; EOF or anything but 'y' aborts. A directory that
+belongs to a running gem-agent is skipped.`,
 	SilenceUsage: true,
 	RunE:         runWorkdirsClean,
 }
@@ -101,8 +101,8 @@ func runWorkdirsList(cmd *cobra.Command, _ []string) error {
 		total += in.Bytes
 	}
 	_ = tw.Flush()
-	fmt.Fprintf(out, "total: %s in %d director%s — delete with 'gem-agent workdirs clean'\n",
-		humanBytes(total), len(infos), plural(len(infos), "y", "ies"))
+	fmt.Fprintf(out, "total: %s in %d dir(s) — delete with 'gem-agent workdirs clean'\n",
+		humanBytes(total), len(infos))
 	return nil
 }
 
@@ -166,11 +166,11 @@ func runWorkdirsClean(cmd *cobra.Command, args []string) error {
 
 	var total int64
 	for _, in := range picked {
-		fmt.Fprintf(out, "  %s  %s (%d file%s)\n", in.ID, humanBytes(in.Bytes), in.Files, plural(in.Files, "", "s"))
+		fmt.Fprintf(out, "  %s  %s (%d file(s))\n", in.ID, humanBytes(in.Bytes), in.Files)
 		total += in.Bytes
 	}
-	fmt.Fprintf(out, "delete %d director%s, %s in total? [y/N] ",
-		len(picked), plural(len(picked), "y", "ies"), humanBytes(total))
+	fmt.Fprintf(out, "delete %d dir(s), %s in total? [y/N] ",
+		len(picked), humanBytes(total))
 	if !flagWorkdirsYes {
 		// Deny on EOF and on a non-TTY, the approval gate's stance: a
 		// pipe that says nothing has not said yes — and a pipe that says
@@ -221,15 +221,6 @@ func humanAge(t time.Time) string {
 	default:
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
-}
-
-// plural picks the suffix for one-vs-many. Tiny, but the startup note
-// shipped with "1 directory hold" — grammar is part of the contract too.
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
 }
 
 // workdirsStdinIsTerminal decides whether a typed answer counts; tests

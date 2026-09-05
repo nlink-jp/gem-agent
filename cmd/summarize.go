@@ -58,7 +58,7 @@ func registerSummarizeTool(registry *tools.Registry, backend llm.Backend, modelN
 			tag := guard.NewTagWithPrefix("file")
 			wrapped, err := tag.Wrap(content)
 			if err != nil {
-				return "", fmt.Errorf("isolation failed: adversarial tag content in %s", p)
+				return "", fmt.Errorf("%s contains text that looks like a prompt tag and cannot be summarised safely — read it directly", p)
 			}
 			ask := fmt.Sprintf("Summarise the file %q.", p)
 			if focus, _ := args["focus"].(string); strings.TrimSpace(focus) != "" {
@@ -67,7 +67,7 @@ func registerSummarizeTool(registry *tools.Registry, backend llm.Backend, modelN
 			resp, err := backend.ChatStream(ctx, tag.Expand(summarizePrompt),
 				[]llm.Message{{Role: llm.RoleUser, Content: ask + "\n\n" + wrapped}}, nil, nil)
 			if err != nil {
-				return "", fmt.Errorf("summariser (%s): %w", modelName, err)
+				return "", fmt.Errorf("summary model (%s): %w", modelName, err)
 			}
 			if tally != nil {
 				tally.add("summarize_file", modelName, resp.PromptTokens, resp.OutputTokens, resp.ToolPromptTokens)
@@ -86,7 +86,7 @@ func registerSummarizeTool(registry *tools.Registry, backend llm.Backend, modelN
 				if reason == "" {
 					reason = resp.FinishReason
 				}
-				return "", fmt.Errorf("summariser (%s) returned nothing (%s) — read the file directly instead", modelName, reason)
+				return "", fmt.Errorf("summary model (%s) returned nothing (%s) — read the file directly instead", modelName, reason)
 			}
 			return fmt.Sprintf("Summary of %s (by %s — lossy; read_file for exact text):\n\n%s",
 				p, modelName, summary), nil

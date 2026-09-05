@@ -75,18 +75,16 @@ func Execute(version string) {
 var rootCmd = &cobra.Command{
 	Use:   "gem-agent [first message]",
 	Short: "Minimal, sandboxed CLI agent runtime backed by Vertex AI Gemini",
-	Long: `gem-agent is an independent, deliberately minimal CLI agent runtime
-backed by Vertex AI Gemini 3.x: an auditable loop of file read/write,
-sandboxed command execution, and MCP server connectivity, with mutating
-calls gated behind per-call approval. It is drop-in compatible with the
-agent ecosystem's conventions — AGENTS.md / CLAUDE.md instruction
-files, Claude Code-format .mcp.json and skills — so a project needs no
-gem-agent-specific setup.
+	Long: `gem-agent is a sandboxed CLI agent backed by Vertex AI Gemini: file
+read/write, sandboxed shell commands and MCP servers, with mutating calls
+asking for your approval. It reads a project's AGENTS.md / CLAUDE.md,
+Claude Code-format .mcp.json and skills as they are — no gem-agent-specific
+setup.
 
-The current working directory is the project: file access is confined to
-it, and shell file-writes are restricted to it by macOS sandbox-exec.
+The current working directory is the project: file tools stay inside it,
+and sandboxed shell commands cannot write outside it.
 
-macOS only. See docs/ for the RFP and design records.`,
+macOS only. Documentation: README.md.`,
 	// One optional positional argument: the first interactive turn
 	// (ADR-0064). It runs through the same path a typed message takes,
 	// then the session is ordinary interactive gem-agent.
@@ -101,11 +99,11 @@ func init() {
 	rootCmd.Flags().StringVar(&flagThinking, "thinking", "", "override [model].thinking for this run: minimal|low|medium|high, or 'default' to clear a configured level (supported levels are model-dependent)")
 	rootCmd.Flags().StringVar(&flagMCP, "mcp", "", "override [mcp].enabled for this run: on|off (off skips every MCP server spawn — useful for -p pipelines)")
 	rootCmd.Flags().BoolVar(&flagNoSandbox, "no-sandbox", false, "disable the sandbox-exec wrapper for shell_exec (debugging only, unsafe)")
-	rootCmd.Flags().StringVarP(&flagPrompt, "prompt", "p", "", "one-shot mode: run this prompt and exit (mutating tools are denied unless granted with --allow or armed with --auto)")
-	rootCmd.Flags().BoolVar(&flagAuto, "auto", false, "start in auto-approve mode; the only way to arm it in one-shot -p, where [agent].auto_approve is ignored")
-	rootCmd.Flags().StringSliceVar(&flagAllow, "allow", nil, `per-run approval grants: tool names or mcp__server__* prefixes that never ask this run (repeatable or comma-separated; the Block floor still applies)`)
+	rootCmd.Flags().StringVarP(&flagPrompt, "prompt", "p", "", "one-shot: run this prompt and exit; mutating tools are denied unless listed in --allow or --auto is set")
+	rootCmd.Flags().BoolVar(&flagAuto, "auto", false, "start in auto-approve mode (required for auto-approve in -p, where [agent].auto_approve is ignored)")
+	rootCmd.Flags().StringSliceVar(&flagAllow, "allow", nil, `tools that never ask this run: tool names or mcp__server__* prefixes (repeatable or comma-separated); blocked commands still ask`)
 	rootCmd.Flags().BoolVarP(&flagContinue, "continue", "c", false, "resume this project's most recent session")
-	rootCmd.Flags().StringVar(&flagResume, "resume", "", "resume a specific session id (see `gem-agent sessions`)")
+	rootCmd.Flags().StringVar(&flagResume, "resume", "", "resume a specific session id (see: gem-agent sessions)")
 }
 
 const shell = "/bin/bash"
@@ -248,7 +246,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if n := len(policyFile.CommandsFor(projectDir)); n > 0 {
-		fmt.Fprintf(stderr, "note: %d learned command rule(s) in %s are not applied; delete the [projects...commands] entries or leave them\n", n, policyPath)
+		fmt.Fprintf(stderr, "note: %s has %d obsolete [projects.<dir>.commands] entries — ignored; delete them to silence this note\n", policyPath, n)
 	}
 
 	// The persistent-file snapshot (ADR-0074 §3/§4): what this session
@@ -258,7 +256,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// the write lane.
 	persistentSnap, persistentCut := trustpin.Snapshot(projectDir)
 	if persistentCut {
-		fmt.Fprintf(stderr, "note: persistent-file scan stopped at %d entries\n", trustpin.WalkEntries)
+		fmt.Fprintf(stderr, "note: change detection covers the first %d files under the project only\n", trustpin.WalkEntries)
 	}
 	persistentPath, persistentPathErr := persistentStateFile(projectDir)
 	if persistentPathErr == nil {
@@ -341,7 +339,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// line can hand the session to a server that keeps
 			// per-session state (ADR-0069 addendum 2).
 			if err := session.Export(sessionID); err != nil {
-				fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", session.EnvVar, err)
+				fmt.Fprintf(stderr, "warning: cannot set %s: %v\n", session.EnvVar, err)
 			}
 			if resumedID != "" {
 				// Under the flock (Reopen holds it): the file we read
@@ -373,7 +371,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// The project directory is the third fact a child sees (ADR-0071
 	// §3), beside the session id and the work directory.
 	if err := os.Setenv(workdir.ProjectEnvVar, projectDir); err != nil {
-		fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", workdir.ProjectEnvVar, err)
+		fmt.Fprintf(stderr, "warning: cannot set %s: %v\n", workdir.ProjectEnvVar, err)
 	}
 	workDir := ""
 	defer removeFallbackScratch()
@@ -397,21 +395,15 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// inherits os.Environ), and every hook, without any of them
 			// needing to know gem-agent's layout.
 			if err := exportWorkDir(workDir); err != nil {
-				fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", workdir.EnvVar, err)
+				fmt.Fprintf(stderr, "warning: cannot set %s: %v\n", workdir.EnvVar, err)
 			}
 			if dirs, bytes, more, err := workdir.Sweep(projectDir, sessionID); err == nil && dirs > 0 {
 				plus := ""
 				if more {
 					plus = "+" // the startup scan was cut: a lower bound
 				}
-				verb, noun := "hold", plural(dirs, "y", "ies")
-				if dirs == 1 && !more {
-					verb = "holds"
-				} else if more {
-					noun = "ies" // "1+ directories": a lower bound reads plural
-				}
-				fmt.Fprintf(stderr, "note: %d%s earlier session work director%s %s %s%s here — review with 'gem-agent workdirs' (nothing is deleted automatically)\n",
-					dirs, plus, noun, verb, humanBytes(bytes), plus)
+				fmt.Fprintf(stderr, "note: %d%s earlier session work dir(s), %s%s — review with 'gem-agent workdirs'; nothing is deleted automatically\n",
+					dirs, plus, humanBytes(bytes), plus)
 			}
 		}
 	}
@@ -457,7 +449,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// it the model sees paths it cannot open and routes around the
 		// built-ins with shell redirection, which is less reviewable.
 		if err := registry.UseWorkDir(workDir); err != nil {
-			fmt.Fprintf(stderr, "warning: work directory not readable by the file tools: %v\n", err)
+			fmt.Fprintf(stderr, "warning: session work directory not readable by the file tools: %v\n", err)
 		}
 	}
 
@@ -468,7 +460,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// the gap between digest and read is kept to this (ADR-0074).
 	projectContext, contextLabels, contextNotes := loadInstructions(projectDir, grant)
 	for _, n := range contextNotes {
-		fmt.Fprintf(stderr, "warning: instructions %s\n", n)
+		fmt.Fprintf(stderr, "warning: instruction file %s\n", n)
 	}
 
 	// --- skills: Claude Code's skill library, read as-is (ADR-0010) ---
@@ -971,7 +963,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// banner line below announces it while in force. ---
 	rbBook, rbErr := riskbook.Load(cfgPath, projectDir)
 	if rbErr != nil {
-		fmt.Fprintf(stderr, "warning: risk rulebook: %v\n", rbErr)
+		fmt.Fprintf(stderr, "warning: risk rules: %v\n", rbErr)
 	} else {
 		ag.SetRulebook(rbBook.Compose())
 	}
@@ -1207,14 +1199,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// against the working directory, the operator's project.
 		if sessionDirErr != nil {
 			ag.Reset()
-			note("cleared in place — could not start a new session: %v", sessionDirErr)
+			note("history cleared; a new session could not be started (%v) — the conversation continues in this session", sessionDirErr)
 			sessionHooks("clear")
 			return render()
 		}
 		newLog, err := openSessionLog(sessionDir, "", projectDir, cfg.Model.Name, cfg.GCP.Location, cmd.Root().Version)
 		if err != nil {
 			ag.Reset()
-			note("cleared in place — could not start a new session: %v", err)
+			note("history cleared; a new session could not be started (%v) — the conversation continues in this session", err)
 			sessionHooks("clear")
 			return render()
 		}
@@ -1249,7 +1241,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		sessionLog = newLog
 		sessionPath, sessionID = newLog.Path(), newLog.ID()
 		if err := session.Export(sessionID); err != nil {
-			note("cannot export %s: %v", session.EnvVar, err)
+			note("cannot set %s: %v", session.EnvVar, err)
 		}
 		hookSession = hooks.Session{ID: sessionID, TranscriptPath: sessionPath, CWD: projectDir}
 		if workDir != "" {
@@ -1265,7 +1257,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// the environment, and the old directory must not survive in
 		// it (review after v0.68.0).
 		if err := exportWorkDir(workDir); err != nil {
-			note("cannot export %s: %v", workdir.EnvVar, err)
+			note("cannot set %s: %v", workdir.EnvVar, err)
 		}
 		// Every consumer of the work directory follows it (review round
 		// 4): the file tools' second root, the sandbox profile, the MCP
@@ -1280,7 +1272,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// board) sees the session the hooks report. Measured: without
 		// this the board's child kept --session <old id> across /clear.
 		if err := sink.Restart(ctx, sessionID); err != nil {
-			note("telemetry keeps the previous session id: %v", err)
+			note("audit events for this session continue under the previous session id (%v)", err)
 		}
 		if cfg.MCP.Enabled {
 			extra.WriteString(reconnectMCP(false))
@@ -1297,7 +1289,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		go resolveWindow()
 		if !sandboxOn {
-			fmt.Fprintln(stderr, "sandbox: DISABLED — shell commands run unconfined; every shell_exec needs your approval, and auto mode, a session allowlist and policy do not lift that")
+			fmt.Fprintln(stderr, "sandbox: DISABLED — shell commands run unconfined and every one asks for your approval (auto-approve does not skip this)")
 		}
 		// Piped stdin becomes a nonce-wrapped data attachment
 		// (ADR-0055) — never prompt text: the -p string alone is the
@@ -1738,7 +1730,7 @@ func firstMessage(args []string, oneShot bool) (string, error) {
 		return "", nil
 	}
 	if oneShot {
-		return "", fmt.Errorf("cannot combine -p with a first-message argument: -p runs one turn and exits, the argument starts an interactive session")
+		return "", fmt.Errorf("cannot combine -p (one turn, then exit) with a first message (interactive session) — pass one or the other")
 	}
 	return msg, nil
 }

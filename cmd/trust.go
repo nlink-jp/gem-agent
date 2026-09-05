@@ -158,7 +158,7 @@ func resolveProjectTrust(cfg *config.Config, policyFile *config.PolicyFile, poli
 	if fresh, err := config.MutatePolicyFile(policyPath, func(pf *config.PolicyFile) {
 		pf.SetTrust(projectDir, trust)
 	}); err != nil {
-		fmt.Fprintf(out, "warning: could not record the decision: %v\n", err)
+		fmt.Fprintf(out, "warning: could not record the decision: %v — you will be asked again next start\n", err)
 		policyFile.SetTrust(projectDir, trust) // keep the session consistent anyway
 	} else {
 		*policyFile = *fresh

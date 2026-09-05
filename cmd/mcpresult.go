@@ -200,7 +200,7 @@ func (in mcpIntake) pathFor(server, tool, ext string, data []byte) string {
 func (in mcpIntake) write(server, tool, ext string, data []byte) (string, error) {
 	dir := in.workDir()
 	if dir == "" {
-		return "", fmt.Errorf("no session work directory")
+		return "", fmt.Errorf("no session work directory to save the result in")
 	}
 	path := in.pathFor(server, tool, ext, data)
 	name := filepath.Base(path)

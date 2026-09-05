@@ -122,11 +122,11 @@ func resolveResume(dir, projectDir, model, id string) (session.Meta, error) {
 	}
 
 	if meta.Header.Project != "" && meta.Header.Project != projectDir {
-		return meta, fmt.Errorf("session %s was recorded in %s, not %s — its history describes that project's files; run gem-agent there to resume it",
-			meta.ID, meta.Header.Project, projectDir)
+		return meta, fmt.Errorf("session %s belongs to %s, not %s — cd there and run gem-agent --resume %s",
+			meta.ID, meta.Header.Project, projectDir, meta.ID)
 	}
 	if meta.Header.Model != "" && meta.Header.Model != model {
-		return meta, fmt.Errorf("session %s was recorded with %s and this run uses %s — a conversation cannot move between models (the replayed reasoning tokens are model-bound); resume it with --model %s",
+		return meta, fmt.Errorf("session %s was recorded with %s; this run uses %s — resume it with --model %s",
 			meta.ID, meta.Header.Model, model, meta.Header.Model)
 	}
 
@@ -147,7 +147,7 @@ func loadResumedHistory(lg *session.Logger, id string) ([]llm.Message, []string,
 		return nil, nil, err
 	}
 	if len(history) == 0 {
-		return nil, nil, fmt.Errorf("session %s has no conversation to resume", id)
+		return nil, nil, fmt.Errorf("session %s has no conversation to resume — start without --resume", id)
 	}
 	var notes []string
 	if skipped > 0 {

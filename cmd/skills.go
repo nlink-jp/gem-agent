@@ -86,7 +86,7 @@ func registerSkillTool(registry *tools.Registry, get func() []skills.Skill) erro
 			name, _ := args["name"].(string)
 			s, ok := skills.Find(get(), name)
 			if !ok {
-				return "", fmt.Errorf("unknown skill %q — only the skills listed in the system prompt exist", name)
+				return "", fmt.Errorf("unknown skill %q — /skills lists the installed ones", name)
 			}
 			if file, _ := args["file"].(string); file != "" {
 				return s.File(file, skills.DefaultLimits())

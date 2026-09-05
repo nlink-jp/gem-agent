@@ -79,7 +79,7 @@ func render(s string) string {
 		}
 	}
 	out := fmt.Sprintf(s, args...)
-	return strconv.Quote(strings.ReplaceAll(out, "\n", "⏎"))
+	return "“" + strings.ReplaceAll(out, "\n", "⏎") + "”"
 }
 
 // literals prints the string literals the cmd package shows the operator:

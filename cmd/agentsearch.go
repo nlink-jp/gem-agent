@@ -89,7 +89,7 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 	}
 	for _, t := range subReg.List() {
 		if t.Mutating {
-			return fmt.Errorf("agentic_file_search allowlist holds mutating tool %q", t.Name)
+			return fmt.Errorf("[agentic_file_search].allowlist in the config lists %q, a tool that writes — remove it from the list", t.Name)
 		}
 	}
 	subSink := opts.sink.Sub("agentic_file_search")
@@ -123,7 +123,7 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 				return "", errors.New("question is required")
 			}
 			if n := utf8.RuneCountInString(question); n > searchQuestionCap {
-				return "", fmt.Errorf("question is %d runes; the limit is %d", n, searchQuestionCap)
+				return "", fmt.Errorf("question is %d characters; the limit is %d — shorten it", n, searchQuestionCap)
 			}
 
 			// Run is synchronous, so the counters need no lock.

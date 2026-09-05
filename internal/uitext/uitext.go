@@ -237,14 +237,17 @@ type Messages struct {
 	TrustItemSkillsFmt       string // %d = skill count
 	TrustQuestion            string // the [y/N] question
 	// Content pins (ADR-0074).
-	PinRecordedFmt         string // %d = files pinned, %s = their names
+	PinRecordedFmt         string // %d = files recorded, %s = their names
 	PinNonePending         string // no pins yet, non-interactive: loaded as before
-	PinChangedFmt          string // %s = described change ("AGENTS.md changed (12 bytes)")
+	PinChangeFmt           string // %s name, %s kind (PinKindChanged/PinKindAdded), %s size — one described change
+	PinKindChanged         string // the kind word of a changed file
+	PinKindAdded           string // the kind word of a new file
+	PinChangedFmt          string // %s = PinChangeFmt result; the prompt line
 	PinQuestion            string // the [y/N] question for one changed file
-	PinNotLoadedFmt        string // %s = described change — not loaded
+	PinNotLoadedFmt        string // %s = PinChangeFmt result — not loaded
 	PinAcceptedFmt         string // %s = name
 	PinRemovedFmt          string // %s = name — gone since trusted; pin kept
-	PinPendingFmt          string // %s = described changes after an operator command
+	PinPendingFmt          string // %s = PinChangeFmt results after an operator command
 	PinStaleWriteFmt       string // %s = name — had drifted before the approved write; not re-pinned
 	PersistentSinceLastFmt string // %s = comma list — changed since the previous session
 	PersistentSessionFmt   string // %s = comma list — added/changed by this session
@@ -279,9 +282,9 @@ var en = Messages{
 	ApproveAllow:              "allow (y)",
 	ApproveDeny:               "deny (n)",
 	ApproveDenyReason:         "deny with reason (N)",
-	ApproveAlways:             "always allow (a)",
-	ApprovePersist:            "never ask again (p)",
-	ApprovalHint:              "←→/Tab select · Enter confirm · y/n/N/a direct · Esc denies",
+	ApproveAlways:             "allow this session (a)",
+	ApprovePersist:            "allow permanently (p)",
+	ApprovalHint:              "←→/Tab select · Enter confirm · y/n/N/a/p direct · Esc denies",
 	ApprovalReasonPrompt:      "deny reason:",
 	ApprovalReasonPlaceholder: "why this call should not run, or what to do instead…",
 	ApprovalReasonHint:        "Enter send · empty Enter denies without a reason · Esc back",
@@ -313,7 +316,7 @@ var en = Messages{
 	SettingsSavedTo:         "  policy changes are saved to: ",
 	SettingsScopeGlobal:     "global (~/.config/gem-agent/policy.toml)",
 	SettingsScopeProjectFmt: "this project only — %s",
-	SettingsUnavailable:     "✗ settings are unavailable in this mode",
+	SettingsUnavailable:     "✗ settings are unavailable in this mode — edit ~/.config/gem-agent/config.toml",
 	NoOutput:                "(no output)",
 
 	StatusThinking:          "thinking…",
@@ -326,10 +329,10 @@ var en = Messages{
 	StallFmt:                "no data for %ds — the stream may be stalled",
 	RetryFmt:                "retry %d/%d (%s) — waiting %ds",
 	ThoughtPrefix:           "✦ ",
-	InterruptStuckWarn:      "⚠ the tool is not responding to cancellation — one more Ctrl+C quits gem-agent (the transcript up to this call is already saved)",
+	InterruptStuckWarn:      "⚠ tool ignores cancel — one more Ctrl+C quits gem-agent (the session is saved)",
 	AskTitleFmt:             "question: %s",
 	AskHint:                 "←→/Tab select · 1-9 pick directly · Enter confirm · Esc declines",
-	AskHiddenFmt:            "⚠ +%d lines of the question hidden — Esc to decline and ask for a shorter question, or enlarge the terminal",
+	AskHiddenFmt:            "⚠ +%d lines hidden — enlarge the terminal, or Esc to decline (the model can re-ask briefly)",
 	RoundLimitAskFmt:        "round limit reached: %d rounds used (hard cap %d) — %s. Continue?",
 	RoundLoopAskFmt:         "possible loop: the same call keeps repeating (%s) — %s. Continue?",
 	RoundVerdictProgressFmt: "progress review: progressing (%s)",
@@ -341,10 +344,10 @@ var en = Messages{
 	RiskbookStatusLearning: "drafting project risk rules from your decision record…",
 	RiskbookNoDataFmt:      "read %d sessions — no gate decisions recorded yet. The rulebook learns from your own answers at the approval gate; you can also write ~/.config/gem-agent/risk-rules.md by hand.",
 	RiskbookScannedFmt:     "read %d sessions / %d gate decisions — drafting…",
-	RiskbookUnreadableFmt:  "%d transcripts could not be read and were skipped",
-	RiskbookPartialFmt:     "more than %d session files — only the first were scanned",
+	RiskbookUnreadableFmt:  "%d sessions could not be read and were skipped",
+	RiskbookPartialFmt:     "more than %d sessions — only the first were scanned",
 	RiskbookDraftHeader:    "proposed project risk rules — review every line; this exact text is what would be stored:",
-	RiskbookAskSave:        "Save these project risk rules? They will inform every auto-mode risk review in this project.",
+	RiskbookAskSave:        "Save these project risk rules? They will inform every auto-approve risk review in this project.",
 	RiskbookAccept:         "save",
 	RiskbookDiscard:        "discard",
 	RiskbookSavedFmt:       "saved to %s — in force now",
@@ -391,12 +394,12 @@ keys:
   Enter send · up/down history · Ctrl+C interrupt/clear · Ctrl+D quit
   Ctrl+J or a trailing \ inserts a newline; a multi-line paste stays one message
   typing during a turn queues the text (! and / cannot be queued)
-  approval dialog: arrows/Tab select · Enter confirm · y/n/N/a direct (N = deny with a reason)
+  approval dialog: arrows/Tab select · Enter confirm · y/n/N/a/p direct (N = deny with a reason)
 `,
 	AutoOn:            "auto-approve: ON — safe changes run unattended; risky ones still ask\n",
 	AutoOff:           "auto-approve: OFF — every change asks\n",
 	HistoryCleared:    "history cleared — the next message starts a fresh conversation\n",
-	NothingToCompact:  "nothing to compact yet — the conversation is short enough that a summary would lose more than it saves",
+	NothingToCompact:  "nothing to compact yet — the conversation is still short",
 	CompactedFmt:      "compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
 	UnknownCommandFmt: "unknown command %q — /help lists commands\n",
 	MCPNone:           "no MCP servers connected — define them in ~/.config/gem-agent/mcp.json (global) or the project's .mcp.json (project; wins name collisions)\n",
@@ -405,23 +408,26 @@ keys:
 	SkillsReloadedFmt: "skills reloaded: %d found\n",
 
 	TrustHeaderFmt:           "\nnew project: %s\nthis project provides:\n",
-	TrustItemInstructionsFmt: "%s (injected as instructions)",
-	TrustItemMCPFmt:          ".mcp.json (%d server(s) — each starts a child process)",
-	TrustItemSkillsFmt:       ".claude/skills/ (%d entr(y/ies) — loaded as your instructions)",
+	TrustItemInstructionsFmt: "%s (loaded as your instructions)",
+	TrustItemMCPFmt:          ".mcp.json (%d server(s) — will be started)",
+	TrustItemSkillsFmt:       ".claude/skills/ (%d skill(s) — loaded as your instructions)",
 	TrustQuestion:            "trust this project? These files will be treated as YOUR instructions and its MCP servers will run. [y/N]: ",
-	PinRecordedFmt:           "project trust: pinned %d file(s): %s",
-	PinNonePending:           "project trust: no pins recorded yet — start interactively once, or run `gem-agent trust --accept`",
+	PinRecordedFmt:           "project trust: %d file(s) recorded as trusted: %s",
+	PinNonePending:           "project trust: no trusted files recorded yet — start interactively once, or run `gem-agent trust --accept`",
+	PinChangeFmt:             "%s %s %s",
+	PinKindChanged:           "changed",
+	PinKindAdded:             "added",
 	PinChangedFmt:            "\n%s since you trusted it.",
 	PinQuestion:              "trust the new content? [y/N]: ",
-	PinNotLoadedFmt:          "project trust: %s since you trusted it — not loaded (`gem-agent trust --accept`, or an interactive start, re-trusts)",
+	PinNotLoadedFmt:          "project trust: %s since you trusted it — not loaded; re-trust with `gem-agent trust --accept` or at an interactive start",
 	PinAcceptedFmt:           "project trust: %s re-trusted",
 	PinRemovedFmt:            "project trust: %s was removed since you trusted it",
-	PinPendingFmt:            "project trust: %s since you trusted it — not re-trusted; the next interactive start asks (`gem-agent trust --accept` re-trusts)",
-	PinStaleWriteFmt:         "project trust: %s had changed before this write — not re-trusted; the next interactive start asks",
+	PinPendingFmt:            "project trust: %s since you trusted it — not re-trusted; `gem-agent trust --accept` or the next interactive start",
+	PinStaleWriteFmt:         "project trust: %s had changed before this write — not re-trusted; asks at the next interactive start",
 	PersistentSinceLastFmt:   "note: changed since your previous session: %s",
 	PersistentSessionFmt:     "note: this session added or changed: %s",
-	TrustDeclinedFmt:         "project trust: declined — the project's instruction files, .mcp.json, and skills are not loaded (edit %s to re-ask)",
-	TrustUndecided:           "project trust: undecided (non-interactive) — the project's instruction files, .mcp.json, and skills are not loaded; run interactively once to decide",
+	TrustDeclinedFmt:         "project trust: declined — the project's own files are not loaded (edit %s to be asked again)",
+	TrustUndecided:           "project trust: undecided — the project's own files are not loaded; start interactively once to decide",
 	ReasonFSRoot:             "the filesystem root",
 	ReasonHome:               "your home directory",
 	ReasonHomeAncestor:       "an ancestor of your home directory",
@@ -435,9 +441,9 @@ var ja = Messages{
 	ApproveAllow:              "許可 (y)",
 	ApproveDeny:               "拒否 (n)",
 	ApproveDenyReason:         "理由を添えて拒否 (N)",
-	ApproveAlways:             "常に許可 (a)",
-	ApprovePersist:            "今後聞かない (p)",
-	ApprovalHint:              "←→/Tab 選択 · Enter 決定 · y/n/N/a 直接指定 · Esc 拒否",
+	ApproveAlways:             "このセッション中は許可 (a)",
+	ApprovePersist:            "今後も許可 (p)",
+	ApprovalHint:              "←→/Tab 選択 · Enter 決定 · y/n/N/a/p 直接指定 · Esc 拒否",
 	ApprovalReasonPrompt:      "拒否理由:",
 	ApprovalReasonPlaceholder: "拒否する理由や、代わりにすべきこと…",
 	ApprovalReasonHint:        "Enter 送信 · 空 Enter は理由なし拒否 · Esc で戻る",
@@ -452,7 +458,7 @@ var ja = Messages{
 	AutoApprovedFmt:           "  ↳ 自動承認 (%s): %s",
 	CtrlCHint:                 "  (Ctrl+C で中断)",
 
-	Placeholder:   "message…  Enter 送信 · Ctrl+J 改行 · /help · !shell",
+	Placeholder:   "メッセージ…  Enter 送信 · Ctrl+J 改行 · /help · !shell",
 	QueueRefused:  "⚠ ! と / のコマンドは実行中には送れません — Ctrl+C で中断してから実行してください（入力は残っています）",
 	QueuedPrefix:  "⏎ 予約: ",
 	QueueHandback: "⚠ 予約したメッセージは送信されませんでした — ターンが正常に終了しなかったため、入力欄に戻しています",
@@ -460,7 +466,7 @@ var ja = Messages{
 	ErrorPrefix:   "✗ エラー: ",
 	Bye:           "bye",
 
-	SettingsHint:            "  ↑↓ 選択 · ←→/Enter 変更 · s 保存先 · Esc 閉じる",
+	SettingsHint:            "  ↑↓ 選択 · ←→/Enter 変更 · s スコープ · Esc 閉じる",
 	SettingsTitle:           "設定",
 	SettingsMoreAboveFmt:    "  … 上に %d 件",
 	SettingsMoreBelowFmt:    "  … 下に %d 件",
@@ -469,23 +475,23 @@ var ja = Messages{
 	SettingsSavedTo:         "  ポリシーの保存先: ",
 	SettingsScopeGlobal:     "グローバル (~/.config/gem-agent/policy.toml)",
 	SettingsScopeProjectFmt: "このプロジェクトのみ — %s",
-	SettingsUnavailable:     "✗ このモードでは設定パネルを使えません",
+	SettingsUnavailable:     "✗ このモードでは設定パネルを使えません — ~/.config/gem-agent/config.toml を編集してください",
 	NoOutput:                "(出力なし)",
 
-	StatusThinking:          "thinking…",
+	StatusThinking:          "思考中…",
 	StatusCompacting:        "会話を圧縮中…",
 	StatusInterrupting:      "中断中…",
 	StatusToolWait:          "ツールの完了待ち…",
 	StatusRunningFmt:        "実行中 %s",
 	StatusShellFmt:          "shell: %s",
-	HeartbeatFmt:            "%s · %d chunks · last %ds",
+	HeartbeatFmt:            "%s · %d チャンク · 最終 %d 秒前",
 	StallFmt:                "%d 秒間データなし — 接続が失速している可能性",
 	RetryFmt:                "リトライ %d/%d (%s) — %d 秒待機",
 	ThoughtPrefix:           "✦ ",
-	InterruptStuckWarn:      "⚠ ツールがキャンセルに応答していません — もう一度 Ctrl+C で gem-agent を終了します（この呼び出しまでの transcript は保存済みです）",
+	InterruptStuckWarn:      "⚠ ツールがキャンセルに応答しません — もう一度 Ctrl+C で gem-agent を終了します（セッションは保存済み）",
 	AskTitleFmt:             "質問: %s",
 	AskHint:                 "←→/Tab 選択 · 1-9 で即決定 · Enter 決定 · Esc 回答しない",
-	AskHiddenFmt:            "⚠ 質問の +%d 行が非表示 — Esc で辞退して短い質問を求めるか、端末を広げてください",
+	AskHiddenFmt:            "⚠ +%d 行が非表示 — 端末を広げるか、Esc で辞退（モデルは短く聞き直せます）",
 	RoundLimitAskFmt:        "ラウンド上限に到達: %d ラウンド消費（絶対上限 %d）— %s。続行しますか？",
 	RoundLoopAskFmt:         "ループの疑い: 同一コールが反復しています（%s）— %s。続行しますか？",
 	RoundVerdictProgressFmt: "進捗レビュー: 前進中（%s）",
@@ -497,10 +503,10 @@ var ja = Messages{
 	RiskbookStatusLearning: "判断記録からプロジェクトのリスクルールを起草しています…",
 	RiskbookNoDataFmt:      "%d セッションを読みました — 記録されたゲート判断はまだありません。ルールブックは承認ゲートでのあなた自身の回答から学びます。~/.config/gem-agent/risk-rules.md を手で書くこともできます。",
 	RiskbookScannedFmt:     "%d セッション / %d 件のゲート判断を読みました — 起草中…",
-	RiskbookUnreadableFmt:  "%d 件の記録は読めなかったため飛ばしました",
-	RiskbookPartialFmt:     "セッションファイルが %d 件を超えるため、先頭分だけを走査しました",
+	RiskbookUnreadableFmt:  "%d 件のセッションは読めなかったため飛ばしました",
+	RiskbookPartialFmt:     "セッションが %d 件を超えるため、先頭分だけを走査しました",
 	RiskbookDraftHeader:    "プロジェクトリスクルールの提案 — 全行を確認してください。保存されるのはこのテキストそのものです:",
-	RiskbookAskSave:        "このプロジェクトリスクルールを保存しますか？ このプロジェクトの auto モードの全リスク評価が参照するようになります。",
+	RiskbookAskSave:        "このプロジェクトリスクルールを保存しますか？ このプロジェクトの auto-approve の全リスク評価が参照するようになります。",
 	RiskbookAccept:         "保存",
 	RiskbookDiscard:        "破棄",
 	RiskbookSavedFmt:       "%s に保存しました — いま有効です",
@@ -547,12 +553,12 @@ var ja = Messages{
   Enter 送信 · ↑↓ 履歴 · Ctrl+C 中断/クリア · Ctrl+D 終了
   改行は Ctrl+J か行末 \ + Enter。複数行ペーストは 1 メッセージのまま
   実行中の入力は次メッセージとして予約（! と / は予約不可）
-  承認ダイアログ: ←→/Tab 選択 · Enter 決定 · y/n/N/a 直接（N = 理由を添えて拒否）
+  承認ダイアログ: ←→/Tab 選択 · Enter 決定 · y/n/N/a/p 直接（N = 理由を添えて拒否）
 `,
 	AutoOn:            "auto-approve: ON — 安全な変更は無人で実行します。危険なものは引き続き確認します\n",
 	AutoOff:           "auto-approve: OFF — すべての変更で確認します\n",
 	HistoryCleared:    "履歴をクリアしました — 次のメッセージから新しい会話が始まります\n",
-	NothingToCompact:  "まだ /compact の対象がありません — 会話が短く、要約すると失う情報のほうが多くなります",
+	NothingToCompact:  "まだ /compact の対象がありません — 会話がまだ短いためです",
 	CompactedFmt:      "古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",
 	UnknownCommandFmt: "未知のコマンド %q — /help に一覧があります\n",
 	MCPNone:           "MCP サーバー未接続 — ~/.config/gem-agent/mcp.json（グローバル）またはプロジェクトの .mcp.json（プロジェクト側が名前衝突で優先）で定義します\n",
@@ -561,27 +567,30 @@ var ja = Messages{
 	SkillsReloadedFmt: "skill を再読込しました: %d 件\n",
 
 	TrustHeaderFmt:           "\n新しいプロジェクト: %s\nこのプロジェクトの提供物:\n",
-	TrustItemInstructionsFmt: "%s（instructions として注入されます）",
-	TrustItemMCPFmt:          ".mcp.json（サーバー %d 件 — それぞれ子プロセスを起動します）",
-	TrustItemSkillsFmt:       ".claude/skills/（%d 件 — あなたへの指示として読み込まれます）",
+	TrustItemInstructionsFmt: "%s（あなたへの指示として読み込まれます）",
+	TrustItemMCPFmt:          ".mcp.json（サーバー %d 件 — 起動されます）",
+	TrustItemSkillsFmt:       ".claude/skills/（スキル %d 件 — あなたへの指示として読み込まれます）",
 	TrustQuestion:            "このプロジェクトを信用しますか？ これらのファイルはあなたへの指示として扱われ、MCP サーバーが起動します。 [y/N]: ",
-	PinRecordedFmt:           "project trust: %d 件をピン留めしました: %s",
-	PinNonePending:           "project trust: ピンは未記録です — 一度対話モードで起動するか `gem-agent trust --accept` を実行してください",
-	PinChangedFmt:            "\n%s — 信用した時点から変わっています。",
+	PinRecordedFmt:           "project trust: %d 件を信用済みとして記録: %s",
+	PinNonePending:           "project trust: 信用済みファイルは未記録です — 一度対話起動するか `gem-agent trust --accept` を実行",
+	PinChangeFmt:             "%s が%s %s",
+	PinKindChanged:           "変更されました",
+	PinKindAdded:             "追加されました",
+	PinChangedFmt:            "\n信用した時点から %s。",
 	PinQuestion:              "新しい内容を信用しますか？ [y/N]: ",
-	PinNotLoadedFmt:          "project trust: %s — 信用した時点から変わっています。読み込みません（`gem-agent trust --accept` か対話起動で再信用）",
+	PinNotLoadedFmt:          "project trust: 信用した時点から %s — 読み込みません。`gem-agent trust --accept` か対話起動で再信用",
 	PinAcceptedFmt:           "project trust: %s を再信用しました",
 	PinRemovedFmt:            "project trust: %s は信用した時点から削除されています",
-	PinPendingFmt:            "project trust: %s — 信用した時点から変わっています。再信用していません。次の対話起動で確認します（`gem-agent trust --accept` でも可）",
-	PinStaleWriteFmt:         "project trust: %s はこの書込の前から変わっていました — 再信用していません。次の対話起動で確認します",
+	PinPendingFmt:            "project trust: 信用した時点から %s — 再信用していません。`gem-agent trust --accept` か次の対話起動で",
+	PinStaleWriteFmt:         "project trust: %s はこの書込の前から変わっていました — 再信用していません。次の対話起動で確認",
 	PersistentSinceLastFmt:   "note: 前回のセッション以降に変更: %s",
 	PersistentSessionFmt:     "note: このセッションが追加・変更: %s",
-	TrustDeclinedFmt:         "project trust: 拒否 — このプロジェクトの instruction ファイル・.mcp.json・skills は読み込まれません（再確認するには %s を編集）",
-	TrustUndecided:           "project trust: 未決定（非対話） — このプロジェクトの instruction ファイル・.mcp.json・skills は読み込まれません。対話モードで一度起動して決定してください",
+	TrustDeclinedFmt:         "project trust: 拒否 — このプロジェクト自身のファイルは読み込みません（再確認するには %s を編集）",
+	TrustUndecided:           "project trust: 未決定 — このプロジェクト自身のファイルは読み込みません。一度対話起動して決めてください",
 	ReasonFSRoot:             "ファイルシステムのルート",
 	ReasonHome:               "ホームディレクトリ",
 	ReasonHomeAncestor:       "ホームディレクトリの祖先",
-	BroadRootPromptFmt:       "\n⚠ %s は%sです。\nファイルツールとサンドボックス内シェルの書き込みが、このツリー全体に及びます。\nこのまま起動しますか？ [y/N]: ",
+	BroadRootPromptFmt:       "\n⚠ %s は %s です。\nファイルツールとサンドボックス内シェルの書き込みが、このツリー全体に及びます。\nこのまま起動しますか？ [y/N]: ",
 	BroadRootRefusedFmt:      "%s（%s）では起動を拒否します: ファイルツールとシェル書き込みがツリー全体に及びます。対話モードで確認するか、プロジェクトディレクトリで起動してください",
 	BroadRootAbortFmt:        "%s では起動しません — まずプロジェクトディレクトリに cd してください",
 }

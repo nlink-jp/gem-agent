@@ -94,7 +94,7 @@ func checkPins(cfg *config.Config, policyFile *config.PolicyFile, policyPath, pr
 		}
 		ok := false
 		if interactive {
-			fmt.Fprintf(out, msgs.PinChangedFmt, describeChange(projectDir, c))
+			fmt.Fprintf(out, msgs.PinChangedFmt, describeChange(projectDir, c, msgs))
 			fmt.Fprint(out, "\n"+msgs.PinQuestion)
 			answer := strings.TrimSpace(readLineUnbuffered(in))
 			ok = strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes")
@@ -104,7 +104,7 @@ func checkPins(cfg *config.Config, policyFile *config.PolicyFile, policyPath, pr
 			notes = append(notes, fmt.Sprintf(msgs.PinAcceptedFmt, c.Name))
 		} else {
 			excluded[c.Name] = true
-			notes = append(notes, fmt.Sprintf(msgs.PinNotLoadedFmt, describeChange(projectDir, c)))
+			notes = append(notes, fmt.Sprintf(msgs.PinNotLoadedFmt, describeChange(projectDir, c, msgs)))
 		}
 	}
 	if len(accepted) > 0 {
@@ -123,14 +123,16 @@ func checkPins(cfg *config.Config, policyFile *config.PolicyFile, policyPath, pr
 	return excluded, notes
 }
 
-// describeChange renders one change for the operator: the name, the
-// kind and the current size ("AGENTS.md changed (1234 bytes)").
-func describeChange(projectDir string, c trustpin.Change) string {
-	s := c.Name + " " + c.Kind
-	if size := trustpin.Size(projectDir, c.Name); size != "" {
-		s += " " + size
+// describeChange renders one change for the operator in their language:
+// the name, the kind word and the current size ("AGENTS.md changed
+// (1234 bytes)" / "AGENTS.md が変更されました (1234 bytes)"). The verb
+// lives in the catalog, not in the value, so a Japanese line is Japanese.
+func describeChange(projectDir string, c trustpin.Change, msgs *uitext.Messages) string {
+	kind := msgs.PinKindChanged
+	if c.Kind == "added" {
+		kind = msgs.PinKindAdded
 	}
-	return s
+	return strings.TrimSpace(fmt.Sprintf(msgs.PinChangeFmt, c.Name, kind, trustpin.Size(projectDir, c.Name)))
 }
 
 // pinNames lists the pinned names, sorted, for a note.
@@ -246,7 +248,7 @@ func pinChangesNote(cfg *config.Config, policyFile *config.PolicyFile, projectDi
 	}
 	parts := make([]string, 0, len(changes))
 	for _, c := range changes {
-		parts = append(parts, describeChange(projectDir, c))
+		parts = append(parts, describeChange(projectDir, c, msgs))
 	}
 	return fmt.Sprintf(msgs.PinPendingFmt, strings.Join(parts, ", "))
 }

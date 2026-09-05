@@ -82,7 +82,7 @@ func renderInfo(s infoSnapshot) string {
 	}
 	fmt.Fprintf(&b, "model: %s (thinking: %s)", s.Model, thinking)
 	if s.SummaryModel != "" && s.SummaryModel != s.Model {
-		fmt.Fprintf(&b, " · summary/fetch model: %s", s.SummaryModel)
+		fmt.Fprintf(&b, " · summary model: %s", s.SummaryModel)
 	}
 	b.WriteString("\n")
 

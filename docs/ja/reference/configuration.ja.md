@@ -289,7 +289,7 @@ export される変数が 3 つあります: セッション id `GEMAGENT_SESSIO
 | `--no-sandbox` | Seatbelt ラップの無効化（デバッグ専用）— 全 `shell_exec` があなたの承認事項になり、ポリシーも auto モードも持ち上げない（ADR-0073 §5） |
 | `sessions` | 再開可能なセッション一覧 |
 | `workdirs` | このプロジェクトのセッション作業ディレクトリ一覧。`workdirs clean [session-id]...` は確認のうえ削除（ADR-0058、[sessions](sessions.ja.md) 参照） |
-| `trust` | このプロジェクトの信頼状態とピン留めファイルを表示。`--accept` で現在の内容を信頼済みとして記録（ADR-0074） |
+| `trust` | このプロジェクトの信頼状態と信用済みファイルを表示。`--accept` で現在の内容を信頼済みとして記録（ADR-0074） |
 
 ## テレメトリ（ADR-0035）
 

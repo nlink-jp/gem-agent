@@ -49,10 +49,10 @@ close access f`, path)
 		return nil, err
 	}
 	if more {
-		return nil, fmt.Errorf("clipboard image is larger than %d bytes", clipboardImageCap)
+		return nil, fmt.Errorf("clipboard image is larger than %s — shrink it, or attach the file with @<path>", humanBytes(clipboardImageCap))
 	}
 	if len(data) == 0 {
-		return nil, fmt.Errorf("no image on the clipboard")
+		return nil, fmt.Errorf("no image on the clipboard (take a screenshot with Cmd+Ctrl+Shift+4 first)")
 	}
 	return data, nil
 }

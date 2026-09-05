@@ -38,7 +38,7 @@ func TestCheckPinsTrustsOnFirstUseThenAsks(t *testing.T) {
 	msgs := uitext.For(uitext.EN)
 	var out bytes.Buffer
 	excluded, notes := checkPins(cfg, pf, policyPath, proj, true, true, strings.NewReader(""), &out, msgs)
-	if excluded != nil || len(notes) != 1 || !strings.Contains(notes[0], "pinned") {
+	if excluded != nil || len(notes) != 1 || !strings.Contains(notes[0], "recorded as trusted") {
 		t.Fatalf("first use: excluded=%v notes=%v", excluded, notes)
 	}
 	if len(pf.PinsFor(proj)) != 2 {
