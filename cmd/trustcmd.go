@@ -21,8 +21,8 @@ var flagTrustAccept bool
 var trustCmd = &cobra.Command{
 	Use:   "trust",
 	Short: "Show this project's trust state and pinned files",
-	Long: `Show whether this project is trusted (ADR-0023), which agent-facing
-files are pinned (ADR-0074), and which of them changed since they were
+	Long: `Show whether this project is trusted, which agent-facing files are
+pinned, and which of them changed since they were
 pinned. With --accept, the current content of every pinned file is
 recorded as trusted — the answer an interactive start would ask for.`,
 	Args:         cobra.NoArgs,
@@ -78,9 +78,9 @@ func trustReport(projectDir, cfgPath string, accept bool, out io.Writer) error {
 	fmt.Fprintf(out, "project: %s\ntrust: %s\n", projectDir, trust)
 	if !granted {
 		if accept {
-			return fmt.Errorf("this project is not trusted; pins record the content of a trusted project — start gem-agent interactively once to decide (ADR-0023)")
+			return fmt.Errorf("this project is not trusted — start gem-agent interactively once to decide")
 		}
-		fmt.Fprintln(out, "pins: none — they record the content of a trusted project (start gem-agent interactively once to decide)")
+		fmt.Fprintln(out, "pins: none — the project is not trusted (start gem-agent interactively once to decide)")
 		return nil
 	}
 	current, notes := trustpin.Compute(projectDir)
@@ -91,11 +91,11 @@ func trustReport(projectDir, cfgPath string, accept bool, out io.Writer) error {
 		if err := savePins(policyPath, projectDir, current, policyFile); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "pinned %d file(s) as trusted: %s\n", len(current), pinNames(current))
+		fmt.Fprintf(out, "pinned %d file(s): %s\n", len(current), pinNames(current))
 		return nil
 	}
 	if !policyFile.HasPins(projectDir) {
-		fmt.Fprintln(out, "pins: none recorded yet — the project's files load as before; the next interactive start pins them, or run `gem-agent trust --accept`")
+		fmt.Fprintln(out, "pins: none recorded yet — start interactively once, or run `gem-agent trust --accept`")
 		return nil
 	}
 	recorded := policyFile.PinsFor(projectDir)
@@ -133,7 +133,7 @@ func trustReport(projectDir, cfgPath string, accept bool, out io.Writer) error {
 		}
 	}
 	if pending > 0 {
-		fmt.Fprintln(out, "changed or added files are not loaded until re-trusted: answer the prompt at the next interactive start, or run `gem-agent trust --accept` after an edit you intended")
+		fmt.Fprintln(out, "changed files are not loaded until re-trusted: `gem-agent trust --accept`, or the prompt at the next interactive start")
 	}
 	return nil
 }

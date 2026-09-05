@@ -129,7 +129,7 @@ func renderInfo(s infoSnapshot) string {
 		fmt.Fprintf(&b, "mcp servers (as last connected): %s\n", strings.Join(s.MCPServers, "; "))
 	}
 	if !s.ProjectTrusted {
-		b.WriteString("project trust: declined/undecided — the project's own instruction files, .mcp.json, and skills are NOT loaded (ADR-0023); missing tools may be this, not missing configuration\n")
+		b.WriteString("project trust: declined/undecided — the project's own instruction files, .mcp.json, and skills are NOT loaded; missing tools may be this, not missing configuration\n")
 	}
 	bucket := "none (media attaches inline, small files only)"
 	if s.MediaBucket {

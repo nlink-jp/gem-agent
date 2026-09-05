@@ -98,12 +98,12 @@ macOS only. See docs/ for the RFP and design records.`,
 func init() {
 	rootCmd.Flags().StringVar(&flagConfig, "config", "", "config file path (default ~/.config/gem-agent/config.toml)")
 	rootCmd.Flags().StringVar(&flagModel, "model", "", "override the configured model name")
-	rootCmd.Flags().StringVar(&flagThinking, "thinking", "", "override [model].thinking for this run: minimal|low|medium|high, or 'default' to clear a configured level (supported levels are model-dependent — ADR-0025)")
-	rootCmd.Flags().StringVar(&flagMCP, "mcp", "", "override [mcp].enabled for this run: on|off (off skips every MCP server spawn — useful for -p pipelines; ADR-0039)")
+	rootCmd.Flags().StringVar(&flagThinking, "thinking", "", "override [model].thinking for this run: minimal|low|medium|high, or 'default' to clear a configured level (supported levels are model-dependent)")
+	rootCmd.Flags().StringVar(&flagMCP, "mcp", "", "override [mcp].enabled for this run: on|off (off skips every MCP server spawn — useful for -p pipelines)")
 	rootCmd.Flags().BoolVar(&flagNoSandbox, "no-sandbox", false, "disable the sandbox-exec wrapper for shell_exec (debugging only, unsafe)")
 	rootCmd.Flags().StringVarP(&flagPrompt, "prompt", "p", "", "one-shot mode: run this prompt and exit (mutating tools are denied unless granted with --allow or armed with --auto)")
-	rootCmd.Flags().BoolVar(&flagAuto, "auto", false, "start in auto-approve mode (ADR-0004); the only way to arm it in one-shot -p, where [agent].auto_approve is ignored (ADR-0053)")
-	rootCmd.Flags().StringSliceVar(&flagAllow, "allow", nil, `per-run approval grants: tool names or mcp__server__* prefixes that never ask this run (repeatable or comma-separated; the Block floor still applies — ADR-0053)`)
+	rootCmd.Flags().BoolVar(&flagAuto, "auto", false, "start in auto-approve mode; the only way to arm it in one-shot -p, where [agent].auto_approve is ignored")
+	rootCmd.Flags().StringSliceVar(&flagAllow, "allow", nil, `per-run approval grants: tool names or mcp__server__* prefixes that never ask this run (repeatable or comma-separated; the Block floor still applies)`)
 	rootCmd.Flags().BoolVarP(&flagContinue, "continue", "c", false, "resume this project's most recent session")
 	rootCmd.Flags().StringVar(&flagResume, "resume", "", "resume a specific session id (see `gem-agent sessions`)")
 }
@@ -248,7 +248,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if n := len(policyFile.CommandsFor(projectDir)); n > 0 {
-		fmt.Fprintf(stderr, "note: %d learned command rule(s) in %s are not applied — /learn was withdrawn (ADR-0049); delete the [projects...commands] entries or keep them for a future version\n", n, policyPath)
+		fmt.Fprintf(stderr, "note: %d learned command rule(s) in %s are not applied; delete the [projects...commands] entries or leave them\n", n, policyPath)
 	}
 
 	// The persistent-file snapshot (ADR-0074 §3/§4): what this session
@@ -258,7 +258,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// the write lane.
 	persistentSnap, persistentCut := trustpin.Snapshot(projectDir)
 	if persistentCut {
-		fmt.Fprintf(stderr, "note: the persistent-file scan stopped at %d entries; the report below and the write lane's parent denials cover what it reached\n", trustpin.WalkEntries)
+		fmt.Fprintf(stderr, "note: persistent-file scan stopped at %d entries\n", trustpin.WalkEntries)
 	}
 	persistentPath, persistentPathErr := persistentStateFile(projectDir)
 	if persistentPathErr == nil {
@@ -1738,7 +1738,7 @@ func firstMessage(args []string, oneShot bool) (string, error) {
 		return "", nil
 	}
 	if oneShot {
-		return "", fmt.Errorf("cannot combine -p with a first-message argument: -p runs one turn and exits, the argument starts an interactive session (ADR-0064)")
+		return "", fmt.Errorf("cannot combine -p with a first-message argument: -p runs one turn and exits, the argument starts an interactive session")
 	}
 	return msg, nil
 }
@@ -1757,7 +1757,7 @@ func effectiveAuto(cfgAuto, oneShot, flagAuto bool) bool {
 type denyGate struct{ out io.Writer }
 
 func (d denyGate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
-	why := "mutating tools are disabled in one-shot mode; approve interactively, grant with --allow, or arm the risk ladder with --auto (ADR-0053)"
+	why := "mutating tools are disabled in one-shot mode; approve interactively, grant with --allow, or arm the risk ladder with --auto"
 	if reason != "" {
 		// The ladder or the rule tier said why this call needs a human;
 		// with no human here, that reason is the denial's story

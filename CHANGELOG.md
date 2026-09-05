@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Operator-facing text no longer cites design documents or explains
+  itself: the project-trust notes, the `trust` subcommand's output,
+  the settings panel descriptions, flag help and the subcommands' long
+  help state the fact and the next command, nothing else. An
+  architecture test now fails on any operator- or model-facing string
+  literal that cites an ADR number
+
 ### Changed
 
 - `make check` (docs-mirror-check) now fails when a concept exists in

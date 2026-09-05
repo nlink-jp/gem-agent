@@ -12,6 +12,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -290,6 +291,60 @@ func TestProjectContentLoadsThroughGrant(t *testing.T) {
 		// started or registered.
 		"cmd probeProject": "counts .mcp.json servers for the trust prompt; nothing is loaded",
 	})
+}
+
+// operatorTextPackages hold the strings an operator (or the model)
+// reads: UI catalogs, banners, notes, flag help, tool descriptions and
+// results. A design reference (`ADR-0074`) or a reason clause belongs
+// in the docs, the ADR and the commit message — never in what the
+// screen shows (the fourth time this habit shipped; the knowledge base's
+// "status output is not documentation").
+var operatorTextPackages = []string{
+	"cmd", "internal/uitext", "internal/tui", "internal/repl", "internal/agent",
+	"internal/approve", "internal/tools", "internal/sandbox", "internal/skills",
+	"internal/mcp", "internal/session", "internal/memory", "internal/workdir",
+}
+
+func TestNoDesignReferencesInOperatorText(t *testing.T) {
+	root := repoRoot(t)
+	adr := regexp.MustCompile(`ADR-[0-9]{4}`)
+	fset := token.NewFileSet()
+	for _, dir := range operatorTextPackages {
+		abs := filepath.Join(root, dir)
+		err := filepath.WalkDir(abs, func(p string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				if p != abs && (strings.HasPrefix(d.Name(), ".") || d.Name() == "testdata") {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+				return nil
+			}
+			f, err := parser.ParseFile(fset, p, nil, 0)
+			if err != nil {
+				return err
+			}
+			ast.Inspect(f, func(n ast.Node) bool {
+				lit, ok := n.(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING {
+					return true
+				}
+				if adr.MatchString(lit.Value) {
+					pos := fset.Position(lit.Pos())
+					t.Errorf("%s:%d: string literal cites %s — design references belong in docs and comments, not in operator- or model-facing text", pos.Filename, pos.Line, adr.FindString(lit.Value))
+				}
+				return true
+			})
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 // importers lists the packages (repo-relative directories) whose

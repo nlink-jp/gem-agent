@@ -160,7 +160,7 @@ func (a *Agent) decideAuto(ctx context.Context, tc llm.ToolCall) AutoDecision {
 	// safe and low-risk". The operator decides what the agent
 	// remembers.
 	if memoryWrite(tc.Name) {
-		return AutoDecision{Tier: v.Tier, Reason: "memory writes are the operator's call (ADR-0020 §4)"}
+		return AutoDecision{Tier: v.Tier, Reason: "memory writes are the operator's call"}
 	}
 	// The same objection, generalised (ADR-0072 §4): a write into the
 	// instruction files or the runtime's configuration persists into

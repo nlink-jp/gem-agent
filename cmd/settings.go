@@ -105,7 +105,7 @@ func (s *settingsStore) data() tui.SettingsData {
 	ro("limits", "mcp.enabled", strconv.FormatBool(s.cfg.MCP.Enabled), "mcp.enabled",
 		"false disables ALL MCP servers, global and project")
 	ro("telemetry", "telemetry.enabled", strconv.FormatBool(s.cfg.Telemetry.Enabled), "telemetry.enabled",
-		"audit events to Cloud Logging or an OTLP collector (ADR-0035); applies at next start")
+		"audit events to Cloud Logging or an OTLP collector; applies at next start")
 	if s.cfg.Telemetry.Enabled {
 		ro("telemetry", "telemetry.backend", s.cfg.Telemetry.Backend, "telemetry.backend", "")
 		if s.cfg.Telemetry.Backend != "gcp" && s.cfg.Telemetry.Backend != "" {
@@ -144,7 +144,7 @@ func (s *settingsStore) data() tui.SettingsData {
 	// beats a menu that lies, per this panel's own design rule.
 	ro("session", "tui.theme", s.cfg.TUI.Theme, "tui.theme", "applies at next start")
 	ro("session", "tui.show_thoughts", strconv.FormatBool(s.cfg.TUI.ShowThoughts), "tui.show_thoughts",
-		"live thought summaries in the TUI (ADR-0033); applies at next start")
+		"live thought summaries in the TUI; applies at next start")
 
 	for _, t := range s.registry.List() {
 		d.Rows = append(d.Rows, tui.SettingRow{

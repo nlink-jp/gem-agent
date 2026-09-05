@@ -129,6 +129,15 @@ a new hook) is an architecture change and takes the same rows as a
 
 ## Gotchas
 
+- **Operator-facing text states the fact and the next command — never a
+  design reference or a reason.** `(ADR-0074)` in a banner note, or a
+  clause explaining why a rule exists, shipped four times; the reasons
+  live in the ADR, the reference docs and comments. `internal/archtest`
+  `TestNoDesignReferencesInOperatorText` fails on any string literal in
+  the operator- or model-facing packages that cites `ADR-nnnn`; the
+  wording rule beyond that is the knowledge base's "status output is
+  not documentation" (session facts in output, explanations in docs).
+
 - **macOS-only by design** — isolation is built on sandbox-exec (ADR-0001).
   Do not add linux/windows targets to the Makefile.
 - **Gemini 3 thought signatures** — a function-call response's Parts

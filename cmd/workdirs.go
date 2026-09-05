@@ -31,7 +31,7 @@ var workdirsCmd = &cobra.Command{
 	Long: `List the work directories earlier sessions of this project left
 behind — id, age, files, size — newest first.
 
-Nothing is ever deleted automatically (ADR-0058); 'workdirs clean' is
+Nothing is ever deleted automatically; 'workdirs clean' is
 the explicit remedy, and it never touches a running session's directory.`,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,

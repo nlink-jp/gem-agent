@@ -24,7 +24,7 @@ var sessionsCmd = &cobra.Command{
 
 Resume one with --resume <id>, or the most recent with --continue.
 Sessions from other project directories are not listed: a session
-resumes only into the directory it was recorded in (ADR-0005).`,
+resumes only into the directory it was recorded in.`,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE:         runSessions,
