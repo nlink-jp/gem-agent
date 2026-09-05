@@ -547,6 +547,25 @@ fine). All seven held:
   loop's `scanner.Err()` is kept as the incarnation's end cause and
   named to the waiter.
 
+### 4.9 Pre-release verification pass (2026-09-05, v0.68.2)
+
+The independent verification pass this project requires before a
+release (three fresh reviewers over `v0.68.1..HEAD`, plus a live
+end-to-end run of the release candidate) was skipped during the
+review-driven passes above and is recorded here.
+
+- **Found live, by the maintainer**: `--allow write_file --auto` in
+  one-shot mode wrote `AGENTS.md` unattended. The `never` policy the
+  grant stands for lifts the ordinary gate through `gated()`, and that
+  path honoured the Block floor only. OperatorOnly is a floor there
+  too: under a `never` policy or a `--allow` grant, a persistent-file
+  write still prompts (interactive) or is denied with the reason
+  (one-shot). `.git/hooks` was already Block on the same run.
+- Live checks passed: `read_file` through the root layer; `write_file`
+  → `edit_file` → `shell_exec` in auto mode; `/clear` with MCP
+  reconnect (the board's child moved to the new session id, 22
+  servers / 191 tools reconnected).
+
 ## Lessons
 
 - **Independent reviewers found what the maintainer pass did not**, for

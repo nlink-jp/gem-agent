@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/policy"
 	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/telemetry"
 	"github.com/nlink-jp/gem-agent/internal/tools"
@@ -307,5 +308,35 @@ func TestOperatorOnlyIsNotAnsweredByTheAllowlist(t *testing.T) {
 	}
 	if len(gate.prompted) != 1 || !strings.Contains(gate.prompted[0], "AGENTS.md") {
 		t.Errorf("the instruction-file write must prompt: %v", gate.prompted)
+	}
+}
+
+// ADR-0072 §4.9: a `never` policy (and the one-shot --allow grant it
+// stands for) lifts the ordinary gate, not the OperatorOnly floor —
+// found live: `--allow write_file --auto` wrote AGENTS.md unattended.
+func TestNeverPolicyKeepsTheOperatorOnlyFloor(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "write_file", Args: map[string]any{"path": "notes.md", "content": "x"}}}},
+		{ToolCalls: []llm.ToolCall{{ID: "c2", Name: "write_file", Args: map[string]any{"path": "AGENTS.md", "content": "x"}}}},
+		{Content: "done"},
+	}}
+	gate := &allowlistGate{}
+	a, reg := newAgent(t, mb, gate, 5)
+	pol, _, err := policy.Build(map[string]string{"write_file": "never"}, nil, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetPolicy(pol)
+	if _, err := a.Run(context.Background(), "write", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.allowlisted) != 0 {
+		t.Errorf("the never policy consulted the allowlist: %v", gate.allowlisted)
+	}
+	if len(gate.prompted) != 1 || !strings.Contains(gate.prompted[0], "AGENTS.md") {
+		t.Errorf("the instruction-file write must prompt under a never policy: %v", gate.prompted)
+	}
+	if _, err := os.Stat(filepath.Join(reg.ProjectDir(), "notes.md")); err != nil {
+		t.Error("the ordinary write under a never policy did not run")
 	}
 }

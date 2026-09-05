@@ -1388,7 +1388,12 @@ func (a *Agent) gated(mutating bool, tc llm.ToolCall) bool {
 		if !ok {
 			return true
 		}
-		return risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir(), a.registry.WorkDir()).Tier == risk.Block
+		// Block and OperatorOnly are floors a `never` policy — or a
+		// one-shot --allow grant, which is the same policy for one run
+		// — does not lift (ADR-0072 §4.9: `--allow write_file --auto`
+		// wrote AGENTS.md unattended).
+		v := risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir(), a.registry.WorkDir())
+		return v.Tier == risk.Block || v.OperatorOnly
 	default:
 		return mutating
 	}

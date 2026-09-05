@@ -393,8 +393,12 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 - **Instruction files are read through an `os.Root` at their
   directory** (ADR-0072 §4.4) — `readInstruction`; a link out of the
   directory is refused and noted, a sibling link resolves.
-- **OperatorOnly is a floor like Block** (ADR-0072 §4.5) — it sets
-  `mustPrompt`, so the session allowlist never answers it. Process
+- **OperatorOnly is a floor like Block** (ADR-0072 §4.5, §4.9) — it
+  sets `mustPrompt`, so the session allowlist never answers it, and
+  `gated()` keeps it under a `never` policy / a one-shot `--allow`
+  grant (found live: `--allow write_file --auto` wrote AGENTS.md).
+  Any new place that reads `v.Tier == risk.Block` must read
+  `|| v.OperatorOnly` beside it. Process
   output is bounded as it arrives (`boundedOutput` in tools,
   `boundedBuffer` in hooks) — never `CombinedOutput` on a command the
   model wrote. `readDirIn` returns `(entries, more, err)`: every

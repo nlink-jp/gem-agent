@@ -61,6 +61,9 @@
   previews count against the response budget; `.pptx` `r:id` is read
   by namespace; startup directory scans are bounded; the bounded shell
   output cuts on a rune boundary
+- A `never` policy or a one-shot `--allow` grant no longer lifts the
+  operator-only floor: writing `AGENTS.md` under `--allow write_file
+  --auto` is denied with the reason instead of running
 - `osascript … with administrator privileges` is Block; `git branch`
   deleting with force in any spelling is Block; GNU sed's `e` command
   and `e` flag are not Safe
