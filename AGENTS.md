@@ -32,9 +32,21 @@ on-demand [health check](docs/en/reference/drill.md).
 | Vet + lint + test + docs mirror + build | `make check` |
 | Docs mirror only | `make docs-check` |
 | Release archive | `make package` → `dist/gem-agent-vX.Y.Z-darwin-arm64.zip` |
+| Operator text, collected | `make labels` → `dist/labels.md` (UI catalog ja/en, cmd notes/errors/help, `--help` pages) |
 
 Version is injected via `-X main.version` from `git describe` — never edit the
 `version` var default.
+
+Before a release, three passes run in this order, each by a reader who
+did not write the change: (1) `make check`; (2) an independent review of
+the release diff, findings triaged by the contributor (CONVENTIONS
+§Verify with an independent pass); (3) **the label read-through** —
+`make labels`, then `dist/labels.md` read end to end as the operator
+reads it: every line is a session fact plus the next command, no design
+reference, no reason clause, ja and en say the same thing, sample values
+render sensibly. Text scattered over forty files cannot be read that way
+in a diff; four releases shipped explanatory banners because nobody had
+the whole in one place.
 
 ## Structure
 

@@ -13,6 +13,10 @@
 
 ### Changed
 
+- `make labels` collects every operator-facing string — the ja/en UI
+  catalog with format verbs filled in, the cmd notes, errors and help,
+  and the `--help` pages — into `dist/labels.md` for the read-through
+  that now precedes a release
 - `make check` (docs-mirror-check) now fails when a concept exists in
   the code and not in the document that describes the whole: every
   `internal/` package must appear in the architecture reference's

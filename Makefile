@@ -83,6 +83,22 @@ docs-check:
 
 check: vet lint test docs-check build
 
+## labels: every operator-facing string in one document (dist/labels.md)
+## for the read-through before a release: the ja/en UI catalog with verbs
+## filled in, the cmd notes/errors/help, and the built binary's --help
+## pages. Text scattered over forty files cannot be read as the operator
+## reads it; collected, it can (AGENTS.md §Build / test).
+labels: build
+	@mkdir -p $(DIST_DIR)
+	@go run ./tools/labels > $(DIST_DIR)/labels.md
+	@echo "" >> $(DIST_DIR)/labels.md; echo "## --help pages" >> $(DIST_DIR)/labels.md
+	@for c in "" sessions trust workdirs "workdirs clean"; do \
+		echo "" >> $(DIST_DIR)/labels.md; echo '```' >> $(DIST_DIR)/labels.md; \
+		echo "$$ gem-agent $$c --help" >> $(DIST_DIR)/labels.md; \
+		$(DIST_DIR)/$(BINARY) $$c --help >> $(DIST_DIR)/labels.md 2>&1; \
+		echo '```' >> $(DIST_DIR)/labels.md; done
+	@echo "labels: $(DIST_DIR)/labels.md ($$(grep -c '^- ' $(DIST_DIR)/labels.md) strings) — read it through before a release"
+
 clean:
 	rm -rf $(DIST_DIR)
 
