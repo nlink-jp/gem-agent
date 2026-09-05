@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -344,13 +345,17 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			if err := exportWorkDir(workDir); err != nil {
 				fmt.Fprintf(stderr, "warning: cannot export %s: %v\n", workdir.EnvVar, err)
 			}
-			if dirs, bytes, err := workdir.Sweep(projectDir, sessionID); err == nil && dirs > 0 {
+			if dirs, bytes, more, err := workdir.Sweep(projectDir, sessionID); err == nil && dirs > 0 {
 				verb := "hold"
 				if dirs == 1 {
 					verb = "holds"
 				}
-				fmt.Fprintf(stderr, "note: %d earlier session work director%s %s %s here — review with 'gem-agent workdirs' (nothing is deleted automatically)\n",
-					dirs, plural(dirs, "y", "ies"), verb, humanBytes(bytes))
+				plus := ""
+				if more {
+					plus = "+" // the startup scan was cut: a lower bound
+				}
+				fmt.Fprintf(stderr, "note: %d%s earlier session work director%s %s %s%s here — review with 'gem-agent workdirs' (nothing is deleted automatically)\n",
+					dirs, plus, plural(dirs, "y", "ies"), verb, humanBytes(bytes), plus)
 			}
 		}
 	}
@@ -470,7 +475,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// attachments route through the operator's bucket as gs:// URIs.
 	// The client is created lazily on first use — most sessions attach
 	// no media.
-	var mediaUpload func(callCtx context.Context, path, mime string) (string, error)
+	var mediaUpload func(callCtx context.Context, f *os.File, name, mime string) (string, error)
 	if cfg.GCP.Bucket != "" {
 		// Lazy, but retryable: sync.Once pinned the FIRST construction
 		// error (a transient DNS/ADC hiccup) for the whole session
@@ -481,7 +486,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			upMu sync.Mutex
 			up   *mediastore.Uploader
 		)
-		mediaUpload = func(callCtx context.Context, path, mime string) (string, error) {
+		mediaUpload = func(callCtx context.Context, f *os.File, name, mime string) (string, error) {
 			upMu.Lock()
 			if up == nil {
 				u, err := mediastore.New(ctx, cfg.GCP.Project, cfg.GCP.Bucket)
@@ -493,10 +498,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			}
 			u := up
 			upMu.Unlock()
-			uri, err := u.Upload(callCtx, path, mime)
+			uri, err := u.UploadFile(callCtx, f, filepath.Ext(name), mime)
 			if err == nil {
 				var size int64
-				if fi, statErr := os.Stat(path); statErr == nil {
+				if fi, statErr := f.Stat(); statErr == nil {
 					size = fi.Size()
 				}
 				sink.MediaUpload(size, uri)

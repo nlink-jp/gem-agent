@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -161,7 +162,7 @@ type Agent struct {
 	// clipboard captures the clipboard image (ADR-0012). May be nil.
 	clipboard func() ([]byte, error)
 	// mediaUpload routes media attachments through GCS (ADR-0027).
-	mediaUpload func(ctx context.Context, path, mime string) (string, error)
+	mediaUpload func(ctx context.Context, f *os.File, name, mime string) (string, error)
 
 	// stats is the per-category usage accounting (ADR-0019), guarded by
 	// mu with everything else the UI goroutine reads.
@@ -246,7 +247,7 @@ type Options struct {
 	ClipboardImage func() ([]byte, error)
 	// MediaUpload stores an audio/video attachment in the operator's
 	// bucket and returns its gs:// URI (ADR-0027). nil = inline only.
-	MediaUpload func(ctx context.Context, path, mime string) (string, error)
+	MediaUpload func(ctx context.Context, f *os.File, name, mime string) (string, error)
 	// InstructionTools names tools whose results are instruction-grade
 	// rather than untrusted data, exempting them from the nonce wrap
 	// (ADR-0010: load_skill, whose reads are confined to operator-

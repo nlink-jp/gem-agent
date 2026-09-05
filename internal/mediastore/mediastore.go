@@ -88,12 +88,22 @@ func (u *Uploader) Upload(ctx context.Context, path, contentType string) (string
 		return "", err
 	}
 	defer func() { _ = f.Close() }()
+	return u.UploadFile(ctx, f, filepath.Ext(path), contentType)
+}
+
+// UploadFile uploads an already-open file — the descriptor the caller
+// verified, so nothing is re-resolved by name (review after v0.68.2,
+// R05). ext names the object's extension.
+func (u *Uploader) UploadFile(ctx context.Context, f *os.File, ext, contentType string) (string, error) {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
 	}
 	sum := hex.EncodeToString(h.Sum(nil))
-	object := objectPrefix + sum + strings.ToLower(filepath.Ext(path))
+	object := objectPrefix + sum + strings.ToLower(ext)
 	uri := "gs://" + u.bucket + "/" + object
 
 	exists, err := u.store.Exists(ctx, object)

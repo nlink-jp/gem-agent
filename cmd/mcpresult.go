@@ -55,6 +55,7 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content, isErr bool
 	// one, so the inline text never exceeds one cap.
 	budget := in.cap
 	var rest []string // text blocks past the budget, saved together
+	leftBinary, savedUnlisted := 0, 0
 	spend := func(piece string) bool {
 		// Every rendered piece — inline text, a spill preview and its
 		// path, a binary note, the separator — is paid from the one
@@ -84,13 +85,28 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content, isErr bool
 			rest = append(rest, b.Text)
 			continue
 		}
+		// A non-text block past the budget is neither saved nor
+		// described one by one (review after v0.68.2, R06: a note per
+		// block was itself unbounded); the leftovers are one line.
+		if budget < minBinaryNote {
+			leftBinary++
+			continue
+		}
 		piece := in.binary(server, tool, b)
 		if !spend(piece) {
-			parts = append(parts, fmt.Sprintf("[%s content (%d bytes) — past the response budget, not saved]", b.Type, len(b.Data)))
+			leftBinary++
+			savedUnlisted++
 		}
 	}
 	if len(rest) > 0 {
 		parts = append(parts, in.spillRest(server, tool, rest))
+	}
+	if leftBinary > 0 {
+		note := fmt.Sprintf("[%d more non-text block(s) past the response budget — not saved; narrow the call and ask again]", leftBinary)
+		if savedUnlisted > 0 {
+			note = fmt.Sprintf("[%d more non-text block(s) past the response budget — %d saved in the work directory but not listed, %d not saved; narrow the call and ask again]", leftBinary, savedUnlisted, leftBinary-savedUnlisted)
+		}
+		parts = append(parts, note)
 	}
 	out := strings.Join(parts, "\n")
 	if out == "" {
@@ -101,6 +117,10 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content, isErr bool
 	}
 	return out
 }
+
+// minBinaryNote is the room a binary block's note needs; below it the
+// block is counted as a leftover without being saved.
+const minBinaryNote = 160
 
 // spillRest saves the text blocks past the response budget as one file
 // and tells the model where, with no preview.

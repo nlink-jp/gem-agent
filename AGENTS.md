@@ -401,6 +401,13 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   caller renders `more`. Project files read before the trust prompt
   go through `readCapped` (1 MiB). The risk tier's persistent-file
   candidates come from `shellUnquote` + `candidateSplit`.
+- **The media upload takes the opened file** (ADR-0072 §4.7) —
+  `mention.Limits.UploadMedia` and `agent.Options.MediaUpload` receive
+  `*os.File` (opened through the root) plus the reference name;
+  `mediastore.UploadFile` hashes and streams that descriptor. Never
+  reintroduce a path parameter the callee reopens. `workdir.List`
+  returns `(infos, more, err)` and `Info.Partial`; every consumer
+  renders the cut.
 - **Every cut is a rune cut** (ADR-0072 §4.3) — `cutRunes` in tools,
   skills, memory, instructions, `clipText` in docext: never `s[:n]`
   on text the model will see.

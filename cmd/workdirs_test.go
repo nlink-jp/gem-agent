@@ -89,7 +89,7 @@ func TestWorkdirsCleanAsksAndEOFMeansNo(t *testing.T) {
 	if !strings.Contains(out, "aborted") {
 		t.Fatalf("EOF must abort:\n%s", out)
 	}
-	if infos, _ := workdir.List(project, ""); len(infos) != 2 {
+	if infos, _, _ := workdir.List(project, ""); len(infos) != 2 {
 		t.Fatalf("EOF deleted something: %d dirs left", len(infos))
 	}
 
@@ -99,7 +99,7 @@ func TestWorkdirsCleanAsksAndEOFMeansNo(t *testing.T) {
 	if !strings.Contains(out, "aborted") || !strings.Contains(out, "--yes") {
 		t.Fatalf("piped y must abort and name --yes:\n%s", out)
 	}
-	if infos, _ := workdir.List(project, ""); len(infos) != 2 {
+	if infos, _, _ := workdir.List(project, ""); len(infos) != 2 {
 		t.Fatalf("piped y deleted something: %d dirs left", len(infos))
 	}
 
@@ -108,7 +108,7 @@ func TestWorkdirsCleanAsksAndEOFMeansNo(t *testing.T) {
 	if !strings.Contains(out, "deleted 20260830-000001") || !strings.Contains(out, "deleted 20260830-000002") {
 		t.Fatalf("y should delete both:\n%s", out)
 	}
-	if infos, _ := workdir.List(project, ""); len(infos) != 0 {
+	if infos, _, _ := workdir.List(project, ""); len(infos) != 0 {
 		t.Fatalf("%d dirs survived a confirmed clean", len(infos))
 	}
 }

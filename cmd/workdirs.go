@@ -72,7 +72,7 @@ func runWorkdirsList(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	infos, err := workdir.List(projectDir, "")
+	infos, more, err := workdir.List(projectDir, "")
 	if err != nil {
 		return err
 	}
@@ -80,6 +80,9 @@ func runWorkdirsList(cmd *cobra.Command, _ []string) error {
 	if len(infos) == 0 {
 		fmt.Fprintln(out, "no session work directories here")
 		return nil
+	}
+	if more {
+		fmt.Fprintf(out, "[more than %d session work directories — the listing stopped there]\n", workdir.ListCap)
 	}
 	sessDir, sessErr := session.DefaultDir()
 	tw := tabwriter.NewWriter(out, 2, 8, 2, ' ', 0)
@@ -90,7 +93,11 @@ func runWorkdirsList(cmd *cobra.Command, _ []string) error {
 		if sessErr == nil && session.InUse(sessDir, projectDir, in.ID) {
 			note = "(running)"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n", in.ID, humanAge(in.LastUsed), in.Files, humanBytes(in.Bytes), note)
+		files := fmt.Sprint(in.Files)
+		if in.Partial {
+			files += "+" // walk cut at WalkCap: a lower bound
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", in.ID, humanAge(in.LastUsed), files, humanBytes(in.Bytes), note)
 		total += in.Bytes
 	}
 	_ = tw.Flush()
@@ -104,7 +111,7 @@ func runWorkdirsClean(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	infos, err := workdir.List(projectDir, "")
+	infos, more, err := workdir.List(projectDir, "")
 	if err != nil {
 		return err
 	}
@@ -126,7 +133,13 @@ func runWorkdirsClean(cmd *cobra.Command, args []string) error {
 		for _, id := range args {
 			in, ok := byID[id]
 			if !ok {
-				return fmt.Errorf("no work directory for session %s here", id)
+				// Not in the listing — which may have been cut (R12):
+				// the named form stats the directory itself.
+				st, err := workdir.Stat(projectDir, id)
+				if err != nil {
+					return fmt.Errorf("no work directory for session %s here", id)
+				}
+				in = st
 			}
 			if live(id) {
 				return fmt.Errorf("session %s is running — not deleting its work directory", id)
@@ -134,6 +147,9 @@ func runWorkdirsClean(cmd *cobra.Command, args []string) error {
 			picked = append(picked, in)
 		}
 	} else {
+		if more {
+			fmt.Fprintf(cmd.OutOrStdout(), "[more than %d session work directories — this pass covers the first %d; run again for the rest]\n", workdir.ListCap, workdir.ListCap)
+		}
 		for _, in := range infos {
 			if live(in.ID) {
 				fmt.Fprintf(cmd.OutOrStdout(), "skipping %s (session is running)\n", in.ID)

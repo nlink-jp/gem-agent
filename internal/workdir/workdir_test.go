@@ -1,6 +1,7 @@
 package workdir
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,7 +112,7 @@ func TestSweepCountsOtherSessionsAndSkipsTheCurrentOne(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dirs, bytes, err := Sweep(project, "current")
+	dirs, bytes, _, err := Sweep(project, "current")
 	if err != nil {
 		t.Fatalf("Sweep: %v", err)
 	}
@@ -131,7 +132,7 @@ func TestSweepCountsOtherSessionsAndSkipsTheCurrentOne(t *testing.T) {
 
 func TestSweepIsQuietWhenNothingWasEverWritten(t *testing.T) {
 	isolate(t)
-	dirs, bytes, err := Sweep(t.TempDir(), "sess-1")
+	dirs, bytes, _, err := Sweep(t.TempDir(), "sess-1")
 	if err != nil || dirs != 0 || bytes != 0 {
 		t.Errorf("Sweep on a fresh project = %d/%d/%v, want 0/0/nil", dirs, bytes, err)
 	}
@@ -171,7 +172,7 @@ func TestListReportsEverySessionWithSizes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	infos, err := List(project, "")
+	infos, _, err := List(project, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +186,7 @@ func TestListReportsEverySessionWithSizes(t *testing.T) {
 	if sizes["sess-a"] != 100 || sizes["sess-b"] != 40 {
 		t.Errorf("sizes = %v", sizes)
 	}
-	if got, _, _ := Sweep(project, "sess-b"); got != 1 {
+	if got, _, _, _ := Sweep(project, "sess-b"); got != 1 {
 		t.Errorf("Sweep must exclude the asking session: dirs = %d, want 1", got)
 	}
 }
@@ -225,5 +226,48 @@ func TestRemoveDeletesOnlyTheNamedSession(t *testing.T) {
 	parent := filepath.Dir(bDir)
 	if _, err := os.Stat(parent); !os.IsNotExist(err) {
 		t.Errorf("emptied work/ parent should be folded up: %v", err)
+	}
+}
+
+// R12: a listing cut at ListCap says so, and a session it did not reach
+// is still found by id.
+func TestListReportsItsCutAndStatFindsTheRest(t *testing.T) {
+	isolate(t)
+	project := t.TempDir()
+	seed, err := Path(project, "seed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Dir(seed)
+	if err := os.MkdirAll(base, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i <= ListCap; i++ {
+		if err := os.Mkdir(filepath.Join(base, fmt.Sprintf("session-%05d", i)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	infos, more, err := List(project, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !more || len(infos) != ListCap {
+		t.Fatalf("List returned %d entries more=%v; want %d and more", len(infos), more, ListCap)
+	}
+	listed := map[string]bool{}
+	for _, in := range infos {
+		listed[in.ID] = true
+	}
+	for i := 0; i <= ListCap; i++ {
+		id := fmt.Sprintf("session-%05d", i)
+		if !listed[id] {
+			if _, err := Stat(project, id); err != nil {
+				t.Fatalf("the unlisted session %s is not found by id: %v", id, err)
+			}
+			break
+		}
+	}
+	if _, _, more, err := Sweep(project, "seed"); err != nil || !more {
+		t.Errorf("Sweep did not report the cut: more=%v err=%v", more, err)
 	}
 }

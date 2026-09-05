@@ -24,8 +24,8 @@ func TestMediaBucketAlwaysWins(t *testing.T) {
 
 	var uploaded []string
 	lim := DefaultLimits()
-	lim.UploadMedia = func(_ context.Context, p, mime string) (string, error) {
-		uploaded = append(uploaded, p+"|"+mime)
+	lim.UploadMedia = func(_ context.Context, f *os.File, name, mime string) (string, error) {
+		uploaded = append(uploaded, f.Name()+"|"+mime)
 		return "gs://ops/gem-agent/media/abc.wav", nil
 	}
 	atts, problems := Expand(context.Background(), "聞いて @memo.wav", dir, "", lim)
@@ -81,7 +81,7 @@ func TestMediaUploadFailureReported(t *testing.T) {
 	path := filepath.Join(dir, "m.mov")
 	_ = os.WriteFile(path, fakeWAV(64), 0o644)
 	lim := DefaultLimits()
-	lim.UploadMedia = func(_ context.Context, p, mime string) (string, error) {
+	lim.UploadMedia = func(_ context.Context, _ *os.File, _, _ string) (string, error) {
 		return "", os.ErrPermission
 	}
 	atts, problems := Expand(context.Background(), "@m.mov", dir, "", lim)

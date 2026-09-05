@@ -94,78 +94,135 @@ type Info struct {
 	Files    int
 	Bytes    int64
 	LastUsed time.Time
+	// Partial marks a directory whose walk stopped at WalkCap files:
+	// Files and Bytes are lower bounds.
+	Partial bool
 }
+
+// WalkCap bounds the files counted under one session directory at
+// startup; ListCap bounds the sessions listed. Both report their cut
+// (review after v0.68.2, R12).
+const (
+	WalkCap = 50000
+	ListCap = 10000
+)
 
 // List returns a project's session work directories, newest first,
 // excluding excludeSessionID when non-empty (the session doing the
 // asking). Read-only: sizes are summed, nothing is touched.
-func List(projectDir, excludeSessionID string) ([]Info, error) {
+//
+// more reports that the directory held more sessions than ListCap: the
+// list is then incomplete, and a caller must say so rather than treat
+// it as the whole (review after v0.68.2, R12 — a silent cut made
+// `workdirs clean <id>` call an existing session non-existent).
+func List(projectDir, excludeSessionID string) (infos []Info, more bool, err error) {
 	root, err := statedir.Root()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	base := filepath.Join(root, statedir.EscapeProject(projectDir), "work")
 	d, err := os.Open(base)
 	if os.IsNotExist(err) {
-		return nil, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	// Bounded: the state root is the machine's, but a long-lived
 	// install accumulates, and the startup scan must not hold every
-	// entry (review after v0.68.2, R12).
-	entries, err := d.ReadDir(ListCap)
+	// entry.
+	entries, err := d.ReadDir(ListCap + 1)
 	_ = d.Close()
 	if err != nil && err != io.EOF {
-		return nil, err
+		return nil, false, err
 	}
-	var infos []Info
+	if len(entries) > ListCap {
+		entries, more = entries[:ListCap], true
+	}
 	for _, e := range entries {
 		if !e.IsDir() || e.Name() == excludeSessionID {
 			continue
 		}
-		in := Info{ID: e.Name(), Path: filepath.Join(base, e.Name())}
-		if fi, err := e.Info(); err == nil {
-			in.LastUsed = fi.ModTime()
-		}
-		_ = filepath.WalkDir(in.Path, func(_ string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return nil //nolint:nilerr // an unreadable entry is skipped, not fatal
-			}
-			if info, err := d.Info(); err == nil {
-				in.Files++
-				in.Bytes += info.Size()
-				if info.ModTime().After(in.LastUsed) {
-					in.LastUsed = info.ModTime()
-				}
-			}
-			return nil
-		})
-		infos = append(infos, in)
+		infos = append(infos, describe(base, e))
 	}
 	sort.Slice(infos, func(i, j int) bool { return infos[i].LastUsed.After(infos[j].LastUsed) })
-	return infos, nil
+	return infos, more, nil
 }
+
+// describe sizes one session directory, walking at most WalkCap files.
+func describe(base string, e os.DirEntry) Info {
+	in := Info{ID: e.Name(), Path: filepath.Join(base, e.Name())}
+	if fi, err := e.Info(); err == nil {
+		in.LastUsed = fi.ModTime()
+	}
+	_ = filepath.WalkDir(in.Path, func(_ string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil //nolint:nilerr // an unreadable entry is skipped, not fatal
+		}
+		if in.Files >= WalkCap {
+			in.Partial = true
+			return filepath.SkipAll
+		}
+		if info, err := d.Info(); err == nil {
+			in.Files++
+			in.Bytes += info.Size()
+			if info.ModTime().After(in.LastUsed) {
+				in.LastUsed = info.ModTime()
+			}
+		}
+		return nil
+	})
+	return in
+}
+
+// Stat describes one session's work directory by id, whether or not
+// List would have reached it: the named form of the cleanup command
+// must not depend on a listing that was cut (R12).
+func Stat(projectDir, sessionID string) (Info, error) {
+	p, err := Path(projectDir, sessionID)
+	if err != nil {
+		return Info{}, err
+	}
+	fi, err := os.Stat(p)
+	if err != nil {
+		return Info{}, err
+	}
+	if !fi.IsDir() {
+		return Info{}, fmt.Errorf("%s is not a directory", p)
+	}
+	return describe(filepath.Dir(p), dirEntry{fi}), nil
+}
+
+// dirEntry adapts a FileInfo to the DirEntry describe reads.
+type dirEntry struct{ os.FileInfo }
+
+func (d dirEntry) Type() os.FileMode          { return d.Mode().Type() }
+func (d dirEntry) Info() (os.FileInfo, error) { return d.FileInfo, nil }
 
 // Sweep aggregates List for the startup report: how many earlier work
 // directories exist and how many bytes they hold. It is deliberately a
 // report and not a deletion. Removing a tree of files the operator may
 // not have looked at yet is not a decision an agent gets to make on its
 // own; the explicit remedy is the workdirs command (ADR-0059).
-func Sweep(projectDir, currentSessionID string) (dirs int, bytes int64, err error) {
+//
+// more reports that the count is a lower bound (List was cut, or a
+// directory's walk was).
+func Sweep(projectDir, currentSessionID string) (dirs int, bytes int64, more bool, err error) {
 	if _, err := Path(projectDir, currentSessionID); err != nil {
-		return 0, 0, err
+		return 0, 0, false, err
 	}
-	infos, err := List(projectDir, currentSessionID)
+	infos, more, err := List(projectDir, currentSessionID)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, false, err
 	}
 	for _, in := range infos {
 		dirs++
 		bytes += in.Bytes
+		if in.Partial {
+			more = true
+		}
 	}
-	return dirs, bytes, nil
+	return dirs, bytes, more, nil
 }
 
 // Remove deletes one session's work directory (ADR-0059). The path is
@@ -203,6 +260,3 @@ func RemoveIfEmpty(dir string) {
 	}
 	_ = os.Remove(dir)
 }
-
-// ListCap bounds the work directories List reads at startup.
-const ListCap = 10000

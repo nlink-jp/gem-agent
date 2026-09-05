@@ -213,3 +213,25 @@ func TestOversizedBlockPreviewsShareTheBudget(t *testing.T) {
 		t.Fatal("the remainder was not saved together")
 	}
 }
+
+// R06: non-text blocks past the budget are one line, not a note each,
+// and are not saved.
+func TestBinaryLeftoversAreOneLine(t *testing.T) {
+	work := t.TempDir()
+	in := newMCPIntake(fixedDir(work))
+	blocks := make([]mcp.Content, 10000)
+	for i := range blocks {
+		blocks[i] = mcp.Content{Type: "image", MIME: "image/png", Data: []byte("TEST-DATA")}
+	}
+	out := in.render("srv", "tool", blocks, false)
+	if len(out) > in.cap+1000 {
+		t.Fatalf("rendered %d bytes for cap %d", len(out), in.cap)
+	}
+	if !strings.Contains(out, "more non-text block(s) past the response budget") {
+		t.Fatal("leftovers not summarised")
+	}
+	entries, _ := os.ReadDir(work)
+	if len(entries) > 200 {
+		t.Errorf("%d files saved for blocks past the budget", len(entries))
+	}
+}

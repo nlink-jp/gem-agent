@@ -61,6 +61,11 @@
   previews count against the response budget; `.pptx` `r:id` is read
   by namespace; startup directory scans are bounded; the bounded shell
   output cuts on a rune boundary
+- Residuals: the media upload streams the file `@` opened through its
+  root instead of reopening a path; non-text MCP blocks past the
+  budget are one line, not a note each; `workdirs` says when its
+  listing or a directory walk was cut, and `workdirs clean <id>` finds
+  a session the listing did not reach
 
 - `.gitignore` files are read through the confinement roots with the
   cap applied on the stream; a link where a `.gitignore` should be

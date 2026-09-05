@@ -46,7 +46,11 @@ type Limits struct {
 	// The ctx is the TURN's context: a multi-minute upload the
 	// operator's Ctrl+C could not reach looked like a hang (review
 	// round 2).
-	UploadMedia func(ctx context.Context, path, mime string) (string, error)
+	// It receives the file mention opened through its confinement root
+	// and the reference's name (for the extension), never a path to
+	// reopen: a path re-resolved after the check was a swap away from
+	// reading outside (review after v0.68.2, R05).
+	UploadMedia func(ctx context.Context, f *os.File, name, mime string) (string, error)
 }
 
 // DefaultLimits are sized so a handful of source files fit comfortably
@@ -366,12 +370,17 @@ func attachMedia(ctx context.Context, ref, projectDir string, lim Limits) (Attac
 		return Attachment{}, err
 	}
 	mime := mediaMIME[strings.ToLower(filepath.Ext(ref))]
-	info, err := os.Stat(abs)
+	f, err := openConfined(abs, projectDir)
+	if err != nil {
+		return Attachment{}, fmt.Errorf("not found")
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
 	if err != nil {
 		return Attachment{}, fmt.Errorf("not found")
 	}
 	if lim.UploadMedia != nil {
-		uri, err := lim.UploadMedia(ctx, abs, mime)
+		uri, err := lim.UploadMedia(ctx, f, ref, mime)
 		if err != nil {
 			return Attachment{}, fmt.Errorf("upload: %v", err)
 		}

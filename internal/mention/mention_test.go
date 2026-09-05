@@ -3,6 +3,7 @@ package mention
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -477,5 +478,39 @@ func TestDirectoryOmissionIsNotACount(t *testing.T) {
 	}
 	if strings.Contains(att.Content, "1 more entries") || !strings.Contains(att.Content, "more than 2 entries") {
 		t.Errorf("omission wording wrong: %q", att.Content)
+	}
+}
+
+// R05: the upload receives the file mention verified and opened — a
+// swap after the check reaches neither the hash nor the bucket.
+func TestUploadUsesTheVerifiedFile(t *testing.T) {
+	project, _ := filepath.EvalSymlinks(t.TempDir())
+	outside, _ := filepath.EvalSymlinks(t.TempDir())
+	p := filepath.Join(project, "clip.mp4")
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(p, []byte("MEDIA-SENTINEL"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secret, []byte("OUTSIDE-SENTINEL"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var captured string
+	lim := DefaultLimits()
+	lim.UploadMedia = func(_ context.Context, f *os.File, _, _ string) (string, error) {
+		if err := os.Rename(p, p+".original"); err != nil {
+			return "", err
+		}
+		if err := os.Symlink(secret, p); err != nil {
+			return "", err
+		}
+		data, err := io.ReadAll(f)
+		captured = string(data)
+		return "gs://test-only/not-uploaded", err
+	}
+	if _, err := attachMedia(context.Background(), "clip.mp4", project, lim); err != nil {
+		t.Fatal(err)
+	}
+	if captured != "MEDIA-SENTINEL" {
+		t.Fatalf("upload read %q, want the verified file's bytes", captured)
 	}
 }

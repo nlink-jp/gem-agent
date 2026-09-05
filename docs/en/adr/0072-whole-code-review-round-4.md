@@ -490,6 +490,27 @@ remaining, two regressions from the fixes. All seven held:
 - **N02** (regression) — `boundedOutput` sliced by byte before the
   rune cut. The whole kept buffer goes to the cut.
 
+### 4.7 Eighth pass — three residuals (2026-09-05, v0.68.2)
+
+The re-check of §4.6 confirmed four items and left three related
+paths, all held:
+
+- **R05** — the media upload took a path and reopened it; a swap after
+  the check uploaded an outside file. `UploadMedia` receives the file
+  mention opened through its root (`*os.File`) and the uploader hashes
+  and streams that descriptor (`UploadFile`).
+- **R06** — a non-text block whose note did not fit got a "not saved"
+  line each — ten thousand of them — after `binary` had already saved
+  it. Leftover non-text blocks are neither saved nor described one by
+  one: one line names how many, and how many were saved but not
+  listed.
+- **R12** — `List` cut at 10,000 sessions silently, so `Sweep`,
+  `workdirs list` and `workdirs clean <id>` treated the cut list as
+  the whole; the per-session walk was unbounded. `List` reports the
+  cut, the walk stops at 50,000 files and marks the entry partial,
+  every consumer shows it (`+`, "more than"), and the named cleanup
+  stats the directory itself.
+
 ## Lessons
 
 - **Independent reviewers found what the maintainer pass did not**, for
