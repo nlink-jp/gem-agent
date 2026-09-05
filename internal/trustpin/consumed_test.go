@@ -50,7 +50,7 @@ func TestPinName(t *testing.T) {
 		".claude/skills/x": ".claude/skills/x", ".claude/skills": "", "sub/AGENTS.md": "", "README.md": "",
 	}
 	for in, want := range cases {
-		if got := PinName(in); got != want {
+		if got := PinName("", in); got != want {
 			t.Errorf("PinName(%q) = %q, want %q", in, got, want)
 		}
 	}

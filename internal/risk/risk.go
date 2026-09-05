@@ -272,7 +272,8 @@ func persistentTarget(rel string) (Verdict, bool) {
 	if strings.HasPrefix(c, "../") || c == ".." {
 		return Verdict{}, false // outside the project: judged elsewhere
 	}
-	if c == ".git" || strings.HasPrefix(c, ".git/") || strings.Contains(c, "/.git/") || strings.HasSuffix(c, "/.git") {
+	// Folded: the volume does not distinguish .GIT from .git.
+	if l := strings.ToLower(c); l == ".git" || strings.HasPrefix(l, ".git/") || strings.Contains(l, "/.git/") || strings.HasSuffix(l, "/.git") {
 		return Verdict{Tier: Block, Reason: "writes inside the version-control internals — hooks and config there run outside the sandbox on the next git command"}, true
 	}
 	if sandbox.PersistentFile(c) {

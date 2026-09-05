@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Security:** the file tools' persistent-file rule, the rule tier's
+  `.git` check and the trust pins compared names by exact case, while
+  the default APFS volume folds it — `write_file("agents.md")` reached
+  `AGENTS.md` at Review tier instead of operator-only, a created
+  `.git/hooks/PRE-COMMIT` (the hook git runs) passed as ordinary, and it
+  was missing from the persistent-file snapshot. All three now fold
+  case; the kernel side (Seatbelt) was measured to fold already and a
+  real-Seatbelt test with controls pins both sides (external finding)
+
 ## [0.70.1] - 2026-09-05
 
 ### Fixed

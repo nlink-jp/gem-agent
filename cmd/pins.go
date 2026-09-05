@@ -166,7 +166,7 @@ func pinNameForWrite(projectDir string, tc llm.ToolCall) string {
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
 		return ""
 	}
-	return trustpin.PinName(rel)
+	return trustpin.PinName(projectDir, rel)
 }
 
 // repinName re-records the pin of one name after a write the operator

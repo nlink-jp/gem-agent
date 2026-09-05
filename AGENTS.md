@@ -431,7 +431,12 @@ a new hook) is an architecture change and takes the same rows as a
   / `PersistentFile` and `sandbox.CredentialFilters` / `CredentialPath`
   are read by the profile builder and by the file tools' verdict;
   `ScratchDirs` / `ScratchFiles` likewise. Adding a persistent file or a
-  credential location means adding it there, nowhere else.
+  credential location means adding it there, nowhere else. **Name checks
+  fold case**: the default APFS volume does, so a check keyed on exact
+  case protects nothing there (`agents.md` is `AGENTS.md`; a created
+  `.git/hooks/PRE-COMMIT` runs). Seatbelt was measured to fold already;
+  `PersistentFile`, the rule tier's `.git` Block and `trustpin.PinName`
+  fold by rule (`TestLanesFoldCase`, `TestPersistentFileFoldsCase`).
 - **The architecture tests are the rule** (ADR-0073 §4) —
   `internal/archtest` fails the build on a raw `os.Open`/`Stat`/… in a
   path-taking package, on `io.ReadAll`/`os.ReadFile`/`os.ReadDir`/

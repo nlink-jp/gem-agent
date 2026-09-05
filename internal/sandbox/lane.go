@@ -125,9 +125,14 @@ func PersistentFiles(projectDir string) []string {
 
 // PersistentFile reports whether rel — a project-relative, slash-
 // separated path — names one of the persistent files (the file-tool
-// side of PersistentFiles; one rule, two enforcers).
+// side of PersistentFiles; one rule, two enforcers). The comparison
+// folds case: the default APFS volume does, so `agents.md` is AGENTS.md
+// and a created `.git/hooks/PRE-COMMIT` is the hook git runs (external
+// finding after v0.70.1; the kernel side was measured to fold already).
+// On a case-sensitive volume the fold over-protects a few names, which
+// costs nothing.
 func PersistentFile(rel string) bool {
-	c := strings.Trim(filepath.ToSlash(filepath.Clean(rel)), "/")
+	c := strings.ToLower(strings.Trim(filepath.ToSlash(filepath.Clean(rel)), "/"))
 	for _, seg := range strings.Split(c, "/") {
 		if seg == ".claude" {
 			return true
@@ -144,7 +149,7 @@ func PersistentFile(rel string) bool {
 		}
 	}
 	switch filepath.Base(c) {
-	case "AGENTS.md", "AGENT.md", "CLAUDE.md", "GEMINI.md", ".mcp.json", ".gem-agent.toml":
+	case "agents.md", "agent.md", "claude.md", "gemini.md", ".mcp.json", ".gem-agent.toml":
 		return true
 	}
 	return false

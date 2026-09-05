@@ -227,6 +227,19 @@ of the project running in between — closing it fully means the loaders
 returning the digest of the bytes they read, a change kept for when a
 reader outside this order appears.
 
+An external finding after v0.70.1: the name checks compared exact case
+while the default APFS volume folds it — `write_file("agents.md")` lands
+in `AGENTS.md`, a created `.git/hooks/PRE-COMMIT` is the hook git runs,
+and `.GIT/config` passed the rule tier's `.git` Block. Measured with
+controls: the kernel side (Seatbelt regex and literal filters) already
+folds case on such a volume — every case variant was denied in both
+lanes; the Go side did not. `sandbox.PersistentFile`, the rule tier's
+`.git` check and `trustpin.PinName` now fold case, PinName returning the
+canonical spelling (the loader's name for a root file, the directory
+entry as listed for a skill); a real-Seatbelt test with controls and
+unit tests over the variants pin it. On a case-sensitive volume the fold
+over-protects a handful of names, which costs nothing.
+
 ## Survey of other agents (2026-09-05)
 
 No mainstream coding agent keys trust on content today: Claude Code,

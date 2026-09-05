@@ -196,7 +196,9 @@ lane's profile denies those files and `.git/hooks`, `.git/info` and
 `git config` onto them fails with `Operation not permitted` — and only
 the `operator` lane, which you approve, may touch them. The list is one
 function (`sandbox.PersistentFiles`) read by the profile and by the
-file tools' verdict, so the two cannot disagree.
+file tools' verdict, so the two cannot disagree. Both match the names
+regardless of case: the default APFS volume folds it, so `agents.md` is
+`AGENTS.md` and a created `.git/hooks/PRE-COMMIT` is the hook git runs.
 
 **Memory writes never reach tier 2.** `save_memory` and `delete_memory`
 are Review-tier, so they would take the *uncertain* branch — but they

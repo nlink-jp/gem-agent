@@ -355,22 +355,38 @@ func Size(projectDir, name string) string {
 // PinName maps a project-relative path a tool wrote to the pin it
 // belongs to: a root instruction or configuration file is its own pin,
 // a file inside a project skill is that skill's pin, anything else has
-// none (ADR-0074 §1: re-pin only what the operator saw).
-func PinName(rel string) string {
+// none (ADR-0074 §1: re-pin only what the operator saw). Names are
+// compared regardless of case — the default volume folds it — and the
+// pin returned is the canonical spelling: the loader's name for a root
+// file, the directory entry as listed for a skill (projectDir may be
+// empty, in which case the segment is returned as written).
+func PinName(projectDir, rel string) string {
 	rel = filepath.ToSlash(filepath.Clean(rel))
 	for _, name := range append(append([]string{}, instructions.Names...), ConfigNames...) {
-		if rel == name {
+		if strings.EqualFold(rel, name) {
 			return name
 		}
 	}
-	if strings.HasPrefix(rel, SkillsDir+"/") {
-		rest := strings.TrimPrefix(rel, SkillsDir+"/")
+	if len(rel) > len(SkillsDir)+1 && strings.EqualFold(rel[:len(SkillsDir)+1], SkillsDir+"/") {
+		rest := rel[len(SkillsDir)+1:]
+		entry := rest
 		if i := strings.IndexByte(rest, '/'); i > 0 {
-			return SkillsDir + "/" + rest[:i]
+			entry = rest[:i]
 		}
-		if rest != "" {
-			return SkillsDir + "/" + rest
+		if entry == "" {
+			return ""
 		}
+		if projectDir != "" {
+			if entries, _, err := readDir(filepath.Join(projectDir, SkillsDir), DirEntries); err == nil {
+				for _, e := range entries {
+					if strings.EqualFold(e.Name(), entry) {
+						entry = e.Name()
+						break
+					}
+				}
+			}
+		}
+		return SkillsDir + "/" + entry
 	}
 	return ""
 }

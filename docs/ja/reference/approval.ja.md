@@ -184,6 +184,9 @@ TUI を使わない plain stdin ゲートは `y`/`n`/`N`/`a`）、拒否は拒�
 `Operation not permitted` で失敗し — 触れられるのはあなたが承認する
 `operator` レーンだけです。一覧は関数 1 つ（`sandbox.PersistentFiles`）で、
 プロファイルと file ツールの判定が同じものを読むので、両者は食い違えません。
+どちらも名前を大文字小文字の区別なく照合します: 既定の APFS はケースを畳み込むので、
+`agents.md` は `AGENTS.md` であり、作られた `.git/hooks/PRE-COMMIT` は git が走らせる
+フックです。
 
 **メモリ書込は第 2 層に到達しません。** `save_memory`/`delete_memory` は
 Review 層なので上の「*不確実*」に該当しますが、自動承認から除外されて
