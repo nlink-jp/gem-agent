@@ -381,7 +381,7 @@ you typed them. Every lane confines file writes to the project
 directory, the session work directory and the scratch dirs (`TMPDIR`,
 `/private/tmp`, `/dev/fd` and the device sinks), enforced by Seatbelt
 and covered by a real enforcement test that runs the three profiles
-against seventeen probes (redirect, `mv`, `sed -i`, `rm`, `git config`
+against the probes (redirect, `mv`, `sed -i`, `rm`, `git config`
 onto `AGENTS.md` and `.git/config`, credential reads, `osascript`, a
 child `kill`). The scratch, persistent-file and credential lists are
 each one function in `internal/sandbox`, read by the profile and by

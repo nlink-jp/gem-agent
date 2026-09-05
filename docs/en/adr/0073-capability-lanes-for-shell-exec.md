@@ -141,7 +141,7 @@ tools refuse is impossible by construction, not by review.
   operator chose to let run.
 - The `access` argument is visible in the approval box and the transcript.
 - `TestLaneEnforcement` runs the three profiles under real `sandbox-exec`
-  against seventeen spellings of the probes above; it is the load-bearing
+  against the spellings of the probes above, and against a project checked out under a scratch root; it is the load-bearing
   test, as ADR-0001's enforcement test was.
 
 ## Lessons

@@ -290,7 +290,17 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 		b.WriteString(")\n")
 		return b.String(), nil
 	}
-	// The read lane's side-effect denials.
+	// The read lane's side-effect denials. The project and the work
+	// directory are denied by name after the scratch allow: a project
+	// checked out under /private/tmp sits inside a scratch root, and
+	// the read lane must not write it for that reason (live E2E of
+	// ADR-0073 — the first probe project was under TMPDIR).
+	b.WriteString("(deny file-write*\n")
+	fmt.Fprintf(&b, "    (subpath %s)\n", sbplString(filepath.Clean(spec.ProjectDir)))
+	if spec.WorkDir != "" {
+		fmt.Fprintf(&b, "    (subpath %s)\n", sbplString(filepath.Clean(spec.WorkDir)))
+	}
+	b.WriteString(")\n")
 	b.WriteString("(deny network*)\n")
 	b.WriteString("(deny user-preference-write)\n")
 	b.WriteString("(deny sysctl-write)\n")

@@ -107,7 +107,10 @@ func TestLaneProfiles(t *testing.T) {
 			t.Errorf("read lane lacks %q:\n%s", want, read)
 		}
 	}
-	if strings.Contains(read, `(subpath "/private/tmp/proj")`) {
+	if !strings.Contains(read, "(deny file-write*\n    (subpath \"/private/tmp/proj\")") {
+		t.Error("read lane must deny project writes by name (after the scratch allow)")
+	}
+	if strings.Contains(read, "(allow file-write*\n    (subpath \"/private/tmp/proj\")") {
 		t.Error("read lane must not allow project writes")
 	}
 	write, err := LaneProfile(LaneWrite, spec)
@@ -242,5 +245,25 @@ func TestLaneEnforcement(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(agents); string(got) != "ok\n" {
 		t.Errorf("AGENTS.md = %q: the write lane changed it or the operator lane could not", got)
+	}
+	// A project under a scratch root (a checkout in /private/tmp) is
+	// still not writable in the read lane: the deny by name follows the
+	// scratch allow.
+	tmpProj, _ := ResolveWriteDir(t.TempDir())
+	if !strings.HasPrefix(tmpProj, "/private/") && !strings.HasPrefix(tmpProj, os.TempDir()) {
+		t.Skip("TempDir is not under a scratch root")
+	}
+	tmpSpec := Spec{ProjectDir: tmpProj, Home: fakeHome}
+	profile, err := LaneProfile(LaneRead, tmpSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	argv := Wrap(profile, "/bin/bash", "echo x > "+filepath.Join(tmpProj, "new.txt"))
+	if err := exec.CommandContext(ctx, argv[0], argv[1:]...).Run(); err == nil {
+		t.Error("read lane wrote into a project that lives under a scratch root")
+	}
+	argv = Wrap(profile, "/bin/bash", "echo x > "+filepath.Join(os.TempDir(), "gem-agent-lane-probe-"+filepath.Base(tmpProj))+" && rm "+filepath.Join(os.TempDir(), "gem-agent-lane-probe-"+filepath.Base(tmpProj)))
+	if err := exec.CommandContext(ctx, argv[0], argv[1:]...).Run(); err != nil {
+		t.Errorf("read lane denied a scratch write beside the project: %v", err)
 	}
 }

@@ -366,7 +366,7 @@ v0.46.0 から v0.47.0 の間、記録されたゲート判断から承認ルー
 あなたが打ったので operator レーンで走ります。どのレーンもファイル書込を
 プロジェクトディレクトリ・セッション作業ディレクトリ・scratch（`TMPDIR`・
 `/private/tmp`・`/dev/fd` とデバイス sink）に制限し、Seatbelt が強制、
-3 プロファイルを 17 のプローブ（`AGENTS.md`・`.git/config` へのリダイレクト・
+3 プロファイルをプローブ（`AGENTS.md`・`.git/config` へのリダイレクト・
 `mv`・`sed -i`・`rm`・`git config`、資格情報の読取、`osascript`、子への
 `kill`）に当てる実強制テストが覆います。scratch・永続ファイル・資格情報の
 一覧はそれぞれ `internal/sandbox` の関数 1 つで、プロファイルと file ツールの
