@@ -57,7 +57,10 @@ verbatim).
 The agent core knows nothing about the UI. It receives an `Approver`
 interface, a set of callbacks (`OnToolCall`, `OnToolDone`, `OnUsage`, `OnNotice`,
 `OnAutoDecision`, `OnAttach`, `OnRoundLimit`, `BeforeOperatorWrite`/`OnOperatorWrite`
-— the pair around a write the operator approved as operator-only, ADR-0074), and a telemetry sink whose nil value
+— the pair around a write the operator approved as operator-only, ADR-0074),
+three injected capabilities (`PreToolHook` — the operator's pre-tool hooks,
+ADR-0044; `ClipboardImage` and `MediaUpload` — the clipboard and GCS
+media paths, ADR-0027/0028), and a telemetry sink whose nil value
 disables auditing; the TUI implements the callbacks by sending Bubble
 Tea messages, and the plain REPL by writing to stderr. That is what lets
 the same loop run under a pty, a pipe, and `-p`.

@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- `make check` (docs-mirror-check) now fails when a concept exists in
+  the code and not in the document that describes the whole: every
+  `internal/` package must appear in the architecture reference's
+  package map, every `agent.Options` callback or capability in its
+  UI-contract paragraph, and every subcommand in the configuration
+  reference's command table. The architecture reference, the RFP's
+  gating table and security-design section, and the interface,
+  integration, approval and configuration references were brought up
+  to ADR-0072–0074 (and the `workdirs` subcommand and the `hooks` /
+  `workdir` packages, missed since ADR-0044/0058); AGENTS.md gains a
+  change-kind → documents routing table
+
 ## [0.70.0] - 2026-09-05
 
 ### Changed — trust is granted to content, not to a path (ADR-0074)

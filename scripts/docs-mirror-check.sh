@@ -190,3 +190,44 @@ if bad:
 
 print(f"OK: identifiers agree across all {len(pairs)} en/ja pairs.")
 PY
+
+# --- concept coverage: code → the whole-system documents ----------------
+# Every check above is a symmetry check (en ↔ ja, ADR ↔ index). None can
+# see a concept that exists in the code and in no document. That is how
+# the architecture reference missed five internal packages across three
+# ADRs while every commit "updated the docs": the rule named no document,
+# so the ones nearest the feature were updated and the ones describing
+# the whole were not. These checks route by construction:
+#   internal/<pkg>        → architecture.md names it
+#   agent.Options funcs   → architecture.md names the callback / capability
+#   cobra subcommands     → configuration.md's command table has a row
+cov_errors=0
+arch="docs/en/reference/architecture.md"
+for d in internal/*/; do
+    pkg="${d%/}"
+    # In the tree diagram (fenced) or in prose (backticked): whole word.
+    if ! grep -qw "${pkg}" "$arch"; then
+        echo "ERROR: ${arch} does not name ${pkg} — add it to the package map" >&2
+        cov_errors=$((cov_errors + 1))
+    fi
+done
+for cb in $(awk '/^type Options struct/,/^}/' internal/agent/agent.go | grep -E '^	[A-Z][A-Za-z]* +func' | awk '{print $1}'); do
+    if ! grep -q "\`${cb}\`" "$arch"; then
+        echo "ERROR: ${arch} does not name agent.Options.${cb} — the UI/runtime contract is documented there" >&2
+        cov_errors=$((cov_errors + 1))
+    fi
+done
+conf="docs/en/reference/configuration.md"
+for use in $(grep -h '^	Use: *"' cmd/*.go | sed 's/.*Use: *"\([a-z-]*\).*/\1/' | grep -v '^gem-agent$' | sort -u); do
+    # Nested commands (`workdirs clean`) appear on their parent's row.
+    if ! grep -q "| \`${use}" "$conf" && ! grep -q "\`[a-z-]* ${use}" "$conf"; then
+        echo "ERROR: ${conf} has no row for subcommand \`${use}\`" >&2
+        cov_errors=$((cov_errors + 1))
+    fi
+done
+if [ "$cov_errors" -ne 0 ]; then
+    echo "" >&2
+    echo "A concept in the code is missing from the document that describes the whole (AGENTS.md §Docs routing)." >&2
+    exit 1
+fi
+echo "OK: every internal package, agent callback and subcommand is documented."

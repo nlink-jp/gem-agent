@@ -295,6 +295,7 @@ used to measure box art under a CJK locale.
 | `--mcp <on\|off>` | override `[mcp].enabled` for this run — `off` skips every MCP server spawn, which is what a `-p` pipeline usually wants (ADR-0039) |
 | `--no-sandbox` | disable the Seatbelt wrapper (debugging only) — every `shell_exec` then needs your approval and no policy or auto mode lifts that (ADR-0073 §5) |
 | `sessions` | list resumable sessions |
+| `workdirs` | list this project's session work directories; `workdirs clean [session-id]...` deletes them after asking (ADR-0058, see [sessions](sessions.md)) |
 | `trust` | show this project's trust state and pinned files; `--accept` records the current content as trusted (ADR-0074) |
 
 ## Telemetry (ADR-0035)

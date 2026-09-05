@@ -102,6 +102,31 @@ scripts/           codesign-darwin.sh / notarize-darwin.sh (org templates, verba
 docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 ```
 
+## Docs routing (change kind → documents)
+
+"Update the docs in the same commit" names no document, so the ones
+nearest the feature get updated and the ones describing the whole do
+not — architecture.md missed five packages across three ADRs that way,
+and configuration.md missed a subcommand. Route by the kind of change;
+the rows marked *checked* fail `make check` when missed.
+
+| Change | Update (en and ja) |
+|---|---|
+| a new or removed `internal/` package | architecture.md package map (*checked*) |
+| a new `agent.Options` callback or capability | architecture.md "the agent core knows nothing about the UI" (*checked*) |
+| a new subcommand | configuration.md command table (*checked*), README usage block |
+| a new flag or config key | configuration.md, config.example.toml, README where user-facing |
+| approval, trust, sandbox or lane behaviour | approval.md; architecture.md §Approval; the RFP's gating table and §Security design; tools.md `shell_exec` when a lane's reach changes |
+| a new transcript record or state-directory file | sessions.md (records and layout); an *Amended by* note under ADR-0022 for a state file |
+| `/clear`, reload or startup-order behaviour | integration.md (reloads), sessions.md §Session ids, architecture.md §Configuration |
+| `!`, slash commands, keys, dialogs | interface.md |
+| anything an earlier ADR states differently | an *Amended by* line under that ADR's table (see ADR-0001/0004/0022/0023) |
+| every behaviour change | CHANGELOG, README.md/README.ja.md, this file's Structure and Gotchas when non-obvious |
+
+A `fix:` that changes structure (a new package, a single decision point,
+a new hook) is an architecture change and takes the same rows as a
+`feat:` — the ADR-0072 review rounds updated the ADR and this file only.
+
 ## Gotchas
 
 - **macOS-only by design** — isolation is built on sandbox-exec (ADR-0001).
