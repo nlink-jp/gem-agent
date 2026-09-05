@@ -61,6 +61,9 @@ type Report struct {
 	Unreadable int
 	Decisions  int
 	Keys       map[string]*KeyStats
+	// Partial reports that the session listing was cut at
+	// session.ListCap: the evidence below is not all of it.
+	Partial bool
 }
 
 // gateRecord / autoRecord are the decoded shapes of the transcript
@@ -90,10 +93,11 @@ type autoRecord struct {
 // is the reason the rulebook layers exist at all (ADR-0050 §1).
 func Scan(dir, projectDir string) (Report, error) {
 	rep := Report{Keys: map[string]*KeyStats{}}
-	metas, err := session.List(dir, projectDir)
+	metas, more, err := session.List(dir, projectDir)
 	if err != nil {
 		return rep, err
 	}
+	rep.Partial = more
 	for _, m := range metas {
 		if err := rep.scanOne(m.Path); err != nil {
 			// One unreadable transcript is a gap in the evidence, not a

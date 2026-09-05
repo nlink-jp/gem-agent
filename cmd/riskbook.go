@@ -67,6 +67,9 @@ func (r *riskbookRunner) Learn(ctx context.Context) {
 		say("%s", err)
 		return
 	}
+	if rep.Partial {
+		say(r.msgs.RiskbookPartialFmt, session.ListCap)
+	}
 	if rep.Unreadable > 0 {
 		say(r.msgs.RiskbookUnreadableFmt, rep.Unreadable)
 	}

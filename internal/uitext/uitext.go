@@ -162,6 +162,8 @@ type Messages struct {
 	RiskbookScannedFmt string
 	// RiskbookUnreadableFmt: %d transcripts skipped as unreadable.
 	RiskbookUnreadableFmt string
+	// RiskbookPartialFmt: the session listing was cut at %d files.
+	RiskbookPartialFmt string
 	// RiskbookDraftHeader precedes the full draft — everything below it
 	// is byte-for-byte what would be stored.
 	RiskbookDraftHeader string
@@ -328,6 +330,7 @@ var en = Messages{
 	RiskbookNoDataFmt:      "read %d sessions — no gate decisions recorded yet. The rulebook learns from your own answers at the approval gate; you can also write ~/.config/gem-agent/risk-rules.md by hand.",
 	RiskbookScannedFmt:     "read %d sessions / %d gate decisions — drafting…",
 	RiskbookUnreadableFmt:  "%d transcripts could not be read and were skipped",
+	RiskbookPartialFmt:     "more than %d session files — only the first were scanned",
 	RiskbookDraftHeader:    "proposed project risk rules — review every line; this exact text is what would be stored:",
 	RiskbookAskSave:        "Save these project risk rules? They will inform every auto-mode risk review in this project.",
 	RiskbookAccept:         "save",
@@ -472,6 +475,7 @@ var ja = Messages{
 	RiskbookNoDataFmt:      "%d セッションを読みました — 記録されたゲート判断はまだありません。ルールブックは承認ゲートでのあなた自身の回答から学びます。~/.config/gem-agent/risk-rules.md を手で書くこともできます。",
 	RiskbookScannedFmt:     "%d セッション / %d 件のゲート判断を読みました — 起草中…",
 	RiskbookUnreadableFmt:  "%d 件の記録は読めなかったため飛ばしました",
+	RiskbookPartialFmt:     "セッションファイルが %d 件を超えるため、先頭分だけを走査しました",
 	RiskbookDraftHeader:    "プロジェクトリスクルールの提案 — 全行を確認してください。保存されるのはこのテキストそのものです:",
 	RiskbookAskSave:        "このプロジェクトリスクルールを保存しますか？ このプロジェクトの auto モードの全リスク評価が参照するようになります。",
 	RiskbookAccept:         "保存",

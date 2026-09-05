@@ -1,6 +1,38 @@
 # Changelog
 
-## [0.68.2] - 2026-09-05
+## [0.69.0] - unreleased
+
+### Changed — capability lanes for `shell_exec` (ADR-0073)
+
+- `shell_exec` takes an `access` argument — `read` (default), `write`
+  or `operator` — and macOS Seatbelt enforces that lane: the read lane
+  denies writes outside scratch, the network, preference writes,
+  signals to other processes, `open`, the IPC-capable programs
+  (osascript, launchctl, defaults, security, pbcopy, …) and credential
+  reads, and **runs without a prompt in every mode**; the write lane is
+  the ADR-0001 profile minus the instruction/configuration files and
+  `.git` hooks/config, approval-gated as before; the operator lane is
+  the operator's alone, and is where `!` commands run
+- The rule tier no longer derives *safe* from a shell command's text
+  (~700 lines of shell parsing removed with their tests); what remains
+  for shell commands is the Block floor, which can only escalate. A new
+  spelling can no longer open a hole
+- `defaults write` is denied by the kernel (`user-preference-write`),
+  which `(deny file-write*)` never covered; `osascript` and the other
+  IPC-capable programs are denied at `exec`, whatever their spelling
+- One list each for the scratch, persistent-file and credential paths
+  (`internal/sandbox`), read by the profile and by the file tools'
+  verdict; `.env.example` and friends are readable, `.env` is not
+- `internal/bounded` is the one place a read, a listing or a process
+  output is capped, and `internal/archtest` fails the build on a raw
+  filesystem call in a path-taking package, an unbounded read anywhere,
+  or a `risk.Classify` outside the single decision point
+- `gem-agent sessions` and the riskbook scan say when the session
+  listing was cut; the clipboard capture and the piped stdin are bounded
+- New config key `[sandbox].read_lane_deny_exec`; the banner says when
+  the sandbox is off that every `shell_exec` will ask
+
+### Fixed — pre-release verification of the ADR-0072 fixes (§4.1–§4.9, formerly staged as 0.68.2)
 
 ### Fixed — second, third and fourth passes of the post-release review (ADR-0072 §4.1–§4.3)
 

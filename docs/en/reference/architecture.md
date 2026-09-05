@@ -74,9 +74,14 @@ purpose:
   Every path-taking built-in routes through it (the navigation tools' tree walks additionally refuse to follow symlinks — a walk that follows links can leave the project through a link the per-path checks never see).
 - **Process-level containment** (`internal/sandbox`). `shell_exec` takes
   no path — it takes a command — so it is wrapped in `sandbox-exec` with
-  a generated SBPL profile that denies `file-write*` outside the project
-  plus scratch directories. `cmd.Dir` is the project. `--no-sandbox`
-  removes this layer and says so in the banner.
+  a generated SBPL profile. Since ADR-0073 the profile is the lane the
+  model declares: `read` denies every write outside scratch, the
+  network, preference writes, foreign signals and the IPC-capable
+  programs, and runs unasked; `write` allows the project and work
+  directory but denies the persistent files; `operator` is the ADR-0001
+  profile. The rule tier no longer reads shell text beyond a Block
+  floor — the kernel decides. `cmd.Dir` is the project. `--no-sandbox`
+  removes this layer (and the read lane) and says so in the banner.
 
 ## One turn
 

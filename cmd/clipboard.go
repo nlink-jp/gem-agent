@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"fmt"
 	"os"
 	"os/exec"
@@ -30,19 +32,31 @@ on error m number n
 	error m number n
 end try
 close access f`, path)
-	if out, err := exec.Command("osascript", "-e", script).CombinedOutput(); err != nil {
+	if out, _, err := bounded.CombinedOutput(exec.Command("osascript", "-e", script), 64*1024); err != nil {
 		msg := strings.TrimSpace(string(out))
 		if strings.Contains(msg, "PNGf") || strings.Contains(msg, "-1700") {
 			return nil, fmt.Errorf("no image on the clipboard (take a screenshot with Cmd+Ctrl+Shift+4 first)")
 		}
 		return nil, fmt.Errorf("clipboard capture failed: %s", msg)
 	}
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
+	}
+	data, more, err := bounded.ReadAll(f, clipboardImageCap)
+	_ = f.Close()
+	if err != nil {
+		return nil, err
+	}
+	if more {
+		return nil, fmt.Errorf("clipboard image is larger than %d bytes", clipboardImageCap)
 	}
 	if len(data) == 0 {
 		return nil, fmt.Errorf("no image on the clipboard")
 	}
 	return data, nil
 }
+
+// clipboardImageCap bounds a clipboard capture: a screenshot, not a
+// disk image (ADR-0073 §4 — the read was unbounded).
+const clipboardImageCap = 64 << 20

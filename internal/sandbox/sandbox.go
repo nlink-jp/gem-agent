@@ -34,6 +34,12 @@ func Profile(writeDirs []string, writeFiles []string) (string, error) {
 	if len(writeDirs) == 0 {
 		return "", fmt.Errorf("sandbox profile needs at least one writable directory")
 	}
+	return profileBody(writeDirs, writeFiles)
+}
+
+// profileBody is Profile without the non-empty check: the read lane of
+// ADR-0073 may legitimately allow no directory at all.
+func profileBody(writeDirs []string, writeFiles []string) (string, error) {
 	var b strings.Builder
 	b.WriteString("(version 1)\n")
 	b.WriteString("(allow default)\n")

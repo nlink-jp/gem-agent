@@ -48,14 +48,18 @@ internal/config/   strict-decode TOML + env/flag precedence
 internal/llm/      Backend interface + Vertex AI impl (thought signatures, backoff)
 internal/agent/    tool-calling loop, approval dispatch, nonce wrapping, history,
                    compaction (compact.go, ADR-0006)
-internal/tools/    built-in tools, path confinement, ExecFunc injection, Register
+internal/tools/    built-in tools, path confinement, lane-aware exec injection, Register
+internal/bounded/  the one place a read, listing or process output is capped —
+                   every primitive returns the `more` fact (ADR-0073 §4)
+internal/archtest/ AST tests pinning confined opens, bounded reads and the
+                   single decision point (ADR-0073 §4)
 internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
 internal/ignore/   ignore-aware enumeration (ADR-0052): builtin dir list + full
                    gitignore matcher (in-repo, git check-ignore cross-checked)
-internal/risk/     rule tier of the auto-approve ladder (pure, no model);
-                   its writable scratch roots come from sandbox.ScratchDirs (ADR-0070);
-                   reads a command the way bash runs it, and marks writes to
-                   instruction/config files OperatorOnly (ADR-0072)
+internal/risk/     rule tier of the auto-approve ladder (pure, no model); exact
+                   for file-tool paths (persistent files OperatorOnly, ADR-0072),
+                   a Block floor only for shell text — the lane decides the rest
+                   (ADR-0073); the shared lists come from internal/sandbox
 internal/policy/   per-tool approval policy (ADR-0008), pure resolver; also the
                    ADR-0045 per-command vocabulary, parsed for file compatibility
                    but not applied since ADR-0049
@@ -79,7 +83,9 @@ cmd/settings.go    /settings panel content + edits (ADR-0009)
 internal/mention/  @-reference parsing, project-confined resolution, completion
 internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery
                    (ancestor walk, stops at $HOME)
-internal/sandbox/  SBPL profile generation, sandbox-exec wrapping
+internal/sandbox/  SBPL profile generation per lane (read/write/operator), the
+                   shared scratch / persistent-file / credential lists,
+                   sandbox-exec wrapping (ADR-0001, ADR-0073)
 internal/approve/  MITL gate (y/n/N/a + session allowlist; N = deny with
                    a typed reason, ADR-0060)
 internal/hooks/    operator hooks on Claude Code's measured contracts: the
@@ -364,20 +370,30 @@ docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
   `origin_session_id` (captured from `Sink.SessionID()` at the start;
   after a `/clear` the resource names the new session). `exportWorkDir("")` UNSETS the variable
   — a stale value is inherited by the next MCP reconnect.
-- **The rule tier reads a command the way bash runs it** (ADR-0072
-  §1.3) — `segmentSplit` includes newlines; `normalizeHeads`
-  canonicalises each segment's first word (path prefix, backslash,
-  case) before the block patterns; `rmRecursiveForce` reads rm's flags
-  in any spelling; `mutatingUse` takes a read-only command's Safe away
-  when its flags write or exec (`find -exec`, `sed -i`, `env cmd`);
-  `tee` and `xargs` are not read-only; `awkSystemRe` matches
-  `system (` across the joined script; after a wrapper (`env`,
-  `time`, `nohup`, `nice`, `xargs`, `sudo`, …) every path-spelled word
-  in the segment is canonicalised too (ADR-0072 §4.3); a writing
-  command that names a persistent file in any argument gets that
-  file's verdict (`persistentTokens`); `aliasResolve` maps `/tmp`,
-  `/var`, `/etc` to `/private` before any roots check. New dangerous
-  forms go in with a corpus case in `internal/risk/review4_test.go`.
+- **The rule tier does not read shell text for Safe** (ADR-0073) — a
+  `shell_exec` call's tier comes from the lane it declares (`access`:
+  read / write / operator), enforced by Seatbelt (`sandbox.LaneProfile`);
+  the text rules that remain (`blockPatterns`, `rmRecursiveForce`,
+  `gitBranchForceDelete`, credential paths) are the Block floor and may
+  only raise a verdict. Do not add a "read-only command" or "mutating
+  flag" rule back: if a lane lets something through that it should not,
+  fix the profile (and extend `TestLaneEnforcement`), never the regex.
+  A read-lane call is non-mutating (`Tool.MutatesWith`) only when the
+  registry has a kernel-enforced read lane (`SetLaneExec(fn, true)`).
+- **One list, three enforcers** (ADR-0073 §3) — `sandbox.PersistentFiles`
+  / `PersistentFile` and `sandbox.CredentialFilters` / `CredentialPath`
+  are read by the profile builder and by the file tools' verdict;
+  `ScratchDirs` / `ScratchFiles` likewise. Adding a persistent file or a
+  credential location means adding it there, nowhere else.
+- **The architecture tests are the rule** (ADR-0073 §4) —
+  `internal/archtest` fails the build on a raw `os.Open`/`Stat`/… in a
+  path-taking package, on `io.ReadAll`/`os.ReadFile`/`os.ReadDir`/
+  `bufio.NewScanner`/`CombinedOutput`/`Output` outside `internal/bounded`,
+  and on any `risk.Classify` call outside `Agent.decide`. An exemption
+  goes in the allowlist WITH its reason; a stale exemption fails too.
+  `bounded.ReadAll` returns exactly `cap` bytes with `more`; use
+  `bounded.TrimIncompleteRune` (or `CutRunes` on a longer buffer) before
+  showing a cut
 - **`/dev` is never writable as a whole** (ADR-0072 §4.3) — the
   profile allows `sandbox.ScratchFiles()` as literals and `/dev/fd` as
   a directory; the rule tier reads both lists (`scratchFiles`,

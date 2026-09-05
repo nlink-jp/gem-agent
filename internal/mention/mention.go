@@ -7,10 +7,11 @@
 package mention
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -242,8 +243,18 @@ func Expand(ctx context.Context, text, projectDir, workDir string, lim Limits) (
 			problems = append(problems, Problem{ref, err.Error()})
 			continue
 		}
-		info, err := os.Stat(abs)
+		// One open through the root, then everything — the kind, the
+		// size, the read or the listing — comes from that descriptor
+		// (ADR-0073 §4: a Stat by name before the open was the
+		// check-then-use shape the roots exist to remove).
+		f, err := openConfined(abs, projectDir, workDir)
 		if err != nil {
+			problems = append(problems, Problem{ref, "not found"})
+			continue
+		}
+		info, err := f.Stat()
+		if err != nil {
+			_ = f.Close()
 			problems = append(problems, Problem{ref, "not found"})
 			continue
 		}
@@ -259,9 +270,9 @@ func Expand(ctx context.Context, text, projectDir, workDir string, lim Limits) (
 
 		var att Attachment
 		if info.IsDir() {
-			att, err = attachDir(ref, abs, projectDir, workDir, lim)
+			att, err = attachDir(ref, f, lim)
 		} else {
-			att, err = attachFile(ref, abs, projectDir, workDir, perFile)
+			att, err = attachFile(ref, f, perFile)
 		}
 		if err != nil {
 			problems = append(problems, Problem{ref, err.Error()})
@@ -440,11 +451,9 @@ func resolveImagePath(projectDir, ref string) (string, error) {
 	return real, nil
 }
 
-func attachFile(ref, abs, projectDir, workDir string, cap int) (Attachment, error) {
-	f, err := openConfined(abs, projectDir, workDir)
-	if err != nil {
-		return Attachment{}, fmt.Errorf("unreadable")
-	}
+// attachFile reads the already-opened f: the caller opened it through
+// the root and owns the close.
+func attachFile(ref string, f *os.File, cap int) (Attachment, error) {
 	defer func() { _ = f.Close() }()
 	size := int64(0)
 	if st, err := f.Stat(); err == nil {
@@ -452,13 +461,13 @@ func attachFile(ref, abs, projectDir, workDir string, cap int) (Attachment, erro
 	}
 	// Bounded read and a rune-boundary cut (ADR-0072 §4.5): the file
 	// was read whole and sliced by byte.
-	data, err := io.ReadAll(io.LimitReader(f, int64(cap)+1))
+	data, more, err := bounded.ReadAll(f, cap)
 	if err != nil {
 		return Attachment{}, fmt.Errorf("unreadable")
 	}
 	content := string(data)
-	if len(content) > cap {
-		cut := cutRunes(content, cap)
+	if more {
+		cut := string(bounded.TrimIncompleteRune(data))
 		content = cut + fmt.Sprintf("\n[truncated: %d of %d bytes shown]", len(cut), size)
 	}
 	return Attachment{Ref: ref, Kind: "file", Content: content, Bytes: len(content)}, nil
@@ -525,7 +534,7 @@ func readBounded(abs, projectDir string, cap int) ([]byte, error) {
 	if st, err := f.Stat(); err == nil && st.Size() > int64(cap) {
 		return nil, fmt.Errorf("file is %d bytes; the limit is %d", st.Size(), cap)
 	}
-	data, err := io.ReadAll(io.LimitReader(f, int64(cap)+1))
+	data, _, err := bounded.ReadAll(f, cap+1)
 	if err != nil {
 		return nil, fmt.Errorf("unreadable")
 	}
@@ -535,23 +544,14 @@ func readBounded(abs, projectDir string, cap int) ([]byte, error) {
 	return data, nil
 }
 
-// cutRunes truncates s to at most n bytes without splitting a UTF-8
-// sequence.
-func cutRunes(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n]
-}
-
-func attachDir(ref, abs, projectDir, workDir string, lim Limits) (Attachment, error) {
+// attachDir lists the already-opened directory d (the caller opened it
+// through the root; attachDir closes it).
+func attachDir(ref string, d *os.File, lim Limits) (Attachment, error) {
+	defer func() { _ = d.Close() }()
 	// Bounded listing through the root (ADR-0072 §4.5): one entry past
 	// the display cap is enough to say "more" — how many more is not
 	// known, and is not claimed.
-	entries, err := readDirCapped(abs, lim.DirEntries+1, projectDir, workDir)
+	entries, more, err := bounded.ReadDir(d, lim.DirEntries)
 	if err != nil {
 		return Attachment{}, fmt.Errorf("unreadable")
 	}
@@ -564,8 +564,7 @@ func attachDir(ref, abs, projectDir, workDir string, lim Limits) (Attachment, er
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	if len(names) > lim.DirEntries {
-		names = names[:lim.DirEntries]
+	if more {
 		names = append(names, fmt.Sprintf("[more than %d entries — the rest not shown]", lim.DirEntries))
 	}
 	content := strings.Join(names, "\n")
@@ -698,9 +697,15 @@ func readDirCapped(abs string, n int, roots ...string) ([]os.DirEntry, error) {
 		return nil, err
 	}
 	defer func() { _ = d.Close() }()
-	entries, err := d.ReadDir(n)
-	if err != nil && err != io.EOF {
+	entries, more, err := bounded.ReadDir(d, n-1)
+	if err != nil {
 		return nil, err
+	}
+	if more {
+		// The caller asked for one past its cap to learn "more"; hand
+		// it that one extra entry as before.
+		extra, _, _ := bounded.ReadDir(d, 1)
+		entries = append(entries, extra...)
 	}
 	return entries, nil
 }

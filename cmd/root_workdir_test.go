@@ -26,13 +26,13 @@ func TestSandboxAllowsWritesToTheWorkDirectory(t *testing.T) {
 	// already allows. A test for "outside" has to be outside.
 	outside := outsideEveryRoot(t)
 
-	execFn, err := buildExecFn(true, project, work)
+	execFn, err := buildExecFn(true, project, work, nil)
 	if err != nil {
 		t.Skipf("sandbox unavailable: %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	run := func(command string) error { return execFn(ctx, command).Run() }
+	run := func(command string) error { return execFn(ctx, command, sandbox.LaneWrite).Run() }
 
 	if err := run("echo ok > " + filepath.Join(work, "out.txt")); err != nil {
 		t.Errorf("a write to the work directory was denied: %v", err)
@@ -56,13 +56,13 @@ func TestSandboxWithoutAWorkDirectoryIsUnchanged(t *testing.T) {
 	}
 	project := t.TempDir()
 	outside := outsideEveryRoot(t)
-	execFn, err := buildExecFn(true, project, "")
+	execFn, err := buildExecFn(true, project, "", nil)
 	if err != nil {
 		t.Skipf("sandbox unavailable: %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := execFn(ctx, "echo bad > "+filepath.Join(outside, "out.txt")).Run(); err == nil {
+	if err := execFn(ctx, "echo bad > "+filepath.Join(outside, "out.txt"), sandbox.LaneWrite).Run(); err == nil {
 		t.Error("a write outside the project was allowed")
 	}
 	if _, err := os.Stat(filepath.Join(outside, "out.txt")); err == nil {
@@ -99,13 +99,13 @@ func TestSandboxAllowsDevNull(t *testing.T) {
 	if err := sandbox.Available(); err != nil {
 		t.Skipf("sandbox-exec cannot apply a profile here (nested sandbox?): %v", err)
 	}
-	execFn, err := buildExecFn(true, t.TempDir(), "")
+	execFn, err := buildExecFn(true, t.TempDir(), "", nil)
 	if err != nil {
 		t.Skipf("sandbox unavailable: %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := execFn(ctx, "echo ok > /dev/null && ls / 2>/dev/null >/dev/null").Run(); err != nil {
+	if err := execFn(ctx, "echo ok > /dev/null && ls / 2>/dev/null >/dev/null", sandbox.LaneWrite).Run(); err != nil {
 		t.Errorf("a write to /dev/null was denied: %v", err)
 	}
 }

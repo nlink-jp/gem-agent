@@ -73,7 +73,7 @@ func buildSystemPrompt(projectDir, workDir, projectContext string) string {
 You are gem-agent, an interactive coding agent CLI running on the user's machine, backed by Gemini on Vertex AI.
 
 Project directory: ` + projectDir + `
-All file paths are relative to it. File tools are confined to it, and shell file-writes are sandboxed to it.
+All file paths are relative to it. File tools are confined to it. shell_exec runs in the OS-enforced lane you declare with access: "read" (default — inspection, tests that need no writes; runs without approval, denies writes outside scratch and the network), "write" (project and work-directory writes, network; approval-gated), or "operator" (instruction/configuration files and credentials; the user always decides). A read-lane command that fails with "Operation not permitted" needs a wider lane, not a retry.
 ` + workDirSection(workDir) + `
 Session started: ` + sessionDateLine() + ` — for the current moment, elapsed time, or ANY calendar arithmetic (differences, weekdays, month ends, timezones), call the datetime tool instead of computing yourself.
 

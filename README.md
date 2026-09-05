@@ -96,7 +96,8 @@ an isolated child context (`agentic_file_search`), atomic batched edits with
 diagnosed misses (`edit_file`/`write_file`, with a shrink guard so a
 whole-file rewrite cannot silently summarize a document away), file identification with
 hashes (`file_info`), images and documents for the model
-(`view_image`/`read_document`), sandboxed shell (`shell_exec`), a
+(`view_image`/`read_document`), a sandboxed shell whose read, write and
+operator lanes the kernel enforces (`shell_exec`), a
 deterministic clock/calendar (`datetime`), the model's own runtime
 picture (`agent_info`), structured mid-turn choices (`ask_user`), and grounded web access
 (`web_search`/`web_fetch`).
@@ -113,7 +114,10 @@ your one-line "do this instead" to the model inside the denial itself,
 a session allowlist that never covers
 Block-tier calls, an opt-in two-tier auto-approve (rules first, model
 review second — edits to instruction and configuration files such as
-`AGENTS.md` and `.mcp.json` always ask you), a per-tool approval policy with scope-aware resolution and
+`AGENTS.md` and `.mcp.json` always ask you), shell commands judged by
+the Seatbelt lane they declare rather than by their text (a read-lane
+command runs unasked; the write lane cannot touch `AGENTS.md` or
+`.git/config`; the operator lane is yours alone), a per-tool approval policy with scope-aware resolution and
 trust-gated project loosening, a layered risk rulebook the auto-mode
 reviewer reads — hand-written or drafted from your own recorded
 answers, never skipping a gate — the Seatbelt sandbox, operator pre-tool

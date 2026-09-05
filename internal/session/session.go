@@ -9,6 +9,8 @@
 package session
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"bufio"
 	"bytes"
 	"crypto/rand"
@@ -482,8 +484,8 @@ func Load(path string) ([]llm.Message, Header, int, error) {
 // They are easy to make — start gem-agent, run /help, quit — and being
 // the newest file they would shadow the real session that --continue is
 // meant to find, turning a resume into an error message.
-func List(dir, projectDir string) ([]Meta, error) {
-	var metas []Meta
+func List(dir, projectDir string) (metas []Meta, more bool, err error) {
+	note := func(m bool) { more = more || m }
 
 	// Project subdirectories (ADR-0022): one project's own subdir, or —
 	// for the all-projects listing — every subdir under projects/. A
@@ -492,22 +494,45 @@ func List(dir, projectDir string) ([]Meta, error) {
 	if projectDir != "" {
 		sub := projectSubdir(dir, projectDir)
 		if ok, _ := statedir.MarkerMatches(sub, projectDir); ok {
-			metas = append(metas, listDir(sub, projectDir)...)
+			m, cut := listDir(sub, projectDir)
+			metas = append(metas, m...)
+			note(cut)
 		}
-	} else if entries, err := os.ReadDir(filepath.Join(dir, "projects")); err == nil {
+	} else if entries, cut, err := readDirCapped(filepath.Join(dir, "projects")); err == nil {
+		note(cut)
 		for _, e := range entries {
 			if e.IsDir() {
-				metas = append(metas, listDir(filepath.Join(dir, "projects", e.Name()), "")...)
+				m, cut := listDir(filepath.Join(dir, "projects", e.Name()), "")
+				metas = append(metas, m...)
+				note(cut)
 			}
 		}
 	}
 
 	// Legacy flat files, read in place (ADR-0022 §3), header-filtered
 	// exactly as before the layout change.
-	metas = append(metas, listDir(dir, projectDir)...)
+	m, cut := listDir(dir, projectDir)
+	metas = append(metas, m...)
+	note(cut)
 
 	sort.Slice(metas, func(i, j int) bool { return metas[i].LastActive.After(metas[j].LastActive) })
-	return metas, nil
+	return metas, more, nil
+}
+
+// ListCap bounds one directory listing of sessions (ADR-0073 §4: a
+// cap without a "more" is a new bug — the cut is reported to the
+// caller, who says so).
+const ListCap = 10000
+
+// readDirCapped lists at most ListCap entries of dir, reporting
+// whether the directory held more.
+func readDirCapped(dir string) ([]os.DirEntry, bool, error) {
+	d, err := os.Open(dir)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = d.Close() }()
+	return bounded.ReadDir(d, ListCap)
 }
 
 // Scan walks one transcript's records, decoding only the envelope and
@@ -538,10 +563,10 @@ func Scan(path string, fn func(kind string, ts time.Time, data json.RawMessage) 
 // listDir describes the resumable sessions in one directory. Unreadable
 // files and (when projectDir is non-empty) foreign-project headers are
 // skipped — never fatal to a listing.
-func listDir(dir, projectDir string) []Meta {
-	entries, err := os.ReadDir(dir)
+func listDir(dir, projectDir string) ([]Meta, bool) {
+	entries, more, err := readDirCapped(dir)
 	if err != nil {
-		return nil
+		return nil, false
 	}
 	var metas []Meta
 	for _, e := range entries {
@@ -564,7 +589,7 @@ func listDir(dir, projectDir string) []Meta {
 		}
 		metas = append(metas, meta)
 	}
-	return metas
+	return metas, more
 }
 
 // Find describes one session by id, whether or not it holds a
@@ -596,11 +621,13 @@ func FindByPrefix(dir, projectDir, typed string) (Meta, error) {
 	}
 	var matches []string
 	seen := map[string]bool{}
+	cut := false
 	add := func(d string) {
-		entries, err := os.ReadDir(d)
+		entries, more, err := readDirCapped(d)
 		if err != nil {
 			return
 		}
+		cut = cut || more
 		for _, e := range entries {
 			id := strings.TrimSuffix(e.Name(), ".jsonl")
 			if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") || !ValidID(id) || !strings.HasPrefix(id, typed) || seen[id] {
@@ -615,7 +642,8 @@ func FindByPrefix(dir, projectDir, typed string) (Meta, error) {
 		add(dir)
 	}
 	if len(matches) == 0 {
-		if entries, err := os.ReadDir(filepath.Join(dir, "projects")); err == nil {
+		if entries, more, err := readDirCapped(filepath.Join(dir, "projects")); err == nil {
+			cut = cut || more
 			for _, e := range entries {
 				if e.IsDir() {
 					add(filepath.Join(dir, "projects", e.Name()))
@@ -625,6 +653,9 @@ func FindByPrefix(dir, projectDir, typed string) (Meta, error) {
 	}
 	switch len(matches) {
 	case 0:
+		if cut {
+			return Meta{}, fmt.Errorf("no session starts with %q among the first %d listed — type the full id", typed, ListCap)
+		}
 		return Meta{}, fmt.Errorf("no session starts with %q", typed)
 	case 1:
 		return Find(dir, projectDir, matches[0])
@@ -648,7 +679,7 @@ func findSessionFile(dir, projectDir, id string) (string, error) {
 			return p, nil
 		}
 	}
-	if entries, err := os.ReadDir(filepath.Join(dir, "projects")); err == nil {
+	if entries, _, err := readDirCapped(filepath.Join(dir, "projects")); err == nil {
 		for _, e := range entries {
 			if !e.IsDir() {
 				continue
@@ -664,7 +695,7 @@ func findSessionFile(dir, projectDir, id string) (string, error) {
 
 // Latest returns the most recent session for a project, if any.
 func Latest(dir, projectDir string) (Meta, bool, error) {
-	metas, err := List(dir, projectDir)
+	metas, _, err := List(dir, projectDir)
 	if err != nil || len(metas) == 0 {
 		return Meta{}, false, err
 	}

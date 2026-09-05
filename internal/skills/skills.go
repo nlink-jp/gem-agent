@@ -18,6 +18,8 @@
 package skills
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"fmt"
 	"io"
 	"os"
@@ -145,14 +147,7 @@ func readCapped(root *os.Root, rel string, cap int) ([]byte, bool, error) {
 		return nil, false, err
 	}
 	defer func() { _ = f.Close() }()
-	data, err := io.ReadAll(io.LimitReader(f, int64(cap)+1))
-	if err != nil {
-		return nil, false, err
-	}
-	if len(data) > cap {
-		return data[:cap], true, nil
-	}
-	return data, false, nil
+	return bounded.ReadAll(f, cap)
 }
 
 // namePattern bounds what a skill may be called. Names appear in slash

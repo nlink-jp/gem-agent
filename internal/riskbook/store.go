@@ -1,6 +1,8 @@
 package riskbook
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"fmt"
 	"os"
 	"path/filepath"
@@ -67,7 +69,7 @@ func (b Book) InForce() bool {
 // rules the operator wrote would be worse than failing.
 func Load(cfgPath, projectDir string) (Book, error) {
 	b := Book{BasePath: BasePath(cfgPath)}
-	data, err := os.ReadFile(b.BasePath)
+	data, err := readRulebook(b.BasePath)
 	switch {
 	case err == nil:
 		b.Base = string(data)
@@ -88,7 +90,7 @@ func Load(cfgPath, projectDir string) (Book, error) {
 			return b, nil
 		}
 	}
-	data, err = os.ReadFile(pp)
+	data, err = readRulebook(pp)
 	switch {
 	case err == nil:
 		b.Project = string(data)
@@ -164,4 +166,24 @@ func (b Book) Compose() string {
 		parts = append(parts, "== project rules (this project) ==\n"+Clip(s))
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+// rulebookCap bounds one rulebook layer: the operator writes these by
+// hand or through /learn; a larger file is not a rulebook.
+const rulebookCap = 1 << 20
+
+func readRulebook(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	data, more, err := bounded.ReadAll(f, rulebookCap)
+	if err != nil {
+		return nil, err
+	}
+	if more {
+		return nil, fmt.Errorf("%s is larger than %d bytes", path, rulebookCap)
+	}
+	return data, nil
 }

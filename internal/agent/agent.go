@@ -16,7 +16,6 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mention"
 	"github.com/nlink-jp/gem-agent/internal/policy"
-	"github.com/nlink-jp/gem-agent/internal/risk"
 	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/telemetry"
 	"github.com/nlink-jp/gem-agent/internal/tools"
@@ -1073,12 +1072,8 @@ func (a *Agent) execCall(ctx context.Context, tc llm.ToolCall) (result string, d
 	case strings.HasPrefix(result, "error:"):
 		outcome = "error"
 	}
-	mutating := false
-	if t, ok := a.registry.Get(tc.Name); ok {
-		mutating = t.Mutating
-	}
 	detail, purpose := a.Describe(tc)
-	a.telemetry.ToolCall(tc.Name, mutating, detail, purpose, time.Since(start), outcome)
+	a.telemetry.ToolCall(tc.Name, a.decide(tc).Mutating, detail, purpose, time.Since(start), outcome)
 	return result, denied, floor == floorRan && !denied && !hookDenied
 }
 
@@ -1122,24 +1117,20 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			return "error: interrupted before execution", false, false, floorInterrupted
 		}
 	}
-	if a.gated(tool.Mutating, tc) {
+	d := a.decide(tc)
+	if a.gated(d, tc) {
 		approved, reason := false, ""
-		// The floor (ADR-0021 §5): a Block-tier call, or a tool whose
-		// policy is "always", may not be answered by the gates' session
-		// allowlist. Decided here — where policy and the risk verdict
-		// live — not inside the gates.
+		// The floor (ADR-0021 §5): a Block-tier call, an OperatorOnly
+		// Review (ADR-0072 §4.5), or a tool whose policy is "always",
+		// may not be answered by the gates' session allowlist. One
+		// decision (ADR-0073 §4), read here and in the ladder.
 		mustPrompt := a.callPolicy(tc) == policy.AlwaysAsk
-		if !mustPrompt && tool.Mutating {
-			// OperatorOnly is a floor like Block (ADR-0072 §4.5): the
-			// write persists into what later sessions trust, so an
-			// earlier 'a' for the same tool must not answer it either.
-			if v := risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir(), a.registry.WorkDir()); v.Tier == risk.Block || v.OperatorOnly {
-				mustPrompt = true
-				// Shown on the prompt, so the operator sees why an
-				// earlier 'a' did not stick — and the deny-default that
-				// a reason triggers is exactly right for Block.
-				reason = v.Reason
-			}
+		if !mustPrompt && d.Floor() {
+			mustPrompt = true
+			// Shown on the prompt, so the operator sees why an
+			// earlier 'a' did not stick — and the deny-default that
+			// a reason triggers is exactly right for Block.
+			reason = d.Verdict.Reason
 		}
 		// A tool the operator marked "always" skips the ladder: the
 		// question is settled, and spending a model round on it would
@@ -1376,26 +1367,21 @@ func (a *Agent) takeLateNotices() []string {
 // the rule tier's Block floor. A tool whose effect varies per call —
 // shell_exec above all — must not become "run anything unattended"
 // because of one config line, so a Block verdict still asks.
-func (a *Agent) gated(mutating bool, tc llm.ToolCall) bool {
+func (a *Agent) gated(d Decision, tc llm.ToolCall) bool {
 	switch a.callPolicy(tc) {
 	case policy.AlwaysAsk:
 		return true
 	case policy.NeverAsk:
-		if !mutating {
-			return false
-		}
-		tool, ok := a.registry.Get(tc.Name)
-		if !ok {
-			return true
-		}
 		// Block and OperatorOnly are floors a `never` policy — or a
 		// one-shot --allow grant, which is the same policy for one run
 		// — does not lift (ADR-0072 §4.9: `--allow write_file --auto`
 		// wrote AGENTS.md unattended).
-		v := risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir(), a.registry.WorkDir())
-		return v.Tier == risk.Block || v.OperatorOnly
+		return d.Floor()
 	default:
-		return mutating
+		// A non-mutating call runs ungated — unless the floor names it
+		// (a `sudo` in the read lane: the cage refuses it, and the
+		// operator still sees the attempt).
+		return d.Mutating || d.Floor()
 	}
 }
 

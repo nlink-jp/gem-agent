@@ -1,35 +1,29 @@
-// Package risk is the logical (LLM-free) tier of the auto-approve
-// escalation ladder (ADR-0004). Classify is a pure function: same input,
-// same verdict, no I/O, no model. Its Block tier is the deterministic
-// floor that a model verdict cannot override.
+// Package risk is the rule tier of the approval ladder (ADR-0004): a
+// pure, model-free classifier that reads a tool call's named arguments
+// and returns Safe, Review or Block with a reason.
+//
+// Since ADR-0073 the tier decides nothing about what a shell command
+// will do. That question belongs to the kernel: shell_exec runs in a
+// Seatbelt lane the model declares (read, write, operator) and the
+// lane, not the command text, bounds its effects. What remains here
+// for shell commands is the Block floor — patterns for the operations
+// an operator wants to see whatever lane they run in (privilege
+// escalation, recursive force deletes, history rewrites, downloads
+// piped into a shell, credential paths). A floor only raises a
+// verdict; a spelling the patterns miss costs a prompt the cage would
+// have caught anyway, never a hole. For the file tools, whose
+// arguments are structured paths, the tier is exact: where the path
+// lies and what the file is decide the verdict.
 package risk
 
 import (
 	"fmt"
-	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 )
-
-// scratchRoots are the scratch locations the sandbox profile lets a
-// shell write to — read from the sandbox package, not repeated here
-// (ADR-0070 §2): the redirect rule's job is to explain what Seatbelt
-// will deny, so it has to read Seatbelt's list. Resolved once at
-// init; Classify itself does no I/O.
-var scratchRoots = sandbox.ScratchDirs()
-
-// scratchFiles are the device sinks the profile allows as literals
-// (sandbox.ScratchFiles): a redirect to one is a write nowhere.
-var scratchFiles = sandbox.ScratchFiles()
-
-// homeDir expands a leading `~` in a walk's starting point (ADR-0070
-// §3). Empty when the home is unknown, in which case `~` is treated as
-// outside every root — the conservative reading.
-var homeDir, _ = os.UserHomeDir()
 
 // Tier is the logical verdict for one tool call.
 type Tier int
@@ -63,7 +57,8 @@ type Verdict struct {
 	// instruction files, the runtime's own configuration — so the
 	// party that proposed it cannot also be its judge (ADR-0020 §4,
 	// applied beyond memory). The ladder hands such calls straight to
-	// the operator.
+	// the operator. A shell command in the operator lane (ADR-0073) is
+	// the same verdict: the lane can write those files.
 	OperatorOnly bool
 }
 
@@ -78,18 +73,17 @@ type blockPattern struct {
 // subcommand decides the verdict, wherever it sits.
 const gitGlobalOpts = `(?:(?:-C|-c|--git-dir|--work-tree|--namespace)(?:=\S+|\s+\S+)\s+|--?[A-Za-z][\w-]*\s+)*`
 
-// blockPatterns catches destructive, irreversible, or scope-escaping
-// shell commands. Matching is deliberately generous: a false Block costs
-// one approval prompt, a false Safe costs the user's data. They run on
-// the command with every segment's first word canonicalised
-// (normalizeHeads): a path prefix, a leading backslash and letter case
-// all invoke the same program. `rm` is judged by rmRecursiveForce,
-// which reads the flags however they are spelled.
+// blockPatterns is the Block floor for shell commands: destructive,
+// irreversible, or scope-escaping operations the operator sees in
+// every lane. Matching is deliberately generous: a false Block costs
+// one approval prompt. They run on the command with every segment's
+// first word canonicalised (normalizeHeads): a path prefix, a leading
+// backslash and letter case all invoke the same program. `rm` is
+// judged by rmRecursiveForce, which reads the flags however spelled.
 var blockPatterns = []blockPattern{
 	{regexp.MustCompile(`(^|[\s;&|(])(sudo|doas|su)\s`), "privilege escalation"},
 	// AppleScript's administrator prompt is the same escalation by
-	// another door (ADR-0072 §4.8); a plain osascript stays Review —
-	// scripting the desktop is the model tier's to weigh, not a floor.
+	// another door (ADR-0072 §4.8).
 	{regexp.MustCompile(`(?i)with\s+administrator\s+privileges`), "privilege escalation (administrator privileges)"},
 	{regexp.MustCompile(`(^|[\s;&|(])(dd|mkfs\S*|fdisk|diskutil|newfs\S*)\s`), "raw disk / filesystem operation"},
 	{regexp.MustCompile(`(^|[\s;&|(])git\s+` + gitGlobalOpts +
@@ -106,43 +100,19 @@ var blockPatterns = []blockPattern{
 	{regexp.MustCompile(`\bgpg\b|\bopenssl\s+(enc|rsa|genrsa)|security\s+(find|dump|delete)-`), "cryptographic material handling"},
 }
 
-// credentialPaths are locations whose contents are secrets; touching
-// them is never auto-approved, read or write. Directory names match
-// with or without a leading `~/` or `/`, so a relative `.ssh/config`
-// is as much a credential as `~/.ssh/config`.
-var credentialPaths = []string{
-	".ssh/", ".aws/", ".kube/", ".gnupg/", ".config/gcloud/", ".config/gh/",
-	".docker/config.json", ".git-credentials", ".bash_history", ".zsh_history",
-	".env", "id_rsa", "id_ed25519",
-	"credentials.json", "service-account", ".netrc", ".npmrc", ".pypirc",
-	"application_default_credentials",
-}
-
-// readOnlyCommands are shell entry points that cannot mutate state in
-// their plain form. Only a command built exclusively from these is
-// Safe, and only when none is invoked in a form mutatingUse recognises
-// as a write or a program launch (`find -delete`, `sed -i`, `env cmd`).
-// `tee` and `xargs` are not here: one writes by definition, the other
-// runs whatever it is given.
-var readOnlyCommands = map[string]bool{
-	"ls": true, "cat": true, "head": true, "tail": true, "wc": true, "file": true,
-	"stat": true, "pwd": true, "echo": true, "which": true, "type": true,
-	"grep": true, "egrep": true, "fgrep": true, "rg": true, "find": true, "fd": true,
-	"sort": true, "uniq": true, "cut": true, "tr": true, "sed": true, "awk": true,
-	"jq": true, "yq": true, "diff": true, "date": true, "env": true, "uname": true,
-	"df": true, "du": true, "ps": true, "top": true, "id": true, "whoami": true,
-	"true": true, "false": true, "basename": true, "dirname": true, "realpath": true,
-	"column": true, "nl": true, "seq": true,
-}
-
 // Classify returns the logical verdict for one tool call. projectDir is
 // the confinement root and workDir the session work directory — the
 // second root of ADR-0058, empty when the session has none. Both are
-// ordinary places for a session to write; treating the work directory
-// as foreign made every spill, staging step, and mkdir there cost a
-// model review or a human prompt (found in the v0.56.0 field test).
-// args come straight from the model.
+// ordinary places for a session to write. args come straight from the
+// model. mutating is the tool's own word on whether this call changes
+// state — for shell_exec that depends on the lane (tools.Tool.MutatesFor).
 func Classify(toolName string, mutating bool, args map[string]any, projectDir, workDir string) Verdict {
+	if toolName == "shell_exec" {
+		// Judged before the read-only shortcut: the Block floor applies
+		// to a read-lane command too (a `sudo` the cage would refuse is
+		// still something the operator wants to see).
+		return classifyShell(args, mutating)
+	}
 	if !mutating {
 		return Verdict{Tier: Safe, Reason: "read-only tool"}
 	}
@@ -168,10 +138,6 @@ func Classify(toolName string, mutating bool, args map[string]any, projectDir, w
 		}
 		return Verdict{Tier: Safe, Reason: "edits a file inside the project"}
 
-	case "shell_exec":
-		command, _ := args["command"].(string)
-		return classifyCommand(command, projectDir, workDir)
-
 	case "save_memory", "delete_memory":
 		// Never Safe: a persisted memory reappears in every later
 		// session's prompt, so memory is a persistence vector for
@@ -186,6 +152,59 @@ func Classify(toolName string, mutating bool, args map[string]any, projectDir, w
 	return Verdict{Tier: Review, Reason: "unrecognised tool"}
 }
 
+// classifyShell judges a shell_exec call (ADR-0073): the Block floor
+// first, in every lane; then the lane decides. mutating is false only
+// when the registry has a read lane and the call asked for it — a
+// read-lane request with no sandbox to back it is a write-lane call.
+func classifyShell(args map[string]any, mutating bool) Verdict {
+	command, _ := args["command"].(string)
+	access, _ := args["access"].(string)
+	trimmed := strings.TrimSpace(command)
+	if trimmed == "" {
+		return Verdict{Tier: Review, Reason: "empty command"}
+	}
+	if v, ok := blockFloor(trimmed); ok {
+		return v
+	}
+	lane, err := sandbox.ParseLane(access)
+	if err != nil {
+		return Verdict{Tier: Review, Reason: err.Error()}
+	}
+	switch {
+	case lane == sandbox.LaneOperator:
+		return Verdict{Tier: Review, OperatorOnly: true,
+			Reason: "operator access: the command may write the instruction and configuration files later sessions trust, and read credentials — the operator decides, not the model tier"}
+	case lane == sandbox.LaneRead && !mutating:
+		return Verdict{Tier: Safe, Reason: "read lane: the sandbox denies writes outside scratch, the network, preference writes, signals to other processes and IPC-capable programs"}
+	case lane == sandbox.LaneRead:
+		return Verdict{Tier: Review, Reason: "shell command with no read lane to run in (the sandbox is off) — the model tier weighs it"}
+	}
+	return Verdict{Tier: Review, Reason: "write lane: writes the project and the work directory, reaches the network — the model tier weighs it"}
+}
+
+// blockFloor is the text part of the shell verdict that survives
+// ADR-0073: it can only raise a call to Block.
+func blockFloor(trimmed string) (Verdict, bool) {
+	norm := normalizeHeads(trimmed)
+	if rmRecursiveForce(norm) {
+		return Verdict{Tier: Block, Reason: "recursive force delete"}, true
+	}
+	if gitBranchForceDelete(norm) {
+		return Verdict{Tier: Block, Reason: "history-rewriting or remote-publishing git operation"}, true
+	}
+	for _, p := range blockPatterns {
+		if p.re.MatchString(norm) {
+			return Verdict{Tier: Block, Reason: p.reason}, true
+		}
+	}
+	if hasCredentialPath(trimmed) {
+		// The read and write lanes deny the read at the kernel; the
+		// floor puts the attempt in front of the operator as well.
+		return Verdict{Tier: Block, Reason: "references credential material"}, true
+	}
+	return Verdict{}, false
+}
+
 func classifyPath(p, projectDir, workDir string) (Verdict, bool) {
 	if p == "" {
 		return Verdict{Tier: Review, Reason: "missing path argument"}, true
@@ -194,7 +213,10 @@ func classifyPath(p, projectDir, workDir string) (Verdict, bool) {
 		return Verdict{Tier: Block, Reason: "path looks like credential material"}, true
 	}
 	if filepath.IsAbs(p) {
-		if !withinAnyRoot(filepath.Clean(p), projectDir, workDir) {
+		// Either spelling of a macOS alias (/tmp, /private/tmp) is the
+		// same place to the kernel and to the registry's resolved root.
+		c := filepath.Clean(p)
+		if !withinAnyRoot(c, projectDir, workDir) && !withinAnyRoot(aliasResolve(c), projectDir, workDir) {
 			return Verdict{Tier: Block, Reason: outsideRootsReason("absolute path", workDir)}, true
 		}
 		return Verdict{}, false
@@ -231,9 +253,9 @@ func projectRelative(p, projectDir string) string {
 // file is (ADR-0072 §4). Version-control internals are Block: a hook
 // or a config value under .git/ runs outside the sandbox on the
 // operator's next git command, and no file tool has business there.
-// The instruction files (AGENTS.md, CLAUDE.md, AGENT.md, GEMINI.md, a
-// skill under .claude/) and the runtime's own configuration
-// (.mcp.json, .gem-agent.toml, .claude/) are Review that only the
+// The instruction files, the runtime's own configuration and the
+// .claude directory — sandbox.PersistentFile, the one list the write
+// lane's profile also denies (ADR-0073 §3) — are Review that only the
 // operator may answer: the edit persists into what every later session
 // trusts, so the evaluator-is-the-proposer objection of ADR-0020 §4
 // applies to it exactly as to memory.
@@ -248,138 +270,12 @@ func persistentTarget(rel string) (Verdict, bool) {
 	if c == ".git" || strings.HasPrefix(c, ".git/") || strings.Contains(c, "/.git/") || strings.HasSuffix(c, "/.git") {
 		return Verdict{Tier: Block, Reason: "writes inside the version-control internals — hooks and config there run outside the sandbox on the next git command"}, true
 	}
-	persistent := Verdict{Tier: Review, OperatorOnly: true,
-		Reason: "changes the instructions or configuration later sessions trust — the operator decides, not the model tier"}
-	if c == ".claude" || strings.HasPrefix(c, ".claude/") || strings.Contains(c, "/.claude/") {
-		return persistent, true
-	}
-	switch path.Base(c) {
-	case ".mcp.json", ".gem-agent.toml", "AGENTS.md", "AGENT.md", "CLAUDE.md", "GEMINI.md":
-		return persistent, true
+	if sandbox.PersistentFile(c) {
+		return Verdict{Tier: Review, OperatorOnly: true,
+			Reason: "changes the instructions or configuration later sessions trust — the operator decides, not the model tier"}, true
 	}
 	return Verdict{}, false
 }
-
-func classifyCommand(command, projectDir, workDir string) Verdict {
-	trimmed := strings.TrimSpace(command)
-	if trimmed == "" {
-		return Verdict{Tier: Review, Reason: "empty command"}
-	}
-	norm := normalizeHeads(trimmed)
-	if rmRecursiveForce(norm) {
-		return Verdict{Tier: Block, Reason: "recursive force delete"}
-	}
-	if gitBranchForceDelete(norm) {
-		return Verdict{Tier: Block, Reason: "history-rewriting or remote-publishing git operation"}
-	}
-	for _, p := range blockPatterns {
-		if p.re.MatchString(norm) {
-			return Verdict{Tier: Block, Reason: p.reason}
-		}
-	}
-	if hasCredentialPath(trimmed) {
-		return Verdict{Tier: Block, Reason: "references credential material"}
-	}
-	if v, ok := redirectTarget(trimmed, projectDir, workDir); ok {
-		return v
-	}
-	// Command substitution hides the real target from any pattern rule
-	// (the agent-skeleton finding) — never Safe, let the model look.
-	// Process substitution is the same hole spelled with a paren:
-	// `cat <(rm -r x)` runs the inner command under bash.
-	if strings.Contains(trimmed, "$(") || strings.Contains(trimmed, "`") ||
-		strings.Contains(trimmed, "${") || strings.Contains(trimmed, "eval ") ||
-		strings.Contains(trimmed, "<(") || strings.Contains(trimmed, ">(") {
-		return Verdict{Tier: Review, Reason: "dynamic command construction"}
-	}
-	// A read-only walk is still a walk: the sandbox denies writes only,
-	// so a `find /` reaches every mount. Never Safe outside the roots;
-	// the model tier weighs the cost (ADR-0070 §3).
-	if walksOutsideRoots(trimmed, projectDir, workDir) {
-		return Verdict{Tier: Review, Reason: outsideRootsReason("walks the filesystem", workDir)}
-	}
-	if readOnlyCommand(trimmed) {
-		return Verdict{Tier: Safe, Reason: "read-only shell command"}
-	}
-	// A command that can write and names a persistent file (ADR-0072
-	// §1.4) gets that file's verdict whatever the command is — `cp`,
-	// `tee`, `install`, `sed -i`, `python3 -c` — not only a redirect
-	// (review after v0.68.2). Read-only commands were judged above:
-	// `cat .git/config` stays a read.
-	if v, ok := persistentTokens(trimmed, projectDir); ok {
-		return v
-	}
-	return Verdict{Tier: Review, Reason: "shell command with unclear effects"}
-}
-
-// persistentTokens scans every word of a writing command for a path
-// into the version-control internals or an instruction/configuration
-// file, relative to the project or absolute inside it.
-//
-// Candidates are split on every delimiter a shell or a script would
-// put around a path — whitespace, quotes, `=`, parens, commas — so
-// `--file=.git/config` and `python3 -c 'open(".git/config","w")'` both
-// yield `.git/config` (review after v0.68.2). The cost is a false
-// operator prompt on a writing command that merely mentions the
-// file (`git commit -m "update AGENTS.md"`), accepted: a prompt, not
-// a hole.
-func persistentTokens(command, projectDir string) (Verdict, bool) {
-	// bash concatenates adjacent quoted pieces and a backslash escapes
-	// the next character: `.g''it/config` and `.git\/config` both run
-	// as .git/config (ADR-0072 §4.5). The quotes and backslashes are
-	// removed before the split, so the words are what the shell sees.
-	for _, seg := range segmentSplit.Split(shellUnquote.Replace(command), -1) {
-		if gitReadOnlySegment(seg) {
-			continue // `git log -- .git` reads history; nothing is written
-		}
-		for _, tok := range candidateSplit.Split(seg, -1) {
-			if tok == "" || strings.HasPrefix(tok, "-") {
-				continue
-			}
-			if v, ok := persistentTarget(projectRelative(tok, projectDir)); ok {
-				return v, true
-			}
-		}
-	}
-	return Verdict{}, false
-}
-
-// gitReadOnly are git subcommands that write nothing to the tree or
-// the repository; a persistent path among their arguments is a
-// pathspec, not a target (pre-release review: `git log -- .git` was
-// Block).
-var gitReadOnly = map[string]bool{
-	"log": true, "diff": true, "show": true, "status": true, "grep": true, "blame": true,
-	"ls-files": true, "ls-tree": true, "rev-parse": true, "describe": true, "shortlog": true,
-	"cat-file": true, "show-ref": true, "rev-list": true, "name-rev": true, "count-objects": true,
-}
-
-func gitReadOnlySegment(seg string) bool {
-	fields := strings.Fields(seg)
-	if len(fields) == 0 || canonicalName(fields[0]) != "git" {
-		return false
-	}
-	rest := fields[1:]
-	for len(rest) > 0 && strings.HasPrefix(rest[0], "-") {
-		if (rest[0] == "-C" || rest[0] == "-c") && len(rest) > 1 {
-			rest = rest[2:]
-			continue
-		}
-		rest = rest[1:]
-	}
-	return len(rest) > 0 && gitReadOnly[rest[0]]
-}
-
-// candidateSplit separates the words a path could be, inside or
-// outside flag syntax; quotes and backslashes are removed beforehand
-// (shellUnquote), never treated as separators.
-var candidateSplit = regexp.MustCompile("[\\s`()=,;|&<>\\[\\]{}]+")
-
-// shellUnquote removes the quoting bash would consume: a backslash-
-// newline (line continuation) vanishes whole — first, so the newline
-// does not survive as a separator — then quotes and escaping
-// backslashes.
-var shellUnquote = strings.NewReplacer("\\\n", "", "\\\r\n", "", `'`, "", `"`, "", "\\", "")
 
 // segmentSplit separates the simple commands of a shell text: pipes,
 // lists, background, and newlines — bash runs each line as a separate
@@ -556,62 +452,9 @@ func gitBranchForceDelete(command string) bool {
 	return false
 }
 
-// writableRoots are the places a shell command may write: the project,
-// the session work directory, and the sandbox's scratch roots.
-func writableRoots(projectDir, workDir string) []string {
-	return append([]string{projectDir, workDir}, scratchRoots...)
-}
-
-// redirectRe finds the target of an output redirection, absolute or
-// relative; a descriptor duplication (`2>&1`) has no path and does not
-// match.
-var redirectRe = regexp.MustCompile(`>>?\s*("?)([^\s"';|&<>()]+)`)
-
-// redirectTarget judges where a command's output redirections land: an
-// absolute path outside the writable roots is Block (the sandbox would
-// deny it, but escalating explains why), and a target that is one of
-// the persistent files persistentTarget names gets that verdict —
-// `echo x > AGENTS.md` is the same write as write_file's.
-func redirectTarget(command, projectDir, workDir string) (Verdict, bool) {
-	for _, m := range redirectRe.FindAllStringSubmatch(command, -1) {
-		target := m[2]
-		if strings.HasPrefix(target, "&") {
-			continue // >&2
-		}
-		if filepath.IsAbs(target) {
-			raw := filepath.Clean(target)
-			if isScratchFile(raw) {
-				continue // a device sink the profile allows as a literal
-			}
-			if !withinAnyRoot(aliasResolve(raw), writableRoots(projectDir, workDir)...) {
-				return Verdict{Tier: Block, Reason: outsideRootsReason("redirects output", workDir)}, true
-			}
-			if v, ok := persistentTarget(projectRelative(raw, projectDir)); ok {
-				return v, true
-			}
-			continue
-		}
-		if v, ok := persistentTarget(target); ok {
-			return v, true
-		}
-	}
-	return Verdict{}, false
-}
-
-// isScratchFile reports a device sink the profile allows as a literal.
-func isScratchFile(p string) bool {
-	for _, f := range scratchFiles {
-		if p == f {
-			return true
-		}
-	}
-	return false
-}
-
 // pathAliases are macOS's top-level symlinks. Seatbelt sees the real
 // path, so a lexical /tmp/x must be judged as /private/tmp/x — the
-// rule tier does no I/O to find that out (review round 4: `> /tmp/x`
-// was a false Block with an untrue reason, the ADR-0070 §2 drift).
+// rule tier does no I/O to find that out.
 var pathAliases = [][2]string{{"/tmp", "/private/tmp"}, {"/var", "/private/var"}, {"/etc", "/private/etc"}}
 
 func aliasResolve(p string) string {
@@ -622,76 +465,6 @@ func aliasResolve(p string) string {
 	}
 	return p
 }
-
-// walkers are read-only commands whose work is a tree walk from a
-// starting point given as an argument; recursiveWhenFlagged walk only
-// with a recursive flag (`grep -r`, `ls -R`).
-var walkers = map[string]bool{"find": true, "fd": true, "du": true, "rg": true}
-var recursiveWhenFlagged = map[string]bool{"grep": true, "egrep": true, "fgrep": true, "ls": true}
-
-// walksOutsideRoots reports whether any segment of the command walks a
-// tree from `/`, `~`, `~user`, a `$VAR`, a `..`-relative path, or an
-// absolute path outside the writable roots (ADR-0070 §3). Other
-// relative starting points stay inside the project — the command's
-// working directory.
-func walksOutsideRoots(command, projectDir, workDir string) bool {
-	roots := writableRoots(projectDir, workDir)
-	for _, seg := range segmentSplit.Split(command, -1) {
-		fields := strings.Fields(strings.TrimSpace(seg))
-		if len(fields) == 0 {
-			continue
-		}
-		head := canonicalName(fields[0])
-		walks := walkers[head] || (recursiveWhenFlagged[head] && hasRecursiveFlag(fields[1:]))
-		if !walks {
-			continue
-		}
-		for _, f := range fields[1:] {
-			if strings.HasPrefix(f, "-") {
-				continue
-			}
-			f = strings.Trim(f, `"'`)
-			switch {
-			case f == "~" || strings.HasPrefix(f, "~/"):
-				if homeDir == "" {
-					return true
-				}
-				f = filepath.Join(homeDir, strings.TrimPrefix(f, "~"))
-			case strings.HasPrefix(f, "~"):
-				return true // ~user: another account's tree
-			case strings.HasPrefix(f, "$"):
-				return true // $HOME, $PWD/..: unknown until the shell runs
-			case !filepath.IsAbs(f):
-				if c := filepath.Clean(f); c == ".." || strings.HasPrefix(c, "../") {
-					return true
-				}
-				continue
-			}
-			if !withinAnyRoot(aliasResolve(filepath.Clean(f)), roots...) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func hasRecursiveFlag(args []string) bool {
-	for _, a := range args {
-		if a == "--recursive" || a == "--dereference-recursive" {
-			return true
-		}
-		if strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--") && strings.ContainsAny(a, "rR") {
-			return true
-		}
-	}
-	return false
-}
-
-// devNullRedirect matches redirections that write nowhere: to a
-// device sink (sandbox.ScratchFiles, /dev/fd/N), or one descriptor
-// onto another (`2>&1`). They do not make a read-only command a
-// writing one (ADR-0070 §2).
-var devNullRedirect = regexp.MustCompile(`(\d*>>?|&>)\s*/dev/(null|zero|stdout|stderr|stdin|fd/\d+)\b|\d>&\d`)
 
 // withinAnyRoot reports whether an absolute, cleaned path sits under
 // any non-empty root.
@@ -714,381 +487,22 @@ func outsideRootsReason(what, workDir string) string {
 	return what + " outside the project and session work directories"
 }
 
-// readOnlyCommand reports whether every segment of a pipeline/sequence
-// starts with a known read-only command, in a form that neither writes
-// nor launches a program, and carries no redirection.
-func readOnlyCommand(command string) bool {
-	command = devNullRedirect.ReplaceAllString(command, "")
-	if strings.ContainsAny(command, ">") {
-		return false // any other redirection writes somewhere
-	}
-	segments := segmentSplit.Split(command, -1)
-	for _, seg := range segments {
-		// Shell words, not whitespace fields: a quoted sed script is
-		// one argument to sed and must reach mutatingUse whole
-		// (pre-release review — `'w /etc/passwd'` arrived as two
-		// pieces and the write command lost its trailing space).
-		fields := shellWords(seg)
-		if len(fields) == 0 {
-			return false
-		}
-		head := fields[0]
-		if strings.Contains(head, "=") {
-			return false // env assignment prefix; unclear
-		}
-		name := canonicalName(head)
-		if !readOnlyCommands[name] || mutatingUse(name, fields[1:]) {
-			return false
-		}
-	}
-	return true
-}
-
-// shellWords splits one simple command into the words the shell would
-// pass: whitespace separates, single and double quotes group (and are
-// removed), a backslash outside single quotes escapes the next byte.
-// Unbalanced quotes run to the end of the segment.
-func shellWords(seg string) []string {
-	var words []string
-	var cur strings.Builder
-	inWord, single, double := false, false, false
-	flush := func() {
-		if inWord {
-			words = append(words, cur.String())
-			cur.Reset()
-			inWord = false
-		}
-	}
-	for i := 0; i < len(seg); i++ {
-		ch := seg[i]
-		switch {
-		case single:
-			if ch == '\'' {
-				single = false
-			} else {
-				cur.WriteByte(ch)
-			}
-		case double:
-			if ch == '"' {
-				double = false
-			} else if ch == '\\' && i+1 < len(seg) {
-				i++
-				cur.WriteByte(seg[i])
-			} else {
-				cur.WriteByte(ch)
-			}
-		case ch == '\'':
-			single, inWord = true, true
-		case ch == '"':
-			double, inWord = true, true
-		case ch == '\\' && i+1 < len(seg):
-			i++
-			cur.WriteByte(seg[i])
-			inWord = true
-		case ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r':
-			flush()
-		default:
-			cur.WriteByte(ch)
-			inWord = true
-		}
-	}
-	flush()
-	return words
-}
-
-// awkSystemRe finds awk's system() call, with any whitespace before
-// the paren.
-var awkSystemRe = regexp.MustCompile(`\bsystem\s*\(`)
-
-// sedExecutes reports a GNU sed script that runs a program: the `e`
-// command (`1e id`, `e whoami`) or the `e` flag of a substitution
-// (`s/x/y/e`, `s#x#y#ge`, any delimiter). A script whose s-command
-// cannot be parsed is treated as executing — the unknown is not Safe
-// (ADR-0072 §4.8).
-func sedExecutes(script string) bool {
-	for _, cmd := range splitSedCommands(script) {
-		c := strings.TrimLeft(cmd, " \t")
-		// Strip an address: numbers, $, ranges, /re/ with any escaping.
-		c = strings.TrimLeft(stripSedAddress(c), " \t")
-		if c == "" {
-			continue
-		}
-		if c[0] == 'e' && (len(c) == 1 || c[1] == ' ' || c[1] == '\t') {
-			return true
-		}
-		if c[0] == 's' && len(c) > 1 {
-			delim := c[1]
-			parts := splitSedDelim(c[2:], delim)
-			if len(parts) < 3 {
-				return true // unparseable substitution: not Safe
-			}
-			if strings.ContainsRune(parts[2], 'e') {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// splitSedCommands splits a sed script on `;` and newlines outside a
-// substitution's pattern/replacement.
-func splitSedCommands(script string) []string {
-	var out []string
-	var cur strings.Builder
-	depth := 0 // inside an s command's delimited parts
-	var delim byte
-	esc := false
-	for i := 0; i < len(script); i++ {
-		ch := script[i]
-		switch {
-		case esc:
-			esc = false
-		case ch == '\\':
-			esc = true
-		case depth > 0 && ch == delim:
-			depth--
-		case depth == 0 && (ch == ';' || ch == '\n'):
-			out = append(out, cur.String())
-			cur.Reset()
-			continue
-		case depth == 0 && ch == 's' && i+1 < len(script) && (cur.Len() == 0 || strings.TrimSpace(stripSedAddress(cur.String())) == ""):
-			delim = script[i+1]
-			depth = 2 // pattern and replacement close with two delimiters
-			cur.WriteByte(ch)
-			cur.WriteByte(delim)
-			i++
-			continue
-		}
-		cur.WriteByte(ch)
-	}
-	out = append(out, cur.String())
-	return out
-}
-
-// stripSedAddress removes a leading address (`1`, `$`, `1,5`, `/re/`).
-func stripSedAddress(c string) string {
-	i := 0
-	for i < len(c) {
-		switch {
-		case c[i] >= '0' && c[i] <= '9', c[i] == '$', c[i] == ',', c[i] == ' ', c[i] == '~', c[i] == '!':
-			i++
-		case c[i] == '/':
-			j := i + 1
-			for j < len(c) && c[j] != '/' {
-				if c[j] == '\\' {
-					j++
-				}
-				j++
-			}
-			i = j + 1
-		default:
-			return c[i:]
-		}
-	}
-	return ""
-}
-
-// splitSedDelim splits the body of an s command on its unescaped
-// delimiter: pattern, replacement, flags.
-func splitSedDelim(body string, delim byte) []string {
-	var parts []string
-	var cur strings.Builder
-	for i := 0; i < len(body); i++ {
-		if body[i] == '\\' && i+1 < len(body) {
-			cur.WriteByte(body[i])
-			cur.WriteByte(body[i+1])
-			i++
-			continue
-		}
-		if body[i] == delim && len(parts) < 2 {
-			parts = append(parts, cur.String())
-			cur.Reset()
-			continue
-		}
-		cur.WriteByte(body[i])
-	}
-	parts = append(parts, cur.String())
-	return parts
-}
-
-// sedWriteCmd finds a `w`/`W` command in a sed script — `/re/w file`,
-// `1,5w file`, the `s///w file` flag — which writes a file whatever
-// the options say. Matched against the script and file arguments
-// joined, since the shell's quoting split them into fields.
-var sedWriteCmd = regexp.MustCompile(`(^|[;{}\n])\s*[^a-zA-Z]*[wW]\s|/[wW]\s`)
-
-// mutatingUse reports whether a read-only command is invoked in a form
-// that writes or runs a program: the flag turns a search into a rewrite
-// (`sed -i`, `sort -o`, `yq -i`), a walk into a launcher (`find -exec`,
-// `fd -x`, `rg --pre`), or a printer into a runner (`env cmd`,
-// `awk 'system(…)'`). Review, not Block: the model weighs it.
-func mutatingUse(name string, args []string) bool {
-	shortHas := func(a string, letters string) bool {
-		return strings.HasPrefix(a, "-") && !strings.HasPrefix(a, "--") && strings.ContainsAny(a, letters)
-	}
-	switch name {
-	case "find":
-		for _, a := range args {
-			switch a {
-			case "-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls":
-				return true
-			}
-		}
-	case "fd":
-		for _, a := range args {
-			if a == "--exec" || a == "--exec-batch" || shortHas(a, "xX") {
-				return true
-			}
-		}
-	case "rg":
-		for _, a := range args {
-			if a == "--pre" || strings.HasPrefix(a, "--pre=") {
-				return true
-			}
-		}
-	case "sed":
-		// The scripts are what -e/--expression name, glued or not, or
-		// the first operand when none does; everything after is a file
-		// operand and never enters the parse (pre-release review: a
-		// filename with an `e` read as an s-command flag, and a glued
-		// `-e'w file'` / `--expression=` / `--file=` slipped past the
-		// bare-token scan as an opaque flag).
-		var scripts []string
-		explicit := false
-		for i := 0; i < len(args); i++ {
-			a := args[i]
-			switch {
-			case a == "-e" || a == "--expression":
-				explicit = true
-				if i+1 < len(args) {
-					scripts = append(scripts, args[i+1])
-					i++
-				}
-			case strings.HasPrefix(a, "--expression="):
-				explicit = true
-				scripts = append(scripts, strings.TrimPrefix(a, "--expression="))
-			case a == "-f" || a == "--file" || strings.HasPrefix(a, "--file=") || (strings.HasPrefix(a, "-f") && !strings.HasPrefix(a, "--")):
-				return true // a script file: unreadable here, so not Safe
-			case strings.HasPrefix(a, "--in-place"):
-				return true
-			case strings.HasPrefix(a, "--"):
-			case strings.HasPrefix(a, "-"):
-				// A short cluster: i is in-place; e means the script
-				// follows (glued or as the next word); f means a file.
-				cluster := a[1:]
-				if strings.ContainsAny(cluster, "if") {
-					return true
-				}
-				if j := strings.IndexByte(cluster, 'e'); j >= 0 {
-					explicit = true
-					if rest := cluster[j+1:]; rest != "" {
-						scripts = append(scripts, rest)
-					} else if i+1 < len(args) {
-						scripts = append(scripts, args[i+1])
-						i++
-					}
-				}
-			default:
-				if !explicit && len(scripts) == 0 {
-					scripts = append(scripts, a)
-				}
-			}
-		}
-		for _, sc := range scripts {
-			sc = strings.Trim(sc, `"'`)
-			if sedWriteCmd.MatchString(sc) || sedExecutes(sc) {
-				return true
-			}
-		}
-	case "awk":
-		for _, a := range args {
-			if a == "-f" || strings.HasPrefix(a, "-i") {
-				return true
-			}
-		}
-		// `system (…)` is valid awk: the call is matched across the
-		// joined script, not per whitespace token (review after v0.68.0).
-		if awkSystemRe.MatchString(strings.Join(args, " ")) {
-			return true
-		}
-	case "sort":
-		for _, a := range args {
-			if strings.HasPrefix(a, "-o") || strings.HasPrefix(a, "--output") {
-				return true
-			}
-		}
-	case "yq":
-		for _, a := range args {
-			if a == "-i" || a == "--inplace" || shortHas(a, "i") {
-				return true
-			}
-		}
-	case "env":
-		for _, a := range args {
-			if !strings.HasPrefix(a, "-") && !strings.Contains(a, "=") {
-				return true // env runs the named program
-			}
-		}
-	case "uniq":
-		// uniq INPUT OUTPUT overwrites its second operand (pre-release
-		// review).
-		operands := 0
-		for _, a := range args {
-			if !strings.HasPrefix(a, "-") {
-				operands++
-			}
-		}
-		if operands >= 2 {
-			return true
-		}
-	case "date":
-		for _, a := range args {
-			if strings.HasPrefix(a, "-s") || strings.HasPrefix(a, "--set") {
-				return true // sets the clock
-			}
-		}
-	}
-	return false
-}
-
+// hasCredentialPath reports credential material named anywhere in s —
+// a file-tool path or a shell command — by the one rule the sandbox
+// profile enforces (sandbox.CredentialPath). For a command every word
+// is tried, quotes removed, so `cat "~/.ssh/id_rsa"` is seen.
 func hasCredentialPath(s string) bool {
-	lower := strings.ToLower(s)
-	for _, p := range credentialPaths {
-		if p == ".env" {
-			if envCredential(lower) {
-				return true
-			}
-			continue
-		}
-		if strings.Contains(lower, p) {
+	if sandbox.CredentialPath(s) {
+		return true
+	}
+	for _, w := range strings.FieldsFunc(s, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '"' || r == '\'' || r == '=' || r == ';' || r == '|' || r == '&' || r == '(' || r == ')'
+	}) {
+		if sandbox.CredentialPath(w) {
 			return true
 		}
 	}
 	return false
-}
-
-// envCredential reports a `.env` reference that is a credential file:
-// `.env`, `.env.local`, `.env.production` — not the committed
-// templates `.env.example` / `.env.sample` / `.env.template` /
-// `.env.dist` (pre-release review: `cat .env.example` was Block).
-func envCredential(lower string) bool {
-	for i := 0; ; {
-		j := strings.Index(lower[i:], ".env")
-		if j < 0 {
-			return false
-		}
-		rest := lower[i+j+4:]
-		template := false
-		for _, suffix := range []string{".example", ".sample", ".template", ".dist"} {
-			if strings.HasPrefix(rest, suffix) {
-				template = true
-			}
-		}
-		if !template {
-			return true
-		}
-		i += j + 4
-	}
 }
 
 func withinDir(base, p string) bool {

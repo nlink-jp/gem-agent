@@ -458,8 +458,11 @@ func TestWorkDirAttachmentOpensThroughItsRoot(t *testing.T) {
 	if err := os.Symlink(secret, p); err != nil {
 		t.Fatal(err)
 	}
-	if att, err := attachFile(p, abs, project, work, 1024); err == nil {
-		t.Fatalf("work-dir reference read outside its root: %q", att.Content)
+	if f, err := openConfined(abs, project, work); err == nil {
+		att, err := attachFile(p, f, 1024)
+		if err == nil {
+			t.Fatalf("work-dir reference read outside its root: %q", att.Content)
+		}
 	}
 }
 
@@ -474,7 +477,11 @@ func TestDirectoryOmissionIsNotACount(t *testing.T) {
 	}
 	lim := DefaultLimits()
 	lim.DirEntries = 2
-	att, err := attachDir("dir", dir, "", "", lim)
+	d, err := os.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	att, err := attachDir("dir", d, lim)
 	if err != nil {
 		t.Fatal(err)
 	}

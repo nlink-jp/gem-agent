@@ -46,7 +46,8 @@ name = "<gemini model id>"
 # safety = "default"        # default | relaxed | off (see Content filters)
 
 [sandbox]
-enabled = true             # default
+enabled = true             # default; off = no read lane, every shell_exec asks (ADR-0073)
+# read_lane_deny_exec = ["docker"]   # programs the read lane may not launch, added to the built-in list
 
 [agent]
 max_turns = 50             # default; an intervention checkpoint, extensions up to 3× (ADR-0040)

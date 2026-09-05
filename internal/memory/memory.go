@@ -6,6 +6,8 @@
 package memory
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"fmt"
 	"os"
 	"path/filepath"
@@ -108,9 +110,17 @@ func Load(baseDir, projectDir string, lim Limits) ([]Memory, []string) {
 				return
 			}
 		}
-		entries, err := os.ReadDir(dir)
+		d, err := os.Open(dir)
 		if err != nil {
 			return
+		}
+		entries, more, err := bounded.ReadDir(d, memoryDirCap)
+		_ = d.Close()
+		if err != nil {
+			return
+		}
+		if more {
+			notes = append(notes, fmt.Sprintf("memory %s: more than %d files; only the first %d were read", scope, memoryDirCap, memoryDirCap))
 		}
 		names := make([]string, 0, len(entries))
 		for _, e := range entries {
@@ -123,7 +133,7 @@ func Load(baseDir, projectDir string, lim Limits) ([]Memory, []string) {
 		sort.Strings(names)
 		for _, n := range names {
 			path := filepath.Join(dir, n+".md")
-			data, err := os.ReadFile(path)
+			data, size, err := readMemoryFile(path, lim.PerMemoryBytes)
 			if err != nil {
 				continue
 			}
@@ -140,8 +150,8 @@ func Load(baseDir, projectDir string, lim Limits) ([]Memory, []string) {
 				cap = remaining
 			}
 			// Only reachable by hand-editing: Save enforces the cap.
-			if len(content) > cap {
-				content = cutRunes(content, cap) + fmt.Sprintf("\n[truncated: %d of %d bytes shown]", cap, len(data))
+			if len(content) > cap || size > int64(len(data)) {
+				content = cutRunes(content, cap) + fmt.Sprintf("\n[truncated: %d of %d bytes shown]", cap, size)
 				notes = append(notes, fmt.Sprintf("memory %s/%s truncated", scope, n))
 			}
 			total += len(content)
@@ -278,4 +288,24 @@ func cutRunes(s string, n int) string {
 		n--
 	}
 	return s[:n]
+}
+
+// memoryDirCap bounds one scope's listing: memory is written by Save
+// under a cap, so more files than this is a hand-made state.
+const memoryDirCap = 2000
+
+// readMemoryFile reads at most cap bytes of a memory file and reports
+// the file's size, so a truncation note can name the real total.
+func readMemoryFile(path string, cap int) ([]byte, int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = f.Close() }()
+	size := int64(0)
+	if st, err := f.Stat(); err == nil {
+		size = st.Size()
+	}
+	data, _, err := bounded.ReadAll(f, cap+1)
+	return data, size, err
 }

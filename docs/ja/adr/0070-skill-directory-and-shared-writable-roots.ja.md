@@ -9,6 +9,13 @@
 | きっかけ | セッション `20260904-225330`: モデルは `load_skill` で `incident-research` をロードし `references/` と `schema.json` を読んだあと、「skill のスクリプト配置場所を確認する」という目的で `find / -name "validate.py" 2>/dev/null \| grep incident-research` を実行した。ルール層は事実でない理由（`2>/dev/null` を書込可ルート外へのリダイレクトと読んだ）で Block し、オペレータが承認し、走査は 65 秒後に Ctrl+C で kill された |
 | 修正対象 | ADR-0010 §2 / §4（skill ロードが開示するもの）; ADR-0004（ルール層の Safe 集合と「書ける場所」の定義） |
 
+*ADR-0073 §3 による修正: §2 の共有一覧 1 つは 3 つ — scratch ディレクトリ・
+永続ファイル・資格情報パス — になり、それぞれ `internal/sandbox` で 1 度
+定義され、プロファイルと file ツールの判定が読む。ルール層は Block 床の
+ほかにシェルコマンドを判定しなくなったので §3 の「ルート外を歩く」判定は
+消えた: read レーンでの `/` からの走査はカーネルが許す読取で、利用者が確認
+不要と選んだもの。*
+
 ## 背景
 
 その skill は Claude Code の契約に沿って書かれていた。`SKILL.md` は

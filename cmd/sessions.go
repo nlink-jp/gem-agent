@@ -50,11 +50,14 @@ func runSessions(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	}
-	metas, err := session.List(dir, projectDir)
+	metas, more, err := session.List(dir, projectDir)
 	if err != nil {
 		return err
 	}
 	out := cmd.OutOrStdout()
+	if more {
+		fmt.Fprintf(cmd.ErrOrStderr(), "note: more than %d session files — the listing is cut; --resume takes a full id\n", session.ListCap)
+	}
 	if len(metas) == 0 {
 		if flagSessionsAll {
 			fmt.Fprintf(out, "no sessions recorded yet (%s)\n", dir)

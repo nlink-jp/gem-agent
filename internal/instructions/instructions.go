@@ -9,8 +9,9 @@
 package instructions
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -222,7 +223,7 @@ func readInstruction(path string, cap int) ([]byte, int64, error) {
 	if st, err := f.Stat(); err == nil {
 		size = st.Size()
 	}
-	data, err := io.ReadAll(io.LimitReader(f, int64(cap)))
+	data, _, err := bounded.ReadAll(f, cap)
 	if err != nil {
 		return nil, 0, err
 	}

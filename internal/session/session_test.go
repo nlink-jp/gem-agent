@@ -320,7 +320,7 @@ func TestListFiltersByProjectAndSortsNewestFirst(t *testing.T) {
 	newer := write("/proj", "later question")
 	write("/other", "different project")
 
-	metas, err := List(dir, "/proj")
+	metas, _, err := List(dir, "/proj")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +359,7 @@ func TestListIgnoresForeignFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "planted.jsonl"), []byte(`{"kind":"session","data":{"project":"/proj"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	metas, err := List(dir, "")
+	metas, _, err := List(dir, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +369,7 @@ func TestListIgnoresForeignFiles(t *testing.T) {
 }
 
 func TestListOnMissingDirIsEmptyNotAnError(t *testing.T) {
-	metas, err := List(filepath.Join(t.TempDir(), "never-created"), "")
+	metas, _, err := List(filepath.Join(t.TempDir(), "never-created"), "")
 	if err != nil || len(metas) != 0 {
 		t.Errorf("List = %v, %v; want no sessions and no error on a first run", metas, err)
 	}
@@ -401,7 +401,7 @@ func TestListSkipsSessionsWithNoConversation(t *testing.T) {
 	}
 	_ = empty.Close()
 
-	metas, err := List(dir, "/proj")
+	metas, _, err := List(dir, "/proj")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,7 +465,7 @@ func TestPreviewPrefersTypedMessagesAndRendersShellCommands(t *testing.T) {
 			}
 			_ = l.Close()
 
-			metas, err := List(dir, "/proj")
+			metas, _, err := List(dir, "/proj")
 			if err != nil {
 				t.Fatal(err)
 			}

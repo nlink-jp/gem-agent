@@ -108,52 +108,54 @@ call. Each mutating call then goes through:
 
 1. **Rule tier** (no model call): *safe* → runs; *blocked* → always
    asks (`rm -rf`, `sudo`, `osascript … with administrator privileges`,
-   `git push`, download-piped-to-shell, disk writes, credential paths,
-   anything outside the project and the session work directory…; a
-   plain `osascript` is *uncertain*, not blocked);
-   *uncertain* → tier 2.
+   `git push`, download-piped-to-shell, disk writes, credential paths;
+   for the file tools also anything outside the project and the
+   session work directory); *uncertain* → tier 2. For `shell_exec` the
+   tier never says *safe* from the command's text: the **lane** the
+   model declared does (below).
 2. **Model tier**: a separate evaluation round judges the proposed call
    (delivered to it as nonce-wrapped untrusted data, with no tools
    available). It must both approve *and* be confident, or the call
    asks.
 
-*Safe* is read-only **inside the roots** (ADR-0070). A tree walk —
-`find`, `fd`, `du`, `rg`, or `grep` with a recursive flag — that starts
-at `/`, `~`, or an absolute path outside the project, the session work
-directory and the sandbox's scratch roots is *uncertain*, not safe: the
-sandbox denies writes only, so a walk from `/` reaches every mount, and
-that cost is the model tier's to weigh. Redirects to `/dev/null` (and
-`2>&1`) write nowhere and do not cost a command its safe verdict;
-redirects into the scratch roots (`TMPDIR`, `/private/tmp`, `/dev/fd`)
-and to the device sinks (`/dev/null`, `/dev/zero`, `/dev/stdout`,
-`/dev/stderr`, `/dev/urandom` — never `/dev` as a whole, so `/dev/tty`
-is denied) are writes the sandbox allows and are not "outside the
-project" — the rule tier reads the sandbox's own list, so the reason
-it shows you is what Seatbelt will do.
+**Shell commands are judged by their lane, not their text** (ADR-0073).
+`shell_exec` takes an `access` argument the model declares — `read`
+(default), `write` or `operator` — and macOS Seatbelt enforces that
+lane, whatever the command says:
 
-The rule tier reads a command the way bash runs it (ADR-0072 §1): a
-newline separates commands like `;`; `/bin/rm`, `\rm` and `RM` are
-`rm`, and `rm`'s recursive-and-force is read from the flags in any
-spelling; git's global options are skipped before the subcommand, and
-`checkout … --`, `restore`, `stash drop`, `clean --force` ask like
-`push`. A read-only command is safe only in its plain form —
-`find -delete` / `-exec`, `fd -x`, `rg --pre`, `sed -i`, `awk`
-with `system(…)`, `sort -o`, `yq -i`, `env <command>` are
-*uncertain*, and `tee` and `xargs` always are; `<(…)` is dynamic
-construction like `$(…)`. `/tmp`, `/var` and `/etc` are judged as the
-`/private` paths Seatbelt sees.
+| lane | the kernel denies | who decides |
+|---|---|---|
+| `read` | writes outside the scratch locations, the network, preference writes (`defaults`), `sysctl` writes, signals to anything but the command's own children, `open`, and launching the IPC-capable programs (`osascript`, `open`, `launchctl`, `defaults`, `security`, `pbcopy`, `shortcuts`, `automator`, `scutil`, `networksetup`, `systemsetup`, plus `[sandbox].read_lane_deny_exec`); reading credential files | nobody — a read-lane command is non-mutating by construction and **runs without a prompt in every mode**, like `read_file` |
+| `write` | writes to the files later sessions trust (below); reading credential files | the ladder above in auto mode, you in the default mode |
+| `operator` | nothing beyond the ADR-0001 profile: the persistent files are writable, credentials readable | **you, always** — the model tier, a session `a` and `--allow` never answer it |
+
+A false declaration gains nothing: `read` can only tighten the cage,
+`write` and `operator` only add scrutiny. A command the read lane
+refused returns its exit status and one line naming the lane to ask
+for; the model re-issues it with `access: "write"`, which is where the
+approval happens. The *blocked* patterns above still apply in every
+lane — a `sudo` in the read lane asks even though the cage would refuse
+it — and they are the only text rule left: a spelling they miss costs a
+prompt the kernel catches anyway, never a hole. With the sandbox off
+(`--no-sandbox`, or a nested sandbox) there is no read lane, and every
+`shell_exec` asks.
 
 **Writes that later sessions trust ask you, not the model** (ADR-0072
-§1.4). A write under `.git/` is *blocked* — a hook or a config value
-there runs outside the sandbox on your next git command. A write to
+§1.4, enforced by the kernel since ADR-0073). A write under `.git/`
+through the file tools is *blocked* — a hook or a config value there
+runs outside the sandbox on your next git command. A write to
 `AGENTS.md`, `AGENT.md`, `CLAUDE.md`, `GEMINI.md`, `.mcp.json`,
-`.gem-agent.toml` or anything under `.claude/` — through `write_file`,
-`edit_file`, a shell redirect, or any writing shell command that names
-the file (`cp`, `tee`, `sed -i`, …) — is *uncertain* and skips tier 2:
-the edit persists into what every later session takes instructions or
-configuration from, so the party that proposed it cannot be its judge
-(the memory rule below, applied to the same class of persistence). In
-auto mode that is one prompt per instruction-file edit.
+`.gem-agent.toml` or anything under `.claude/` through `write_file` or
+`edit_file` is *uncertain* and skips tier 2: the edit persists into
+what every later session takes instructions or configuration from, so
+the party that proposed it cannot be its judge (the memory rule below,
+applied to the same class of persistence). From the shell, the write
+lane's profile denies those files and `.git/hooks`, `.git/info` and
+`.git/config` outright — a redirect, `mv`, `sed -i`, `rm` or
+`git config` onto them fails with `Operation not permitted` — and only
+the `operator` lane, which you approve, may touch them. The list is one
+function (`sandbox.PersistentFiles`) read by the profile and by the
+file tools' verdict, so the two cannot disagree.
 
 **Memory writes never reach tier 2.** `save_memory` and `delete_memory`
 are Review-tier, so they would take the *uncertain* branch — but they
@@ -370,16 +372,22 @@ What remains, and what to check if you used it:
   review `~/.config/gem-agent/policy.toml` and delete any wildcard you
   do not want.
 
-## Sandbox (ADR-0001)
+## Sandbox (ADR-0001, ADR-0073)
 
-`shell_exec` (and `!` commands) run wrapped in macOS sandbox-exec:
-file writes restricted to the project directory, the session work
-directory, and the scratch dirs (`TMPDIR`, `/private/tmp`, `/dev`),
-enforced by Seatbelt and covered by a real enforcement test. The
-scratch list is one function, `sandbox.ScratchDirs()`, and the rule
-tier above reads the same one (ADR-0070 §2).
-`--no-sandbox` disables the wrapper (debugging only). The sandbox
-applies in every approval mode.
+`shell_exec` runs wrapped in macOS sandbox-exec under the profile of
+the lane the model declared (see the auto-approve section above for
+what each lane denies); `!` commands run in the operator lane because
+you typed them. Every lane confines file writes to the project
+directory, the session work directory and the scratch dirs (`TMPDIR`,
+`/private/tmp`, `/dev/fd` and the device sinks), enforced by Seatbelt
+and covered by a real enforcement test that runs the three profiles
+against seventeen probes (redirect, `mv`, `sed -i`, `rm`, `git config`
+onto `AGENTS.md` and `.git/config`, credential reads, `osascript`, a
+child `kill`). The scratch, persistent-file and credential lists are
+each one function in `internal/sandbox`, read by the profile and by
+the file tools' verdict (ADR-0070 §2, ADR-0073 §3). `--no-sandbox`
+disables the wrapper (debugging only) — and with it the read lane, so
+every `shell_exec` asks. The sandbox applies in every approval mode.
 
 ## Startup safety (ADR-0023)
 

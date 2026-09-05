@@ -7,6 +7,8 @@
 package statedir
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,7 +51,7 @@ const Marker = ".project"
 // create it; a hand-made directory — or one left by a crashed pre-fix
 // writer — has no better claim to check).
 func MarkerMatches(dir, projectDir string) (bool, string) {
-	data, err := os.ReadFile(filepath.Join(dir, Marker))
+	data, err := readMarker(filepath.Join(dir, Marker))
 	if err != nil {
 		return true, ""
 	}
@@ -80,7 +82,7 @@ func EnsureProjectDir(dir, projectDir string) error {
 		return fmt.Errorf("%s", note)
 	}
 	marker := filepath.Join(dir, Marker)
-	if data, err := os.ReadFile(marker); err == nil {
+	if data, err := readMarker(marker); err == nil {
 		if recorded := strings.TrimSpace(string(data)); recorded != "" {
 			// Re-VERIFY, never assume: between the MarkerMatches read
 			// above and this one, a colliding project's first launch
@@ -111,4 +113,17 @@ func EnsureProjectDir(dir, projectDir string) error {
 		return err
 	}
 	return nil
+}
+
+// markerCap bounds a marker read: a marker holds one path.
+const markerCap = 64 * 1024
+
+func readMarker(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	data, _, err := bounded.ReadAll(f, markerCap)
+	return data, err
 }

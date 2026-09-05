@@ -106,47 +106,48 @@ TUI を使わない plain stdin ゲートは `y`/`n`/`N`/`a`）、拒否は拒�
 
 1. **ルール層**（モデル呼び出しなし）: *safe* → 実行、*block* → 必ず
    確認（`rm -rf`・`sudo`・`osascript … with administrator privileges`・
-   `git push`・ダウンロードのシェル直
-   パイプ・ディスク書き込み・認証情報パス・プロジェクトとセッション作業ディレクトリの外など）、
-   *不確実* → 第 2 層へ
+   `git push`・ダウンロードのシェル直パイプ・ディスク書き込み・認証情報
+   パス。file ツールではプロジェクトとセッション作業ディレクトリの外も）、
+   *不確実* → 第 2 層へ。`shell_exec` については、この層がコマンド文字列
+   から *safe* を言うことはない: モデルが宣言した**レーン**が決める（下記）
 2. **モデル層**: 別の評価ラウンドが対象コールを判定（コールはノンス
    隔離した非信頼データとして渡し、この評価ラウンドにはツールを一切
    与えない）。承認 **かつ** 高確信のときだけ自動実行、それ以外は
    確認へ
 
-*safe* は **ルート内の** read-only です（ADR-0070）。木を歩くコマンド —
-`find`・`fd`・`du`・`rg`・再帰フラグ付きの `grep` — の起点が `/`・`~`・
-またはプロジェクト・セッション作業ディレクトリ・sandbox の scratch
-ルートの外の絶対パスなら、safe ではなく *不確実* です: sandbox が拒む
-のは書き込みだけなので `/` からの走査は全マウントに届き、そのコストを
-量るのはモデル層の仕事です。`/dev/null` へのリダイレクト（と `2>&1`）は
-どこにも書かず、コマンドの safe 判定を奪いません。scratch ルート
-（`TMPDIR`・`/private/tmp`・`/dev/fd`）とデバイス sink（`/dev/null`・
-`/dev/zero`・`/dev/stdout`・`/dev/stderr`・`/dev/urandom` — `/dev` 全体では
-ないので `/dev/tty` は拒否）へのリダイレクトは sandbox が許す
-書き込みで「プロジェクト外」ではありません — ルール層は sandbox 自身の
-一覧を読むので、表示される理由は Seatbelt が実際にすることと一致します。
+**シェルコマンドは文字列ではなくレーンで判定します**（ADR-0073）。
+`shell_exec` はモデルが宣言する引数 `access` — `read`（既定）・`write`・
+`operator` — を取り、コマンドが何を言おうと macOS Seatbelt がそのレーンを
+強制します:
 
-ルール層はコマンドを bash が実行するとおりに読みます（ADR-0072 §1）: 改行は
-`;` と同じくコマンドの区切り。`/bin/rm`・`\rm`・`RM` は `rm` であり、`rm` の
-recursive+force はどの綴りでもフラグから読みます。git はサブコマンド前の
-グローバルオプションを飛ばし、`checkout … --`・`restore`・`stash drop`・
-`clean --force` は `push` と同じく確認になります。read-only コマンドが safe
-なのは素の形のときだけ — `find -delete`/`-exec`・`fd -x`・`rg --pre`・
-`sed -i`・`system(…)` を含む `awk`・`sort -o`・`yq -i`・`env <command>` は
-*不確実*、`tee` と `xargs` は常にそうです。`<(…)` は `$(…)` と同じ動的構築。
-`/tmp`・`/var`・`/etc` は Seatbelt が見る `/private` のパスとして判定します。
+| レーン | カーネルが拒むもの | 決める者 |
+|---|---|---|
+| `read` | scratch 以外への書込、ネットワーク、設定書込（`defaults`）、`sysctl` 書込、自分の子以外へのシグナル、`open`、IPC 系プログラムの起動（`osascript`・`open`・`launchctl`・`defaults`・`security`・`pbcopy`・`shortcuts`・`automator`・`scutil`・`networksetup`・`systemsetup`、加えて `[sandbox].read_lane_deny_exec`）、資格情報ファイルの読取 | 誰も — read レーンのコマンドは構成上非変更系で、`read_file` と同じく**どのモードでも確認なしで走ります** |
+| `write` | 後続セッションが信頼するファイル（下記）への書込、資格情報ファイルの読取 | auto モードでは上のラダー、既定モードではあなた |
+| `operator` | ADR-0001 のプロファイル以上には何も: 永続ファイルは書込可、資格情報は読取可 | **常にあなた** — モデル層・セッションの `a`・`--allow` は決して答えません |
+
+偽の宣言は何も得ません: `read` は檻を狭めるだけ、`write`・`operator` は
+審査を増やすだけです。read レーンが拒んだコマンドは exit status と、求める
+べきレーンを名指しする 1 行を返し、モデルは `access: "write"` で再発行
+します — 承認が起きるのはそこです。上の *block* パターンは全レーンで
+効きます — read レーンの `sudo` は檻が拒むとしても確認になります — そして
+それが残る唯一の文字列規則です: 見逃した綴りのコストはカーネルがいずれ
+捕まえる確認 1 回であって、穴ではありません。sandbox が無効（`--no-sandbox`
+または入れ子 sandbox）なら read レーンは無く、全 `shell_exec` が確認になります。
 
 **後続セッションが信頼するものへの書込は、モデルではなくあなたに確認します**
-（ADR-0072 §1.4）。`.git/` 配下への書込は *block* — そこのフックや設定値は
-次の git コマンドで sandbox の外で走ります。`AGENTS.md`・`AGENT.md`・
-`CLAUDE.md`・`GEMINI.md`・`.mcp.json`・`.gem-agent.toml`・`.claude/` 配下への
-書込は — `write_file`・`edit_file`・シェルのリダイレクト・そのファイルを
-名指しする書込可能なシェルコマンド（`cp`・`tee`・`sed -i`…）のいずれでも —
+（ADR-0072 §1.4、ADR-0073 からはカーネルが強制）。file ツールによる `.git/`
+配下への書込は *block* — そこのフックや設定値は次の git コマンドで sandbox の
+外で走ります。`AGENTS.md`・`AGENT.md`・`CLAUDE.md`・`GEMINI.md`・`.mcp.json`・
+`.gem-agent.toml`・`.claude/` 配下への `write_file`・`edit_file` は
 *不確実*で第 2 層を飛ばします: その編集は後続の全セッションが指示や設定を
 取る先に残るので、提案した当事者が裁くことはできません（下のメモリの規則を
-同じ永続化の類型に適用したもの）。auto モードでは指示ファイル編集ごとに
-確認 1 回です。
+同じ永続化の類型に適用したもの）。シェルからは、write レーンのプロファイルが
+それらのファイルと `.git/hooks`・`.git/info`・`.git/config` への書込を
+そのまま拒みます — リダイレクト・`mv`・`sed -i`・`rm`・`git config` は
+`Operation not permitted` で失敗し — 触れられるのはあなたが承認する
+`operator` レーンだけです。一覧は関数 1 つ（`sandbox.PersistentFiles`）で、
+プロファイルと file ツールの判定が同じものを読むので、両者は食い違えません。
 
 **メモリ書込は第 2 層に到達しません。** `save_memory`/`delete_memory` は
 Review 層なので上の「*不確実*」に該当しますが、自動承認から除外されて
@@ -358,15 +359,20 @@ v0.46.0 から v0.47.0 の間、記録されたゲート判断から承認ルー
   `~/.config/gem-agent/policy.toml` をレビューし、不要なワイルド
   カードを削除してください。
 
-## サンドボックス（ADR-0001）
+## サンドボックス（ADR-0001・ADR-0073）
 
-`shell_exec`（と `!` コマンド）は macOS sandbox-exec でラップされ、
-ファイル書き込みはプロジェクトディレクトリ・セッション作業ディレクトリ・
-scratch（`TMPDIR`・`/private/tmp`・`/dev`）に制限されます（Seatbelt に
-よる強制・実強制テスト付き）。scratch の一覧は関数 1 つ
-`sandbox.ScratchDirs()` で、上のルール層も同じものを読みます
-（ADR-0070 §2）。`--no-sandbox` はラップの
-無効化（デバッグ専用）。sandbox はどの承認モードでも有効です。
+`shell_exec` はモデルが宣言したレーンのプロファイルで macOS sandbox-exec に
+ラップされます（各レーンが拒むものは上の auto-approve 節）。`!` コマンドは
+あなたが打ったので operator レーンで走ります。どのレーンもファイル書込を
+プロジェクトディレクトリ・セッション作業ディレクトリ・scratch（`TMPDIR`・
+`/private/tmp`・`/dev/fd` とデバイス sink）に制限し、Seatbelt が強制、
+3 プロファイルを 17 のプローブ（`AGENTS.md`・`.git/config` へのリダイレクト・
+`mv`・`sed -i`・`rm`・`git config`、資格情報の読取、`osascript`、子への
+`kill`）に当てる実強制テストが覆います。scratch・永続ファイル・資格情報の
+一覧はそれぞれ `internal/sandbox` の関数 1 つで、プロファイルと file ツールの
+判定が読みます（ADR-0070 §2・ADR-0073 §3）。`--no-sandbox` はラップの無効化
+（デバッグ専用）— read レーンも無くなり、全 `shell_exec` が確認になります。
+sandbox はどの承認モードでも有効です。
 
 ## 起動時の安全機構（ADR-0023）
 

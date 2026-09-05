@@ -48,7 +48,7 @@ func TestLegacyFlatSessionStaysUsable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	metas, err := List(dir, "/proj")
+	metas, _, err := List(dir, "/proj")
 	if err != nil || len(metas) != 1 || metas[0].ID != "20260101-120000" {
 		t.Fatalf("List = %+v err=%v — the legacy session must appear", metas, err)
 	}
@@ -100,11 +100,11 @@ func TestListMergesLayoutsAndSeparatesProjects(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	metas, err := List(dir, "/proj")
+	metas, _, err := List(dir, "/proj")
 	if err != nil || len(metas) != 2 {
 		t.Fatalf("List(/proj) = %d sessions (err=%v), want new + legacy", len(metas), err)
 	}
-	all, err := List(dir, "")
+	all, _, err := List(dir, "")
 	if err != nil || len(all) != 3 {
 		t.Fatalf("List(all) = %d sessions (err=%v), want 3", len(all), err)
 	}

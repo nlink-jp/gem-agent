@@ -7,6 +7,8 @@
 package telemetry
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -450,9 +452,17 @@ func loadHeaders(path string) (map[string]string, error) {
 	if info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("headers_file %s is mode %04o — it holds credentials; chmod 600 it", path, info.Mode().Perm())
 	}
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("headers_file: %w", err)
+	}
+	data, more, err := bounded.ReadAll(f, 1<<20)
+	_ = f.Close()
+	if err != nil {
+		return nil, fmt.Errorf("headers_file: %w", err)
+	}
+	if more {
+		return nil, fmt.Errorf("headers_file %s is larger than 1 MiB — not a header map", path)
 	}
 	var headers map[string]string
 	if err := json.Unmarshal(data, &headers); err != nil {

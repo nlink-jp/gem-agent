@@ -8,6 +8,11 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | オペレータからの自動承認モード要望。かつ「ロジカル処理によるリスク評価 + モデルによる評価の 2 つが必要」という明示的な設計指示 |
 
+*ADR-0073 による修正: ルール層は `shell_exec` コマンドの Safe を文字列から
+導出しなくなった。モデルが宣言するレーン（`read`・`write`・`operator`）を
+カーネルが強制し、それが層を決める。以下のパターンは判定を上げるだけで
+下げることのない Block 床としてのみ残る。*
+
 ## Context
 
 ADR-0001 は都度の人間承認（MITL）を一次防御、sandbox-exec を

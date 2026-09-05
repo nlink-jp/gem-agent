@@ -37,20 +37,21 @@ func TestRotateWorkDirMovesEveryConsumer(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	execFn, err := buildExecFn(true, project, oldWork)
+	execFn, err := buildExecFn(true, project, oldWork, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	shellExec := &liveExec{fn: execFn}
-	registry, err := tools.New(project, shellExec.run, 5*time.Second)
+	registry, err := tools.New(project, nil, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
+	registry.SetLaneExec(shellExec.run, true)
 	if err := registry.UseWorkDir(oldWork); err != nil {
 		t.Fatal(err)
 	}
 	systemRebuilt := false
-	notes := rotateWorkDir(registry, shellExec, true, project, newWork, func() { systemRebuilt = true })
+	notes := rotateWorkDir(registry, shellExec, true, project, newWork, nil, func() { systemRebuilt = true })
 	if len(notes) != 0 {
 		t.Fatalf("rotation raised notes: %v", notes)
 	}
@@ -63,7 +64,7 @@ func TestRotateWorkDirMovesEveryConsumer(t *testing.T) {
 	}
 	// The shell writes to the new directory and is denied the old one.
 	run := func(command string) error {
-		return shellExec.run(context.Background(), command).Run()
+		return shellExec.run(context.Background(), command, sandbox.LaneWrite).Run()
 	}
 	if err := run("echo x > " + newWork + "/out.txt"); err != nil {
 		t.Errorf("sandbox denied a write to the new work directory: %v", err)
@@ -72,7 +73,7 @@ func TestRotateWorkDirMovesEveryConsumer(t *testing.T) {
 		t.Error("sandbox still allows the old work directory")
 	}
 	// No work directory at all: the second root is removed, not kept.
-	if notes := rotateWorkDir(registry, shellExec, true, project, "", nil); len(notes) != 0 {
+	if notes := rotateWorkDir(registry, shellExec, true, project, "", nil, nil); len(notes) != 0 {
 		t.Fatalf("rotation to none raised notes: %v", notes)
 	}
 	if registry.WorkDir() != "" {
@@ -108,16 +109,16 @@ func TestLiveLogFollowsTheSwap(t *testing.T) {
 // next shell call runs under.
 func TestLiveExecSwaps(t *testing.T) {
 	calls := []string{}
-	mk := func(tag string) tools.ExecFunc {
-		return func(ctx context.Context, command string) *exec.Cmd {
+	mk := func(tag string) tools.LaneExecFunc {
+		return func(ctx context.Context, command string, _ sandbox.Lane) *exec.Cmd {
 			calls = append(calls, tag)
 			return exec.CommandContext(ctx, "/usr/bin/true")
 		}
 	}
 	e := &liveExec{fn: mk("old")}
-	_ = e.run(context.Background(), "x")
+	_ = e.run(context.Background(), "x", sandbox.LaneRead)
 	e.set(mk("new"))
-	_ = e.run(context.Background(), "x")
+	_ = e.run(context.Background(), "x", sandbox.LaneRead)
 	if strings.Join(calls, ",") != "old,new" {
 		t.Fatalf("calls = %v", calls)
 	}

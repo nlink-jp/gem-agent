@@ -4,8 +4,9 @@
 package config
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -239,6 +240,9 @@ func ValidThinking(s string) bool {
 // SandboxConfig controls the sandbox-exec wrapper for shell_exec.
 type SandboxConfig struct {
 	Enabled bool `toml:"enabled"`
+	// ReadLaneDenyExec adds programs the read lane may not launch, by
+	// name or absolute path, to sandbox.DefaultDenyExec (ADR-0073).
+	ReadLaneDenyExec []string `toml:"read_lane_deny_exec"`
 }
 
 // AgentConfig holds agent-loop tunables.
@@ -424,7 +428,7 @@ var trackedKeys = []string{
 	"gcp.project", "gcp.location",
 	"model.name", "model.context_window", "model.safety", "model.summary",
 	"model.thinking", "gcp.bucket",
-	"sandbox.enabled",
+	"sandbox.enabled", "sandbox.read_lane_deny_exec",
 	"agent.max_turns", "agent.shell_timeout_sec", "agent.auto_approve",
 	"agent.auto_compact", "agent.compact_at_pct",
 	"mcp.enabled", "mcp.call_timeout_sec",
@@ -558,11 +562,11 @@ func readCapped(path string, cap int64) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
-	data, err := io.ReadAll(io.LimitReader(f, cap+1))
+	data, more, err := bounded.ReadAll(f, int(cap))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(data)) > cap {
+	if more {
 		return nil, fmt.Errorf("larger than %d bytes", cap)
 	}
 	return data, nil

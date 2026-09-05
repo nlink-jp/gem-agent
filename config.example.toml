@@ -70,10 +70,15 @@ name = "gemini-3.8-flash"
 #thinking = "high"
 
 [sandbox]
-# Wrap shell_exec in macOS sandbox-exec, confining file writes to the
-# project directory (ADR-0001 defense-in-depth). Leave enabled unless
-# you are debugging the sandbox itself.
+# Wrap shell_exec in macOS sandbox-exec (ADR-0001, ADR-0073): the lane
+# the model declares — read, write or operator — is enforced by the
+# kernel. Leave enabled unless you are debugging the sandbox itself;
+# with it off there is no read lane and every shell_exec asks.
 enabled = true
+# Programs the read lane may not launch, added to the built-in list
+# (osascript, open, launchctl, defaults, security, pbcopy, shortcuts,
+# automator, scutil, networksetup, systemsetup). Names or absolute paths.
+#read_lane_deny_exec = ["docker", "/usr/local/bin/terraform"]
 
 [agent]
 # Round budget for one turn. Reaching it is an intervention, not a

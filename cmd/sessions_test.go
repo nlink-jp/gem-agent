@@ -128,7 +128,7 @@ func TestOpenSessionLogWritesAHeaderAndResumeAppends(t *testing.T) {
 	if header.Model != "gemini-x" || header.Project != "/proj" || header.Schema != session.SchemaVersion {
 		t.Errorf("header = %+v", header)
 	}
-	metas, err := session.List(dir, "/proj")
+	metas, _, err := session.List(dir, "/proj")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestOpenSessionLogWritesAHeaderAndResumeAppends(t *testing.T) {
 func TestWriteSessionsShowsIDAndPreview(t *testing.T) {
 	dir := t.TempDir()
 	id := seed(t, dir, "/proj", "gemini-x", llm.Message{Role: llm.RoleUser, Content: "fix the parser"})
-	metas, err := session.List(dir, "/proj")
+	metas, _, err := session.List(dir, "/proj")
 	if err != nil {
 		t.Fatal(err)
 	}

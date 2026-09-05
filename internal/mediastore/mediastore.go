@@ -14,7 +14,6 @@ import (
 	"hash"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"cloud.google.com/go/storage"
@@ -82,14 +81,6 @@ func newWithStore(bucket string, store objectStore) *Uploader {
 //   - verifyReader re-hashes DURING the upload pass and fails the
 //     stream on mismatch (a recorder still appending to the file), so
 //     the store never commits bytes that don't match their name.
-func (u *Uploader) Upload(ctx context.Context, path, contentType string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = f.Close() }()
-	return u.UploadFile(ctx, f, filepath.Ext(path), contentType)
-}
 
 // UploadFile uploads an already-open file — the descriptor the caller
 // verified, so nothing is re-resolved by name (review after v0.68.2,

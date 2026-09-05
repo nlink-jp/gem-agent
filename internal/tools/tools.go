@@ -5,6 +5,10 @@
 package tools
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
+
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"bufio"
 	"bytes"
 	"context"
@@ -44,6 +48,10 @@ type Tool struct {
 	Parameters  map[string]any
 	// Mutating tools require MITL approval before each run.
 	Mutating bool
+	// MutatesWith, when set, decides per call whether it changes state
+	// (ADR-0073): shell_exec in a kernel-enforced read lane does not.
+	// Nil means Mutating answers for every call.
+	MutatesWith func(args map[string]any) bool
 	// WaitsOnOperator marks a tool whose Run blocks on the operator's
 	// own input (ask_user). The ADR-0065 floor never abandons such a
 	// call: a stdin read left behind would be a second reader on the
@@ -58,10 +66,23 @@ type Tool struct {
 	Annotate func(args map[string]any) string
 }
 
-// ExecFunc builds the exec.Cmd for a shell command. The production
-// implementation wraps the command in sandbox-exec; tests inject a direct
-// runner.
+// ExecFunc builds the exec.Cmd for a shell command. Tests inject a
+// direct runner; production sets a LaneExecFunc (SetLaneExec), which
+// also carries the lane the command runs in.
 type ExecFunc func(ctx context.Context, command string) *exec.Cmd
+
+// LaneExecFunc builds the exec.Cmd for a shell command in a lane
+// (ADR-0073): the production implementation wraps the command in
+// sandbox-exec with that lane's profile.
+type LaneExecFunc func(ctx context.Context, command string, lane sandbox.Lane) *exec.Cmd
+
+// MutatesFor reports whether a call with these arguments changes state.
+func (t *Tool) MutatesFor(args map[string]any) bool {
+	if t.MutatesWith != nil {
+		return t.MutatesWith(args)
+	}
+	return t.Mutating
+}
 
 // Registry holds the built-in tools for one project directory.
 type Registry struct {
@@ -93,8 +114,13 @@ type Registry struct {
 	// parent is set on a Subset: the child reads the parent's roots,
 	// so a work directory rotated after the child was built is the
 	// child's too.
-	parent       *Registry
-	execFn       ExecFunc
+	parent *Registry
+	execFn ExecFunc
+	// laneExec, when set, runs shell commands in the lane they declare;
+	// readLane reports that the read lane is kernel-enforced (the
+	// sandbox is on), so a read-lane call is non-mutating.
+	laneExec     LaneExecFunc
+	readLane     bool
 	shellTimeout time.Duration
 	tools        map[string]*Tool
 	order        []string
@@ -425,14 +451,7 @@ func (r *Registry) readFileCapped(abs string, cap int) ([]byte, bool, error) {
 // os.ReadFile of a huge or sparse file could exhaust memory before the
 // output cap applied).
 func readAllCapped(f io.Reader, cap int) (data []byte, more bool, err error) {
-	data, err = io.ReadAll(io.LimitReader(f, int64(cap)+1))
-	if err != nil {
-		return nil, false, err
-	}
-	if len(data) > cap {
-		return data[:cap], true, nil
-	}
-	return data, false, nil
+	return bounded.ReadAll(f, cap)
 }
 
 // roots returns the directories the file tools may touch.
@@ -465,6 +484,8 @@ func (r *Registry) Subset(names ...string) (*Registry, error) {
 		projectDir:   r.projectDir,
 		parent:       r, // roots are the parent's, rotation included
 		execFn:       r.execFn,
+		laneExec:     r.laneExec,
+		readLane:     r.readLane,
 		shellTimeout: r.shellTimeout,
 		tools:        map[string]*Tool{},
 		abandoned:    r.abandoned, // shared: the child's abandoned calls are the session's
@@ -722,7 +743,7 @@ func readWindowLines(ctx context.Context, f io.Reader, start, end, cap int) (con
 	if start == 0 && end == 0 {
 		// One byte past the cap, so the caller's truncate sees the
 		// overflow and marks it.
-		data, err := io.ReadAll(io.LimitReader(f, int64(cap)+1))
+		data, _, err := bounded.ReadAll(f, cap+1)
 		if err != nil {
 			return "", "", 0, 0, err
 		}
@@ -932,50 +953,29 @@ func truncate(s string, limit int) string {
 // holds one cap's worth. String renders what was kept with the
 // truncation note the whole-output path would have produced.
 type boundedOutput struct {
-	mu    sync.Mutex
-	buf   []byte
+	w     *bounded.Writer
 	limit int
-	total int64
 }
 
-func (b *boundedOutput) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	n := len(p)
-	b.total += int64(n)
-	if room := b.limit + 1 - len(b.buf); room > 0 {
-		if len(p) > room {
-			p = p[:room]
-		}
-		b.buf = append(b.buf, p...)
-	}
-	return n, nil // the writer accepts everything; it keeps a cap's worth
+func newBoundedOutput(limit int) *boundedOutput {
+	return &boundedOutput{w: bounded.NewWriter(limit), limit: limit}
 }
+
+func (b *boundedOutput) Write(p []byte) (int, error) { return b.w.Write(p) }
 
 func (b *boundedOutput) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if len(b.buf) <= b.limit {
-		return string(b.buf)
+	data, more := b.w.Bytes()
+	if !more {
+		return string(data)
 	}
-	// The whole kept buffer (limit+1 bytes) goes to cutRunes, which
-	// lands the cut on a rune boundary at or before the limit; slicing
-	// first split a character and left cutRunes nothing to fix.
-	cut := cutRunes(string(b.buf), b.limit)
-	return cut + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", len(cut), b.total)
+	return string(data) + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", len(data), b.w.Total())
 }
 
 // cutRunes truncates s to at most n bytes without splitting a UTF-8
 // sequence (review after v0.68.2: a byte cut through a Japanese
 // character left a broken tail in what the model was sent).
 func cutRunes(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
-	}
-	return s[:n]
+	return string(bounded.CutRunes([]byte(s), n))
 }
 
 // --- tools ---
@@ -1225,11 +1225,47 @@ func sizeLabel(n int64) string {
 	}
 }
 
+// SetLaneExec installs the lane-aware runner (ADR-0073). readLane
+// says whether the read lane is kernel-enforced: true when the sandbox
+// is on, so a read-lane call runs without approval; false when it is
+// off, so every shell call is a write-lane call for the gates.
+func (r *Registry) SetLaneExec(fn LaneExecFunc, readLane bool) {
+	r.laneExec = fn
+	r.readLane = readLane
+}
+
+// ReadLane reports whether shell_exec has a kernel-enforced read lane.
+func (r *Registry) ReadLane() bool {
+	if r.parent != nil {
+		return r.parent.ReadLane()
+	}
+	return r.readLane
+}
+
+// ShellLane reads the lane a shell_exec call declares; a missing or
+// unparseable declaration is the read lane (the tightest cage).
+func ShellLane(args map[string]any) sandbox.Lane {
+	access, _ := args["access"].(string)
+	lane, err := sandbox.ParseLane(access)
+	if err != nil {
+		return sandbox.LaneRead
+	}
+	return lane
+}
+
+// readLaneDeniedNote tells the model which lane to ask for when the
+// kernel refused something in the read lane.
+const readLaneDeniedNote = "\n[the read lane denied an operation — the sandbox allows no writes outside scratch, no network, no preference writes and no IPC-capable programs there; if the command must do one of those, call shell_exec again with access: \"write\" (or \"operator\" for the instruction/configuration files and credentials, which asks the user)]"
+
 func (r *Registry) shellExec() *Tool {
 	return &Tool{
 		Name: ShellExecName,
 		Description: "Run a shell command (bash) with the project root as the working directory. " +
-			"File writes are restricted to the project directory by the OS sandbox. " +
+			"The OS sandbox enforces the lane you declare with `access`: \"read\" (default; runs without approval — " +
+			"no writes outside scratch, no network, no preference writes, no osascript/open/launchctl/defaults/security/pbcopy), " +
+			"\"write\" (may write the project and the work directory and reach the network; approval-gated), " +
+			"\"operator\" (may also write AGENTS.md/CLAUDE.md/.mcp.json/.claude/ and .git hooks or config, and read credential files; the user always decides). " +
+			"A command that fails in the read lane with 'Operation not permitted' needs a wider lane, not a retry. " +
 			"Output is truncated when large; the exit status is reported when non-zero.",
 		Parameters: map[string]any{
 			"type": "object",
@@ -1238,26 +1274,46 @@ func (r *Registry) shellExec() *Tool {
 					"type":        "string",
 					"description": "The shell command to run.",
 				},
+				"access": map[string]any{
+					"type":        "string",
+					"enum":        []string{"read", "write", "operator"},
+					"description": "The capability lane: read (default) for inspection and read-only tooling, write for commands that change files or use the network, operator for commands that must touch instruction/configuration files or credentials.",
+				},
 			},
 			"required": []string{"command"},
 		},
 		Mutating: true,
+		MutatesWith: func(args map[string]any) bool {
+			// A read-lane call changes nothing the kernel lets it change —
+			// when the kernel is there to enforce that.
+			return ShellLane(args) != sandbox.LaneRead || !r.ReadLane()
+		},
 		Run: func(ctx context.Context, args map[string]any) (string, error) {
 			command, ok := strArg(args, "command")
 			if !ok || command == "" {
 				return "", errors.New("command is required")
 			}
+			access, _ := args["access"].(string)
+			lane, err := sandbox.ParseLane(access)
+			if err != nil {
+				return "", err
+			}
 			cctx, cancel := context.WithTimeout(ctx, r.shellTimeout)
 			defer cancel()
-			cmd := r.execFn(cctx, command)
+			var cmd *exec.Cmd
+			if r.laneExec != nil {
+				cmd = r.laneExec(cctx, command, lane)
+			} else {
+				cmd = r.execFn(cctx, command)
+			}
 			cmd.Dir = r.projectDir
 			hardenExec(cmd)
 			// The output is bounded as it arrives (ADR-0072 §4.5):
 			// CombinedOutput held everything until exit, so a command
 			// printing without end exhausted memory before the cap ran.
-			out := &boundedOutput{limit: OutputCap}
+			out := newBoundedOutput(OutputCap)
 			cmd.Stdout, cmd.Stderr = out, out
-			err := cmd.Run()
+			err = cmd.Run()
 			result := out.String()
 			if cctx.Err() == context.DeadlineExceeded {
 				return result + fmt.Sprintf("\n[command timed out after %s]", r.shellTimeout), nil
@@ -1277,7 +1333,11 @@ func (r *Registry) shellExec() *Tool {
 					// Non-zero exit is a result the LLM must see, not a
 					// tool failure: silently dropping the status turns
 					// failed commands into false positives.
-					return result + fmt.Sprintf("\n[exit status %d]", exitErr.ExitCode()), nil
+					result += fmt.Sprintf("\n[exit status %d]", exitErr.ExitCode())
+					if lane == sandbox.LaneRead && r.ReadLane() && sandbox.DeniedHint(result) {
+						result += readLaneDeniedNote
+					}
+					return result, nil
 				}
 				return "", err
 			}

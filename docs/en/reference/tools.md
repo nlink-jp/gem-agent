@@ -141,12 +141,19 @@ Operator-side attachment routes for both live in
 
 ## `shell_exec`
 
-Runs a shell command wrapped in macOS sandbox-exec — file writes
-restricted to the project directory + scratch dirs (enforcement covered
-by a real Seatbelt test), with a timeout and an output cap, exit status
-surfaced. Approval-gated; the `!command` input route runs the same way
-without the prompt because you typed it (see
-[interface](interface.md)).
+Runs a shell command wrapped in macOS sandbox-exec in the lane the
+model declares with `access` (ADR-0073): `read` (default — no writes
+outside scratch, no network, no preference writes, no IPC-capable
+programs, no credential reads; runs without a prompt), `write` (the
+project and the work directory writable, network allowed, the
+instruction/configuration files and `.git` hooks/config denied;
+approval-gated) or `operator` (the full ADR-0001 profile; you always
+decide). Enforcement is covered by a real Seatbelt test over the three
+profiles. Timeout and output cap, exit status surfaced, and a read-lane
+refusal comes back with the lane to ask for. The `!command` input route
+runs in the operator lane without the prompt because you typed it (see
+[interface](interface.md)). See [approval](approval.md) for what each
+lane denies.
 
 ## `datetime` (ADR-0032)
 

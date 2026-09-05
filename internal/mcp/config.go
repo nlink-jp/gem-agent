@@ -4,9 +4,10 @@
 package mcp
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,11 +136,11 @@ func readCapped(path string, cap int64) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
-	data, err := io.ReadAll(io.LimitReader(f, cap+1))
+	data, more, err := bounded.ReadAll(f, int(cap))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(data)) > cap {
+	if more {
 		return nil, fmt.Errorf("%s is larger than %d bytes", path, cap)
 	}
 	return data, nil

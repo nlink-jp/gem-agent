@@ -389,7 +389,7 @@ func TestShellExecOutputIsBoundedAsItArrives(t *testing.T) {
 	if !strings.Contains(out, "of 3000000 bytes shown]") {
 		t.Errorf("note does not name the real total: %q", out[len(out)-80:])
 	}
-	b := &boundedOutput{limit: 4}
+	b := newBoundedOutput(4)
 	n, _ := b.Write([]byte("abcdefgh"))
 	if n != 8 {
 		t.Errorf("Write must accept everything: %d", n)
@@ -446,7 +446,7 @@ func TestDirectoryListingsAreBounded(t *testing.T) {
 // N02: the bounded shell output cuts on a rune boundary and counts
 // complete characters.
 func TestBoundedOutputKeepsRunesWhole(t *testing.T) {
-	b := &boundedOutput{limit: 4}
+	b := newBoundedOutput(4)
 	_, _ = b.Write([]byte("あいう"))
 	s := b.String()
 	if !utf8.ValidString(s) || !strings.HasPrefix(s, "あ\n[output truncated: 3 of 9 bytes shown]") {

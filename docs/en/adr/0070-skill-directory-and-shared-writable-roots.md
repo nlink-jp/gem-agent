@@ -9,6 +9,14 @@
 | Triggered by | Session `20260904-225330`: after loading `incident-research` through `load_skill` and reading its `references/` and `schema.json`, the model ran `find / -name "validate.py" 2>/dev/null \| grep incident-research` with the stated purpose "confirm where the skill's scripts are". The rule tier Blocked it for a reason that was not true (the `2>/dev/null` read as a redirect outside the writable roots), the operator approved, and the walk was killed by Ctrl+C after 65 s |
 | Amends | ADR-0010 §2 / §4 (what a skill load discloses); ADR-0004 (the rule tier's Safe set and its notion of writable) |
 
+*Amended by ADR-0073 §3: the one shared list of §2 became three —
+scratch directories, persistent files and credential paths — each
+defined once in `internal/sandbox` and read by the profile and by the
+file tools' verdict. The rule tier no longer judges shell commands
+beyond the Block floor, so §3's "walks outside the roots" verdict is
+gone: a read-lane walk from `/` is a read the kernel allows and the
+operator chose not to be asked about.*
+
 ## Context
 
 The skill was written to Claude Code's contract. Its `SKILL.md` says

@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"bufio"
 	"bytes"
 	"context"
@@ -364,7 +366,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 
 	// --- shell execution strategy (ADR-0001 defense-in-depth) ---
 	sandboxOn := cfg.Sandbox.Enabled && !flagNoSandbox
-	execFn, err := buildExecFn(sandboxOn, projectDir, workDir)
+	execFn, err := buildExecFn(sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec)
 	if err != nil {
 		return err
 	}
@@ -373,10 +375,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// profile built at startup denied every write to the new one.
 	shellExec := &liveExec{fn: execFn}
 
-	registry, err := tools.New(projectDir, shellExec.run, time.Duration(cfg.Agent.ShellTimeoutSec)*time.Second)
+	registry, err := tools.New(projectDir, nil, time.Duration(cfg.Agent.ShellTimeoutSec)*time.Second)
 	if err != nil {
 		return err
 	}
+	// The lanes (ADR-0073): with the sandbox on, a read-lane command is
+	// kernel-confined and runs without approval; with it off there is
+	// no read lane and every shell call is gated.
+	registry.SetLaneExec(shellExec.run, sandboxOn)
 	if workDir != "" {
 		// The file tools get the work directory as a second root, so a
 		// result the intake saved is one read_file can read back. Without
@@ -1118,7 +1124,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// 4): the file tools' second root, the sandbox profile, the MCP
 		// intake (it reads the registry), and the system prompt — a
 		// cleared conversation has no cached prefix to protect.
-		notes = append(notes, rotateWorkDir(registry, shellExec, sandboxOn, projectDir, workDir, func() { ag.SetSystem(composeSystem()) })...)
+		notes = append(notes, rotateWorkDir(registry, shellExec, sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec, func() { ag.SetSystem(composeSystem()) })...)
 		// A cleared session restarts what carries its identity (ADR-0071
 		// addendum): telemetry is re-resourced with the new id, and the
 		// MCP servers — spawned at startup with the old id in their
@@ -1144,7 +1150,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		go resolveWindow()
 		if !sandboxOn {
-			fmt.Fprintln(stderr, "sandbox: DISABLED — shell commands run unconfined")
+			fmt.Fprintln(stderr, "sandbox: DISABLED — shell commands run unconfined, and every shell_exec asks (no read lane)")
 		}
 		// Piped stdin becomes a nonce-wrapped data attachment
 		// (ADR-0055) — never prompt text: the -p string alone is the
@@ -1191,7 +1197,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- banner ---
-	sandboxLine := "sandbox: enabled (shell writes confined to the project directory)"
+	sandboxLine := "sandbox: enabled (shell lanes: read runs unasked, write and operator ask)"
 	if !sandboxOn {
 		sandboxLine = "sandbox: DISABLED — shell commands run unconfined"
 	}
@@ -1475,13 +1481,9 @@ const stdinCap = 256 * 1024
 // empty) and a warning ("" when none): binary input is skipped with the
 // warning naming why.
 func readPipedStdin(r io.Reader) (content, warning string) {
-	buf, err := io.ReadAll(io.LimitReader(r, stdinCap+1))
+	buf, clipped, err := bounded.ReadAll(r, stdinCap)
 	if err != nil {
 		return "", "stdin read failed, nothing attached: " + err.Error()
-	}
-	clipped := false
-	if len(buf) > stdinCap {
-		buf, clipped = buf[:stdinCap], true
 	}
 	if len(buf) == 0 {
 		return "", ""
@@ -1713,35 +1715,39 @@ func runTurnWith(parent context.Context, ladder *interruptLadder, fn func(ctx co
 	return err
 }
 
-// buildExecFn returns the shell execution strategy: sandbox-exec-wrapped
-// when the sandbox is on, direct bash otherwise.
-func buildExecFn(sandboxOn bool, projectDir, workDir string) (tools.ExecFunc, error) {
+// buildExecFn returns the shell execution strategy: sandbox-exec
+// wrapped in the profile of the declared lane (ADR-0073) when the
+// sandbox is on, direct bash — one lane, every call gated — otherwise.
+func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string) (tools.LaneExecFunc, error) {
 	if !sandboxOn {
-		return func(ctx context.Context, command string) *exec.Cmd {
+		return func(ctx context.Context, command string, _ sandbox.Lane) *exec.Cmd {
 			return exec.CommandContext(ctx, shell, "-c", command)
 		}, nil
 	}
 	if _, err := os.Stat(sandbox.Executable); err != nil {
 		return nil, fmt.Errorf("%s not found (gem-agent is macOS-only); use --no-sandbox to bypass at your own risk", sandbox.Executable)
 	}
-	writeDirs := []string{projectDir}
+	spec := sandbox.Spec{ProjectDir: projectDir, DenyExec: append(append([]string{}, sandbox.DefaultDenyExec...), denyExec...)}
 	if workDir != "" {
 		// The session work directory (ADR-0058). A shell command told to
 		// put its output in $GEMAGENT_WORK_DIR has to be able to.
 		if resolved, err := sandbox.ResolveWriteDir(workDir); err == nil {
-			writeDirs = append(writeDirs, resolved)
+			spec.WorkDir = resolved
 		}
 	}
-	// Scratch locations shell tools legitimately write to — the one
-	// list the rule tier reads as well (ADR-0070 §2), so what it calls
-	// "outside the writable roots" is what Seatbelt will deny.
-	writeDirs = append(writeDirs, sandbox.ScratchDirs()...)
-	profile, err := sandbox.Profile(writeDirs, sandbox.ScratchFiles())
-	if err != nil {
-		return nil, err
+	if home, err := os.UserHomeDir(); err == nil {
+		spec.Home = home
 	}
-	return func(ctx context.Context, command string) *exec.Cmd {
-		argv := sandbox.Wrap(profile, shell, command)
+	profiles := map[sandbox.Lane]string{}
+	for _, lane := range []sandbox.Lane{sandbox.LaneRead, sandbox.LaneWrite, sandbox.LaneOperator} {
+		p, err := sandbox.LaneProfile(lane, spec)
+		if err != nil {
+			return nil, err
+		}
+		profiles[lane] = p
+	}
+	return func(ctx context.Context, command string, lane sandbox.Lane) *exec.Cmd {
+		argv := sandbox.Wrap(profiles[lane], shell, command)
 		return exec.CommandContext(ctx, argv[0], argv[1:]...)
 	}, nil
 }
@@ -1770,7 +1776,9 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 	if !ok {
 		return "error: shell_exec is unavailable"
 	}
-	out, err := tool.Run(ctx, map[string]any{"command": command})
+	// The operator typed it: the operator lane (ADR-0073), as the
+	// operator's own shell would be.
+	out, err := tool.Run(ctx, map[string]any{"command": command, "access": sandbox.LaneOperator.String()})
 	if err != nil {
 		out = "error: " + err.Error()
 	}
@@ -1999,17 +2007,17 @@ func exportWorkDir(dir string) error {
 // starts on the new one.
 type liveExec struct {
 	mu sync.RWMutex
-	fn tools.ExecFunc
+	fn tools.LaneExecFunc
 }
 
-func (e *liveExec) run(ctx context.Context, command string) *exec.Cmd {
+func (e *liveExec) run(ctx context.Context, command string, lane sandbox.Lane) *exec.Cmd {
 	e.mu.RLock()
 	fn := e.fn
 	e.mu.RUnlock()
-	return fn(ctx, command)
+	return fn(ctx, command, lane)
 }
 
-func (e *liveExec) set(fn tools.ExecFunc) {
+func (e *liveExec) set(fn tools.LaneExecFunc) {
 	e.mu.Lock()
 	e.fn = fn
 	e.mu.Unlock()
@@ -2032,12 +2040,12 @@ func (l liveLog) Log(kind string, data any) error {
 // dir ("" for none): the file tools' second root, the sandbox profile,
 // and the system prompt. The MCP intake reads the registry, so it
 // follows on its own. Returns operator notes for what could not follow.
-func rotateWorkDir(registry *tools.Registry, shellExec *liveExec, sandboxOn bool, projectDir, dir string, setSystem func()) []string {
+func rotateWorkDir(registry *tools.Registry, shellExec *liveExec, sandboxOn bool, projectDir, dir string, denyExec []string, setSystem func()) []string {
 	var notes []string
 	if err := registry.UseWorkDir(dir); err != nil {
 		notes = append(notes, fmt.Sprintf("file tools keep the previous work directory: %v", err))
 	}
-	if fn, err := buildExecFn(sandboxOn, projectDir, dir); err != nil {
+	if fn, err := buildExecFn(sandboxOn, projectDir, dir, denyExec); err != nil {
 		notes = append(notes, fmt.Sprintf("shell commands keep the previous sandbox profile: %v", err))
 	} else {
 		shellExec.set(fn)

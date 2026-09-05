@@ -7,6 +7,8 @@
 package docext
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"archive/zip"
 	"bytes"
 	"encoding/xml"
@@ -585,11 +587,11 @@ func readMember(data []byte, name string, cap int64) ([]byte, error) {
 			return nil, err
 		}
 		defer func() { _ = rc.Close() }()
-		raw, err := io.ReadAll(io.LimitReader(rc, cap+1))
+		raw, more, err := bounded.ReadAll(rc, int(cap))
 		if err != nil {
 			return nil, err
 		}
-		if int64(len(raw)) > cap {
+		if more {
 			return nil, fmt.Errorf("%s decompresses past the %d-byte member cap", name, cap)
 		}
 		return raw, nil

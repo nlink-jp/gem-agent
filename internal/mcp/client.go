@@ -1,6 +1,8 @@
 package mcp
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/bounded"
+
 	"bufio"
 	"context"
 	"encoding/base64"
@@ -195,8 +197,7 @@ func (c *Client) ensureStarted(ctx context.Context) error {
 // politely refuses server-initiated requests (unanswered requests could
 // hang a server that waits for the reply).
 func (c *Client) readLoop(stdout io.ReadCloser, gen int) {
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, scannerInitial), scannerMax)
+	scanner := bounded.Scanner(stdout, scannerInitial, scannerMax)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {

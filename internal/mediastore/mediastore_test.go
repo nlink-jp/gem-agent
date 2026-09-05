@@ -142,3 +142,15 @@ func TestVerifyReaderPassesUnchangedContent(t *testing.T) {
 		t.Errorf("writes = %d", fake.writes)
 	}
 }
+
+// Upload opens path and uploads it — the by-path convenience the
+// production code no longer has (ADR-0073 §4: every open of a
+// caller-named path happens at the caller, once).
+func (u *Uploader) Upload(ctx context.Context, path, contentType string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	return u.UploadFile(ctx, f, filepath.Ext(path), contentType)
+}

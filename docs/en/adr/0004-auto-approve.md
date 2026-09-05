@@ -8,6 +8,12 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator request for an auto-approve mode, with the explicit design that a tool call be judged by both a logical (rule-based) risk assessment and a model-based one |
 
+*Amended by ADR-0073: the rule tier no longer derives Safe for a
+`shell_exec` command from its text. The lane the model declares
+(`read`, `write`, `operator`) is enforced by the kernel and decides the
+tier; the patterns below survive only as the Block floor, which can
+raise a verdict and never lower one.*
+
 ## Context
 
 ADR-0001 made per-call human approval (MITL) the primary defense, with

@@ -45,7 +45,8 @@ name = "<gemini model id>"
 # safety = "default"        # default | relaxed | off（コンテンツフィルタ参照）
 
 [sandbox]
-enabled = true             # デフォルト
+enabled = true             # デフォルト。無効なら read レーンが無く全 shell_exec が確認（ADR-0073）
+# read_lane_deny_exec = ["docker"]   # read レーンが起動できないプログラムを組み込み一覧に追加
 
 [agent]
 max_turns = 50             # デフォルト。介入チェックポイントで、延長は 3 倍まで（ADR-0040）

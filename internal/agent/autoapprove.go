@@ -131,12 +131,12 @@ func memoryWrite(name string) bool {
 }
 
 func (a *Agent) decideAuto(ctx context.Context, tc llm.ToolCall) AutoDecision {
-	tool, ok := a.registry.Get(tc.Name)
-	if !ok {
+	d := a.decide(tc)
+	if d.Tool == nil {
 		return AutoDecision{Reason: "unknown tool"}
 	}
 
-	v := risk.Classify(tc.Name, tool.Mutating, tc.Args, a.registry.ProjectDir(), a.registry.WorkDir())
+	v := d.Verdict
 	switch v.Tier {
 	case risk.Safe:
 		return AutoDecision{Approved: true, Tier: v.Tier, Reason: v.Reason}
