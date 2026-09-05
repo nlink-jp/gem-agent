@@ -126,7 +126,7 @@ lane, whatever the command says:
 | lane | the kernel denies | who decides |
 |---|---|---|
 | `read` | every write except into the session's private scratch directory (`TMPDIR` points there) and the device sinks — the project, the work directory and `/private/tmp` included; the network; Mach and POSIX IPC, Apple Events, launch services (`open`), preference writes (`defaults`), NVRAM, device access, signals to anything but the command's own children; launching the IPC-capable programs (`osascript`, `open`, `launchctl`, `defaults`, `security`, `pbcopy`, `shortcuts`, `automator`, `scutil`, `networksetup`, `systemsetup`, plus `[sandbox].read_lane_deny_exec`) as a second line; reading credential files | nobody — a read-lane command changes nothing but its own scratch and **runs without a prompt in every mode**, like `read_file` — on a machine where the lane's denials were verified at startup (below) |
-| `write` | writes to the files later sessions trust (below); reading credential files | the ladder above in auto mode, you in the default mode |
+| `write` | writes to the files later sessions trust (below) — which is why `git init`, `git clone` and `git remote add` (they write `.git/config` and hooks) land in the operator lane, and the refusal says so; reading credential files | the ladder above in auto mode, you in the default mode |
 | `operator` | nothing beyond the ADR-0001 profile: the persistent files are writable, credentials readable | **you, always** — the model tier, a session `a` and `--allow` never answer it |
 
 A false declaration gains nothing: `read` can only tighten the cage,

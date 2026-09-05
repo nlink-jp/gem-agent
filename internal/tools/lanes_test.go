@@ -85,8 +85,17 @@ func TestReadLaneDenialIsExplained(t *testing.T) {
 		t.Errorf("denial not explained: %q", out)
 	}
 	out, _ = tool.Run(context.Background(), map[string]any{"command": "echo 'x: Operation not permitted' >&2; exit 1", "access": "write"})
-	if strings.Contains(out, `access: "write"`) {
-		t.Errorf("a write-lane failure must not be blamed on the read lane: %q", out)
+	if strings.Contains(out, `access: "write"`) || !strings.Contains(out, `access: "operator"`) {
+		t.Errorf("a write-lane denial must point at the operator lane, not the read lane: %q", out)
+	}
+	// Go spells the errno in lower case; the hint must still fire.
+	out, _ = tool.Run(context.Background(), map[string]any{"command": "echo 'open x: operation not permitted' >&2; exit 1"})
+	if !strings.Contains(out, `access: "write"`) {
+		t.Errorf("lower-case errno not recognised: %q", out)
+	}
+	out, _ = tool.Run(context.Background(), map[string]any{"command": "echo 'x: Operation not permitted' >&2; exit 1", "access": "operator"})
+	if strings.Contains(out, "lane denied") {
+		t.Errorf("an operator-lane failure has no wider lane to suggest: %q", out)
 	}
 	out, _ = tool.Run(context.Background(), map[string]any{"command": "echo plain failure >&2; exit 2"})
 	if strings.Contains(out, "read lane denied") {

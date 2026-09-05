@@ -162,6 +162,15 @@ scratch ディレクトリとデバイス sink だけ。共有の `/private/tmp`
 無確認の read レーンは全プローブが期待どおりだった環境にだけ存在し、そうでなければ
 全 `shell_exec` が確認になりバナーが理由を告げる。
 
+**agent-board レビューのエッジケース 2 件。** `git init`・`git clone`・
+`git remote add` は `.git/config` と `.git/hooks` を書くので write レーンで失敗
+する。write レーンの拒否注記が operator レーンを名指しし（確認 1 回がまさに
+狙い — 次に sandbox 外で走るのがフックだから）、`TestLaneEnforcement` が
+`git init` を write レーンの拒否・operator レーンの成功として固定する。
+キャッシュ（`GOCACHE`）を要するビルドは read レーンで Go の小文字
+「operation not permitted」で失敗する。拒否ヒントは大文字小文字を区別せずに
+一致するので、モデルは再試行ではなく write レーンを案内される。
+
 **AST テストの横に振る舞いテスト。** アーキテクチャテストは原始関数の呼出し
 位置を固定するが、呼出しが正しいことは証明しない。そこで `TestReadLaneCorpus`
 が旧テキスト層のコーパス — リダイレクト・`tee`・`sed -i`・`find -exec`・`xargs`・

@@ -241,6 +241,8 @@ func TestLaneEnforcement(t *testing.T) {
 		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/hooks/pre-commit"), false, "write lane denies a hook"},
 		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/index"), true, "write lane allows ordinary .git writes"},
 		{LaneWrite, "cat " + filepath.Join(fakeHome, ".ssh/id_rsa"), false, "write lane denies a credential read"},
+		{LaneWrite, "cd " + shellQuote(proj) + " && git init -q .", false, "write lane denies git init (it writes .git/config and hooks) — agent-board review"},
+		{LaneOperator, "cd " + shellQuote(proj) + " && git init -q . && test -f .git/config", true, "operator lane allows git init"},
 		{LaneOperator, "cat " + filepath.Join(fakeHome, ".ssh/id_rsa"), true, "operator lane allows a credential read"},
 		{LaneOperator, "echo ok > " + agents, true, "operator lane allows AGENTS.md"},
 	}

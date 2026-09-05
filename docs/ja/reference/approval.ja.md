@@ -123,7 +123,7 @@ TUI を使わない plain stdin ゲートは `y`/`n`/`N`/`a`）、拒否は拒�
 | レーン | カーネルが拒むもの | 決める者 |
 |---|---|---|
 | `read` | セッション専用の scratch ディレクトリ（`TMPDIR` がそこを指す）とデバイス sink 以外への全書込 — プロジェクト・作業ディレクトリ・`/private/tmp` を含む。ネットワーク。Mach/POSIX IPC・Apple Events・launch services（`open`）・設定書込（`defaults`）・NVRAM・デバイスアクセス・自分の子以外へのシグナル。第 2 線として IPC 系プログラムの起動（`osascript`・`open`・`launchctl`・`defaults`・`security`・`pbcopy`・`shortcuts`・`automator`・`scutil`・`networksetup`・`systemsetup`、加えて `[sandbox].read_lane_deny_exec`）。資格情報ファイルの読取 | 誰も — read レーンのコマンドは自分の scratch 以外を何も変えず、`read_file` と同じく**どのモードでも確認なしで走ります** — 起動時にレーンの拒否が検証された機体で（下記） |
-| `write` | 後続セッションが信頼するファイル（下記）への書込、資格情報ファイルの読取 | auto モードでは上のラダー、既定モードではあなた |
+| `write` | 後続セッションが信頼するファイル（下記）への書込 — そのため `.git/config` とフックを書く `git init`・`git clone`・`git remote add` は operator レーンの仕事になり、拒否がそう告げます。資格情報ファイルの読取 | auto モードでは上のラダー、既定モードではあなた |
 | `operator` | ADR-0001 のプロファイル以上には何も: 永続ファイルは書込可、資格情報は読取可 | **常にあなた** — モデル層・セッションの `a`・`--allow` は決して答えません |
 
 偽の宣言は何も得ません: `read` は檻を狭めるだけ、`write`・`operator` は

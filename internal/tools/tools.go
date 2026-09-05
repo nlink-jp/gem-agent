@@ -1268,6 +1268,13 @@ func ShellLane(args map[string]any) sandbox.Lane {
 // kernel refused something in the read lane.
 const readLaneDeniedNote = "\n[the read lane denied an operation — the sandbox allows no writes outside scratch, no network, no preference writes and no IPC-capable programs there; if the command must do one of those, call shell_exec again with access: \"write\" (or \"operator\" for the instruction/configuration files and credentials, which asks the user)]"
 
+// writeLaneDeniedNote names the one thing the write lane denies inside
+// the project: the files later sessions trust — so `git init`, `git
+// clone`, `git remote add` (they write .git/config and hooks) and an
+// edit of AGENTS.md need the operator lane, and the model is told
+// rather than left to retry (agent-board review of ADR-0073).
+const writeLaneDeniedNote = "\n[the write lane denied a write — inside the project it denies only the instruction/configuration files (AGENTS.md, CLAUDE.md, .mcp.json, .gem-agent.toml, .claude/) and .git/hooks, .git/info, .git/config (so git init, clone and remote add land here), plus credential reads and anything outside the project and work directory; if the command must do that, call shell_exec again with access: \"operator\", which asks the user]"
+
 func (r *Registry) shellExec() *Tool {
 	return &Tool{
 		Name: ShellExecName,
@@ -1345,8 +1352,13 @@ func (r *Registry) shellExec() *Tool {
 					// tool failure: silently dropping the status turns
 					// failed commands into false positives.
 					result += fmt.Sprintf("\n[exit status %d]", exitErr.ExitCode())
-					if lane == sandbox.LaneRead && r.ReadLane() && sandbox.DeniedHint(result) {
-						result += readLaneDeniedNote
+					if r.Confined() && sandbox.DeniedHint(result) {
+						switch {
+						case lane == sandbox.LaneRead && r.ReadLane():
+							result += readLaneDeniedNote
+						case lane == sandbox.LaneWrite:
+							result += writeLaneDeniedNote
+						}
 					}
 					return result, nil
 				}

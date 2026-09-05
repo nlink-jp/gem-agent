@@ -350,12 +350,15 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 // refused it — the read lane's signature — so the tool can tell the
 // model which lane to ask for instead of leaving it to guess.
 func DeniedHint(output string) bool {
+	lower := strings.ToLower(output)
 	for _, s := range []string{
-		"Operation not permitted", "Permission denied", "Read-only file system",
-		"Could not resolve host", "Could not write domain", "Network is unreachable",
+		// Go and Python spell the errno in lower case ("open x: operation
+		// not permitted"), bash and the BSD tools capitalise it.
+		"operation not permitted", "permission denied", "read-only file system",
+		"could not resolve host", "could not write domain", "network is unreachable",
 		"nodename nor servname provided",
 	} {
-		if strings.Contains(output, s) {
+		if strings.Contains(lower, s) {
 			return true
 		}
 	}

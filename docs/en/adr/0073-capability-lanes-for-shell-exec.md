@@ -181,6 +181,16 @@ write, a socket connect, a signal to another process, a write into
 The unasked read lane exists only where every probe behaved; otherwise
 every `shell_exec` asks and the banner says why.
 
+**Two edge cases from the agent-board review.** `git init`, `git clone`
+and `git remote add` write `.git/config` and `.git/hooks`, so they fail
+in the write lane; the write lane's denial note names the operator lane
+(the one prompt is the point — a hook is what runs unsandboxed next),
+and `TestLaneEnforcement` pins `git init` as a write-lane refusal and an
+operator-lane success. A build that needs its cache (`GOCACHE`) fails
+in the read lane with Go's lower-case "operation not permitted"; the
+denial hint matches case-insensitively, so the model is told to use the
+write lane rather than left to retry.
+
 **Behaviour tests beside the AST tests.** The architecture tests pin
 where the primitives are called; they do not prove the call is right.
 So: `TestReadLaneCorpus` runs the old text-tier corpus — redirects,

@@ -42,6 +42,10 @@
   `--no-sandbox` every `shell_exec` is the operator's alone and the
   audit record says `unconfined:`; the old shell corpus lives on as a
   kernel-level behaviour test (`TestReadLaneCorpus`)
+- A write-lane refusal names the operator lane (`git init`, `git clone`
+  and `git remote add` write `.git/config` and hooks and land there);
+  the denial hint matches Go's lower-case "operation not permitted", so
+  a build refused its cache in the read lane is pointed at the write lane
 
 ### Fixed — pre-release verification of the ADR-0072 fixes (§4.1–§4.9, formerly staged as 0.68.2)
 
