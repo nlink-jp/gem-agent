@@ -198,9 +198,15 @@ exclude = ["github"]
   rejected the prohibition; the restructuring that followed removed the
   question along with it.)
 - **Per server, the nearest scope decides, whole.** If `policy.toml`
-  says anything about a server — the server itself, or any of its
-  functions — that is the answer for that server, and `config.toml`'s
-  word about it is not consulted. No set arithmetic across scopes: what
+  has an opinion about a server, that is the answer for that server, and
+  `config.toml`'s word about it is not consulted. The opinion is
+  recorded, not inferred from the presence of an entry: `policy.toml`
+  carries a `decided` list beside `exclude`, because "this server has
+  nothing excluded" is itself an opinion — the one that undoes a
+  `config.toml` exclusion — and inferring the opinion from the entries
+  made exactly that state unrepresentable, so a server the operator's
+  own file turned off could never be turned back on from the panel
+  (found by the pre-release review, which is the review's whole job). No set arithmetic across scopes: what
   the operator last said in the panel replaces the file they wrote last
   month, for that server and no other.
 - **The project file may only add to `exclude`.** Narrowing is the only
@@ -503,8 +509,13 @@ what a server-level exclusion will do). One fixed trivial prompt,
   about what a server used to offer.** The only new startup output is a
   name in `exclude` that matches nothing (§2).
 - A transcript record for a call to an excluded tool — the one thing the
-  dispatch site adds, since the refusal itself already exists. Telemetry
-  unchanged: the call never runs, so there is no `tool.call` to report.
+  dispatch site adds, since the refusal itself already exists. A server
+  excluded whole never lists, so it has no function names to record one
+  by one; the registry keeps its name prefix instead, or a call to one of
+  its tools would read as a tool that never existed. Telemetry is
+  unchanged in the sense that nothing was added to it, but a `tool.call`
+  event IS emitted for the refused call, with `outcome=error`: the
+  executor reports every call it was handed.
 - Tests: per-server precedence between the three files; a project file
   that can only add to `exclude`; an excluded name reaching the executor
   (refused with the unregistered-name text, recorded distinctly, no hook

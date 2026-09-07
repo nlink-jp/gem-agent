@@ -181,7 +181,7 @@ func (s *settingsStore) mcpRows(d *tui.SettingsData) {
 		serverOff := s.filter.Server(server)
 		detail := ""
 		if serverOff {
-			detail = "not started — nothing of it is declared, and turning it on starts it"
+			detail = "not started — turn it on to start it"
 		}
 		d.Rows = append(d.Rows, tui.SettingRow{
 			Section: "mcp tools", Label: server, Value: declaredValue(!serverOff),
@@ -338,9 +338,24 @@ func (s *settingsStore) markSessionEdit(key string) {
 // set across is what keeps an operator who toggled one function from
 // silently losing the three their own file excluded.
 func (s *settingsStore) applyExclude(ch tui.SettingChange) (tui.SettingsData, string) {
+	// Refuse to write what the loader would refuse to read: a name
+	// carrying "*" or a second "/" would be saved into the machine-owned
+	// file and then fail every later start, with hand-editing the only
+	// way out (pre-release review).
+	if _, err := mcpfilter.Parse(ch.Exclude, mcpfilter.FromPolicy); err != nil {
+		return s.data(), "cannot exclude this name: " + err.Error()
+	}
 	server, fn := mcpfilter.Split(ch.Exclude)
 	want := ch.Value == "off" // "off" means excluded
-	entries := s.filter.For(server)
+	// The server's state as the two GLOBAL scopes have it. Not the
+	// composed filter: that includes the project file's additions, and
+	// writing those into policy.toml would promote a project-scoped
+	// exclusion to every project the operator opens (pre-release review).
+	globals, err := mcpfilter.Build(s.cfg.MCP.Exclude, policyScope(s.policyFile), nil)
+	if err != nil {
+		return s.data(), "cannot read the current exclusions: " + err.Error()
+	}
+	entries := globals.For(server)
 	if fn == "" {
 		// The server level: off is the whole server, on clears
 		// everything about it — a server that was never started has no

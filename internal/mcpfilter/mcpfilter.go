@@ -30,9 +30,13 @@ type Scope string
 // The three scopes, nearest last for everything but composition (§2:
 // per server, the nearest scope decides whole; the project may only add).
 const (
-	FromConfig  Scope = "config.toml"
-	FromPolicy  Scope = "policy.toml"
-	FromProject Scope = "project"
+	FromConfig Scope = "config.toml"
+	FromPolicy Scope = "policy.toml"
+	// The file, not the word "project": two of the three scopes told the
+	// operator which file to open and the third did not. The name is
+	// config.ProjectFileName's, spelled here because a pure predicate
+	// does not import the loader.
+	FromProject Scope = ".gem-agent.toml"
 )
 
 // Entry is one parsed exclusion: a server, or one function of it.
@@ -110,6 +114,18 @@ type Filter struct {
 	entries  []Entry // every entry that survived composition, for Unmatched
 }
 
+// PolicyScope is the machine-owned file's word (ADR-0077 §2). Decided
+// names the servers it has an opinion about, and it is carried
+// separately from Entries on purpose: "this server has nothing
+// excluded" is an opinion that shadows config.toml, and inferring the
+// opinion from the presence of an entry made that state unrepresentable
+// — a server excluded in config.toml could then never be turned back on
+// from the panel (pre-release review).
+type PolicyScope struct {
+	Entries []string
+	Decided []string
+}
+
 // Build composes the three scopes into one filter (ADR-0077 §2).
 //
 // Per server, the nearest scope decides whole: if policy.toml says
@@ -121,7 +137,7 @@ type Filter struct {
 // The project file may only add. Union is the only composition it gets,
 // so ADR-0008 §4's direction rule holds by construction rather than by a
 // trust check.
-func Build(configEntries, policyEntries, projectEntries []string) (Filter, error) {
+func Build(configEntries []string, policy PolicyScope, projectEntries []string) (Filter, error) {
 	parseAll := func(raw []string, scope Scope) (map[string]*bucket, []Entry, error) {
 		byServer := map[string]*bucket{}
 		var entries []Entry
@@ -145,9 +161,17 @@ func Build(configEntries, policyEntries, projectEntries []string) (Filter, error
 	if err != nil {
 		return Filter{}, err
 	}
-	polB, polE, err := parseAll(policyEntries, FromPolicy)
+	polB, polE, err := parseAll(policy.Entries, FromPolicy)
 	if err != nil {
 		return Filter{}, err
+	}
+	// A decided server shadows config.toml even with no entries.
+	shadowed := make(map[string]bool, len(polB)+len(policy.Decided))
+	for server := range polB {
+		shadowed[server] = true
+	}
+	for _, server := range policy.Decided {
+		shadowed[strings.TrimSpace(server)] = true
 	}
 	_, prjE, err := parseAll(projectEntries, FromProject)
 	if err != nil {
@@ -159,13 +183,13 @@ func Build(configEntries, policyEntries, projectEntries []string) (Filter, error
 
 	// config, except where policy speaks about the same server
 	for server, b := range cfgB {
-		if _, shadowed := polB[server]; shadowed {
+		if shadowed[server] {
 			continue
 		}
 		f.byServer[server] = b
 	}
 	for _, e := range cfgE {
-		if _, shadowed := polB[e.Server]; !shadowed {
+		if !shadowed[e.Server] {
 			keep(e)
 		}
 	}
@@ -227,11 +251,6 @@ func (f Filter) For(server string) []string {
 	return out
 }
 
-// Speaks reports whether this filter has anything to say about a server
-// at all — what the panel shows as provenance when a scope shadows
-// another one's word about the same server.
-func (f Filter) Speaks(server string) bool { return f.byServer[server] != nil }
-
 // Empty reports whether nothing is excluded, which is the default and
 // keeps `.mcp.json` meaning exactly what it means today.
 func (f Filter) Empty() bool { return len(f.byServer) == 0 }
@@ -243,16 +262,25 @@ func (f Filter) Empty() bool { return len(f.byServer) == 0 }
 // stale. listed maps the servers that actually answered tools/list to
 // their function names; a server that is configured but absent from
 // listed was excluded or unreachable, and a function entry under it says
-// nothing about whether the operator's line is right.
+// nothing about whether the operator's line is right. complete says
+// whether every server list was read this run: when it is false, a name
+// missing from configured proves nothing.
 //
 // A name that matches nothing is reported, not ignored (ADR-0037's
 // rule): a server or function renamed upstream must not leave a line
 // that quietly does nothing.
-func (f Filter) Unmatched(configured map[string]bool, listed map[string][]string) []string {
+func (f Filter) Unmatched(configured map[string]bool, listed map[string][]string, complete bool) []string {
 	var out []string
 	for _, e := range f.entries {
 		if !configured[e.Server] {
-			out = append(out, fmt.Sprintf("%s (%s): no such MCP server", e, e.Scope))
+			// Only when every server list was actually read. A project
+			// whose .mcp.json was not loaded (untrusted, changed pin),
+			// a different project, or a file that failed to parse all
+			// leave servers out of `configured` — and telling the
+			// operator to delete a correct line is worse than silence.
+			if complete {
+				out = append(out, fmt.Sprintf("%s (%s): no such MCP server", e, e.Scope))
+			}
 			continue
 		}
 		if e.Func == "" {

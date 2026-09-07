@@ -140,3 +140,43 @@ func TestChildRowsAreIndented(t *testing.T) {
 		t.Errorf("child rows are not indented:\n%s", view)
 	}
 }
+
+// An edit can bring a group into existence — turning a server on gives
+// it functions. A group with no collapse entry rendered open, against
+// "groups open closed" (pre-release review).
+func TestGroupsBornDuringAnEditOpenClosed(t *testing.T) {
+	rows := groupRows()
+	grown := append(append([]SettingRow{}, rows...),
+		SettingRow{Section: "mcp tools", Label: "github", Value: "on", Values: []string{"on", "off"},
+			Exclude: "github", Group: "mcp:github", Collapsible: true, Source: "default"},
+		SettingRow{Section: "mcp tools", Label: "list_issues", Value: "on", Values: []string{"on", "off"},
+			Exclude: "github/list_issues", Group: "mcp:github", Child: true, Source: "default"},
+	)
+	m := New(Options{
+		StartTurn: func(ctx context.Context, input string) {},
+		Slash:     slashStub,
+		Printer:   (&capture{}).printer,
+		Settings:  &SettingsData{Rows: rows, ProjectDir: "~/work/p"},
+		ApplySetting: func(SettingChange) (SettingsData, string) {
+			return SettingsData{Rows: grown, ProjectDir: "~/work/p"}, ""
+		},
+		RenderFactory: func(width int) func(string) string {
+			return func(s string) string { return s }
+		},
+	})
+	next, _ := m.openSettings()
+	m = next.(Model)
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = next.(Model)
+
+	m = press(m, tea.KeyMsg{Type: tea.KeyRight}) // edit the server row
+
+	for _, r := range m.visibleRows() {
+		if r.Child {
+			t.Errorf("a group born during the edit rendered open: %+v", r)
+		}
+	}
+	if m.settingsCursor >= len(m.visibleRows()) {
+		t.Errorf("cursor %d is outside the %d visible rows", m.settingsCursor, len(m.visibleRows()))
+	}
+}

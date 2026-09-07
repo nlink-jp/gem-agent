@@ -226,7 +226,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// exclusion that does not do what it says is worse than none, and
 	// falling back to "exclude nothing" would silently hand back the
 	// write functions the operator took away.
-	mcpFilter, err := mcpfilter.Build(cfg.MCP.Exclude, policyFile.MCP.Exclude, projectCfg.MCP.Exclude)
+	mcpFilter, err := mcpfilter.Build(cfg.MCP.Exclude, policyScope(policyFile), projectCfg.MCP.Exclude)
 	if err != nil {
 		return err
 	}
@@ -1096,7 +1096,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// so the panel and the runtime read the same three files in the
 	// same order the next start will.
 	settings.reloadMCP = func() (mcpfilter.Filter, mcpInventory, string) {
-		f, err := mcpfilter.Build(cfg.MCP.Exclude, policyFile.MCP.Exclude, projectCfg.MCP.Exclude)
+		f, err := mcpfilter.Build(cfg.MCP.Exclude, policyScope(policyFile), projectCfg.MCP.Exclude)
 		if err != nil {
 			// Saved but unusable: keep the running set and say so
 			// rather than dropping every exclusion on the floor.

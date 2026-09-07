@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/nlink-jp/gem-agent/internal/config"
@@ -17,7 +18,7 @@ func withMCP(t *testing.T, s *settingsStore, servers []string, offered map[strin
 	t.Helper()
 	s.inv = mcpInventory{Servers: servers, Offered: offered, Scopes: map[string]string{}}
 	rebuild := func() mcpfilter.Filter {
-		f, err := mcpfilter.Build(s.cfg.MCP.Exclude, s.policyFile.MCP.Exclude, s.projectCfg.MCP.Exclude)
+		f, err := mcpfilter.Build(s.cfg.MCP.Exclude, policyScope(s.policyFile), s.projectCfg.MCP.Exclude)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -225,5 +226,111 @@ func TestApprovalRowsAreGroupedByServer(t *testing.T) {
 		if r.Tool == "list_files" && r.Child {
 			t.Error("a built-in was filed under a server")
 		}
+	}
+}
+
+// loadPolicy reads what actually reached the disk. Every panel test that
+// asserted on the in-memory struct passed while Save was dropping the
+// [mcp] table on the floor (pre-release review), so the exclusion tests
+// go through the file from here on.
+func loadPolicy(t *testing.T, s *settingsStore) *config.PolicyFile {
+	t.Helper()
+	pf, err := config.LoadPolicyFile(s.policyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pf
+}
+
+func TestPanelWriteReachesTheFile(t *testing.T) {
+	s := newStore(t)
+	withMCP(t, s, []string{"obsidian"}, map[string][]string{"obsidian": {"patch_vault_file"}})
+
+	s.Apply(tui.SettingChange{Exclude: "obsidian/patch_vault_file", Value: "off"})
+
+	pf := loadPolicy(t, s)
+	if len(pf.MCP.Exclude) != 1 || pf.MCP.Exclude[0] != "obsidian/patch_vault_file" {
+		t.Errorf("policy.toml holds %v — the panel said it saved", pf.MCP.Exclude)
+	}
+}
+
+// The case the ADR's own justification for keeping an excluded server's
+// row visible depends on: a server config.toml turned off must be
+// switchable back on from the panel.
+func TestPanelCanTurnAConfigExclusionBackOn(t *testing.T) {
+	s := newStore(t)
+	s.cfg.MCP.Exclude = []string{"chrome-pilot"}
+	withMCP(t, s, []string{"chrome-pilot"}, map[string][]string{})
+	if !s.filter.Server("chrome-pilot") {
+		t.Fatal("setup: the server should start out excluded")
+	}
+
+	s.Apply(tui.SettingChange{Exclude: "chrome-pilot", Value: "on"})
+
+	if s.filter.Server("chrome-pilot") {
+		t.Error("the server is still excluded — the panel could not undo config.toml")
+	}
+	pf := loadPolicy(t, s)
+	found := false
+	for _, d := range pf.MCP.Decided {
+		if d == "chrome-pilot" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("policy.toml does not record the decision: %+v", pf.MCP)
+	}
+}
+
+// Same for the last function of a server.
+func TestPanelCanTurnTheLastConfigFunctionBackOn(t *testing.T) {
+	s := newStore(t)
+	s.cfg.MCP.Exclude = []string{"obsidian/patch_vault_file"}
+	withMCP(t, s, []string{"obsidian"}, map[string][]string{"obsidian": {"patch_vault_file"}})
+
+	s.Apply(tui.SettingChange{Exclude: "obsidian/patch_vault_file", Value: "on"})
+
+	if s.filter.Func("obsidian", "patch_vault_file") {
+		t.Error("the function is still excluded — config.toml was not shadowed")
+	}
+}
+
+// policy.toml is global. A project's own exclusion must not be copied
+// into it and follow the operator into every other project.
+func TestPanelDoesNotPromoteProjectExclusions(t *testing.T) {
+	s := newStore(t)
+	s.projectCfg.MCP.Exclude = []string{"obsidian/project_only"}
+	withMCP(t, s, []string{"obsidian"}, map[string][]string{
+		"obsidian": {"project_only", "another"},
+	})
+
+	s.Apply(tui.SettingChange{Exclude: "obsidian/another", Value: "off"})
+
+	pf := loadPolicy(t, s)
+	for _, e := range pf.MCP.Exclude {
+		if e == "obsidian/project_only" {
+			t.Errorf("a project-scoped exclusion was promoted to the global file: %v", pf.MCP.Exclude)
+		}
+	}
+	// And it is still in force here, from its own scope.
+	if !s.filter.Func("obsidian", "project_only") {
+		t.Error("the project's own exclusion stopped applying")
+	}
+}
+
+// The panel must not write what the loader would refuse to read: the
+// next start would fail with hand-editing the machine-owned file as the
+// only way out.
+func TestPanelRefusesAnUnwritableName(t *testing.T) {
+	s := newStore(t)
+	withMCP(t, s, []string{"obsidian"}, map[string][]string{"obsidian": {"a"}})
+
+	_, line := s.Apply(tui.SettingChange{Exclude: "obsidian/a/b", Value: "off"})
+
+	if line == "" || !strings.Contains(line, "cannot exclude") {
+		t.Errorf("line = %q, want a refusal", line)
+	}
+	if pf := loadPolicy(t, s); len(pf.MCP.Exclude) != 0 {
+		t.Errorf("the bad entry was written anyway: %v", pf.MCP.Exclude)
 	}
 }

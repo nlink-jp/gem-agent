@@ -119,6 +119,21 @@ func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Too
 	return added, errs
 }
 
+// policyScope is the machine-owned file's word, in the shape the filter
+// composes (ADR-0077 §2). Decided travels beside the entries because a
+// server the panel decided to exclude NOTHING of still shadows
+// config.toml — see PolicyMCP.Decided.
+func policyScope(pf *config.PolicyFile) mcpfilter.PolicyScope {
+	return mcpfilter.PolicyScope{Entries: pf.MCP.Exclude, Decided: pf.MCP.Decided}
+}
+
+// mcpToolPrefix is the registry-name prefix of one server's tools. A
+// truncated name keeps its head, so the prefix still matches unless the
+// prefix itself is longer than the cap.
+func mcpToolPrefix(server string) string {
+	return "mcp__" + sanitizeToolName(server) + "__"
+}
+
 // mcpInventory is what the session knows about its MCP servers after a
 // connect: every configured server (whether or not it was started, and
 // whether or not it was excluded), and the function names of the ones
@@ -166,10 +181,16 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 		return nil, nil, mcpInventory{Offered: map[string][]string{}}
 	}
 
+	// complete says every server list this session should have was
+	// actually read. A file that failed to parse, or a project file left
+	// unread because the project is untrusted, means a name missing from
+	// the merged map proves nothing about the operator's exclude line.
+	complete := true
 	load := func(path, scope string) map[string]mcp.ServerConfig {
 		servers, skipped, err := mcp.LoadConfig(path)
 		if err != nil {
 			fmt.Fprintf(stderr, "warning: %s MCP config: %v — skipped\n", scope, err)
+			complete = false
 			return nil
 		}
 		for _, s := range skipped {
@@ -188,6 +209,8 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 	var project map[string]mcp.ServerConfig
 	if grant.mcp() {
 		project = load(filepath.Join(projectDir, ".mcp.json"), "project")
+	} else {
+		complete = false
 	}
 
 	servers, scopes, overridden := mcp.Merge(global, project)
@@ -213,7 +236,7 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 		configured[name] = true
 	}
 	defer func() {
-		for _, note := range filter.Unmatched(configured, listed) {
+		for _, note := range filter.Unmatched(configured, listed, complete) {
 			// The fact and the next command on one line: a stale entry
 			// is doing nothing, and the line says where to fix it.
 			fmt.Fprintf(stderr, "warning: [mcp] exclude: %s — remove it or correct the name\n", note)
@@ -227,6 +250,12 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 		// (ADR-0077 §1). Its row still comes from .mcp.json, so it can
 		// be turned back on without having been running.
 		if filter.Server(name) {
+			// Recorded by prefix: the server never listed, so there are
+			// no function names to note one by one, and a call naming
+			// one must still read as the operator's doing in the
+			// transcript rather than as a tool that never existed
+			// (ADR-0077 §5, pre-release review).
+			registry.NoteExcludedPrefix(mcpToolPrefix(name))
 			summary = append(summary, fmt.Sprintf("%s [%s] (not started — excluded)", name, scopes[name]))
 			continue
 		}

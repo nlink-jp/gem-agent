@@ -19,7 +19,7 @@ func obsidianTools() []mcp.Tool {
 
 func mustFilter(t *testing.T, cfg, policy, project []string) mcpfilter.Filter {
 	t.Helper()
-	f, err := mcpfilter.Build(cfg, policy, project)
+	f, err := mcpfilter.Build(cfg, mcpfilter.PolicyScope{Entries: policy}, project)
 	if err != nil {
 		t.Fatal(err)
 	}

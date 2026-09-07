@@ -40,7 +40,7 @@ func TestParse(t *testing.T) {
 }
 
 func TestEmptyFilterExcludesNothing(t *testing.T) {
-	f, err := Build(nil, nil, nil)
+	f, err := Build(nil, PolicyScope{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestEmptyFilterExcludesNothing(t *testing.T) {
 }
 
 func TestServerAndFunc(t *testing.T) {
-	f, err := Build([]string{"chrome-pilot", "obsidian/patch_vault_file"}, nil, nil)
+	f, err := Build([]string{"chrome-pilot", "obsidian/patch_vault_file"}, PolicyScope{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestServerAndFunc(t *testing.T) {
 func TestPolicyReplacesConfigPerServer(t *testing.T) {
 	f, err := Build(
 		[]string{"obsidian/patch_vault_file", "obsidian/search_and_replace", "github"},
-		[]string{"obsidian/delete_vault_file"},
+		PolicyScope{Entries: []string{"obsidian/delete_vault_file"}},
 		nil,
 	)
 	if err != nil {
@@ -99,7 +99,7 @@ func TestPolicyReplacesConfigPerServer(t *testing.T) {
 // The project file may only add (ADR-0008 §4's direction rule, held by
 // construction): it can never bring back something a nearer scope excluded.
 func TestProjectOnlyAdds(t *testing.T) {
-	f, err := Build([]string{"obsidian/patch_vault_file"}, nil, []string{"github", "obsidian/get_vault_file"})
+	f, err := Build([]string{"obsidian/patch_vault_file"}, PolicyScope{}, []string{"github", "obsidian/get_vault_file"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestProjectOnlyAdds(t *testing.T) {
 }
 
 func TestProjectAddsOnTopOfPolicy(t *testing.T) {
-	f, err := Build(nil, []string{"obsidian/delete_vault_file"}, []string{"obsidian/patch_vault_file"})
+	f, err := Build(nil, PolicyScope{Entries: []string{"obsidian/delete_vault_file"}}, []string{"obsidian/patch_vault_file"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestProjectAddsOnTopOfPolicy(t *testing.T) {
 }
 
 func TestBuildRejectsBadEntryWithScope(t *testing.T) {
-	_, err := Build(nil, nil, []string{"a/b/c"})
+	_, err := Build(nil, PolicyScope{}, []string{"a/b/c"})
 	if err == nil {
 		t.Fatal("a malformed entry was accepted")
 	}
@@ -136,7 +136,7 @@ func TestBuildRejectsBadEntryWithScope(t *testing.T) {
 func TestUnmatchedNamesWhatMatchedNothing(t *testing.T) {
 	f, err := Build(
 		[]string{"typo-server", "obsidian/renamed_away", "obsidian/patch_vault_file"},
-		nil, nil,
+		PolicyScope{}, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +146,7 @@ func TestUnmatchedNamesWhatMatchedNothing(t *testing.T) {
 		"obsidian": {"patch_vault_file", "get_vault_file"},
 		"github":   {"list_issues"},
 	}
-	got := f.Unmatched(configured, listed)
+	got := f.Unmatched(configured, listed, true)
 	if len(got) != 2 {
 		t.Fatalf("Unmatched = %v, want two entries", got)
 	}
@@ -162,33 +162,80 @@ func TestUnmatchedNamesWhatMatchedNothing(t *testing.T) {
 // An excluded server is configured but never started: naming it, and
 // naming one of its functions, are both correct — neither is stale.
 func TestUnmatchedIsSilentForServersThatDidNotList(t *testing.T) {
-	f, err := Build([]string{"chrome-pilot", "chrome-pilot/take_screenshot"}, nil, nil)
+	f, err := Build([]string{"chrome-pilot", "chrome-pilot/take_screenshot"}, PolicyScope{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	configured := map[string]bool{"chrome-pilot": true, "obsidian": true}
 	listed := map[string][]string{"obsidian": {"get_vault_file"}}
-	if got := f.Unmatched(configured, listed); len(got) != 0 {
+	if got := f.Unmatched(configured, listed, true); len(got) != 0 {
 		t.Fatalf("Unmatched = %v, want nothing: the server is configured, just not started", got)
 	}
 }
 
 func TestUnmatchedIsDeduped(t *testing.T) {
-	f, err := Build([]string{"ghost"}, nil, []string{"ghost"})
+	f, err := Build([]string{"ghost"}, PolicyScope{}, []string{"ghost"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := f.Unmatched(map[string]bool{}, map[string][]string{}); len(got) != 2 {
+	if got := f.Unmatched(map[string]bool{}, map[string][]string{}, true); len(got) != 2 {
 		// The same server named in two scopes is two distinct lines
 		// (they carry different scope labels) — dedupe only collapses
 		// byte-identical ones.
 		t.Logf("Unmatched = %v", got)
 	}
-	f2, err := Build([]string{"ghost", "ghost"}, nil, nil)
+	f2, err := Build([]string{"ghost", "ghost"}, PolicyScope{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := f2.Unmatched(map[string]bool{}, map[string][]string{}); len(got) != 1 {
+	if got := f2.Unmatched(map[string]bool{}, map[string][]string{}, true); len(got) != 1 {
 		t.Errorf("identical entries were not deduped: %v", got)
+	}
+}
+
+// A server the panel decided about shadows config.toml even when it
+// excluded nothing of it. Inferring the opinion from the entry list made
+// this state unrepresentable, and a server excluded in config.toml could
+// then never be turned back on (pre-release review).
+func TestDecidedShadowsConfigWithNoEntries(t *testing.T) {
+	f, err := Build([]string{"chrome-pilot", "obsidian/patch_vault_file"},
+		PolicyScope{Decided: []string{"chrome-pilot"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Server("chrome-pilot") {
+		t.Error("the panel turned this server on and config.toml still won")
+	}
+	if !f.Func("obsidian", "patch_vault_file") {
+		t.Error("a decision about one server disturbed another")
+	}
+}
+
+// A decided server with entries behaves as before: its entries replace
+// config.toml's for that server.
+func TestDecidedWithEntriesStillReplaces(t *testing.T) {
+	f, err := Build([]string{"obsidian/a", "obsidian/b"},
+		PolicyScope{Entries: []string{"obsidian/c"}, Decided: []string{"obsidian"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.Func("obsidian", "c") || f.Func("obsidian", "a") || f.Func("obsidian", "b") {
+		t.Error("the policy entries did not replace the config ones whole")
+	}
+}
+
+// When a server list could not be read, a name missing from it proves
+// nothing — and telling the operator to delete a correct line is worse
+// than saying nothing.
+func TestUnmatchedIsSilentWhenTheListsAreIncomplete(t *testing.T) {
+	f, err := Build([]string{"a-server-from-another-project"}, PolicyScope{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.Unmatched(map[string]bool{}, map[string][]string{}, false); len(got) != 0 {
+		t.Errorf("Unmatched = %v, want silence while the lists are incomplete", got)
+	}
+	if got := f.Unmatched(map[string]bool{}, map[string][]string{}, true); len(got) != 1 {
+		t.Errorf("Unmatched = %v, want the stale entry once the lists are complete", got)
 	}
 }

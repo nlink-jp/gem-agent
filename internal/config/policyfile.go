@@ -52,6 +52,14 @@ type PolicyFile struct {
 // operator last said in the panel is not merged with the file they
 // wrote last month (ADR-0077 §2).
 type PolicyMCP struct {
+	// Decided names the servers this file has an opinion about. It is
+	// not derivable from Exclude: "the panel decided this server has
+	// nothing excluded" is a real state — it shadows what config.toml
+	// says about that server — and inferring the opinion from the
+	// presence of an entry made exactly that state unrepresentable, so
+	// a server excluded in config.toml could never be turned back on
+	// from the panel (pre-release review).
+	Decided []string `toml:"decided"`
 	Exclude []string `toml:"exclude"`
 }
 
@@ -92,6 +100,9 @@ type ProjectPolicy struct {
 // The caller passes the server's whole effective state, not a delta.
 // That is what makes the panel honest: an operator who toggles one
 // function must not silently lose the three their config.toml excluded.
+// An empty slice is a statement — this file now has an opinion about the
+// server and excludes nothing of it — and it is recorded in Decided,
+// because the entry list alone cannot carry it.
 func (pf *PolicyFile) SetMCPExclusions(server string, entries []string) {
 	kept := make([]string, 0, len(pf.MCP.Exclude)+len(entries))
 	for _, e := range pf.MCP.Exclude {
@@ -103,6 +114,16 @@ func (pf *PolicyFile) SetMCPExclusions(server string, entries []string) {
 	kept = append(kept, entries...)
 	sort.Strings(kept)
 	pf.MCP.Exclude = kept
+
+	// The opinion is recorded even when it excludes nothing — that is
+	// the whole point of Decided.
+	for _, d := range pf.MCP.Decided {
+		if d == server {
+			return
+		}
+	}
+	pf.MCP.Decided = append(pf.MCP.Decided, server)
+	sort.Strings(pf.MCP.Decided)
 }
 
 // mcpEntryServer is the server half of an exclusion entry. Parsing
@@ -332,6 +353,15 @@ func (pf *PolicyFile) Save(path string) error {
 		b.WriteString("\n[tools]\n")
 		writeTools(&b, pf.Tools)
 	}
+	if len(pf.MCP.Exclude) > 0 || len(pf.MCP.Decided) > 0 {
+		b.WriteString("\n[mcp]\n")
+		if len(pf.MCP.Decided) > 0 {
+			fmt.Fprintf(&b, "decided = %s\n", quoteList(pf.MCP.Decided))
+		}
+		if len(pf.MCP.Exclude) > 0 {
+			fmt.Fprintf(&b, "exclude = %s\n", quoteList(pf.MCP.Exclude))
+		}
+	}
 	for _, dir := range sortedProjects(pf.Projects) {
 		entry := pf.Projects[dir]
 		if entry.Trust != "" || entry.PinnedAt != "" {
@@ -386,6 +416,16 @@ func sortedProjects(m map[string]ProjectPolicy) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// quoteList renders a TOML array of basic strings. Exclusion entries
+// carry "/" and server names carry "-", so every element is quoted.
+func quoteList(items []string) string {
+	parts := make([]string, len(items))
+	for i, it := range items {
+		parts[i] = quoteKey(it)
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 // quoteKey renders a TOML basic string. Tool patterns contain "*" and

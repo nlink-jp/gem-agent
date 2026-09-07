@@ -120,7 +120,11 @@ type Registry struct {
 	// set exists so the transcript can say the operator removed it
 	// rather than that it never was.
 	excluded map[string]bool
-	execFn   ExecFunc
+	// excludedPrefixes covers a whole server that was never started:
+	// there are no function names to record one by one, and a call
+	// naming one still has to read as the operator's doing.
+	excludedPrefixes []string
+	execFn           ExecFunc
 	// laneExec, when set, runs shell commands in the lane they declare;
 	// enf is what the runtime established about the sandbox (ADR-0073
 	// §5): a read-lane call is non-mutating only when enf.ReadLane.
@@ -575,6 +579,13 @@ func (r *Registry) RemoveByPrefix(prefix string) int {
 			delete(r.excluded, n)
 		}
 	}
+	keptPrefixes := r.excludedPrefixes[:0]
+	for _, p := range r.excludedPrefixes {
+		if !strings.HasPrefix(p, prefix) {
+			keptPrefixes = append(keptPrefixes, p)
+		}
+	}
+	r.excludedPrefixes = keptPrefixes
 	return removed
 }
 
@@ -588,6 +599,17 @@ func (r *Registry) NoteExcluded(name string) {
 	r.excluded[name] = true
 }
 
+// NoteExcludedPrefix records that every registry name under this prefix
+// was removed — a whole server the session never started.
+func (r *Registry) NoteExcludedPrefix(prefix string) {
+	for _, p := range r.excludedPrefixes {
+		if p == prefix {
+			return
+		}
+	}
+	r.excludedPrefixes = append(r.excludedPrefixes, prefix)
+}
+
 // Excluded reports whether this name was removed by the MCP filter,
 // which is how the executor tells "the operator took this away" from
 // "no such tool has ever existed" — a distinction the transcript keeps
@@ -595,6 +617,11 @@ func (r *Registry) NoteExcluded(name string) {
 func (r *Registry) Excluded(name string) bool {
 	if r.excluded[name] {
 		return true
+	}
+	for _, p := range r.excludedPrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
 	}
 	if r.parent != nil {
 		return r.parent.Excluded(name)

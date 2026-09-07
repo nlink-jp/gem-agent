@@ -90,14 +90,27 @@ func (m Model) openSettings() (tea.Model, tea.Cmd) {
 	// Groups open closed. Flat, this list is hundreds of rows on a
 	// machine with a full server list, which is the state ADR-0077 §3
 	// exists to end.
-	m.settingsCollapsed = map[string]bool{}
-	for _, r := range data.Rows {
-		if r.Collapsible {
-			m.settingsCollapsed[r.Group] = true
-		}
-	}
+	m.settingsCollapsed = withNewGroupsClosed(nil, data.Rows)
 	m.phase = phaseSettings
 	return m, nil
+}
+
+// withNewGroupsClosed returns a copy of the collapse state in which
+// every group the data carries has an entry — new ones closed. The map
+// is copied rather than mutated because Model is passed by value.
+func withNewGroupsClosed(collapsed map[string]bool, rows []SettingRow) map[string]bool {
+	out := make(map[string]bool, len(collapsed)+4)
+	for k, v := range collapsed {
+		out[k] = v
+	}
+	for _, r := range rows {
+		if r.Collapsible {
+			if _, known := out[r.Group]; !known {
+				out[r.Group] = true
+			}
+		}
+	}
+	return out
 }
 
 // visibleRows is the panel as it is on screen: a collapsed group shows
@@ -207,6 +220,14 @@ func (m Model) cycleSetting(delta int) (tea.Model, tea.Cmd) {
 		Label: row.Label, Tool: row.Tool, Exclude: row.Exclude, Value: next, Scope: scope,
 	})
 	m.settings = &data
+	// An edit can bring groups into existence — turning a server on
+	// gives it functions and an approval group — and a group with no
+	// entry in the map would render open, against "groups open closed".
+	// The row count can also change under the cursor.
+	m.settingsCollapsed = withNewGroupsClosed(m.settingsCollapsed, data.Rows)
+	if n := len(m.visibleRows()); n > 0 && m.settingsCursor >= n {
+		m.settingsCursor = n - 1
+	}
 	if line == "" {
 		return m, nil
 	}

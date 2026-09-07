@@ -137,3 +137,74 @@ func TestSubsetInheritsExclusions(t *testing.T) {
 		t.Error("a Subset did not inherit the parent's exclusions")
 	}
 }
+
+// A server excluded whole is never started, so there are no function
+// names to record one by one — the prefix carries it, or a call naming
+// one of its tools reads in the transcript as a tool that never existed
+// rather than as the operator's own doing (pre-release review).
+func TestWholeServerExclusionIsRecordedByPrefix(t *testing.T) {
+	log := &recordingLog{}
+	reg, err := tools.New(t.TempDir(),
+		func(ctx context.Context, command string) *exec.Cmd {
+			return exec.CommandContext(ctx, "/bin/true")
+		}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg.NoteExcludedPrefix("mcp__chrome-pilot__")
+	a := New(Options{Registry: reg, Gate: &approveAll{}, Log: log, MaxTurns: 5,
+		Backend: &mockBackend{responses: []*llm.Response{
+			{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "mcp__chrome-pilot__navigate", Args: map[string]any{}}}},
+			{Content: "ok"},
+		}}})
+	if _, err := a.Run(context.Background(), "x", nil); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, k := range log.kinds {
+		if k == "tool_excluded" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no tool_excluded record for an excluded server's tool: %v", log.kinds)
+	}
+	if reg.Excluded("mcp__other__navigate") {
+		t.Error("the prefix matched a different server")
+	}
+}
+
+// Resuming with a changed set: the history holds calls to tools that are
+// no longer declared. The turn must run, and a fresh call to the removed
+// name must be refused and recorded like any other (ADR-0077's
+// Consequences promised this test).
+func TestResumeWithAChangedSet(t *testing.T) {
+	log := &recordingLog{}
+	reg, err := tools.New(t.TempDir(),
+		func(ctx context.Context, command string) *exec.Cmd {
+			return exec.CommandContext(ctx, "/bin/true")
+		}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg.NoteExcluded(excludedName)
+	a := New(Options{Registry: reg, Gate: &approveAll{}, Log: log, MaxTurns: 5,
+		Backend: &mockBackend{responses: []*llm.Response{
+			{ToolCalls: []llm.ToolCall{{ID: "c2", Name: excludedName, Args: map[string]any{}}}},
+			{Content: "ok"},
+		}}})
+	// What a resume restores: a completed call to a tool that is gone now.
+	a.history = []llm.Message{
+		{Role: llm.RoleUser, Content: "earlier"},
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "c1", Name: excludedName}}},
+		{Role: llm.RoleTool, ToolCallID: "c1", ToolName: excludedName, Content: "earlier result"},
+	}
+
+	if _, err := a.Run(context.Background(), "again", nil); err != nil {
+		t.Fatalf("a resumed session with a changed tool set failed to run: %v", err)
+	}
+	mb := a.backend.(*mockBackend)
+	if !strings.Contains(mb.calls[1][len(mb.calls[1])-1].Content, "unknown tool") {
+		t.Errorf("the removed tool was not refused: %q", mb.calls[1][len(mb.calls[1])-1].Content)
+	}
+}
