@@ -90,7 +90,27 @@ func literals() {
 	fmt.Println()
 	fset := token.NewFileSet()
 	var lines []string
-	_ = filepath.WalkDir("cmd", func(p string, d os.DirEntry, err error) error {
+	// cmd is where most operator text lives; internal/agent is the other
+	// place that writes to the operator's screen (notices about
+	// compaction, the round ladder, a remote server's repeated fault).
+	for _, root := range []string{"cmd", "internal/agent"} {
+		collect(root, fset, &lines)
+	}
+	sort.Strings(lines)
+	// A literal reached through both its print call and the variable it
+	// was assembled into is one line, not two.
+	prev := ""
+	for _, l := range lines {
+		if l == prev {
+			continue
+		}
+		prev = l
+		fmt.Println(l)
+	}
+}
+
+func collect(root string, fset *token.FileSet, lines *[]string) {
+	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 			return nil
 		}
@@ -106,14 +126,25 @@ func literals() {
 					return true
 				}
 				for _, a := range x.Args {
-					if lit, ok := a.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-						add(&lines, fset, lit)
-					}
+					addLiterals(lines, fset, a)
 				}
 			case *ast.KeyValueExpr:
-				if k, ok := x.Key.(*ast.Ident); ok && (k.Name == "Short" || k.Name == "Long" || k.Name == "Use") {
-					if lit, ok := x.Value.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-						add(&lines, fset, lit)
+				if k, ok := x.Key.(*ast.Ident); ok && fieldNames[k.Name] {
+					addLiterals(lines, fset, x.Value)
+				}
+			case *ast.AssignStmt:
+				// A line the operator reads is often built into a
+				// variable first and printed later. Collecting only the
+				// print call missed the whole startup banner, which is
+				// how four releases shipped explanatory banners with the
+				// instrument that exists to prevent them (pre-release
+				// review, 2026-09-08).
+				for i, lhs := range x.Lhs {
+					if i >= len(x.Rhs) {
+						break
+					}
+					if id, ok := lhs.(*ast.Ident); ok && operatorVar(id.Name) {
+						addLiterals(lines, fset, x.Rhs[i])
 					}
 				}
 			}
@@ -121,18 +152,65 @@ func literals() {
 		})
 		return nil
 	})
-	sort.Strings(lines)
-	for _, l := range lines {
-		fmt.Println(l)
-	}
 }
 
+// What this still cannot see, stated so the next reader does not mistake
+// the document for the whole: string labels shorter than 16 characters
+// ("session log: ", "instructions: ") are filtered as noise, and text
+// assembled with a strings.Builder rather than a format call has no
+// literal to collect. Both are prefixes to a value rather than sentences
+// the operator has to weigh; a sentence that goes missing here is a
+// defect in this tool, not in the read-through.
+
 // printing names the functions whose string arguments reach the operator.
+// Sprintf is here because most of what an operator reads is formatted
+// into a variable and printed somewhere else entirely.
 var printing = map[string]bool{
 	"Fprintf": true, "Fprintln": true, "Fprint": true, "Errorf": true, "Println": true, "Printf": true,
-	"notice": true, "note": true, "warn": true,
+	"Sprintf": true, "notice": true, "note": true, "warn": true, "notify": true,
 	"StringVar": true, "StringVarP": true, "BoolVar": true, "BoolVarP": true, "IntVar": true,
 	"StringSliceVar": true, "DurationVar": true,
+}
+
+// fieldNames are struct fields whose string value the operator reads:
+// cobra's help text, and the settings panel's dim note.
+var fieldNames = map[string]bool{"Short": true, "Long": true, "Use": true, "Detail": true}
+
+// operatorVar reports whether a variable name marks operator text
+// assembled before it is printed. Names, not types: the banner is a
+// []string built line by line, and there is no type to key on.
+func operatorVar(name string) bool {
+	switch name {
+	case "bannerLines", "summary", "notes", "sandboxLine", "detail", "line", "scope", "msg":
+		return true
+	}
+	return strings.HasSuffix(name, "Line") || strings.HasSuffix(name, "Note") ||
+		strings.HasSuffix(name, "Notice") || strings.HasSuffix(name, "Msg")
+}
+
+// addLiterals collects the string literals inside an expression —
+// including both sides of a concatenation, since "project: " + dir is
+// two nodes and only the first is text the operator reads.
+func addLiterals(lines *[]string, fset *token.FileSet, e ast.Expr) {
+	switch v := e.(type) {
+	case *ast.BasicLit:
+		if v.Kind == token.STRING {
+			add(lines, fset, v)
+		}
+	case *ast.BinaryExpr:
+		addLiterals(lines, fset, v.X)
+		addLiterals(lines, fset, v.Y)
+	case *ast.CallExpr:
+		for _, a := range v.Args {
+			addLiterals(lines, fset, a)
+		}
+	case *ast.CompositeLit:
+		// The banner is a []string literal: four of the first five lines
+		// an operator ever sees live in one composite.
+		for _, el := range v.Elts {
+			addLiterals(lines, fset, el)
+		}
+	}
 }
 
 func calleeName(e ast.Expr) string {
