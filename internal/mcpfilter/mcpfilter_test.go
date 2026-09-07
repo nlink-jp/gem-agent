@@ -239,3 +239,43 @@ func TestUnmatchedIsSilentWhenTheListsAreIncomplete(t *testing.T) {
 		t.Errorf("Unmatched = %v, want the stale entry once the lists are complete", got)
 	}
 }
+
+// Shadowing is intended; shadowing in silence is not. A config entry a
+// nearer scope overrode still does nothing, and "a name that matches
+// nothing is reported, not ignored" covers that too (pre-release
+// re-review: `decided` widened the silent set to every server the panel
+// ever touched).
+func TestShadowedConfigEntriesAreReported(t *testing.T) {
+	f, err := Build([]string{"obsidian/delete_vault_file"},
+		PolicyScope{Decided: []string{"obsidian"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := f.Unmatched(map[string]bool{"obsidian": true},
+		map[string][]string{"obsidian": {"delete_vault_file"}}, true)
+	if len(got) != 1 || !strings.Contains(got[0], "not in force") {
+		t.Fatalf("Unmatched = %v, want the shadowed entry reported", got)
+	}
+	if !strings.Contains(got[0], "delete_vault_file") {
+		t.Errorf("the report does not name the line: %q", got[0])
+	}
+}
+
+// FunctionEntries answers "turn this server on — what stays off?", which
+// For cannot: For collapses to the whole-server entry and would discard
+// the functions a lower scope excluded by hand.
+func TestFunctionEntriesIgnoresTheWholeServerEntry(t *testing.T) {
+	f, err := Build([]string{"obsidian", "obsidian/a", "obsidian/b"}, PolicyScope{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.For("obsidian"); len(got) != 1 || got[0] != "obsidian" {
+		t.Errorf("For = %v, want the whole-server entry", got)
+	}
+	if got := strings.Join(f.FunctionEntries("obsidian"), ","); got != "obsidian/a,obsidian/b" {
+		t.Errorf("FunctionEntries = %q, want both functions", got)
+	}
+	if f.Knows("github") {
+		t.Error("Knows reported an opinion about a server with none")
+	}
+}

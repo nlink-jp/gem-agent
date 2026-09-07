@@ -127,9 +127,15 @@ func policyScope(pf *config.PolicyFile) mcpfilter.PolicyScope {
 	return mcpfilter.PolicyScope{Entries: pf.MCP.Exclude, Decided: pf.MCP.Decided}
 }
 
-// mcpToolPrefix is the registry-name prefix of one server's tools. A
-// truncated name keeps its head, so the prefix still matches unless the
-// prefix itself is longer than the cap.
+// mcpToolPrefix is the registry-name prefix of one server's tools.
+//
+// Two edges, both bounded: a server named "foo__bar" (or anything that
+// sanitises to it) shares the prefix of a server named "foo", and a
+// server name near the 64-character cap is truncated past its own
+// prefix. Neither can hide a live tool — Excluded is consulted only
+// after the registry fails to resolve the name — so the cost is a
+// transcript record attributed to the wrong server, or missing for a
+// very long name (pre-release re-review).
 func mcpToolPrefix(server string) string {
 	return "mcp__" + sanitizeToolName(server) + "__"
 }
@@ -186,6 +192,7 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 	// unread because the project is untrusted, means a name missing from
 	// the merged map proves nothing about the operator's exclude line.
 	complete := true
+	var skippedNames []string
 	load := func(path, scope string) map[string]mcp.ServerConfig {
 		servers, skipped, err := mcp.LoadConfig(path)
 		if err != nil {
@@ -195,6 +202,11 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 		}
 		for _, s := range skipped {
 			fmt.Fprintf(stderr, "warning: %s MCP server skipped: %s\n", scope, s)
+			// A server the loader skipped (a transport this client does
+			// not speak, a missing command) exists in the operator's
+			// file. Leaving it out of `configured` made an exclude entry
+			// naming it read as a typo (pre-release re-review).
+			skippedNames = append(skippedNames, strings.Fields(s)[0])
 		}
 		return servers
 	}
@@ -229,17 +241,21 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 	// What the filter is checked against, so a stale entry can be told
 	// from one that did its work (ADR-0077 §2): every configured server,
 	// and the function names of the ones that actually listed.
-	configured := make(map[string]bool, len(names))
+	configured := make(map[string]bool, len(names)+len(skippedNames))
 	listed := map[string][]string{}
 	inv.Offered = listed
 	for _, name := range names {
 		configured[name] = true
 	}
+	for _, name := range skippedNames {
+		configured[name] = true
+	}
 	defer func() {
 		for _, note := range filter.Unmatched(configured, listed, complete) {
-			// The fact and the next command on one line: a stale entry
-			// is doing nothing, and the line says where to fix it.
-			fmt.Fprintf(stderr, "warning: [mcp] exclude: %s — remove it or correct the name\n", note)
+			// The fact and the next command on one line. The command
+			// differs by cause — a misspelled name is not a line another
+			// file has overridden — so each note carries its own.
+			fmt.Fprintf(stderr, "warning: [mcp] exclude: %s\n", note)
 		}
 	}()
 

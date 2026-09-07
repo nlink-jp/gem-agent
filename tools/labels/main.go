@@ -132,6 +132,17 @@ func collect(root string, fset *token.FileSet, lines *[]string) {
 				if k, ok := x.Key.(*ast.Ident); ok && fieldNames[k.Name] {
 					addLiterals(lines, fset, x.Value)
 				}
+			case *ast.ReturnStmt:
+				// A function whose whole job is to build the operator's
+				// line returns it; the four failure lines the settings
+				// panel returns were invisible for exactly this reason.
+				for _, r := range x.Results {
+					addLiterals(lines, fset, r)
+				}
+			case *ast.ValueSpec:
+				for _, v := range x.Values {
+					addLiterals(lines, fset, v)
+				}
 			case *ast.AssignStmt:
 				// A line the operator reads is often built into a
 				// variable first and printed later. Collecting only the
@@ -161,6 +172,12 @@ func collect(root string, fset *token.FileSet, lines *[]string) {
 // literal to collect. Both are prefixes to a value rather than sentences
 // the operator has to weigh; a sentence that goes missing here is a
 // defect in this tool, not in the read-through.
+//
+// What it does NOT distinguish, and should: roughly a fifth of what it
+// collects from cmd and internal/agent is addressed to the MODEL, not
+// the operator (tool results, the runtime's notes inside a function
+// response). Judging those against operator criteria is a category
+// error, and the split is per-function, not per-file.
 
 // printing names the functions whose string arguments reach the operator.
 // Sprintf is here because most of what an operator reads is formatted

@@ -126,6 +126,28 @@ func (pf *PolicyFile) SetMCPExclusions(server string, entries []string) {
 	sort.Strings(pf.MCP.Decided)
 }
 
+// ClearMCPServer withdraws this file's opinion about a server: its
+// entries go, and so does its place in Decided. Turning a server back on
+// when nothing below excluded it should leave no trace — recording
+// "decided, nothing excluded" would shadow a config.toml the operator
+// writes tomorrow.
+func (pf *PolicyFile) ClearMCPServer(server string) {
+	kept := pf.MCP.Exclude[:0]
+	for _, e := range pf.MCP.Exclude {
+		if mcpEntryServer(e) != server {
+			kept = append(kept, e)
+		}
+	}
+	pf.MCP.Exclude = kept
+	keptD := pf.MCP.Decided[:0]
+	for _, d := range pf.MCP.Decided {
+		if d != server {
+			keptD = append(keptD, d)
+		}
+	}
+	pf.MCP.Decided = keptD
+}
+
 // mcpEntryServer is the server half of an exclusion entry. Parsing
 // belongs to internal/mcpfilter; this is the one split this file needs
 // and importing the package here would be a cycle through config.

@@ -112,6 +112,13 @@ func (b *bucket) add(e Entry) {
 type Filter struct {
 	byServer map[string]*bucket
 	entries  []Entry // every entry that survived composition, for Unmatched
+	// shadowed are the entries a nearer scope overrode. They are kept
+	// because "a name that matches nothing is reported, not ignored"
+	// (ADR-0077 §2) covers a line that does nothing because another file
+	// speaks about the same server, not only a misspelled one — and
+	// `decided` widened the silent set to every server ever touched in
+	// the panel (pre-release re-review).
+	shadowed []Entry
 }
 
 // PolicyScope is the machine-owned file's word (ADR-0077 §2). Decided
@@ -189,9 +196,11 @@ func Build(configEntries []string, policy PolicyScope, projectEntries []string) 
 		f.byServer[server] = b
 	}
 	for _, e := range cfgE {
-		if !shadowed[e.Server] {
-			keep(e)
+		if shadowed[e.Server] {
+			f.shadowed = append(f.shadowed, e)
+			continue
 		}
+		keep(e)
 	}
 	for server, b := range polB {
 		f.byServer[server] = b
@@ -229,6 +238,29 @@ func (f Filter) Func(server, fn string) bool {
 	}
 	return b.whole || b.fns[fn]
 }
+
+// FunctionEntries returns one server's function-level entries, ignoring
+// any whole-server exclusion. It answers the question "turn this server
+// on — what stays off?": collapsing to the whole-server entry, as For
+// does, would discard the functions a lower scope excluded by hand.
+func (f Filter) FunctionEntries(server string) []string {
+	b := f.byServer[server]
+	if b == nil {
+		return nil
+	}
+	out := make([]string, 0, len(b.fns))
+	for fn := range b.fns {
+		out = append(out, server+Separator+fn)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Knows reports whether this filter has any opinion about a server —
+// used to tell "the panel is overriding a lower scope" from "the panel
+// is the only thing that ever excluded this", which decides whether
+// turning a server on should record an opinion or withdraw one.
+func (f Filter) Knows(server string) bool { return f.byServer[server] != nil }
 
 // For returns one server's exclusions as full entries — "obsidian" when
 // the whole server is excluded, otherwise "obsidian/patch_vault_file"
@@ -279,7 +311,7 @@ func (f Filter) Unmatched(configured map[string]bool, listed map[string][]string
 			// leave servers out of `configured` — and telling the
 			// operator to delete a correct line is worse than silence.
 			if complete {
-				out = append(out, fmt.Sprintf("%s (%s): no such MCP server", e, e.Scope))
+				out = append(out, fmt.Sprintf("%s (%s): no such MCP server — remove it or correct the name", e, e.Scope))
 			}
 			continue
 		}
@@ -298,8 +330,12 @@ func (f Filter) Unmatched(configured map[string]bool, listed map[string][]string
 			}
 		}
 		if !found {
-			out = append(out, fmt.Sprintf("%s (%s): server %q offers no such function", e, e.Scope, e.Server))
+			out = append(out, fmt.Sprintf("%s (%s): server %q offers no such function — remove it or correct the name", e, e.Scope, e.Server))
 		}
+	}
+	for _, e := range f.shadowed {
+		out = append(out, fmt.Sprintf("%s (%s): not in force — %s decides this server; remove it, or turn that server's functions off in /settings",
+			e, e.Scope, FromPolicy))
 	}
 	sort.Strings(out)
 	return dedupe(out)

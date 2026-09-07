@@ -214,6 +214,16 @@ func (s *settingsStore) excludeSource(server, entry string) string {
 			return config.PolicyFileName
 		}
 	}
+	// An opinion with no entries is still this file's opinion, and it is
+	// the case `decided` was added for: without this the row for a
+	// server the panel turned back on credited the very file that says
+	// it is off, and an operator following the column would edit
+	// config.toml and see nothing happen (pre-release re-review).
+	for _, d := range s.policyFile.MCP.Decided {
+		if d == server {
+			return config.PolicyFileName
+		}
+	}
 	for _, e := range s.cfg.MCP.Exclude {
 		if e == entry {
 			return config.FromFile
@@ -347,27 +357,48 @@ func (s *settingsStore) applyExclude(ch tui.SettingChange) (tui.SettingsData, st
 	}
 	server, fn := mcpfilter.Split(ch.Exclude)
 	want := ch.Value == "off" // "off" means excluded
-	// The server's state as the two GLOBAL scopes have it. Not the
-	// composed filter: that includes the project file's additions, and
-	// writing those into policy.toml would promote a project-scoped
-	// exclusion to every project the operator opens (pre-release review).
-	globals, err := mcpfilter.Build(s.cfg.MCP.Exclude, policyScope(s.policyFile), nil)
+	// config.toml alone: what this server's state falls back to when the
+	// panel withdraws, and the function exclusions the operator wrote by
+	// hand — which turning the server off and on again used to discard
+	// for good (pre-release re-review).
+	configOnly, err := mcpfilter.Build(s.cfg.MCP.Exclude, mcpfilter.PolicyScope{}, nil)
 	if err != nil {
 		return s.data(), "cannot read the current exclusions: " + err.Error()
 	}
-	entries := globals.For(server)
-	if fn == "" {
-		// The server level: off is the whole server, on clears
-		// everything about it — a server that was never started has no
-		// function names to carry over.
-		entries = nil
-		if want {
-			entries = []string{server}
-		}
-	} else {
-		entries = withEntry(entries, ch.Exclude, want)
-	}
+	withdraw := false
 	fresh, err := config.MutatePolicyFile(s.policyPath, func(pf *config.PolicyFile) {
+		// Derived inside the lock, from the file this write is based on:
+		// a set computed from the startup snapshot would erase whatever
+		// another instance committed meanwhile, which is the failure the
+		// lock exists for (pre-release re-review).
+		globals, berr := mcpfilter.Build(s.cfg.MCP.Exclude, policyScope(pf), nil)
+		if berr != nil {
+			return
+		}
+		var entries []string
+		switch {
+		case fn != "":
+			// Not the composed filter: it carries the project file's
+			// additions, and writing those here would promote a
+			// project-scoped exclusion into every project.
+			entries = withEntry(globals.For(server), ch.Exclude, want)
+		case want:
+			entries = []string{server}
+		default:
+			// Turning a server on lifts the whole-server exclusion and
+			// nothing else: the functions a lower scope excluded stay
+			// excluded. If config.toml has no opinion about this server
+			// at all, the panel withdraws instead of recording one —
+			// otherwise it would shadow a config.toml written tomorrow.
+			entries = configOnly.FunctionEntries(server)
+			if !configOnly.Knows(server) {
+				withdraw = true
+			}
+		}
+		if withdraw {
+			pf.ClearMCPServer(server)
+			return
+		}
 		pf.SetMCPExclusions(server, entries)
 	})
 	if err != nil {
@@ -384,8 +415,19 @@ func (s *settingsStore) applyExclude(ch tui.SettingChange) (tui.SettingsData, st
 		return s.data(), "saved but not applied: " + err.Error()
 	}
 	line := fmt.Sprintf("%s: %s (saved to %s)", ch.Exclude, ch.Value, config.PolicyFileName)
+	if withdraw {
+		line = fmt.Sprintf("%s: %s (%s no longer has an opinion about %s)",
+			ch.Exclude, ch.Value, config.PolicyFileName, server)
+	}
+	// What the reconnect said — a server that would not start, a stale
+	// entry — belongs on the same line as the edit that caused it.
+	// Discarding it left the row reading "on" with no children and no
+	// reason anywhere (pre-release re-review).
 	if note != "" {
-		line += " — " + note
+		line += " — " + strings.TrimSpace(note)
+	}
+	if s.filter.Func(server, fn) && ch.Value == "on" && fn != "" {
+		line += " — still excluded by " + config.ProjectFileName
 	}
 	return data, line
 }

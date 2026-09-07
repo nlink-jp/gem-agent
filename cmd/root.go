@@ -1103,8 +1103,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			return mcpFilter, mcpInv, "not applied: " + err.Error()
 		}
 		mcpFilter = f
-		reconnectMCP(false)
-		return mcpFilter, mcpInv, ""
+		// What the reconnect reports — a server that would not start, a
+		// stale entry — is the operator's answer to "why did nothing
+		// appear", so it goes back with the edit rather than into the
+		// void (pre-release re-review).
+		return mcpFilter, mcpInv, reconnectMCP(false)
 	}
 	reloadSkills := func() string {
 		var pinNotes []string

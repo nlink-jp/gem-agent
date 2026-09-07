@@ -43,6 +43,25 @@ func registerFakeMCPTool(s *settingsStore, server, fn string) error {
 	})
 }
 
+// seedPolicy puts exclusions in the machine-owned file and reloads the
+// store from it. Seeding only the in-memory struct is not a state the
+// runtime can be in: applyExclude derives the server's set from the file
+// it is about to write, inside the lock.
+func seedPolicy(t *testing.T, s *settingsStore, exclude, decided []string) {
+	t.Helper()
+	pf := &config.PolicyFile{Tools: map[string]string{}, Projects: map[string]config.ProjectPolicy{}}
+	pf.MCP.Exclude = exclude
+	pf.MCP.Decided = decided
+	if err := pf.Save(s.policyPath); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.LoadPolicyFile(s.policyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	*s.policyFile = *loaded
+}
+
 func excludeRow(d tui.SettingsData, entry string) (tui.SettingRow, bool) {
 	for _, r := range d.Rows {
 		if r.Exclude == entry {
@@ -137,7 +156,7 @@ func TestPanelWriteCarriesTheServersOtherExclusions(t *testing.T) {
 // Turning a function back on removes just that entry.
 func TestPanelTurningAFunctionOnRemovesOnlyIt(t *testing.T) {
 	s := newStore(t)
-	s.policyFile.MCP.Exclude = []string{"obsidian/patch_vault_file", "obsidian/search_and_replace"}
+	seedPolicy(t, s, []string{"obsidian/patch_vault_file", "obsidian/search_and_replace"}, []string{"obsidian"})
 	withMCP(t, s, []string{"obsidian"}, map[string][]string{
 		"obsidian": {"get_vault_file", "patch_vault_file", "search_and_replace"},
 	})
@@ -151,7 +170,7 @@ func TestPanelTurningAFunctionOnRemovesOnlyIt(t *testing.T) {
 // Turning a whole server off replaces whatever was said about it.
 func TestPanelTurningAServerOffReplacesItsEntries(t *testing.T) {
 	s := newStore(t)
-	s.policyFile.MCP.Exclude = []string{"obsidian/patch_vault_file"}
+	seedPolicy(t, s, []string{"obsidian/patch_vault_file"}, []string{"obsidian"})
 	withMCP(t, s, []string{"obsidian"}, map[string][]string{"obsidian": {"get_vault_file"}})
 
 	s.Apply(tui.SettingChange{Exclude: "obsidian", Value: "off"})
@@ -166,7 +185,7 @@ func TestPanelTurningAServerOffReplacesItsEntries(t *testing.T) {
 func TestPanelProvenanceShowsTheShadowingFile(t *testing.T) {
 	s := newStore(t)
 	s.cfg.MCP.Exclude = []string{"obsidian/search_and_replace"}
-	s.policyFile.MCP.Exclude = []string{"obsidian/patch_vault_file"}
+	seedPolicy(t, s, []string{"obsidian/patch_vault_file"}, []string{"obsidian"})
 	withMCP(t, s, []string{"obsidian"}, map[string][]string{
 		"obsidian": {"get_vault_file", "patch_vault_file", "search_and_replace"},
 	})
@@ -332,5 +351,71 @@ func TestPanelRefusesAnUnwritableName(t *testing.T) {
 	}
 	if pf := loadPolicy(t, s); len(pf.MCP.Exclude) != 0 {
 		t.Errorf("the bad entry was written anyway: %v", pf.MCP.Exclude)
+	}
+}
+
+// The defect the re-review would not ship: two keypresses on a server row
+// (off, then on again) discarded every function exclusion config.toml
+// held for that server, permanently, with policy.toml shadowing the file
+// from then on.
+func TestServerOffThenOnKeepsConfigsFunctionExclusions(t *testing.T) {
+	s := newStore(t)
+	s.cfg.MCP.Exclude = []string{"obsidian/delete_vault_file", "obsidian/patch_vault_file"}
+	withMCP(t, s, []string{"obsidian"}, map[string][]string{
+		"obsidian": {"get_vault_file", "delete_vault_file", "patch_vault_file"},
+	})
+
+	s.Apply(tui.SettingChange{Exclude: "obsidian", Value: "off"})
+	s.Apply(tui.SettingChange{Exclude: "obsidian", Value: "on"})
+
+	if s.filter.Server("obsidian") {
+		t.Fatal("the server did not come back on")
+	}
+	for _, fn := range []string{"delete_vault_file", "patch_vault_file"} {
+		if !s.filter.Func("obsidian", fn) {
+			t.Errorf("%s was silently re-declared — config.toml excluded it by hand", fn)
+		}
+	}
+	if s.filter.Func("obsidian", "get_vault_file") {
+		t.Error("a function nobody excluded came back off")
+	}
+}
+
+// Turning on a server that only the panel ever excluded leaves no trace:
+// recording "decided, nothing excluded" would shadow a config.toml the
+// operator writes tomorrow.
+func TestTurningOnAPanelOnlyExclusionWithdrawsTheOpinion(t *testing.T) {
+	s := newStore(t)
+	withMCP(t, s, []string{"chrome-pilot"}, map[string][]string{"chrome-pilot": {"navigate"}})
+
+	s.Apply(tui.SettingChange{Exclude: "chrome-pilot", Value: "off"})
+	s.Apply(tui.SettingChange{Exclude: "chrome-pilot", Value: "on"})
+
+	pf := loadPolicy(t, s)
+	if len(pf.MCP.Exclude) != 0 || len(pf.MCP.Decided) != 0 {
+		t.Errorf("the file still has an opinion: exclude=%v decided=%v", pf.MCP.Exclude, pf.MCP.Decided)
+	}
+}
+
+// The provenance column has to name the file that decided, including
+// when its opinion is "nothing excluded" — an operator following it to
+// config.toml would edit a file that is shadowed.
+func TestProvenanceNamesTheDecidingFileWhenItExcludesNothing(t *testing.T) {
+	s := newStore(t)
+	s.cfg.MCP.Exclude = []string{"chrome-pilot"}
+	withMCP(t, s, []string{"chrome-pilot"}, map[string][]string{})
+
+	s.Apply(tui.SettingChange{Exclude: "chrome-pilot", Value: "on"})
+
+	row, ok := excludeRow(s.data(), "chrome-pilot")
+	if !ok {
+		t.Fatal("no row")
+	}
+	if row.Value != "on" {
+		t.Fatalf("row = %q, want on", row.Value)
+	}
+	if row.Source != config.PolicyFileName {
+		t.Errorf("source = %q, want %s — config.toml no longer decides this server",
+			row.Source, config.PolicyFileName)
 	}
 }
