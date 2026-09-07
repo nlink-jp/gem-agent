@@ -418,7 +418,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// Gated on bytes, not on the count (ADR-0078 §4): two empty
 			// leftovers are not an accumulation, and a line reading "0B"
 			// asks the operator to look at nothing.
-			if dirs, bytes, more, err := workdir.Sweep(projectDir, sessionID); err == nil && bytes >= workDirNoteFloor {
+			// `more` means the scan was cut, so bytes is a lower bound:
+			// a truncated sweep whose partial sum is under the floor
+			// would suppress the note the floor exists to make
+			// meaningful (pre-release review).
+			if dirs, bytes, more, err := workdir.Sweep(projectDir, sessionID); err == nil && (bytes >= workDirNoteFloor || more) {
 				plus := ""
 				if more {
 					plus = "+" // the startup scan was cut: a lower bound
@@ -983,8 +987,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- risk rulebook (ADR-0050): read both layers into the judge.
-	// A standing influence is never silent (the ADR-0049 lesson): the
-	// banner line below announces it while in force. ---
+	// A standing influence is never silent (the ADR-0049 lesson):
+	// `/riskbook` shows which layers are in force. ADR-0078 took the
+	// banner line out — a line that names the command superseding it has
+	// conceded the point — so the invariant now rests on the command. ---
 	rbBook, rbErr := riskbook.Load(cfgPath, projectDir)
 	if rbErr != nil {
 		fmt.Fprintf(stderr, "warning: risk rules: %v\n", rbErr)
@@ -1119,7 +1125,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// stale entry — is the operator's answer to "why did nothing
 		// appear", so it goes back with the edit rather than into the
 		// void (pre-release re-review).
-		return mcpFilter, mcpInv, reconnectMCP(false)
+		// Hoisted: reconnectMCP reassigns mcpInv, and the order of a
+		// call against the other operands of a return is unspecified.
+		// gc runs the call first today; a build that did not would hand
+		// the panel the pre-reload inventory.
+		note := reconnectMCP(false)
+		return mcpFilter, mcpInv, note
 	}
 	reloadSkills := func() string {
 		var pinNotes []string

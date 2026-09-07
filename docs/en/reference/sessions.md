@@ -191,9 +191,11 @@ a capability and spent its concrete sentences on prohibitions.
 
 Every session gets a work directory under the state root (exported
 as `GEMAGENT_WORK_DIR`); oversized MCP results and scratch output land
-there. At startup a note counts the earlier sessions' directories
-(`N earlier session work directories hold 12 MB here`); nothing is
-deleted automatically. `gem-agent workdirs` lists them with age, file
+there. At startup a note names the earlier sessions' directories once they
+hold more than 10 MiB, or once the scan was cut short — below that
+nothing has accumulated and the line would ask you to look at nothing
+(ADR-0078). It ends in the command that clears them; nothing is deleted
+without you typing it. `gem-agent workdirs` lists them with age, file
 count and size, and `gem-agent workdirs clean [id…]` deletes after a
 typed confirmation (`--yes` without a terminal), never a running
 session's. The scans are bounded: the listing stops at 10,000

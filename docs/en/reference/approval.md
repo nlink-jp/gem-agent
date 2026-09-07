@@ -155,7 +155,7 @@ instruction file's name and a write outside the project, and allow an
 ordinary one. A read lane that fails asks for every command; a write
 lane that fails makes the session **unconfined** — every shell command
 is yours to answer, and the banner says which expectation failed.
-`/status` shows the measured state.
+`/settings` shows the measured state.
 
 The credential list is a bounded set (`sandbox.CredentialFilters`):
 `~/.ssh`, `~/.aws`, `~/.kube`, `~/.gnupg`, `~/.config/gcloud`,

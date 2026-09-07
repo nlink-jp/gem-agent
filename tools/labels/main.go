@@ -153,20 +153,38 @@ func literals() {
 // model — tool descriptions, tool results, the notes the runtime puts
 // inside a function response. The split is per function, not per file:
 // cmd/info.go holds renderInfo (the model's) and versionLine (/version,
-// the operator's). A function added here disappears from the operator
-// read-through, so add one only after reading where its string goes.
+// the operator's).
+//
+// A name here disappears from the operator read-through, so add one only
+// after reading where its string goes — and never add a name so common
+// that a future function elsewhere would inherit it silently. The list
+// is matched across cmd and internal/agent, so `render` was both
+// redundant (its file is covered whole) and a trap for the next
+// `func render` anyone writes. expandSkillInput was on it and is
+// operator-facing by its own doc comment, which hid three of its
+// strings (pre-release review).
 var modelFacing = map[string]bool{
 	"renderInfo": true, "registerMemoryTools": true, "registerSkillTool": true,
-	// Found sitting in the operator section by the read-through: the
-	// system prompt, the tool descriptions, and the runtime's own notes
-	// inside a function response.
-	"composeSystem": true, "systemPrompt": true, "registerRiskbookTool": true,
-	"registerClipboardTool": true, "compactPrompt": true, "progressPrompt": true,
-	"riskPrompt": true, "attachNote": true,
-	"expandSkillInput": true, "registerSummarizeTool": true, "registerAgenticSearch": true,
+	"registerSummarizeTool": true, "registerAgenticSearch": true,
 	"registerWebTools": true, "registerAskTool": true, "registerMCPTools": true,
+	"registerRiskbookTool": true, "registerClipboardTool": true,
 	"wrapToolMessages": true, "runWithFloor": true, "evaluateProgress": true,
-	"remoteFaultNote": true, "newMCPIntake": true, "render": true,
+	"remoteFaultNote": true, "buildSystemPrompt": true, "workDirSection": true,
+}
+
+// modelFacingDecls are package-level const/var declarations holding text
+// written for the model — the system prompt and the side-call prompts.
+// They are classified separately because a GenDecl is not a FuncDecl:
+// keying only on functions left the largest model-facing blocks in the
+// operator read-through, which is the document a reader would then
+// "fix" by rewriting prompts into chrome (pre-release review).
+var modelFacingDecls = map[string]bool{
+	"searchAgentPrompt": true, "riskbookLearnPrompt": true, "summarizePrompt": true,
+	"fetchPromptTemplate": true, "riskEvalPrompt": true, "compactPrompt": true,
+	"riskEvalContextAddendum": true, "riskEvalDescriptionAddendum": true,
+	"riskEvalRulebookAddendum": true, "progressEvalPrompt": true,
+	"purposeDescription": true, "deniedResult": true, "abandonedResult": true,
+	"clipboardScript": true,
 }
 
 // modelFacingFiles are files with nothing but model-facing text in them.
@@ -186,8 +204,23 @@ func collect(root string, fset *token.FileSet, lines, modelLines *[]string) {
 			if modelFacingFiles[filepath.ToSlash(p)] {
 				out = modelLines
 			}
-			if fn, ok := decl.(*ast.FuncDecl); ok && modelFacing[fn.Name.Name] {
-				out = modelLines
+			switch d := decl.(type) {
+			case *ast.FuncDecl:
+				if modelFacing[d.Name.Name] {
+					out = modelLines
+				}
+			case *ast.GenDecl:
+				for _, spec := range d.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for _, n := range vs.Names {
+						if modelFacingDecls[n.Name] {
+							out = modelLines
+						}
+					}
+				}
 			}
 			inspect(decl, fset, out)
 		}

@@ -927,7 +927,6 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 	}
 }
 
-// emptyResponseError explains a response that carried nothing, naming
 // roundStopFmt is the one sentence for a turn stopped by counting
 // rounds: which counter, and its number. Three wordings of it were live
 // at once — "round cap" and "round limit", "saved" and "saved in the
@@ -935,6 +934,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 // (pre-release review).
 const roundStopFmt = "the %s (%d rounds) stopped this turn — progress so far is saved: say \"continue\" to resume where it left off, or raise [agent].max_turns"
 
+// emptyResponseError explains a response that carried nothing, naming
 // the cause the API reported. "The model returned nothing" is not
 // actionable on its own: a thinking budget spent before any text was
 // emitted and a safety block look identical from the outside.

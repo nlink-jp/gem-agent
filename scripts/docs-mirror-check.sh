@@ -152,7 +152,13 @@ def idents(path):
     # next real one and silently blanked every identifier between them —
     # forty lines of interface.md, which is the opposite of what this check
     # is for.
-    text = re.sub(r"(?m)^```[\s\S]*?^```[^\n]*$", "", io.open(path, encoding="utf-8").read())
+    # An opener is exactly three backticks at the start of a line, with an
+    # optional language; a closer is three backticks alone on a line. The
+    # first fix anchored to line starts, which still let a line-initial
+    # ```` (an escaped fence, as in ADR-0063) open a span and blank
+    # everything to the next real fence.
+    text = re.sub(r"(?m)^```(?!`)[^\n]*\n[\s\S]*?^```[ \t]*$", "",
+                  io.open(path, encoding="utf-8").read())
     found = set()
     for m in re.finditer(r"`([^`\n]+)`", text):
         tok = m.group(1).strip()

@@ -9,13 +9,18 @@
 // lines (grep-stable log output), cobra --help, model-facing text, and
 // Go error chains.
 //
-// A notice the agent writes mid-turn IS here, and always was by §3's own
-// list — it names "/compact feedback" as cataloged, and auto-compaction
-// is that feedback from the other trigger. Until v0.72.0 the agent
-// simply never read this package, so the same event printed Japanese
+// A notice the agent writes mid-turn IS here (ADR-0079). Until v0.72.0
+// the agent never read this package, so the same event printed Japanese
 // when the operator asked for it and English when the runtime decided.
-// The line between the two: a sentence carrying the operator's next
-// command is chrome, whatever wrote it; a wrapped error chain is not.
+//
+// The line between the two is authorship, not the presence of a next
+// command: gem-agent composes the sentence, so it is cataloged, and it
+// may quote a cause verbatim — the frame is translated, the cause
+// arrives in whatever language it was written in. What stays English is
+// a sentence that IS a returned error, because its innards come from
+// libraries and a translated frame around them is the mixing §3
+// removed. Every operator line should carry a next command; that is a
+// rule about wording, and it was never a rule about language.
 package uitext
 
 import "strings"
@@ -261,6 +266,10 @@ type Messages struct {
 	// check was at 30.
 	RoundLimitContinuedFmt string // %d = the limit that fired
 	RoundLoopContinuedFmt  string // %s = the repeated call
+	// PromptHookAttachedFmt: bytes a prompt hook attached as data. It
+	// reaches the operator through onNotice rather than notify, which
+	// is how a sweep that grepped for notify missed it.
+	PromptHookAttachedFmt string
 	// UnknownCommandFmt: %s = the input that matched no command.
 	UnknownCommandFmt string
 	MCPNone           string // /mcp with nothing connected
@@ -454,6 +463,7 @@ keys:
 	RemoteFaultFmt:         "MCP server %q: %s failed %d times in a row with the same error — /mcp reload, or fix the server",
 	RoundLimitContinuedFmt: "round limit reached at %d rounds — the progress review continued the turn",
 	RoundLoopContinuedFmt:  "the same call repeated (%s) — the progress review continued the turn",
+	PromptHookAttachedFmt:  "user_prompt_submit hook attached %d bytes of context as data",
 	UnknownCommandFmt:      "unknown command %q — /help lists commands\n",
 	MCPNone:                "no MCP servers connected — define them in ~/.config/gem-agent/mcp.json (global) or the project's .mcp.json (project; wins name collisions)\n",
 	MCPDisabled:            "MCP is disabled for this session ([mcp].enabled=false or --mcp off) — restart to enable it\n",
@@ -624,6 +634,7 @@ var ja = Messages{
 	RemoteFaultFmt:         "MCP サーバー %q: %s が同じエラーで %d 回連続して失敗しました — /mcp reload、またはサーバー側を修正してください",
 	RoundLimitContinuedFmt: "ラウンド上限 %d に達しました — 進捗レビューがターンを継続しました",
 	RoundLoopContinuedFmt:  "同じ呼び出しが繰り返されました（%s）— 進捗レビューがターンを継続しました",
+	PromptHookAttachedFmt:  "user_prompt_submit フックが %d バイトのコンテキストをデータとして添付しました",
 	UnknownCommandFmt:      "未知のコマンド %q — /help に一覧があります\n",
 	MCPNone:                "MCP サーバー未接続 — ~/.config/gem-agent/mcp.json（グローバル）またはプロジェクトの .mcp.json（プロジェクト側が名前衝突で優先）で定義します\n",
 	MCPDisabled:            "MCP はこのセッションでは無効です（[mcp].enabled=false または --mcp off）— 有効化するには再起動してください\n",

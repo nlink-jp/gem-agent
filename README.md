@@ -49,7 +49,7 @@ sandboxed shell commands cannot write outside it, and mutating tool
 calls ask for approval before running. Each session also gets a work
 directory of its own for anything that is not part of the project —
 intermediate data, an oversized tool result, a screenshot a server
-returned — so the working copy stays clean. `/status` names it, and
+returned — so the working copy stays clean. `/settings` names it, and
 nothing in it is ever deleted for you — `gem-agent workdirs` lists what
 earlier sessions left behind, and `workdirs clean` removes it after
 showing you exactly what and asking first. Requirements: macOS (Apple
@@ -173,8 +173,8 @@ real probes; the result decides how commands are treated:
   both.
 - **unverified** — the banner says `sandbox unverified: …` or
   `sandbox: DISABLED`: every shell command asks you before it runs, and
-  nothing else stands between the command and your machine. `/status`
-  shows which state you are in.
+  nothing else stands between the command and your machine. The banner
+  says which, and `/settings` shows it on request.
 
 A copy of the source rebuilt for another platform (Linux, WSL, Windows)
 has no kernel sandbox behind it. If it starts without the warning above,

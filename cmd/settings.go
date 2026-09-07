@@ -488,6 +488,15 @@ func (s *settingsStore) applyPolicy(ch tui.SettingChange) (tui.SettingsData, str
 // writeSettingsTable renders the panel content as plain text, for the
 // non-TTY REPL and pipes. Same rows, no editor.
 func writeSettingsTable(out io.Writer, d tui.SettingsData) {
+	// The project, first. ADR-0078 §5 dropped `project:` from the banner
+	// on the grounds that /settings shows it in both modes — and this
+	// renderer, the footer-less one, never printed it. The path is
+	// symlink-resolved, so "the operator is standing in it" is not an
+	// answer either: launching in /tmp/x confines the file tools to
+	// /private/tmp/x (pre-release review).
+	if d.ProjectDir != "" {
+		fmt.Fprintf(out, "project: %s\n", d.ProjectDir)
+	}
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	section := ""
 	for _, row := range d.Rows {

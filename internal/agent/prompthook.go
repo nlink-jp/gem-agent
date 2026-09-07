@@ -50,7 +50,7 @@ func (a *Agent) runPromptHook(ctx context.Context, input string) error {
 		Ref: "user_prompt_submit", Kind: HookAttachmentKind, Content: extra,
 	})
 	if a.onNotice != nil {
-		a.onNotice(fmt.Sprintf("user_prompt_submit hook attached %d bytes of context as data", len(extra)))
+		a.onNotice(fmt.Sprintf(a.msgs.PromptHookAttachedFmt, len(extra)))
 	}
 	return nil
 }

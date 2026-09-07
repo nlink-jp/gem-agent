@@ -70,7 +70,12 @@ func TestCatalogsComplete(t *testing.T) {
 // verbs in the same order in both catalogs — a %d/%s swap would
 // compile fine and corrupt one language at runtime.
 func TestFmtFieldsAgree(t *testing.T) {
-	verbs := regexp.MustCompile(`%[a-zA-Z]`)
+	// Flags, width, precision and argument indexes are part of the verb:
+	// with the bare `%[a-zA-Z]` form, "a %-24s b" yielded only [%d]-shaped
+	// leftovers and two catalogs whose verbs are all padded compared as
+	// equal-empty — an %-24s / %-8d swap between languages passed the test
+	// that exists to stop exactly that (pre-release review).
+	verbs := regexp.MustCompile(`%[-+# 0]*\d*(?:\.\d*)?(?:\[\d+\])?[a-zA-Z%]`)
 	je := reflect.ValueOf(ja)
 	ee := reflect.ValueOf(en)
 	for i := 0; i < je.NumField(); i++ {

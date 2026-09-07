@@ -8,6 +8,12 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator: help and hint messages mix English and Japanese arbitrarily — unify them behind a Japanese-mode / English-mode concept |
 
+
+*Amended by ADR-0079: §3's cataloged list gains the notices the agent
+writes mid-turn, and its discriminator is restated — gem-agent composes
+the sentence, so it is catalog text (a quoted cause stays verbatim); a
+sentence that IS a returned error stays English. The four surfaces that
+stay English are unchanged.*
 ## Context
 
 The interactive chrome grew string by string across nineteen releases,

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
@@ -25,19 +26,29 @@ func TestNoticesFollowTheConfiguredLanguage(t *testing.T) {
 	}
 	var notices []string
 	a := New(Options{Registry: reg, Gate: &approveAll{}, MaxTurns: 1,
-		Msgs: uitext.For(uitext.JA), OnNotice: func(s string) { notices = append(notices, s) }})
+		Backend: &mockBackend{responses: []*llm.Response{{Content: "a summary"}}},
+		Msgs:    uitext.For(uitext.JA), OnNotice: func(s string) { notices = append(notices, s) }})
 
-	a.compactFailures = 0
-	a.notify(strings.TrimSpace(a.msgs.CompactNothingFmt))
+	// Through a real notice site, not through the catalog field: the
+	// first version of this test printed a.msgs.CompactNothingFmt and
+	// asserted it was Japanese, which is a restatement of New's
+	// assignment — removing a.msgs from compact.go would have left it
+	// green (pre-release review).
+	a.autoCompact, a.compactAtPct = true, 80
+	a.window, a.lastPrompt = 1000, 950
+	for i := 0; i < 12; i++ {
+		a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: "x"})
+	}
+	a.maybeAutoCompact(context.Background())
 
 	if len(notices) != 1 {
-		t.Fatalf("notices = %v", notices)
+		t.Fatalf("notices = %v — the auto-compaction path wrote nothing", notices)
 	}
-	if strings.Contains(notices[0], "context is at") {
+	if strings.Contains(notices[0], "context reached") {
 		t.Errorf("a Japanese session got the English catalog: %q", notices[0])
 	}
-	if !strings.Contains(notices[0], "/clear") {
-		t.Errorf("the next command did not survive translation: %q", notices[0])
+	if !strings.Contains(notices[0], "要約") {
+		t.Errorf("the notice is not the Japanese one: %q", notices[0])
 	}
 }
 

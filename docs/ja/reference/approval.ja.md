@@ -148,7 +148,7 @@ answered …`・`rejected the call …`・`gem-agent could not complete …`）�
 指示ファイル名への書込とプロジェクト外への書込を拒否し、通常の書込を許さなければ
 なりません。read レーンが落ちれば全コマンドが確認になり、write レーンが落ちればセッション
 は**未確認** — 全シェルコマンドはあなたが答え、バナーがどの期待が満たされなかったかを
-告げます。`/status` は測定した状態を示します。
+告げます。`/settings` は測定した状態を示します。
 
 資格情報一覧は有限集合です（`sandbox.CredentialFilters`）: `~/.ssh`・`~/.aws`・
 `~/.kube`・`~/.gnupg`・`~/.config/gcloud`・`~/.config/gh`・`~/.gemini`・`~/.codex`・
