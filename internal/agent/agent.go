@@ -20,6 +20,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/telemetry"
 	"github.com/nlink-jp/gem-agent/internal/tools"
+	"github.com/nlink-jp/gem-agent/internal/uitext"
 	"github.com/nlink-jp/nlk/guard"
 )
 
@@ -161,6 +162,10 @@ type Agent struct {
 	// startup and on /riskbook accept/reload/clear, hence mu.
 	rulebook string
 
+	// msgs is the operator's language for the notices this package
+	// writes mid-turn (ADR-0029). Never nil: New falls back to English,
+	// so a caller that does not care — every test — needs no wiring.
+	msgs *uitext.Messages
 	// instructionTools: results of these tools bypass the nonce wrap
 	// (ADR-0010). Set at construction, read-only afterwards.
 	instructionTools map[string]bool
@@ -262,6 +267,8 @@ type Options struct {
 	// MediaUpload stores an audio/video attachment in the operator's
 	// bucket and returns its gs:// URI (ADR-0027). nil = inline only.
 	MediaUpload func(ctx context.Context, f *os.File, name, mime string) (string, error)
+	// Msgs is the resolved UI catalog. Nil means English.
+	Msgs *uitext.Messages
 	// InstructionTools names tools whose results are instruction-grade
 	// rather than untrusted data, exempting them from the nonce wrap
 	// (ADR-0010: load_skill, whose reads are confined to operator-
@@ -300,6 +307,11 @@ type Options struct {
 // New creates an agent.
 func New(opts Options) *Agent {
 	defs, purposeTools := toolDefs(opts.Registry)
+	if opts.Msgs == nil {
+		// English, so a caller that never asked for a language still
+		// gets sentences rather than empty format strings.
+		opts.Msgs = uitext.For(uitext.EN)
+	}
 	return &Agent{
 		backend:       opts.Backend,
 		registry:      opts.Registry,
@@ -327,6 +339,7 @@ func New(opts Options) *Agent {
 		compactAtPct: opts.CompactAtPct,
 
 		instructionTools: toSet(opts.InstructionTools),
+		msgs:             opts.Msgs,
 		clipboard:        opts.ClipboardImage,
 		mediaUpload:      opts.MediaUpload,
 		telemetry:        opts.Telemetry,
@@ -702,7 +715,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 				return "", &RoundLimitError{Rounds: limit}
 			}
 			if limit >= roundCap {
-				return "", fmt.Errorf("the absolute round cap (%d rounds = %d× [agent].max_turns) stopped this turn — progress so far is saved in the conversation: say \"continue\" to resume where it left off", roundCap, roundCapMultiplier)
+				return "", fmt.Errorf("the round cap (%d rounds) stopped this turn — progress so far is saved: say \"continue\" to resume where it left off, or raise [agent].max_turns", roundCap)
 			}
 			if !a.roundIntervention(ctx, "round-limit", "", round, limit, roundCap) {
 				return "", fmt.Errorf("the turn was stopped at the round limit (%d rounds) — progress so far is saved in the conversation: say \"continue\" to resume where it left off, or raise [agent].max_turns", round)
@@ -735,7 +748,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			// trade — the error must at least say so.
 			if ctx.Err() == nil && strings.Contains(err.Error(), "400") {
 				if ref := a.firstURIAttachment(); ref != "" {
-					return "", fmt.Errorf("%w\n(note: the history replays uploaded media %s on every turn — if the bucket's lifecycle rules deleted it, /clear, or /compact until the attachment falls out of the kept tail)", err, ref)
+					return "", fmt.Errorf("%w\n(uploaded media %s is no longer readable — /clear to drop it from the history)", err, ref)
 				}
 			}
 			return "", err
@@ -776,7 +789,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			// only once, so a genuinely refused request still surfaces.
 			if resp.BlockReason != "" && filterRetries < maxFilterRetries {
 				filterRetries++
-				a.notify(fmt.Sprintf("content filter blocked the response (%s) — retrying once", resp.BlockReason))
+				a.notify(fmt.Sprintf(a.msgs.FilterRetryFmt, resp.BlockReason))
 				continue
 			}
 			return "", emptyResponseError(resp)
@@ -791,7 +804,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			if resp.BlockReason != "" {
 				why = resp.BlockReason
 			}
-			a.notify("the response was cut off mid-generation (" + why + ") — the answer may be incomplete")
+			a.notify(fmt.Sprintf(a.msgs.TruncatedFmt, why))
 		}
 
 		// The assistant turn is appended verbatim — including thought
@@ -926,7 +939,7 @@ func emptyResponseError(resp *llm.Response) error {
 		// attempt, and PROHIBITED_CONTENT comes from a filter the
 		// configurable categories do not cover. So the honest advice is
 		// "retry", not "change a setting".
-		return fmt.Errorf("the model provider's content filter blocked this exchange (%s). It fires intermittently on the same request, so sending it again often works; narrowing the request, or /clear to drop large documents from the context, helps too. [model].safety adjusts the configurable categories but does not cover this one",
+		return fmt.Errorf("the provider's content filter blocked this exchange (%s) — send it again, or /clear and narrow the request",
 			resp.BlockReason)
 	case resp.FinishReason == "MAX_TOKENS":
 		return fmt.Errorf("the model hit its output limit before answering (%d reasoning tokens spent); ask for something narrower, or lower [model].thinking (or pass --thinking low) so less of the limit goes to reasoning",
@@ -935,11 +948,15 @@ func emptyResponseError(resp *llm.Response) error {
 		return fmt.Errorf("the model stopped without answering: its response tripped a content filter (SAFETY); set [model].safety = \"relaxed\" or \"off\" if this is legitimate work, or rephrase")
 	case resp.FinishReason == "RECITATION":
 		return fmt.Errorf("the model stopped without answering (RECITATION: the answer looked like verbatim recitation); rephrase the request")
-	case resp.FinishReason != "" && resp.FinishReason != "STOP":
-		return fmt.Errorf("the model returned no text (finish reason %s); try rephrasing, or /clear to start a fresh conversation", resp.FinishReason)
 	default:
-		return fmt.Errorf("the model returned an empty response (no text, no tool calls; finish reason %q); try rephrasing, or /clear to start a fresh conversation",
-			resp.FinishReason)
+		// One message, not two: the pair differed only in whether the
+		// finish reason was quoted, and the operator's move is the same
+		// either way. What they can use is whether the model said why.
+		reason := resp.FinishReason
+		if reason == "" {
+			reason = "none reported"
+		}
+		return fmt.Errorf("the model returned no usable response (finish reason %s) — try rephrasing, or /clear to start a fresh conversation", reason)
 	}
 }
 
@@ -1529,7 +1546,7 @@ func (a *Agent) logRecord(kind string, data any) {
 			a.mu.Lock()
 			a.logDead = true
 			a.mu.Unlock()
-			a.notify("session transcript write failed (" + err.Error() + ") — recording stopped; this session can no longer be fully resumed")
+			a.notify(fmt.Sprintf(a.msgs.TranscriptFailedFmt, err))
 		}
 	}
 }

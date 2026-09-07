@@ -847,6 +847,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(stderr, "[⚠ %s]\n", msg)
 	}
 	ag = agent.New(agent.Options{
+		// The operator's language for the notices the agent writes
+		// mid-turn (ADR-0029 §3: they are chrome, not error chains).
+		Msgs: msgs,
 		// Accounting only (ADR-0057): the model name that goes into
 		// this session's usage records.
 		Model:    cfg.Model.Name,

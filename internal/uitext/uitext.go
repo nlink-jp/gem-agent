@@ -8,6 +8,14 @@
 // Deliberately NOT here (ADR-0029 §3): banner labels and "warning:"
 // lines (grep-stable log output), cobra --help, model-facing text, and
 // Go error chains.
+//
+// A notice the agent writes mid-turn IS here, and always was by §3's own
+// list — it names "/compact feedback" as cataloged, and auto-compaction
+// is that feedback from the other trigger. Until v0.72.0 the agent
+// simply never read this package, so the same event printed Japanese
+// when the operator asked for it and English when the runtime decided.
+// The line between the two: a sentence carrying the operator's next
+// command is chrome, whatever wrote it; a wrapped error chain is not.
 package uitext
 
 import "strings"
@@ -219,6 +227,32 @@ type Messages struct {
 	NothingToCompact string
 	// CompactedFmt reports a /compact: messages summarised, kept.
 	CompactedFmt string
+
+	// The notices the agent writes mid-turn. They were English-only
+	// until v0.72.0 — the same compaction printed Japanese when the
+	// operator asked for it and English when the runtime decided — and
+	// they belong here by §3's own reading: a sentence carrying the
+	// operator's next command is chrome, whatever wrote it.
+	//
+	// AutoCompactedFmt: window %, messages summarised, kept verbatim.
+	AutoCompactedFmt string
+	// CompactNothingFmt: window %, with nothing safe to summarise.
+	CompactNothingFmt string
+	// CompactFailedFmt: the cause.
+	CompactFailedFmt string
+	// CompactOffSuffix is appended to CompactFailedFmt once automatic
+	// compaction gives up for the session.
+	CompactOffSuffix string
+	// TranscriptFailedFmt: the cause. Resume is gone for this session.
+	TranscriptFailedFmt string
+	// FilterRetryFmt: the provider's block reason; one retry follows.
+	FilterRetryFmt string
+	// TruncatedFmt: why generation stopped early.
+	TruncatedFmt string
+	// RemoteFaultFmt: server, tool, identical failures in a row.
+	RemoteFaultFmt string
+	// RoundContinuingFmt: this round, and the cap it is counting to.
+	RoundContinuingFmt string
 	// UnknownCommandFmt: %s = the input that matched no command.
 	UnknownCommandFmt string
 	MCPNone           string // /mcp with nothing connected
@@ -396,16 +430,26 @@ keys:
   typing during a turn queues the text (! and / cannot be queued)
   approval dialog: arrows/Tab select · Enter confirm · y/n/N/a/p direct (N = deny with a reason)
 `,
-	AutoOn:            "auto-approve: ON — safe changes run unattended; risky ones still ask\n",
-	AutoOff:           "auto-approve: OFF — every change asks\n",
-	HistoryCleared:    "history cleared — the next message starts a fresh conversation\n",
-	NothingToCompact:  "nothing to compact yet — the conversation is still short",
-	CompactedFmt:      "compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
-	UnknownCommandFmt: "unknown command %q — /help lists commands\n",
-	MCPNone:           "no MCP servers connected — define them in ~/.config/gem-agent/mcp.json (global) or the project's .mcp.json (project; wins name collisions)\n",
-	MCPDisabled:       "MCP is disabled for this session ([mcp].enabled=false or --mcp off) — restart to enable it\n",
-	MCPReloadedFmt:    "mcp reloaded: %d server(s), %d tool(s)\n",
-	SkillsReloadedFmt: "skills reloaded: %d found\n",
+	AutoOn:           "auto-approve: ON — safe changes run unattended; risky ones still ask\n",
+	AutoOff:          "auto-approve: OFF — every change asks\n",
+	HistoryCleared:   "history cleared — the next message starts a fresh conversation\n",
+	NothingToCompact: "nothing to compact yet — the conversation is still short",
+	CompactedFmt:     "compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
+
+	AutoCompactedFmt:    "context reached %d%% of the window — compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
+	CompactNothingFmt:   "context is at %d%% of the window and nothing can be summarised yet — /clear starts a fresh conversation",
+	CompactFailedFmt:    "context compaction failed: %s",
+	CompactOffSuffix:    " — automatic compaction is off for this session; /compact retries by hand",
+	TranscriptFailedFmt: "session transcript write failed (%s) — recording stopped and this session can no longer be resumed; restart gem-agent to record again",
+	FilterRetryFmt:      "the provider's content filter blocked the response (%s) — retrying once",
+	TruncatedFmt:        "the response was cut off mid-generation (%s) — the answer may be incomplete",
+	RemoteFaultFmt:      "MCP server %q: %s failed %d times in a row with the same error — /mcp reload, or fix the server",
+	RoundContinuingFmt:  "round %d of %d — continuing",
+	UnknownCommandFmt:   "unknown command %q — /help lists commands\n",
+	MCPNone:             "no MCP servers connected — define them in ~/.config/gem-agent/mcp.json (global) or the project's .mcp.json (project; wins name collisions)\n",
+	MCPDisabled:         "MCP is disabled for this session ([mcp].enabled=false or --mcp off) — restart to enable it\n",
+	MCPReloadedFmt:      "mcp reloaded: %d server(s), %d tool(s)\n",
+	SkillsReloadedFmt:   "skills reloaded: %d found\n",
 
 	TrustHeaderFmt:           "\nnew project: %s\nthis project provides:\n",
 	TrustItemInstructionsFmt: "%s (loaded as your instructions)",
@@ -555,16 +599,26 @@ var ja = Messages{
   実行中の入力は次メッセージとして予約（! と / は予約不可）
   承認ダイアログ: ←→/Tab 選択 · Enter 決定 · y/n/N/a/p 直接（N = 理由を添えて拒否）
 `,
-	AutoOn:            "auto-approve: ON — 安全な変更は無人で実行します。危険なものは引き続き確認します\n",
-	AutoOff:           "auto-approve: OFF — すべての変更で確認します\n",
-	HistoryCleared:    "履歴をクリアしました — 次のメッセージから新しい会話が始まります\n",
-	NothingToCompact:  "まだ /compact の対象がありません — 会話がまだ短いためです",
-	CompactedFmt:      "古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",
-	UnknownCommandFmt: "未知のコマンド %q — /help に一覧があります\n",
-	MCPNone:           "MCP サーバー未接続 — ~/.config/gem-agent/mcp.json（グローバル）またはプロジェクトの .mcp.json（プロジェクト側が名前衝突で優先）で定義します\n",
-	MCPDisabled:       "MCP はこのセッションでは無効です（[mcp].enabled=false または --mcp off）— 有効化するには再起動してください\n",
-	MCPReloadedFmt:    "MCP を再接続しました: %d サーバー・%d ツール\n",
-	SkillsReloadedFmt: "skill を再読込しました: %d 件\n",
+	AutoOn:           "auto-approve: ON — 安全な変更は無人で実行します。危険なものは引き続き確認します\n",
+	AutoOff:          "auto-approve: OFF — すべての変更で確認します\n",
+	HistoryCleared:   "履歴をクリアしました — 次のメッセージから新しい会話が始まります\n",
+	NothingToCompact: "まだ /compact の対象がありません — 会話がまだ短いためです",
+	CompactedFmt:     "古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",
+
+	AutoCompactedFmt:    "コンテキストがウィンドウの %d%% に達したので、古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",
+	CompactNothingFmt:   "コンテキストはウィンドウの %d%% ですが、まだ要約できるものがありません — /clear で新しい会話を始められます",
+	CompactFailedFmt:    "コンテキストの要約に失敗しました: %s",
+	CompactOffSuffix:    " — このセッションでは自動要約を止めます; /compact で手動再試行できます",
+	TranscriptFailedFmt: "セッション記録の書き込みに失敗しました（%s）— 記録を停止したので、このセッションは再開できません; 記録を再開するには gem-agent を起動し直してください",
+	FilterRetryFmt:      "プロバイダのコンテンツフィルタが応答を遮断しました（%s）— 1 回だけ再試行します",
+	TruncatedFmt:        "応答が生成途中で打ち切られました（%s）— 回答が不完全な可能性があります",
+	RemoteFaultFmt:      "MCP サーバー %q: %s が同じエラーで %d 回連続して失敗しました — /mcp reload、またはサーバー側を修正してください",
+	RoundContinuingFmt:  "ラウンド %d / %d — 継続します",
+	UnknownCommandFmt:   "未知のコマンド %q — /help に一覧があります\n",
+	MCPNone:             "MCP サーバー未接続 — ~/.config/gem-agent/mcp.json（グローバル）またはプロジェクトの .mcp.json（プロジェクト側が名前衝突で優先）で定義します\n",
+	MCPDisabled:         "MCP はこのセッションでは無効です（[mcp].enabled=false または --mcp off）— 有効化するには再起動してください\n",
+	MCPReloadedFmt:      "MCP を再接続しました: %d サーバー・%d ツール\n",
+	SkillsReloadedFmt:   "skill を再読込しました: %d 件\n",
 
 	TrustHeaderFmt:           "\n新しいプロジェクト: %s\nこのプロジェクトの提供物:\n",
 	TrustItemInstructionsFmt: "%s（あなたへの指示として読み込まれます）",

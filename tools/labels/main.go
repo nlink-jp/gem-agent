@@ -93,9 +93,11 @@ func literals() {
 	// cmd is where most operator text lives; internal/agent is the other
 	// place that writes to the operator's screen (notices about
 	// compaction, the round ladder, a remote server's repeated fault).
+	var modelLines []string
 	for _, root := range []string{"cmd", "internal/agent"} {
-		collect(root, fset, &lines)
+		collect(root, fset, &lines, &modelLines)
 	}
+	sort.Strings(modelLines)
 	sort.Strings(lines)
 	// A literal reached through both its print call and the variable it
 	// was assembled into is one line, not two.
@@ -107,9 +109,44 @@ func literals() {
 		prev = l
 		fmt.Println(l)
 	}
+
+	// Kept apart, not dropped: this text is written FOR THE MODEL, and
+	// judging it against "a session fact plus the next command" is a
+	// category error that will send the next reader to rewrite prompts
+	// into operator chrome. It is printed so the document stays the
+	// whole of what these packages say, which is the point of the
+	// document.
+	fmt.Println()
+	fmt.Println("## Model-facing text — NOT judged by the operator criteria")
+	fmt.Println()
+	prev = ""
+	for _, l := range modelLines {
+		if l == prev {
+			continue
+		}
+		prev = l
+		fmt.Println(l)
+	}
 }
 
-func collect(root string, fset *token.FileSet, lines *[]string) {
+// modelFacing names the functions whose strings are written for the
+// model — tool descriptions, tool results, the notes the runtime puts
+// inside a function response. The split is per function, not per file:
+// cmd/info.go holds renderInfo (the model's) and versionLine (/version,
+// the operator's). A function added here disappears from the operator
+// read-through, so add one only after reading where its string goes.
+var modelFacing = map[string]bool{
+	"renderInfo": true, "registerMemoryTools": true, "registerSkillTool": true,
+	"expandSkillInput": true, "registerSummarizeTool": true, "registerAgenticSearch": true,
+	"registerWebTools": true, "registerAskTool": true, "registerMCPTools": true,
+	"wrapToolMessages": true, "runWithFloor": true, "evaluateProgress": true,
+	"remoteFaultNote": true, "newMCPIntake": true, "render": true,
+}
+
+// modelFacingFiles are files with nothing but model-facing text in them.
+var modelFacingFiles = map[string]bool{"cmd/mcpresult.go": true}
+
+func collect(root string, fset *token.FileSet, lines, modelLines *[]string) {
 	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 			return nil
@@ -118,7 +155,23 @@ func collect(root string, fset *token.FileSet, lines *[]string) {
 		if err != nil {
 			return nil
 		}
-		ast.Inspect(f, func(n ast.Node) bool {
+		for _, decl := range f.Decls {
+			out := lines
+			if modelFacingFiles[filepath.ToSlash(p)] {
+				out = modelLines
+			}
+			if fn, ok := decl.(*ast.FuncDecl); ok && modelFacing[fn.Name.Name] {
+				out = modelLines
+			}
+			inspect(decl, fset, out)
+		}
+		return nil
+	})
+}
+
+func inspect(root ast.Node, fset *token.FileSet, lines *[]string) {
+	{
+		ast.Inspect(root, func(n ast.Node) bool {
 			switch x := n.(type) {
 			case *ast.CallExpr:
 				name := calleeName(x.Fun)
@@ -161,8 +214,7 @@ func collect(root string, fset *token.FileSet, lines *[]string) {
 			}
 			return true
 		})
-		return nil
-	})
+	}
 }
 
 // What this still cannot see, stated so the next reader does not mistake

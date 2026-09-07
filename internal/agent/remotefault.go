@@ -54,7 +54,7 @@ func (a *Agent) remoteFault(name string, remote *tools.RemoteError, ran bool, ro
 		"count": f.count, "round": round, "error": clip(remote.Text, 300),
 	})
 	if f.count == mcpFaultThreshold {
-		a.notify(fmt.Sprintf("MCP server %q: %s has failed %d times in a row with the same error — the model has been told to report it to you",
+		a.notify(fmt.Sprintf(a.msgs.RemoteFaultFmt,
 			remote.Server, name, f.count))
 	}
 	return remoteFaultNote(name, remote, f.count)

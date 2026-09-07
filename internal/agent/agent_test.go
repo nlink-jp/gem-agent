@@ -293,7 +293,7 @@ func TestEmptyResponseDoesNotPoisonHistory(t *testing.T) {
 	if err == nil {
 		t.Fatal("an empty response should be reported as an error")
 	}
-	if !strings.Contains(err.Error(), "empty response") {
+	if !strings.Contains(err.Error(), "no usable response") {
 		t.Errorf("error should name the cause: %v", err)
 	}
 	for i, m := range a.history {

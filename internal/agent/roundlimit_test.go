@@ -100,7 +100,10 @@ func TestRoundCapIsCeiling(t *testing.T) {
 	b := &rlBackend{responses: loopRounds(50), verdict: progressingVerdict}
 	a := newRLAgent(t, b, 2, nil)
 	_, err := a.Run(context.Background(), "q", nil)
-	if err == nil || !strings.Contains(err.Error(), "absolute round cap") {
+	// The message names the cap and the remedy; the wording is the
+	// catalog's business, the facts are this test's.
+	if err == nil || !strings.Contains(err.Error(), "round cap") ||
+		!strings.Contains(err.Error(), "[agent].max_turns") {
 		t.Fatalf("err = %v", err)
 	}
 	if cap := 2 * roundCapMultiplier; b.calls != cap {
@@ -151,7 +154,10 @@ func TestRoundLimitAutoContinues(t *testing.T) {
 	if called {
 		t.Error("auto mode with a confident verdict must not open the dialog")
 	}
-	if len(notices) == 0 || !strings.Contains(notices[0], "progress review") {
+	// The operator is told the turn continued and where it is against
+	// the cap. The reviewer's own prose is deliberately not in it: it is
+	// model-generated text, and operator chrome is not the place for it.
+	if len(notices) == 0 || !strings.Contains(notices[0], "continuing") {
 		t.Errorf("auto-continue notice missing: %v", notices)
 	}
 }

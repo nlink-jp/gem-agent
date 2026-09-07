@@ -110,7 +110,10 @@ func TestNonInteractiveContinueNotifies(t *testing.T) {
 	if _, err := a.Run(context.Background(), "q", nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(notices) == 0 || !strings.Contains(notices[0], "progress review says progressing") {
+	// ADR-0040 §2: a silent extension is not transparent. What the
+	// operator needs is that it continued and how far it can go — not
+	// the reviewer's own prose, which is model-generated.
+	if len(notices) == 0 || !strings.Contains(notices[0], "continuing") {
 		t.Errorf("silent extension: notices = %v", notices)
 	}
 }

@@ -2,6 +2,23 @@
 
 ## [0.72.0] - 2026-09-08
 
+### Fixed
+
+- The notices gem-agent writes while a turn runs now follow
+  `[tui].language` like the rest of the chrome. They were English-only:
+  compacting by hand printed Japanese and the runtime compacting for you
+  printed English, for the same event, in the same session. Their wording
+  changed with the move — each one now states what happened and what to
+  type, and nothing else. The round-limit notice no longer splices the
+  progress reviewer's own prose into the runtime's line; the repeated-MCP-
+  failure notice names `/mcp reload` instead of telling you that the model
+  has been told to tell you; the transcript-write failure says how to
+  start recording again; the content-filter, round-cap and media-replay
+  errors lost their explanations of why the remedy works and kept the
+  remedy; and the two near-identical "the model returned nothing" errors
+  are one. Turn-ending errors stay English by ADR-0029 §3 — a translated
+  prefix on an English library chain is the mixing that ADR removed
+
 ### Added
 
 - `[mcp].exclude` names what a session does not have: an MCP server, or

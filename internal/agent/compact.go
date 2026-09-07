@@ -243,7 +243,7 @@ func (a *Agent) maybeAutoCompact(ctx context.Context) {
 	case errors.Is(err, ErrNothingToCompact):
 		if !a.warnedNoCut {
 			a.warnedNoCut = true
-			a.notify(fmt.Sprintf("context is at %d%% of the window but there is nothing safe to compact yet — /clear starts fresh if a turn fails", pct))
+			a.notify(fmt.Sprintf(a.msgs.CompactNothingFmt, pct))
 		}
 		return
 	case err != nil:
@@ -251,16 +251,15 @@ func (a *Agent) maybeAutoCompact(ctx context.Context) {
 			return // interrupted, not failed
 		}
 		a.compactFailures++
-		msg := "context compaction failed: " + err.Error()
+		msg := fmt.Sprintf(a.msgs.CompactFailedFmt, err)
 		if a.compactFailures >= maxCompactFailures {
 			a.SetAutoCompact(false)
-			msg += " — automatic compaction is off for this session (/compact retries by hand)"
+			msg += a.msgs.CompactOffSuffix
 		}
 		a.notify(msg)
 		return
 	}
 	a.compactFailures = 0
 	a.warnedNoCut = false
-	a.notify(fmt.Sprintf("context reached %d%% of the window — compacted %d earlier messages into a summary (%d kept verbatim). Detail from the summarised part is now second-hand",
-		pct, res.Replaced, res.After-1))
+	a.notify(fmt.Sprintf(a.msgs.AutoCompactedFmt, pct, res.Replaced, res.After-1))
 }

@@ -64,7 +64,7 @@ func TestFailedConversationWriteStopsTranscript(t *testing.T) {
 
 	a.appendMessage(llm.Message{Role: llm.RoleUser, Content: "lost"})
 
-	if len(notices) != 1 || !strings.Contains(notices[0], "no longer be fully resumed") {
+	if len(notices) != 1 || !strings.Contains(notices[0], "can no longer be resumed") {
 		t.Fatalf("notices = %v — the operator must hear that resume is broken", notices)
 	}
 	// Later writes are skipped even after the log recovers: a gap in the

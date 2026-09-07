@@ -164,16 +164,14 @@ func (a *Agent) roundIntervention(ctx context.Context, trigger, detail string, r
 		// and a silent extension is not transparent, so it says so.
 		decision, source = confident, "review"
 		if decision {
-			a.notify(fmt.Sprintf("round %d: progress review says progressing (%s) — continuing, hard cap %d rounds",
-				round, info.Reason, cap))
+			a.notify(fmt.Sprintf(a.msgs.RoundContinuingFmt, round, cap))
 		}
 	case a.AutoApprove() && confident:
 		// Auto mode exists to reduce interruptions (operator
 		// direction): a confident "progressing" continues with a
 		// visible notice instead of a dialog.
 		decision, source = true, "auto"
-		a.notify(fmt.Sprintf("round %d: progress review says progressing (%s) — continuing, hard cap %d rounds",
-			round, info.Reason, cap))
+		a.notify(fmt.Sprintf(a.msgs.RoundContinuingFmt, round, cap))
 	default:
 		decision, source = a.onRoundLimit(ctx, info), "operator"
 	}

@@ -288,7 +288,7 @@ func TestEmptyResponseErrorNamesTheCause(t *testing.T) {
 		{llm.Response{BlockReason: "PROHIBITED_CONTENT"}, "PROHIBITED_CONTENT"},
 		{llm.Response{FinishReason: "MAX_TOKENS", ThoughtTokens: 4096}, "output limit"},
 		{llm.Response{FinishReason: "SAFETY"}, "SAFETY"},
-		{llm.Response{}, "empty response"},
+		{llm.Response{}, "no usable response"},
 	}
 	for _, c := range cases {
 		resp := c.resp
@@ -337,7 +337,9 @@ func TestContentFilterBlockRetriesOnce(t *testing.T) {
 	}}
 	a2 := New(Options{Backend: b2, Registry: reg, Gate: &recordingGate{}, System: "s", MaxTurns: 5})
 	_, err = a2.Run(context.Background(), "write the runbook", nil)
-	if err == nil || !strings.Contains(err.Error(), "sending it again often works") {
+	// The advice is "send it again" — the sentence explaining WHY that
+	// works was a rationale clause and is gone; the command is not.
+	if err == nil || !strings.Contains(err.Error(), "send it again") {
 		t.Errorf("second block should report with retry advice: %v", err)
 	}
 }
