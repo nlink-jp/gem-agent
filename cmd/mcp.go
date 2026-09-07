@@ -214,7 +214,9 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 	}
 	defer func() {
 		for _, note := range filter.Unmatched(configured, listed) {
-			fmt.Fprintf(stderr, "warning: [mcp] exclude: %s\n", note)
+			// The fact and the next command on one line: a stale entry
+			// is doing nothing, and the line says where to fix it.
+			fmt.Fprintf(stderr, "warning: [mcp] exclude: %s — remove it or correct the name\n", note)
 		}
 	}()
 
