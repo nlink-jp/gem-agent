@@ -8,6 +8,15 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator: "it is probably time for a `/` command that manages settings visually" |
 
+*Amended by ADR-0077 — decision 1 only: the rows are two-level, a server
+and then its tools, and the approval rows adopt it (`[approval.tools]`
+has taken `mcp__server__*` since ADR-0008 §3). Flat, the rows run to two
+hundred on a machine with a full server list, and a server that is not
+running could not be offered at all. Decisions 2, 3 and 4 stand as
+written and ADR-0077 reuses them: the tool set is editable because it
+can take effect now, which is decision 2's own test, and its persisted
+form goes to the machine-owned `policy.toml` of decision 3.*
+
 ## Context
 
 Configuration is resolved through four layers — flags, `GEMAGENT_*`,
