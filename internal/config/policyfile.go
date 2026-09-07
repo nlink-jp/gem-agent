@@ -41,6 +41,18 @@ const policyFileHeader = `# gem-agent approval policy — WRITTEN BY gem-agent.
 type PolicyFile struct {
 	Tools    map[string]string        `toml:"tools"`
 	Projects map[string]ProjectPolicy `toml:"projects"`
+	// MCP carries what the panel excluded (ADR-0077). It is global, not
+	// per project: the operator's judgement about what a server's
+	// functions are for does not change when they cd elsewhere.
+	MCP PolicyMCP `toml:"mcp"`
+}
+
+// PolicyMCP is policy.toml's [mcp] table: the exclusions the panel
+// wrote. Per server it replaces config.toml's word entirely — what the
+// operator last said in the panel is not merged with the file they
+// wrote last month (ADR-0077 §2).
+type PolicyMCP struct {
+	Exclude []string `toml:"exclude"`
 }
 
 // Trust values for ProjectPolicy.Trust (ADR-0023).

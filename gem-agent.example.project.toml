@@ -1,9 +1,10 @@
 # gem-agent project policy — copy to <project>/.gem-agent.toml
 #
-# This file carries the per-tool approval policy (ADR-0008) and nothing
-# else. Model, credentials, and the sandbox switch stay in your own
-# ~/.config/gem-agent/config.toml, where a checked-out repository cannot
-# reach them; an unknown key here is an error, not an ignored line.
+# This file carries the per-tool approval policy (ADR-0008) and the MCP
+# exclusions of ADR-0077, and nothing else. Model, credentials, and the
+# sandbox switch stay in your own ~/.config/gem-agent/config.toml, where
+# a checked-out repository cannot reach them; an unknown key here is an
+# error, not an ignored line.
 #
 # Direction matters:
 #   "always" (more approvals) is honoured in any project.
@@ -19,3 +20,10 @@
 
 # Needs the project to be trusted; ignored (with a note) otherwise.
 #"mcp__tor-exit-lookup__*" = "never"
+
+[mcp]
+# Tools this project does not get (ADR-0077): a server, or one function
+# of one server. A project file may only ADD to the exclusions your own
+# config and the settings panel already carry — it can never bring back
+# something they removed, which is why it needs no trust condition.
+#exclude = ["chrome-pilot", "obsidian/patch_vault_file"]

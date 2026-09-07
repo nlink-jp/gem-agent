@@ -25,6 +25,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/hooks"
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/mcpfilter"
 	"github.com/nlink-jp/gem-agent/internal/mediastore"
 	"github.com/nlink-jp/gem-agent/internal/memory"
 	"github.com/nlink-jp/gem-agent/internal/mention"
@@ -215,6 +216,17 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// trusted: a checked-out repository must not be able to switch the
 	// gate off.
 	projectCfg, projectMayLoosen, err := loadProjectConfig(cfg, projectDir, grant)
+	if err != nil {
+		return err
+	}
+	// The MCP tool filter (ADR-0077): what this session does not have.
+	// Built once — the reload re-derives what it removes, but the files
+	// it is built from are config, and config changes need a restart
+	// like every other key. A malformed entry refuses to start: an
+	// exclusion that does not do what it says is worse than none, and
+	// falling back to "exclude nothing" would silently hand back the
+	// write functions the operator took away.
+	mcpFilter, err := mcpfilter.Build(cfg.MCP.Exclude, policyFile.MCP.Exclude, projectCfg.MCP.Exclude)
 	if err != nil {
 		return err
 	}
@@ -479,7 +491,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- MCP servers from the project's .mcp.json (drop-in) ---
-	mcpClients, mcpSummary, _ := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, grant)
+	mcpClients, mcpSummary, _ := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, grant, mcpFilter)
 	defer func() {
 		for _, c := range mcpClients {
 			c.Close()
@@ -1053,7 +1065,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(&warn, "%s\n", n)
 			}
 		}
-		mcpClients, mcpSummary, _ = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, grant)
+		mcpClients, mcpSummary, _ = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, grant, mcpFilter)
 		ag.RefreshTools()
 		mcpTools := 0
 		for _, t := range registry.List() {

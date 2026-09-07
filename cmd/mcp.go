@@ -14,6 +14,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/mcp"
+	"github.com/nlink-jp/gem-agent/internal/mcpfilter"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
@@ -118,6 +119,28 @@ func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Too
 	return added, errs
 }
 
+// splitByFilter divides one server's advertised tools into what the
+// session declares and what it does not (ADR-0077 §1). It answers in
+// three parts: every function name the server offered (what a stale
+// exclusion is checked against), the tools to register, and the REGISTRY
+// names of the excluded ones — the filter matches the name the server
+// spells, while the transcript and the executor see gem-agent's
+// sanitized `mcp__server__tool`, and confusing the two would file the
+// exclusion under a name no call ever carries.
+func splitByFilter(server string, list []mcp.Tool, filter mcpfilter.Filter) (offered []string, kept []mcp.Tool, excluded []string) {
+	offered = make([]string, 0, len(list))
+	kept = make([]mcp.Tool, 0, len(list))
+	for _, t := range list {
+		offered = append(offered, t.Name)
+		if filter.Func(server, t.Name) {
+			excluded = append(excluded, mcpToolName(server, t.Name))
+			continue
+		}
+		kept = append(kept, t)
+	}
+	return offered, kept, excluded
+}
+
 // connectMCPServers loads the global (~/.config/gem-agent/mcp.json) and
 // project (.mcp.json) server lists — the project entry wins a name
 // collision — and registers every reachable server's tools. Failures on
@@ -126,7 +149,7 @@ func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Too
 // scopes maps each connected server to "global" or "project" — kept
 // for consumers that must not treat a project-supplied server like an
 // operator-installed one (none today; /learn was, before ADR-0049).
-func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, version string, registry *tools.Registry, stderr io.Writer, grant projectGrant) (clients []*mcp.Client, summary []string, scopes map[string]string) {
+func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, version string, registry *tools.Registry, stderr io.Writer, grant projectGrant, filter mcpfilter.Filter) (clients []*mcp.Client, summary []string, scopes map[string]string) {
 	if !cfg.MCP.Enabled {
 		return nil, nil, nil
 	}
@@ -166,8 +189,30 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 	}
 	sort.Strings(names)
 
+	// What the filter is checked against, so a stale entry can be told
+	// from one that did its work (ADR-0077 §2): every configured server,
+	// and the function names of the ones that actually listed.
+	configured := make(map[string]bool, len(names))
+	listed := map[string][]string{}
+	for _, name := range names {
+		configured[name] = true
+	}
+	defer func() {
+		for _, note := range filter.Unmatched(configured, listed) {
+			fmt.Fprintf(stderr, "warning: [mcp] exclude: %s\n", note)
+		}
+	}()
+
 	timeout := time.Duration(cfg.MCP.CallTimeoutSec) * time.Second
 	for _, name := range names {
+		// An excluded server is not started at all: no process, no
+		// credentials touched, nothing of it in the declarations
+		// (ADR-0077 §1). Its row still comes from .mcp.json, so it can
+		// be turned back on without having been running.
+		if filter.Server(name) {
+			summary = append(summary, fmt.Sprintf("%s [%s] (not started — excluded)", name, scopes[name]))
+			continue
+		}
 		client := mcp.NewStdio(name, servers[name], timeout, version)
 		lctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		toolList, err := client.ListTools(lctx)
@@ -177,16 +222,37 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 			client.Close()
 			continue
 		}
-		added, errs := registerMCPTools(registry, client, toolList)
+		offered, kept, excluded := splitByFilter(name, toolList, filter)
+		for _, n := range excluded {
+			// Not registered. The name is kept so the transcript can say
+			// the operator removed it (ADR-0077 §5).
+			registry.NoteExcluded(n)
+		}
+		removed := len(excluded)
+		listed[name] = offered
+
+		added, errs := registerMCPTools(registry, client, kept)
 		for _, e := range errs {
 			fmt.Fprintf(stderr, "warning: MCP server %s: %s\n", name, e)
 		}
 		if len(added) == 0 {
+			if removed > 0 {
+				// Every function excluded is a choice, not a fault: the
+				// server keeps running for nothing, which is what §1
+				// says an empty function list means.
+				clients = append(clients, client)
+				summary = append(summary, fmt.Sprintf("%s [%s] (0 of %d tools — all excluded)", name, scopes[name], len(toolList)))
+				continue
+			}
 			fmt.Fprintf(stderr, "warning: MCP server %s advertises no usable tools\n", name)
 			client.Close()
 			continue
 		}
 		clients = append(clients, client)
+		if removed > 0 {
+			summary = append(summary, fmt.Sprintf("%s [%s] (%d of %d tools)", name, scopes[name], len(added), len(toolList)))
+			continue
+		}
 		summary = append(summary, fmt.Sprintf("%s [%s] (%d tools)", name, scopes[name], len(added)))
 	}
 	return clients, summary, scopes

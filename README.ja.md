@@ -139,7 +139,10 @@ Claude Code 形式 `.mcp.json` の MCP サーバー（グローバル +
 （ロードした skill は Claude Code と同じく自分のディレクトリを名乗る
 ので自前のスクリプトが走る）— どちらもセッション中に再読込可能
 （`/mcp reload`・`/skills reload`）、
-`--mcp on|off` で実行単位の MCP 切替。
+`--mcp on|off` で実行単位の MCP 切替。`[mcp].exclude` は、そのセッションが
+持たない MCP サーバー、あるいはその配下の個々のファンクションを名指す ——
+除外されたサーバーは起動されず、除外されたファンクションは宣言されないので、
+read と write が同居するサーバーを read 側だけで使える（ADR-0077）。
 
 **[設定](docs/ja/reference/configuration.ja.md)** — 設定リファレンス
 全体、優先順位、CLI フラグ、コンテンツフィルタの挙動、エンドポイント

@@ -60,6 +60,7 @@ compact_at_pct = 80        # default; share of the window that triggers it
 [mcp]
 enabled = true             # default; false disables ALL MCP servers
 call_timeout_sec = 60      # default
+# exclude = ["chrome-pilot", "obsidian/patch_vault_file"]   # see below
 
 [tui]
 theme = "auto"             # auto | dark | light | plain
@@ -279,6 +280,56 @@ variables exist for debugging and are read directly, outside the config
 file: `GEMAGENT_MCP_STDERR=1` forwards MCP servers' stderr to the
 terminal, and `RUNEWIDTH_EASTASIAN` overrides the pinned width model
 used to measure box art under a CJK locale.
+
+
+### `[mcp].exclude` — what this session does not have
+
+An entry is a **server**, or **one function of one server**:
+
+```toml
+[mcp]
+exclude = [
+  "chrome-pilot",                 # a whole server
+  "obsidian/patch_vault_file",    # one function of a server
+  "obsidian/search_and_replace",
+]
+```
+
+Everything not named is declared, so an empty list is the behaviour you
+have today and `.mcp.json` keeps the meaning it has.
+
+- **A server named here is never started**: no process, no credentials
+  touched, nothing of it in the tool declarations. It still appears in
+  `/mcp` — the entry comes from `.mcp.json`, not from the server — so
+  you can put it back without it ever having run.
+- **A function named here is not declared.** The server keeps running
+  for its other functions; turning off the last one leaves it running
+  and declaring nothing. Stopping a process is the server-level entry's
+  job, not something arithmetic arrives at behind you.
+- **Names are exact. There are no patterns** — naming a server already
+  means all of it, and a pattern inside a server (`search_*`) would
+  quietly cover `search_and_replace`.
+- **A name that matches nothing is reported at startup**, so a server or
+  function renamed upstream does not leave a line that does nothing.
+- **Built-in tools cannot be excluded.** Removing a reviewable built-in
+  pushes the same work into `shell_exec` and shell redirection, which is
+  less reviewable, not more contained.
+
+Three files may carry the key, and **per server, the nearest one decides
+whole**: if `policy.toml` (written by the settings panel) says anything
+about a server, `config.toml`'s word about that server is not consulted.
+A project's `.gem-agent.toml` may only **add** — it can never bring back
+something the other two removed, which is why it needs no trust
+condition. A malformed entry refuses to start: an exclusion that does not
+do what it says is worse than none.
+
+What it is worth, exactly: **this runtime will not emit a call to a name
+you excluded.** It does not confine the server — the capability is still
+there, your credentials still reach it, and a function that reads may
+write as a side effect. It also does not follow a rename: a function
+excluded as `patch_vault_file` that comes back as `write_note` is
+declared again. MCP publishes no capability a client could filter on, so
+the function name is the only place the intent can be said (ADR-0077).
 
 ## CLI flags
 

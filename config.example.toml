@@ -206,6 +206,24 @@ enabled = true
 # child is killed and respawned on the next call (MCP has no cancel).
 call_timeout_sec = 60
 
+# What this session does not have (ADR-0077). An entry is a server, or
+# one function of one server; everything not named here is declared, so
+# leaving this empty is today's behaviour and .mcp.json keeps the
+# meaning it has. An excluded server is never started — no process, no
+# credentials touched — and it still appears in /mcp, so you can put it
+# back. Names are exact: no patterns, because naming a server already
+# means all of it. A name that matches nothing is reported at startup.
+#
+# MCP has no capability declaration to filter on — a tool is a name, a
+# description and schemas — so the function name is the only place your
+# intent can be said. That is also the limit: this removes the name, not
+# the capability, and it does not follow a function that is renamed.
+#exclude = [
+#  "chrome-pilot",                 # a whole server: not started
+#  "obsidian/patch_vault_file",    # one function of a server
+#  "obsidian/search_and_replace",
+#]
+
 [tui]
 # Interactive UI theme: "auto" detects the terminal background at
 # startup, "dark"/"light" force it when detection guesses wrong, and

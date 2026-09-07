@@ -30,7 +30,9 @@ tier), `internal/policy` (per-tool approval policy, plus the
 per-command vocabulary of ADR-0045 — parsed for file compatibility but
 not applied since ADR-0049), `internal/riskbook` (the layered risk
 rulebook and its learning tool — ADR-0050), `internal/mcp`
-(stdio JSON-RPC client), `internal/mention` (`@`-references),
+(stdio JSON-RPC client), `internal/mcpfilter` (the one predicate behind
+`[mcp] exclude`: is this server, or this function of it, part of the
+session — ADR-0077), `internal/mention` (`@`-references),
 `internal/instructions` (`AGENTS.md` discovery), `internal/ignore`
 (ignore-aware enumeration: builtin dir list + gitignore matcher —
 ADR-0052), `internal/session`

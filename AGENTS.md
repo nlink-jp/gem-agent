@@ -66,6 +66,9 @@ internal/bounded/  the one place a read, listing or process output is capped —
 internal/archtest/ AST tests pinning confined opens, bounded reads and the
                    single decision point (ADR-0073 §4)
 internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
+internal/mcpfilter/ the one predicate behind `[mcp] exclude` (ADR-0077): is this
+                   server, or this function of it, part of the session? Pure — the two
+                   call sites are the connect loop (cmd/mcp.go) and the executor
 internal/ignore/   ignore-aware enumeration (ADR-0052): builtin dir list + full
                    gitignore matcher (in-repo, git check-ignore cross-checked)
 internal/risk/     rule tier of the auto-approve ladder (pure, no model); exact

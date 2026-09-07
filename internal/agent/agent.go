@@ -1132,6 +1132,16 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 	}
 	tool, ok := a.registry.Get(tc.Name)
 	if !ok {
+		if a.registry.Excluded(tc.Name) {
+			// The operator removed this one from the session (ADR-0077).
+			// The model is told what every unresolved name is told: a
+			// tool that was excluded and a tool that never existed are
+			// the same fact from where it stands, and giving the first
+			// its own wording would be "blocked by policy" under another
+			// name. The distinction is kept here, for the operator who
+			// drew the line.
+			a.logRecord("tool_excluded", map[string]any{"name": tc.Name})
+		}
 		return fmt.Sprintf("error: unknown tool %q", tc.Name), false, false, floorRan, nil
 	}
 	// Operator pre-tool hooks run before the ladder (ADR-0044 §2): the

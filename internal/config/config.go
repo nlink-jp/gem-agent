@@ -81,6 +81,15 @@ type ApprovalConfig struct {
 // config, where a checked-out repository cannot reach them.
 type ProjectConfig struct {
 	Approval ProjectApproval `toml:"approval"`
+	MCP      ProjectMCP      `toml:"mcp"`
+}
+
+// ProjectMCP is the project file's [mcp] table. It carries `exclude`
+// and nothing else: a project may only REMOVE tools from the session
+// (ADR-0077 §2), which is why it needs no trust condition — narrowing
+// is the only composition available to it.
+type ProjectMCP struct {
+	Exclude []string `toml:"exclude"`
 }
 
 // ProjectApproval is the project file's [approval] table.
@@ -118,7 +127,7 @@ func LoadProject(dir string) (*ProjectConfig, error) {
 		for i, k := range undecoded {
 			keys[i] = k.String()
 		}
-		return nil, fmt.Errorf("unknown key(s) in %s: %s (this file carries [approval.tools] only)",
+		return nil, fmt.Errorf("unknown key(s) in %s: %s (this file carries [approval.tools] and [mcp].exclude only)",
 			path, strings.Join(keys, ", "))
 	}
 	return &cfg, nil
@@ -197,6 +206,12 @@ type TelemetryConfig struct {
 type MCPConfig struct {
 	Enabled        bool `toml:"enabled"`
 	CallTimeoutSec int  `toml:"call_timeout_sec"`
+	// Exclude names MCP servers, or single functions of them
+	// ("obsidian/patch_vault_file"), that this session does not have
+	// (ADR-0077). An excluded server is never started. Everything not
+	// named here is declared, so an operator who sets nothing sees
+	// today's behaviour and .mcp.json keeps the meaning it has.
+	Exclude []string `toml:"exclude"`
 }
 
 // GCPConfig identifies the Vertex AI project.

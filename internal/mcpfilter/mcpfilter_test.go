@@ -1,0 +1,194 @@
+package mcpfilter
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestParse(t *testing.T) {
+	for _, tc := range []struct {
+		in     string
+		server string
+		fn     string
+		err    string
+	}{
+		{in: "obsidian", server: "obsidian"},
+		{in: "  obsidian  ", server: "obsidian"},
+		{in: "obsidian/patch_vault_file", server: "obsidian", fn: "patch_vault_file"},
+		{in: "", err: "empty entry"},
+		{in: "   ", err: "empty entry"},
+		{in: "mcp__obsidian__search_*", err: "no patterns"},
+		{in: "obsidian/", err: "both sides"},
+		{in: "/patch", err: "both sides"},
+		{in: "a/b/c", err: "at most"},
+	} {
+		got, err := Parse(tc.in, FromConfig)
+		if tc.err != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.err) {
+				t.Errorf("Parse(%q) error = %v, want containing %q", tc.in, err, tc.err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("Parse(%q) unexpected error: %v", tc.in, err)
+			continue
+		}
+		if got.Server != tc.server || got.Func != tc.fn {
+			t.Errorf("Parse(%q) = %+v, want server %q func %q", tc.in, got, tc.server, tc.fn)
+		}
+	}
+}
+
+func TestEmptyFilterExcludesNothing(t *testing.T) {
+	f, err := Build(nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.Empty() {
+		t.Error("a filter with no entries is not Empty")
+	}
+	if f.Server("obsidian") || f.Func("obsidian", "anything") {
+		t.Error("an empty filter excluded something")
+	}
+}
+
+func TestServerAndFunc(t *testing.T) {
+	f, err := Build([]string{"chrome-pilot", "obsidian/patch_vault_file"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.Server("chrome-pilot") {
+		t.Error("whole-server entry did not exclude the server")
+	}
+	if !f.Func("chrome-pilot", "anything") {
+		t.Error("an excluded server's functions are excluded with it")
+	}
+	if f.Server("obsidian") {
+		t.Error("a function entry stopped a server — it must not (§1)")
+	}
+	if !f.Func("obsidian", "patch_vault_file") {
+		t.Error("function entry did not exclude the function")
+	}
+	if f.Func("obsidian", "get_vault_file") {
+		t.Error("function entry excluded a sibling")
+	}
+}
+
+// Per server, the nearest scope decides whole (ADR-0077 §2): policy
+// replaces config for that server, and leaves every other server alone.
+func TestPolicyReplacesConfigPerServer(t *testing.T) {
+	f, err := Build(
+		[]string{"obsidian/patch_vault_file", "obsidian/search_and_replace", "github"},
+		[]string{"obsidian/delete_vault_file"},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.Func("obsidian", "delete_vault_file") {
+		t.Error("policy entry not in force")
+	}
+	if f.Func("obsidian", "patch_vault_file") || f.Func("obsidian", "search_and_replace") {
+		t.Error("config entries for a server policy speaks about were merged, not replaced")
+	}
+	if !f.Server("github") {
+		t.Error("policy about obsidian disturbed the config's word about github")
+	}
+}
+
+// The project file may only add (ADR-0008 §4's direction rule, held by
+// construction): it can never bring back something a nearer scope excluded.
+func TestProjectOnlyAdds(t *testing.T) {
+	f, err := Build([]string{"obsidian/patch_vault_file"}, nil, []string{"github", "obsidian/get_vault_file"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.Server("github") {
+		t.Error("project entry did not add a server exclusion")
+	}
+	for _, fn := range []string{"patch_vault_file", "get_vault_file"} {
+		if !f.Func("obsidian", fn) {
+			t.Errorf("project entry replaced instead of adding: %s lost", fn)
+		}
+	}
+}
+
+func TestProjectAddsOnTopOfPolicy(t *testing.T) {
+	f, err := Build(nil, []string{"obsidian/delete_vault_file"}, []string{"obsidian/patch_vault_file"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.Func("obsidian", "delete_vault_file") || !f.Func("obsidian", "patch_vault_file") {
+		t.Error("project entries must union with the policy's, not replace them")
+	}
+}
+
+func TestBuildRejectsBadEntryWithScope(t *testing.T) {
+	_, err := Build(nil, nil, []string{"a/b/c"})
+	if err == nil {
+		t.Fatal("a malformed entry was accepted")
+	}
+	if !strings.Contains(err.Error(), string(FromProject)) {
+		t.Errorf("error does not name the scope it came from: %v", err)
+	}
+}
+
+func TestUnmatchedNamesWhatMatchedNothing(t *testing.T) {
+	f, err := Build(
+		[]string{"typo-server", "obsidian/renamed_away", "obsidian/patch_vault_file"},
+		nil, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured := map[string]bool{"obsidian": true, "github": true}
+	listed := map[string][]string{
+		"obsidian": {"patch_vault_file", "get_vault_file"},
+		"github":   {"list_issues"},
+	}
+	got := f.Unmatched(configured, listed)
+	if len(got) != 2 {
+		t.Fatalf("Unmatched = %v, want two entries", got)
+	}
+	joined := strings.Join(got, "\n")
+	if !strings.Contains(joined, "typo-server") || !strings.Contains(joined, "renamed_away") {
+		t.Errorf("Unmatched did not name both stale entries: %v", got)
+	}
+	if strings.Contains(joined, "patch_vault_file") {
+		t.Errorf("Unmatched reported an entry that did its work: %v", got)
+	}
+}
+
+// An excluded server is configured but never started: naming it, and
+// naming one of its functions, are both correct — neither is stale.
+func TestUnmatchedIsSilentForServersThatDidNotList(t *testing.T) {
+	f, err := Build([]string{"chrome-pilot", "chrome-pilot/take_screenshot"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured := map[string]bool{"chrome-pilot": true, "obsidian": true}
+	listed := map[string][]string{"obsidian": {"get_vault_file"}}
+	if got := f.Unmatched(configured, listed); len(got) != 0 {
+		t.Fatalf("Unmatched = %v, want nothing: the server is configured, just not started", got)
+	}
+}
+
+func TestUnmatchedIsDeduped(t *testing.T) {
+	f, err := Build([]string{"ghost"}, nil, []string{"ghost"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.Unmatched(map[string]bool{}, map[string][]string{}); len(got) != 2 {
+		// The same server named in two scopes is two distinct lines
+		// (they carry different scope labels) — dedupe only collapses
+		// byte-identical ones.
+		t.Logf("Unmatched = %v", got)
+	}
+	f2, err := Build([]string{"ghost", "ghost"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f2.Unmatched(map[string]bool{}, map[string][]string{}); len(got) != 1 {
+		t.Errorf("identical entries were not deduped: %v", got)
+	}
+}

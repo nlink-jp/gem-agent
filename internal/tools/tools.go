@@ -114,7 +114,13 @@ type Registry struct {
 	// so a work directory rotated after the child was built is the
 	// child's too.
 	parent *Registry
-	execFn ExecFunc
+	// excluded holds the registry names the MCP filter removed
+	// (ADR-0077). They are not registered, so a call naming one is
+	// refused by the executor like any name it cannot resolve — this
+	// set exists so the transcript can say the operator removed it
+	// rather than that it never was.
+	excluded map[string]bool
+	execFn   ExecFunc
 	// laneExec, when set, runs shell commands in the lane they declare;
 	// enf is what the runtime established about the sandbox (ADR-0073
 	// §5): a read-lane call is non-mutating only when enf.ReadLane.
@@ -562,7 +568,38 @@ func (r *Registry) RemoveByPrefix(prefix string) int {
 		kept = append(kept, n)
 	}
 	r.order = kept
+	// The reload re-derives what the filter removes, so yesterday's
+	// answer must not survive it (ADR-0039 + ADR-0077).
+	for n := range r.excluded {
+		if strings.HasPrefix(n, prefix) {
+			delete(r.excluded, n)
+		}
+	}
 	return removed
+}
+
+// NoteExcluded records that this registry name was removed by the MCP
+// filter. The tool is not registered and never will be in this session;
+// nothing about the call path changes.
+func (r *Registry) NoteExcluded(name string) {
+	if r.excluded == nil {
+		r.excluded = map[string]bool{}
+	}
+	r.excluded[name] = true
+}
+
+// Excluded reports whether this name was removed by the MCP filter,
+// which is how the executor tells "the operator took this away" from
+// "no such tool has ever existed" — a distinction the transcript keeps
+// and the model is deliberately not given (ADR-0077 §5).
+func (r *Registry) Excluded(name string) bool {
+	if r.excluded[name] {
+		return true
+	}
+	if r.parent != nil {
+		return r.parent.Excluded(name)
+	}
+	return false
 }
 
 // Get returns a tool by name.

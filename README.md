@@ -147,7 +147,10 @@ tree, Claude Code-format `.mcp.json` MCP servers (global + project),
 and Claude Code-format skills with progressive disclosure (a loaded
 skill names its directory, as in Claude Code, so its own scripts run)
 — both reloadable mid-session (`/mcp reload`, `/skills reload`), with
-`--mcp on|off` to switch MCP per run.
+`--mcp on|off` to switch MCP per run. `[mcp].exclude` names the MCP
+servers, or the single functions of them, that a session does not have:
+an excluded server is never started, an excluded function is never
+declared, and a read/write server can be kept for its read half (ADR-0077).
 
 **[Configuration](docs/en/reference/configuration.md)** — the full
 config reference, precedence, CLI flags, content-filter behaviour,

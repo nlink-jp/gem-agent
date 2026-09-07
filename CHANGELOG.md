@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `[mcp].exclude` names what a session does not have: an MCP server, or
+  one function of one server (`"obsidian/patch_vault_file"`). An
+  excluded server is never started — no process, no credentials touched
+  — and still appears in `/mcp` so you can put it back; an excluded
+  function is never declared, and the server keeps running for the rest.
+  Everything not named is declared, so an empty list is what you have
+  today. The key is read from your config, from the machine-owned
+  `policy.toml` (the settings panel that writes it comes next), and from
+  a project's `.gem-agent.toml`, which may only add to it; per server the
+  nearest file decides whole. Names are exact
+  and a name that matches nothing is reported at startup. This is what
+  keeps a read/write server for its read half: MCP publishes no
+  capability a client could filter on, so the function name is the only
+  place that intent can be said — which is also the limit, since it
+  removes the name and not the capability, and does not follow a rename
+  (ADR-0077)
+
 ## [0.71.0] - 2026-09-06
 
 ### Added
