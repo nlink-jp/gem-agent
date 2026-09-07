@@ -223,16 +223,3 @@ func applyRulebook(cfgPath, projectDir string, ag *agent.Agent) (riskbook.Book, 
 	ag.SetRulebook(book.Compose())
 	return book, nil
 }
-
-// riskbookBannerLine announces the rulebook in force — which layers,
-// glance-sized (the /riskbook command holds the statement).
-func riskbookBannerLine(b riskbook.Book) string {
-	var layers []string
-	if strings.TrimSpace(b.Base) != "" {
-		layers = append(layers, "base")
-	}
-	if strings.TrimSpace(b.Project) != "" {
-		layers = append(layers, "project")
-	}
-	return "risk rulebook: " + strings.Join(layers, " + ") + " (/riskbook shows it)"
-}

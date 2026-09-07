@@ -147,7 +147,12 @@ IDENT = re.compile(
 
 
 def idents(path):
-    text = re.sub(r"```.*?```", "", io.open(path, encoding="utf-8").read(), flags=re.S)
+    # A fence opens and closes at the start of a line. Matching ``` anywhere
+    # paired an escaped fence quoted in prose (```` ```mermaid ````) with the
+    # next real one and silently blanked every identifier between them —
+    # forty lines of interface.md, which is the opposite of what this check
+    # is for.
+    text = re.sub(r"(?m)^```[\s\S]*?^```[^\n]*$", "", io.open(path, encoding="utf-8").read())
     found = set()
     for m in re.finditer(r"`([^`\n]+)`", text):
         tok = m.group(1).strip()

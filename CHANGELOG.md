@@ -2,6 +2,24 @@
 
 ## [0.72.0] - 2026-09-08
 
+### Changed
+
+- The startup banner prints what nothing else will say, and stops there.
+  It was 28 wrapped rows on a machine with a full server list — 11 of
+  them one comma-joined list of MCP servers, 4 one session-log path —
+  and nobody had decided to print them: the banner was assembled by
+  teeing every startup write into it, so each feature added a line to a
+  wall with no author. Two of those lines ended by naming the command
+  that supersedes them. What remains is the build and the model, the
+  instruction files found on disk, a resume, one counts row naming
+  `/mcp` `/skills` `/memory`, and everything abnormal. The project path,
+  the sandbox summary in the ordinary case, the session-log path, the
+  approval-policy summary and the risk-rulebook line are gone — the
+  footer, `/tools`, `/riskbook` and `gem-agent sessions` show them
+  better. The first row no longer carries your GCP project and location.
+  The work-directory note is gated on bytes, so empty leftovers no
+  longer announce "0B" (ADR-0078)
+
 ### Fixed
 
 - The notices gem-agent writes while a turn runs now follow

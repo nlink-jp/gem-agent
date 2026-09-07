@@ -55,6 +55,40 @@ mutating tools (pipe-friendly; a tool set to `"never"` in the approval
 policy never asks, so it still runs — see
 [approval](approval.md)).
 
+## What prints at startup (ADR-0078)
+
+A line earns a place at startup only if nothing else will say it. That
+leaves four kinds:
+
+```
+gem-agent v0.72.0 — gemini-3.8-flash
+instructions: ~/.config/gem-agent/AGENTS.md, ../CLAUDE.md, AGENTS.md
+mcp: 24 servers, 249 tools · skills: 5 · memory: 3 (/mcp /skills /memory)
+/help for commands, Ctrl+D to quit
+```
+
+- **the build and the model** — what this session is and what it spends.
+  Not the GCP project or location: `/settings` shows those on request,
+  and they do not belong in every screenshot.
+- **`instructions:`** — files found on disk that change how the agent
+  behaves. You did not type them and no command lists them.
+- **one counts row** — with the commands that expand it. `/mcp` prints
+  the servers one per line, `/skills` and `/memory` the same.
+- **`resumed:`**, when a session was resumed.
+
+Everything abnormal also prints, and only when it applies: a disabled or
+unverified sandbox, an untrusted project, an MCP server that would not
+start, a policy entry that was ignored, a stale `[mcp] exclude` name,
+session work directories that have grown. Each carries the command that
+addresses it.
+
+What is *not* there is deliberate. The project directory and the model
+are in the footer continuously; the approval policy is `/tools`, the
+risk rulebook `/riskbook`, the session list `gem-agent sessions`, and
+the resume command is printed again at exit. Before this rule the
+banner ran to 28 wrapped rows on a machine with a full server list, and
+nobody had decided to print them.
+
 ## Watching a turn run (ADR-0033)
 
 While a turn runs, the status line is live, not a static spinner:

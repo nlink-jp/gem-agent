@@ -165,25 +165,6 @@ func skillsListing(list []skills.Skill) string {
 	return b.String()
 }
 
-// skillBannerLine summarises discovery for the startup banner.
-func skillBannerLine(list []skills.Skill) string {
-	if len(list) == 0 {
-		return ""
-	}
-	names := make([]string, 0, len(list))
-	for _, s := range list {
-		n := s.Name
-		if s.Scope == "project" {
-			n += " [project]"
-		}
-		names = append(names, n)
-	}
-	if len(names) > 8 {
-		names = append(names[:8], fmt.Sprintf("… +%d more", len(list)-8))
-	}
-	return "skills: " + strings.Join(names, ", ")
-}
-
 func clipRunes(s string, limit int) string {
 	if r := []rune(s); len(r) > limit {
 		return string(r[:limit]) + "…"

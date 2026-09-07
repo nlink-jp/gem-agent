@@ -109,6 +109,11 @@ func init() {
 
 const shell = "/bin/bash"
 
+// workDirNoteFloor is the size a session's leftovers reach before the
+// startup note is worth an operator's attention (ADR-0078 §4). Below it
+// the directories exist but nothing has accumulated.
+const workDirNoteFloor = 10 << 20 // 10 MiB
+
 func runREPL(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	if ctx == nil {
@@ -409,12 +414,15 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			if err := exportWorkDir(workDir); err != nil {
 				fmt.Fprintf(stderr, "warning: cannot set %s: %v\n", workdir.EnvVar, err)
 			}
-			if dirs, bytes, more, err := workdir.Sweep(projectDir, sessionID); err == nil && dirs > 0 {
+			// Gated on bytes, not on the count (ADR-0078 §4): two empty
+			// leftovers are not an accumulation, and a line reading "0B"
+			// asks the operator to look at nothing.
+			if dirs, bytes, more, err := workdir.Sweep(projectDir, sessionID); err == nil && bytes >= workDirNoteFloor {
 				plus := ""
 				if more {
 					plus = "+" // the startup scan was cut: a lower bound
 				}
-				fmt.Fprintf(stderr, "note: %d%s earlier session work dir(s), %s%s — review with 'gem-agent workdirs'; nothing is deleted automatically\n",
+				fmt.Fprintf(stderr, "note: %d%s earlier session work dir(s) hold %s%s — delete them with 'gem-agent workdirs clean'\n",
 					dirs, plus, humanBytes(bytes), plus)
 			}
 		}
@@ -1370,44 +1378,28 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return runErr
 	}
 
-	// --- banner ---
-	sandboxLine := "sandbox: enabled (shell lanes: read runs unasked, write and operator ask)"
-	if sandboxOn && !registry.ReadLane() {
-		sandboxLine = "sandbox: enabled (read lane unverified on this machine — every shell_exec asks)"
-		if cfg.Sandbox.ReadLanePrompts {
-			sandboxLine = "sandbox: enabled (read_lane_prompts: read-lane commands ask too)"
-		}
-	}
-	if !sandboxOn {
-		sandboxLine = "sandbox: DISABLED — shell commands run unconfined"
-	}
+	// --- banner (ADR-0078) ---
+	// A line earns a place here only if nothing else will say it. The
+	// footer carries the project and the model continuously, and a `/`
+	// command carries every list; what is left is the build, the files
+	// the operator did not type, a resume, and anything abnormal.
 	bannerLines := []string{
-		fmt.Sprintf("gem-agent %s — %s @ %s/%s", cmd.Root().Version, cfg.Model.Name, cfg.GCP.Project, cfg.GCP.Location),
-		"project: " + projectDir,
-		sandboxLine,
-		"session log: " + sessionPath,
-	}
-	if len(mcpSummary) > 0 {
-		bannerLines = append(bannerLines, "mcp: "+strings.Join(mcpSummary, ", "))
+		fmt.Sprintf("gem-agent %s — %s", cmd.Root().Version, cfg.Model.Name),
 	}
 	if len(contextLabels) > 0 {
 		bannerLines = append(bannerLines, "instructions: "+strings.Join(contextLabels, ", "))
 	}
-	if line := skillBannerLine(skillsList); line != "" {
-		bannerLines = append(bannerLines, line)
-	}
-	if line := memory.BannerLine(memories); line != "" {
+	if line := inventoryLine(len(mcpClients), mcpToolCount(registry), len(skillsList), len(memories)); line != "" {
 		bannerLines = append(bannerLines, line)
 	}
 	if resumedID != "" {
 		bannerLines = append(bannerLines,
 			fmt.Sprintf("resumed: session %s (%d messages restored)", resumedID, len(restored)))
 	}
-	if approvalPolicy.Configured() {
-		bannerLines = append(bannerLines, policyBannerLine(approvalPolicy.Describe()))
-	}
-	if rbErr == nil && rbBook.InForce() {
-		bannerLines = append(bannerLines, riskbookBannerLine(rbBook))
+	// Abnormal only: the ordinary three-lane summary is a manual
+	// excerpt, identical on every start.
+	if line := sandboxAbnormalLine(sandboxOn, registry.ReadLane(), cfg.Sandbox.ReadLanePrompts); line != "" {
+		bannerLines = append(bannerLines, line)
 	}
 	for _, n := range policyNotes {
 		bannerLines = append(bannerLines, "warning: "+string(n))
@@ -2113,17 +2105,56 @@ func slashCompletions(getSkills func() []skills.Skill) func(string) []string {
 	}
 }
 
-// policyBannerLine summarises the approval policy for the banner. A
-// full dump grows one entry per 'p' answer and MCP wildcard until the
-// line is a wall of rules nobody reads (operator report) — the banner
-// is a glance; /tools and /settings hold the statement.
-func policyBannerLine(rules []string) string {
-	const show = 3
-	if len(rules) <= show {
-		return "approval policy: " + strings.Join(rules, ", ")
+// inventoryLine is the one row that replaces the enumerations
+// (ADR-0078 §2): what came up, and the commands that expand it. The
+// count survives the cut because "did my toolset come up as expected" is
+// a question the operator has before typing — a server that fails to
+// start warns, but one missing from the configuration warns nobody.
+func inventoryLine(servers, tools, skillCount, memCount int) string {
+	var parts, cmds []string
+	if servers > 0 {
+		parts = append(parts, fmt.Sprintf("mcp: %d servers, %d tools", servers, tools))
+		cmds = append(cmds, "/mcp")
 	}
-	return fmt.Sprintf("approval policy: %s, … %d rules total (/tools shows each tool's effective gate)",
-		strings.Join(rules[:show], ", "), len(rules))
+	if skillCount > 0 {
+		parts = append(parts, fmt.Sprintf("skills: %d", skillCount))
+		cmds = append(cmds, "/skills")
+	}
+	if memCount > 0 {
+		parts = append(parts, fmt.Sprintf("memory: %d", memCount))
+		cmds = append(cmds, "/memory")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " · ") + " (" + strings.Join(cmds, " ") + ")"
+}
+
+// mcpToolCount counts the MCP tools this session actually declares.
+func mcpToolCount(registry *tools.Registry) int {
+	n := 0
+	for _, t := range registry.List() {
+		if strings.HasPrefix(t.Name, "mcp__") {
+			n++
+		}
+	}
+	return n
+}
+
+// sandboxAbnormalLine returns the sandbox line only when the sandbox is
+// not in its ordinary state. Enabled with a verified read lane is the
+// normal case and says nothing (ADR-0078 §3); the three exceptions each
+// change what a shell command will do, so each still prints.
+func sandboxAbnormalLine(on, readLane, readLanePrompts bool) string {
+	switch {
+	case !on:
+		return "sandbox: DISABLED — shell commands run unconfined"
+	case readLanePrompts:
+		return "sandbox: enabled (read_lane_prompts: read-lane commands ask too)"
+	case !readLane:
+		return "sandbox: enabled (read lane unverified on this machine — every shell_exec asks)"
+	}
+	return ""
 }
 
 // abbreviateHome shortens the home-directory prefix to "~" for display.

@@ -146,14 +146,3 @@ func TestSkillsListingShowsUsageAndInstallPathsWhenEmpty(t *testing.T) {
 		}
 	}
 }
-
-func TestSkillBannerLine(t *testing.T) {
-	if skillBannerLine(nil) != "" {
-		t.Error("no skills must add no banner line")
-	}
-	list := []skills.Skill{{Name: "a", Scope: "global"}, {Name: "b", Scope: "project"}}
-	line := skillBannerLine(list)
-	if !strings.Contains(line, "a") || !strings.Contains(line, "b [project]") {
-		t.Errorf("banner = %q", line)
-	}
-}

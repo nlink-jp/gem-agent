@@ -221,18 +221,6 @@ func TestPromptSection(t *testing.T) {
 	}
 }
 
-func TestBannerLine(t *testing.T) {
-	if got := BannerLine(nil); got != "" {
-		t.Errorf("BannerLine(nil) = %q, want empty", got)
-	}
-	got := BannerLine([]Memory{
-		{Scope: ScopeGlobal}, {Scope: ScopeGlobal}, {Scope: ScopeProject},
-	})
-	if got != "memory: 2 global, 1 project" {
-		t.Errorf("BannerLine = %q", got)
-	}
-}
-
 func TestNonMemoryFilesIgnored(t *testing.T) {
 	base := t.TempDir()
 	project := t.TempDir()

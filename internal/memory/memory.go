@@ -260,23 +260,6 @@ func PromptSection(mems []Memory) string {
 	return b.String()
 }
 
-// BannerLine summarises loaded memory for the startup banner; "" when
-// there is none.
-func BannerLine(mems []Memory) string {
-	global, project := 0, 0
-	for _, m := range mems {
-		if m.Scope == ScopeGlobal {
-			global++
-		} else {
-			project++
-		}
-	}
-	if global+project == 0 {
-		return ""
-	}
-	return fmt.Sprintf("memory: %d global, %d project", global, project)
-}
-
 // cutRunes truncates s to at most n bytes without splitting a UTF-8
 // sequence (internal/bounded is the one implementation).
 func cutRunes(s string, n int) string {
