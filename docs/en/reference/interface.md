@@ -153,7 +153,7 @@ in the input box as one message, never one LLM call per line.
 | `/mcp` | connected MCP servers with their scope; `/mcp reload` reconnects them (ADR-0039) |
 | `/auto` | toggle auto-approve (shift+tab does the same, and works mid-run) |
 | `/compact` | summarise the older half of the conversation now |
-| `/settings` | every setting with its provenance; edit policy + toggles |
+| `/settings` | every setting with its provenance; edit policy, session toggles, and which MCP servers and functions this session has (ADR-0077 — Enter opens a server, ←→ turns one on or off) |
 | `/riskbook` | the risk rules the auto-mode reviewer reads; `learn` drafts them from your answers (ADR-0050) |
 | `/usage` | the session's token statement (ADR-0019) |
 | `/memory` | persisted memories, global + this project |

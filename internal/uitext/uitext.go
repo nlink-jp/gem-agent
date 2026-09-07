@@ -307,7 +307,7 @@ var en = Messages{
 	ErrorPrefix:   "✗ error: ",
 	Bye:           "bye",
 
-	SettingsHint:            "  ↑↓ select · ←→/Enter change · s scope · Esc close",
+	SettingsHint:            "  ↑↓ select · ←→ change · Enter open/close a server · s scope · Esc close",
 	SettingsTitle:           "settings",
 	SettingsMoreAboveFmt:    "  … %d more above",
 	SettingsMoreBelowFmt:    "  … %d more below",
@@ -466,7 +466,7 @@ var ja = Messages{
 	ErrorPrefix:   "✗ エラー: ",
 	Bye:           "bye",
 
-	SettingsHint:            "  ↑↓ 選択 · ←→/Enter 変更 · s スコープ · Esc 閉じる",
+	SettingsHint:            "  ↑↓ 選択 · ←→ 変更 · Enter サーバーを開閉 · s スコープ · Esc 閉じる",
 	SettingsTitle:           "設定",
 	SettingsMoreAboveFmt:    "  … 上に %d 件",
 	SettingsMoreBelowFmt:    "  … 下に %d 件",

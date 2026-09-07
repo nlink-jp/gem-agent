@@ -77,6 +77,16 @@ func Parse(raw string, scope Scope) (Entry, error) {
 	}
 }
 
+// Split is Parse for an entry already known to be well formed — the
+// panel's rows carry entries this package produced. It never errors:
+// anything without a separator is a whole server.
+func Split(entry string) (server, fn string) {
+	if i := strings.Index(entry, Separator); i >= 0 {
+		return entry[:i], entry[i+len(Separator):]
+	}
+	return entry, ""
+}
+
 // bucket is one server's exclusions from one scope.
 type bucket struct {
 	whole bool
@@ -195,6 +205,32 @@ func (f Filter) Func(server, fn string) bool {
 	}
 	return b.whole || b.fns[fn]
 }
+
+// For returns one server's exclusions as full entries — "obsidian" when
+// the whole server is excluded, otherwise "obsidian/patch_vault_file"
+// for each excluded function, sorted. The settings panel writes a
+// server's whole state rather than a delta (ADR-0077 §2), and this is
+// the state it starts from.
+func (f Filter) For(server string) []string {
+	b := f.byServer[server]
+	if b == nil {
+		return nil
+	}
+	if b.whole {
+		return []string{server}
+	}
+	out := make([]string, 0, len(b.fns))
+	for fn := range b.fns {
+		out = append(out, server+Separator+fn)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Speaks reports whether this filter has anything to say about a server
+// at all — what the panel shows as provenance when a scope shadows
+// another one's word about the same server.
+func (f Filter) Speaks(server string) bool { return f.byServer[server] != nil }
 
 // Empty reports whether nothing is excluded, which is the default and
 // keeps `.mcp.json` meaning exactly what it means today.

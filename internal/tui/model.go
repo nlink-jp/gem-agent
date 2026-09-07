@@ -242,8 +242,11 @@ type Model struct {
 	settings       *SettingsData
 	settingsCursor int
 	settingsScope  string
-	applySetting   SettingsApplier
-	expandInput    func(input string) (string, bool, string)
+	// settingsCollapsed is UI state, keyed by group (an MCP server
+	// name): the panel's two levels (ADR-0077 §3). Groups open closed.
+	settingsCollapsed map[string]bool
+	applySetting      SettingsApplier
+	expandInput       func(input string) (string, bool, string)
 	// choice indexes approvalOptions. Selection + Enter exists because
 	// typing y/n/a is impossible with a Japanese IME switched on — the
 	// letters are swallowed by composition — while arrows, Tab, and

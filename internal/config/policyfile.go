@@ -82,6 +82,39 @@ type ProjectPolicy struct {
 	Commands map[string]string `toml:"commands"`
 }
 
+// SetMCPExclusions replaces every [mcp].exclude entry about one server
+// with the ones given, leaving other servers alone (ADR-0077 §2: per
+// server, the nearest scope decides whole). entries are full entries —
+// "obsidian" or "obsidian/patch_vault_file" — and an empty slice means
+// the server has nothing excluded, which is still a statement: it
+// shadows whatever config.toml says about that server.
+//
+// The caller passes the server's whole effective state, not a delta.
+// That is what makes the panel honest: an operator who toggles one
+// function must not silently lose the three their config.toml excluded.
+func (pf *PolicyFile) SetMCPExclusions(server string, entries []string) {
+	kept := make([]string, 0, len(pf.MCP.Exclude)+len(entries))
+	for _, e := range pf.MCP.Exclude {
+		if mcpEntryServer(e) == server {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	kept = append(kept, entries...)
+	sort.Strings(kept)
+	pf.MCP.Exclude = kept
+}
+
+// mcpEntryServer is the server half of an exclusion entry. Parsing
+// belongs to internal/mcpfilter; this is the one split this file needs
+// and importing the package here would be a cycle through config.
+func mcpEntryServer(entry string) string {
+	if i := strings.IndexByte(entry, '/'); i >= 0 {
+		return entry[:i]
+	}
+	return entry
+}
+
 // PolicyPath returns the machine-owned policy file's path, beside the
 // operator's own config.
 func PolicyPath(configPath string) string {

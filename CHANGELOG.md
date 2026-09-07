@@ -20,6 +20,17 @@
   place that intent can be said — which is also the limit, since it
   removes the name and not the capability, and does not follow a rename
   (ADR-0077)
+- `/settings` grew a second level, and needed one: flat, its rows ran to
+  the hundreds on a machine with a full server list. Servers open closed
+  and Enter opens one to its functions; the MCP section turns a server or
+  a function on and off, writing `policy.toml` and reconnecting, and the
+  approval rows sit under their server too (built-ins stay flat). Every
+  row still names the file that decided it — including a server whose
+  `policy.toml` entry shadows what `config.toml` says about it, which is
+  the shadowing the panel exists to show. A toggle writes the server's
+  whole state, so changing one function never drops the exclusions your
+  own config made for the same server (ADR-0077 §3, amending ADR-0009
+  decision 1)
 
 ## [0.71.0] - 2026-09-06
 

@@ -119,6 +119,18 @@ func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Too
 	return added, errs
 }
 
+// mcpInventory is what the session knows about its MCP servers after a
+// connect: every configured server (whether or not it was started, and
+// whether or not it was excluded), and the function names of the ones
+// that answered tools/list. The settings panel needs both to draw its
+// two levels — a server excluded whole has no functions to list, and its
+// row still has to be there to turn back on (ADR-0077 §1).
+type mcpInventory struct {
+	Servers []string            // sorted; every configured server
+	Offered map[string][]string // server -> function names, for those that listed
+	Scopes  map[string]string   // server -> "global" | "project"
+}
+
 // splitByFilter divides one server's advertised tools into what the
 // session declares and what it does not (ADR-0077 §1). It answers in
 // three parts: every function name the server offered (what a stale
@@ -149,9 +161,9 @@ func splitByFilter(server string, list []mcp.Tool, filter mcpfilter.Filter) (off
 // scopes maps each connected server to "global" or "project" — kept
 // for consumers that must not treat a project-supplied server like an
 // operator-installed one (none today; /learn was, before ADR-0049).
-func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, version string, registry *tools.Registry, stderr io.Writer, grant projectGrant, filter mcpfilter.Filter) (clients []*mcp.Client, summary []string, scopes map[string]string) {
+func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, version string, registry *tools.Registry, stderr io.Writer, grant projectGrant, filter mcpfilter.Filter) (clients []*mcp.Client, summary []string, inv mcpInventory) {
 	if !cfg.MCP.Enabled {
-		return nil, nil, nil
+		return nil, nil, mcpInventory{Offered: map[string][]string{}}
 	}
 
 	load := func(path, scope string) map[string]mcp.ServerConfig {
@@ -179,6 +191,7 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 	}
 
 	servers, scopes, overridden := mcp.Merge(global, project)
+	inv.Scopes = scopes
 	for _, name := range overridden {
 		fmt.Fprintf(stderr, "note: project .mcp.json overrides global MCP server %q\n", name)
 	}
@@ -188,12 +201,14 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	inv.Servers = names
 
 	// What the filter is checked against, so a stale entry can be told
 	// from one that did its work (ADR-0077 §2): every configured server,
 	// and the function names of the ones that actually listed.
 	configured := make(map[string]bool, len(names))
 	listed := map[string][]string{}
+	inv.Offered = listed
 	for _, name := range names {
 		configured[name] = true
 	}
@@ -255,5 +270,5 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 		}
 		summary = append(summary, fmt.Sprintf("%s [%s] (%d tools)", name, scopes[name], len(added)))
 	}
-	return clients, summary, scopes
+	return clients, summary, inv
 }

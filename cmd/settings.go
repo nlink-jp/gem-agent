@@ -5,10 +5,12 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/config"
+	"github.com/nlink-jp/gem-agent/internal/mcpfilter"
 	"github.com/nlink-jp/gem-agent/internal/policy"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/tui"
@@ -29,6 +31,13 @@ type settingsStore struct {
 	ag         *agent.Agent
 	// current is the resolved policy the agent is using.
 	current policy.Policy
+	// filter and inv are the MCP half of the panel (ADR-0077 §3): what
+	// is excluded, and what there is to exclude. Both are replaced by
+	// reloadMCP, which re-derives the filter from the files and
+	// reconnects — the panel never edits the live tool set itself.
+	filter    mcpfilter.Filter
+	inv       mcpInventory
+	reloadMCP func() (mcpfilter.Filter, mcpInventory, string)
 	// sessionEdits marks keys the panel changed this session: their
 	// provenance is "session", not whatever startup layer set the
 	// value the panel just replaced — the display claimed config.toml
@@ -146,14 +155,125 @@ func (s *settingsStore) data() tui.SettingsData {
 	ro("session", "tui.show_thoughts", strconv.FormatBool(s.cfg.TUI.ShowThoughts), "tui.show_thoughts",
 		"live thought summaries in the TUI; applies at next start")
 
-	for _, t := range s.registry.List() {
-		d.Rows = append(d.Rows, tui.SettingRow{
-			Section: "approval policy", Label: t.Name, Tool: t.Name,
-			Value: s.current.For(t.Name).String(), Source: s.policySource(t.Name),
-			Values: policyValues,
-		})
-	}
+	s.mcpRows(&d)
+	s.approvalRows(&d)
 	return d
+}
+
+// declaredValue renders an exclusion state the way the operator reads
+// it: a row is on when the session has it. Lower case, unlike the
+// banner's ON/OFF — these are row values the panel cycles, not status.
+func declaredValue(present bool) string {
+	if present {
+		return "on"
+	}
+	return "off"
+}
+
+var onOffValues = []string{"on", "off"}
+
+// mcpRows draws the two levels of ADR-0077 §3: every configured server —
+// present whether or not it is running, because the row comes from
+// .mcp.json and not from the server — and, for the ones that listed,
+// their functions.
+func (s *settingsStore) mcpRows(d *tui.SettingsData) {
+	for _, server := range s.inv.Servers {
+		serverOff := s.filter.Server(server)
+		detail := ""
+		if serverOff {
+			detail = "not started — nothing of it is declared, and turning it on starts it"
+		}
+		d.Rows = append(d.Rows, tui.SettingRow{
+			Section: "mcp tools", Label: server, Value: declaredValue(!serverOff),
+			Values: onOffValues, Exclude: server, Group: "mcp:" + server,
+			Collapsible: true, Source: s.excludeSource(server, server), Detail: detail,
+		})
+		for _, fn := range s.inv.Offered[server] {
+			entry := server + mcpfilter.Separator + fn
+			d.Rows = append(d.Rows, tui.SettingRow{
+				Section: "mcp tools", Label: fn, Value: declaredValue(!s.filter.Func(server, fn)),
+				Values: onOffValues, Exclude: entry, Group: "mcp:" + server, Child: true,
+				Source: s.excludeSource(server, entry),
+			})
+		}
+	}
+}
+
+// excludeSource says which file decided this row. Per server the nearest
+// scope decides whole, so policy.toml having spoken about a server is
+// the answer for every row under it — including the ones it left on,
+// which is the shadowing this panel exists to make visible.
+func (s *settingsStore) excludeSource(server, entry string) string {
+	for _, e := range s.projectCfg.MCP.Exclude {
+		if e == entry {
+			return config.ProjectFileName
+		}
+	}
+	for _, e := range s.policyFile.MCP.Exclude {
+		if es, _ := mcpfilter.Split(e); es == server {
+			return config.PolicyFileName
+		}
+	}
+	for _, e := range s.cfg.MCP.Exclude {
+		if e == entry {
+			return config.FromFile
+		}
+	}
+	return config.FromDefault
+}
+
+// approvalRows groups the approval policy by server, for the reason the
+// tool rows are grouped: flat, this section is hundreds of lines on a
+// machine with a full server list (ADR-0009 decision 1, amended by
+// ADR-0077). Built-ins stay ungrouped — there are a dozen of them and
+// they have no server to sit under.
+func (s *settingsStore) approvalRows(d *tui.SettingsData) {
+	row := func(name string, child bool, group string) tui.SettingRow {
+		return tui.SettingRow{
+			Section: "approval policy", Label: name, Tool: name,
+			Value: s.current.For(name).String(), Source: s.policySource(name),
+			Values: policyValues, Child: child, Group: group,
+		}
+	}
+	prefixes := make([][2]string, 0, len(s.inv.Servers))
+	for _, server := range s.inv.Servers {
+		prefixes = append(prefixes, [2]string{server, "mcp__" + sanitizeToolName(server) + "__"})
+	}
+	byServer := map[string][]string{}
+	var ungrouped []string
+	for _, t := range s.registry.List() {
+		matched := ""
+		for _, p := range prefixes {
+			if strings.HasPrefix(t.Name, p[1]) {
+				matched = p[0]
+				break
+			}
+		}
+		if matched == "" {
+			ungrouped = append(ungrouped, t.Name)
+			continue
+		}
+		byServer[matched] = append(byServer[matched], t.Name)
+	}
+	for _, name := range ungrouped {
+		d.Rows = append(d.Rows, row(name, false, ""))
+	}
+	for _, server := range s.inv.Servers {
+		names := byServer[server]
+		if len(names) == 0 {
+			continue
+		}
+		group := "approval:" + server
+		d.Rows = append(d.Rows, tui.SettingRow{
+			Section: "approval policy", Label: server,
+			Value: fmt.Sprintf("%d tools", len(names)), Group: group, Collapsible: true,
+			Source: config.FromDefault,
+			Detail: "a group heading — open it to set a policy per tool",
+		})
+		for _, name := range names {
+			d.Rows = append(d.Rows, row(name, true, group))
+		}
+	}
 }
 
 // policySource says which file decided a tool's policy — the point of
@@ -184,6 +304,9 @@ func (s *settingsStore) policySource(tool string) string {
 // Apply stores one edit and returns the refreshed panel plus a line for
 // scrollback.
 func (s *settingsStore) Apply(ch tui.SettingChange) (tui.SettingsData, string) {
+	if ch.Exclude != "" {
+		return s.applyExclude(ch)
+	}
 	if ch.Tool != "" {
 		return s.applyPolicy(ch)
 	}
@@ -205,6 +328,70 @@ func (s *settingsStore) markSessionEdit(key string) {
 		s.sessionEdits = map[string]bool{}
 	}
 	s.sessionEdits[key] = true
+}
+
+// applyExclude writes one server's whole exclusion state and reconnects.
+//
+// The whole state, not a delta: per server the nearest scope decides
+// (ADR-0077 §2), so the first thing the panel writes about a server
+// shadows config.toml's word about it entirely. Carrying the effective
+// set across is what keeps an operator who toggled one function from
+// silently losing the three their own file excluded.
+func (s *settingsStore) applyExclude(ch tui.SettingChange) (tui.SettingsData, string) {
+	server, fn := mcpfilter.Split(ch.Exclude)
+	want := ch.Value == "off" // "off" means excluded
+	entries := s.filter.For(server)
+	if fn == "" {
+		// The server level: off is the whole server, on clears
+		// everything about it — a server that was never started has no
+		// function names to carry over.
+		entries = nil
+		if want {
+			entries = []string{server}
+		}
+	} else {
+		entries = withEntry(entries, ch.Exclude, want)
+	}
+	fresh, err := config.MutatePolicyFile(s.policyPath, func(pf *config.PolicyFile) {
+		pf.SetMCPExclusions(server, entries)
+	})
+	if err != nil {
+		return s.data(), "could not save the exclusion: " + err.Error()
+	}
+	*s.policyFile = *fresh
+	if s.reloadMCP == nil {
+		return s.data(), ch.Exclude + ": saved, but this session cannot reconnect MCP"
+	}
+	filter, inv, note := s.reloadMCP()
+	s.filter, s.inv = filter, inv
+	data, err := s.Rebuild()
+	if err != nil {
+		return s.data(), "saved but not applied: " + err.Error()
+	}
+	line := fmt.Sprintf("%s: %s (saved to %s)", ch.Exclude, ch.Value, config.PolicyFileName)
+	if note != "" {
+		line += " — " + note
+	}
+	return data, line
+}
+
+// withEntry adds or removes one entry, keeping the rest.
+func withEntry(entries []string, entry string, want bool) []string {
+	out := make([]string, 0, len(entries)+1)
+	found := false
+	for _, e := range entries {
+		if e == entry {
+			found = true
+			if !want {
+				continue
+			}
+		}
+		out = append(out, e)
+	}
+	if want && !found {
+		out = append(out, entry)
+	}
+	return out
 }
 
 func (s *settingsStore) applyPolicy(ch tui.SettingChange) (tui.SettingsData, string) {
@@ -255,7 +442,11 @@ func writeSettingsTable(out io.Writer, d tui.SettingsData) {
 		if len(row.Values) > 0 {
 			editable = "\t(editable in the TUI)"
 		}
-		fmt.Fprintf(tw, "  %s\t%s\t(%s)%s\n", row.Label, row.Value, row.Source, editable)
+		indent := "  "
+		if row.Child {
+			indent = "      "
+		}
+		fmt.Fprintf(tw, "%s%s\t%s\t(%s)%s\n", indent, row.Label, row.Value, row.Source, editable)
 	}
 	_ = tw.Flush()
 	fmt.Fprintln(out, "\nrun gem-agent in a terminal for the interactive panel")

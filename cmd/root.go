@@ -491,7 +491,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- MCP servers from the project's .mcp.json (drop-in) ---
-	mcpClients, mcpSummary, _ := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, grant, mcpFilter)
+	mcpClients, mcpSummary, mcpInv := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, grant, mcpFilter)
 	defer func() {
 		for _, c := range mcpClients {
 			c.Close()
@@ -1034,6 +1034,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		cfg: cfg, projectCfg: projectCfg, policyFile: policyFile,
 		policyPath: policyPath, projectDir: projectDir,
 		registry: registry, ag: ag, current: approvalPolicy,
+		filter: mcpFilter, inv: mcpInv,
 	}
 	settingsData := settings.data()
 
@@ -1065,7 +1066,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(&warn, "%s\n", n)
 			}
 		}
-		mcpClients, mcpSummary, _ = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, grant, mcpFilter)
+		mcpClients, mcpSummary, mcpInv = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, grant, mcpFilter)
 		ag.RefreshTools()
 		mcpTools := 0
 		for _, t := range registry.List() {
@@ -1089,6 +1090,22 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return b.String()
 	}
 	reloadMCP := func() string { return reconnectMCP(true) }
+	// The panel writes an exclusion and then asks for this: the filter
+	// is re-derived from the files it just changed, and the reload
+	// applies it (ADR-0039 + ADR-0077 §3). Rebuilt rather than patched
+	// so the panel and the runtime read the same three files in the
+	// same order the next start will.
+	settings.reloadMCP = func() (mcpfilter.Filter, mcpInventory, string) {
+		f, err := mcpfilter.Build(cfg.MCP.Exclude, policyFile.MCP.Exclude, projectCfg.MCP.Exclude)
+		if err != nil {
+			// Saved but unusable: keep the running set and say so
+			// rather than dropping every exclusion on the floor.
+			return mcpFilter, mcpInv, "not applied: " + err.Error()
+		}
+		mcpFilter = f
+		reconnectMCP(false)
+		return mcpFilter, mcpInv, ""
+	}
 	reloadSkills := func() string {
 		var pinNotes []string
 		grant.excluded, pinNotes = checkPins(cfg, policyFile, policyPath, projectDir, projectTrusted, false, nil, io.Discard, msgs)

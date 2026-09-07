@@ -28,6 +28,18 @@ type SettingRow struct {
 	Values []string
 	// Tool marks a row as an approval-policy row for the named tool.
 	Tool string
+	// Exclude marks a row as an MCP exclusion row (ADR-0077) and
+	// carries the entry it writes: a server ("obsidian"), or one
+	// function of one server ("obsidian/patch_vault_file").
+	Exclude string
+	// Group is the parent this row belongs to — an MCP server name.
+	// Rows sharing a Group collapse together.
+	Child bool
+	Group string
+	// Collapsible marks the parent of a Group. There are two levels and
+	// no third, which is the type saying what ADR-0077 §1 says: a
+	// server, and a function of a server.
+	Collapsible bool
 	// Detail is an optional dim note (why a row is read-only, say).
 	Detail string
 }
@@ -47,8 +59,11 @@ type SettingsData struct {
 type SettingChange struct {
 	Label string
 	Tool  string
-	Value string
-	Scope string
+	// Exclude is set for an MCP exclusion row and carries the entry
+	// (ADR-0077): "server" or "server/function".
+	Exclude string
+	Value   string
+	Scope   string
 }
 
 // SettingsApplier receives an edit and returns the refreshed panel plus a
@@ -72,13 +87,37 @@ func (m Model) openSettings() (tea.Model, tea.Cmd) {
 	m.settings = &data
 	m.settingsCursor = 0
 	m.settingsScope = ScopeGlobal
+	// Groups open closed. Flat, this list is hundreds of rows on a
+	// machine with a full server list, which is the state ADR-0077 §3
+	// exists to end.
+	m.settingsCollapsed = map[string]bool{}
+	for _, r := range data.Rows {
+		if r.Collapsible {
+			m.settingsCollapsed[r.Group] = true
+		}
+	}
 	m.phase = phaseSettings
 	return m, nil
 }
 
+// visibleRows is the panel as it is on screen: a collapsed group shows
+// its parent and none of its children. Every cursor, window and render
+// index is into this slice, never into the underlying data.
+func (m Model) visibleRows() []SettingRow {
+	rows := m.settings.Rows
+	out := make([]SettingRow, 0, len(rows))
+	for _, r := range rows {
+		if r.Child && m.settingsCollapsed[r.Group] {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 // updateSettings handles keys while the panel is open.
 func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	rows := m.settings.Rows
+	rows := m.visibleRows()
 	switch msg.Type {
 	case tea.KeyEsc, tea.KeyCtrlC:
 		m.phase = phaseInput
@@ -93,7 +132,14 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyLeft:
 		return m.cycleSetting(-1)
-	case tea.KeyRight, tea.KeyEnter:
+	case tea.KeyEnter:
+		// On a group parent Enter opens and closes it; elsewhere it
+		// keeps its old meaning of "change this row".
+		if m.settingsCursor < len(rows) && rows[m.settingsCursor].Collapsible {
+			return m.toggleGroup(rows[m.settingsCursor].Group)
+		}
+		return m.cycleSetting(1)
+	case tea.KeyRight:
 		return m.cycleSetting(1)
 	}
 	switch strings.ToLower(msg.String()) {
@@ -110,16 +156,40 @@ func (m Model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.settings = nil
 		m.ta.Focus()
 		return m, textarea.Blink
+	case " ":
+		if m.settingsCursor < len(rows) && rows[m.settingsCursor].Collapsible {
+			return m.toggleGroup(rows[m.settingsCursor].Group)
+		}
+	}
+	return m, nil
+}
+
+// toggleGroup opens or closes one group, keeping the cursor on the row
+// the operator was looking at: collapsing above the cursor would
+// otherwise slide a different row under it.
+func (m Model) toggleGroup(group string) (tea.Model, tea.Cmd) {
+	collapsed := map[string]bool{}
+	for k, v := range m.settingsCollapsed {
+		collapsed[k] = v
+	}
+	collapsed[group] = !collapsed[group]
+	m.settingsCollapsed = collapsed
+	for i, r := range m.visibleRows() {
+		if r.Collapsible && r.Group == group {
+			m.settingsCursor = i
+			break
+		}
 	}
 	return m, nil
 }
 
 // cycleSetting moves the highlighted row's value by delta and reports it.
 func (m Model) cycleSetting(delta int) (tea.Model, tea.Cmd) {
-	if m.settingsCursor >= len(m.settings.Rows) {
+	rows := m.visibleRows()
+	if m.settingsCursor >= len(rows) {
 		return m, nil
 	}
-	row := m.settings.Rows[m.settingsCursor]
+	row := rows[m.settingsCursor]
 	if len(row.Values) == 0 {
 		// Read-only: say why rather than doing nothing silently.
 		detail := row.Detail
@@ -134,7 +204,7 @@ func (m Model) cycleSetting(delta int) (tea.Model, tea.Cmd) {
 		scope = m.settingsScope
 	}
 	data, line := m.applySetting(SettingChange{
-		Label: row.Label, Tool: row.Tool, Value: next, Scope: scope,
+		Label: row.Label, Tool: row.Tool, Exclude: row.Exclude, Value: next, Scope: scope,
 	})
 	m.settings = &data
 	if line == "" {
@@ -152,7 +222,7 @@ func (m Model) cycleSetting(delta int) (tea.Model, tea.Cmd) {
 // panel ran 2-3 lines over on a 40-line terminal). So the row list is
 // budgeted against the real chrome rather than a guessed margin.
 func (m Model) settingsView() string {
-	rows := m.settings.Rows
+	rows := m.visibleRows()
 	// Below this there is no honest layout: the header, one row, the
 	// scope line, the footer and the trailing newline already exceed the
 	// screen. Say so rather than overflowing it.
@@ -188,6 +258,15 @@ func (m Model) settingsView() string {
 		}
 		marker := "  "
 		label := row.Label
+		if row.Collapsible {
+			glyph := "▾ "
+			if m.settingsCollapsed[row.Group] {
+				glyph = "▸ "
+			}
+			label = glyph + label
+		} else if row.Child {
+			label = "    " + label
+		}
 		if len([]rune(label)) > labelWidth {
 			label = string([]rune(label)[:labelWidth-1]) + "…"
 		}
@@ -226,7 +305,7 @@ func (m Model) settingsView() string {
 // shares a section with the row above it, and that single uncounted line
 // was enough to push the panel past the bottom of the screen.
 func (m Model) settingsWindow(budget int) (int, int) {
-	rows := m.settings.Rows
+	rows := m.visibleRows()
 	if len(rows) == 0 {
 		return 0, 0
 	}
