@@ -308,8 +308,17 @@ func (m Model) settingsView() string {
 		if len(row.Values) == 0 {
 			value = m.st.hint.Render(value)
 		}
-		fmt.Fprintf(&b, "\n%s%s%s %s %s", marker, label, pad, value,
-			m.st.hint.Render("("+row.Source+")"))
+		// A Detail on an editable row used to render nowhere, so the
+		// note explaining an excluded server's "not started" state was
+		// dead text the read-through was still asked to judge
+		// (pre-release review). The cursor row shows it; the others stay
+		// one line each.
+		detail := ""
+		if row.Detail != "" && i == m.settingsCursor {
+			detail = m.st.hint.Render("  " + row.Detail)
+		}
+		fmt.Fprintf(&b, "\n%s%s%s %s %s%s", marker, label, pad, value,
+			m.st.hint.Render("("+row.Source+")"), detail)
 	}
 	if end < len(rows) {
 		b.WriteString("\n" + m.st.hint.Render(fmt.Sprintf(m.msgs.SettingsMoreBelowFmt, len(rows)-end)))

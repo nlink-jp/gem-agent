@@ -49,9 +49,9 @@ gem-agent -p "このリポジトリを要約して"      # 単発実行、パイ
 変更系ツールコールは実行前に承認を求めます。さらにセッションごとに
 専用の作業ディレクトリが用意され、プロジェクトの一部でないもの——
 中間データ、大きすぎるツール結果、サーバーが返した画像——はそちらに
-落ちるので、作業コピーは汚れません。`gem-agent workdirs` が一覧し、`$GEMAGENT_WORK_DIR` が今回の場所を示し、
-中身が自動で削除されることはありません — 過去セッションの残置分は
-`gem-agent workdirs` で一覧し、`workdirs clean` が対象を提示して
+落ちるので、作業コピーは汚れません。今回の場所は `$GEMAGENT_WORK_DIR` が
+示し、中身が自動で削除されることはありません。過去セッションの残置分は
+`gem-agent workdirs` が一覧し、`workdirs clean` が対象を提示して
 確認の上で削除します。動作要件は macOS
 （Apple Silicon）、Vertex AI が有効な Google Cloud プロジェクト、ADC
 （`gcloud auth application-default login`）— 詳細は

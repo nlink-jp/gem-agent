@@ -58,10 +58,10 @@ policy never asks, so it still runs — see
 ## What prints at startup (ADR-0078)
 
 A line earns a place at startup only if nothing else will say it. That
-leaves four kinds, of which an ordinary session shows the first three:
+leaves five kinds, of which an ordinary session shows the first three:
 
 ```
-gem-agent v0.72.0 — gemini-3.8-flash
+gem-agent vX.Y.Z — gemini-3.8-flash
 instructions: ~/.config/gem-agent/AGENTS.md, ../CLAUDE.md, AGENTS.md
 mcp: 24 servers, 249 tools · skills: 5 · memory: 3 (/mcp /skills /memory)
 ```
@@ -77,6 +77,9 @@ TUI has its own chrome for that.
 - **one counts row** — with the commands that expand it. `/mcp` prints
   the servers one per line, `/skills` and `/memory` the same.
 - **`resumed:`**, when a session was resumed.
+- **`auto-approve: ON at start`**, when the session begins approving its
+  own mutating tools. The TUI footer carries it afterwards; the plain
+  REPL and one-shot have no footer.
 
 Everything abnormal also prints, and only when it applies: a disabled or
 unverified sandbox, an untrusted project, an MCP server that would not
@@ -86,8 +89,9 @@ addresses it.
 
 What is *not* there is deliberate. In the TUI the project directory and
 the model are in the footer continuously; the plain REPL has no footer
-and `/settings` names both there. One-shot has neither, and needs
-neither: it runs one turn against the directory you launched it in. The approval policy is
+and `/settings` names both there. One-shot has neither: it prints the
+abnormal lines and nothing else, and the directory it confines the file
+tools to is the symlink-resolved form of the one you launched in. The approval policy is
 `/tools`, the risk rulebook `/riskbook`, the session list `gem-agent
 sessions`, and the resume command is printed again at exit. The
 ordinary-case sandbox summary is not relocated — it is dropped, and the

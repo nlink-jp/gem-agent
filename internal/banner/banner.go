@@ -109,6 +109,13 @@ func AutoApproveLine() string {
 	return "auto-approve: ON at start — /auto or shift+tab turns it off"
 }
 
+// AutoApproveOneShotLine is the same fact for `-p`, where neither /auto
+// nor shift+tab exists: there is no REPL to type into and no TUI to
+// press. The next command is the flag.
+func AutoApproveOneShotLine() string {
+	return "auto-approve: ON — this run approves its own mutating tools; drop --auto to restore the gate"
+}
+
 // SandboxLine returns the sandbox line only when the sandbox is not in
 // its ordinary state. Enabled with a verified read lane is the normal
 // case and says nothing (ADR-0078 §3); the three exceptions each change
@@ -120,16 +127,35 @@ func AutoApproveLine() string {
 func SandboxLine(on, readLane, readLanePrompts bool) string {
 	switch {
 	case !on:
-		// The clause about auto-approve is more load-bearing
-		// interactively, not less: it is the only place that says the
-		// prompts will not be silenced.
-		return "sandbox: DISABLED — shell commands run unconfined and every one asks for your approval (auto-approve does not skip this)"
+		// The confinement fact and the command that undoes it, and
+		// nothing about approvals: the clause that used to be here said
+		// every command asks, which is false in one-shot (mutating
+		// tools are denied outright) and false again under --auto. The
+		// approval regime has its own lines (pre-release review).
+		return "sandbox: DISABLED — shell commands run unconfined; restart without --no-sandbox to re-enable it"
 	case readLanePrompts:
-		return "sandbox: enabled (read_lane_prompts: read-lane commands ask too)"
+		return "sandbox: enabled (read_lane_prompts: read-lane commands ask too — unset it in config.toml to run them unasked)"
 	case !readLane:
-		return "sandbox: enabled (read lane unverified on this machine — every shell_exec asks)"
+		return "sandbox: enabled (read lane unverified on this machine — every shell_exec asks; run `gem-agent` again to re-probe)"
 	}
 	return ""
+}
+
+// State is the same four-way answer in the settings panel's vocabulary:
+// a row, not a sentence. Both surfaces read the same booleans, so they
+// cannot tell the operator different stories about the same session —
+// which they did while the row took two booleans and the runtime had
+// four states (pre-release review).
+func State(on, readLane, readLanePrompts bool) string {
+	switch {
+	case !on:
+		return "DISABLED — shell commands run unconfined"
+	case readLanePrompts:
+		return "enabled (read_lane_prompts: read-lane commands ask too)"
+	case !readLane:
+		return "enabled (read lane unverified — every shell_exec asks)"
+	}
+	return "enabled"
 }
 
 // Sample is a banner with every optional line present, for the operator
@@ -146,6 +172,10 @@ func Sample() Facts {
 		ResumedID: "2acb328c", Restored: 42,
 		SandboxOn: true, ReadLane: false,
 		AutoApprove: true,
-		Notes:       []string{"project .gem-agent.toml entry ignored: not a trusted project"},
+		// The real note, not a shortened invention: a reader judging the
+		// banner's last row was judging a line gem-agent never prints,
+		// and the real one wraps to three rows and carries a command
+		// (pre-release review).
+		Notes: []string{"project policy ignored for read_file, shell_exec: a project file may not remove approvals unless the project is trusted. To allow it, add the project path to [approval].trusted_projects in your own config"},
 	}
 }

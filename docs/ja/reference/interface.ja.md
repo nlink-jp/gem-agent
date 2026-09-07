@@ -54,11 +54,11 @@ erDiagram。幅ゲートも高さ上限もありません: 端末より広いア
 
 ## 起動時に何が出るか（ADR-0078）
 
-起動時に席を得られるのは、他の何もそれを言わない行だけである。残るのは 4 種類で、
+起動時に席を得られるのは、他の何もそれを言わない行だけである。残るのは 5 種類で、
 通常のセッションが出すのはそのうち最初の 3 つである。
 
 ```
-gem-agent v0.72.0 — gemini-3.8-flash
+gem-agent vX.Y.Z — gemini-3.8-flash
 instructions: ~/.config/gem-agent/AGENTS.md, ../CLAUDE.md, AGENTS.md
 mcp: 24 servers, 249 tools · skills: 5 · memory: 3 (/mcp /skills /memory)
 ```
@@ -74,6 +74,9 @@ plain REPL はこの後に `/help for commands, Ctrl+D to quit` を足す。TUI 
 - **個数 1 行** —— それを展開するコマンドつき。`/mcp` はサーバーを 1 行ずつ、
   `/skills` と `/memory` も同様に出す。
 - セッションを再開したときの **`resumed:`**。
+- セッションが最初から変更系ツールを自分で承認するときの
+  **`auto-approve: ON at start`**。以後は TUI のフッタが担うが、plain REPL と
+  one-shot にはフッタが無い。
 
 異常もすべて出る。ただし該当するときだけ: sandbox の無効化・未検証、未信頼
 プロジェクト、起動しなかった MCP サーバー、無視されたポリシ項目、陳腐化した
@@ -82,8 +85,8 @@ plain REPL はこの後に `/help for commands, Ctrl+D to quit` を足す。TUI 
 
 **無いもの**は意図的である。TUI ではプロジェクトディレクトリとモデルをフッタが
 常時出す。plain REPL にはフッタが無いが `/settings` が両方を名指す。one-shot は
-どちらも持たず、必要ともしない —— 起動したディレクトリに対して 1 ターン走って
-終わるからである。
+どちらも持たない —— 異常行だけを出して終わる。ファイルツールが閉じ込められるのは、
+起動したディレクトリの symlink 解決済みの形である。
 承認ポリシは `/tools`、リスク規則書は `/riskbook`、セッション一覧は
 `gem-agent sessions`、再開コマンドは終了時にもう一度出る。通常時の sandbox 要約は
 移設したのではなく落とした —— バナーが口を開くのは sandbox が通常でないときだけ

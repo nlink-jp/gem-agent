@@ -56,7 +56,8 @@ gem-agent
 - `instructions:` にプロジェクトの `AGENTS.md` / `CLAUDE.md` 等が並んでいる
 - sandbox 行が **無い** こと: バナーが sandbox 行を出すのは、無効・未検証・
   read レーンも確認を求める設定のときだけである（ADR-0078）
-- フッタが意図したプロジェクトディレクトリを出している
+- `/settings` が意図したプロジェクトディレクトリを名指す —— symlink 解決済みの形
+  なので `/tmp/x` は `/private/tmp/x` と出る
 
 **不合格:** 起動しない、設定キー不足を報告する、あるべき `instructions:` /
 `mcp:` が空。

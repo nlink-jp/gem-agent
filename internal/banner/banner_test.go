@@ -119,10 +119,72 @@ func TestAutoApproveIsAnnouncedAtStart(t *testing.T) {
 	}
 }
 
-// One-shot mode prints the disabled-sandbox sentence without the rest of
-// the banner; it must be the same sentence.
-func TestDisabledSandboxSentenceIsShared(t *testing.T) {
-	if !strings.Contains(SandboxLine(false, false, false), "auto-approve does not skip this") {
-		t.Error("the interactive form dropped the clause that says the prompts stay")
+// One-shot prints this sentence without the rest of the banner, so it
+// has to be true in one-shot too. The clause it used to carry — that
+// every command still asks — is false there (mutating tools are denied
+// outright) and false again under --auto, so the sentence states the
+// confinement and the command that undoes it, and leaves the approval
+// regime to the lines that own it.
+func TestDisabledSandboxSentenceIsTrueInEveryMode(t *testing.T) {
+	got := SandboxLine(false, false, false)
+	if strings.Contains(got, "asks for your approval") {
+		t.Errorf("the shared sentence claims an approval regime it cannot know: %q", got)
+	}
+	if !strings.Contains(got, "--no-sandbox") {
+		t.Errorf("no next command: %q", got)
+	}
+}
+
+// Four states, one vocabulary. The panel row took two booleans while the
+// runtime had four, so a session that had opted into read_lane_prompts
+// was told its machine failed the probe (pre-release review).
+func TestSandboxStatesAgreeAcrossSurfaces(t *testing.T) {
+	for _, tc := range []struct {
+		on, lane, prompts bool
+		want              string
+	}{
+		{true, true, false, ""},
+		{true, true, true, "read_lane_prompts"},
+		{true, false, false, "unverified"},
+		{false, false, false, "DISABLED"},
+	} {
+		line := SandboxLine(tc.on, tc.lane, tc.prompts)
+		row := State(tc.on, tc.lane, tc.prompts)
+		if tc.want == "" {
+			if line != "" || row != "enabled" {
+				t.Errorf("ordinary sandbox: line=%q row=%q", line, row)
+			}
+			continue
+		}
+		if !strings.Contains(line, tc.want) || !strings.Contains(row, tc.want) {
+			t.Errorf("state %v: line=%q row=%q, both must name %q", tc, line, row, tc.want)
+		}
+	}
+}
+
+// Every abnormal sandbox line carries a command, which is what the
+// interface reference promises of them.
+func TestSandboxLinesCarryACommand(t *testing.T) {
+	for _, line := range []string{
+		SandboxLine(false, false, false),
+		SandboxLine(true, true, true),
+		SandboxLine(true, false, false),
+	} {
+		if !strings.Contains(line, "gem-agent") && !strings.Contains(line, "--no-sandbox") &&
+			!strings.Contains(line, "config.toml") {
+			t.Errorf("no next command in %q", line)
+		}
+	}
+}
+
+// One-shot has no REPL and no TUI, so its auto-approve line cannot name
+// /auto or shift+tab.
+func TestOneShotAutoApproveNamesTheFlag(t *testing.T) {
+	got := AutoApproveOneShotLine()
+	if strings.Contains(got, "/auto") || strings.Contains(got, "shift+tab") {
+		t.Errorf("one-shot line names something it does not have: %q", got)
+	}
+	if !strings.Contains(got, "--auto") {
+		t.Errorf("one-shot line has no next command: %q", got)
 	}
 }

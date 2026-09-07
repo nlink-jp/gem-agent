@@ -180,3 +180,43 @@ func TestGroupsBornDuringAnEditOpenClosed(t *testing.T) {
 		t.Errorf("cursor %d is outside the %d visible rows", m.settingsCursor, len(m.visibleRows()))
 	}
 }
+
+// The panel showed the startup snapshot every time it was reopened, so
+// an exclusion turned off read `on` again on the next open — and with
+// ADR-0077 that row is the only place the state appears at all
+// (pre-release review).
+func TestPanelRereadsOnEveryOpen(t *testing.T) {
+	rows := groupRows()
+	changed := append([]SettingRow{}, rows...)
+	changed[0].Value = "off"
+	current := &rows
+	m := New(Options{
+		StartTurn: func(ctx context.Context, input string) {},
+		Slash:     slashStub,
+		Printer:   (&capture{}).printer,
+		Settings:  &SettingsData{Rows: rows, ProjectDir: "~/work/p"},
+		ApplySetting: func(SettingChange) (SettingsData, string) {
+			current = &changed
+			return SettingsData{Rows: changed, ProjectDir: "~/work/p"}, ""
+		},
+		RefreshSettings: func() SettingsData {
+			return SettingsData{Rows: *current, ProjectDir: "~/work/p"}
+		},
+		RenderFactory: func(width int) func(string) string {
+			return func(s string) string { return s }
+		},
+	})
+	next, _ := m.openSettings()
+	m = next.(Model)
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = next.(Model)
+
+	m = press(m, tea.KeyMsg{Type: tea.KeyRight}) // turn the server off
+	m = press(m, tea.KeyMsg{Type: tea.KeyEsc})   // close
+	next, _ = m.openSettings()
+	m = next.(Model)
+
+	if got := m.visibleRows()[0].Value; got != "off" {
+		t.Errorf("reopened panel shows %q — the store says off", got)
+	}
+}

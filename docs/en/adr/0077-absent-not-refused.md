@@ -227,8 +227,11 @@ exclude = ["github"]
 
 ### 3. The panel is where the set is decided
 
-`/settings` gains a two-level list. The outer level is the servers, from
-`.mcp.json`: on or off, present whether or not the server is running.
+`/settings` gains a two-level list. The outer level is the servers this
+client can speak to, from `.mcp.json`: on or off, present whether or not
+the server is running. One the loader skipped — a transport this client
+does not speak, a missing command — has no row; its skip warning at
+startup is the surface for it.
 Expanding one shows its functions, each row on or off and carrying
 **where that came from** — `config.toml`, `policy.toml`, the project
 file, or the default. That provenance column is ADR-0009's.
@@ -511,8 +514,10 @@ what a server-level exclusion will do). One fixed trivial prompt,
 - `/settings` gains the two-level list, provenance and toggles; the same
   component renders `/settings`' approval rows (ADR-0009 amended).
 - **Nothing is added to the startup banner, and no state is recorded
-  about what a server used to offer.** The only new startup output is a
-  name in `exclude` that matches nothing (§2).
+  about what a server used to offer.** The new startup output is a
+  `warning:` line, and only when the operator's own file says something
+  that does nothing: a name in `exclude` that matches nothing, or an
+  entry a nearer scope overrode into having no effect (§2).
 - A transcript record for a call to an excluded tool — the one thing the
   dispatch site adds, since the refusal itself already exists. A server
   excluded whole never lists, so it has no function names to record one
@@ -529,7 +534,7 @@ what a server-level exclusion will do). One fixed trivial prompt,
   the history holds calls to tools that are no longer declared; and the
   mid-session reload of the declared set.
 - Docs: README and README.ja (the paragraph on what the model can see),
-  the configuration and approval references in both languages,
+  the configuration reference in both languages,
   `config.example.toml`, the project template, AGENTS.md's structure
   table, CHANGELOG, and both INDEX files.
 - The strings this adds are hardcoded English in `cmd` and

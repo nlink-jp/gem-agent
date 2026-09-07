@@ -248,7 +248,8 @@ type Messages struct {
 	// CompactOffSuffix is appended to CompactFailedFmt once automatic
 	// compaction gives up for the session.
 	CompactOffSuffix string
-	// TranscriptFailedFmt: the cause. Resume is gone for this session.
+	// TranscriptFailedFmt: the cause. What reached the disk still
+	// resumes; what follows the failure does not.
 	TranscriptFailedFmt string
 	// FilterRetryFmt: the provider's block reason; one retry follows.
 	FilterRetryFmt string
@@ -457,7 +458,7 @@ keys:
 	CompactNothingFmt:      "context is at %d%% of the window and nothing can be summarised yet — /clear starts a fresh conversation",
 	CompactFailedFmt:       "context compaction failed: %s",
 	CompactOffSuffix:       " — automatic compaction is off for this session; /compact retries by hand",
-	TranscriptFailedFmt:    "session transcript write failed (%s) — recording stopped and this session can no longer be resumed; restart gem-agent to record again",
+	TranscriptFailedFmt:    "session transcript write failed (%s) — recording stopped, so this session can no longer be resumed in full; restart gem-agent to record again",
 	FilterRetryFmt:         "the provider's content filter blocked the response (%s) — retrying once",
 	TruncatedFmt:           "the response was cut off mid-generation (%s) — ask for the rest, or narrow the request",
 	RemoteFaultFmt:         "MCP server %q: %s failed %d times in a row with the same error — /mcp reload, or fix the server",
@@ -628,7 +629,7 @@ var ja = Messages{
 	CompactNothingFmt:      "コンテキストはウィンドウの %d%% ですが、まだ要約できるものがありません — /clear で新しい会話を始められます",
 	CompactFailedFmt:       "コンテキストの要約に失敗しました: %s",
 	CompactOffSuffix:       " — このセッションの自動要約は停止しています。/compact で手動で再試行できます",
-	TranscriptFailedFmt:    "セッション記録の書き込みに失敗しました（%s）。記録は停止し、このセッションは再開できません。記録を再開するには gem-agent を起動し直してください",
+	TranscriptFailedFmt:    "セッション記録の書き込みに失敗しました（%s）。記録が停止したため、このセッションは完全な形では再開できません。記録を再開するには gem-agent を起動し直してください",
 	FilterRetryFmt:         "プロバイダのコンテンツフィルタが応答を遮断しました（%s）— 1 回だけ再試行します",
 	TruncatedFmt:           "応答が生成途中で打ち切られました（%s）— 続きを求めるか、要求を絞ってください",
 	RemoteFaultFmt:         "MCP サーバー %q: %s が同じエラーで %d 回連続して失敗しました — /mcp reload、またはサーバー側を修正してください",

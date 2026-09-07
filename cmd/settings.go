@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/nlink-jp/gem-agent/internal/agent"
+	"github.com/nlink-jp/gem-agent/internal/banner"
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/mcpfilter"
 	"github.com/nlink-jp/gem-agent/internal/policy"
@@ -113,7 +114,7 @@ func (s *settingsStore) data() tui.SettingsData {
 	// into cfg, and a failed probe leaves the setting true.
 	d.Rows = append(d.Rows, tui.SettingRow{
 		Section: "safety", Label: "sandbox",
-		Value:  sandboxState(s.registry.Confined(), s.registry.ReadLane()),
+		Value:  banner.State(s.registry.Confined(), s.registry.ReadLane(), s.cfg.Sandbox.ReadLanePrompts),
 		Source: "measured",
 		Detail: "established by probes at startup — restart with or without --no-sandbox to change it",
 	})
@@ -171,18 +172,6 @@ func (s *settingsStore) data() tui.SettingsData {
 	s.mcpRows(&d)
 	s.approvalRows(&d)
 	return d
-}
-
-// sandboxState renders what the runtime established, in the vocabulary
-// the banner uses for the same fact.
-func sandboxState(confined, readLane bool) string {
-	switch {
-	case !confined:
-		return "DISABLED — shell commands run unconfined"
-	case !readLane:
-		return "enabled (read lane unverified — every shell_exec asks)"
-	}
-	return "enabled"
 }
 
 // declaredValue renders an exclusion state the way the operator reads
@@ -542,6 +531,12 @@ func writeSettingsTable(out io.Writer, d tui.SettingsData) {
 			indent = "      "
 		}
 		fmt.Fprintf(tw, "%s%s\t%s\t(%s)%s\n", indent, row.Label, row.Value, row.Source, editable)
+		// The remedy, in the mode that has no way to press a key on the
+		// row: the measured sandbox value arrived here with nothing
+		// saying what to do about it (pre-release review).
+		if row.Detail != "" {
+			fmt.Fprintf(tw, "%s  \t%s\t\n", indent, row.Detail)
+		}
 	}
 	_ = tw.Flush()
 	fmt.Fprintln(out, "\nrun gem-agent in a terminal for the interactive panel")

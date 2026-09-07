@@ -20,16 +20,18 @@
   sessions` lists your sessions. The ordinary-case sandbox summary is
   not relocated — it is dropped, and the banner now speaks only when the
   sandbox is not ordinary.
-- Documentation that pointed at a `/status` command now points at
-  commands that exist. `/status` was never built: entries below and two
-  READMEs named it, and the sandbox state it promised is on the banner
-  and in `/settings`, while the work directory is `gem-agent workdirs`
-  and `$GEMAGENT_WORK_DIR`. The older entries are left as they were
-  written The first row no longer carries your GCP project and location.
-  The work-directory note is gated on bytes, so empty leftovers no
-  longer announce "0B". Starting in auto-approve now says so: the footer
-  carries it in the TUI, but the plain REPL has no footer and it is the
-  only approval-regime fact with no other startup surface (ADR-0078)
+  The first row no longer carries your GCP project and location. The
+  work-directory note is gated on bytes, so empty leftovers no longer
+  announce "0B". Starting in auto-approve now says so — the TUI footer
+  carries it, but the plain REPL has no footer and one-shot has neither,
+  which is where it matters most since nobody is at a prompt (ADR-0078)
+- The READMEs and the approval and sessions references pointed at a
+  `/status` command. It was never built: the sandbox state it promised
+  is on the banner and in `/settings`, and the work directory is
+  `gem-agent workdirs` and `$GEMAGENT_WORK_DIR`. Those four now name
+  commands that exist. Older CHANGELOG entries and ADR-0073 still
+  mention `/status` and are left as they were written — they are the
+  record of what was decided, not instructions
 
 ### Fixed
 

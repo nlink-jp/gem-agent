@@ -436,7 +436,8 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// a truncated sweep whose partial sum is under the floor
 			// would suppress the note the floor exists to make
 			// meaningful (pre-release review).
-			if dirs, bytes, more, err := workdir.Sweep(projectDir, sessionID); err == nil && (bytes >= workDirNoteFloor || more) {
+			if dirs, bytes, more, err := workdir.Sweep(projectDir, sessionID); err == nil &&
+				(bytes >= workDirNoteFloor || (more && bytes > 0)) {
 				plus := ""
 				if more {
 					plus = "+" // the startup scan was cut: a lower bound
@@ -1106,6 +1107,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				mcpTools++
 			}
 		}
+		// The panel reads this snapshot; only a panel-driven reload used
+		// to refresh it, so a server added to .mcp.json and picked up by
+		// `/mcp reload` had no row and could not be excluded until some
+		// other toggle healed it (pre-release review).
+		settings.inv = mcpInv
 		sink.Reload("mcp", len(mcpClients), mcpTools)
 		if sessionLog != nil {
 			_ = sessionLog.Log("mcp_reload", map[string]any{
@@ -1357,15 +1363,19 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(stderr, "warning: %s\n", n)
 		}
 		go resolveWindow()
-		if !sandboxOn {
-			fmt.Fprintln(stderr, banner.SandboxLine(false, false, false))
+		// The measured state, all four branches: passing constants meant
+		// one-shot printed nothing when the read lane was unverified —
+		// and every shell_exec then needs an approval nobody is there to
+		// give (pre-release review).
+		if line := banner.SandboxLine(registry.Confined(), registry.ReadLane(), cfg.Sandbox.ReadLanePrompts); line != "" {
+			fmt.Fprintln(stderr, line)
 		}
 		// One-shot returns before the banner is built, so the fact that
 		// this run approves its own mutating tools had no surface at all
 		// — in the mode where it matters most, since the ladder answers
 		// and nobody is at a prompt (pre-release review).
 		if ag.AutoApprove() {
-			fmt.Fprintln(stderr, banner.AutoApproveLine())
+			fmt.Fprintln(stderr, banner.AutoApproveOneShotLine())
 		}
 		// Piped stdin becomes a nonce-wrapped data attachment
 		// (ADR-0055) — never prompt text: the -p string alone is the
@@ -1426,7 +1436,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		Servers:      len(mcpClients), Tools: mcpToolCount(registry),
 		Skills: len(skillsList), Memories: len(memories),
 		ResumedID: resumedID, Restored: len(restored),
-		SandboxOn: sandboxOn, ReadLane: registry.ReadLane(),
+		// The measurement, not the intent: --no-sandbox is folded into
+		// sandboxOn already, but a failed write-lane probe zeroes the
+		// enforcement and left the banner saying "enabled" while
+		// /settings said "DISABLED" — in the one case the row exists for.
+		SandboxOn: registry.Confined(), ReadLane: registry.ReadLane(),
 		ReadLanePrompts: cfg.Sandbox.ReadLanePrompts,
 		AutoApprove:     ag.AutoApprove(),
 		Notes:           warnLines,
