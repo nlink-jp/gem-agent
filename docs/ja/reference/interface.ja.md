@@ -75,8 +75,8 @@ plain REPL はこの後に `/help for commands, Ctrl+D to quit` を足す。TUI 
   `/skills` と `/memory` も同様に出す。
 - セッションを再開したときの **`resumed:`**。
 - セッションが最初から変更系ツールを自分で承認するときの
-  **`auto-approve: ON at start`**。以後は TUI のフッタが担うが、plain REPL と
-  one-shot にはフッタが無い。
+  **`auto-approve: ON at start`**。以後は TUI のフッタが担う。plain REPL には
+  フッタが無く、one-shot は `--auto` を名指す独自の形で出す。
 
 異常もすべて出る。ただし該当するときだけ: sandbox の無効化・未検証、未信頼
 プロジェクト、起動しなかった MCP サーバー、無視されたポリシ項目、陳腐化した

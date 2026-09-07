@@ -127,16 +127,18 @@ func AutoApproveOneShotLine() string {
 func SandboxLine(on, readLane, readLanePrompts bool) string {
 	switch {
 	case !on:
-		// The confinement fact and the command that undoes it, and
-		// nothing about approvals: the clause that used to be here said
-		// every command asks, which is false in one-shot (mutating
-		// tools are denied outright) and false again under --auto. The
+		// The confinement fact and the state to restore, and nothing
+		// about approvals: the clause that used to be here said every
+		// command asks, which is false in one-shot, where a gated call
+		// is denied rather than asked. (Interactively it was true even
+		// under --auto — an unconfined shell is OperatorOnly and the
+		// gate prompts.) "Gated" is the word true in both modes, and the
 		// approval regime has its own lines (pre-release review).
-		return "sandbox: DISABLED — shell commands run unconfined; restart without --no-sandbox to re-enable it"
+		return "sandbox: DISABLED — shell commands run unconfined; restart with the sandbox enabled to confine them"
 	case readLanePrompts:
-		return "sandbox: enabled (read_lane_prompts: read-lane commands ask too — unset it in config.toml to run them unasked)"
+		return "sandbox: enabled (read_lane_prompts: read-lane commands are gated too — unset it in config.toml to run them unasked)"
 	case !readLane:
-		return "sandbox: enabled (read lane unverified on this machine — every shell_exec asks; run `gem-agent` again to re-probe)"
+		return "sandbox: enabled (read lane unverified on this machine — every shell_exec is gated; run `gem-agent` again to re-probe)"
 	}
 	return ""
 }
@@ -151,9 +153,9 @@ func State(on, readLane, readLanePrompts bool) string {
 	case !on:
 		return "DISABLED — shell commands run unconfined"
 	case readLanePrompts:
-		return "enabled (read_lane_prompts: read-lane commands ask too)"
+		return "enabled (read_lane_prompts: read-lane commands are gated too)"
 	case !readLane:
-		return "enabled (read lane unverified — every shell_exec asks)"
+		return "enabled (read lane unverified — every shell_exec is gated)"
 	}
 	return "enabled"
 }

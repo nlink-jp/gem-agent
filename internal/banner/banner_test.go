@@ -121,17 +121,17 @@ func TestAutoApproveIsAnnouncedAtStart(t *testing.T) {
 
 // One-shot prints this sentence without the rest of the banner, so it
 // has to be true in one-shot too. The clause it used to carry — that
-// every command still asks — is false there (mutating tools are denied
-// outright) and false again under --auto, so the sentence states the
-// confinement and the command that undoes it, and leaves the approval
-// regime to the lines that own it.
+// every command still asks — is false there, where a gated call is
+// denied rather than asked (interactively it held even under --auto), so
+// the sentence states the confinement and the state to restore, and
+// leaves the approval regime to the lines that own it.
 func TestDisabledSandboxSentenceIsTrueInEveryMode(t *testing.T) {
 	got := SandboxLine(false, false, false)
 	if strings.Contains(got, "asks for your approval") {
 		t.Errorf("the shared sentence claims an approval regime it cannot know: %q", got)
 	}
-	if !strings.Contains(got, "--no-sandbox") {
-		t.Errorf("no next command: %q", got)
+	if !strings.Contains(got, "sandbox enabled") {
+		t.Errorf("no state to restore named: %q", got)
 	}
 }
 
@@ -170,7 +170,7 @@ func TestSandboxLinesCarryACommand(t *testing.T) {
 		SandboxLine(true, true, true),
 		SandboxLine(true, false, false),
 	} {
-		if !strings.Contains(line, "gem-agent") && !strings.Contains(line, "--no-sandbox") &&
+		if !strings.Contains(line, "gem-agent") && !strings.Contains(line, "sandbox enabled") &&
 			!strings.Contains(line, "config.toml") {
 			t.Errorf("no next command in %q", line)
 		}

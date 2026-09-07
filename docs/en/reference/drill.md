@@ -62,8 +62,8 @@ Read the banner and confirm all of it:
 - **no** sandbox line: the banner prints one only when the sandbox is
   disabled, unverified, or set to prompt on read-lane commands
   (ADR-0078)
-- `/settings` names the project directory you meant — it is the
-  symlink-resolved form, so `/tmp/x` reads as `/private/tmp/x`
+- the footer, once the banner is up, shows the project directory you
+  meant — the symlink-resolved form, so `/tmp/x` reads as `/private/tmp/x`
 
 **Fails if** the binary will not launch, the banner reports a missing
 config key, or `instructions:`/`mcp:` is empty where it should not be.

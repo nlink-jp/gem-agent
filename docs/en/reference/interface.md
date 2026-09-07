@@ -79,7 +79,7 @@ TUI has its own chrome for that.
 - **`resumed:`**, when a session was resumed.
 - **`auto-approve: ON at start`**, when the session begins approving its
   own mutating tools. The TUI footer carries it afterwards; the plain
-  REPL and one-shot have no footer.
+  REPL has no footer, and one-shot prints its own form naming `--auto`.
 
 Everything abnormal also prints, and only when it applies: a disabled or
 unverified sandbox, an untrusted project, an MCP server that would not
