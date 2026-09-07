@@ -309,8 +309,15 @@ default alone.
 It guarantees exactly one thing, and the guarantee is the operator's own
 to verify: **this runtime never emits a call to a tool the operator
 turned off.** Not in the declarations, and not through a name the model
-supplies anyway — a call naming a removed tool is refused before any
-gate. That is pinned by a test, in `internal/archtest`'s sense of pinned.
+supplies anyway: the executor already refuses a name it cannot resolve
+in the registry — before the pre-tool hook, before the ladder, before
+the gate (`execCallInner`). An excluded tool is simply not registered,
+so it inherits that refusal and needs no new path. **This ADR's first
+draft said otherwise** — that an unregistered name reached the gate as a
+`Review` "unknown tool" — reading `decide` without noticing that the
+executor returns first. The `Review` verdict exists, but only the
+telemetry and auto-approve paths ever see it. The correction makes the
+mechanism smaller, not larger.
 
 It does **not** confine the server. The capability still exists there,
 the operator's credentials still reach it, and a tool that reads may
@@ -338,10 +345,12 @@ Two audiences, two texts, both true:
   under its own record kind. Nothing is hidden from the person who set
   the list.
 
-The existing gate for a genuinely unknown name (rule tier `Review`,
-"unknown tool") is untouched. The asymmetry is deliberate: a name the
-operator removed is a fact the runtime holds, and a name nobody has ever
-registered is not.
+The model-facing text is therefore the one an unregistered name already
+gets, and deliberately so: a tool the operator excluded and a tool that
+never existed are the same fact from where the model stands, and giving
+the first its own wording would be the "blocked by policy" state under
+another name. The runtime keeps the distinction where it belongs — in
+the transcript, for the operator who drew the line.
 
 ### 6. What is not done, and why
 
@@ -493,12 +502,14 @@ what a server-level exclusion will do). One fixed trivial prompt,
 - **Nothing is added to the startup banner, and no state is recorded
   about what a server used to offer.** The only new startup output is a
   name in `exclude` that matches nothing (§2).
-- A transcript record for a call to a removed tool. Telemetry unchanged:
-  the call never runs, so there is no `tool.call` to report.
+- A transcript record for a call to an excluded tool — the one thing the
+  dispatch site adds, since the refusal itself already exists. Telemetry
+  unchanged: the call never runs, so there is no `tool.call` to report.
 - Tests: per-server precedence between the three files; a project file
-  that can only add to `exclude`; the refusal path (never
-  reaches the gate) pinned in `internal/archtest`; the drift report;
-  a name matching nothing; **resume with a changed set**, where
+  that can only add to `exclude`; an excluded name reaching the executor
+  (refused with the unregistered-name text, recorded distinctly, no hook
+  and no gate); a name matching nothing; **resume with a changed set**,
+  where
   the history holds calls to tools that are no longer declared; and the
   mid-session reload of the declared set.
 - Docs: README and README.ja (the paragraph on what the model can see),
