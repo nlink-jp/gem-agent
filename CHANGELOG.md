@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- A `/settings` toggle on an MCP row reconnects that one server instead
+  of all of them. Every toggle used to kill and respawn every configured
+  server and re-list its tools — twenty-five processes on a full machine
+  — synchronously inside the TUI's event loop, so an arrow key took
+  seconds and the keys typed meanwhile queued up behind it. Now a
+  function toggle re-lists the running server (one `tools/list` round
+  trip, no restart), turning a server off stops its process, turning one
+  on starts it, and the other servers are not touched. `/mcp reload` and
+  `/clear` still reconnect the whole set, as they say they do.
+
 ## [0.72.0] - 2026-09-08
 
 ### Changed

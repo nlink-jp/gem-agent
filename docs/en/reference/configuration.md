@@ -318,9 +318,12 @@ have today and `.mcp.json` keeps the meaning it has.
 `/settings` edits the same thing without a text editor: the MCP section
 lists every configured server (Enter opens one to its functions, ←→
 turns a row on or off) with the file that decided each row, and a change
-is written to `policy.toml` and applied by reconnecting. The panel
-writes the server's whole state, so toggling one function never drops
-the exclusions your own config made for the same server.
+is written to `policy.toml` and applied by reconnecting that one server:
+a function toggle re-lists a running server's tools without restarting
+it, turning a server off stops its process, turning one on starts it,
+and no other server is touched. The panel writes the server's whole
+state, so toggling one function never drops the exclusions your own
+config made for the same server.
 
 Three files may carry the key, and **per server, the nearest one decides
 whole**: if `policy.toml` (written by the settings panel) says anything

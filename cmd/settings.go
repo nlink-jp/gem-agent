@@ -35,10 +35,11 @@ type settingsStore struct {
 	// filter and inv are the MCP half of the panel (ADR-0077 §3): what
 	// is excluded, and what there is to exclude. Both are replaced by
 	// reloadMCP, which re-derives the filter from the files and
-	// reconnects — the panel never edits the live tool set itself.
+	// reconnects that one server — the panel never edits the live tool
+	// set itself.
 	filter    mcpfilter.Filter
 	inv       mcpInventory
-	reloadMCP func() (mcpfilter.Filter, mcpInventory, string)
+	reloadMCP func(server string) (mcpfilter.Filter, mcpInventory, string)
 	// sessionEdits marks keys the panel changed this session: their
 	// provenance is "session", not whatever startup layer set the
 	// value the panel just replaced — the display claimed config.toml
@@ -422,7 +423,7 @@ func (s *settingsStore) applyExclude(ch tui.SettingChange) (tui.SettingsData, st
 	if s.reloadMCP == nil {
 		return s.data(), ch.Exclude + ": saved, but this session cannot reconnect MCP"
 	}
-	filter, inv, note := s.reloadMCP()
+	filter, inv, note := s.reloadMCP(server)
 	s.filter, s.inv = filter, inv
 	data, err := s.Rebuild()
 	if err != nil {

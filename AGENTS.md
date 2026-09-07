@@ -820,3 +820,14 @@ a new hook) is an architecture change and takes the same rows as a
   the project tree, and the lossy path-escape is guarded by the
   `.project` marker (a mismatch skips the directory; misattribution
   would be worse than not loading).
+- **A `/settings` MCP toggle reconnects ONE server** (`reconnectMCPServer`,
+  cmd/mcp.go): the store's `reloadMCP(server)` removes that server's
+  registry names by prefix, then re-lists a running client (no respawn),
+  closes one that is now excluded, or starts one that is now allowed —
+  and re-runs the stale-entry check against the whole inventory.
+  `mcpInventory` therefore carries what a single reconnect needs from the
+  files (`configs`, `configured`, `complete`, `summary`). The whole-set
+  path (`reconnectMCP`) is `/mcp reload` and `/clear` only. Reconnecting
+  everything on a toggle respawned 25 processes inside the Bubble Tea
+  update loop; the keys typed meanwhile queued behind it (field report,
+  post-v0.72.0).

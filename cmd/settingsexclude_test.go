@@ -25,7 +25,7 @@ func withMCP(t *testing.T, s *settingsStore, servers []string, offered map[strin
 		return f
 	}
 	s.filter = rebuild()
-	s.reloadMCP = func() (mcpfilter.Filter, mcpInventory, string) { return rebuild(), s.inv, "" }
+	s.reloadMCP = func(string) (mcpfilter.Filter, mcpInventory, string) { return rebuild(), s.inv, "" }
 }
 
 // registerFakeMCPTool puts a tool in the registry under the name the

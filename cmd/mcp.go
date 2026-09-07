@@ -146,10 +146,150 @@ func mcpToolPrefix(server string) string {
 // that answered tools/list. The settings panel needs both to draw its
 // two levels — a server excluded whole has no functions to list, and its
 // row still has to be there to turn back on (ADR-0077 §1).
+//
+// It also keeps what a later reconnect of ONE server needs from the
+// files the full connect read: how to start it, which names the
+// operator's files mention, and whether every list was read. A panel
+// toggle changes one server, and reconnecting all of them for it —
+// twenty-five processes killed and spawned on this machine, inside the
+// TUI's event loop — was what made an arrow key take seconds and queue
+// the keys typed meanwhile (post-release field report).
 type mcpInventory struct {
 	Servers []string            // sorted; every configured server
 	Offered map[string][]string // server -> function names, for those that listed
 	Scopes  map[string]string   // server -> "global" | "project"
+
+	configs    map[string]mcp.ServerConfig // how each server is started
+	configured map[string]bool             // every name the files mention, skipped ones included
+	complete   bool                        // every list this session should have was read
+	summary    map[string]string           // server -> its /mcp line, for those with one
+}
+
+// summaryLines is the /mcp listing, in server order: one line per
+// server that was started or deliberately not, none for one that failed.
+func (inv mcpInventory) summaryLines() []string {
+	var out []string
+	for _, name := range inv.Servers {
+		if line, ok := inv.summary[name]; ok {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// warnUnmatched names every exclude entry that did no work, with its own
+// remedy (ADR-0077 §2). Checked against the whole inventory because a
+// stale entry is stale whichever server was just touched.
+func (inv mcpInventory) warnUnmatched(filter mcpfilter.Filter, stderr io.Writer) {
+	for _, note := range filter.Unmatched(inv.configured, inv.Offered, inv.complete) {
+		// The fact and the next command on one line. The command
+		// differs by cause — a misspelled name is not a line another
+		// file has overridden — so each note carries its own.
+		fmt.Fprintf(stderr, "warning: [mcp] exclude: %s\n", note)
+	}
+}
+
+// mcpServer is what the connect path needs of a server process: the
+// real *mcp.Client in the runtime, a stub in tests.
+type mcpServer interface {
+	mcpCaller
+	ListTools(ctx context.Context) ([]mcp.Tool, error)
+	Close()
+}
+
+// excludeMCPServer records a server the session does not start (ADR-0077
+// §1): no process, no credentials touched, nothing of it in the
+// declarations. Its row still comes from .mcp.json, so it can be turned
+// back on without having been running.
+func excludeMCPServer(name string, registry *tools.Registry, inv *mcpInventory) {
+	// Recorded by prefix: the server never listed, so there are no
+	// function names to note one by one, and a call naming one must
+	// still read as the operator's doing in the transcript rather than
+	// as a tool that never existed (ADR-0077 §5, pre-release review).
+	registry.NoteExcludedPrefix(mcpToolPrefix(name))
+	delete(inv.Offered, name)
+	inv.summary[name] = fmt.Sprintf("%s [%s] (not started — excluded)", name, inv.Scopes[name])
+}
+
+// attachMCPServer lists one server's tools and registers what the filter
+// keeps. It reports whether the client is worth holding on to: false
+// means it was closed here (unavailable, or nothing usable) and the
+// caller drops it. The server's slots in the inventory are overwritten,
+// so the same call serves the first connect and a later reconnect of
+// that one server.
+func attachMCPServer(ctx context.Context, client mcpServer, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory) bool {
+	name := client.Name()
+	scope := inv.Scopes[name]
+	delete(inv.summary, name)
+	delete(inv.Offered, name)
+	lctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	toolList, err := client.ListTools(lctx)
+	cancel()
+	if err != nil {
+		fmt.Fprintf(stderr, "warning: MCP server %s unavailable: %v\n", name, err)
+		client.Close()
+		return false
+	}
+	offered, kept, excluded := splitByFilter(name, toolList, filter)
+	for _, n := range excluded {
+		// Not registered. The name is kept so the transcript can say
+		// the operator removed it (ADR-0077 §5).
+		registry.NoteExcluded(n)
+	}
+	removed := len(excluded)
+	inv.Offered[name] = offered
+
+	added, errs := registerMCPTools(registry, client, kept)
+	for _, e := range errs {
+		fmt.Fprintf(stderr, "warning: MCP server %s: %s\n", name, e)
+	}
+	switch {
+	case len(added) == 0 && removed > 0:
+		// Every function excluded is a choice, not a fault: the server
+		// keeps running for nothing, which is what §1 says an empty
+		// function list means.
+		inv.summary[name] = fmt.Sprintf("%s [%s] (0 of %d tools — all excluded)", name, scope, len(toolList))
+	case len(added) == 0:
+		fmt.Fprintf(stderr, "warning: MCP server %s advertises no usable tools\n", name)
+		client.Close()
+		return false
+	case removed > 0:
+		inv.summary[name] = fmt.Sprintf("%s [%s] (%d of %d tools)", name, scope, len(added), len(toolList))
+	default:
+		inv.summary[name] = fmt.Sprintf("%s [%s] (%d tools)", name, scope, len(added))
+	}
+	return true
+}
+
+// reconnectMCPServer applies the filter to ONE server and leaves every
+// other server's process and tools alone (ADR-0077 §3: the panel's edit
+// names one server, and that is the whole of what changes). running is
+// the server's client if the session has one, nil otherwise; start
+// makes a fresh one. The server's registry names are removed first, so
+// a running server is re-listed — one tools/list round trip, no
+// respawn — and re-registered under the new filter. What comes back is
+// the client to keep, or nil when the server is now excluded, gone, or
+// useless.
+func reconnectMCPServer(ctx context.Context, name string, running mcpServer, start func() mcpServer, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory) mcpServer {
+	registry.RemoveByPrefix(mcpToolPrefix(name))
+	if filter.Server(name) {
+		if running != nil {
+			running.Close()
+		}
+		excludeMCPServer(name, registry, inv)
+		inv.warnUnmatched(filter, stderr)
+		return nil
+	}
+	client := running
+	if client == nil {
+		client = start()
+	}
+	kept := attachMCPServer(ctx, client, registry, stderr, filter, inv)
+	inv.warnUnmatched(filter, stderr)
+	if !kept {
+		return nil
+	}
+	return client
 }
 
 // splitByFilter divides one server's advertised tools into what the
@@ -184,7 +324,7 @@ func splitByFilter(server string, list []mcp.Tool, filter mcpfilter.Filter) (off
 // operator-installed one (none today; /learn was, before ADR-0049).
 func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, version string, registry *tools.Registry, stderr io.Writer, grant projectGrant, filter mcpfilter.Filter) (clients []*mcp.Client, summary []string, inv mcpInventory) {
 	if !cfg.MCP.Enabled {
-		return nil, nil, mcpInventory{Offered: map[string][]string{}}
+		return nil, nil, mcpInventory{Offered: map[string][]string{}, summary: map[string]string{}}
 	}
 
 	// complete says every server list this session should have was
@@ -227,6 +367,8 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 
 	servers, scopes, overridden := mcp.Merge(global, project)
 	inv.Scopes = scopes
+	inv.configs = servers
+	inv.summary = map[string]string{}
 	for _, name := range overridden {
 		fmt.Fprintf(stderr, "note: project .mcp.json overrides global MCP server %q\n", name)
 	}
@@ -241,81 +383,27 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 	// What the filter is checked against, so a stale entry can be told
 	// from one that did its work (ADR-0077 §2): every configured server,
 	// and the function names of the ones that actually listed.
-	configured := make(map[string]bool, len(names)+len(skippedNames))
-	listed := map[string][]string{}
-	inv.Offered = listed
+	inv.configured = make(map[string]bool, len(names)+len(skippedNames))
+	inv.Offered = map[string][]string{}
+	inv.complete = complete
 	for _, name := range names {
-		configured[name] = true
+		inv.configured[name] = true
 	}
 	for _, name := range skippedNames {
-		configured[name] = true
+		inv.configured[name] = true
 	}
-	defer func() {
-		for _, note := range filter.Unmatched(configured, listed, complete) {
-			// The fact and the next command on one line. The command
-			// differs by cause — a misspelled name is not a line another
-			// file has overridden — so each note carries its own.
-			fmt.Fprintf(stderr, "warning: [mcp] exclude: %s\n", note)
-		}
-	}()
+	defer func() { inv.warnUnmatched(filter, stderr) }()
 
 	timeout := time.Duration(cfg.MCP.CallTimeoutSec) * time.Second
 	for _, name := range names {
-		// An excluded server is not started at all: no process, no
-		// credentials touched, nothing of it in the declarations
-		// (ADR-0077 §1). Its row still comes from .mcp.json, so it can
-		// be turned back on without having been running.
 		if filter.Server(name) {
-			// Recorded by prefix: the server never listed, so there are
-			// no function names to note one by one, and a call naming
-			// one must still read as the operator's doing in the
-			// transcript rather than as a tool that never existed
-			// (ADR-0077 §5, pre-release review).
-			registry.NoteExcludedPrefix(mcpToolPrefix(name))
-			summary = append(summary, fmt.Sprintf("%s [%s] (not started — excluded)", name, scopes[name]))
+			excludeMCPServer(name, registry, &inv)
 			continue
 		}
 		client := mcp.NewStdio(name, servers[name], timeout, version)
-		lctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		toolList, err := client.ListTools(lctx)
-		cancel()
-		if err != nil {
-			fmt.Fprintf(stderr, "warning: MCP server %s unavailable: %v\n", name, err)
-			client.Close()
-			continue
+		if attachMCPServer(ctx, client, registry, stderr, filter, &inv) {
+			clients = append(clients, client)
 		}
-		offered, kept, excluded := splitByFilter(name, toolList, filter)
-		for _, n := range excluded {
-			// Not registered. The name is kept so the transcript can say
-			// the operator removed it (ADR-0077 §5).
-			registry.NoteExcluded(n)
-		}
-		removed := len(excluded)
-		listed[name] = offered
-
-		added, errs := registerMCPTools(registry, client, kept)
-		for _, e := range errs {
-			fmt.Fprintf(stderr, "warning: MCP server %s: %s\n", name, e)
-		}
-		if len(added) == 0 {
-			if removed > 0 {
-				// Every function excluded is a choice, not a fault: the
-				// server keeps running for nothing, which is what §1
-				// says an empty function list means.
-				clients = append(clients, client)
-				summary = append(summary, fmt.Sprintf("%s [%s] (0 of %d tools — all excluded)", name, scopes[name], len(toolList)))
-				continue
-			}
-			fmt.Fprintf(stderr, "warning: MCP server %s advertises no usable tools\n", name)
-			client.Close()
-			continue
-		}
-		clients = append(clients, client)
-		if removed > 0 {
-			summary = append(summary, fmt.Sprintf("%s [%s] (%d of %d tools)", name, scopes[name], len(added), len(toolList)))
-			continue
-		}
-		summary = append(summary, fmt.Sprintf("%s [%s] (%d tools)", name, scopes[name], len(added)))
 	}
-	return clients, summary, inv
+	return clients, inv.summaryLines(), inv
 }

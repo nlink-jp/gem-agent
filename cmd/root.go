@@ -26,6 +26,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/hooks"
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/mcp"
 	"github.com/nlink-jp/gem-agent/internal/mcpfilter"
 	"github.com/nlink-jp/gem-agent/internal/mediastore"
 	"github.com/nlink-jp/gem-agent/internal/memory"
@@ -1128,12 +1129,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return b.String()
 	}
 	reloadMCP := func() string { return reconnectMCP(true) }
-	// The panel writes an exclusion and then asks for this: the filter
-	// is re-derived from the files it just changed, and the reload
-	// applies it (ADR-0039 + ADR-0077 §3). Rebuilt rather than patched
-	// so the panel and the runtime read the same three files in the
-	// same order the next start will.
-	settings.reloadMCP = func() (mcpfilter.Filter, mcpInventory, string) {
+	// The panel writes an exclusion for one server and then asks for
+	// this: the filter is re-derived from the files it just changed, and
+	// that one server is reconnected under it (ADR-0039 + ADR-0077 §3).
+	// Rebuilt rather than patched so the panel and the runtime read the
+	// same three files in the same order the next start will. One
+	// server, not the set: the edit names one, and reconnecting all of
+	// them killed and respawned every process on an arrow key, inside
+	// the TUI's event loop, so the keys typed meanwhile queued behind it
+	// (post-release field report).
+	settings.reloadMCP = func(server string) (mcpfilter.Filter, mcpInventory, string) {
 		f, err := mcpfilter.Build(cfg.MCP.Exclude, policyScope(policyFile), projectCfg.MCP.Exclude)
 		if err != nil {
 			// Saved but unusable: keep the running set and say so
@@ -1141,16 +1146,46 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			return mcpFilter, mcpInv, "not applied: " + err.Error()
 		}
 		mcpFilter = f
-		// Only what went wrong. The reconnect's report is a line per
-		// server — twenty-five of them on this machine — and an arrow
-		// key is not a command that asked for an inventory; the
-		// warnings are still the operator's answer to "why did nothing
-		// appear" (pre-release review).
-		//
-		// Hoisted: reconnectMCP reassigns mcpInv, and the order of a
-		// call against the other operands of a return is unspecified.
-		report := reconnectMCP(false)
-		return mcpFilter, mcpInv, reloadWarnings(report)
+		var running *mcp.Client
+		others := make([]*mcp.Client, 0, len(mcpClients))
+		for _, c := range mcpClients {
+			if c.Name() == server {
+				running = c
+				continue
+			}
+			others = append(others, c)
+		}
+		// Only what went wrong goes back to the panel: an arrow key is
+		// not a command that asked for an inventory, and the warnings
+		// are still the operator's answer to "why did nothing appear"
+		// (pre-release review).
+		var warn bytes.Buffer
+		timeout := time.Duration(cfg.MCP.CallTimeoutSec) * time.Second
+		start := func() mcpServer {
+			return mcp.NewStdio(server, mcpInv.configs[server], timeout, cmd.Root().Version)
+		}
+		// The interface hides the type; a nil *mcp.Client inside it
+		// would not compare equal to nil, so the running client is
+		// passed only when there is one.
+		var runningServer mcpServer
+		if running != nil {
+			runningServer = running
+		}
+		kept := reconnectMCPServer(ctx, server, runningServer, start, registry, &warn, mcpFilter, &mcpInv)
+		if kept != nil {
+			others = append(others, kept.(*mcp.Client))
+		}
+		mcpClients = others
+		mcpSummary = mcpInv.summaryLines()
+		ag.RefreshTools()
+		settings.inv = mcpInv
+		mcpTools := mcpToolCount(registry)
+		sink.Reload("mcp", len(mcpClients), mcpTools)
+		if sessionLog != nil {
+			_ = sessionLog.Log("mcp_reload", map[string]any{
+				"servers": len(mcpClients), "tools": mcpTools, "server": server})
+		}
+		return mcpFilter, mcpInv, reloadWarnings(warn.String())
 	}
 	reloadSkills := func() string {
 		var pinNotes []string

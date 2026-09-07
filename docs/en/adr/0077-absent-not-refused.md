@@ -246,8 +246,14 @@ server has always been that table's natural unit too, and one panel
 component serves both lists.
 
 A toggle is written and applied at once: `policy.toml` is updated, the
-filter is re-derived from the three files, and the servers reconnect
-(ADR-0039). There is no separate persist step — a panel that showed one
+filter is re-derived from the three files, and the server the toggle
+named reconnects under it (ADR-0039) — that one server, not the set: a
+function toggle re-lists a running server, off stops its process, on
+starts it, and the others are not touched. (As shipped in v0.72.0 every
+server was restarted for any toggle, which on a machine with twenty-five
+of them made an arrow key take seconds inside the TUI's event loop and
+queue the keys typed meanwhile; corrected in the release after.) There
+is no separate persist step — a panel that showed one
 state and stored another is the disagreement ADR-0009 built the
 provenance column to end. The scrollback line says which file was
 written.
