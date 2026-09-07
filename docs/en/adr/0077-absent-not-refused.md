@@ -427,6 +427,36 @@ with a tapping `http.RoundTripper` — `internal/llm/wirebytes_live_test.go`
 already taps the response body and is the pattern to copy. It is a
 curiosity beside (1): bytes are not what is billed.
 
+**Measured 2026-09-08** (v0.71.0, before implementation; the reduced
+configuration was produced by editing a scratch `mcp.json`, which is
+what a server-level exclusion will do). One fixed trivial prompt,
+`gemini-3.8-flash`, same project directory, isolated state, same
+`config.toml`; the server list is the only variable.
+
+| configuration | servers | tools | prompt tokens (round 1) |
+|---|---|---|---|
+| no MCP servers | 0 | 0 | 5,804 / 5,805 / 5,809 |
+| three largest removed | 21 | 130 | 32,647 |
+| the operator's list | 24 | 249 | 73,143 / 73,144 / 73,151 |
+
+- **The declarations are 67,340 tokens — 92% of the prompt.** Run to run
+  the figure moves by five tokens; the tool set is the whole of the
+  variance.
+- **Three of the twenty-four servers are 60% of that cost** (40,499
+  tokens for 119 tools). Declaration bytes read straight from
+  `tools/list` — 242,350 over 249 tools, about 3.6 bytes per token —
+  predicted that saving within 6%, so a byte count is a serviceable
+  estimator once the total is known.
+- **The first-round figure must not be quoted alone**, exactly as (2)
+  said. In a second round of the same session the prompt was 73,382 with
+  **68,660 cached**: the declarations are paid in full once per prefix
+  and at the cached rate on every round after. What an exclusion saves
+  is therefore one full payment per session (and per prefix change) plus
+  a cached-rate share thereafter — real, and not the headline number.
+- **Startup wall-clock produced nothing usable at three runs**: model
+  latency dominates it. The solid startup fact is the process count, 24
+  against 0.
+
 ## Alternatives considered
 
 - **Declared but refused** — rejected; see the second Context section.
