@@ -110,6 +110,20 @@ func init() {
 
 const shell = "/bin/bash"
 
+// reloadWarnings keeps a reload report's warnings and drops its
+// per-server inventory. `/mcp reload` is a command that asked for the
+// inventory; a toggle in the settings panel is not.
+func reloadWarnings(report string) string {
+	var keep []string
+	for _, l := range strings.Split(report, "\n") {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "warning:") || strings.HasPrefix(t, "note:") {
+			keep = append(keep, t)
+		}
+	}
+	return strings.Join(keep, "; ")
+}
+
 // workDirNoteFloor is the size a session's leftovers reach before the
 // startup note is worth an operator's attention (ADR-0078 §4). Below it
 // the directories exist but nothing has accumulated.
@@ -1121,16 +1135,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			return mcpFilter, mcpInv, "not applied: " + err.Error()
 		}
 		mcpFilter = f
-		// What the reconnect reports — a server that would not start, a
-		// stale entry — is the operator's answer to "why did nothing
-		// appear", so it goes back with the edit rather than into the
-		// void (pre-release re-review).
+		// Only what went wrong. The reconnect's report is a line per
+		// server — twenty-five of them on this machine — and an arrow
+		// key is not a command that asked for an inventory; the
+		// warnings are still the operator's answer to "why did nothing
+		// appear" (pre-release review).
+		//
 		// Hoisted: reconnectMCP reassigns mcpInv, and the order of a
 		// call against the other operands of a return is unspecified.
-		// gc runs the call first today; a build that did not would hand
-		// the panel the pre-reload inventory.
-		note := reconnectMCP(false)
-		return mcpFilter, mcpInv, note
+		report := reconnectMCP(false)
+		return mcpFilter, mcpInv, reloadWarnings(report)
 	}
 	reloadSkills := func() string {
 		var pinNotes []string
@@ -1346,6 +1360,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		if !sandboxOn {
 			fmt.Fprintln(stderr, banner.SandboxLine(false, false, false))
 		}
+		// One-shot returns before the banner is built, so the fact that
+		// this run approves its own mutating tools had no surface at all
+		// — in the mode where it matters most, since the ladder answers
+		// and nobody is at a prompt (pre-release review).
+		if ag.AutoApprove() {
+			fmt.Fprintln(stderr, banner.AutoApproveLine())
+		}
 		// Piped stdin becomes a nonce-wrapped data attachment
 		// (ADR-0055) — never prompt text: the -p string alone is the
 		// instruction the risk evaluator sees (ADR-0038/0054). A
@@ -1441,9 +1462,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			CompletePath: func(prefix string) []string {
 				return mention.Complete(projectDir, prefix, 24)
 			},
-			CompleteSlash: slashCompletions(func() []skills.Skill { return skillsList }),
-			Settings:      &settingsData,
-			ApplySetting:  settings.Apply,
+			CompleteSlash:   slashCompletions(func() []skills.Skill { return skillsList }),
+			Settings:        &settingsData,
+			ApplySetting:    settings.Apply,
+			RefreshSettings: settings.data,
 			ExpandInput: func(in string) (string, bool, string) {
 				return expandSkillInput(in, skillsList)
 			},

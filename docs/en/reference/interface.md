@@ -58,14 +58,16 @@ policy never asks, so it still runs — see
 ## What prints at startup (ADR-0078)
 
 A line earns a place at startup only if nothing else will say it. That
-leaves four kinds:
+leaves four kinds, of which an ordinary session shows the first three:
 
 ```
 gem-agent v0.72.0 — gemini-3.8-flash
 instructions: ~/.config/gem-agent/AGENTS.md, ../CLAUDE.md, AGENTS.md
 mcp: 24 servers, 249 tools · skills: 5 · memory: 3 (/mcp /skills /memory)
-/help for commands, Ctrl+D to quit
 ```
+
+The plain REPL adds `/help for commands, Ctrl+D to quit` after it; the
+TUI has its own chrome for that.
 
 - **the build and the model** — what this session is and what it spends.
   Not the GCP project or location: `/settings` shows those on request,
@@ -82,10 +84,14 @@ start, a policy entry that was ignored, a stale `[mcp] exclude` name,
 session work directories that have grown. Each carries the command that
 addresses it.
 
-What is *not* there is deliberate. The project directory and the model
-are in the footer continuously; the approval policy is `/tools`, the
-risk rulebook `/riskbook`, the session list `gem-agent sessions`, and
-the resume command is printed again at exit. Before this rule the
+What is *not* there is deliberate. In the TUI the project directory and
+the model are in the footer continuously; the plain REPL has no footer
+and `/settings` names both there. One-shot has neither, and needs
+neither: it runs one turn against the directory you launched it in. The approval policy is
+`/tools`, the risk rulebook `/riskbook`, the session list `gem-agent
+sessions`, and the resume command is printed again at exit. The
+ordinary-case sandbox summary is not relocated — it is dropped, and the
+banner speaks only when the sandbox is not ordinary. Before this rule the
 banner ran to 28 wrapped rows on a machine with a full server list, and
 nobody had decided to print them.
 

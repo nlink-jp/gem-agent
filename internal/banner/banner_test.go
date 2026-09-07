@@ -68,7 +68,7 @@ func TestDisabledSandboxWinsOverTheOtherStates(t *testing.T) {
 
 // The banner is composed by a rule, so the rule is what is tested: the
 // ordinary session prints what nothing else says, and nothing more.
-func TestOrdinarySessionIsFourLines(t *testing.T) {
+func TestOrdinarySessionIsThreeLines(t *testing.T) {
 	got := Lines(Facts{
 		Version: "v0.72.0", Model: "gemini-3.8-flash",
 		Instructions: []string{"AGENTS.md"},

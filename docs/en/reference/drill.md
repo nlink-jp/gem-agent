@@ -38,10 +38,11 @@ anyone touching gem-agent:
 
 ## Procedure
 
-Record the session id before you start — `gem-agent sessions` lists it,
-and the exit summary prints it with its resume command. The transcript
-**is** the drill's evidence: it holds every prompt, tool call, and
-answer, so nothing needs transcribing by hand.
+The transcript **is** the drill's evidence: it holds every prompt, tool
+call, and answer, so nothing needs transcribing by hand. Its id is
+printed by the exit summary at the end of the run, and `gem-agent
+sessions` lists it afterwards — there is nothing to record before you
+start, because the session does not exist yet.
 
 ### 1. Launch (2 min)
 

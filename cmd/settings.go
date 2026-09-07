@@ -102,8 +102,21 @@ func (s *settingsStore) data() tui.SettingsData {
 	ro("backend", "model.thinking", thinkingLabel(s.cfg.Model.Thinking), "model.thinking", needsRestart)
 	ro("backend", "model.context_window", contextWindowLabel(s.cfg.Model.ContextWindow),
 		"model.context_window", "auto-detected when unset")
-	ro("safety", "sandbox.enabled", strconv.FormatBool(s.cfg.Sandbox.Enabled), "sandbox.enabled",
-		"the sandbox is not a menu item — restart with --no-sandbox if you must")
+	// The measured state, not the configured one: --no-sandbox is never
+	// folded back into cfg, and a failed write-lane probe leaves the
+	// setting true while the runtime is unconfined. Two documents send
+	// the operator here to check the sandbox, so the row has to answer
+	// the question they were sent with (pre-release review).
+	// Source "measured", not the config file: the value is what the
+	// startup probes established, and crediting config.toml would name a
+	// file that does not decide it — `--no-sandbox` is never folded back
+	// into cfg, and a failed probe leaves the setting true.
+	d.Rows = append(d.Rows, tui.SettingRow{
+		Section: "safety", Label: "sandbox",
+		Value:  sandboxState(s.registry.Confined(), s.registry.ReadLane()),
+		Source: "measured",
+		Detail: "established by probes at startup — restart with or without --no-sandbox to change it",
+	})
 	ro("limits", "agent.max_turns", strconv.Itoa(s.cfg.Agent.MaxTurns), "agent.max_turns", "")
 	ro("limits", "agent.shell_timeout_sec", strconv.Itoa(s.cfg.Agent.ShellTimeoutSec), "agent.shell_timeout_sec", "")
 	ro("limits", "agent.compact_at_pct", strconv.Itoa(s.cfg.Agent.CompactAtPct)+"%", "agent.compact_at_pct", "")
@@ -158,6 +171,18 @@ func (s *settingsStore) data() tui.SettingsData {
 	s.mcpRows(&d)
 	s.approvalRows(&d)
 	return d
+}
+
+// sandboxState renders what the runtime established, in the vocabulary
+// the banner uses for the same fact.
+func sandboxState(confined, readLane bool) string {
+	switch {
+	case !confined:
+		return "DISABLED — shell commands run unconfined"
+	case !readLane:
+		return "enabled (read lane unverified — every shell_exec asks)"
+	}
+	return "enabled"
 }
 
 // declaredValue renders an exclusion state the way the operator reads
@@ -426,7 +451,11 @@ func (s *settingsStore) applyExclude(ch tui.SettingChange) (tui.SettingsData, st
 	if note != "" {
 		line += " — " + strings.TrimSpace(note)
 	}
-	if s.filter.Func(server, fn) && ch.Value == "on" && fn != "" {
+	// Also at the server level: Func(server, "") answers for the whole
+	// server, and the fn != "" guard meant a server row snapped back to
+	// off with nothing but the Source column to explain it (pre-release
+	// review).
+	if ch.Value == "on" && s.filter.Func(server, fn) {
 		line += " — still excluded by " + config.ProjectFileName
 	}
 	return data, line

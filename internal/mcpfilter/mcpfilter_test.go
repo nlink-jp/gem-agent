@@ -44,9 +44,6 @@ func TestEmptyFilterExcludesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !f.Empty() {
-		t.Error("a filter with no entries is not Empty")
-	}
 	if f.Server("obsidian") || f.Func("obsidian", "anything") {
 		t.Error("an empty filter excluded something")
 	}
@@ -277,5 +274,36 @@ func TestFunctionEntriesIgnoresTheWholeServerEntry(t *testing.T) {
 	}
 	if f.Knows("github") {
 		t.Error("Knows reported an opinion about a server with none")
+	}
+}
+
+// The panel carries config.toml's entries forward when it writes, so a
+// shadowed entry is usually still excluded — by the nearer file.
+// Reporting those said "not in force" about something in force, on every
+// start, and told the operator to undo what they had just done.
+func TestShadowedButStillExcludedIsNotReported(t *testing.T) {
+	f, err := Build([]string{"obsidian/patch_vault_file"},
+		PolicyScope{Entries: []string{"obsidian/patch_vault_file", "obsidian/other"}, Decided: []string{"obsidian"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := f.Unmatched(map[string]bool{"obsidian": true},
+		map[string][]string{"obsidian": {"patch_vault_file", "other"}}, true)
+	if len(got) != 0 {
+		t.Errorf("Unmatched = %v — the entry is still in force, from policy.toml", got)
+	}
+}
+
+// One that genuinely lost its effect is still reported.
+func TestShadowedAndNoLongerExcludedIsReported(t *testing.T) {
+	f, err := Build([]string{"obsidian/patch_vault_file"},
+		PolicyScope{Decided: []string{"obsidian"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := f.Unmatched(map[string]bool{"obsidian": true},
+		map[string][]string{"obsidian": {"patch_vault_file"}}, true)
+	if len(got) != 1 || !strings.Contains(got[0], "not in force") {
+		t.Errorf("Unmatched = %v, want the entry reported", got)
 	}
 }

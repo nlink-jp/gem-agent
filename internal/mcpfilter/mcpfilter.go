@@ -197,6 +197,13 @@ func Build(configEntries []string, policy PolicyScope, projectEntries []string) 
 	}
 	for _, e := range cfgE {
 		if shadowed[e.Server] {
+			// Only when the entry stops having an effect. The panel
+			// carries config.toml's entries forward when it writes, so
+			// the ordinary case is that a shadowed entry is still
+			// excluded — by the nearer file. Reporting those said "not
+			// in force" about something in force, on every start, and
+			// told the operator to undo what they had just done
+			// (pre-release review).
 			f.shadowed = append(f.shadowed, e)
 			continue
 		}
@@ -283,10 +290,6 @@ func (f Filter) For(server string) []string {
 	return out
 }
 
-// Empty reports whether nothing is excluded, which is the default and
-// keeps `.mcp.json` meaning exactly what it means today.
-func (f Filter) Empty() bool { return len(f.byServer) == 0 }
-
 // Unmatched returns the entries that named nothing.
 //
 // configured is every server name in the merged .mcp.json — an excluded
@@ -334,6 +337,9 @@ func (f Filter) Unmatched(configured map[string]bool, listed map[string][]string
 		}
 	}
 	for _, e := range f.shadowed {
+		if f.Func(e.Server, e.Func) {
+			continue // still excluded, just by a nearer file
+		}
 		out = append(out, fmt.Sprintf("%s (%s): not in force — %s decides this server; remove it, or turn that server's functions off in /settings",
 			e, e.Scope, FromPolicy))
 	}

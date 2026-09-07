@@ -226,6 +226,6 @@ func TestRenderInfoNamesTheWorkDirectory(t *testing.T) {
 	}
 	s.WorkDir = "/state/gem-agent/proj/work/2026-08-21-abcdef"
 	if !strings.Contains(renderInfo(s), s.WorkDir) {
-		t.Errorf("/status does not name the work directory:\n%s", renderInfo(s))
+		t.Errorf("agent_info does not name the work directory:\n%s", renderInfo(s))
 	}
 }

@@ -14,9 +14,18 @@
   instruction files found on disk, a resume, one counts row naming
   `/mcp` `/skills` `/memory`, and everything abnormal. The project path,
   the sandbox summary in the ordinary case, the session-log path, the
-  approval-policy summary and the risk-rulebook line are gone — the
-  footer, `/tools`, `/riskbook` and `gem-agent sessions` show them
-  better. The first row no longer carries your GCP project and location.
+  approval-policy summary and the risk-rulebook line are gone. The
+  footer carries the project in the TUI and `/settings` names it in the
+  plain REPL; `/tools` and `/riskbook` carry the other two; `gem-agent
+  sessions` lists your sessions. The ordinary-case sandbox summary is
+  not relocated — it is dropped, and the banner now speaks only when the
+  sandbox is not ordinary.
+- Documentation that pointed at a `/status` command now points at
+  commands that exist. `/status` was never built: entries below and two
+  READMEs named it, and the sandbox state it promised is on the banner
+  and in `/settings`, while the work directory is `gem-agent workdirs`
+  and `$GEMAGENT_WORK_DIR`. The older entries are left as they were
+  written The first row no longer carries your GCP project and location.
   The work-directory note is gated on bytes, so empty leftovers no
   longer announce "0B". Starting in auto-approve now says so: the footer
   carries it in the TUI, but the plain REPL has no footer and it is the
@@ -48,7 +57,7 @@
   function is never declared, and the server keeps running for the rest.
   Everything not named is declared, so an empty list is what you have
   today. The key is read from your config, from the machine-owned
-  `policy.toml` (the settings panel that writes it comes next), and from
+  `policy.toml`, which the settings panel below writes, and from
   a project's `.gem-agent.toml`, which may only add to it; per server the
   nearest file decides whole. Names are exact
   and a name that matches nothing is reported at startup. This is what

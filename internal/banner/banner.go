@@ -61,11 +61,7 @@ func Lines(f Facts) []string {
 		out = append(out, line)
 	}
 	if f.AutoApprove {
-		// A change, not a status: the session begins running mutating
-		// tools unattended. The TUI footer carries it continuously, but
-		// the plain REPL has no footer, and it is the only
-		// approval-regime fact with no other startup surface.
-		out = append(out, "auto-approve: ON at start — /auto or shift+tab turns it off")
+		out = append(out, AutoApproveLine())
 	}
 	for _, n := range f.Notes {
 		out = append(out, "warning: "+n)
@@ -101,6 +97,18 @@ func inventory(f Facts) string {
 	return strings.Join(parts, " · ") + " (" + strings.Join(cmds, " ") + ")"
 }
 
+// AutoApproveLine says the session begins running mutating tools
+// unattended. A change, not a status: the TUI footer carries it
+// continuously, the plain REPL has no footer, and one-shot has neither —
+// which is the mode where it matters most, since the ladder answers and
+// nobody is at a prompt.
+//
+// Exported for the same reason as SandboxLine: one-shot prints it
+// without the rest of the banner, and the two modes must not disagree.
+func AutoApproveLine() string {
+	return "auto-approve: ON at start — /auto or shift+tab turns it off"
+}
+
 // SandboxLine returns the sandbox line only when the sandbox is not in
 // its ordinary state. Enabled with a verified read lane is the normal
 // case and says nothing (ADR-0078 §3); the three exceptions each change
@@ -130,7 +138,9 @@ func SandboxLine(on, readLane, readLanePrompts bool) string {
 // the four explanatory-banner releases were shipped past.
 func Sample() Facts {
 	return Facts{
-		Version: "v0.72.0", Model: "gemini-3.8-flash",
+		// Not a real version: a hardcoded one goes stale on the next
+		// release and the document then asserts it (pre-release review).
+		Version: "vX.Y.Z", Model: "gemini-3.8-flash",
 		Instructions: []string{"~/.config/gem-agent/AGENTS.md", "../CLAUDE.md", "AGENTS.md"},
 		Servers:      24, Tools: 249, Skills: 5, Memories: 3,
 		ResumedID: "2acb328c", Restored: 42,

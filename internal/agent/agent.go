@@ -748,7 +748,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			// trade — the error must at least say so.
 			if ctx.Err() == nil && strings.Contains(err.Error(), "400") {
 				if ref := a.firstURIAttachment(); ref != "" {
-					return "", fmt.Errorf("%w\n(uploaded media %s is no longer readable — /clear to drop it from the history)", err, ref)
+					return "", fmt.Errorf("%w\n(if the uploaded media %s is gone, /clear drops it from the history)", err, ref)
 				}
 			}
 			return "", err

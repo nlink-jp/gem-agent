@@ -32,8 +32,31 @@ func main() {
 	fmt.Println()
 	fmt.Println("Read as the operator reads it: a fact and the next command, no design references, no reasons. Format verbs are filled with sample values.")
 	fmt.Println()
+	// The banner first, because it is first: the document is read in
+	// the order an operator meets the text, and the banner is the one
+	// screen they meet before typing anything.
+	startupBanner()
 	catalogs()
 	literals()
+}
+
+// startupBanner prints the first screen, assembled. Its fragments used
+// to be scattered through the flat literal list, so the one thing every
+// operator meets first was the one thing this document could not show —
+// which is how those lines reached twenty-eight rows (ADR-0078).
+func startupBanner() {
+	fmt.Println("## Startup banner")
+	fmt.Println()
+	fmt.Println("Every optional line present; an ordinary session prints the first three.")
+	fmt.Println()
+	fmt.Println("```")
+	for _, l := range banner.Lines(banner.Sample()) {
+		fmt.Println(l)
+	}
+	fmt.Println("```")
+	fmt.Println()
+	fmt.Println("The plain REPL adds `/help for commands, Ctrl+D to quit`; the TUI has its own chrome for it.")
+	fmt.Println()
 }
 
 // catalogs prints the UI catalog field by field, English then Japanese.
@@ -58,7 +81,7 @@ func catalogs() {
 }
 
 // verb is one fmt directive: flags, width, precision, verb letter.
-var verb = regexp.MustCompile(`%[-+# 0]*\d*(?:\.\d*)?[a-zA-Z%]`)
+var verb = regexp.MustCompile(`%[-+# 0]*\d*(?:\.\d*)?(?:\[\d+\])?[a-zA-Z%]`)
 
 // render fills format verbs with sample values so a message reads as it
 // will on screen. Verb count and kinds are taken from the string itself.
@@ -88,25 +111,7 @@ func render(s string) string {
 // arguments of the printing and error functions, cobra descriptions and
 // flag help. Paths are repo-relative.
 func literals() {
-	fmt.Println("## cmd literals (notes, errors, help)")
-	// The first screen, assembled — not its fragments scattered through
-	// the flat list below. The banner is what every operator meets
-	// first, and it was the one thing this document could not show
-	// (ADR-0078's own check, missing until the pre-release read-through
-	// looked for it).
-	fmt.Println()
-	fmt.Println("## Startup banner")
-	fmt.Println()
-	fmt.Println("Every optional line present; an ordinary session prints the first three.")
-	fmt.Println()
-	fmt.Println("```")
-	for _, l := range banner.Lines(banner.Sample()) {
-		fmt.Println(l)
-	}
-	fmt.Println("```")
-	fmt.Println()
-	fmt.Println("The plain REPL adds `/help for commands, Ctrl+D to quit`; the TUI has its own chrome for it.")
-
+	fmt.Println("## cmd and agent literals (notes, errors, help)")
 	fmt.Println()
 	fset := token.NewFileSet()
 	var lines []string

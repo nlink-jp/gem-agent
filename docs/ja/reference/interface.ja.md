@@ -54,14 +54,17 @@ erDiagram。幅ゲートも高さ上限もありません: 端末より広いア
 
 ## 起動時に何が出るか（ADR-0078）
 
-起動時に席を得られるのは、他の何もそれを言わない行だけである。残るのは 4 種類。
+起動時に席を得られるのは、他の何もそれを言わない行だけである。残るのは 4 種類で、
+通常のセッションが出すのはそのうち最初の 3 つである。
 
 ```
 gem-agent v0.72.0 — gemini-3.8-flash
 instructions: ~/.config/gem-agent/AGENTS.md, ../CLAUDE.md, AGENTS.md
 mcp: 24 servers, 249 tools · skills: 5 · memory: 3 (/mcp /skills /memory)
-/help for commands, Ctrl+D to quit
 ```
+
+plain REPL はこの後に `/help for commands, Ctrl+D to quit` を足す。TUI はそれ用の
+クロムを別に持つ。
 
 - **ビルドとモデル** —— このセッションが何であり、何を費やしているか。GCP の
   プロジェクトとロケーションは出さない: `/settings` が求めに応じて見せるし、
@@ -77,9 +80,14 @@ mcp: 24 servers, 249 tools · skills: 5 · memory: 3 (/mcp /skills /memory)
 `[mcp] exclude` の名前、肥大したセッション作業ディレクトリ。それぞれが対処の
 コマンドを持っている。
 
-**無いもの**は意図的である。プロジェクトディレクトリとモデルはフッタが常時
-出しており、承認ポリシは `/tools`、リスク規則書は `/riskbook`、セッション一覧は
-`gem-agent sessions`、再開コマンドは終了時にもう一度出る。この規則の前、
+**無いもの**は意図的である。TUI ではプロジェクトディレクトリとモデルをフッタが
+常時出す。plain REPL にはフッタが無いが `/settings` が両方を名指す。one-shot は
+どちらも持たず、必要ともしない —— 起動したディレクトリに対して 1 ターン走って
+終わるからである。
+承認ポリシは `/tools`、リスク規則書は `/riskbook`、セッション一覧は
+`gem-agent sessions`、再開コマンドは終了時にもう一度出る。通常時の sandbox 要約は
+移設したのではなく落とした —— バナーが口を開くのは sandbox が通常でないときだけ
+である。この規則の前、
 サーバー一覧が揃った機体でバナーは折返し 28 行あり、それを出すと決めた者は
 いなかった。
 

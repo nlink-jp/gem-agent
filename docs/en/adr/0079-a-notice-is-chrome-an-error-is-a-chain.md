@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** |
+| Status | **Accepted** (2026-09-08, implemented and unreleased) |
 | Date | 2026-09-08 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -17,14 +17,15 @@ and `/compact` feedback, the startup-safety prompts) and what stays
 English (banner labels and `warning:` lines, cobra `--help`,
 model-facing text, Go error chains).
 
-Nine strings `internal/agent` writes mid-turn were moved into the
-catalog on the claim that no ADR was needed, because §3 names "`/compact`
-feedback" and auto-compaction is that feedback from the other trigger.
+Eleven catalog fields now carry what `internal/agent` writes mid-turn.
+They were moved on the claim that no ADR was needed, because §3 names
+"`/compact` feedback" and auto-compaction is that feedback from the
+other trigger.
 
-That reading holds for four of them. It does not hold for the other
-five — a content-filter retry, a truncated response, a repeated remote
-failure, a transcript-write failure, and the round ladder's continuation
-— which are on neither list. Those are new surfaces entering the
+That reading holds for four of them. It does not hold for the rest — a
+content-filter retry, a truncated response, a repeated remote failure, a
+transcript-write failure, the round ladder's two continuations, and the
+prompt hook's attachment notice — which are on neither list. Those are new surfaces entering the
 catalog, and §3 is a closed enumeration. `df2ea5e`, in the same release,
 wrote a whole ADR with an `Amends` row for a move of exactly this size.
 
@@ -36,7 +37,8 @@ the move does not decide its own membership:
 
 `CompactFailedFmt` is `"context compaction failed: %s"` with the cause
 from `err.Error()`, and it carries no command at all — the command
-arrives separately, on the third consecutive failure. By the stated rule
+arrives separately, on the second consecutive failure, when automatic
+compaction gives up. By the stated rule
 it belongs on the English side. It is in the catalog. A rule that the
 work it justifies does not follow is not the rule that was applied.
 
@@ -77,7 +79,23 @@ operator line should have one — and it was never a rule about
 **language**. Conflating the two is what produced a justification that
 its own examples contradict.
 
-### 3. What does not change
+### 3. What the rule does not yet cover, and is not fixed here
+
+Three composed-by-gem-agent strings render inside the approval dialog —
+which §3 lists as cataloged — and stay hardcoded English:
+`EscalationReason` (`internal/agent/autoapprove.go`), every
+`risk.Verdict.Reason` (`internal/risk`), and the unknown-tool and
+unconfined-shell reasons in `internal/agent/decision.go`. By §2's rule
+they are catalog text. They are pre-existing, they are not touched by
+this release, and a Japanese session still reads English risk reasoning
+at the gate.
+
+Named rather than quietly excepted: the rule is what makes them a
+violation, and a rule with an unstated exception is the thing §2 was
+written to replace. Cataloging them is a change to the risk tier's
+vocabulary, not a wiring fix, and it belongs in its own change.
+
+### 4. What does not change
 
 - Banner labels and `warning:` lines stay English (grep-stable output).
 - Cobra `--help` stays English.
@@ -102,5 +120,5 @@ its own examples contradict.
 - `internal/uitext`'s package doc states the authorship rule, not the
   next-command one.
 - ADR-0029 gains an *Amended by* line.
-- No code changes: the nine fields are already cataloged, and this ADR
+- No code changes: the eleven fields are already cataloged, and this ADR
   records the decision that put them there and corrects the reason.

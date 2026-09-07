@@ -180,6 +180,12 @@ type Options struct {
 	// Both nil disables /settings (the plain REPL prints a table).
 	Settings     *SettingsData
 	ApplySetting SettingsApplier
+	// RefreshSettings re-reads the panel's content. Without it the panel
+	// showed the startup snapshot every time it was reopened: an
+	// exclusion turned off, Esc, reopen, and the row read on again —
+	// with ADR-0077 that row is the only place the state is visible at
+	// all (pre-release review).
+	RefreshSettings func() SettingsData
 	// ExpandInput rewrites an input line into the text of a turn before
 	// it is sent — the /skill route (ADR-0010): the operator's line is
 	// echoed, the expanded text is what actually runs. handled=false
@@ -238,10 +244,11 @@ type Model struct {
 
 	// Settings panel (ADR-0009). settingsData is the caller-supplied
 	// snapshot used to open the panel; settings is the live copy.
-	settingsData   *SettingsData
-	settings       *SettingsData
-	settingsCursor int
-	settingsScope  string
+	settingsData    *SettingsData
+	refreshSettings func() SettingsData
+	settings        *SettingsData
+	settingsCursor  int
+	settingsScope   string
 	// settingsCollapsed is UI state, keyed by group (an MCP server
 	// name): the panel's two levels (ADR-0077 §3). Groups open closed.
 	settingsCollapsed map[string]bool
@@ -347,6 +354,7 @@ func New(opts Options) Model {
 		completePath:    opts.CompletePath,
 		completeSlashFn: opts.CompleteSlash,
 		settingsData:    opts.Settings,
+		refreshSettings: opts.RefreshSettings,
 		applySetting:    opts.ApplySetting,
 		expandInput:     opts.ExpandInput,
 		baseCtx:         opts.BaseCtx,

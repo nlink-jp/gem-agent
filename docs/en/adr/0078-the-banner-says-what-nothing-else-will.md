@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** |
+| Status | **Accepted** (2026-09-08, implemented and unreleased; §1 gained the auto-approve line and §5's justification was corrected during the pre-release passes) |
 | Date | 2026-09-08 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -127,8 +127,12 @@ is not a next command.
 - **No mode-dependent banner.** The plain REPL has no footer, so
   dropping `project:` costs it there. Branching the banner on the
   presence of chrome is a rule the next reader has to reconstruct from
-  two code paths; `/settings` shows the project in both modes, and the
-  operator is standing in the directory they launched from.
+  two code paths. `/settings` answers instead — its plain-REPL renderer
+  prints a `project:` line, added when the pre-release review found that
+  this justification had been written before it was true. "The operator
+  is standing in the directory they launched from" was also in this
+  paragraph and is struck: the path is symlink-resolved, so launching in
+  `/tmp/x` confines the file tools to `/private/tmp/x`.
 - **No configurable banner** (`[tui].banner = "full" | "minimal"`). It
   would preserve the wall for anyone who set it and add a setting to
   every future line's design. If a line is worth printing it is worth

@@ -83,7 +83,13 @@ func (m Model) openSettings() (tea.Model, tea.Cmd) {
 	if m.settingsData == nil {
 		return m, m.emit(m.st.errS.Render(m.msgs.SettingsUnavailable))
 	}
+	// Re-read on every open: the panel is the only surface for what
+	// ADR-0077 lets an operator change, and a snapshot taken at startup
+	// told them their own last edit had not happened.
 	data := *m.settingsData
+	if m.refreshSettings != nil {
+		data = m.refreshSettings()
+	}
 	m.settings = &data
 	m.settingsCursor = 0
 	m.settingsScope = ScopeGlobal

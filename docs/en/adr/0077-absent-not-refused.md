@@ -124,12 +124,13 @@ reasons.
 
 ## Decision
 
-Mechanically this is one thing: **a filter on tool names, applied at two
-points** — the declarations the model is given, and the dispatch of a
-call. Everything below is the shape of the name the filter matches
-(§1–§2), the place the operator edits it (§3), or the reason for a
-default (§4–§6). If the implementation grows past one predicate and two
-call sites, something has been smuggled in.
+Mechanically this is one thing: **a filter on tool names**. Two places
+act on it — the declarations the model is given, and the dispatch of a
+call — and one place reads it, the panel that edits it (§3). Everything
+below is the shape of the name the filter matches (§1–§2), where the
+operator edits it (§3), or the reason for a default (§4–§7). If a fourth
+place starts consulting it, or the predicate starts deciding anything
+but "is this name in the session", something has been smuggled in.
 
 Saying it that way also fixes the limit. A filter on names is exactly as
 strong as the convention that a name says what a tool does: the runtime
@@ -183,7 +184,7 @@ exclude = ["obsidian/delete_vault_file"]
 ```
 
 ```toml
-# <project>/.gem-agent.toml — may only add to off
+# <project>/.gem-agent.toml — may only add
 [mcp]
 exclude = ["github"]
 ```
@@ -226,7 +227,7 @@ exclude = ["github"]
 
 ### 3. The panel is where the set is decided
 
-`/tools` gains a two-level list. The outer level is the servers, from
+`/settings` gains a two-level list. The outer level is the servers, from
 `.mcp.json`: on or off, present whether or not the server is running.
 Expanding one shows its functions, each row on or off and carrying
 **where that came from** — `config.toml`, `policy.toml`, the project
@@ -241,11 +242,12 @@ adopt the same two levels** (ADR-0009 decision 1 amended):
 server has always been that table's natural unit too, and one panel
 component serves both lists.
 
-Toggling takes effect immediately through the ADR-0039 reload and is
-**session-scoped until it is persisted**; persisting writes
-`policy.toml`. Trying a set before committing to it is the ordinary
-case, and it keeps the pressure off getting the hand-written file right
-in one pass.
+A toggle is written and applied at once: `policy.toml` is updated, the
+filter is re-derived from the three files, and the servers reconnect
+(ADR-0039). There is no separate persist step — a panel that showed one
+state and stored another is the disagreement ADR-0009 built the
+provenance column to end. The scrollback line says which file was
+written.
 
 ### 4. What the exclusion direction costs, and what already covers it
 
@@ -365,9 +367,9 @@ the transcript, for the operator who drew the line.
   "declared but refused" expressible as a combination of values, which
   is the state this ADR is written to prevent. The asymmetry is visible
   in one spelling: a bare `"*"` is a configuration error in the approval
-  table (it disarms every gate) and would be meaningless in `exclude` (it
-  would leave the session with no MCP tools at all, which the panel
-  reaches server by server).
+  table (it disarms every gate) and is refused outright in `exclude`:
+  `Parse` rejects any pattern, so a bare `"*"` stops the runtime from
+  starting rather than emptying the session's tool set.
 - **No standing deny via `[[hooks.pre_tool_use]]`**, although it works
   today. A hook is given the call's arguments because it judges per
   call; a standing "this tool is not part of this session" has no
@@ -495,15 +497,18 @@ what a server-level exclusion will do). One fixed trivial prompt,
 
 ## Consequences
 
-- One key, `[mcp] exclude`, in the global config, in `policy.toml` and in
+- `[mcp] exclude` in the global config and the project file; `policy.toml`
+  carries it beside `decided`, which records the opinion an entry list
+  cannot (§2). In
   the project file (where it may only add). Entries are `server` or
   `server/function`. Strict decode, as every other key is.
-- The registry keeps the names it removed, so a call to one is a
-  refusal rather than an unknown name. `toolDefs` builds declarations
+- The registry keeps the names it removed. The model gets the same text
+  either way — that is §5's point — and the difference is the transcript
+  record. `toolDefs` builds declarations
   from the effective set; the ADR-0039 reload path rebuilds it.
 - A server turned off is not started; `/mcp` says so, and the panel
   lists it regardless, from `.mcp.json`.
-- `/tools` gains the two-level list, provenance and toggles; the same
+- `/settings` gains the two-level list, provenance and toggles; the same
   component renders `/settings`' approval rows (ADR-0009 amended).
 - **Nothing is added to the startup banner, and no state is recorded
   about what a server used to offer.** The only new startup output is a
@@ -524,9 +529,14 @@ what a server-level exclusion will do). One fixed trivial prompt,
   the history holds calls to tools that are no longer declared; and the
   mid-session reload of the declared set.
 - Docs: README and README.ja (the paragraph on what the model can see),
-  the configuration, tools, approval and integration references in both
-  languages, the RFP's security layer, `config.example.toml`,
-  AGENTS.md's structure table, CHANGELOG, and both INDEX files. New
-  operator-facing strings go in both `uitext` catalogs.
+  the configuration and approval references in both languages,
+  `config.example.toml`, the project template, AGENTS.md's structure
+  table, CHANGELOG, and both INDEX files.
+- The strings this adds are hardcoded English in `cmd` and
+  `internal/mcpfilter`, not catalog entries. ADR-0029 §3 keeps
+  `warning:` lines and banner labels English, and these are those; the
+  panel's own rows are chrome and are the gap ADR-0079 leaves open —
+  named here so the next reader does not take the omission for an
+  oversight.
 - The measurement of §7, taken before or with the implementation. It
   belongs in the release note, not in the justification.
