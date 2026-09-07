@@ -40,7 +40,7 @@ const (
 type RoundLimitError struct{ Rounds int }
 
 func (e *RoundLimitError) Error() string {
-	return fmt.Sprintf("the round limit (%d rounds) stopped this turn — progress so far is saved in the conversation: say \"continue\" to resume where it left off, or raise [agent].max_turns", e.Rounds)
+	return fmt.Sprintf(roundStopFmt, "round limit", e.Rounds)
 }
 
 // roundExtension is one extension grant: half of max_turns, at least 1.
@@ -137,6 +137,17 @@ func (a *Agent) evaluateProgress(ctx context.Context) (progressVerdict, error) {
 
 // roundIntervention is the decision at a checkpoint (limit reached, or
 // the loop detector fired). Returns whether the turn continues.
+// continuedNotice tells the operator what was waved through. The two
+// triggers are different events: a round limit is "this turn is long",
+// a loop is "the same call came round again", and announcing the second
+// as a round count says nothing about the repeat.
+func (a *Agent) continuedNotice(trigger, detail string, limit int) string {
+	if trigger == "loop" {
+		return fmt.Sprintf(a.msgs.RoundLoopContinuedFmt, clip(detail, 80))
+	}
+	return fmt.Sprintf(a.msgs.RoundLimitContinuedFmt, limit)
+}
+
 // Fail-closed at every uncertain edge, exactly like ADR-0004.
 func (a *Agent) roundIntervention(ctx context.Context, trigger, detail string, round, limit, cap int) bool {
 	// A cancelled turn gets no dialog and no review — the operator
@@ -164,14 +175,14 @@ func (a *Agent) roundIntervention(ctx context.Context, trigger, detail string, r
 		// and a silent extension is not transparent, so it says so.
 		decision, source = confident, "review"
 		if decision {
-			a.notify(fmt.Sprintf(a.msgs.RoundContinuingFmt, round, cap))
+			a.notify(a.continuedNotice(trigger, detail, limit))
 		}
 	case a.AutoApprove() && confident:
 		// Auto mode exists to reduce interruptions (operator
 		// direction): a confident "progressing" continues with a
 		// visible notice instead of a dialog.
 		decision, source = true, "auto"
-		a.notify(fmt.Sprintf(a.msgs.RoundContinuingFmt, round, cap))
+		a.notify(a.continuedNotice(trigger, detail, limit))
 	default:
 		decision, source = a.onRoundLimit(ctx, info), "operator"
 	}

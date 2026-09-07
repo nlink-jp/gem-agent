@@ -70,6 +70,12 @@ the operator has no reason to go looking for it.
   questioned.
 - **`resumed: session <id> (<n> messages restored)`.** A fact about this
   session with no other surface.
+- **`auto-approve: ON at start`**, when it is. Added by the pre-release
+  read-through, which found it stated nowhere: the session begins
+  running mutating tools unattended, the TUI footer carries it
+  continuously but the plain REPL has no footer, and §3 removed the
+  sandbox line that used to gesture at the approval regime. It is
+  abnormal by §1's own definition and carries its own next command.
 - **Everything abnormal**, unchanged: a disabled or unverified sandbox,
   `read_lane_prompts`, an untrusted project, an MCP server that would
   not start, a policy entry ignored, a stale `[mcp] exclude` name. These
@@ -149,8 +155,11 @@ is not a next command.
 
 ## Consequences
 
-- `cmd/root.go` builds the banner from the rule rather than from
-  whatever wrote to stderr: the counts line replaces `mcpSummary`'s
+- The rule and the composition live in `internal/banner`, so they can be
+  stated, tested and *rendered* — `make labels` prints the assembled
+  banner, which is the check this ADR claimed and did not have until the
+  read-through went looking for it. `cmd/root.go` supplies the facts
+  rather than assembling lines from whatever wrote to stderr: the counts line replaces `mcpSummary`'s
   join, `skillBannerLine` and `memory.BannerLine`; the policy and
   rulebook lines go; the sandbox line prints only its abnormal variants.
 - The identity line loses `@ <project>/<location>`.

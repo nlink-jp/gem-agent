@@ -65,6 +65,11 @@
   明快な事例であり、誰も疑わなかった唯一の行である。
 - **`resumed: session <id> (<n> messages restored)`。** 他に現れる場所の無い、
   このセッションについての事実。
+- ON のときの **`auto-approve: ON at start`**。リリース前通読が「どこにも書かれて
+  いない」として見つけた。セッションは最初から変更系ツールを無人で走らせるのに、
+  TUI のフッタは常時それを出す一方 plain REPL にはフッタが無く、§3 が承認体制を
+  示唆していた sandbox 行を落としてしまった。§1 自身の定義で異常であり、自分の
+  次の一手を持っている。
 - **異常はすべて**そのまま: sandbox の無効化・未検証、`read_lane_prompts`、
   未信頼プロジェクト、起動しなかった MCP サーバー、無視されたポリシ項目、
   陳腐化した `[mcp] exclude` の名前。これらは状態ではなく変化であり、それぞれが
@@ -132,7 +137,10 @@ deleted automatically」は落とす —— `gem-agent workdirs` が自分の he
 
 ## 影響
 
-- `cmd/root.go` は、stderr に何が書かれたかではなく規則からバナーを組む: 個数行が
+- 規則と組み立ては `internal/banner` に置く。述べ、テストし、そして**描画**できる
+  ようにするためである —— `make labels` が組み上がったバナーを印字する。これは本
+  ADR が主張しながら、通読が探しに来るまで存在しなかった検査である。`cmd/root.go`
+  は stderr に何が書かれたかではなく事実を渡す: 個数行が
   `mcpSummary` の連結・`skillBannerLine`・`memory.BannerLine` を置き換え、policy と
   rulebook の行は消え、sandbox 行は異常変種だけを出す。
 - 識別行から `@ <project>/<location>` が消える。

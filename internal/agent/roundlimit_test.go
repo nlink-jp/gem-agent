@@ -133,7 +133,8 @@ func TestRoundLimitOperatorDecides(t *testing.T) {
 	b2 := &rlBackend{responses: loopRounds(9), verdict: progressingVerdict}
 	a2 := newRLAgent(t, b2, 2, onLimit)
 	if _, err := a2.Run(context.Background(), "q", nil); err == nil ||
-		!strings.Contains(err.Error(), "stopped at the round limit") {
+		!strings.Contains(err.Error(), "round limit") ||
+		!strings.Contains(err.Error(), "stopped this turn") {
 		t.Fatalf("stop path: %v", err)
 	}
 }
@@ -157,7 +158,7 @@ func TestRoundLimitAutoContinues(t *testing.T) {
 	// The operator is told the turn continued and where it is against
 	// the cap. The reviewer's own prose is deliberately not in it: it is
 	// model-generated text, and operator chrome is not the place for it.
-	if len(notices) == 0 || !strings.Contains(notices[0], "continuing") {
+	if len(notices) == 0 || !strings.Contains(notices[0], "continued the turn") {
 		t.Errorf("auto-continue notice missing: %v", notices)
 	}
 }

@@ -22,6 +22,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/approve"
+	"github.com/nlink-jp/gem-agent/internal/banner"
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/hooks"
 	"github.com/nlink-jp/gem-agent/internal/llm"
@@ -1332,7 +1333,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		go resolveWindow()
 		if !sandboxOn {
-			fmt.Fprintln(stderr, "sandbox: DISABLED — shell commands run unconfined and every one asks for your approval (auto-approve does not skip this)")
+			fmt.Fprintln(stderr, banner.SandboxLine(false, false, false))
 		}
 		// Piped stdin becomes a nonce-wrapped data attachment
 		// (ADR-0055) — never prompt text: the -p string alone is the
@@ -1379,31 +1380,25 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- banner (ADR-0078) ---
-	// A line earns a place here only if nothing else will say it. The
-	// footer carries the project and the model continuously, and a `/`
-	// command carries every list; what is left is the build, the files
-	// the operator did not type, a resume, and anything abnormal.
-	bannerLines := []string{
-		fmt.Sprintf("gem-agent %s — %s", cmd.Root().Version, cfg.Model.Name),
-	}
-	if len(contextLabels) > 0 {
-		bannerLines = append(bannerLines, "instructions: "+strings.Join(contextLabels, ", "))
-	}
-	if line := inventoryLine(len(mcpClients), mcpToolCount(registry), len(skillsList), len(memories)); line != "" {
-		bannerLines = append(bannerLines, line)
-	}
-	if resumedID != "" {
-		bannerLines = append(bannerLines,
-			fmt.Sprintf("resumed: session %s (%d messages restored)", resumedID, len(restored)))
-	}
-	// Abnormal only: the ordinary three-lane summary is a manual
-	// excerpt, identical on every start.
-	if line := sandboxAbnormalLine(sandboxOn, registry.ReadLane(), cfg.Sandbox.ReadLanePrompts); line != "" {
-		bannerLines = append(bannerLines, line)
-	}
+	// The rule, and the composition, live in internal/banner: a line
+	// earns a place here only if nothing else will say it, and that
+	// rule needs somewhere to be stated, tested and rendered for the
+	// operator-text read-through.
+	warnLines := make([]string, 0, len(policyNotes))
 	for _, n := range policyNotes {
-		bannerLines = append(bannerLines, "warning: "+string(n))
+		warnLines = append(warnLines, string(n))
 	}
+	bannerLines := banner.Lines(banner.Facts{
+		Version: cmd.Root().Version, Model: cfg.Model.Name,
+		Instructions: contextLabels,
+		Servers:      len(mcpClients), Tools: mcpToolCount(registry),
+		Skills: len(skillsList), Memories: len(memories),
+		ResumedID: resumedID, Restored: len(restored),
+		SandboxOn: sandboxOn, ReadLane: registry.ReadLane(),
+		ReadLanePrompts: cfg.Sandbox.ReadLanePrompts,
+		AutoApprove:     ag.AutoApprove(),
+		Notes:           warnLines,
+	})
 
 	// --- interactive TUI (ADR-0002/0003) ---
 	if useTUI {
@@ -2105,31 +2100,6 @@ func slashCompletions(getSkills func() []skills.Skill) func(string) []string {
 	}
 }
 
-// inventoryLine is the one row that replaces the enumerations
-// (ADR-0078 §2): what came up, and the commands that expand it. The
-// count survives the cut because "did my toolset come up as expected" is
-// a question the operator has before typing — a server that fails to
-// start warns, but one missing from the configuration warns nobody.
-func inventoryLine(servers, tools, skillCount, memCount int) string {
-	var parts, cmds []string
-	if servers > 0 {
-		parts = append(parts, fmt.Sprintf("mcp: %d servers, %d tools", servers, tools))
-		cmds = append(cmds, "/mcp")
-	}
-	if skillCount > 0 {
-		parts = append(parts, fmt.Sprintf("skills: %d", skillCount))
-		cmds = append(cmds, "/skills")
-	}
-	if memCount > 0 {
-		parts = append(parts, fmt.Sprintf("memory: %d", memCount))
-		cmds = append(cmds, "/memory")
-	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return strings.Join(parts, " · ") + " (" + strings.Join(cmds, " ") + ")"
-}
-
 // mcpToolCount counts the MCP tools this session actually declares.
 func mcpToolCount(registry *tools.Registry) int {
 	n := 0
@@ -2139,22 +2109,6 @@ func mcpToolCount(registry *tools.Registry) int {
 		}
 	}
 	return n
-}
-
-// sandboxAbnormalLine returns the sandbox line only when the sandbox is
-// not in its ordinary state. Enabled with a verified read lane is the
-// normal case and says nothing (ADR-0078 §3); the three exceptions each
-// change what a shell command will do, so each still prints.
-func sandboxAbnormalLine(on, readLane, readLanePrompts bool) string {
-	switch {
-	case !on:
-		return "sandbox: DISABLED — shell commands run unconfined"
-	case readLanePrompts:
-		return "sandbox: enabled (read_lane_prompts: read-lane commands ask too)"
-	case !readLane:
-		return "sandbox: enabled (read lane unverified on this machine — every shell_exec asks)"
-	}
-	return ""
 }
 
 // abbreviateHome shortens the home-directory prefix to "~" for display.

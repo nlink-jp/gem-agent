@@ -715,10 +715,10 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 				return "", &RoundLimitError{Rounds: limit}
 			}
 			if limit >= roundCap {
-				return "", fmt.Errorf("the round cap (%d rounds) stopped this turn — progress so far is saved: say \"continue\" to resume where it left off, or raise [agent].max_turns", roundCap)
+				return "", fmt.Errorf(roundStopFmt, "round cap", roundCap)
 			}
 			if !a.roundIntervention(ctx, "round-limit", "", round, limit, roundCap) {
-				return "", fmt.Errorf("the turn was stopped at the round limit (%d rounds) — progress so far is saved in the conversation: say \"continue\" to resume where it left off, or raise [agent].max_turns", round)
+				return "", fmt.Errorf(roundStopFmt, "round limit", round)
 			}
 			limit += roundExtension(a.maxTurns)
 			if limit > roundCap {
@@ -928,6 +928,13 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 }
 
 // emptyResponseError explains a response that carried nothing, naming
+// roundStopFmt is the one sentence for a turn stopped by counting
+// rounds: which counter, and its number. Three wordings of it were live
+// at once — "round cap" and "round limit", "saved" and "saved in the
+// conversation" — and consolidating one of them left the other two
+// (pre-release review).
+const roundStopFmt = "the %s (%d rounds) stopped this turn — progress so far is saved: say \"continue\" to resume where it left off, or raise [agent].max_turns"
+
 // the cause the API reported. "The model returned nothing" is not
 // actionable on its own: a thinking budget spent before any text was
 // emitted and a safety block look identical from the outside.
@@ -942,7 +949,7 @@ func emptyResponseError(resp *llm.Response) error {
 		return fmt.Errorf("the provider's content filter blocked this exchange (%s) — send it again, or /clear and narrow the request",
 			resp.BlockReason)
 	case resp.FinishReason == "MAX_TOKENS":
-		return fmt.Errorf("the model hit its output limit before answering (%d reasoning tokens spent); ask for something narrower, or lower [model].thinking (or pass --thinking low) so less of the limit goes to reasoning",
+		return fmt.Errorf("the model hit its output limit before answering (%d reasoning tokens spent) — ask for something narrower, or lower [model].thinking (--thinking low)",
 			resp.ThoughtTokens)
 	case resp.FinishReason == "SAFETY":
 		return fmt.Errorf("the model stopped without answering: its response tripped a content filter (SAFETY); set [model].safety = \"relaxed\" or \"off\" if this is legitimate work, or rephrase")

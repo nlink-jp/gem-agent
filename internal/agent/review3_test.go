@@ -113,7 +113,7 @@ func TestNonInteractiveContinueNotifies(t *testing.T) {
 	// ADR-0040 §2: a silent extension is not transparent. What the
 	// operator needs is that it continued and how far it can go — not
 	// the reviewer's own prose, which is model-generated.
-	if len(notices) == 0 || !strings.Contains(notices[0], "continuing") {
+	if len(notices) == 0 || !strings.Contains(notices[0], "continued the turn") {
 		t.Errorf("silent extension: notices = %v", notices)
 	}
 }

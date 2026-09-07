@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nlink-jp/gem-agent/internal/banner"
+
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
@@ -87,6 +89,24 @@ func render(s string) string {
 // flag help. Paths are repo-relative.
 func literals() {
 	fmt.Println("## cmd literals (notes, errors, help)")
+	// The first screen, assembled — not its fragments scattered through
+	// the flat list below. The banner is what every operator meets
+	// first, and it was the one thing this document could not show
+	// (ADR-0078's own check, missing until the pre-release read-through
+	// looked for it).
+	fmt.Println()
+	fmt.Println("## Startup banner")
+	fmt.Println()
+	fmt.Println("Every optional line present; an ordinary session prints the first three.")
+	fmt.Println()
+	fmt.Println("```")
+	for _, l := range banner.Lines(banner.Sample()) {
+		fmt.Println(l)
+	}
+	fmt.Println("```")
+	fmt.Println()
+	fmt.Println("The plain REPL adds `/help for commands, Ctrl+D to quit`; the TUI has its own chrome for it.")
+
 	fmt.Println()
 	fset := token.NewFileSet()
 	var lines []string
@@ -137,6 +157,12 @@ func literals() {
 // read-through, so add one only after reading where its string goes.
 var modelFacing = map[string]bool{
 	"renderInfo": true, "registerMemoryTools": true, "registerSkillTool": true,
+	// Found sitting in the operator section by the read-through: the
+	// system prompt, the tool descriptions, and the runtime's own notes
+	// inside a function response.
+	"composeSystem": true, "systemPrompt": true, "registerRiskbookTool": true,
+	"registerClipboardTool": true, "compactPrompt": true, "progressPrompt": true,
+	"riskPrompt": true, "attachNote": true,
 	"expandSkillInput": true, "registerSummarizeTool": true, "registerAgenticSearch": true,
 	"registerWebTools": true, "registerAskTool": true, "registerMCPTools": true,
 	"wrapToolMessages": true, "runWithFloor": true, "evaluateProgress": true,

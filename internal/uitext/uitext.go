@@ -251,8 +251,16 @@ type Messages struct {
 	TruncatedFmt string
 	// RemoteFaultFmt: server, tool, identical failures in a row.
 	RemoteFaultFmt string
-	// RoundContinuingFmt: this round, and the cap it is counting to.
-	RoundContinuingFmt string
+	// RoundLimitContinuedFmt / RoundLoopContinuedFmt: the progress
+	// review extended the turn without asking. Two strings, not one:
+	// the round limit and the loop guard are different events, and a
+	// loop waved through announced as a round count told the operator
+	// nothing about the repeat that triggered it. Neither names the
+	// hard cap — it is not the number that stops them next, and
+	// "round 20 of 200" read as 180 rounds of headroom when the next
+	// check was at 30.
+	RoundLimitContinuedFmt string // %d = the limit that fired
+	RoundLoopContinuedFmt  string // %s = the repeated call
 	// UnknownCommandFmt: %s = the input that matched no command.
 	UnknownCommandFmt string
 	MCPNone           string // /mcp with nothing connected
@@ -436,20 +444,21 @@ keys:
 	NothingToCompact: "nothing to compact yet — the conversation is still short",
 	CompactedFmt:     "compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
 
-	AutoCompactedFmt:    "context reached %d%% of the window — compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
-	CompactNothingFmt:   "context is at %d%% of the window and nothing can be summarised yet — /clear starts a fresh conversation",
-	CompactFailedFmt:    "context compaction failed: %s",
-	CompactOffSuffix:    " — automatic compaction is off for this session; /compact retries by hand",
-	TranscriptFailedFmt: "session transcript write failed (%s) — recording stopped and this session can no longer be resumed; restart gem-agent to record again",
-	FilterRetryFmt:      "the provider's content filter blocked the response (%s) — retrying once",
-	TruncatedFmt:        "the response was cut off mid-generation (%s) — the answer may be incomplete",
-	RemoteFaultFmt:      "MCP server %q: %s failed %d times in a row with the same error — /mcp reload, or fix the server",
-	RoundContinuingFmt:  "round %d of %d — continuing",
-	UnknownCommandFmt:   "unknown command %q — /help lists commands\n",
-	MCPNone:             "no MCP servers connected — define them in ~/.config/gem-agent/mcp.json (global) or the project's .mcp.json (project; wins name collisions)\n",
-	MCPDisabled:         "MCP is disabled for this session ([mcp].enabled=false or --mcp off) — restart to enable it\n",
-	MCPReloadedFmt:      "mcp reloaded: %d server(s), %d tool(s)\n",
-	SkillsReloadedFmt:   "skills reloaded: %d found\n",
+	AutoCompactedFmt:       "context reached %d%% of the window — compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
+	CompactNothingFmt:      "context is at %d%% of the window and nothing can be summarised yet — /clear starts a fresh conversation",
+	CompactFailedFmt:       "context compaction failed: %s",
+	CompactOffSuffix:       " — automatic compaction is off for this session; /compact retries by hand",
+	TranscriptFailedFmt:    "session transcript write failed (%s) — recording stopped and this session can no longer be resumed; restart gem-agent to record again",
+	FilterRetryFmt:         "the provider's content filter blocked the response (%s) — retrying once",
+	TruncatedFmt:           "the response was cut off mid-generation (%s) — ask for the rest, or narrow the request",
+	RemoteFaultFmt:         "MCP server %q: %s failed %d times in a row with the same error — /mcp reload, or fix the server",
+	RoundLimitContinuedFmt: "round limit reached at %d rounds — the progress review continued the turn",
+	RoundLoopContinuedFmt:  "the same call repeated (%s) — the progress review continued the turn",
+	UnknownCommandFmt:      "unknown command %q — /help lists commands\n",
+	MCPNone:                "no MCP servers connected — define them in ~/.config/gem-agent/mcp.json (global) or the project's .mcp.json (project; wins name collisions)\n",
+	MCPDisabled:            "MCP is disabled for this session ([mcp].enabled=false or --mcp off) — restart to enable it\n",
+	MCPReloadedFmt:         "mcp reloaded: %d server(s), %d tool(s)\n",
+	SkillsReloadedFmt:      "skills reloaded: %d found\n",
 
 	TrustHeaderFmt:           "\nnew project: %s\nthis project provides:\n",
 	TrustItemInstructionsFmt: "%s (loaded as your instructions)",
@@ -605,20 +614,21 @@ var ja = Messages{
 	NothingToCompact: "まだ /compact の対象がありません — 会話がまだ短いためです",
 	CompactedFmt:     "古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",
 
-	AutoCompactedFmt:    "コンテキストがウィンドウの %d%% に達したので、古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",
-	CompactNothingFmt:   "コンテキストはウィンドウの %d%% ですが、まだ要約できるものがありません — /clear で新しい会話を始められます",
-	CompactFailedFmt:    "コンテキストの要約に失敗しました: %s",
-	CompactOffSuffix:    " — このセッションでは自動要約を止めます; /compact で手動再試行できます",
-	TranscriptFailedFmt: "セッション記録の書き込みに失敗しました（%s）— 記録を停止したので、このセッションは再開できません; 記録を再開するには gem-agent を起動し直してください",
-	FilterRetryFmt:      "プロバイダのコンテンツフィルタが応答を遮断しました（%s）— 1 回だけ再試行します",
-	TruncatedFmt:        "応答が生成途中で打ち切られました（%s）— 回答が不完全な可能性があります",
-	RemoteFaultFmt:      "MCP サーバー %q: %s が同じエラーで %d 回連続して失敗しました — /mcp reload、またはサーバー側を修正してください",
-	RoundContinuingFmt:  "ラウンド %d / %d — 継続します",
-	UnknownCommandFmt:   "未知のコマンド %q — /help に一覧があります\n",
-	MCPNone:             "MCP サーバー未接続 — ~/.config/gem-agent/mcp.json（グローバル）またはプロジェクトの .mcp.json（プロジェクト側が名前衝突で優先）で定義します\n",
-	MCPDisabled:         "MCP はこのセッションでは無効です（[mcp].enabled=false または --mcp off）— 有効化するには再起動してください\n",
-	MCPReloadedFmt:      "MCP を再接続しました: %d サーバー・%d ツール\n",
-	SkillsReloadedFmt:   "skill を再読込しました: %d 件\n",
+	AutoCompactedFmt:       "コンテキストがウィンドウの %d%% に達しました。古いメッセージ %d 件を要約にまとめ、%d 件はそのまま保持しています。要約された部分の詳細は伝聞になります",
+	CompactNothingFmt:      "コンテキストはウィンドウの %d%% ですが、まだ要約できるものがありません — /clear で新しい会話を始められます",
+	CompactFailedFmt:       "コンテキストの要約に失敗しました: %s",
+	CompactOffSuffix:       " — このセッションの自動要約は停止しています。/compact で手動で再試行できます",
+	TranscriptFailedFmt:    "セッション記録の書き込みに失敗しました（%s）。記録は停止し、このセッションは再開できません。記録を再開するには gem-agent を起動し直してください",
+	FilterRetryFmt:         "プロバイダのコンテンツフィルタが応答を遮断しました（%s）— 1 回だけ再試行します",
+	TruncatedFmt:           "応答が生成途中で打ち切られました（%s）— 続きを求めるか、要求を絞ってください",
+	RemoteFaultFmt:         "MCP サーバー %q: %s が同じエラーで %d 回連続して失敗しました — /mcp reload、またはサーバー側を修正してください",
+	RoundLimitContinuedFmt: "ラウンド上限 %d に達しました — 進捗レビューがターンを継続しました",
+	RoundLoopContinuedFmt:  "同じ呼び出しが繰り返されました（%s）— 進捗レビューがターンを継続しました",
+	UnknownCommandFmt:      "未知のコマンド %q — /help に一覧があります\n",
+	MCPNone:                "MCP サーバー未接続 — ~/.config/gem-agent/mcp.json（グローバル）またはプロジェクトの .mcp.json（プロジェクト側が名前衝突で優先）で定義します\n",
+	MCPDisabled:            "MCP はこのセッションでは無効です（[mcp].enabled=false または --mcp off）— 有効化するには再起動してください\n",
+	MCPReloadedFmt:         "MCP を再接続しました: %d サーバー・%d ツール\n",
+	SkillsReloadedFmt:      "skill を再読込しました: %d 件\n",
 
 	TrustHeaderFmt:           "\n新しいプロジェクト: %s\nこのプロジェクトの提供物:\n",
 	TrustItemInstructionsFmt: "%s（あなたへの指示として読み込まれます）",

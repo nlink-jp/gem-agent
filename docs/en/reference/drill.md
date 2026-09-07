@@ -38,10 +38,10 @@ anyone touching gem-agent:
 
 ## Procedure
 
-Record the session id from the banner before you start (`session log:` on
-the fourth line). The transcript **is** the drill's evidence: it holds
-every prompt, tool call, and answer, so nothing needs transcribing by
-hand.
+Record the session id before you start — `gem-agent sessions` lists it,
+and the exit summary prints it with its resume command. The transcript
+**is** the drill's evidence: it holds every prompt, tool call, and
+answer, so nothing needs transcribing by hand.
 
 ### 1. Launch (2 min)
 
@@ -55,11 +55,13 @@ Read the banner and confirm all of it:
 
 - version matches what you expect (`brew outdated nlink-jp/tap/gem-agent`
   should be silent)
-- `project:` is the directory you meant
-- `sandbox: enabled`
-- `session log:` names a writable path
-- `mcp:` lists the servers you expect, with their scopes
+- the counts row shows the servers, skills and memories you expect —
+  `/mcp` names them with their scopes
 - `instructions:` lists the project's `AGENTS.md` / `CLAUDE.md` etc.
+- **no** sandbox line: the banner prints one only when the sandbox is
+  disabled, unverified, or set to prompt on read-lane commands
+  (ADR-0078)
+- the footer shows the project directory you meant
 
 **Fails if** the binary will not launch, the banner reports a missing
 config key, or `instructions:`/`mcp:` is empty where it should not be.

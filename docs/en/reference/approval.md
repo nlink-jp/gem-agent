@@ -418,8 +418,10 @@ what corrections that implies, and shows you the **full draft —
 byte-for-byte what would be stored**. Nothing takes effect until you
 accept it. `/riskbook` shows what is in force (re-read from disk),
 `/riskbook reload` picks up hand edits without a restart, and
-`/riskbook clear` removes the project layer. While any layer is in
-force the startup banner says so.
+`/riskbook clear` removes the project layer. `/riskbook` shows which
+layers are in force; the startup banner does not say so, because a line
+that names the command which supersedes it has conceded the point
+(ADR-0078).
 
 A rulebook is deliberately **not** read from the repository: a cloned
 project's files steer the model that proposes calls, and the reviewer

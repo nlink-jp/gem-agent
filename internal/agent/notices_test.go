@@ -59,3 +59,23 @@ func TestNoCatalogMeansEnglish(t *testing.T) {
 		t.Errorf("the remote-fault notice lost its command: %q", a.msgs.RemoteFaultFmt)
 	}
 }
+
+// The round limit and the loop guard are different events. A loop waved
+// through, announced as a round count, told the operator nothing about
+// the repeat that triggered it — and the number it printed was the hard
+// cap, which reads as headroom the turn does not have.
+func TestContinuedNoticeNamesItsTrigger(t *testing.T) {
+	a := &Agent{msgs: uitext.For(uitext.EN)}
+
+	limit := a.continuedNotice("round-limit", "", 20)
+	if !strings.Contains(limit, "20") || strings.Contains(limit, "repeated") {
+		t.Errorf("round-limit notice = %q", limit)
+	}
+	loop := a.continuedNotice("loop", "shell_exec: ls -la", 20)
+	if !strings.Contains(loop, "repeated") || !strings.Contains(loop, "ls -la") {
+		t.Errorf("loop notice = %q — it must name the call that repeated", loop)
+	}
+	if strings.Contains(loop, "20") {
+		t.Errorf("loop notice quotes a round number that did not trigger it: %q", loop)
+	}
+}

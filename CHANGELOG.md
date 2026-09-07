@@ -18,7 +18,9 @@
   footer, `/tools`, `/riskbook` and `gem-agent sessions` show them
   better. The first row no longer carries your GCP project and location.
   The work-directory note is gated on bytes, so empty leftovers no
-  longer announce "0B" (ADR-0078)
+  longer announce "0B". Starting in auto-approve now says so: the footer
+  carries it in the TUI, but the plain REPL has no footer and it is the
+  only approval-regime fact with no other startup surface (ADR-0078)
 
 ### Fixed
 

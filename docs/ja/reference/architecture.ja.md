@@ -29,7 +29,8 @@ tools パッケージが持つのはプロジェクトディレクトリだけ�
 `internal/policy`（ツール別承認ポリシー。ADR-0045 のコマンド別語彙は
 ファイル互換のためにパースされるが、ADR-0049 以降は適用されない）、
 `internal/riskbook`（積層リスクルールブックとその学習ツール — ADR-0050）、
-`internal/mcp`（stdio JSON-RPC クライアント）、`internal/mcpfilter`（`[mcp] exclude`
+`internal/mcp`（stdio JSON-RPC クライアント）、`internal/banner`（操作者が何も打つ前に出る行と、どれを出すかを決める規則 —
+ADR-0078）、`internal/mcpfilter`（`[mcp] exclude`
 の背後にある唯一の述語 — このサーバーは、あるいはその配下のこのファンクションは、
 このセッションの一部か。ADR-0077）、`internal/mention`（`@` 参照）、
 `internal/instructions`（`AGENTS.md` 探索）、`internal/ignore`（ignore を理解する列挙: 組み込みディレクトリリスト + gitignore マッチャ — ADR-0052）、`internal/session`（トランスクリプト:
