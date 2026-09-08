@@ -1524,6 +1524,13 @@ func TestEverySubmissionIsEchoedWithASeparator(t *testing.T) {
 		{name: "shell escape", typed: "!git diff", marker: "! ",
 			opt: func(o *Options) { o.Shell = func(context.Context, string) {} }},
 		{name: "slash command", typed: "/tools", marker: "> "},
+		// The branch the first sweep missed: /skill with nothing to
+		// expand answers with a usage line, which is an answer like any
+		// other (pre-release review).
+		{name: "skill usage error", typed: "/skill", marker: "> ",
+			opt: func(o *Options) {
+				o.ExpandInput = func(string) (string, bool, string) { return "", true, "usage: /skill <name>" }
+			}},
 		{name: "auto toggle", typed: "/auto", marker: "> ",
 			opt: func(o *Options) { o.ToggleAuto = func() bool { return true } }},
 	} {
@@ -1555,21 +1562,53 @@ func TestEverySubmissionIsEchoedWithASeparator(t *testing.T) {
 	}
 }
 
-// The command and its output arrive as one write, in that order: two
+// The command and its answer arrive as one write, in that order: two
 // emits would let a repaint land between the caption and what it
-// captions.
-func TestSlashOutputFollowsItsEchoInOneWrite(t *testing.T) {
-	c := &capture{}
-	m := newTestModel(c)
-	m.ta.SetValue("/tools")
-	m = press(m, enter())
+// captions. Asserted on the writes themselves — capture.all() joins
+// them with a newline, so every assertion made on the joined text is
+// blind to the split (pre-release review).
+func TestAnEchoAndItsAnswerAreOneWrite(t *testing.T) {
+	for _, tc := range []struct {
+		name, typed string
+		// answer is read from the model so the expectation is the
+		// catalog's own words, in whatever language the model resolved.
+		answer func(Model) string
+		opt    func(*Options)
+	}{
+		{name: "slash command", typed: "/tools",
+			answer: func(Model) string { return "slash:/tools" }},
+		{name: "auto toggle", typed: "/auto",
+			answer: func(m Model) string { return strings.TrimSpace(m.msgs.AutoOn) },
+			opt:    func(o *Options) { o.ToggleAuto = func() bool { return true } }},
+		{name: "skill usage error", typed: "/skill",
+			answer: func(Model) string { return "✗ usage: /skill <name>" },
+			opt: func(o *Options) {
+				o.ExpandInput = func(string) (string, bool, string) { return "", true, "usage: /skill <name>" }
+			}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &capture{}
+			o := Options{
+				StartTurn: func(ctx context.Context, input string) { c.turns = append(c.turns, input) },
+				Slash:     slashStub, Printer: c.printer,
+				RenderFactory: func(width int) func(string) string { return func(s string) string { return s } },
+			}
+			if tc.opt != nil {
+				tc.opt(&o)
+			}
+			m := New(o)
+			want := "\n> " + tc.typed + "\n" + tc.answer(m)
+			m.ta.SetValue(tc.typed)
+			m = press(m, enter())
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if len(c.printed) != 1 {
-		t.Fatalf("want one write, got %d: %q", len(c.printed), c.printed)
-	}
-	if c.printed[0] != "\n> /tools\nslash:/tools" {
-		t.Errorf("echo and output: %q", c.printed[0])
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			if len(c.printed) != 1 {
+				t.Fatalf("want one write, got %d: %q", len(c.printed), c.printed)
+			}
+			if !strings.HasPrefix(c.printed[0], want) {
+				t.Errorf("echo and answer: %q, want prefix %q", c.printed[0], want)
+			}
+		})
 	}
 }

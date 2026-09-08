@@ -1492,7 +1492,13 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	if m.expandInput != nil {
 		if turn, handled, errMsg := m.expandInput(input); handled {
 			if errMsg != "" {
-				return m, m.emit(m.st.errS.Render("✗ " + errMsg))
+				// Echoed like the answer it is: this branch was missed
+				// when the others were routed through echoLine, leaving
+				// `/skill` with no name typed printing its usage line
+				// flush against the previous output while `/nope` on
+				// the slash branch printed a captioned one (pre-release
+				// review).
+				return m, m.emitJoined(m.echoLine(">", input), m.st.errS.Render("✗ "+errMsg))
 			}
 			m.phase = phaseRunning
 			m.status = m.msgs.StatusThinking

@@ -4,13 +4,15 @@
 
 ### Changed
 
-- Every line you submit in the TUI is echoed into the scrollback before
-  its answer — a blank line, then `> ` and what you typed (`! ` for a
-  shell escape). A turn, a shell escape and `/skill` already did this;
-  a slash command printed its output alone, flush against the previous
-  output, and the input box had cleared by then, so a listing had
-  neither a visible start nor anything saying which command produced
-  it. One helper now renders the echo for all of them.
+- A line that runs in the TUI is echoed into the scrollback before its
+  answer — a blank line, then `> ` and what you typed (`! ` for a shell
+  escape). A turn, a shell escape, `/skill`, `/compact` and `/riskbook
+  learn` already did this; a slash command, and `/skill`'s own usage
+  error, printed their output alone, flush against the previous output,
+  and the input box had cleared by then, so a listing had neither a
+  visible start nor anything saying which command produced it. One
+  helper now renders the echo for all of them, and each prints its echo
+  and its answer as a single write.
 
 ## [0.72.1] - 2026-09-08
 
