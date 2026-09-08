@@ -4,6 +4,18 @@
 
 ### Fixed
 
+- The approval reference said a failed evaluation, and a memory write,
+  "always ask". They always *escalate*, which is not the same thing:
+  the gate is answered by the operator **or** by the session
+  allowlist, and only a must-prompt call (Block-tier, the `operator`
+  lane, unconfined shell, an `"always"` policy) reaches the operator
+  unconditionally. `save_memory` is not must-prompt, so an `a` typed
+  once covers the session's later saves — ADR-0020 §6 says "always
+  escalate", and the reference had strengthened it into a promise the
+  code does not make. Both language references now describe the gate
+  as the ladder's third tier and name `"always"` as the way to keep a
+  tool in front of the operator every time (review 2026-09-08, A-03)
+
 - The live risk-context measurement (`-tags live`) required the model
   to APPROVE, at a late round, a `make build` the operator's
   instruction had explicitly forbidden — it still described ADR-0038's

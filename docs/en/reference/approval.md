@@ -130,7 +130,17 @@ call. Each mutating call then goes through:
 2. **Model tier**: a separate evaluation round judges the proposed call
    (delivered to it as nonce-wrapped untrusted data, with no tools
    available). It must both approve *and* be confident, or the call
-   asks.
+   goes to tier 3.
+3. **The gate**: everything the ladder did not run. The gate is you
+   *or* the session allowlist — if you already answered `a` for that
+   tool name this session, the allowlist answers and no prompt is
+   drawn. Only a **must-prompt** call reaches you unconditionally:
+   Block-tier, the `operator` lane, unconfined shell, or an `"always"`
+   policy. So *escalated* and *you were asked* are not the same
+   sentence: a model tier that refuses a call sends it here, and an `a`
+   you typed earlier for that tool may still answer it. This is widest
+   for MCP tools, where `a` covers any later arguments to the same
+   name; `"always"` is how you keep a tool in front of you every time.
 
 **Shell commands are judged by their lane, not their text** (ADR-0073).
 `shell_exec` takes an `access` argument the model declares — `read`
@@ -225,15 +235,19 @@ regardless of case: the default APFS volume folds it, so `agents.md` is
 
 **Memory writes never reach tier 2.** `save_memory` and `delete_memory`
 are Review-tier, so they would take the *uncertain* branch — but they
-are excluded from auto-approval outright and always ask, whatever the
-evaluation would have said (ADR-0020 §6). The evaluator is the same
+are excluded from auto-approval outright and always escalate, whatever
+the evaluation would have said (ADR-0020 §6). Escalate, not prompt:
+they are not must-prompt, so an `a` you answered earlier for
+`save_memory` covers the session's later saves. `"always"` in the tool
+policy is what keeps every one of them in front of you. The evaluator is the same
 party that proposed the write, so it cannot be the defence against a
 poisoned tool result talking the agent into remembering an instruction;
 memory is a persistence vector, and what the agent remembers is the
 operator's call. The per-tool policy remains the way to relax that on
 purpose.
 
-Anything that fails — model error or a malformed verdict — asks. (An
+Anything that fails — model error or a malformed verdict — goes to the
+gate, which is tier 3 above and not always you. (An
 *unknown* tool never reaches the gate at all: the dispatcher rejects it
 with an error before approval is consulted, so it also never runs.) The blocked tier is a hard floor the model cannot override, and
 the sandbox applies in every mode.
