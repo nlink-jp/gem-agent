@@ -64,6 +64,13 @@
   answers it with the lane ceiling instead. Review-tier calls the
   baseline approves now cost two evaluator rounds instead of one; the
   baseline is cacheable by tool and arguments and that is not built
+- `/readonly` shows the current state as well as setting one, and its
+  lines were written as transitions — showing an unchanged session said
+  "変更できる状態に戻りました" / "the session may change things again"
+  when nothing had changed. They describe the state now, and the ON line
+  names `/readonly off`, which is the state an operator may not have set
+  themselves. The command had shipped with no test; it has one, and it
+  fails against the reported wording
 
 ## [0.73.0] - 2026-09-09
 

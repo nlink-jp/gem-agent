@@ -225,9 +225,13 @@ type Messages struct {
 	ExitFlushing string
 
 	// --- slash command feedback (cmd) ---
-	Help          string // the full /help text
-	AutoOn        string
-	AutoOff       string
+	Help    string // the full /help text
+	AutoOn  string
+	AutoOff string
+	// ReadOnlyOn/Off/Auto describe the state, not a transition:
+	// /readonly shows the current state as well as setting one, so a
+	// transition verb ("…に戻りました") is a lie on the showing path.
+	// Operator report, 2026-09-09.
 	ReadOnlyOn    string
 	ReadOnlyOff   string
 	ReadOnlyAuto  string
@@ -460,8 +464,8 @@ keys:
 `,
 	AutoOn:              "auto-approve: ON — safe changes run unattended; risky ones still ask\n",
 	AutoOff:             "auto-approve: OFF — every change asks\n",
-	ReadOnlyOn:          "read-only: ON — this session may not change anything outside its scratch\n",
-	ReadOnlyOff:         "read-only: OFF — the session may change things again\n",
+	ReadOnlyOn:          "read-only: ON — this session may not change anything outside its scratch; /readonly off lifts it\n",
+	ReadOnlyOff:         "read-only: OFF — this session may change things\n",
 	ReadOnlyAuto:        "read-only: AUTO — off for now; it turns on by itself if you ask for a read-only session\n",
 	ReadOnlyUsage:       "usage: /readonly on|off|auto (no argument shows the current state)\n",
 	ReadOnlyAutoOnFmt:   "read-only: ON — you asked for %q. Nothing outside the session scratch will change; /readonly off lifts it",
@@ -638,8 +642,8 @@ var ja = Messages{
 `,
 	AutoOn:              "auto-approve: ON — 安全な変更は無人で実行します。危険なものは引き続き確認します\n",
 	AutoOff:             "auto-approve: OFF — すべての変更で確認します\n",
-	ReadOnlyOn:          "read-only: ON — このセッションはスクラッチの外を変更できません\n",
-	ReadOnlyOff:         "read-only: OFF — 変更できる状態に戻りました\n",
+	ReadOnlyOn:          "read-only: ON — このセッションはスクラッチの外を変更できません。解除は /readonly off\n",
+	ReadOnlyOff:         "read-only: OFF — このセッションは変更できます\n",
 	ReadOnlyAuto:        "read-only: AUTO — 今は OFF。読み取り専用の依頼を打つと自分で ON になります\n",
 	ReadOnlyUsage:       "使い方: /readonly on|off|auto（引数なしで現在の状態を表示）\n",
 	ReadOnlyAutoOnFmt:   "read-only: ON — %q という依頼のため。セッションスクラッチの外は何も変わりません。解除は /readonly off",

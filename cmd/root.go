@@ -2374,7 +2374,7 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 		// in the runtime loosens it; this is where they do.
 		state := ag.ReadOnly()
 		if sub != "" {
-			if !sandbox.ValidCeiling(sub) || sub == "" {
+			if !sandbox.ValidCeiling(sub) {
 				b.WriteString(msgs.ReadOnlyUsage)
 				break
 			}
