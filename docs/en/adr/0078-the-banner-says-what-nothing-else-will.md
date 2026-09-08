@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-09-08, implemented and unreleased; §1 gained the auto-approve line and §5's justification was corrected during the pre-release passes) |
+| Status | **Accepted** (2026-09-08, shipped in v0.72.0; §1 gained the auto-approve line and §5's justification was corrected during the pre-release passes) |
 | Date | 2026-09-08 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

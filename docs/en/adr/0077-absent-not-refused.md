@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-09-08, implemented and unreleased; §5 corrected against the code during implementation, §7 carries the measurement) |
+| Status | **Accepted** (2026-09-08, shipped in v0.72.0; §5 corrected against the code during implementation, §7 carries the measurement) |
 | Date | 2026-09-07 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

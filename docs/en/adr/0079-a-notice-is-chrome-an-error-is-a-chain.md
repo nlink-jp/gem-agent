@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-09-08, implemented and unreleased) |
+| Status | **Accepted** (2026-09-08, shipped in v0.72.0) |
 | Date | 2026-09-08 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
