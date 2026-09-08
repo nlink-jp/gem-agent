@@ -320,8 +320,9 @@ lists every configured server (Enter opens one to its functions, ←→
 turns a row on or off) with the file that decided each row, and a change
 is written to `policy.toml` and applied by reconnecting that one server:
 a function toggle re-lists a running server's tools without restarting
-it, turning a server off stops its process, turning one on starts it,
-and no other server is touched. The panel writes the server's whole
+it (a server that is not running — it failed at startup — is started),
+turning a server off stops its process, turning one on starts it, and
+no other server is touched. The panel writes the server's whole
 state, so toggling one function never drops the exclusions your own
 config made for the same server.
 

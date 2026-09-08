@@ -10,7 +10,7 @@
   — synchronously inside the TUI's event loop, so an arrow key took
   seconds and the keys typed meanwhile queued up behind it. Now a
   function toggle re-lists the running server (one `tools/list` round
-  trip, no restart), turning a server off stops its process, turning one
+  trip, no restart; a server that is not running is started), turning a server off stops its process, turning one
   on starts it, and the other servers are not touched. `/mcp reload` and
   `/clear` still reconnect the whole set, as they say they do.
 

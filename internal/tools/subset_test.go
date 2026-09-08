@@ -97,3 +97,37 @@ func TestSubsetKeepsConfinement(t *testing.T) {
 		t.Error("subset read escaped the project directory")
 	}
 }
+
+// Remove takes exactly the named tools and their exclusion notes, and
+// nothing that merely shares a prefix — the per-server reconnect's
+// contract (ADR-0077 §3).
+func TestRemoveIsExactAndClearsNotes(t *testing.T) {
+	reg, err := New(t.TempDir(), nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"mcp__foo__x", "mcp__foo__bar__y"} {
+		if err := reg.Register(&Tool{Name: n, Run: func(context.Context, map[string]any) (string, error) { return "", nil }}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reg.NoteExcluded("mcp__foo__z")
+	reg.NoteExcludedPrefix("mcp__foo__")
+
+	if got := reg.Remove("mcp__foo__x", "mcp__foo__z", "never-registered"); got != 1 {
+		t.Errorf("removed %d tools, want 1", got)
+	}
+	if _, ok := reg.Get("mcp__foo__bar__y"); !ok {
+		t.Error("a neighbour sharing the prefix was removed")
+	}
+	if _, ok := reg.Get("mcp__foo__x"); ok {
+		t.Error("the named tool survived")
+	}
+	if !reg.Excluded("mcp__foo__z") {
+		t.Error("the prefix note should still answer for the server")
+	}
+	reg.ForgetExcludedPrefix("mcp__foo__")
+	if reg.Excluded("mcp__foo__z") {
+		t.Error("the name note was not cleared, or the prefix note survived")
+	}
+}

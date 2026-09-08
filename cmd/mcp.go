@@ -163,6 +163,12 @@ type mcpInventory struct {
 	configured map[string]bool             // every name the files mention, skipped ones included
 	complete   bool                        // every list this session should have was read
 	summary    map[string]string           // server -> its /mcp line, for those with one
+	// registered is every registry name a server's attach touched —
+	// the tools it declared and the excluded names it noted — so a
+	// reconnect of that server removes exactly those. The prefix would
+	// also have caught a neighbour named "<server>__*", or missed a
+	// name truncated past it (pre-release review).
+	registered map[string][]string
 }
 
 // summaryLines is the /mcp listing, in server order: one line per
@@ -240,6 +246,7 @@ func attachMCPServer(ctx context.Context, client mcpServer, registry *tools.Regi
 	inv.Offered[name] = offered
 
 	added, errs := registerMCPTools(registry, client, kept)
+	inv.registered[name] = append(append([]string{}, added...), excluded...)
 	for _, e := range errs {
 		fmt.Fprintf(stderr, "warning: MCP server %s: %s\n", name, e)
 	}
@@ -265,13 +272,17 @@ func attachMCPServer(ctx context.Context, client mcpServer, registry *tools.Regi
 // other server's process and tools alone (ADR-0077 §3: the panel's edit
 // names one server, and that is the whole of what changes). running is
 // the server's client if the session has one, nil otherwise; start
-// makes a fresh one. The server's registry names are removed first, so
-// a running server is re-listed — one tools/list round trip, no
+// makes a fresh one. The server's own registry names are removed
+// first, so a running server is re-listed — one tools/list round trip, no
 // respawn — and re-registered under the new filter. What comes back is
 // the client to keep, or nil when the server is now excluded, gone, or
 // useless.
 func reconnectMCPServer(ctx context.Context, name string, running mcpServer, start func() mcpServer, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory) mcpServer {
-	registry.RemoveByPrefix(mcpToolPrefix(name))
+	// Exactly this server's names, as recorded when it attached; the
+	// prefix note is its own record and is withdrawn by value.
+	registry.Remove(inv.registered[name]...)
+	registry.ForgetExcludedPrefix(mcpToolPrefix(name))
+	delete(inv.registered, name)
 	if filter.Server(name) {
 		if running != nil {
 			running.Close()
@@ -369,6 +380,7 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 	inv.Scopes = scopes
 	inv.configs = servers
 	inv.summary = map[string]string{}
+	inv.registered = map[string][]string{}
 	for _, name := range overridden {
 		fmt.Fprintf(stderr, "note: project .mcp.json overrides global MCP server %q\n", name)
 	}

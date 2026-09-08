@@ -50,6 +50,7 @@ func reconnectHarness(t *testing.T) (*tools.Registry, *mcpInventory) {
 		configured: map[string]bool{"a": true, "b": true},
 		complete:   true,
 		summary:    map[string]string{},
+		registered: map[string][]string{},
 	}
 	return reg, inv
 }
@@ -180,4 +181,64 @@ func TestReconnectReportsAStaleEntry(t *testing.T) {
 	if got := reloadWarnings(warn.String()); !strings.Contains(got, "nope") {
 		t.Errorf("the stale entry is not reported: %q", warn.String())
 	}
+}
+
+// The names a reconnect removes are the ones the server's attach
+// recorded, not everything under its prefix. The prefix has two edges
+// that a transcript record could live with and a removal cannot: a
+// neighbour named "<server>__*" shares it, and a name near the 64-char
+// cap is truncated past it (pre-release review).
+func TestReconnectRemovesTheServersOwnNamesNotAPrefix(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("a neighbour sharing the prefix keeps its tools", func(t *testing.T) {
+		reg, inv := reconnectHarness(t)
+		inv.Servers = []string{"foo", "foo__bar"}
+		inv.Scopes["foo__bar"], inv.configured["foo__bar"] = "global", true
+		foo := &stubServer{stubCaller: stubCaller{name: "foo"}, tools: []string{"x", "w"}}
+		bar := &stubServer{stubCaller: stubCaller{name: "foo__bar"}, tools: []string{"y"}}
+		var warn bytes.Buffer
+		attachMCPServer(ctx, foo, reg, &warn, filterOf(t), inv)
+		attachMCPServer(ctx, bar, reg, &warn, filterOf(t), inv)
+
+		reconnectMCPServer(ctx, "foo", foo, nil, reg, &warn, filterOf(t, "foo/x"), inv)
+		if _, ok := reg.Get("mcp__foo__bar__y"); !ok {
+			t.Error("toggling foo took foo__bar's tool with it")
+		}
+		if bar.closed != 0 || bar.lists != 1 {
+			t.Errorf("foo__bar was touched: closed=%d lists=%d", bar.closed, bar.lists)
+		}
+		if got := registered(reg, "mcp__foo__x", "mcp__foo__w"); strings.Join(got, ",") != "mcp__foo__w" {
+			t.Errorf("foo's own tools after the toggle: %v", got)
+		}
+	})
+
+	t.Run("a name truncated past its prefix is still removed", func(t *testing.T) {
+		reg, inv := reconnectHarness(t)
+		long := strings.Repeat("s", 50)
+		inv.Servers = []string{long}
+		inv.Scopes[long], inv.configured[long] = "global", true
+		srv := &stubServer{stubCaller: stubCaller{name: long}, tools: []string{"function_one", "function_two"}}
+		var warn bytes.Buffer
+		if !attachMCPServer(ctx, srv, reg, &warn, filterOf(t), inv) {
+			t.Fatalf("did not attach: %s", warn.String())
+		}
+		if n := mcpToolName(long, "function_one"); strings.HasPrefix(n, mcpToolPrefix(long)) {
+			t.Fatalf("test premise: %q should be truncated past its prefix", n)
+		}
+
+		kept := reconnectMCPServer(ctx, long, srv, nil, reg, &warn, filterOf(t, long+"/function_one"), inv)
+		if kept != srv {
+			t.Fatalf("re-registration failed and the server was dropped: %s", warn.String())
+		}
+		if _, ok := reg.Get(mcpToolName(long, "function_one")); ok {
+			t.Error("the excluded function is still declared")
+		}
+		if _, ok := reg.Get(mcpToolName(long, "function_two")); !ok {
+			t.Error("the kept function is gone")
+		}
+		if warn.Len() != 0 {
+			t.Errorf("warnings: %q", warn.String())
+		}
+	})
 }

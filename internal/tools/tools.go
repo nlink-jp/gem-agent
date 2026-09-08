@@ -589,6 +589,48 @@ func (r *Registry) RemoveByPrefix(prefix string) int {
 	return removed
 }
 
+// Remove drops exactly the named tools, and the exclusion notes filed
+// under those names — one server's set, as the connect path recorded it.
+// By name, not by prefix: a prefix that only attributes a transcript
+// record can afford its two edges (a server named "foo__bar" sharing
+// "foo"'s prefix; a name truncated past its prefix), and RemoveByPrefix
+// kept them because it ran only before a whole-set reconnect. A prefix
+// that removes for ONE server cannot — it took a live neighbour's tools
+// with it, or nothing at all, and then every re-registration failed on
+// "already registered" (pre-release review of the per-server reconnect).
+func (r *Registry) Remove(names ...string) int {
+	removed := 0
+	gone := make(map[string]bool, len(names))
+	for _, n := range names {
+		gone[n] = true
+		delete(r.excluded, n)
+		if _, ok := r.tools[n]; ok {
+			delete(r.tools, n)
+			removed++
+		}
+	}
+	kept := r.order[:0]
+	for _, n := range r.order {
+		if !gone[n] {
+			kept = append(kept, n)
+		}
+	}
+	r.order = kept
+	return removed
+}
+
+// ForgetExcludedPrefix withdraws NoteExcludedPrefix for one server, so a
+// server turned back on is not still recorded as never started.
+func (r *Registry) ForgetExcludedPrefix(prefix string) {
+	kept := r.excludedPrefixes[:0]
+	for _, p := range r.excludedPrefixes {
+		if p != prefix {
+			kept = append(kept, p)
+		}
+	}
+	r.excludedPrefixes = kept
+}
+
 // NoteExcluded records that this registry name was removed by the MCP
 // filter. The tool is not registered and never will be in this session;
 // nothing about the call path changes.
