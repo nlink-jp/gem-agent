@@ -134,7 +134,7 @@ func (r *Registry) editFile() *Tool {
 			if err := ctx.Err(); err != nil {
 				return "", fmt.Errorf("%w (file unchanged)", err)
 			}
-			if err := r.replaceFile(abs, info.Mode().Perm(), []byte(content)); err != nil {
+			if err := r.replaceFile(abs, []byte(content)); err != nil {
 				return "", err
 			}
 			return fmt.Sprintf("edited %s (%d edit(s)):\n%s", p, len(ops), strings.Join(reports, "\n")), nil

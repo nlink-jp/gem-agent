@@ -48,7 +48,7 @@ func TestOpenRefusesALinkSwappedAfterTheCheck(t *testing.T) {
 	// A write replaces the name with a fresh file inside the root; the
 	// link's target outside is never opened (ADR-0073 final review R2:
 	// writes never land in an inode reached through another name).
-	if err := r.replaceFile(abs, 0o644, []byte("inside")); err != nil {
+	if err := r.replaceFile(abs, []byte("inside")); err != nil {
 		t.Fatalf("replace through the swapped link: %v", err)
 	}
 	if data, _ := os.ReadFile(secret); string(data) != "outside" {

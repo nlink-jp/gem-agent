@@ -4,6 +4,15 @@
 
 ### Fixed
 
+- `write_file` keeps an overwritten file's permission bits. Replacing
+  by rename installs a new inode, and the mode was being supplied per
+  call site: `edit_file` passed the stat'd mode and was right, while
+  `write_file` passed a literal `0644` and reset every file it touched
+  — an edited shell script lost its execute bit, and a `0600` file was
+  widened. `replaceFile` now carries the mode across itself, so both
+  callers are correct without knowing to be. A file that did not exist
+  still gets `0644` through the umask rather than past it
+
 - `edit_file`'s batch form no longer reads a missing or non-string
   `new_string` as a deletion. It took the argument through a discarded
   type assertion, so `{"old_string": "..."}` with the key absent, `null`

@@ -38,6 +38,10 @@ const (
 	readCap = 200 * 1024
 	// listCap bounds list_files entries.
 	listCap = 500
+	// newFileMode is the mode of a file a tool creates. It is the
+	// creation default only: replaceFile keeps an existing file's own
+	// permission bits.
+	newFileMode = 0o644
 )
 
 // Tool is one built-in tool: metadata for the LLM plus the implementation.
@@ -344,8 +348,17 @@ func openRegular(open func(flag int) (*os.File, error)) (*os.File, error) {
 // `notes.md` that points at `AGENTS.md` gets a fresh regular file, and
 // `AGENTS.md` keeps its bytes (ADR-0073 final review R2 — the
 // name-based verdict was Safe, and the in-place write went through the
-// link). perm applies to the new file.
-func (r *Registry) replaceFile(abs string, perm os.FileMode, data []byte) error {
+// link).
+//
+// An existing regular file keeps its own permission bits. Replacing by
+// rename installs a new inode, so the mode has to be carried across
+// here rather than by each caller: leaving that to the call site is how
+// write_file reset every file it overwrote to a literal 0644, taking
+// the execute bit off scripts and widening 0600 files, while edit_file
+// two files away passed the stat'd mode and was correct (review
+// 2026-09-08, F-03). newFileMode applies only when rel does not exist,
+// and a name that is a symlink or a directory is not a mode to inherit.
+func (r *Registry) replaceFile(abs string, data []byte) error {
 	root, rel, release, err := r.rootFor(abs)
 	if err != nil {
 		return err
@@ -357,10 +370,27 @@ func (r *Registry) replaceFile(abs string, perm os.FileMode, data []byte) error 
 			return err
 		}
 	}
+	perm, preserved := os.FileMode(newFileMode), false
+	if st, err := root.Lstat(rel); err == nil && st.Mode().IsRegular() {
+		perm, preserved = st.Mode().Perm(), true
+	}
 	tmp := filepath.Join(dir, fmt.Sprintf(".%s.gem-agent-%d.tmp", filepath.Base(rel), os.Getpid()))
 	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
 	if err != nil {
 		return err
+	}
+	// OpenFile's mode is masked by the process umask, so a preserved
+	// 0664 would land as 0644 under the usual 022. Chmod on the open
+	// descriptor sets it exactly, and touches no path. A file that did
+	// not exist keeps the umask, which is the operator's own default for
+	// what they create — forcing newFileMode past it would widen files
+	// under a restrictive umask, which is the defect this fixes.
+	if preserved {
+		if err := f.Chmod(perm); err != nil {
+			_ = f.Close()
+			_ = root.Remove(tmp)
+			return err
+		}
 	}
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
@@ -1326,7 +1356,7 @@ func (r *Registry) writeFile() *Tool {
 			if err := ctx.Err(); err != nil {
 				return "", err
 			}
-			if err := r.replaceFile(abs, 0o644, []byte(content)); err != nil {
+			if err := r.replaceFile(abs, []byte(content)); err != nil {
 				return "", err
 			}
 			return fmt.Sprintf("wrote %d bytes to %s", len(content), p), nil
