@@ -369,7 +369,7 @@ the function name is the only place the intent can be said (ADR-0077).
 | `--no-sandbox` | disable the Seatbelt wrapper (debugging only) — every `shell_exec` then needs your approval and no policy or auto mode lifts that (ADR-0073 §5) |
 | `sessions` | list resumable sessions |
 | `workdirs` | list this project's session work directories; `workdirs clean [session-id]...` deletes them after asking (ADR-0058, see [sessions](sessions.md)) |
-| `trust` | show this project's trust state and trusted files; `--accept` records the current content as trusted (ADR-0074) |
+| `trust` | show this project's trust state and trusted files; `--accept` records the current content as trusted, `--config <path>` reads another config file (ADR-0074) |
 
 ## Telemetry (ADR-0035)
 
