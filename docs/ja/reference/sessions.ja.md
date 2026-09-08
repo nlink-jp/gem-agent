@@ -122,6 +122,32 @@ API が返すのはトークン数であって金額ではない。したがっ�
 `tool_prompt` キーの無いレコードは ADR-0066 以前のもの: 壊れたレコード
 として扱うのではなく、チェックサムの非負の残差としてバケツを導出する。
 
+## transcript の auto モード判定（ADR-0045 §7）
+
+auto モードが ON のとき、ゲート対象のコールは 1 件ずつ `auto_decision`
+レコードを書きます。操作者がそのコールを見たかどうかによらず、階梯自身の
+答えです:
+
+    {"kind":"auto_decision","data":{"name":"shell_exec","lane":"write",
+     "approved":false,"tier":"review","model":true,
+     "evaluator_model":"gemini-…","confidence":0.42,"min_confidence":0.8,
+     "reason":"…","key":"make build"}}
+
+`model` は「モデル層が走ったか」の真偽値、`evaluator_model` は走った
+モデル名です。`confidence` はそのモデルが返した数値、`min_confidence`
+は照合された基準値です — 基準値はバージョンで変わり得る定数なので、
+後から引くのではなくレコードに同梱します。`confidence` はモデルの
+自己申告であって、実測値ではありません。
+
+ルール層だけで決着したコールでは、この 3 キーはいずれも出ません。
+モデル層が走ったが使える値を返さなかった場合（通信エラー・解析不能な
+verdict・0〜1 の範囲外）は `confidence` だけが出ません。キーが無いことは
+0 ではありません。
+
+このレコードが言うのは**階梯**の判定です。階梯がエスカレートした
+コールは承認ゲートが答え、それは操作者ではなくセッション allowlist で
+あり得ます — どちらだったかを言うのは `gate_decision` です。
+
 ## transcript のリモート障害（ADR-0075）
 
 1 つの MCP ツールがターン内で連続 3 コールにバイト同一のエラー文を返したとき

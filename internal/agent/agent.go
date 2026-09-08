@@ -215,9 +215,11 @@ type Options struct {
 	// calls that never hit the approval prompt (a silent pause reads as
 	// a hang).
 	OnToolCall func(tc llm.ToolCall)
-	// Model names the model these calls bill against. Accounting only
-	// (ADR-0057): it goes into the usage records so a transcript can be
-	// priced without joining the header. The backend picks the model.
+	// Model names the model these calls bill against. Record-keeping
+	// only (ADR-0057): it goes into the usage records so a transcript
+	// can be priced without joining the header, and into an
+	// auto_decision the model tier answered, so a verdict can be read
+	// back against the model that gave it. The backend picks the model.
 	Model string
 	// OnUsage, when set, receives per-round token usage (prompt tokens
 	// approximate the current context size; output tokens the round's
@@ -1221,7 +1223,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			if a.onAuto != nil {
 				a.onAuto(tc, d)
 			}
-			a.logRecord("auto_decision", map[string]any{
+			rec := map[string]any{
 				"name": tc.Name, "approved": d.Approved, "lane": a.laneOf(tc),
 				"tier": d.Tier.String(), "reason": d.Reason, "model": d.ModelConsulted,
 				// The learner reads this to tell an escalation the
@@ -1229,7 +1231,24 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 				// on its own (ADR-0045): only the first is evidence of
 				// what the operator wants.
 				"key": a.learnKey(tc),
-			})
+			}
+			if d.ModelConsulted {
+				// What the model tier answered, and what it was measured
+				// against. The bar travels with the record because it is
+				// a constant that can change between versions, and a
+				// record that only says "escalated" cannot be re-read
+				// against a different one (review 2026-09-08, A-04).
+				// "model" above is the boolean "the tier ran";
+				// evaluator_model names which model ran, since the
+				// evaluation is a side call whose spend is logged
+				// separately.
+				rec["evaluator_model"] = a.model
+				rec["min_confidence"] = minConfidence
+				if d.ConfidenceKnown {
+					rec["confidence"] = d.Confidence
+				}
+			}
+			a.logRecord("auto_decision", rec)
 			// The model tier is a network round trip: a cancel that
 			// landed during it comes back as "risk evaluation failed"
 			// and, without this check, escalated to the gate — the

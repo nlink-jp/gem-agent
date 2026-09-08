@@ -83,6 +83,18 @@
 
 ### Changed
 
+- An `auto_decision` the model tier answered now records
+  `confidence`, the `min_confidence` bar it was measured against, and
+  `evaluator_model`. The record said only that a call was approved or
+  escalated, so the 0.8 bar could be argued from the constant but never
+  re-read against the calls it actually decided, and a model change
+  left nothing to compare across. The bar travels with the record
+  because it is a constant that can change between versions. All three
+  keys are absent when the rule tier settled the call alone, and
+  `confidence` alone is absent when the tier ran and returned nothing
+  usable — an absent key is not a zero. Both `sessions` references
+  document the record (review 2026-09-08, A-04)
+
 - `make check` runs the release gate against itself
   (`scripts/verify-release-selftest.sh`, also `make gate-check`): six
   synthetic dists — no marker, a marker older than its zip, a corrupt

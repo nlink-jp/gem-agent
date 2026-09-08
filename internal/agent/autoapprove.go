@@ -23,6 +23,16 @@ type AutoDecision struct {
 	Reason string
 	// ModelConsulted reports whether the model tier ran.
 	ModelConsulted bool
+	// Confidence is the number the model tier returned, and
+	// ConfidenceKnown says whether there is one: the tier can be
+	// consulted and still produce none (transport error, unparseable
+	// verdict, a value outside [0,1]). Both are recorded so the
+	// minConfidence bar can be re-examined against the calls it
+	// actually decided, instead of argued from the constant — a
+	// verdict's 0.8 is the model's own number, not a measured 80%
+	// (review 2026-09-08, A-04).
+	Confidence      float64
+	ConfidenceKnown bool
 }
 
 // EscalationReason renders why auto mode is asking instead of running,
@@ -177,6 +187,7 @@ func (a *Agent) decideAuto(ctx context.Context, tc llm.ToolCall) AutoDecision {
 	}
 	if verdict.Approve && verdict.Confidence >= minConfidence {
 		return AutoDecision{Approved: true, Tier: v.Tier, ModelConsulted: true,
+			Confidence: verdict.Confidence, ConfidenceKnown: true,
 			Reason: strings.TrimSpace(verdict.Reason)}
 	}
 	reason := strings.TrimSpace(verdict.Reason)
@@ -186,7 +197,8 @@ func (a *Agent) decideAuto(ctx context.Context, tc llm.ToolCall) AutoDecision {
 	if verdict.Approve {
 		reason = fmt.Sprintf("%s (confidence %.2f below %.2f)", reason, verdict.Confidence, minConfidence)
 	}
-	return AutoDecision{Tier: v.Tier, ModelConsulted: true, Reason: reason}
+	return AutoDecision{Tier: v.Tier, ModelConsulted: true,
+		Confidence: verdict.Confidence, ConfidenceKnown: true, Reason: reason}
 }
 
 // evaluateRisk asks the model tier about one call. The call is described

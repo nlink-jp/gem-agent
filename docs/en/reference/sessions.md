@@ -129,6 +129,33 @@ report those files as partial. A record without the `tool_prompt` key
 predates ADR-0066: derive the bucket as the non-negative remainder of
 the checksum, rather than treating the record as broken.
 
+## Auto-mode decisions in the transcript (ADR-0045 §7)
+
+With auto mode armed, every gated call writes one `auto_decision`
+record — the ladder's own answer, whether or not the operator ever saw
+the call:
+
+    {"kind":"auto_decision","data":{"name":"shell_exec","lane":"write",
+     "approved":false,"tier":"review","model":true,
+     "evaluator_model":"gemini-…","confidence":0.42,"min_confidence":0.8,
+     "reason":"…","key":"make build"}}
+
+`model` is the boolean "the model tier ran"; `evaluator_model` names the
+model that ran it. `confidence` is the number that model returned, and
+`min_confidence` the bar it was measured against — the bar is a
+constant that can change between versions, so it travels with the
+record instead of being looked up afterwards. Read `confidence` as the
+model's own claim about itself, never as a measured rate.
+
+All three model keys are absent when the rule tier settled the call
+alone, and `confidence` alone is absent when the tier ran but returned
+nothing usable (transport error, unparseable verdict, a value outside
+0–1). An absent key is not a zero.
+
+A record here says what the **ladder** decided. A call it escalated is
+answered at the gate, which may be the session allowlist rather than
+the operator — `gate_decision` is the record that says which.
+
 ## Remote faults in the transcript (ADR-0075)
 
 When one MCP tool answers three consecutive calls with byte-identical
