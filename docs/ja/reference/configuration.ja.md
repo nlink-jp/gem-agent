@@ -85,6 +85,17 @@ config file > defaults。設定ファイル内の未知キーはエラーにな�
 （strict decode）、不正な値はキー名を名指しして起動時に失敗します —
 タイポが原因から遠い実行時エラーとして現れてはいけません。
 
+環境変数から来られるキーは次の 3 つだけです:
+
+| キー | 環境変数 |
+|---|---|
+| `[gcp].project` | `GEMAGENT_PROJECT`、次に `GOOGLE_CLOUD_PROJECT` |
+| `[gcp].location` | `GEMAGENT_LOCATION`、次に `GOOGLE_CLOUD_LOCATION` |
+| `[model].name` | `GEMAGENT_MODEL` |
+
+この 3 つがあれば設定ファイル無しでも起動できます（CI やコンテナ起動が
+必要とするのはこれです）。他はすべてファイルのものです。
+
 `/settings` は全設定を出所付きでライブ表示します。機械が永続化する
 決定（ポリシー編集・プロジェクト信用）は gem-agent 所有の
 `~/.config/gem-agent/policy.toml` に入り、手書きの `config.toml` は

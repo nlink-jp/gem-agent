@@ -87,6 +87,17 @@ decode), and invalid values fail at startup with the key named — a
 typo must not surface as a confusing runtime failure far from its
 cause.
 
+Three keys, and only these three, can come from the environment:
+
+| Key | Environment |
+|---|---|
+| `[gcp].project` | `GEMAGENT_PROJECT`, then `GOOGLE_CLOUD_PROJECT` |
+| `[gcp].location` | `GEMAGENT_LOCATION`, then `GOOGLE_CLOUD_LOCATION` |
+| `[model].name` | `GEMAGENT_MODEL` |
+
+They are enough to run with no config file at all, which is what a CI
+or container start needs. Everything else is the file's.
+
 `/settings` shows every setting with the layer its value came from,
 live. Machine-persisted decisions (policy edits, project trust) live in
 `~/.config/gem-agent/policy.toml`, which gem-agent owns; your

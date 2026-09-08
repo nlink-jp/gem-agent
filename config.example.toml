@@ -17,6 +17,7 @@ project = "your-project-id"
 # gemini-3.8-flash and gemini-3.7-flash answer from "global" and "us",
 # "us-central1" 404s). Use a single region (e.g. "us-central1") only
 # for Gemini 2.5 models.
+# Also settable via GEMAGENT_LOCATION or GOOGLE_CLOUD_LOCATION.
 location = "global"
 
 # GCS bucket for audio/video attachments (ADR-0027). When set, attached
@@ -31,6 +32,7 @@ location = "global"
 [model]
 # Gemini model ID. Required, and deliberately without a built-in
 # default: model IDs churn, and a stale hardcoded one fails at runtime.
+# Also settable via GEMAGENT_MODEL.
 name = "gemini-3.8-flash"
 
 # Context window shown in the status line. Optional — Vertex does not
