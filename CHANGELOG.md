@@ -88,6 +88,13 @@
   only the states that constrain explain themselves now, and the
   Japanese lines name the mode instead of carrying a bare English
   label. Operator report, 2026-09-09
+- The notice the `auto` state prints when it turns read-only on reads
+  as the transition it is: `"…" という依頼のため、読み取り専用モードに
+  切り替えました。解除は /readonly off`. It had also stated what
+  read-only then prevents, which repeats what the mode's own name
+  says. Cause, change, way back — nothing else. Its test now covers
+  both languages; it had only ever checked the English one, which is
+  not the one that was reported. Operator report, 2026-09-09
 
 ## [0.73.0] - 2026-09-09
 

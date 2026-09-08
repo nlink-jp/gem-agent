@@ -13,6 +13,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/tools"
+	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
 // ceilingBackend answers the ceiling question with a fixed verdict and
@@ -44,6 +45,11 @@ func (b *ceilingBackend) ChatStream(_ context.Context, system string, msgs []llm
 
 func autoCeilingAgent(t *testing.T, b llm.Backend, state string) (*Agent, *[]string) {
 	t.Helper()
+	return autoCeilingAgentIn(t, b, state, uitext.EN)
+}
+
+func autoCeilingAgentIn(t *testing.T, b llm.Backend, state string, lang uitext.Lang) (*Agent, *[]string) {
+	t.Helper()
 	reg, err := tools.New(t.TempDir(),
 		func(ctx context.Context, c string) *exec.Cmd { return exec.CommandContext(ctx, "/bin/bash", "-c", c) },
 		5*time.Second)
@@ -52,35 +58,45 @@ func autoCeilingAgent(t *testing.T, b llm.Backend, state string) (*Agent, *[]str
 	}
 	var notices []string
 	a := New(Options{Backend: b, Registry: reg, Gate: &recordingGate{}, System: "s",
-		MaxTurns: 3, ReadOnly: state,
+		MaxTurns: 3, ReadOnly: state, Msgs: uitext.For(lang),
 		OnNotice: func(m string) { notices = append(notices, m) }})
 	return a, &notices
 }
 
 func TestAutoCeilingTightensAndSaysWhy(t *testing.T) {
-	b := &ceilingBackend{verdict: `{"read_only": true, "quote": "変更はしないで"}`}
-	a, notices := autoCeilingAgent(t, b, sandbox.CeilingAuto)
-	if _, err := a.Run(context.Background(), "レビューして。変更はしないで", nil); err != nil {
-		t.Fatal(err)
-	}
-	if a.ReadOnly() != sandbox.CeilingOn {
-		t.Fatalf("state = %q, want on", a.ReadOnly())
-	}
-	if len(*notices) != 1 {
-		t.Fatalf("notices = %v", *notices)
-	}
-	// The change, its cause in the operator's own words, and the way
-	// back — the three things that make a printed line worth printing.
-	n := (*notices)[0]
-	for _, want := range []string{"read-only", "変更はしないで", "/readonly off"} {
-		if !strings.Contains(n, want) {
-			t.Errorf("notice lacks %q: %q", want, n)
+	// Both languages: the operator reads one of them, and only one of
+	// them was ever checked.
+	for _, tc := range []struct {
+		lang   uitext.Lang
+		change string
+	}{
+		{uitext.EN, "now read-only"},
+		{uitext.JA, "読み取り専用モードに切り替えました"},
+	} {
+		b := &ceilingBackend{verdict: `{"read_only": true, "quote": "変更はしないで"}`}
+		a, notices := autoCeilingAgentIn(t, b, sandbox.CeilingAuto, tc.lang)
+		if _, err := a.Run(context.Background(), "レビューして。変更はしないで", nil); err != nil {
+			t.Fatal(err)
 		}
-	}
-	// The operator's message is wrapped as data, not handed over as
-	// instructions.
-	if len(b.payloads) != 1 || strings.HasPrefix(b.payloads[0], "レビューして") {
-		t.Errorf("the message was not isolated: %q", b.payloads)
+		if a.ReadOnly() != sandbox.CeilingOn {
+			t.Fatalf("%v: state = %q, want on", tc.lang, a.ReadOnly())
+		}
+		if len(*notices) != 1 {
+			t.Fatalf("%v: notices = %v", tc.lang, *notices)
+		}
+		// Cause, change, way back — the three things that make a printed
+		// line worth printing, and nothing beyond them.
+		n := (*notices)[0]
+		for _, want := range []string{tc.change, "変更はしないで", "/readonly off"} {
+			if !strings.Contains(n, want) {
+				t.Errorf("%v: notice lacks %q: %q", tc.lang, want, n)
+			}
+		}
+		// The operator's message is wrapped as data, not handed over as
+		// instructions.
+		if len(b.payloads) != 1 || strings.HasPrefix(b.payloads[0], "レビューして") {
+			t.Errorf("%v: the message was not isolated: %q", tc.lang, b.payloads)
+		}
 	}
 }
 

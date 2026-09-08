@@ -250,9 +250,11 @@ type Messages struct {
 	ReadOnlyOff            string
 	ReadOnlyAuto           string
 	ReadOnlyUsage          string
-	// ReadOnlyAutoOnFmt: %s = the operator's own words that decided
-	// it. A state change is worth a line only with its cause and
-	// the way back in the same line.
+	// ReadOnlyAutoOnFmt: %s = the operator's own words that decided it.
+	// This one IS a transition, unlike the state lines above, so it
+	// reads as one. Cause, change, way back — and nothing else: saying
+	// what read-only then prevents repeated what the mode's own name
+	// already says (operator report).
 	ReadOnlyAutoOnFmt   string
 	ReadOnlyAutoOnPlain string
 	HistoryCleared      string
@@ -488,8 +490,8 @@ keys:
 	ReadOnlyOff:            "read-only mode: OFF\n",
 	ReadOnlyAuto:           "read-only mode: AUTO — OFF for now; it turns ON by itself when you ask for a read-only session\n",
 	ReadOnlyUsage:          "usage: /readonly on|off|auto (no argument shows the current state)\n",
-	ReadOnlyAutoOnFmt:      "read-only mode: ON — you asked for %q. Nothing outside the session scratch changes; /readonly off lifts it",
-	ReadOnlyAutoOnPlain:    "read-only mode: ON — this reads as a read-only session. Nothing outside the session scratch changes; /readonly off lifts it",
+	ReadOnlyAutoOnFmt:      "You asked for %q, so this session is now read-only. /readonly off lifts it",
+	ReadOnlyAutoOnPlain:    "This reads as a read-only session, so it is now read-only. /readonly off lifts it",
 	HistoryCleared:         "history cleared — the next message starts a fresh conversation\n",
 	NothingToCompact:       "nothing to compact yet — the conversation is still short",
 	CompactedFmt:           "compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
@@ -672,8 +674,8 @@ var ja = Messages{
 	ReadOnlyOff:            "読み取り専用モード: OFF\n",
 	ReadOnlyAuto:           "読み取り専用モード: AUTO — 今は OFF。読み取り専用の依頼を打つと自動で ON になります\n",
 	ReadOnlyUsage:          "使い方: /readonly on|off|auto（引数なしで現在の状態を表示）\n",
-	ReadOnlyAutoOnFmt:      "読み取り専用モード: ON — %q という依頼のため。スクラッチの外は変更しません。解除は /readonly off",
-	ReadOnlyAutoOnPlain:    "読み取り専用モード: ON — 読み取り専用の依頼と判断しました。スクラッチの外は変更しません。解除は /readonly off",
+	ReadOnlyAutoOnFmt:      "%q という依頼のため、読み取り専用モードに切り替えました。解除は /readonly off",
+	ReadOnlyAutoOnPlain:    "読み取り専用の依頼と判断し、読み取り専用モードに切り替えました。解除は /readonly off",
 	HistoryCleared:         "履歴をクリアしました — 次のメッセージから新しい会話が始まります\n",
 	NothingToCompact:       "まだ /compact の対象がありません — 会話がまだ短いためです",
 	CompactedFmt:           "古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",
