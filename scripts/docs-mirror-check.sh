@@ -203,21 +203,30 @@ print(f"OK: identifiers agree across all {len(pairs)} en/ja pairs.")
 PY
 
 # --- box diagrams keep their right edge --------------------------------
-# A framed diagram in a fenced block must have one width. This is a
-# Japanese-side failure by construction: the English box is drawn once
-# and every row is ASCII, then the translation replaces the content with
-# CJK and the padding is re-counted by eye. The architecture reference
-# shipped a box whose rows measured 53, 54 and 57 columns.
+# A framed diagram in a fenced block must have one width, and must be
+# drawn in ASCII. Two separate defects, one class.
 #
-# Width model: East Asian Wide/Fullwidth = 2, everything else = 1 —
-# including the box-drawing characters and arrows, which are Ambiguous.
-# That is the model internal/tui pins go-runewidth to (AGENTS.md
-# §Gotchas, v0.37.1), so a diagram that lines up here lines up in the
-# terminal that the runtime itself renders into.
+# The padding is a Japanese-side failure by construction: the box is
+# drawn in English, where every row is ASCII, then the translation
+# replaces the content with CJK and the padding is re-counted by eye.
+# The architecture reference shipped rows of 53, 54 and 57 columns.
+#
+# The characters are the deeper half. U+2500 and friends — and the
+# arrows — are East Asian *Ambiguous*: one column under the model
+# internal/tui pins go-runewidth to (AGENTS.md §Gotchas, v0.37.1), two
+# under a CJK locale's. Rows carry different numbers of them, so under
+# the wide model the same box breaks again no matter how it is padded.
+# ASCII "+ - | ` v" is one column everywhere, which is why a frame is
+# required to be free of Ambiguous characters rather than merely
+# padded correctly. Connector-only diagrams with no right edge (the
+# ADR-0050 pipeline, the package trees) have nothing to break and are
+# not framed, so they are not touched.
 python3 - <<'PY' || exit 1
 import glob, io, re, sys, unicodedata
 
-LEFT, RIGHT = set("┌│└├"), set("┐│┘┤")
+# Both alphabets are recognised: an edge drawn the old way has to be
+# caught in order to be reported, not skipped for not being ASCII.
+EDGE = set("|+┌│└├┐┘┤")
 
 
 def width(s):
@@ -225,9 +234,10 @@ def width(s):
 
 
 def framed(line):
-    # A lone connector ("│" on its own) frames nothing.
+    # A lone connector ("|" on its own) frames nothing; a row that opens
+    # with an edge and ends in prose is the caption under the box.
     s = line.strip()
-    return len(s) > 1 and s[0] in LEFT and s[-1] in RIGHT
+    return len(s) > 1 and s[0] in EDGE and s[-1] in EDGE
 
 
 bad = 0
@@ -240,14 +250,24 @@ for path in files:
         if re.match(r"^```", line):
             if inside:
                 rows = [(m, x) for m, x in block if framed(x)]
-                widths = {width(x) for _, x in rows}
-                indents = {len(x) - len(x.lstrip()) for _, x in rows}
-                if len(rows) >= 2 and (len(widths) > 1 or len(indents) > 1):
-                    bad += 1
-                    print(f"ERROR: {path}:{start} — the box rows are not one width:",
-                          file=sys.stderr)
-                    for m, x in rows:
-                        print(f"  {m}: {width(x):>3} columns  {x}", file=sys.stderr)
+                if len(rows) >= 2:
+                    widths = {width(x) for _, x in rows}
+                    indents = {len(x) - len(x.lstrip()) for _, x in rows}
+                    if len(widths) > 1 or len(indents) > 1:
+                        bad += 1
+                        print(f"ERROR: {path}:{start} — the box rows are not one width:",
+                              file=sys.stderr)
+                        for m, x in rows:
+                            print(f"  {m}: {width(x):>3} columns  {x}", file=sys.stderr)
+                    # The whole block, not only the framed rows: a
+                    # connector or an arrow above the box shifts with
+                    # the same ambiguity.
+                    amb = sorted({c for _, x in block for c in x
+                                  if unicodedata.east_asian_width(c) == "A"})
+                    if amb:
+                        bad += 1
+                        print(f"ERROR: {path}:{start} — a framed diagram must be ASCII; "
+                              f"these are ambiguous-width: {' '.join(amb)}", file=sys.stderr)
                 inside, block = False, []
             else:
                 inside, start = True, n
@@ -257,11 +277,11 @@ for path in files:
 
 if bad:
     print("", file=sys.stderr)
-    print("Pad the rows so every framed line is the same width (CJK counts 2, "
-          "box drawing and arrows count 1).", file=sys.stderr)
+    print("Draw framed diagrams with + - | ` v, and pad every framed row to the "
+          "same width (CJK counts 2, ASCII counts 1).", file=sys.stderr)
     sys.exit(1)
 
-print("OK: every framed diagram has one width.")
+print("OK: every framed diagram is ASCII and has one width.")
 PY
 
 # --- concept coverage: code → the whole-system documents ----------------
