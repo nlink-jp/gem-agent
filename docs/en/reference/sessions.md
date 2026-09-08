@@ -10,7 +10,7 @@ memory.
 gem-agent sessions        # ids, age, size, model, and the opening question
 gem-agent sessions --all  # every project, not just this one
 gem-agent -c              # the most recent session in this directory
-gem-agent --resume 20260819-150102
+gem-agent --resume 2acb328c            # a full id, or any unambiguous prefix
 ```
 
 A resumed session continues its own transcript — one file is one
@@ -39,17 +39,20 @@ loudly instead of mixing. Transcripts recorded by older versions in
 the flat `sessions/` directory keep working in place: listed and
 resumed where they are, never moved.
 
-Parallel launches are safe: session ids are timestamps with an atomic
-suffix on collision, and each transcript is held under an exclusive
-lock — a second `--resume` of the same session says "in use" instead
-of interleaving writes.
+Parallel launches are safe: session ids are UUIDs (ADR-0071) and the
+transcript is created with `O_EXCL`, so two sessions can never share a
+file, and each transcript is held under an exclusive lock — a second
+`--resume` of the same session says "in use" instead of interleaving
+writes.
 
 The `GEMAGENT_STATE_DIR` environment variable relocates the whole
 state root (sessions and memory) — its purpose is isolation for tests
 and drills.
 
-Beside a project's transcripts sits `persistent.json` (ADR-0074 §3/§4):
-the digests of the persistent files under the project — the write
+In the project's own state directory —
+`~/.local/state/gem-agent/<escaped path>/`, beside the work directories
+rather than beside the transcripts — sits `persistent.json` (ADR-0074
+§3/§4): the digests of the persistent files under the project — the write
 lane's protected names at any depth, nested repositories' hooks
 included — as the last session left them. The next start compares and
 notes what changed since ("changed since your previous session: …"),
