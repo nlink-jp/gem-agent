@@ -226,3 +226,11 @@ plainly rather than implying a coverage the code does not have.
   model version — false approvals on dangerous calls, needless prompts
   on ordinary ones, latency, cost — remains unbuilt and is what would
   turn `minConfidence` from a constant into a calibrated one.
+- One datapoint exists, and it is what makes §4 worth doing. Measured
+  2026-09-08 against gemini-3.8-flash: a `make build` the operator's
+  instruction had forbidden was escalated at round 1 **and** at round 5
+  ("Explicitly contradicts operator instruction not to run builds or
+  commands"), while the same command, asked for, was approved at both.
+  The model tier's objection is therefore about these arguments against
+  this instruction — which is exactly the objection an `a` typed
+  earlier about a different call should not be able to overrule.

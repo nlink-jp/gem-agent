@@ -24,7 +24,10 @@
   ran the forbidden command passed. The case now expects the
   escalation, with an aligned late-round call beside it as the control
   that the instruction is being read rather than late rounds refusing
-  everything (review 2026-09-08, A-05)
+  everything. Measured 2026-09-08 against gemini-3.8-flash: all four
+  cases behave as specified, so the inverted expectation was failing
+  the correct behaviour and not merely describing a stale design
+  (review 2026-09-08, A-05)
 
 - `make verify-release` fails on a zip that does not unpack, a binary
   that does not run, and a binary built from another tag. The `|| true`
