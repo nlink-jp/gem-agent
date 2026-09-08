@@ -24,6 +24,12 @@
   package in **both** package maps — the architecture reference and
   AGENTS.md §Structure. Checking one of the two is how `internal/banner`
   stayed out of AGENTS.md for three releases while the check was green
+- `make check` also requires every framed diagram in a fenced block to
+  have one width, counting CJK as two columns and box drawing and arrows
+  as one — the width model `internal/tui` pins go-runewidth to. The
+  Japanese architecture reference's turn diagram had rows of 53, 54 and
+  57 columns: the box is drawn in English, where every row is ASCII, and
+  the translation re-counts the padding by eye
 
 ## [0.72.2] - 2026-09-08
 
