@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed**（2026-09-09） |
+| Status | **Accepted**（2026-09-09） — **決定済み、未実装**。文書として v0.73.0 に入る。挙動は後続の minor で入る |
 | Date | 2026-09-09 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

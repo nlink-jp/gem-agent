@@ -135,6 +135,16 @@
   blocks were the one thing no check could see), and a framed text row
   may not contain CJK
 
+### Added
+
+- **ADR-0080** (read-only is a mode, on its own lane-ceiling axis) and
+  **ADR-0081** (instruction context may only subtract) are accepted and
+  **not implemented**. The decisions ship in this release; the
+  behaviour does not, and lands in a later minor because it changes
+  what a session may do. Both carry the live measurements they were
+  decided on
+
+
 ## [0.72.2] - 2026-09-08
 
 ### Changed

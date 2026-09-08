@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed**（2026-09-09、第 3 改訂。この番号の先行草案を置き換える） — この集合で Accepted でない最初の ADR |
+| Status | **Accepted**（2026-09-09） — **決定済み、未実装**。文書として v0.73.0 に入る。挙動はセッションに何ができるかを変えるため、後続の minor で入る |
 | Date | 2026-09-09 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
