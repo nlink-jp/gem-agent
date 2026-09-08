@@ -95,6 +95,17 @@
   says. Cause, change, way back — nothing else. Its test now covers
   both languages; it had only ever checked the English one, which is
   not the one that was reported. Operator report, 2026-09-09
+- **The ceiling is visible**: the TUI footer carries `🔒read-only`
+  while it is in force, beside `⚡auto` and for the same reason — it
+  changes what runs — and the startup banner names a non-default state.
+  Both were required by ADR-0080 §1 and neither was built. The footer
+  reads the state live rather than mirroring it, because the ceiling
+  moves from three places and two are inside the agent. `auto` gets a
+  banner line but no footer badge: it has no ceiling in force yet, and
+  the banner is the only place that fact appears before it fires.
+  One-shot prints its own line, having neither a footer nor `/readonly`
+  — the same argument, and the same shape, as the auto-approve pair.
+  Operator report, 2026-09-09
 
 ## [0.73.0] - 2026-09-09
 

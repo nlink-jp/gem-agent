@@ -101,3 +101,32 @@ func TestModeChangeIgnoresTheAnswersItDoesNotOffer(t *testing.T) {
 		}
 	}
 }
+
+// The footer carries the ceiling in force, continuously, for the same
+// reason it carries auto mode: it changes what runs (ADR-0080 §1).
+func TestFooterShowsTheCeilingInForce(t *testing.T) {
+	state := "off"
+	m := New(Options{Msgs: uitext.For(uitext.JA), Theme: "notty",
+		ReadOnlyState: func() string { return state }})
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = next.(Model)
+
+	if strings.Contains(m.View(), "read-only") {
+		t.Errorf("off is the default and says nothing in the footer:\n%s", m.View())
+	}
+	state = "auto"
+	if strings.Contains(m.View(), "read-only") {
+		t.Errorf("auto has no ceiling in force yet:\n%s", m.View())
+	}
+	state = "on"
+	if !strings.Contains(m.View(), "read-only") {
+		t.Errorf("the footer does not show the ceiling in force:\n%s", m.View())
+	}
+	// It is read live, so a change from anywhere shows without the TUI
+	// being told: /readonly, the auto state, and an approved lift all
+	// move it, and two of the three are inside the agent.
+	state = "off"
+	if strings.Contains(m.View(), "read-only") {
+		t.Errorf("the footer kept a ceiling that was lifted:\n%s", m.View())
+	}
+}

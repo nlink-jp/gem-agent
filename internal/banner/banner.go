@@ -12,6 +12,8 @@
 package banner
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
+
 	"fmt"
 	"strings"
 )
@@ -38,6 +40,12 @@ type Facts struct {
 	// AutoApprove reports that the session begins running mutating
 	// tools unattended.
 	AutoApprove bool
+	// ReadOnly is the session's lane-ceiling state (ADR-0080). It earns
+	// a line because nothing else says it at start: the footer carries
+	// "on" continuously but shows nothing for "auto", which is
+	// invisible until the turn it fires on, and one-shot has no footer
+	// at all. "off" is the default and says nothing.
+	ReadOnly string
 	// Notes are startup warnings already phrased by their own subsystem.
 	Notes []string
 }
@@ -62,6 +70,9 @@ func Lines(f Facts) []string {
 	}
 	if f.AutoApprove {
 		out = append(out, AutoApproveLine())
+	}
+	if line := ReadOnlyLine(f.ReadOnly); line != "" {
+		out = append(out, line)
 	}
 	for _, n := range f.Notes {
 		out = append(out, "warning: "+n)
@@ -114,6 +125,28 @@ func AutoApproveLine() string {
 // press. The next command is the flag.
 func AutoApproveOneShotLine() string {
 	return "auto-approve: ON — this run approves its own mutating tools; drop --auto to restore the gate"
+}
+
+// ReadOnlyLine says the session starts with a lane ceiling, and says
+// nothing for the default. Two states print, for different reasons:
+// "on" because a session that refuses changes should say so before the
+// operator asks for one, and "auto" because the footer cannot — it
+// shows the ceiling in force, and auto has none yet.
+func ReadOnlyLine(state string) string {
+	switch state {
+	case sandbox.CeilingOn:
+		return "read-only: ON at start — this session changes nothing outside its scratch; /readonly off lifts it"
+	case sandbox.CeilingAuto:
+		return "read-only: AUTO — off for now; it turns on by itself when you ask for a read-only session"
+	}
+	return ""
+}
+
+// ReadOnlyOneShotLine is the same fact for `-p`, where there is no
+// footer to carry it and no /readonly to type. The next command is the
+// flag — the same shape as the auto-approve pair above.
+func ReadOnlyOneShotLine() string {
+	return "read-only: ON — this run changes nothing outside its scratch; drop --read-only to allow changes"
 }
 
 // SandboxLine returns the sandbox line only when the sandbox is not in

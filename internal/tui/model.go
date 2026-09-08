@@ -20,6 +20,7 @@ import (
 	"github.com/rivo/uniseg"
 
 	"github.com/nlink-jp/gem-agent/internal/diagram"
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
@@ -181,8 +182,15 @@ type Options struct {
 	InitialInput string
 	// AutoMode is the initial auto-approve state; ToggleAuto flips it
 	// (shift+tab) and returns the new state.
-	AutoMode   bool
-	ToggleAuto func() bool
+	AutoMode bool
+	// ReadOnlyState reports the session's lane-ceiling state (ADR-0080
+	// §1). A getter rather than a mirrored field: the ceiling changes
+	// from three places — /readonly, the auto state tightening itself,
+	// and a lift the operator approved — and two of them are inside the
+	// agent, so a mirror would need three notifications to stay true.
+	// nil means the footer never shows it.
+	ReadOnlyState func() string
+	ToggleAuto    func() bool
 	// CompletePath returns candidate project paths for an @-reference
 	// prefix (Tab completion in the input box).
 	CompletePath func(prefix string) []string
@@ -281,6 +289,7 @@ type Model struct {
 	slash           SlashHandler
 	toggleAuto      func() bool
 	autoMode        bool
+	readOnlyState   func() string
 	completePath    func(prefix string) []string
 	completeSlashFn func(prefix string) []string
 	baseCtx         context.Context
@@ -365,6 +374,7 @@ func New(opts Options) Model {
 		slash:           opts.Slash,
 		toggleAuto:      opts.ToggleAuto,
 		autoMode:        opts.AutoMode,
+		readOnlyState:   opts.ReadOnlyState,
 		completePath:    opts.CompletePath,
 		completeSlashFn: opts.CompleteSlash,
 		settingsData:    opts.Settings,
@@ -2148,6 +2158,12 @@ func (m Model) footer() string {
 		parts = append(parts, m.projectDir)
 	}
 	line := m.st.hint.Render(strings.Join(parts, " · "))
+	// The ceiling in force, in the accent color for the same reason auto
+	// mode is: it changes what runs. Only "on" shows — "auto" has no
+	// ceiling yet, and the banner is where that fact lives (ADR-0078).
+	if m.readOnlyState != nil && m.readOnlyState() == sandbox.CeilingOn {
+		line = m.st.tool.Render("🔒read-only") + m.st.hint.Render(" · ") + line
+	}
 	if m.autoMode {
 		// Auto mode changes what runs without asking — it must be
 		// visible at all times, and in the accent color, not the dim one.

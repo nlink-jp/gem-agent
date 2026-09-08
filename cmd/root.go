@@ -1427,6 +1427,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		if ag.AutoApprove() {
 			fmt.Fprintln(stderr, banner.AutoApproveOneShotLine())
 		}
+		// Same argument for the ceiling: one-shot has no footer to carry
+		// it and no /readonly to type, so the only place this fact can
+		// appear is here (ADR-0080 §1, ADR-0078's test for a line).
+		if ag.ReadOnly() == sandbox.CeilingOn {
+			fmt.Fprintln(stderr, banner.ReadOnlyOneShotLine())
+		}
 		// Piped stdin becomes a nonce-wrapped data attachment
 		// (ADR-0055) — never prompt text: the -p string alone is the
 		// instruction the risk evaluator sees (ADR-0038/0054). A
@@ -1493,6 +1499,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		SandboxOn: registry.Confined(), ReadLane: registry.ReadLane(),
 		ReadLanePrompts: cfg.Sandbox.ReadLanePrompts,
 		AutoApprove:     ag.AutoApprove(),
+		ReadOnly:        ag.ReadOnly(),
 		Notes:           warnLines,
 	})
 
@@ -1512,13 +1519,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// Msgs is the wiring ADR-0029 shipped without: the catalog
 			// was resolved here but never handed to the TUI, so the
 			// whole chrome fell back to English (review round 2).
-			Msgs:         msgs,
-			Theme:        resolveTheme(cfg.TUI.Theme),
-			ModelName:    cfg.Model.Name,
-			ProjectDir:   abbreviateHome(projectDir),
-			Banner:       bannerLines,
-			InitialInput: initialInput,
-			AutoMode:     ag.AutoApprove(),
+			Msgs:          msgs,
+			Theme:         resolveTheme(cfg.TUI.Theme),
+			ModelName:     cfg.Model.Name,
+			ProjectDir:    abbreviateHome(projectDir),
+			Banner:        bannerLines,
+			InitialInput:  initialInput,
+			AutoMode:      ag.AutoApprove(),
+			ReadOnlyState: ag.ReadOnly,
 			ToggleAuto: func() bool {
 				ag.SetAutoApprove(!ag.AutoApprove())
 				return ag.AutoApprove()

@@ -188,3 +188,35 @@ func TestOneShotAutoApproveNamesTheFlag(t *testing.T) {
 		t.Errorf("one-shot line has no next command: %q", got)
 	}
 }
+
+// The ceiling earns a banner line only where nothing else says it
+// (ADR-0078's test): "on" before the operator asks for a change, "auto"
+// because the footer shows the ceiling in force and auto has none yet,
+// and "off" — the default — never.
+func TestReadOnlyLine(t *testing.T) {
+	for _, tc := range []struct{ state, want string }{
+		{"", ""},
+		{"off", ""},
+		{"on", "ON at start"},
+		{"auto", "AUTO"},
+	} {
+		got := ReadOnlyLine(tc.state)
+		if tc.want == "" {
+			if got != "" {
+				t.Errorf("state %q printed %q", tc.state, got)
+			}
+			continue
+		}
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("state %q → %q, want it to contain %q", tc.state, got, tc.want)
+		}
+		if !strings.Contains(got, "read-only") {
+			t.Errorf("state %q does not name the mode: %q", tc.state, got)
+		}
+	}
+	// One-shot has no footer and no /readonly, so its line names the
+	// flag instead — the same shape as the auto-approve pair.
+	if !strings.Contains(ReadOnlyOneShotLine(), "--read-only") {
+		t.Errorf("the one-shot line does not name the flag: %q", ReadOnlyOneShotLine())
+	}
+}
