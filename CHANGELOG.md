@@ -24,12 +24,15 @@
   package in **both** package maps — the architecture reference and
   AGENTS.md §Structure. Checking one of the two is how `internal/banner`
   stayed out of AGENTS.md for three releases while the check was green
-- `make check` also requires every framed diagram in a fenced block to
-  have one width, counting CJK as two columns and box drawing and arrows
-  as one — the width model `internal/tui` pins go-runewidth to. The
-  Japanese architecture reference's turn diagram had rows of 53, 54 and
-  57 columns: the box is drawn in English, where every row is ASCII, and
-  the translation re-counts the padding by eye
+- The architecture reference's diagrams are drawn in ASCII (`+ - | ` v`)
+  in both languages, and `make check` now requires every framed diagram
+  to be ASCII and to have one width. The Japanese turn diagram had rows
+  of 53, 54 and 57 columns — the box is drawn in English, where every
+  row is ASCII, and the translation re-counts the padding by eye — but
+  padding alone only fixed it under one reading: box drawing and arrows
+  are East Asian Ambiguous, one column under the model `internal/tui`
+  pins go-runewidth to and two under a CJK locale's, and the rows carry
+  different numbers of them. ASCII is one column under both
 
 ## [0.72.2] - 2026-09-08
 
