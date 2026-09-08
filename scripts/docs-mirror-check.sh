@@ -117,6 +117,32 @@ if [ "$adr_errors" -ne 0 ]; then
 fi
 echo "OK: ADR index complete and ordered in both languages."
 
+# --- INDEX links resolve ----------------------------------------------
+# The check above matches ADR files to entries by number, and a number
+# survives a rename: the ADR-0080 rewrite (2026-09-09) renamed both
+# files and left both indexes pointing at a path that no longer
+# existed, with every line above still green. A number is not a link.
+link_errors=0
+for lang in en ja; do
+    index="docs/${lang}/INDEX.md"
+    [ "$lang" = "ja" ] && index="docs/ja/INDEX.ja.md"
+    dir=$(dirname "$index")
+    targets=$(grep -o ']([^)]*)' "$index" \
+        | sed 's/^](//; s/)$//; s/#.*$//' \
+        | grep -v '^[a-z][a-z0-9+.-]*:' \
+        | grep -v '^$' | sort -u)
+    for t in $targets; do
+        if [ ! -e "${dir}/${t}" ]; then
+            echo "ERROR: ${index} links to ${t}, which does not exist" >&2
+            link_errors=$((link_errors + 1))
+        fi
+    done
+done
+if [ "$link_errors" -ne 0 ]; then
+    exit 1
+fi
+echo "OK: every INDEX link resolves."
+
 # --- identifier parity between each en/ja pair -------------------------
 # Pairing alone proved too weak. A capability documented in one language
 # only passes every check above: README.md lost the terminal-diagram

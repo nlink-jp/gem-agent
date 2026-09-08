@@ -86,6 +86,13 @@
 
 ### Changed
 
+- `make check` (docs-mirror-check) requires every relative link in
+  either INDEX to resolve. The ADR index was matched to its files by
+  number, and a number survives a rename: renaming ADR-0080's two files
+  left both indexes pointing at a path that no longer existed, with
+  "ADR index complete and ordered in both languages" still green. A
+  number is not a link
+
 - An `auto_decision` the model tier answered now records
   `confidence`, the `min_confidence` bar it was measured against, and
   `evaluator_model`. The record said only that a call was approved or
