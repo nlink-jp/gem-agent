@@ -710,6 +710,11 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 	// to raise one prompt per proposed write until the operator
 	// clears it to make them stop.
 	a.liftDeclined = false
+	// The auto state decides the ceiling from this turn's message,
+	// before any tool call in it (ADR-0080 §2). It only ever
+	// tightens, so a wrong answer costs a restriction the operator
+	// can lift, and a failed one leaves the ceiling where it was.
+	a.maybeTightenCeiling(ctx, input)
 	// An abandoned mutating call that completed since the last turn
 	// is announced before this turn's message (ADR-0065 §2): the
 	// model's last word on it was "interrupted, result discarded".

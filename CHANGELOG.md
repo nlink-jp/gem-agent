@@ -39,6 +39,15 @@
   rest of the turn, so a model pushed by a poisoned tool result cannot
   raise one prompt per proposed write. In `-p` the deny gate answers,
   so the refusal is final and its reason goes to stderr
+- **The `auto` state tightens the ceiling by itself** (ADR-0080 §2):
+  once per turn a separate evaluation reads the operator's message and,
+  if it asks for a session that changes nothing, switches read-only on
+  and prints one line — the change, the words that decided it, and
+  `/readonly off`. It never switches it off. Tightening can only refuse
+  more, so a wrong answer costs a liftable restriction, while loosening
+  is where a guess becomes a permission; a failed or unparseable
+  evaluation leaves the state untouched. In `off` the evaluation does
+  not run, so the default spends no tokens
 
 ## [0.73.0] - 2026-09-09
 

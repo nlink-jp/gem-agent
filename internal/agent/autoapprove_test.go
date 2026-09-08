@@ -25,6 +25,12 @@ type autoBackend struct {
 }
 
 func (b *autoBackend) ChatStream(ctx context.Context, system string, msgs []llm.Message, defs []llm.ToolDef, onText func(string)) (*llm.Response, error) {
+	// The auto ceiling's per-turn question is a side call like the risk
+	// tier's (ADR-0080 §2). Answered false so it changes nothing here;
+	// the tests that exercise it use their own backend.
+	if len(defs) == 0 && strings.Contains(system, "changes nothing") {
+		return &llm.Response{Content: `{"read_only": false}`}, nil
+	}
 	if len(defs) == 0 && strings.Contains(system, "security reviewer") {
 		if b.verdictErr != nil {
 			return nil, b.verdictErr

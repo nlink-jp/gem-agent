@@ -311,6 +311,16 @@ changes it in a session:
 | `on` | `read` | you |
 | `auto` | starts at `operator` | you, **and** the runtime — which may tighten it to `read` on its own, and never loosens it |
 
+In the `auto` state, once per turn a separate evaluation reads the
+message you typed and decides whether you asked for a session that
+changes nothing. If it says yes the mode switches on and one line says
+so, quoting the words that decided it and naming `/readonly off`. It
+never switches off: tightening can only refuse more, so a wrong answer
+costs a restriction you can lift, while loosening is where a guess
+becomes a permission — the way back always has you in it. A failed or
+unparseable evaluation leaves the state exactly where it was. In `off`
+the evaluation does not run at all, so the default costs nothing.
+
 Under a `read` ceiling a call whose effect needs a higher lane is
 **refused before the gate**: a `shell_exec` declaring `write` or
 `operator`, and `write_file`, `edit_file`, `save_memory`,
