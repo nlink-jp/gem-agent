@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-09-09) — **decided, not yet implemented**. Released as documentation in v0.73.0; the behaviour lands in a later minor |
+| Status | **Accepted** (2026-09-09) — **implemented and unreleased**. §1's `safe` bullet was corrected against the code during implementation |
 | Date | 2026-09-09 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
