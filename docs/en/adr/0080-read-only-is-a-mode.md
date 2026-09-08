@@ -92,13 +92,13 @@ changes it mid-session. The state is shown in the status line and
 recorded when it changes.
 
 ```
-gem-agent --writeable          # off — today's behaviour, stated
+gem-agent --writable          # off — today's behaviour, stated
 gem-agent --read-only          # the ceiling is read for this session
 gem-agent --auto-read-only     # off, and the runtime may tighten it
 ```
 
 A flag for the default state has to exist because the config key does:
-`--writeable` is how a session opts out of a configured `"on"` or
+`--writable` is how a session opts out of a configured `"on"` or
 `"auto"`, per-invocation and recorded with flag provenance in
 `/settings`, the way `--auto` already works beside `[agent]`'s own key. It survives turns because it is
 state — which is why no prose has to be carried across the turn
@@ -166,7 +166,7 @@ in the direction this ADR errs everywhere else. Ignoring it would drop
 a restriction the operator asked for, silently, in the one context
 where nobody is watching to notice. Reading it as `"on"` refuses a
 write instead, with its reason on stderr — and the run that wants the
-write says `--writeable` on its own command line, which is where
+write says `--writable` on its own command line, which is where
 ADR-0053 §1 requires a grant to be visible. The stricter reading is
 what makes the loosening invocation-visible.
 
@@ -269,7 +269,7 @@ proposing a tightening is harmless.
   write access a function of its prompt's wording.
 - **Ignoring a configured `"auto"` in `-p`.** Rejected in §2: it drops
   a restriction silently, unattended. Reading it as `"on"` is the same
-  mistake pointed the safe way, and `--writeable` is the visible
+  mistake pointed the safe way, and `--writable` is the visible
   override.
 - **Making a configured `"auto"` a startup error in `-p`.** Rejected:
   it breaks working invocations to buy nothing the stricter reading
