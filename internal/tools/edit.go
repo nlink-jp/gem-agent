@@ -143,47 +143,74 @@ func (r *Registry) editFile() *Tool {
 }
 
 // parseEditOps accepts the single-pair form or the edits array, not both.
+// Both forms read one replacement through parseEditOp — the single form
+// is the batch of one — so a required argument cannot be enforced in one
+// form and dropped in the other. It was: the batch form read new_string
+// with a discarded type assertion, so a missing or non-string value
+// became "" and the edit deleted old_string's text instead of failing
+// (review 2026-09-08, F-02).
 func parseEditOps(args map[string]any) ([]editOp, error) {
-	single, hasOld := strArg(args, "old_string")
-	newStr, hasNew := strArg(args, "new_string")
-	rawEdits, hasEdits := args["edits"].([]any)
+	_, hasOld := args["old_string"]
+	_, hasNew := args["new_string"]
+	rawEdits, hasEdits := args["edits"]
 
 	if hasEdits && (hasOld || hasNew) {
 		return nil, errors.New("pass either old_string/new_string or edits, not both")
 	}
-	if hasEdits {
-		if len(rawEdits) == 0 {
-			return nil, errors.New("edits is empty")
+	if !hasEdits {
+		op, err := parseEditOp(args, 1, " (or pass edits)")
+		if err != nil {
+			return nil, err
 		}
-		ops := make([]editOp, 0, len(rawEdits))
-		for i, raw := range rawEdits {
-			m, ok := raw.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("edit %d is not an object", i+1)
-			}
-			op := editOp{}
-			op.oldStr, _ = m["old_string"].(string)
-			op.newStr, _ = m["new_string"].(string)
-			op.replaceAll, _ = m["replace_all"].(bool)
-			if err := validateOp(op, i+1); err != nil {
-				return nil, err
-			}
-			ops = append(ops, op)
+		return []editOp{op}, nil
+	}
+	list, ok := rawEdits.([]any)
+	if !ok {
+		return nil, errors.New("edits must be an array of {old_string, new_string, replace_all?} objects")
+	}
+	if len(list) == 0 {
+		return nil, errors.New("edits is empty")
+	}
+	ops := make([]editOp, 0, len(list))
+	for i, raw := range list {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("edit %d is not an object", i+1)
 		}
-		return ops, nil
+		op, err := parseEditOp(m, i+1, "")
+		if err != nil {
+			return nil, err
+		}
+		ops = append(ops, op)
 	}
-	if !hasOld || single == "" {
-		return nil, errors.New("old_string is required (or pass edits)")
+	return ops, nil
+}
+
+// parseEditOp reads one replacement from m, checking presence and type
+// for both strings. A missing new_string is a malformed call, never a
+// deletion: deletion is new_string passed as "". hint names the other
+// form in the single-form error, where it is the likely fix.
+func parseEditOp(m map[string]any, n int, hint string) (editOp, error) {
+	oldStr, ok := strArg(m, "old_string")
+	if !ok {
+		return editOp{}, fmt.Errorf("edit %d: old_string is required and must be a string%s", n, hint)
 	}
-	if !hasNew {
-		return nil, errors.New("new_string is required")
+	newStr, ok := strArg(m, "new_string")
+	if !ok {
+		return editOp{}, fmt.Errorf("edit %d: new_string is required and must be a string "+
+			"(to delete old_string's text, pass new_string as \"\")", n)
 	}
-	replaceAll, _ := args["replace_all"].(bool)
-	op := editOp{oldStr: single, newStr: newStr, replaceAll: replaceAll}
-	if err := validateOp(op, 1); err != nil {
-		return nil, err
+	replaceAll := false
+	if raw, present := m["replace_all"]; present {
+		if replaceAll, ok = raw.(bool); !ok {
+			return editOp{}, fmt.Errorf("edit %d: replace_all must be a boolean", n)
+		}
 	}
-	return []editOp{op}, nil
+	op := editOp{oldStr: oldStr, newStr: newStr, replaceAll: replaceAll}
+	if err := validateOp(op, n); err != nil {
+		return editOp{}, err
+	}
+	return op, nil
 }
 
 func validateOp(op editOp, n int) error {

@@ -4,6 +4,17 @@
 
 ### Fixed
 
+- `edit_file`'s batch form no longer reads a missing or non-string
+  `new_string` as a deletion. It took the argument through a discarded
+  type assertion, so `{"old_string": "..."}` with the key absent, `null`
+  or a number became `""` and removed the anchored text — while the
+  single-pair form had always required it. Both forms now read one
+  replacement through the same parser, so a deletion is `new_string`
+  passed as `""` and nothing else, and a malformed edit anywhere in a
+  batch writes nothing. `replace_all` and `edits` are type-checked on
+  the same path instead of falling back to "require uniqueness" and
+  "this is the single form"
+
 - Documentation brought back to the code after a whole-set audit. The
   sessions reference put `persistent.json` beside the transcripts (it
   is in the project's state directory, beside the work directories),
