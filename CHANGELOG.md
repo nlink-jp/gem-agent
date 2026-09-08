@@ -30,6 +30,15 @@
   write as "not permitted", which is false and is shown to the
   operator. A judgment, not the kernel denial the lanes give this
   runtime's own tools, and the approval reference says so
+- **A call over the ceiling asks whether to lift it** (ADR-0080 §4)
+  rather than refusing outright. The question is must-prompt, so no
+  `a`, no `"never"` policy and no model tier answers it — a mode is not
+  a call. Yes changes the mode and the call proceeds, except past a
+  floor: a Block-tier call or the `operator` lane is asked again on its
+  own terms. Declining refuses the call and stops the question for the
+  rest of the turn, so a model pushed by a poisoned tool result cannot
+  raise one prompt per proposed write. In `-p` the deny gate answers,
+  so the refusal is final and its reason goes to stderr
 
 ## [0.73.0] - 2026-09-09
 

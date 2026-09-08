@@ -89,8 +89,11 @@ type Agent struct {
 	// /readonly changes it mid-session, and in the auto state the
 	// runtime tightens it (never the other way — ADR-0080 §2).
 	readOnly string
-	system   string
-	maxTurns int
+	// liftDeclined records that the operator refused to lift the ceiling
+	// this turn; it is reset at the start of each turn.
+	liftDeclined bool
+	system       string
+	maxTurns     int
 
 	onToolCall    func(tc llm.ToolCall)
 	onUsage       func(u llm.Usage)
@@ -702,6 +705,11 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 	// @ref tokens, not bytes) is the risk evaluator's instruction
 	// context for this turn (ADR-0038).
 	a.turnInput = input
+	// A declined lift is declined for the rest of the turn (ADR-0080
+	// §4): a model pushed by a poisoned tool result must not be able
+	// to raise one prompt per proposed write until the operator
+	// clears it to make them stop.
+	a.liftDeclined = false
 	// An abandoned mutating call that completed since the last turn
 	// is announced before this turn's message (ADR-0065 §2): the
 	// model's last word on it was "interrupted, result discarded".
@@ -1234,21 +1242,50 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		// prompt about (review F7).
 		return "error: " + d.Invalid.Error(), false, false, floorRan, nil
 	}
+	operatorLifted := false
 	if d.OverCeiling {
-		// Refused, not escalated. The gate can be answered by the
-		// session allowlist, so a ceiling that escalated would be a
-		// ceiling an earlier 'a' could spend (ADR-0080 §2). The text is
-		// deliberately not deniedResult: this is not an operator's
-		// denial, and the learner must not read it as one (ADR-0045).
+		// The ceiling is not an escalation: the gate can be answered by
+		// the session allowlist, so a ceiling that escalated would be a
+		// ceiling an earlier 'a' could spend. What is asked here is a
+		// different question — lift the mode? — and it is must-prompt,
+		// so neither an 'a', a "never" policy (the ceiling is tested
+		// before the policy gate) nor the model tier answers it. A mode
+		// is not a call (ADR-0080 §4).
 		a.logRecord("ceiling_refused", map[string]any{
 			"name": tc.Name, "lane": a.laneOf(tc),
 			"ceiling": a.Ceiling().String(), "state": a.ReadOnly(),
 			"reason": d.CeilingReason,
 		})
-		a.telemetry.Approval(tc.Name, "denied", "ceiling", true, d.CeilingReason, a.laneOf(tc))
-		return "error: " + d.CeilingReason + ". The operator can lift it with /readonly off", false, false, floorRan, nil
+		refused := "error: " + d.CeilingReason + ". The operator can lift it with /readonly off"
+		if a.liftDeclined {
+			a.telemetry.Approval(tc.Name, "denied", "ceiling", true, d.CeilingReason, a.laneOf(tc))
+			return refused, false, false, floorRan, nil
+		}
+		detail, purpose := a.Describe(tc)
+		ok, _, denyReason := a.gate.Approve(tc.Name, detail, purpose,
+			d.CeilingReason+" — approving lifts read-only for the rest of this session", true)
+		if !ok {
+			a.liftDeclined = true
+			a.telemetry.Approval(tc.Name, "denied", "ceiling", true, d.CeilingReason, a.laneOf(tc))
+			if denyReason != "" {
+				return refused + ". " + denyReason, false, false, floorRan, nil
+			}
+			return refused, false, false, floorRan, nil
+		}
+		a.SetReadOnly(sandbox.CeilingOff)
+		a.logRecord("mode_change", map[string]any{
+			"setting": "read_only", "to": sandbox.CeilingOff, "by": "operator", "at": tc.Name,
+		})
+		a.telemetry.Approval(tc.Name, "approved", "operator", true, d.CeilingReason, a.laneOf(tc))
+		// The ceiling is gone, so the ordinary rules decide this call
+		// now. The operator has just seen it and said yes, which stands
+		// as its approval — except where a floor applies, and a Block
+		// verdict or an operator-only lane is a different question again
+		// that has to be asked on its own terms.
+		d = a.decide(tc)
+		operatorLifted = !d.Floor()
 	}
-	if a.gated(d, tc) {
+	if a.gated(d, tc) && !operatorLifted {
 		approved, reason := false, ""
 		// The floor (ADR-0021 §5): a Block-tier call, an OperatorOnly
 		// Review (ADR-0072 §4.5), or a tool whose policy is "always",

@@ -316,10 +316,18 @@ Under a `read` ceiling a call whose effect needs a higher lane is
 `operator`, and `write_file`, `edit_file`, `save_memory`,
 `delete_memory`. A read-lane command still runs unasked. The refusal is
 not an escalation — the gate can be answered by the session allowlist,
-so a ceiling that escalated would be one an earlier `a` could spend —
-and it is not a denial you made, so the decision record does not read it
-as one. Lift it with `/readonly off`; in `-p` there is nobody to ask and
-the refusal is final, which is what `--read-only` is for.
+so a ceiling that escalated would be one an earlier `a` could spend.
+What you are asked instead is a different question: **lift read-only?**
+It is must-prompt, so no `a`, no `"never"` policy and no model tier
+answers it — a mode is not a call. Answering yes changes the mode for
+the rest of the session and the call you were shown proceeds, except
+where a floor applies: a Block-tier call or the `operator` lane is
+another question again and is asked on its own terms. Declining refuses
+the call **and stops the question for the rest of the turn**, so a model
+pushed by a poisoned tool result cannot raise one prompt per proposed
+write. None of it is a denial you made, so the decision record does not
+read it as one. In `-p` there is nobody to ask and the refusal is final,
+which is what `--read-only` is for.
 
 **MCP tools are not refused by the ceiling.** An MCP server runs outside
 every Seatbelt profile and the rule tier cannot tell a read tool from a

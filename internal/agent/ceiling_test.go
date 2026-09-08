@@ -100,34 +100,106 @@ func TestCeilingRefusesWhatNeedsAHigherLane(t *testing.T) {
 	}
 }
 
-// The refusal happens before the gate, and the gate is never consulted:
-// a ceiling the session allowlist could answer would be a ceiling an
-// earlier 'a' could spend.
-func TestCeilingRefusalNeverReachesTheGate(t *testing.T) {
+// liftGate answers the ceiling's lift question and records how it was
+// asked. A mode is not a call, so the question must be must-prompt.
+type liftGate struct {
+	answer      bool
+	asked       []string
+	mustPrompts []bool
+}
+
+func (g *liftGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
+	g.asked = append(g.asked, name+"|"+reason)
+	g.mustPrompts = append(g.mustPrompts, mustPrompt)
+	return g.answer, false, ""
+}
+
+// Declining leaves the ceiling in place, and the rest of the turn is not
+// asked again: a model pushed by a poisoned tool result must not be able
+// to raise one prompt per proposed write (ADR-0080 §4).
+func TestCeilingLiftDeclinedIsNotAskedTwiceInATurn(t *testing.T) {
 	a := ceilingAgent(t, sandbox.CeilingOn)
-	gate := &recordingGate{}
+	gate := &liftGate{answer: false}
 	a.gate = gate
+
 	out, denied, _, _, err := a.execCallInner(context.Background(), shellLane("touch x", "write"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(gate.asked) != 0 {
-		t.Errorf("the gate was asked: %v", gate.asked)
+	if len(gate.asked) != 1 {
+		t.Fatalf("asked %d times, want 1: %v", len(gate.asked), gate.asked)
 	}
-	if !strings.Contains(out, "capped at the read lane") {
-		t.Errorf("result does not name the ceiling: %q", out)
+	// Must-prompt: neither an 'a', a "never" policy nor the model tier
+	// may answer a mode change.
+	if !gate.mustPrompts[0] {
+		t.Error("the lift question was not must-prompt")
 	}
-	if !strings.Contains(out, "/readonly off") {
-		t.Errorf("result does not name the way to lift it: %q", out)
+	if !strings.Contains(gate.asked[0], "lifts read-only") {
+		t.Errorf("the question does not say what yes means: %q", gate.asked[0])
 	}
-	// Not an operator's denial: the learner reads that from the exact
-	// deniedResult text, and a ceiling refusal is not evidence about
-	// what the operator wants (ADR-0045).
-	if denied {
-		t.Error("a ceiling refusal was reported as a denial")
+	if !strings.Contains(out, "capped at the read lane") || !strings.Contains(out, "/readonly off") {
+		t.Errorf("result = %q", out)
 	}
-	if out == deniedResult {
-		t.Error("a ceiling refusal used the operator-denial text")
+	// Not an operator's denial of the tool: the learner reads that from
+	// the exact deniedResult text (ADR-0045).
+	if denied || out == deniedResult {
+		t.Error("a ceiling refusal was reported as an operator denial")
+	}
+	if a.ReadOnly() != sandbox.CeilingOn {
+		t.Errorf("the ceiling moved on a declined lift: %q", a.ReadOnly())
+	}
+
+	if _, _, _, _, err := a.execCallInner(context.Background(), shellLane("touch y", "write")); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.asked) != 1 {
+		t.Errorf("asked again after a decline: %v", gate.asked)
+	}
+}
+
+// Approving is a mode change, and the call the operator was shown then
+// proceeds without a second prompt about the same thing.
+func TestCeilingLiftApprovedTurnsTheModeOff(t *testing.T) {
+	a := ceilingAgent(t, sandbox.CeilingOn)
+	gate := &liftGate{answer: true}
+	a.gate = gate
+
+	if _, _, _, _, err := a.execCallInner(context.Background(), writeCall("f.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.asked) != 1 {
+		t.Errorf("asked %d times, want 1: %v", len(gate.asked), gate.asked)
+	}
+	if a.ReadOnly() != sandbox.CeilingOff {
+		t.Fatalf("the mode did not change: %q", a.ReadOnly())
+	}
+	// What follows is an ordinary session again: in the default mode a
+	// mutating call still asks, but as itself — not as another lift.
+	if _, _, _, _, err := a.execCallInner(context.Background(), writeCall("f.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.asked) != 2 {
+		t.Fatalf("the next write did not go through the ordinary gate: %v", gate.asked)
+	}
+	if strings.Contains(gate.asked[1], "lifts read-only") {
+		t.Errorf("the ceiling asked again after it was lifted: %q", gate.asked[1])
+	}
+}
+
+// A floor is a different question and is asked on its own terms: the
+// lift does not carry a Block-tier call past the floor that stops it.
+func TestCeilingLiftDoesNotCarryACallPastAFloor(t *testing.T) {
+	a := ceilingAgent(t, sandbox.CeilingOn)
+	gate := &liftGate{answer: true}
+	a.gate = gate
+	if _, _, _, _, err := a.execCallInner(context.Background(), shellLane("sudo rm -rf /", "write")); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.asked) != 2 {
+		t.Fatalf("asked %d times, want 2 (the lift, then the floor): %v", len(gate.asked), gate.asked)
+	}
+	if !gate.mustPrompts[1] {
+		t.Error("the floor question was not must-prompt")
 	}
 }
 
