@@ -11,11 +11,11 @@ One binary, one process, one conversation. `main.go` hands off to
 
 ```
 cmd/            flags, config load, project resolution, wiring, REPL/TUI
-  ├── internal/config      strict-decode TOML + env/flag precedence
-  ├── internal/llm         Backend interface + Vertex AI Gemini (stream observer)
-  ├── internal/tools       the eleven file/shell/calendar built-ins + Register
-  ├── internal/agent       the turn loop, approval dispatch, compaction
-  └── internal/tui         Bubble Tea inline UI (or internal/repl, non-TTY)
+  |-- internal/config      strict-decode TOML + env/flag precedence
+  |-- internal/llm         Backend interface + Vertex AI Gemini (stream observer)
+  |-- internal/tools       the eleven file/shell/calendar built-ins + Register
+  |-- internal/agent       the turn loop, approval dispatch, compaction
+  `-- internal/tui         Bubble Tea inline UI (or internal/repl, non-TTY)
 ```
 
 The tools package holds the eleven built-ins that need only the project
@@ -105,18 +105,18 @@ purpose:
 ## One turn
 
 ```
-input ──▶ @-references expanded ──▶ history append + transcript record
-            │
-            ▼
-      ┌─────────────────────────────────────────────┐
-      │ round: compaction check → request → stream  │
-      │   ├── text ──▶ UI (and scrollback at flush) │
-      │   └── tool calls                            │
-      │         ├── auto-approve ladder (if on)     │
-      │         ├── human gate (if not approved)    │
-      │         └── execute ──▶ result into history │
-      └───────────────┬─────────────────────────────┘
-                      │ tool calls present? loop.  text only? done.
+input --> @-references expanded --> history append + transcript record
+            |
+            v
+      +----------------------------------------------+
+      | round: compaction check -> request -> stream |
+      |   |-- text --> UI (and scrollback at flush)  |
+      |   `-- tool calls                             |
+      |         |-- auto-approve ladder (if on)      |
+      |         |-- human gate (if not approved)     |
+      |         `-- execute --> result into history  |
+      +---------------+------------------------------+
+                      | tool calls present? loop.  text only? done.
 ```
 
 Per-round details that matter:

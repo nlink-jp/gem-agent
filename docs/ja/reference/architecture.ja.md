@@ -11,11 +11,11 @@ gem-agent の現在の挙動。前提知識を期待せず読めることを目�
 
 ```
 cmd/            フラグ・設定読込・プロジェクト解決・配線・REPL/TUI
-  ├── internal/config      strict decode TOML + env/flag 優先順位
-  ├── internal/llm         Backend interface + Vertex AI Gemini（stream observer）
-  ├── internal/tools       ファイル/シェル/暦の組み込み 11 ツール + Register
-  ├── internal/agent       ターンループ・承認ディスパッチ・圧縮
-  └── internal/tui         Bubble Tea inline UI（非 TTY は internal/repl）
+  |-- internal/config      strict decode TOML + env/flag 優先順位
+  |-- internal/llm         Backend interface + Vertex AI Gemini（stream observer）
+  |-- internal/tools       ファイル/シェル/暦の組み込み 11 ツール + Register
+  |-- internal/agent       ターンループ・承認ディスパッチ・圧縮
+  `-- internal/tui         Bubble Tea inline UI（非 TTY は internal/repl）
 ```
 
 tools パッケージが持つのはプロジェクトディレクトリだけで動く組み込み
@@ -91,18 +91,18 @@ stderr 書き込みとして実装する。同じループが pty・パイプ・
 ## 1 ターン
 
 ```
-入力 ──▶ @参照を展開 ──▶ 履歴 append + トランスクリプト記録
-           │
-           ▼
-     ┌───────────────────────────────────────────────────┐
-     │ ラウンド: 圧縮判定 → リクエスト → ストリーム      │
-     │   ├── テキスト ──▶ UI（flush でスクロールバック） │
-     │   └── ツールコール                                │
-     │         ├── 自動承認ラダー（ON なら）             │
-     │         ├── 人間ゲート（未承認なら）              │
-     │         └── 実行 ──▶ 結果を履歴へ                 │
-     └───────────────┬───────────────────────────────────┘
-                     │ ツールコールあり → ループ。テキストのみ → 完了。
+入力 --> @参照を展開 --> 履歴 append + トランスクリプト記録
+           |
+           v
+     +---------------------------------------------------+
+     | ラウンド: 圧縮判定 -> リクエスト -> ストリーム    |
+     |   |-- テキスト --> UI（flush でスクロールバック） |
+     |   `-- ツールコール                                |
+     |         |-- 自動承認ラダー（ON なら）             |
+     |         |-- 人間ゲート（未承認なら）              |
+     |         `-- 実行 --> 結果を履歴へ                 |
+     +---------------+-----------------------------------+
+                     | ツールコールあり -> ループ。テキストのみ -> 完了。
 ```
 
 ラウンドごとの要点:
