@@ -202,6 +202,62 @@ if bad:
 print(f"OK: identifiers agree across all {len(pairs)} en/ja pairs.")
 PY
 
+# --- an en/ja pair's mermaid diagrams have the same shape ---------------
+# Every check above strips fenced blocks, so a mermaid diagram is the one
+# thing in the doc set nothing compares: an edge added on the English
+# side and not the Japanese would pass the whole file. Labels are
+# translated and cannot be compared, but the graph must not be — the
+# node ids, the edges and the header are the diagram, and a translation
+# that changes them has changed the architecture in one language only.
+python3 - <<'PY' || exit 1
+import glob, io, os, re, sys
+
+
+def blocks(path):
+    text = io.open(path, encoding="utf-8").read()
+    return re.findall(r"(?m)^```mermaid[ \t]*\n([\s\S]*?)^```[ \t]*$", text)
+
+
+def skeleton(src):
+    # Quoted node labels and |edge labels| are the translated parts.
+    s = re.sub(r'"[^"]*"', '""', src)
+    s = re.sub(r"\|[^|]*\|", "||", s)
+    return [re.sub(r"\s+", " ", l).strip() for l in s.split("\n") if l.strip()]
+
+
+bad = 0
+for en in sorted(glob.glob("docs/en/**/*.md", recursive=True)):
+    ja = "docs/ja/" + en[len("docs/en/"):-3] + ".ja.md"
+    if not os.path.exists(ja):
+        continue
+    a, b = blocks(en), blocks(ja)
+    if len(a) != len(b):
+        bad += 1
+        print(f"ERROR: {en} has {len(a)} mermaid diagram(s), {ja} has {len(b)}",
+              file=sys.stderr)
+        continue
+    for i, (x, y) in enumerate(zip(a, b), 1):
+        sx, sy = skeleton(x), skeleton(y)
+        if sx != sy:
+            bad += 1
+            print(f"ERROR: mermaid diagram {i} differs in shape between {en} and {ja}:",
+                  file=sys.stderr)
+            for line in sorted(set(sx) - set(sy)):
+                print(f"  only in en: {line}", file=sys.stderr)
+            for line in sorted(set(sy) - set(sx)):
+                print(f"  only in ja: {line}", file=sys.stderr)
+            if set(sx) == set(sy):
+                print("  (same statements, different order)", file=sys.stderr)
+
+if bad:
+    print("", file=sys.stderr)
+    print("Translate the labels, not the graph: the node ids, edges and header "
+          "must match.", file=sys.stderr)
+    sys.exit(1)
+
+print("OK: mermaid diagrams have the same shape in both languages.")
+PY
+
 # --- a diagram does not close its right edge over CJK -------------------
 # A right edge is a column-counting promise, and no amount of padding can
 # keep it in a document that mixes CJK with a proportional fallback font.
