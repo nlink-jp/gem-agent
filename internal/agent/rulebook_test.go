@@ -24,10 +24,12 @@ func TestRiskEvalCarriesRulebook(t *testing.T) {
 	if _, err := a.Run(context.Background(), "build it", nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(b.evals) != 1 {
-		t.Fatalf("evals = %d, want 1", len(b.evals))
+	// The rulebook is a durable artifact the operator wrote or reviewed
+	// (ADR-0050), not text from this turn, so it stays in both rounds.
+	payload, _ := alignedEval(t, b)
+	if base, _ := baselineEval(t, b); !strings.Contains(base, "operator risk rules:") {
+		t.Errorf("the baseline round lost the rulebook:\n%s", base)
 	}
-	payload := b.evals[0]
 	if !strings.Contains(payload, "operator risk rules:") ||
 		!strings.Contains(payload, "builds are routine here") {
 		t.Errorf("rulebook missing from payload: %q", payload)

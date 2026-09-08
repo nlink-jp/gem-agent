@@ -56,6 +56,25 @@ func (g *recordingGate) Approve(name, detail, purpose, reason string, mustPrompt
 	return false, false, "" // deny: tests assert on whether the gate was reached
 }
 
+// The model tier is two rounds under ADR-0081: the baseline sees no
+// context from this turn, and only if it approves does the aligned round
+// run. Tests name the one they mean rather than indexing by luck.
+func baselineEval(t *testing.T, b *autoBackend) (payload, system string) {
+	t.Helper()
+	if len(b.evals) == 0 {
+		t.Fatal("the model tier never ran")
+	}
+	return b.evals[0], b.evalSystems[0]
+}
+
+func alignedEval(t *testing.T, b *autoBackend) (payload, system string) {
+	t.Helper()
+	if len(b.evals) < 2 {
+		t.Fatalf("the aligned round never ran (evals = %d)", len(b.evals))
+	}
+	return b.evals[len(b.evals)-1], b.evalSystems[len(b.evalSystems)-1]
+}
+
 func newAutoAgent(t *testing.T, b *autoBackend, gate Approver) (*Agent, *tools.Registry, *[]AutoDecision) {
 	t.Helper()
 	reg, err := tools.New(t.TempDir(),
@@ -156,8 +175,9 @@ func TestAutoReviewApprovedByModel(t *testing.T) {
 	if len(gate.asked) != 0 {
 		t.Errorf("model-approved call should not reach the gate: %v", gate.asked)
 	}
-	if len(b.evals) != 1 {
-		t.Fatalf("model tier should have run once, got %d", len(b.evals))
+	// Two rounds: the baseline, then the aligned one it let through.
+	if len(b.evals) != 2 {
+		t.Fatalf("model tier rounds = %d, want 2", len(b.evals))
 	}
 	// The proposed call must arrive nonce-wrapped as data.
 	if !strings.Contains(b.evals[0], "<proposed_call_") {
@@ -395,8 +415,12 @@ func TestRiskEvaluatorIsToldTheWorkDirectory(t *testing.T) {
 	if len(b.evals) == 0 {
 		t.Fatal("the model tier was never consulted")
 	}
-	if !strings.Contains(b.evals[0], "session work directory: "+reg.WorkDir()) {
-		t.Errorf("payload does not state the work directory:\n%s", b.evals[0])
+	// The work directory is a fact about the call, not context around
+	// it, so the baseline carries it too.
+	for i, payload := range b.evals {
+		if !strings.Contains(payload, "session work directory: "+reg.WorkDir()) {
+			t.Errorf("round %d does not state the work directory:\n%s", i, payload)
+		}
 	}
 	if !strings.Contains(b.evalSystems[0], "session work directory") {
 		t.Errorf("the instructions never mention the work directory:\n%s", b.evalSystems[0])
@@ -411,7 +435,9 @@ func TestRiskEvaluatorPayloadOmitsAnAbsentWorkDirectory(t *testing.T) {
 	if len(b.evals) == 0 {
 		t.Fatal("the model tier was never consulted")
 	}
-	if strings.Contains(b.evals[0], "session work directory") {
-		t.Errorf("payload claims a work directory that does not exist:\n%s", b.evals[0])
+	for i, payload := range b.evals {
+		if strings.Contains(payload, "session work directory") {
+			t.Errorf("round %d claims a work directory that does not exist:\n%s", i, payload)
+		}
 	}
 }

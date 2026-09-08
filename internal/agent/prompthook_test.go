@@ -111,10 +111,7 @@ func TestPromptHookStaysOutOfTheRiskInstructionChannel(t *testing.T) {
 	if _, err := a.Run(context.Background(), "ビルドして", nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(b.evals) != 1 {
-		t.Fatalf("evals = %d, want 1", len(b.evals))
-	}
-	payload := b.evals[0]
+	payload, _ := alignedEval(t, b)
 	if !strings.Contains(payload, "operator instruction (this turn): ビルドして") {
 		t.Errorf("typed instruction missing: %q", payload)
 	}

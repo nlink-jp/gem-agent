@@ -25,10 +25,7 @@ func TestRiskEvalCarriesInstructionEarly(t *testing.T) {
 	if _, err := a.Run(context.Background(), "README の誤字を直して", nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(b.evals) != 1 {
-		t.Fatalf("evals = %d, want 1", len(b.evals))
-	}
-	payload := b.evals[0]
+	payload, _ := alignedEval(t, b)
 	if !strings.Contains(payload, "operator instruction (this turn): README の誤字を直して") {
 		t.Errorf("instruction missing from payload: %q", payload)
 	}
@@ -39,8 +36,14 @@ func TestRiskEvalCarriesInstructionEarly(t *testing.T) {
 	if open < 0 || instr < open {
 		t.Errorf("instruction not inside the nonce wrap: %q", payload)
 	}
-	if !strings.Contains(b.evalSystems[0], "operator instruction (this turn)") {
-		t.Errorf("prompt lacks the alignment addendum: %q", b.evalSystems[0])
+	_, system := alignedEval(t, b)
+	if !strings.Contains(system, "operator instruction (this turn)") {
+		t.Errorf("prompt lacks the alignment addendum: %q", system)
+	}
+	// And the baseline never carries it: that is the composition.
+	base, baseSystem := baselineEval(t, b)
+	if strings.Contains(base, "operator instruction") || strings.Contains(baseSystem, "operator instruction") {
+		t.Error("the baseline round was given the operator's instruction")
 	}
 }
 
@@ -67,13 +70,11 @@ func TestRiskEvalCarriesInstructionOnLateRounds(t *testing.T) {
 	if _, err := a.Run(context.Background(), "ビルドして", nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(b.evals) != 1 {
-		t.Fatalf("evals = %d, want 1", len(b.evals))
+	payload, system := alignedEval(t, b)
+	if !strings.Contains(payload, "operator instruction (this turn): ビルドして") {
+		t.Errorf("late-round payload lacks the instruction: %q", payload)
 	}
-	if !strings.Contains(b.evals[0], "operator instruction (this turn): ビルドして") {
-		t.Errorf("late-round payload lacks the instruction: %q", b.evals[0])
-	}
-	if !strings.Contains(b.evalSystems[0], "operator instruction (this turn)") {
+	if !strings.Contains(system, "operator instruction (this turn)") {
 		t.Error("late-round prompt lacks the alignment addendum")
 	}
 }
@@ -94,7 +95,7 @@ func TestRiskEvalClipsInstruction(t *testing.T) {
 	if _, err := a.Run(context.Background(), long, nil); err != nil {
 		t.Fatal(err)
 	}
-	payload := b.evals[0]
+	payload, _ := alignedEval(t, b)
 	if strings.Contains(payload, long) {
 		t.Error("instruction not clipped")
 	}

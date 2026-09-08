@@ -42,9 +42,15 @@ approve = (the decision reached WITHOUT instruction context)
           (the evaluation given the instruction context)
 ```
 
-- **Safe tier.** The decision without instruction context *is* the rule
-  tier's, and it is `safe`. So `approve = safe AND aligned.approve`:
-  only the aligned round runs — **one** round.
+- **Safe tier.** Nothing to compose, and no round at all. *Corrected
+  against the code during implementation:* this bullet said the aligned
+  round runs for `safe` calls, which came from ADR-0080's second draft,
+  where in-project writes had to reach the evaluator because prose was
+  the only channel a restriction had. ADR-0080 as accepted answers that
+  with the lane ceiling instead, so routing `safe` calls through an
+  aligned round would now buy nothing and cost a model round each. The
+  guarantee is unaffected: instruction context never reaches those
+  calls, so it cannot create an approval there.
 - **Review tier.** The baseline is a model round with no instruction
   context — the evaluation this system made before ADR-0038. If it
   escalates, the call escalates and the aligned round is not run:

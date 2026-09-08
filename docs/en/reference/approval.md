@@ -130,7 +130,16 @@ call. Each mutating call then goes through:
 2. **Model tier**: a separate evaluation round judges the proposed call
    (delivered to it as nonce-wrapped untrusted data, with no tools
    available). It must both approve *and* be confident, or the call
-   goes to tier 3.
+   goes to tier 3. It is **two** rounds, composed (ADR-0081): the
+   *baseline* sees the call and your standing configuration but nothing
+   from this turn's conversation, and only if it approves does the
+   *aligned* round run with your typed request and the session mode. So
+   what reaches the evaluator through that context can remove an
+   approval and never create one — a floor of exactly the evaluator as
+   it was before ADR-0038 — whatever the model concludes from it. A
+   baseline that escalates ends the call there: context may not rescue
+   it, so there is nothing to ask. A `safe` call runs no round at all;
+   the context never reaches it, so there is nothing to compose.
 3. **The gate**: everything the ladder did not run. The gate is you
    *or* the session allowlist — if you already answered `a` for that
    tool name this session, the allowlist answers and no prompt is

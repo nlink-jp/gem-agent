@@ -65,10 +65,12 @@ func TestRiskEvalCarriesMCPDescription(t *testing.T) {
 	if _, err := a.Run(context.Background(), "IP を調べて", nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(b.evals) != 1 {
-		t.Fatalf("evals = %d, want 1", len(b.evals))
+	// The description is information about the call, not context around
+	// it, so both rounds carry it (ADR-0081 §1).
+	payload, _ := alignedEval(t, b)
+	if base, _ := baselineEval(t, b); !strings.Contains(base, "tool self-description") {
+		t.Errorf("the baseline round lost the tool's self-description:\n%s", base)
 	}
-	payload := b.evals[0]
 	want := "tool self-description (published by the MCP server): Reads a locally cached list, fully offline."
 	if !strings.Contains(payload, want) {
 		t.Errorf("description missing from payload: %q", payload)
@@ -100,14 +102,16 @@ func TestRiskEvalDescriptionOnlyForMCP(t *testing.T) {
 	if _, err := a.Run(context.Background(), "ビルドして", nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(b.evals) != 1 {
-		t.Fatalf("evals = %d, want 1", len(b.evals))
+	// Neither round: a built-in's description is gem-agent's own text.
+	for i, payload := range b.evals {
+		if strings.Contains(payload, "tool self-description") {
+			t.Errorf("round %d of a built-in call carries a self-description: %q", i, payload)
+		}
 	}
-	if strings.Contains(b.evals[0], "tool self-description") {
-		t.Errorf("built-in call carries a self-description section: %q", b.evals[0])
-	}
-	if strings.Contains(b.evalSystems[0], "tool self-description") {
-		t.Error("non-MCP prompt is not the byte-identical base prompt")
+	for i, system := range b.evalSystems {
+		if strings.Contains(system, "tool self-description") {
+			t.Errorf("round %d is not the byte-identical base prompt", i)
+		}
 	}
 }
 

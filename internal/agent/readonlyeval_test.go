@@ -59,11 +59,14 @@ func TestReadOnlyReachesTheEvaluator(t *testing.T) {
 			if _, err := a.Run(context.Background(), "ノートを整理して", nil); err != nil {
 				t.Fatal(err)
 			}
-			if len(b.evals) != 1 {
-				t.Fatalf("evals = %d, want 1", len(b.evals))
+			payload, system := alignedEval(t, b)
+			gotPayload := strings.Contains(payload, "session mode: read-only")
+			gotPrompt := strings.Contains(system, `"session mode" line`)
+			// The baseline never sees it: that is what makes the
+			// context subtractive (ADR-0081 §1).
+			if base, _ := baselineEval(t, b); strings.Contains(base, "session mode") {
+				t.Error("the baseline round was told the session mode")
 			}
-			gotPayload := strings.Contains(b.evals[0], "session mode: read-only")
-			gotPrompt := strings.Contains(b.evalSystems[0], `"session mode" line`)
 			if gotPayload != tc.want || gotPrompt != tc.want {
 				t.Errorf("state %q: payload=%v prompt=%v, want %v", tc.state, gotPayload, gotPrompt, tc.want)
 			}
@@ -87,7 +90,7 @@ func TestReadOnlyEvidenceStatesIntentNotEnforcement(t *testing.T) {
 	if _, err := a.Run(context.Background(), "整理して", nil); err != nil {
 		t.Fatal(err)
 	}
-	payload := b.evals[0]
+	payload, _ := alignedEval(t, b)
 	if !strings.Contains(payload, "the operator has asked") {
 		t.Errorf("the line does not state intent: %q", readOnlyEvidence)
 	}
@@ -98,7 +101,7 @@ func TestReadOnlyEvidenceStatesIntentNotEnforcement(t *testing.T) {
 	}
 	// It rides inside the isolation wrap with the rest of the evidence,
 	// not in the system prompt where it would read as an instruction.
-	if strings.Contains(b.evalSystems[0], "the operator has asked") {
+	if _, system := alignedEval(t, b); strings.Contains(system, "the operator has asked") {
 		t.Error("the session-mode evidence leaked into the system prompt")
 	}
 }

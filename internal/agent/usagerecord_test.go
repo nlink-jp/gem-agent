@@ -34,6 +34,10 @@ func TestRiskEvaluationLeavesAnAccountingRecord(t *testing.T) {
 	mb := &mockBackend{responses: []*llm.Response{
 		{ToolCalls: []llm.ToolCall{{ID: "c", Name: "mcp__x__post", Args: map[string]any{"data": "hi"}}},
 			PromptTokens: 3000, OutputTokens: 20, ThoughtTokens: 5, TotalTokens: 3025},
+		// Baseline and aligned, both side-calls (ADR-0081 §1).
+		{Content: `{"approve": true, "confidence": 0.95, "reason": "benign"}`,
+			PromptTokens: 777, OutputTokens: 30, ThoughtTokens: 11, CachedTokens: 100,
+			ToolPromptTokens: 9, TotalTokens: 827},
 		{Content: `{"approve": true, "confidence": 0.95, "reason": "benign"}`,
 			PromptTokens: 777, OutputTokens: 30, ThoughtTokens: 11, CachedTokens: 100,
 			ToolPromptTokens: 9, TotalTokens: 827},
@@ -54,8 +58,8 @@ func TestRiskEvaluationLeavesAnAccountingRecord(t *testing.T) {
 	}
 
 	recs := usageRecords(t, log)
-	if len(recs) != 3 {
-		t.Fatalf("want 3 accounting records (2 rounds + 1 risk eval), got %d: %+v", len(recs), recs)
+	if len(recs) != 4 {
+		t.Fatalf("want 4 accounting records (2 rounds + 2 risk rounds), got %d: %+v", len(recs), recs)
 	}
 	var risk *session.UsageRecord
 	main := 0

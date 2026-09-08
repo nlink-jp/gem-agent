@@ -48,6 +48,22 @@
   is where a guess becomes a permission; a failed or unparseable
   evaluation leaves the state untouched. In `off` the evaluation does
   not run, so the default spends no tokens
+- **The model tier is two composed rounds** (ADR-0081): a *baseline*
+  that sees the call and the operator's standing configuration but
+  nothing from this turn's conversation, and — only if that approves —
+  an *aligned* round given the typed request and the session mode.
+  `approve` is the AND of the two, so what reaches the evaluator
+  through the context can remove an approval and never create one,
+  with the pre-ADR-0038 evaluator as the floor. A composition rather
+  than a prompt asking the model to treat alignment as escalation-only,
+  because the property has to hold against a model that ignores what it
+  was asked. A baseline that escalates ends the call there. `safe`
+  calls run no round at all — ADR-0081 §1 said otherwise and is
+  corrected against the code in the same commit: that bullet was
+  inherited from ADR-0080's second draft, and the accepted ADR-0080
+  answers it with the lane ceiling instead. Review-tier calls the
+  baseline approves now cost two evaluator rounds instead of one; the
+  baseline is cacheable by tool and arguments and that is not built
 
 ## [0.73.0] - 2026-09-09
 

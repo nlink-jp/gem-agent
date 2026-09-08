@@ -625,7 +625,10 @@ func TestSideCallUsageStaysOutOfTheFooter(t *testing.T) {
 		// classify Safe and skip the side-call entirely).
 		{ToolCalls: []llm.ToolCall{{ID: "c", Name: "mcp__x__post", Args: map[string]any{"data": "hi"}}},
 			PromptTokens: 3000, OutputTokens: 20},
-		// The risk evaluation response (a side-call).
+		// Two risk-evaluation responses, both side-calls: the baseline
+		// and the aligned round it lets through (ADR-0081 §1).
+		{Content: `{"approve": true, "confidence": 0.95, "reason": "benign"}`,
+			PromptTokens: 777, OutputTokens: 30},
 		{Content: `{"approve": true, "confidence": 0.95, "reason": "benign"}`,
 			PromptTokens: 777, OutputTokens: 30},
 		// Round 2: the final answer.
@@ -651,7 +654,8 @@ func TestSideCallUsageStaysOutOfTheFooter(t *testing.T) {
 		}
 	}
 	s := a.Usage()
-	if s.RiskCalls != 1 || s.RiskPrompt != 777 {
+	// Two rounds under ADR-0081: baseline, then aligned.
+	if s.RiskCalls != 2 || s.RiskPrompt != 2*777 {
 		t.Errorf("risk bucket = %+v", s)
 	}
 	if s.Rounds != 2 || s.Prompt != 8000 {
