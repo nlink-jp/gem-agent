@@ -104,18 +104,18 @@ purpose:
 
 ## One turn
 
-```
-input --> @-references expanded --> history append + transcript record
-  |
-  v
-round: compaction check -> request -> stream
-  |-- text --> UI (and scrollback at flush)
-  `-- tool calls
-        |-- auto-approve ladder (if on)
-        |-- human gate (if not approved)
-        `-- execute --> result into history
-  |
-  `-> tool calls present? loop.  text only? done.
+```mermaid
+flowchart TD
+    input["input"] --> refs["@-references expanded"]
+    refs --> hist["history append + transcript record"]
+    hist --> round["round: compaction check, request, stream"]
+    round --> text["text to the UI, and to scrollback at flush"]
+    round --> calls["tool calls"]
+    calls --> ladder["auto-approve ladder, when on"]
+    ladder --> gate["human gate, when not approved"]
+    gate --> exec["execute, result into history"]
+    exec -->|tool calls present| round
+    text -->|text only| done["done"]
 ```
 
 Per-round details that matter:
