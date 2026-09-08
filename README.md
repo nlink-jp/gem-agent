@@ -73,9 +73,9 @@ approval dialogs,
 Tab completion for `@`-paths, `/`-commands, and skill
 names, `!command` shell escape, mermaid fences drawn in place in the
 reply (flowchart / ASCII-label sequence / ER; anything the terminal
-cannot draw faithfully stays source), thirteen slash commands (`/help`
-`/tools` `/mcp` `/auto` `/compact` `/settings` `/usage` `/memory`
-`/skills` `/skill` `/version` `/clear` `/quit`), a provenance-first `/settings`
+cannot draw faithfully stays source), fourteen slash commands (`/help`
+`/tools` `/mcp` `/auto` `/compact` `/settings` `/riskbook` `/usage`
+`/memory` `/skills` `/skill` `/version` `/clear` `/quit`), a provenance-first `/settings`
 panel, theme control, and a fully bilingual chrome
 (`[tui].language = auto|ja|en`). A positional argument is the first
 interactive turn — `gem-agent "…"` runs it and hands you the keyboard
