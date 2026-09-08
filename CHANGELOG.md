@@ -82,6 +82,12 @@
   register), its own title and consequence line from the language
   catalog, and three answers; typing `a` or `p` does nothing and the
   selection cannot reach them. Operator report, 2026-09-09
+- `/readonly` says `読み取り専用モード: OFF` rather than explaining that
+  the session may change things. OFF is the default, so spelling out
+  its consequence stated the obvious in a shape that read as a puzzle;
+  only the states that constrain explain themselves now, and the
+  Japanese lines name the mode instead of carrying a bare English
+  label. Operator report, 2026-09-09
 
 ## [0.73.0] - 2026-09-09
 

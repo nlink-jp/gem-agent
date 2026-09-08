@@ -228,6 +228,10 @@ type Messages struct {
 	Help    string // the full /help text
 	AutoOn  string
 	AutoOff string
+	// ReadOnlyOn/Off/Auto describe the state, not a transition, and
+	// only the states that constrain explain themselves: OFF is the
+	// default, so "this session may change things" said something
+	// obvious in a way that read as a puzzle (operator report).
 	// ReadOnlyOn/Off/Auto describe the state, not a transition:
 	// /readonly shows the current state as well as setting one, so a
 	// transition verb ("…に戻りました") is a lie on the showing path.
@@ -480,12 +484,12 @@ keys:
 	CeilingShellFmt:        "this session is capped at the %s lane, and the command declared %s",
 	CeilingFilesFmt:        "this session is capped at the %s lane, and this tool changes files",
 	CeilingMemoryFmt:       "this session is capped at the %s lane, and a memory write changes what every later session trusts",
-	ReadOnlyOn:             "read-only: ON — this session may not change anything outside its scratch; /readonly off lifts it\n",
-	ReadOnlyOff:            "read-only: OFF — this session may change things\n",
-	ReadOnlyAuto:           "read-only: AUTO — off for now; it turns on by itself if you ask for a read-only session\n",
+	ReadOnlyOn:             "read-only mode: ON — nothing outside the session scratch changes; /readonly off lifts it\n",
+	ReadOnlyOff:            "read-only mode: OFF\n",
+	ReadOnlyAuto:           "read-only mode: AUTO — OFF for now; it turns ON by itself when you ask for a read-only session\n",
 	ReadOnlyUsage:          "usage: /readonly on|off|auto (no argument shows the current state)\n",
-	ReadOnlyAutoOnFmt:      "read-only: ON — you asked for %q. Nothing outside the session scratch will change; /readonly off lifts it",
-	ReadOnlyAutoOnPlain:    "read-only: ON — this reads as a read-only session. Nothing outside the session scratch will change; /readonly off lifts it",
+	ReadOnlyAutoOnFmt:      "read-only mode: ON — you asked for %q. Nothing outside the session scratch changes; /readonly off lifts it",
+	ReadOnlyAutoOnPlain:    "read-only mode: ON — this reads as a read-only session. Nothing outside the session scratch changes; /readonly off lifts it",
 	HistoryCleared:         "history cleared — the next message starts a fresh conversation\n",
 	NothingToCompact:       "nothing to compact yet — the conversation is still short",
 	CompactedFmt:           "compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
@@ -664,12 +668,12 @@ var ja = Messages{
 	CeilingShellFmt:        "このセッションは %s レーンに抑えられていますが、このコマンドは %s を宣言しています",
 	CeilingFilesFmt:        "このセッションは %s レーンに抑えられていますが、このツールはファイルを変更します",
 	CeilingMemoryFmt:       "このセッションは %s レーンに抑えられていますが、メモリ書込は後続の全セッションが信頼するものを変えます",
-	ReadOnlyOn:             "read-only: ON — このセッションはスクラッチの外を変更できません。解除は /readonly off\n",
-	ReadOnlyOff:            "read-only: OFF — このセッションは変更できます\n",
-	ReadOnlyAuto:           "read-only: AUTO — 今は OFF。読み取り専用の依頼を打つと自分で ON になります\n",
+	ReadOnlyOn:             "読み取り専用モード: ON — スクラッチの外は変更しません。解除は /readonly off\n",
+	ReadOnlyOff:            "読み取り専用モード: OFF\n",
+	ReadOnlyAuto:           "読み取り専用モード: AUTO — 今は OFF。読み取り専用の依頼を打つと自動で ON になります\n",
 	ReadOnlyUsage:          "使い方: /readonly on|off|auto（引数なしで現在の状態を表示）\n",
-	ReadOnlyAutoOnFmt:      "read-only: ON — %q という依頼のため。セッションスクラッチの外は何も変わりません。解除は /readonly off",
-	ReadOnlyAutoOnPlain:    "read-only: ON — 読み取り専用の依頼と判断しました。セッションスクラッチの外は何も変わりません。解除は /readonly off",
+	ReadOnlyAutoOnFmt:      "読み取り専用モード: ON — %q という依頼のため。スクラッチの外は変更しません。解除は /readonly off",
+	ReadOnlyAutoOnPlain:    "読み取り専用モード: ON — 読み取り専用の依頼と判断しました。スクラッチの外は変更しません。解除は /readonly off",
 	HistoryCleared:         "履歴をクリアしました — 次のメッセージから新しい会話が始まります\n",
 	NothingToCompact:       "まだ /compact の対象がありません — 会話がまだ短いためです",
 	CompactedFmt:           "古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",

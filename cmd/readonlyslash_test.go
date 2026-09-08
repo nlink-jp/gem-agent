@@ -46,7 +46,10 @@ func TestReadonlyShowingReportsTheStateWithoutClaimingAChange(t *testing.T) {
 		for _, state := range []string{sandbox.CeilingOff, sandbox.CeilingOn, sandbox.CeilingAuto} {
 			a := readOnlyAgent(t, state)
 			out := readOnlySlash(t, a, "/readonly", lang)
-			if !strings.Contains(strings.ToLower(out), strings.ToLower(state)) {
+			// The token the operator actually reads, not a case-folded
+			// match that "/readonly off" inside another state's line
+			// would also satisfy.
+			if !strings.Contains(out, strings.ToUpper(state)) {
 				t.Errorf("%v/%s: the line does not name the state: %q", lang, state, out)
 			}
 			for _, verb := range transitions {
