@@ -31,7 +31,9 @@ on-demand [health check](docs/en/reference/drill.md).
 | Lint | `make lint` (golangci-lint, org config in `.golangci.yml`) |
 | Vet + lint + test + docs mirror + build | `make check` |
 | Docs mirror only | `make docs-check` |
+| Release binaries | `make build-all` (darwin/arm64 only — signed and notarised by `make package`) |
 | Release archive | `make package` → `dist/gem-agent-vX.Y.Z-darwin-arm64.zip` |
+| Release gate | `make verify-release` — refuses a zip with no notarisation marker, or one rebuilt after its marker. Run it from the repo, then `gh` from here |
 | Operator text, collected | `make labels` → `dist/labels.md` (UI catalog ja/en, cmd notes/errors/help, `--help` pages) |
 
 Version is injected via `-X main.version` from `git describe` — never edit the
@@ -86,6 +88,11 @@ internal/docext/   stdlib-only Office XML text extraction (ADR-0026): docx/xlsx/
 internal/mediastore/ GCS media uploads (ADR-0027): content-addressed, quota project pinned
 internal/uitext/   ja/en UI string catalogs (ADR-0029): completeness enforced by test —
                    new operator-facing strings go in BOTH catalogs or make check fails
+internal/banner/   the lines printed before the operator has typed (ADR-0078): a line
+                   earns a place only if nothing else will say it. Facts is the whole
+                   of what the banner may know — a feature wanting a line adds a field
+                   and answers why nothing else says it — and Sample() is what
+                   `make labels` renders, so the first screen is readable in one place
 internal/statedir/ shared per-project state convention (ADR-0022): root+env override, escape, .project marker
 internal/workdir/  per-session work directory (ADR-0058): layout under the state root,
                    sweep report, empty-dir removal; GEMAGENT_WORK_DIR is exported at startup.
