@@ -106,17 +106,16 @@ purpose:
 
 ```
 input --> @-references expanded --> history append + transcript record
-            |
-            v
-      +----------------------------------------------+
-      | round: compaction check -> request -> stream |
-      |   |-- text --> UI (and scrollback at flush)  |
-      |   `-- tool calls                             |
-      |         |-- auto-approve ladder (if on)      |
-      |         |-- human gate (if not approved)     |
-      |         `-- execute --> result into history  |
-      +---------------+------------------------------+
-                      | tool calls present? loop.  text only? done.
+  |
+  v
+round: compaction check -> request -> stream
+  |-- text --> UI (and scrollback at flush)
+  `-- tool calls
+        |-- auto-approve ladder (if on)
+        |-- human gate (if not approved)
+        `-- execute --> result into history
+  |
+  `-> tool calls present? loop.  text only? done.
 ```
 
 Per-round details that matter:

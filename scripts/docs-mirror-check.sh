@@ -202,25 +202,29 @@ if bad:
 print(f"OK: identifiers agree across all {len(pairs)} en/ja pairs.")
 PY
 
-# --- box diagrams keep their right edge --------------------------------
-# A framed diagram in a fenced block must have one width, and must be
-# drawn in ASCII. Two separate defects, one class.
+# --- a diagram does not close its right edge over CJK -------------------
+# A right edge is a column-counting promise, and no amount of padding can
+# keep it in a document that mixes CJK with a proportional fallback font.
+# Three readings of the same box were tried and all three failed:
 #
-# The padding is a Japanese-side failure by construction: the box is
-# drawn in English, where every row is ASCII, then the translation
-# replaces the content with CJK and the padding is re-counted by eye.
-# The architecture reference shipped rows of 53, 54 and 57 columns.
+#   1. pad it as written        — the rows measured 53, 54 and 57 columns
+#   2. pad it CJK=2, box=1      — correct under the model internal/tui
+#      pins go-runewidth to (AGENTS.md §Gotchas), broken under a CJK
+#      locale's, where box drawing and arrows are Ambiguous and go wide
+#   3. redraw in ASCII, CJK=2   — still broken in the viewer that
+#      reported it: its monospace stack has no CJK, so kana and kanji
+#      come from a fallback whose advance is not exactly twice the Latin
+#      one. There is no integer padding that fixes a non-integer ratio.
 #
-# The characters are the deeper half. U+2500 and friends — and the
-# arrows — are East Asian *Ambiguous*: one column under the model
-# internal/tui pins go-runewidth to (AGENTS.md §Gotchas, v0.37.1), two
-# under a CJK locale's. Rows carry different numbers of them, so under
-# the wide model the same box breaks again no matter how it is padded.
-# ASCII "+ - | ` v" is one column everywhere, which is why a frame is
-# required to be free of Ambiguous characters rather than merely
-# padded correctly. Connector-only diagrams with no right edge (the
-# ADR-0050 pipeline, the package trees) have nothing to break and are
-# not framed, so they are not touched.
+# So the rule is not about padding. A framed row — one that both opens
+# and closes with an edge — may not contain CJK at all. Left edges,
+# indentation and tree stems are ASCII and align under any font; it is
+# only the closing edge that has to be earned, and over CJK it cannot
+# be. Diagrams with no right edge (the package trees, the ADR-0050
+# pipeline, the turn diagram now) have nothing to break.
+#
+# An all-ASCII box is still allowed, and still has to line up: the width
+# and Ambiguous checks below are what it must pass.
 python3 - <<'PY' || exit 1
 import glob, io, re, sys, unicodedata
 
@@ -251,6 +255,15 @@ for path in files:
             if inside:
                 rows = [(m, x) for m, x in block if framed(x)]
                 if len(rows) >= 2:
+                    wide = [(m, x) for m, x in rows
+                            if any(unicodedata.east_asian_width(c) in ("W", "F")
+                                   for c in x)]
+                    if wide:
+                        bad += 1
+                        print(f"ERROR: {path}:{start} — a row closes its right edge "
+                              f"over CJK, which no padding can align:", file=sys.stderr)
+                        for m, x in wide:
+                            print(f"  {m}: {x}", file=sys.stderr)
                     widths = {width(x) for _, x in rows}
                     indents = {len(x) - len(x.lstrip()) for _, x in rows}
                     if len(widths) > 1 or len(indents) > 1:
@@ -277,11 +290,11 @@ for path in files:
 
 if bad:
     print("", file=sys.stderr)
-    print("Draw framed diagrams with + - | ` v, and pad every framed row to the "
-          "same width (CJK counts 2, ASCII counts 1).", file=sys.stderr)
+    print("Leave the right edge open (a tree or a flow, as the other diagrams do), "
+          "or keep the box ASCII-only and padded to one width.", file=sys.stderr)
     sys.exit(1)
 
-print("OK: every framed diagram is ASCII and has one width.")
+print("OK: no diagram closes a right edge it cannot hold.")
 PY
 
 # --- concept coverage: code → the whole-system documents ----------------
