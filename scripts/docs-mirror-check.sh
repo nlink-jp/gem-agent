@@ -202,6 +202,68 @@ if bad:
 print(f"OK: identifiers agree across all {len(pairs)} en/ja pairs.")
 PY
 
+# --- box diagrams keep their right edge --------------------------------
+# A framed diagram in a fenced block must have one width. This is a
+# Japanese-side failure by construction: the English box is drawn once
+# and every row is ASCII, then the translation replaces the content with
+# CJK and the padding is re-counted by eye. The architecture reference
+# shipped a box whose rows measured 53, 54 and 57 columns.
+#
+# Width model: East Asian Wide/Fullwidth = 2, everything else = 1 —
+# including the box-drawing characters and arrows, which are Ambiguous.
+# That is the model internal/tui pins go-runewidth to (AGENTS.md
+# §Gotchas, v0.37.1), so a diagram that lines up here lines up in the
+# terminal that the runtime itself renders into.
+python3 - <<'PY' || exit 1
+import glob, io, re, sys, unicodedata
+
+LEFT, RIGHT = set("┌│└├"), set("┐│┘┤")
+
+
+def width(s):
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
+
+
+def framed(line):
+    # A lone connector ("│" on its own) frames nothing.
+    s = line.strip()
+    return len(s) > 1 and s[0] in LEFT and s[-1] in RIGHT
+
+
+bad = 0
+files = sorted(glob.glob("docs/**/*.md", recursive=True))
+files += [f for f in ("README.md", "README.ja.md", "AGENTS.md")]
+for path in files:
+    lines = io.open(path, encoding="utf-8").read().split("\n")
+    inside, start, block = False, 0, []
+    for n, line in enumerate(lines, 1):
+        if re.match(r"^```", line):
+            if inside:
+                rows = [(m, x) for m, x in block if framed(x)]
+                widths = {width(x) for _, x in rows}
+                indents = {len(x) - len(x.lstrip()) for _, x in rows}
+                if len(rows) >= 2 and (len(widths) > 1 or len(indents) > 1):
+                    bad += 1
+                    print(f"ERROR: {path}:{start} — the box rows are not one width:",
+                          file=sys.stderr)
+                    for m, x in rows:
+                        print(f"  {m}: {width(x):>3} columns  {x}", file=sys.stderr)
+                inside, block = False, []
+            else:
+                inside, start = True, n
+            continue
+        if inside:
+            block.append((n, line))
+
+if bad:
+    print("", file=sys.stderr)
+    print("Pad the rows so every framed line is the same width (CJK counts 2, "
+          "box drawing and arrows count 1).", file=sys.stderr)
+    sys.exit(1)
+
+print("OK: every framed diagram has one width.")
+PY
+
 # --- concept coverage: code → the whole-system documents ----------------
 # Every check above is a symmetry check (en ↔ ja, ADR ↔ index). None can
 # see a concept that exists in the code and in no document. That is how
