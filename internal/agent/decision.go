@@ -33,9 +33,24 @@ type Decision struct {
 	// an escalation: the gate can be answered by the session allowlist,
 	// so a ceiling that escalated would be a ceiling an earlier 'a'
 	// could spend. CeilingReason is the operator-facing why.
-	OverCeiling   bool
+	OverCeiling bool
+	// CeilingReason is the model-facing why, in English like every other
+	// tool result. CeilingKind is the same fact machine-readable, so the
+	// operator-facing prompt can be rendered from the language catalog
+	// instead of shipping this sentence to a Japanese screen (ADR-0079).
 	CeilingReason string
+	CeilingKind   ceilingKind
 }
+
+// ceilingKind names why a call exceeded the ceiling.
+type ceilingKind int
+
+const (
+	ceilingWithin ceilingKind = iota
+	ceilingShell
+	ceilingFiles
+	ceilingMemory
+)
 
 // Floor reports a verdict no policy, allowlist answer or model tier
 // may lift: Block, or a Review only the operator may answer.
@@ -84,8 +99,8 @@ func (a *Agent) decide(tc llm.ToolCall) Decision {
 			Reason: "unconfined shell (the sandbox is off): no lane bounds this command — the operator decides, not the model tier"}
 	}
 	d := Decision{Tool: tool, Mutating: mutating, Verdict: v}
-	if reason, over := overCeiling(tc.Name, mutating, laneOrDefault(tc), a.Ceiling()); over {
-		d.OverCeiling, d.CeilingReason = true, reason
+	if kind, reason := overCeiling(tc.Name, mutating, laneOrDefault(tc), a.Ceiling()); kind != ceilingWithin {
+		d.OverCeiling, d.CeilingKind, d.CeilingReason = true, kind, reason
 	}
 	return d
 }
@@ -114,28 +129,42 @@ func laneOrDefault(tc llm.ToolCall) sandbox.Lane {
 // be guessing about the one place no profile reaches; ADR-0080 §5 states
 // the ceiling to the model tier instead, which is a judgment and is
 // documented as one.
-func overCeiling(name string, mutating bool, declared, ceiling sandbox.Lane) (string, bool) {
+func overCeiling(name string, mutating bool, declared, ceiling sandbox.Lane) (ceilingKind, string) {
 	if ceiling >= sandbox.LaneOperator {
-		return "", false // no ceiling in force
+		return ceilingWithin, "" // no ceiling in force
 	}
 	if name == tools.ShellExecName {
 		if declared <= ceiling {
-			return "", false
+			return ceilingWithin, ""
 		}
-		return fmt.Sprintf("this session is capped at the %s lane and the command declared %s",
-			ceiling, declared), true
+		return ceilingShell, fmt.Sprintf(
+			"this session is capped at the %s lane and the command declared %s", ceiling, declared)
 	}
 	if strings.HasPrefix(name, "mcp__") || !mutating {
-		return "", false
+		return ceilingWithin, ""
 	}
 	if memoryWrite(name) {
-		return fmt.Sprintf("this session is capped at the %s lane, and a memory write changes what every later session trusts",
-			ceiling), true
+		return ceilingMemory, fmt.Sprintf(
+			"this session is capped at the %s lane, and a memory write changes what every later session trusts", ceiling)
 	}
 	if ceiling >= sandbox.LaneWrite {
-		return "", false
+		return ceilingWithin, ""
 	}
-	return fmt.Sprintf("this session is capped at the %s lane and this tool changes files", ceiling), true
+	return ceilingFiles, fmt.Sprintf("this session is capped at the %s lane and this tool changes files", ceiling)
+}
+
+// ceilingPrompt renders the refusal for the operator, from the language
+// catalog rather than the model-facing sentence.
+func (a *Agent) ceilingPrompt(d Decision, tc llm.ToolCall) string {
+	ceiling := a.Ceiling()
+	switch d.CeilingKind {
+	case ceilingShell:
+		return fmt.Sprintf(a.msgs.CeilingShellFmt, ceiling, laneOrDefault(tc))
+	case ceilingMemory:
+		return fmt.Sprintf(a.msgs.CeilingMemoryFmt, ceiling)
+	default:
+		return fmt.Sprintf(a.msgs.CeilingFilesFmt, ceiling)
+	}
 }
 
 // laneOf names the lane a shell call runs in, for the approval detail

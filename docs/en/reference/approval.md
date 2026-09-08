@@ -336,9 +336,14 @@ Under a `read` ceiling a call whose effect needs a higher lane is
 `delete_memory`. A read-lane command still runs unasked. The refusal is
 not an escalation — the gate can be answered by the session allowlist,
 so a ceiling that escalated would be one an earlier `a` could spend.
-What you are asked instead is a different question: **lift read-only?**
-It is must-prompt, so no `a`, no `"never"` policy and no model tier
-answers it — a mode is not a call. Answering yes changes the mode for
+What you are asked instead is a different question, in a dialog of its
+own: **lift read-only?**, with the call that raised it on screen and a
+line saying what yes and no each do. It offers `y` / `n` / `N` and
+nothing else — "allow for this session" and "always allow" are answers
+about a tool, and an `a` on the ordinary dialog registers the tool in
+the session allowlist even where the allowlist may not answer, which
+would grant exactly what the ceiling withholds. No `"never"` policy and
+no model tier answers it either: a mode is not a call. Answering yes changes the mode for
 the rest of the session and the call you were shown proceeds, except
 where a floor applies: a Block-tier call or the `operator` lane is
 another question again and is asked on its own terms. Declining refuses

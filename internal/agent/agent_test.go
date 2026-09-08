@@ -48,6 +48,10 @@ type approveAll struct {
 	purposes []string
 }
 
+func (a *approveAll) ApproveLift(name, detail, purpose, reason string) (bool, string) {
+	return true, ""
+}
+
 func (a *approveAll) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
 	a.asked = append(a.asked, name+": "+detail)
 	a.purposes = append(a.purposes, purpose)
@@ -55,6 +59,10 @@ func (a *approveAll) Approve(name, detail, purpose, reason string, mustPrompt bo
 }
 
 type denyAll struct{ asked []string }
+
+func (d *denyAll) ApproveLift(name, detail, purpose, reason string) (bool, string) {
+	return false, ""
+}
 
 func (d *denyAll) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
 	d.asked = append(d.asked, name+": "+detail)
@@ -177,6 +185,10 @@ func TestDeniedMutatingCall(t *testing.T) {
 // denyWithReasonGate denies every call with the operator's typed
 // reason (ADR-0060).
 type denyWithReasonGate struct{ reason string }
+
+func (d *denyWithReasonGate) ApproveLift(name, detail, purpose, reason string) (bool, string) {
+	return false, d.reason
+}
 
 func (d *denyWithReasonGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
 	return false, false, d.reason

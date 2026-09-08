@@ -137,7 +137,13 @@ type ApprovalRequest struct {
 	// of running it — the operator needs to know why they are being
 	// asked, and which tier objected.
 	Reason string
-	Resp   chan ApprovalAnswer
+	// ModeChange marks the read-only lift question (ADR-0080 §4). It is
+	// not a tool approval: the dialog says what changes, and offers
+	// y/n/N only — "allow for this session" and "always allow" are
+	// answers about a tool, and an 'a' here would register the tool in
+	// the allowlist, granting exactly what the ceiling withholds.
+	ModeChange bool
+	Resp       chan ApprovalAnswer
 }
 
 // sender is the slice of *tea.Program the gate needs (testable).
@@ -173,6 +179,26 @@ func (g *Gate) SetProgram(p sender) {
 // such a prompt still registers, for future non-Block calls. A denial
 // may carry the operator's typed reason (ADR-0060), which rides back
 // to the agent verbatim.
+// ApproveLift asks the mode question. No allowlist is consulted and
+// none is registered, whatever the operator presses: the dialog does
+// not offer that answer, and this method could not honour it.
+func (g *Gate) ApproveLift(toolName, detail, purpose, reason string) (bool, string) {
+	g.mu.Lock()
+	prog := g.prog
+	g.mu.Unlock()
+	if prog == nil {
+		return false, ""
+	}
+	resp := make(chan ApprovalAnswer, 1)
+	prog.Send(ApprovalRequest{Tool: toolName, Detail: detail, Purpose: purpose,
+		Reason: reason, ModeChange: true, Resp: resp})
+	answer := <-resp
+	if answer.Key == 'y' {
+		return true, ""
+	}
+	return false, answer.Reason
+}
+
 func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (approved, fromAllowlist bool, denyReason string) {
 	g.mu.Lock()
 	if !mustPrompt && g.always[toolName] {

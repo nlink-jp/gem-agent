@@ -259,6 +259,12 @@ func TestRemoteFaultStartsFreshEachTurn(t *testing.T) {
 // scriptedGate answers the gate in order; unanswered calls are approved.
 type scriptedGate struct{ answers []bool }
 
+// A gate this test drives never faces the mode question; refusing
+// keeps the ceiling where the test put it.
+func (g *scriptedGate) ApproveLift(name, detail, purpose, reason string) (bool, string) {
+	return false, ""
+}
+
 func (g *scriptedGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
 	if len(g.answers) == 0 {
 		return true, false, ""

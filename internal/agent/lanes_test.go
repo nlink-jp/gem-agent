@@ -40,6 +40,12 @@ type laneGate struct {
 	mustPrompt []bool
 }
 
+// A gate this test drives never faces the mode question; refusing
+// keeps the ceiling where the test put it.
+func (g *laneGate) ApproveLift(name, detail, purpose, reason string) (bool, string) {
+	return false, ""
+}
+
 func (g *laneGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
 	g.asked = append(g.asked, name+": "+detail)
 	g.mustPrompt = append(g.mustPrompt, mustPrompt)

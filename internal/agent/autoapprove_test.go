@@ -51,6 +51,11 @@ func (b *autoBackend) ChatStream(ctx context.Context, system string, msgs []llm.
 
 type recordingGate struct{ asked []string }
 
+func (g *recordingGate) ApproveLift(name, detail, purpose, reason string) (bool, string) {
+	g.asked = append(g.asked, name+"|"+detail+"|"+reason)
+	return false, ""
+}
+
 func (g *recordingGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
 	g.asked = append(g.asked, name+"|"+detail+"|"+reason)
 	return false, false, "" // deny: tests assert on whether the gate was reached

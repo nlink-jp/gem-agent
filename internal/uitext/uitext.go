@@ -232,10 +232,20 @@ type Messages struct {
 	// /readonly shows the current state as well as setting one, so a
 	// transition verb ("…に戻りました") is a lie on the showing path.
 	// Operator report, 2026-09-09.
-	ReadOnlyOn    string
-	ReadOnlyOff   string
-	ReadOnlyAuto  string
-	ReadOnlyUsage string
+	// The lift question (ADR-0080 §4) is a mode change, not a tool
+	// approval: its own title, its own consequence line, and only
+	// y/n/N, because "allow for this session" and "always allow" are
+	// answers to a question nobody asked here.
+	CeilingLiftTitle       string
+	CeilingLiftConsequence string
+	CeilingLiftHint        string
+	CeilingShellFmt        string
+	CeilingFilesFmt        string
+	CeilingMemoryFmt       string
+	ReadOnlyOn             string
+	ReadOnlyOff            string
+	ReadOnlyAuto           string
+	ReadOnlyUsage          string
 	// ReadOnlyAutoOnFmt: %s = the operator's own words that decided
 	// it. A state change is worth a line only with its cause and
 	// the way back in the same line.
@@ -462,17 +472,23 @@ keys:
   typing during a turn queues the text (! and / cannot be queued)
   approval dialog: arrows/Tab select · Enter confirm · y/n/N/a/p direct (N = deny with a reason)
 `,
-	AutoOn:              "auto-approve: ON — safe changes run unattended; risky ones still ask\n",
-	AutoOff:             "auto-approve: OFF — every change asks\n",
-	ReadOnlyOn:          "read-only: ON — this session may not change anything outside its scratch; /readonly off lifts it\n",
-	ReadOnlyOff:         "read-only: OFF — this session may change things\n",
-	ReadOnlyAuto:        "read-only: AUTO — off for now; it turns on by itself if you ask for a read-only session\n",
-	ReadOnlyUsage:       "usage: /readonly on|off|auto (no argument shows the current state)\n",
-	ReadOnlyAutoOnFmt:   "read-only: ON — you asked for %q. Nothing outside the session scratch will change; /readonly off lifts it",
-	ReadOnlyAutoOnPlain: "read-only: ON — this reads as a read-only session. Nothing outside the session scratch will change; /readonly off lifts it",
-	HistoryCleared:      "history cleared — the next message starts a fresh conversation\n",
-	NothingToCompact:    "nothing to compact yet — the conversation is still short",
-	CompactedFmt:        "compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
+	AutoOn:                 "auto-approve: ON — safe changes run unattended; risky ones still ask\n",
+	AutoOff:                "auto-approve: OFF — every change asks\n",
+	CeilingLiftTitle:       "Lift read-only?",
+	CeilingLiftConsequence: "Yes turns read-only off for the rest of this session and runs the call above. No refuses the call and leaves read-only on; nothing else this turn will ask again.",
+	CeilingLiftHint:        "←→/Tab to choose · Enter to answer · y/n/N · Esc refuses",
+	CeilingShellFmt:        "this session is capped at the %s lane, and the command declared %s",
+	CeilingFilesFmt:        "this session is capped at the %s lane, and this tool changes files",
+	CeilingMemoryFmt:       "this session is capped at the %s lane, and a memory write changes what every later session trusts",
+	ReadOnlyOn:             "read-only: ON — this session may not change anything outside its scratch; /readonly off lifts it\n",
+	ReadOnlyOff:            "read-only: OFF — this session may change things\n",
+	ReadOnlyAuto:           "read-only: AUTO — off for now; it turns on by itself if you ask for a read-only session\n",
+	ReadOnlyUsage:          "usage: /readonly on|off|auto (no argument shows the current state)\n",
+	ReadOnlyAutoOnFmt:      "read-only: ON — you asked for %q. Nothing outside the session scratch will change; /readonly off lifts it",
+	ReadOnlyAutoOnPlain:    "read-only: ON — this reads as a read-only session. Nothing outside the session scratch will change; /readonly off lifts it",
+	HistoryCleared:         "history cleared — the next message starts a fresh conversation\n",
+	NothingToCompact:       "nothing to compact yet — the conversation is still short",
+	CompactedFmt:           "compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
 
 	AutoCompactedFmt:       "context reached %d%% of the window — compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
 	CompactNothingFmt:      "context is at %d%% of the window and nothing can be summarised yet — /clear starts a fresh conversation",
@@ -640,17 +656,23 @@ var ja = Messages{
   実行中の入力は次メッセージとして予約（! と / は予約不可）
   承認ダイアログ: ←→/Tab 選択 · Enter 決定 · y/n/N/a/p 直接（N = 理由を添えて拒否）
 `,
-	AutoOn:              "auto-approve: ON — 安全な変更は無人で実行します。危険なものは引き続き確認します\n",
-	AutoOff:             "auto-approve: OFF — すべての変更で確認します\n",
-	ReadOnlyOn:          "read-only: ON — このセッションはスクラッチの外を変更できません。解除は /readonly off\n",
-	ReadOnlyOff:         "read-only: OFF — このセッションは変更できます\n",
-	ReadOnlyAuto:        "read-only: AUTO — 今は OFF。読み取り専用の依頼を打つと自分で ON になります\n",
-	ReadOnlyUsage:       "使い方: /readonly on|off|auto（引数なしで現在の状態を表示）\n",
-	ReadOnlyAutoOnFmt:   "read-only: ON — %q という依頼のため。セッションスクラッチの外は何も変わりません。解除は /readonly off",
-	ReadOnlyAutoOnPlain: "read-only: ON — 読み取り専用の依頼と判断しました。セッションスクラッチの外は何も変わりません。解除は /readonly off",
-	HistoryCleared:      "履歴をクリアしました — 次のメッセージから新しい会話が始まります\n",
-	NothingToCompact:    "まだ /compact の対象がありません — 会話がまだ短いためです",
-	CompactedFmt:        "古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",
+	AutoOn:                 "auto-approve: ON — 安全な変更は無人で実行します。危険なものは引き続き確認します\n",
+	AutoOff:                "auto-approve: OFF — すべての変更で確認します\n",
+	CeilingLiftTitle:       "read-only を解除しますか",
+	CeilingLiftConsequence: "「はい」でこのセッションの残りは read-only が OFF になり、上のコールを実行します。「いいえ」はこのコールを拒否し、read-only は ON のままです（このターンでは二度と訊きません）。",
+	CeilingLiftHint:        "←→/Tab 選択 · Enter 決定 · y/n/N 直接指定 · Esc 拒否",
+	CeilingShellFmt:        "このセッションは %s レーンに抑えられていますが、このコマンドは %s を宣言しています",
+	CeilingFilesFmt:        "このセッションは %s レーンに抑えられていますが、このツールはファイルを変更します",
+	CeilingMemoryFmt:       "このセッションは %s レーンに抑えられていますが、メモリ書込は後続の全セッションが信頼するものを変えます",
+	ReadOnlyOn:             "read-only: ON — このセッションはスクラッチの外を変更できません。解除は /readonly off\n",
+	ReadOnlyOff:            "read-only: OFF — このセッションは変更できます\n",
+	ReadOnlyAuto:           "read-only: AUTO — 今は OFF。読み取り専用の依頼を打つと自分で ON になります\n",
+	ReadOnlyUsage:          "使い方: /readonly on|off|auto（引数なしで現在の状態を表示）\n",
+	ReadOnlyAutoOnFmt:      "read-only: ON — %q という依頼のため。セッションスクラッチの外は何も変わりません。解除は /readonly off",
+	ReadOnlyAutoOnPlain:    "read-only: ON — 読み取り専用の依頼と判断しました。セッションスクラッチの外は何も変わりません。解除は /readonly off",
+	HistoryCleared:         "履歴をクリアしました — 次のメッセージから新しい会話が始まります\n",
+	NothingToCompact:       "まだ /compact の対象がありません — 会話がまだ短いためです",
+	CompactedFmt:           "古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",
 
 	AutoCompactedFmt:       "コンテキストがウィンドウの %d%% に達しました。古いメッセージ %d 件を要約にまとめ、%d 件はそのまま保持しています。要約された部分の詳細は伝聞になります",
 	CompactNothingFmt:      "コンテキストはウィンドウの %d%% ですが、まだ要約できるものがありません — /clear で新しい会話を始められます",

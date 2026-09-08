@@ -71,6 +71,14 @@ type Approver interface {
 	// to live in a package both gates and the agent import, and
 	// `internal/agent`'s own tests already import `internal/approve`.
 	Approve(toolName, detail, purpose, reason string, mustPrompt bool) (approved, fromAllowlist bool, denyReason string)
+	// ApproveLift asks whether to turn the session's read-only mode off
+	// (ADR-0080 §4). It is a separate method because it is a separate
+	// question: a mode is not a call, so there is no allowlist answer to
+	// return and no "allow for this session" to offer — an 'a' on the
+	// tool-approval dialog registers the tool even when the allowlist
+	// may not answer, which would grant exactly what the ceiling exists
+	// to withhold. reason is operator-facing and already localised.
+	ApproveLift(toolName, detail, purpose, reason string) (approved bool, denyReason string)
 }
 
 // SessionLog receives session records. May be nil.
@@ -1267,8 +1275,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			return refused, false, false, floorRan, nil
 		}
 		detail, purpose := a.Describe(tc)
-		ok, _, denyReason := a.gate.Approve(tc.Name, detail, purpose,
-			d.CeilingReason+" — approving lifts read-only for the rest of this session", true)
+		ok, denyReason := a.gate.ApproveLift(tc.Name, detail, purpose, a.ceilingPrompt(d, tc))
 		if !ok {
 			a.liftDeclined = true
 			a.telemetry.Approval(tc.Name, "denied", "ceiling", true, d.CeilingReason, a.laneOf(tc))

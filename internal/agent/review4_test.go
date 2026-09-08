@@ -281,6 +281,12 @@ func TestLateReturnAfterRestartStaysWithTheOldSession(t *testing.T) {
 // prompt; it records which it did.
 type allowlistGate struct{ prompted, allowlisted []string }
 
+// A gate this test drives never faces the mode question; refusing
+// keeps the ceiling where the test put it.
+func (g *allowlistGate) ApproveLift(name, detail, purpose, reason string) (bool, string) {
+	return false, ""
+}
+
 func (g *allowlistGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
 	if mustPrompt {
 		g.prompted = append(g.prompted, name+" "+detail)

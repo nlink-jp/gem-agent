@@ -71,6 +71,17 @@
   names `/readonly off`, which is the state an operator may not have set
   themselves. The command had shipped with no test; it has one, and it
   fails against the reported wording
+- The read-only lift is asked as a **mode change**, in its own dialog.
+  It had reused the tool-approval prompt, which titled it "approval
+  required: write_file", carried an English reason onto a Japanese
+  screen, and offered "allow for this session" and "always allow" —
+  answers about a tool. Worse, `a` there registers the tool in the
+  session allowlist even where the allowlist may not answer, so one
+  keystroke granted exactly what the ceiling withholds. The lift now
+  has its own approver method (no allowlist to return, none to
+  register), its own title and consequence line from the language
+  catalog, and three answers; typing `a` or `p` does nothing and the
+  selection cannot reach them. Operator report, 2026-09-09
 
 ## [0.73.0] - 2026-09-09
 

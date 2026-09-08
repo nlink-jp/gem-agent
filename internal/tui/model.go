@@ -51,7 +51,21 @@ const (
 var approvalAnswers = []byte{'y', 'n', 'N', 'a', 'p'}
 
 func (m Model) approvalLabels() []string {
-	return []string{m.msgs.ApproveAllow, m.msgs.ApproveDeny, m.msgs.ApproveDenyReason, m.msgs.ApproveAlways, m.msgs.ApprovePersist}
+	labels := []string{m.msgs.ApproveAllow, m.msgs.ApproveDeny, m.msgs.ApproveDenyReason,
+		m.msgs.ApproveAlways, m.msgs.ApprovePersist}
+	return labels[:m.approvalAnswerCount()]
+}
+
+// approvalAnswerCount bounds the labels, the selection wrap and the
+// letter shortcuts together, so the three cannot disagree. A mode change
+// has three answers: 'a' would register the tool in the session
+// allowlist and 'p' would write a policy, and both answer a question
+// about a tool rather than the one on screen (ADR-0080 §4).
+func (m Model) approvalAnswerCount() int {
+	if m.approval != nil && m.approval.ModeChange {
+		return 3
+	}
+	return len(approvalAnswers)
 }
 
 const (
@@ -1095,10 +1109,11 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	answer := byte(0)
 	switch msg.Type {
 	case tea.KeyLeft, tea.KeyUp, tea.KeyShiftTab:
-		m.choice = (m.choice - 1 + len(approvalAnswers)) % len(approvalAnswers)
+		n := m.approvalAnswerCount()
+		m.choice = (m.choice - 1 + n) % n
 		return m, nil
 	case tea.KeyRight, tea.KeyDown, tea.KeyTab:
-		m.choice = (m.choice + 1) % len(approvalAnswers)
+		m.choice = (m.choice + 1) % m.approvalAnswerCount()
 		return m, nil
 	case tea.KeyEnter:
 		answer = approvalAnswers[m.choice]
@@ -1122,6 +1137,11 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case "p":
 				answer = 'p'
 			default:
+				return m, nil
+			}
+			// The two answers a mode change does not have. Typing them
+			// must not do what the dialog refuses to offer.
+			if (answer == 'a' || answer == 'p') && m.approvalAnswerCount() < 4 {
 				return m, nil
 			}
 		}
@@ -1774,6 +1794,13 @@ func (m Model) viewContent() string {
 		}
 		detail, hidden := clipDetail(detailText, budget)
 		body := fmt.Sprintf(m.msgs.ApprovalTitleFmt, req.Tool)
+		if req.ModeChange {
+			// A different question: not "approve this call" but "turn
+			// the session's read-only mode off" (ADR-0080 §4). The call
+			// stays on screen because it is what raised the question,
+			// and the title says what is actually being decided.
+			body = m.st.warn.Render(m.msgs.CeilingLiftTitle)
+		}
 		// The model's declared purpose (ADR-0047) frames the arguments
 		// below it: the operator's question about an innocuous-looking
 		// `cp` is never "is this dangerous" but "why does it want this".
@@ -1801,8 +1828,12 @@ func (m Model) viewContent() string {
 				"\n" + m.reasonInput.View() + "\n" +
 				m.st.hint.Render(m.msgs.ApprovalReasonHint)
 		} else {
-			body += "\n" + m.optionsLine() + "\n" +
-				m.st.hint.Render(m.msgs.ApprovalHint)
+			hint := m.msgs.ApprovalHint
+			if req.ModeChange {
+				body += "\n" + m.st.tool.Render(m.msgs.CeilingLiftConsequence)
+				hint = m.msgs.CeilingLiftHint
+			}
+			body += "\n" + m.optionsLine() + "\n" + m.st.hint.Render(hint)
 		}
 		return m.liveView() + "\n" + m.st.box.Render(body) + "\n" + m.footer() + "\n"
 	default:

@@ -62,6 +62,38 @@ func purposeOrNone(purpose string) string {
 // read from the next line; an empty reason line is a plain deny.
 // EOF or read errors deny — failing closed is the only safe default
 // for an approval gate.
+// ApproveLift asks the mode question (ADR-0080 §4). It offers y/n/N and
+// nothing else: "always this session" is an answer to a question about a
+// tool, and this one is about the session.
+func (g *Gate) ApproveLift(toolName, detail, purpose, reason string) (bool, string) {
+	fmt.Fprintf(g.out, "\n[read-only] %s\n  %s\n", toolName, detail)
+	fmt.Fprintf(g.out, "  ↪ %s\n", purposeOrNone(purpose))
+	fmt.Fprintf(g.out, "  ⚠ %s\n", reason)
+	fmt.Fprint(g.out, "  lift read-only for the rest of this session? [y]es / [n]o / [N]o with reason: ")
+	for {
+		line, err := g.in.ReadString('\n')
+		if err != nil && line == "" {
+			fmt.Fprintln(g.out, "(no input — read-only stays on)")
+			return false, ""
+		}
+		if strings.TrimSpace(line) == "N" {
+			fmt.Fprint(g.out, "  reason (empty = none): ")
+			reasonLine, rerr := g.in.ReadString('\n')
+			if rerr != nil && reasonLine == "" {
+				return false, ""
+			}
+			return false, strings.TrimSpace(reasonLine)
+		}
+		switch strings.ToLower(strings.TrimSpace(line)) {
+		case "y", "yes":
+			return true, ""
+		case "n", "no", "":
+			return false, ""
+		}
+		fmt.Fprint(g.out, "  please answer y, n or N: ")
+	}
+}
+
 func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (approved, fromAllowlist bool, denyReason string) {
 	if !mustPrompt && g.always[toolName] {
 		// One keystroke standing in for this call: the learner must

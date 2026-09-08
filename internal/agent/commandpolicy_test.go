@@ -210,6 +210,12 @@ type approverCall struct {
 	mustPrompt bool
 }
 
+// A gate this test drives never faces the mode question; refusing
+// keeps the ceiling where the test put it.
+func (g *recordingApprover) ApproveLift(name, detail, purpose, reason string) (bool, string) {
+	return false, ""
+}
+
 func (g *recordingApprover) Approve(tool, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
 	g.calls = append(g.calls, approverCall{tool: tool, mustPrompt: mustPrompt})
 	return true, g.fromAllowlist, ""

@@ -66,6 +66,12 @@ func (searchDenyGate) Approve(string, string, string, string, bool) (bool, bool,
 	return false, false, ""
 }
 
+// The search child cannot change the session's mode either: it has no
+// operator to ask and no business lifting a ceiling the parent set.
+func (searchDenyGate) ApproveLift(string, string, string, string) (bool, string) {
+	return false, ""
+}
+
 // agenticSearchOptions wires registerAgenticSearch. onToolCall may be
 // nil; everything else is required (sink may be the no-op Sink).
 type agenticSearchOptions struct {

@@ -106,12 +106,23 @@ type liftGate struct {
 	answer      bool
 	asked       []string
 	mustPrompts []bool
+	lifts       []bool // whether each question was the mode change
 }
 
 func (g *liftGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
 	g.asked = append(g.asked, name+"|"+reason)
 	g.mustPrompts = append(g.mustPrompts, mustPrompt)
+	g.lifts = append(g.lifts, false)
 	return g.answer, false, ""
+}
+
+// The mode question arrives here, and it has no allowlist answer to
+// give: a mode is not a call.
+func (g *liftGate) ApproveLift(name, detail, purpose, reason string) (bool, string) {
+	g.asked = append(g.asked, name+"|"+reason)
+	g.mustPrompts = append(g.mustPrompts, true)
+	g.lifts = append(g.lifts, true)
+	return g.answer, ""
 }
 
 // Declining leaves the ceiling in place, and the rest of the turn is not
@@ -129,13 +140,15 @@ func TestCeilingLiftDeclinedIsNotAskedTwiceInATurn(t *testing.T) {
 	if len(gate.asked) != 1 {
 		t.Fatalf("asked %d times, want 1: %v", len(gate.asked), gate.asked)
 	}
-	// Must-prompt: neither an 'a', a "never" policy nor the model tier
-	// may answer a mode change.
-	if !gate.mustPrompts[0] {
-		t.Error("the lift question was not must-prompt")
+	// It arrives as the mode question, not as a tool approval. That is
+	// the whole point: the tool-approval dialog's 'a' registers the tool
+	// in the session allowlist even when the allowlist may not answer,
+	// which would grant exactly what the ceiling withholds.
+	if !gate.lifts[0] {
+		t.Error("the ceiling asked through the ordinary tool-approval path")
 	}
-	if !strings.Contains(gate.asked[0], "lifts read-only") {
-		t.Errorf("the question does not say what yes means: %q", gate.asked[0])
+	if !strings.Contains(gate.asked[0], "capped at the read lane") {
+		t.Errorf("the question does not name the ceiling: %q", gate.asked[0])
 	}
 	if !strings.Contains(out, "capped at the read lane") || !strings.Contains(out, "/readonly off") {
 		t.Errorf("result = %q", out)
@@ -181,8 +194,8 @@ func TestCeilingLiftApprovedTurnsTheModeOff(t *testing.T) {
 	if len(gate.asked) != 2 {
 		t.Fatalf("the next write did not go through the ordinary gate: %v", gate.asked)
 	}
-	if strings.Contains(gate.asked[1], "lifts read-only") {
-		t.Errorf("the ceiling asked again after it was lifted: %q", gate.asked[1])
+	if gate.lifts[1] {
+		t.Error("the ceiling asked again after it was lifted")
 	}
 }
 
@@ -197,6 +210,9 @@ func TestCeilingLiftDoesNotCarryACallPastAFloor(t *testing.T) {
 	}
 	if len(gate.asked) != 2 {
 		t.Fatalf("asked %d times, want 2 (the lift, then the floor): %v", len(gate.asked), gate.asked)
+	}
+	if !gate.lifts[0] || gate.lifts[1] {
+		t.Errorf("questions = %v, want the mode change then a tool approval", gate.lifts)
 	}
 	if !gate.mustPrompts[1] {
 		t.Error("the floor question was not must-prompt")

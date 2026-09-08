@@ -1911,6 +1911,14 @@ func effectiveReadOnly(cfgValue string, oneShot bool) string {
 	return cfgValue
 }
 
+// ApproveLift refuses in one-shot: there is nobody to ask, so the
+// ceiling holds and the reason goes to stderr like every other denial
+// here (ADR-0080 §4). --read-only is how a run says it meant this.
+func (d denyGate) ApproveLift(toolName, detail, _, reason string) (bool, string) {
+	fmt.Fprintf(d.out, "[denied: %s %s — %s]\n", toolName, detail, reason)
+	return false, ""
+}
+
 // denyGate is the one-shot approver: it denies every mutating call with
 // a visible reason instead of blocking on an approval prompt that
 // nothing will answer.
