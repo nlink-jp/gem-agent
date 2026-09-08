@@ -120,6 +120,13 @@
   armed, so the next read-only request is caught the same way the
   first one was. ADR-0080 §1 is corrected against the code in the same
   commit. Operator report, 2026-09-09
+- The banner reports the ceiling and the watcher as two lines, in
+  `/readonly`'s shape, rather than folding the combinations into one
+  compound sentence: an operator who has read one surface should not
+  have to learn the other. Each still earns its line for its own
+  reason — the ceiling because a session that refuses changes should
+  say so before you ask for one, the watcher because the footer cannot
+  carry it. Operator report, 2026-09-09
 
 ## [0.73.0] - 2026-09-09
 

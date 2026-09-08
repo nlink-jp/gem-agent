@@ -191,37 +191,38 @@ func TestOneShotAutoApproveNamesTheFlag(t *testing.T) {
 	}
 }
 
-// The ceiling earns a banner line only where nothing else says it
-// (ADR-0078's test): "on" before the operator asks for a change, "auto"
-// because the footer shows the ceiling in force and auto has none yet,
-// and "off" — the default — never.
-func TestReadOnlyLine(t *testing.T) {
+// One line per setting, in /readonly's shape, and nothing for a default
+// (ADR-0078's test for a line). The watcher is the case the footer
+// cannot cover: it carries the ceiling in force, and an armed watcher
+// has none yet.
+func TestReadOnlyLines(t *testing.T) {
 	for _, tc := range []struct {
 		state sandbox.Ceiling
-		want  string
+		want  []string
 	}{
-		{sandbox.Ceiling{}, ""},
-		{sandbox.Ceiling{ReadOnly: true}, "ON at start"},
-		{sandbox.Ceiling{Auto: true}, "watching"},
-		// The combination a tri-state could not express.
-		{sandbox.Ceiling{ReadOnly: true, Auto: true}, "ON at start, and watching"},
+		{sandbox.Ceiling{}, nil},
+		{sandbox.Ceiling{ReadOnly: true}, []string{"read-only: ON at start"}},
+		{sandbox.Ceiling{Auto: true}, []string{"read-only watcher: armed"}},
+		// Both, each on its own line — the combination the tri-state
+		// could not name, and the one a session is in the moment the
+		// watcher fires.
+		{sandbox.Ceiling{ReadOnly: true, Auto: true},
+			[]string{"read-only: ON at start", "read-only watcher: armed"}},
 	} {
-		got := ReadOnlyLine(tc.state)
-		if tc.want == "" {
-			if got != "" {
-				t.Errorf("state %+v printed %q", tc.state, got)
-			}
+		got := ReadOnlyLines(tc.state)
+		if len(got) != len(tc.want) {
+			t.Errorf("state %+v → %d lines, want %d: %q", tc.state, len(got), len(tc.want), got)
 			continue
 		}
-		if !strings.Contains(got, tc.want) {
-			t.Errorf("state %+v → %q, want it to contain %q", tc.state, got, tc.want)
-		}
-		if !strings.Contains(got, "read-only") {
-			t.Errorf("state %+v does not name the mode: %q", tc.state, got)
+		for i, want := range tc.want {
+			if !strings.Contains(got[i], want) {
+				t.Errorf("state %+v line %d = %q, want it to contain %q", tc.state, i, got[i], want)
+			}
 		}
 	}
 	// One-shot has no footer and no /readonly, so its line names the
-	// flag instead — the same shape as the auto-approve pair.
+	// flag instead — the same shape as the auto-approve pair. There is
+	// no watcher there to report.
 	if !strings.Contains(ReadOnlyOneShotLine(), "--read-only") {
 		t.Errorf("the one-shot line does not name the flag: %q", ReadOnlyOneShotLine())
 	}

@@ -71,9 +71,7 @@ func Lines(f Facts) []string {
 	if f.AutoApprove {
 		out = append(out, AutoApproveLine())
 	}
-	if line := ReadOnlyLine(f.ReadOnly); line != "" {
-		out = append(out, line)
-	}
+	out = append(out, ReadOnlyLines(f.ReadOnly)...)
 	for _, n := range f.Notes {
 		out = append(out, "warning: "+n)
 	}
@@ -127,21 +125,25 @@ func AutoApproveOneShotLine() string {
 	return "auto-approve: ON — this run approves its own mutating tools; drop --auto to restore the gate"
 }
 
-// ReadOnlyLine says the session starts with a lane ceiling, and says
-// nothing for the default. Two states print, for different reasons:
-// "on" because a session that refuses changes should say so before the
-// operator asks for one, and "auto" because the footer cannot — it
-// shows the ceiling in force, and auto has none yet.
-func ReadOnlyLine(c sandbox.Ceiling) string {
-	switch {
-	case c.ReadOnly && c.Auto:
-		return "read-only: ON at start, and watching — /readonly off lifts it; it turns on again when you ask for a read-only session"
-	case c.ReadOnly:
-		return "read-only: ON at start — this session changes nothing outside its scratch; /readonly off lifts it"
-	case c.Auto:
-		return "read-only: watching — off for now; it turns on by itself when you ask for a read-only session"
+// ReadOnlyLines says what the session starts with, one line per setting
+// and nothing for a default. The shape is `/readonly`'s: the ceiling,
+// then the watcher when it is armed — an operator who has read one
+// should not have to learn the other.
+//
+// Each earns its line for its own reason. The ceiling, because a
+// session that refuses changes should say so before the operator asks
+// for one. The watcher, because the footer cannot: it carries the
+// ceiling in force, and an armed watcher has none yet, so without this
+// the fact is invisible until the turn it fires on.
+func ReadOnlyLines(c sandbox.Ceiling) []string {
+	var out []string
+	if c.ReadOnly {
+		out = append(out, "read-only: ON at start — this session changes nothing outside its scratch; /readonly off lifts it")
 	}
-	return ""
+	if c.Auto {
+		out = append(out, "read-only watcher: armed — it turns read-only on by itself when you ask for a read-only session")
+	}
+	return out
 }
 
 // ReadOnlyOneShotLine is the same fact for `-p`, where there is no
