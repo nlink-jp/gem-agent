@@ -209,18 +209,26 @@ PY
 # ADRs while every commit "updated the docs": the rule named no document,
 # so the ones nearest the feature were updated and the ones describing
 # the whole were not. These checks route by construction:
-#   internal/<pkg>        → architecture.md names it
+#   internal/<pkg>        → architecture.md AND AGENTS.md name it
 #   agent.Options funcs   → architecture.md names the callback / capability
 #   cobra subcommands     → configuration.md's command table has a row
+#
+# Both package maps are checked, not just the architecture reference:
+# AGENTS.md §Structure is the map an agent reads before touching the
+# tree, its own routing table requires it, and checking one of the two
+# is how `internal/banner` reached three releases in the architecture
+# map and nowhere in AGENTS.md.
 cov_errors=0
 arch="docs/en/reference/architecture.md"
 for d in internal/*/; do
     pkg="${d%/}"
     # In the tree diagram (fenced) or in prose (backticked): whole word.
-    if ! grep -qw "${pkg}" "$arch"; then
-        echo "ERROR: ${arch} does not name ${pkg} — add it to the package map" >&2
-        cov_errors=$((cov_errors + 1))
-    fi
+    for doc in "$arch" AGENTS.md; do
+        if ! grep -qw "${pkg}" "$doc"; then
+            echo "ERROR: ${doc} does not name ${pkg} — add it to the package map" >&2
+            cov_errors=$((cov_errors + 1))
+        fi
+    done
 done
 for cb in $(awk '/^type Options struct/,/^}/' internal/agent/agent.go | grep -E '^	[A-Z][A-Za-z]* +func' | awk '{print $1}'); do
     if ! grep -q "\`${cb}\`" "$arch"; then

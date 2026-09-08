@@ -134,7 +134,7 @@ the rows marked *checked* fail `make check` when missed.
 
 | Change | Update (en and ja) |
 |---|---|
-| a new or removed `internal/` package | architecture.md package map (*checked*) |
+| a new or removed `internal/` package | architecture.md package map **and** this file's Structure (*checked*, both) |
 | a new `agent.Options` callback or capability | architecture.md "the agent core knows nothing about the UI" (*checked*) |
 | a new subcommand | configuration.md command table (*checked*), README usage block |
 | a new flag or config key | configuration.md, config.example.toml, README where user-facing |
