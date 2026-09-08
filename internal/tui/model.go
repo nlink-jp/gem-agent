@@ -792,7 +792,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Toggling mid-run matters most here: a long agent loop
 				// that started in manual mode would otherwise demand an
 				// approval for every step until it finishes.
-				return m.toggleAutoMode()
+				return m.toggleAutoMode("")
 			}
 			return m.updateRunningInput(msg)
 		default:
@@ -1060,6 +1060,19 @@ func (m *Model) emitJoined(parts ...string) tea.Cmd {
 		return nil
 	}
 	return m.emit(strings.Join(kept, "\n"))
+}
+
+// echoLine renders one submitted line the way scrollback shows it: a
+// blank line, then the marker and what the operator typed. Every path
+// that accepts a submission goes through here, so the operator reads
+// one shape whether the line became a turn, a shell command or a slash
+// command — the slash branch was the one that printed its answer alone,
+// flush against the previous output and naming nothing (operator
+// report). The blank line is the boundary; the marker line is the
+// caption, and the input box has already cleared by the time either is
+// read.
+func (m Model) echoLine(marker, input string) string {
+	return "\n" + m.st.user.Render(marker+" ") + input
 }
 
 // approvalGrace is how long after the dialog appears keys are ignored —
@@ -1342,7 +1355,7 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msg.Type == tea.KeyShiftTab:
-		return m.toggleAutoMode()
+		return m.toggleAutoMode("")
 
 	case msg.Type == tea.KeyTab:
 		// An input that IS a command completes as one; otherwise Tab
@@ -1457,7 +1470,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		m.shell(ctx, command)
 		// Leading blank line separates this turn from the previous
 		// output so consecutive turns don't run together.
-		return m, tea.Batch(m.emit("\n"+m.st.user.Render("! ")+command), m.spin.Tick)
+		return m, tea.Batch(m.emit(m.echoLine("!", command)), m.spin.Tick)
 	}
 
 	if input == "/settings" && m.settingsData != nil && m.applySetting != nil {
@@ -1470,7 +1483,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	// auto ON while every change asked (found live in the ADR-0060
 	// release E2E; ADR-0004 requires the mode visible at all times).
 	if input == "/auto" && m.toggleAuto != nil {
-		return m.toggleAutoMode()
+		return m.toggleAutoMode(m.echoLine(">", input))
 	}
 
 	// /skill expands into a turn (ADR-0010): echo what the operator
@@ -1490,7 +1503,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 			if m.startTurn != nil {
 				m.startTurn(ctx, turn)
 			}
-			return m, tea.Batch(m.emit("\n"+m.st.user.Render("> ")+input), m.spin.Tick)
+			return m, tea.Batch(m.emit(m.echoLine(">", input)), m.spin.Tick)
 		}
 	}
 
@@ -1504,7 +1517,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		ctx, cancel := context.WithCancel(m.baseCtx)
 		m.cancelTurn = cancel
 		m.compact(ctx)
-		return m, tea.Batch(m.emit("\n"+m.st.user.Render("> ")+input), m.spin.Tick)
+		return m, tea.Batch(m.emit(m.echoLine(">", input)), m.spin.Tick)
 	}
 
 	// /riskbook learn drives dialogs answered on this event loop, so it
@@ -1523,7 +1536,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		ctx, cancel := context.WithCancel(m.baseCtx)
 		m.cancelTurn = cancel
 		m.riskbook(ctx)
-		return m, tea.Batch(m.emit("\n"+m.st.user.Render("> ")+input), m.spin.Tick)
+		return m, tea.Batch(m.emit(m.echoLine(">", input)), m.spin.Tick)
 	}
 
 	if strings.HasPrefix(input, "/") {
@@ -1532,15 +1545,20 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		}
 		out, isErr, quit := m.slash(input)
 		text := strings.TrimRight(out, "\n")
-		var line string
 		if isErr {
 			// Errors must stand out — dim meta styling here is how an
 			// unknown command got camouflaged as help text.
-			line = m.st.errS.Render("✗ " + text)
-		} else {
-			line = text // default foreground: readable on any theme
+			text = m.st.errS.Render("✗ " + text)
 		}
-		cmds := []tea.Cmd{m.emit(line)}
+		// else: default foreground, readable on any theme.
+		//
+		// Echoed like every other submitted line. The blank line is the
+		// boundary — an answer that began flush against the previous
+		// output had no visible start — and the "> " line says which
+		// command produced what follows: the input box clears on
+		// submit, so a bare listing left the operator matching it
+		// against a command they could no longer see (operator report).
+		cmds := []tea.Cmd{m.emitJoined(m.echoLine(">", input), text)}
 		if quit {
 			cmds = append(cmds, tea.Quit)
 			return m, tea.Sequence(cmds...)
@@ -1558,7 +1576,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		m.startTurn(ctx, input)
 	}
 	// Leading blank line separates this turn from the previous output.
-	return m, tea.Batch(m.emit("\n"+m.st.user.Render("> ")+input), m.spin.Tick)
+	return m, tea.Batch(m.emit(m.echoLine(">", input)), m.spin.Tick)
 }
 
 // View implements tea.Model. Every line is clipped to the terminal
@@ -1881,7 +1899,9 @@ func longestCommonPrefix(candidates []string) string {
 // works during a run as well as at the prompt; the agent reads the flag
 // per tool call, so the change lands on the next one (a call already
 // waiting at the approval dialog still needs its answer).
-func (m Model) toggleAutoMode() (tea.Model, tea.Cmd) {
+// echo is the command the operator typed, or "" when the toggle came
+// from shift+tab — there is nothing to echo for a key.
+func (m Model) toggleAutoMode(echo string) (tea.Model, tea.Cmd) {
 	if m.toggleAuto == nil {
 		return m, nil
 	}
@@ -1894,8 +1914,9 @@ func (m Model) toggleAutoMode() (tea.Model, tea.Cmd) {
 		state = strings.TrimSpace(m.msgs.AutoOn)
 	}
 	// One write: the notice lands after the output it followed, with a
-	// single repaint.
-	return m, m.emitJoined(m.takeLive(), m.st.tool.Render(state))
+	// single repaint. The echo goes between them — after whatever was
+	// still streaming, before the answer to it.
+	return m, m.emitJoined(m.takeLive(), echo, m.st.tool.Render(state))
 }
 
 // updateAsk handles the ask_user dialog (ADR-0036): the approval

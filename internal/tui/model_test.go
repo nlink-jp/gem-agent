@@ -1509,3 +1509,67 @@ func TestExpandInputRoutesSkillInvocationsToATurn(t *testing.T) {
 		t.Errorf("/help no longer reaches the slash handler:\n%s", c.all())
 	}
 }
+
+// Every submitted line is echoed the same way: a blank line, then the
+// marker and what was typed. The slash branch printed its answer alone
+// — flush against the previous output, naming no command, with the
+// input box already cleared — so a listing had neither a start nor a
+// caption (operator report).
+func TestEverySubmissionIsEchoedWithASeparator(t *testing.T) {
+	for _, tc := range []struct {
+		name, typed, marker string
+		opt                 func(*Options)
+	}{
+		{name: "turn", typed: "do the thing", marker: "> "},
+		{name: "shell escape", typed: "!git diff", marker: "! ",
+			opt: func(o *Options) { o.Shell = func(context.Context, string) {} }},
+		{name: "slash command", typed: "/tools", marker: "> "},
+		{name: "auto toggle", typed: "/auto", marker: "> ",
+			opt: func(o *Options) { o.ToggleAuto = func() bool { return true } }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &capture{}
+			o := Options{
+				StartTurn: func(ctx context.Context, input string) { c.turns = append(c.turns, input) },
+				Slash:     slashStub, Printer: c.printer,
+				RenderFactory: func(width int) func(string) string { return func(s string) string { return s } },
+			}
+			if tc.opt != nil {
+				tc.opt(&o)
+			}
+			m := New(o)
+			m.ta.SetValue(tc.typed)
+			m = press(m, enter())
+
+			got := c.all()
+			// The echoed text is what was typed, minus a "!" that the
+			// marker itself carries.
+			want := strings.TrimPrefix(tc.typed, "!")
+			if !strings.Contains(got, tc.marker+want) {
+				t.Errorf("no echo of the submitted line: %q", got)
+			}
+			if !strings.HasPrefix(got, "\n"+tc.marker+want) {
+				t.Errorf("the echo does not open with the blank-line separator: %q", got)
+			}
+		})
+	}
+}
+
+// The command and its output arrive as one write, in that order: two
+// emits would let a repaint land between the caption and what it
+// captions.
+func TestSlashOutputFollowsItsEchoInOneWrite(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	m.ta.SetValue("/tools")
+	m = press(m, enter())
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.printed) != 1 {
+		t.Fatalf("want one write, got %d: %q", len(c.printed), c.printed)
+	}
+	if c.printed[0] != "\n> /tools\nslash:/tools" {
+		t.Errorf("echo and output: %q", c.printed[0])
+	}
+}

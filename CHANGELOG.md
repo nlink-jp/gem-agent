@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Every line you submit in the TUI is echoed into the scrollback before
+  its answer — a blank line, then `> ` and what you typed (`! ` for a
+  shell escape). A turn, a shell escape and `/skill` already did this;
+  a slash command printed its output alone, flush against the previous
+  output, and the input box had cleared by then, so a listing had
+  neither a visible start nor anything saying which command produced
+  it. One helper now renders the echo for all of them.
+
 ## [0.72.1] - 2026-09-08
 
 ### Fixed

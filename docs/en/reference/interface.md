@@ -11,6 +11,11 @@ working. Streaming output with a spinner/status line, an input box with
 dialog, and glamour-rendered Markdown responses (wrapped at your
 terminal's width, so copied lines are not broken by an artificial cap).
 
+Every line you submit is echoed into the scrollback before its answer —
+a blank line, then `> ` and what you typed (`! ` for a shell escape).
+The input box clears on submit, so without it a slash command's output
+would begin flush against the previous one, naming nothing.
+
 The input box and its status line pin to the window bottom (like Claude
 Code), while the conversation scrolls above with native terminal
 scrollback intact (ADR-0003; the screen is cleared once at startup). The
