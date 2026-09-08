@@ -1,5 +1,30 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Documentation brought back to the code after a whole-set audit. The
+  sessions reference put `persistent.json` beside the transcripts (it
+  is in the project's state directory, beside the work directories),
+  called session ids "timestamps with an atomic suffix on collision"
+  (they have been UUIDs since ADR-0071; the O_EXCL create is what makes
+  a parallel launch safe), and opened with a `--resume` example in the
+  timestamp form. Both READMEs enumerated thirteen slash commands and
+  named `/riskbook` in neither. ADR-0077, ADR-0078 and ADR-0079 still
+  read "implemented and unreleased" three days after v0.72.0 shipped
+  them. `GEMAGENT_LOCATION`, `GOOGLE_CLOUD_LOCATION` and
+  `GEMAGENT_MODEL` are read by the loader and appeared in no document;
+  so did `gem-agent trust --config`. AGENTS.md was missing
+  `internal/banner`, `make build-all` and `make verify-release`
+
+### Changed
+
+- `make check` (docs-mirror-check) now requires every `internal/`
+  package in **both** package maps — the architecture reference and
+  AGENTS.md §Structure. Checking one of the two is how `internal/banner`
+  stayed out of AGENTS.md for three releases while the check was green
+
 ## [0.72.2] - 2026-09-08
 
 ### Changed
