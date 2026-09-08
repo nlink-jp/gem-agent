@@ -21,6 +21,15 @@
   instead. One-shot takes `--read-only` or nothing, and a configured
   `"auto"` is read there as `"on"`: dropping it would lose a
   restriction silently where nobody is watching
+- **The session mode reaches the risk evaluator** (ADR-0080 §5), which
+  is what covers MCP: an MCP server runs outside every Seatbelt profile
+  and the rule tier cannot read its effects, so the ceiling exempts it
+  and tells the model tier instead. The line states what the operator
+  asked for, never what enforces it — measured 2026-09-09, state-shaped
+  wording produced identical verdicts but made the model report an MCP
+  write as "not permitted", which is false and is shown to the
+  operator. A judgment, not the kernel denial the lanes give this
+  runtime's own tools, and the approval reference says so
 
 ## [0.73.0] - 2026-09-09
 

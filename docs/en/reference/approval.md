@@ -294,6 +294,42 @@ pass routine calls (judging with the server-published description as
 evidence, ADR-0046), and a session `a` covers the tool for any later
 arguments. Pin `"always"` in the policy where that trade is wrong.
 
+## The session's lane ceiling — read-only (ADR-0080)
+
+A separate axis from everything above. Auto-approve decides **who
+answers the gate**; the ceiling decides **what the session may reach at
+all**, so it works in the default mode and in `-p` as well, where the
+questions above have nobody to answer them.
+
+`[agent].read_only` sets the state, `--writable` / `--read-only` /
+`--auto-read-only` override it for one run, and `/readonly on|off|auto`
+changes it in a session:
+
+| state | ceiling | who moves it |
+|---|---|---|
+| `off` (default) | `operator` | nobody — today's behaviour, and it costs nothing |
+| `on` | `read` | you |
+| `auto` | starts at `operator` | you, **and** the runtime — which may tighten it to `read` on its own, and never loosens it |
+
+Under a `read` ceiling a call whose effect needs a higher lane is
+**refused before the gate**: a `shell_exec` declaring `write` or
+`operator`, and `write_file`, `edit_file`, `save_memory`,
+`delete_memory`. A read-lane command still runs unasked. The refusal is
+not an escalation — the gate can be answered by the session allowlist,
+so a ceiling that escalated would be one an earlier `a` could spend —
+and it is not a denial you made, so the decision record does not read it
+as one. Lift it with `/readonly off`; in `-p` there is nobody to ask and
+the refusal is final, which is what `--read-only` is for.
+
+**MCP tools are not refused by the ceiling.** An MCP server runs outside
+every Seatbelt profile and the rule tier cannot tell a read tool from a
+write tool on someone else's machine. Instead the mode is stated to the
+model tier as what you asked for — never as a control that is enforcing
+— and it weighs the call against it the way it already weighs your
+typed request. That is a judgment, not the kernel denial the lanes give
+this runtime's own tools, and the two are deliberately not blurred.
+`[mcp] exclude` (ADR-0077) is still the instrument that removes a tool.
+
 ## Per-tool approval policy (ADR-0008)
 
 Every MCP tool asks on every call, because gem-agent cannot know what a
