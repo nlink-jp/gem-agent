@@ -11,7 +11,7 @@ DIST_DIR := dist
 CODESIGN_IDENTITY ?= Developer ID Application
 NOTARY_PROFILE    ?= nlink-jp-notary
 
-.PHONY: build build-all package verify-release test vet lint docs-check check clean
+.PHONY: build build-all package verify-release test vet lint docs-check gate-check check clean
 
 build:
 	@mkdir -p $(DIST_DIR)
@@ -47,6 +47,16 @@ package: build-all
 # lag a fresh submission. An un-notarised zip once shipped with this
 # target green — the probe failed on an updated Apple agreement, the
 # script failed open by design, and nothing here checked.
+#
+# spctl's `|| true` used to sit at the end of an `unzip && --version &&
+# spctl` chain, where it forgave the whole chain: a zip that did not
+# unpack, or a binary that did not run, still ended in "verify-release:
+# OK" (review 2026-09-08, F-04). Unpacking, running, and reporting this
+# version are hard gates now, each with its own failure line, and the
+# informational probe is the only thing allowed to fail. What the gate
+# does on a bad zip is itself checked — scripts/verify-release-selftest.sh,
+# run by `make check`, because the way this target failed was that
+# nobody exercised it.
 verify-release:
 	@test -f "$(DIST_DIR)/$(BINARY)-$(VERSION)-darwin-arm64.zip.notarized" || { \
 		echo "verify-release: FAIL — $(BINARY)-$(VERSION)-darwin-arm64.zip has no notarization marker."; \
@@ -55,12 +65,22 @@ verify-release:
 	@test "$(DIST_DIR)/$(BINARY)-$(VERSION)-darwin-arm64.zip.notarized" -nt "$(DIST_DIR)/$(BINARY)-$(VERSION)-darwin-arm64.zip" || { \
 		echo "verify-release: FAIL — the zip was rebuilt after its marker (re-run make package)."; \
 		exit 1; }
-	@tmp=$$(mktemp -d) && \
-		unzip -oq "$(DIST_DIR)/$(BINARY)-$(VERSION)-darwin-arm64.zip" -d "$$tmp" && \
-		"$$tmp/$(BINARY)" --version && \
-		spctl -a -vv -t install "$$tmp/$(BINARY)" 2>&1 | head -2 || true; \
-		rm -rf "$$tmp"
-	@echo "verify-release: OK ($(VERSION), notarization marker present)"
+	@tmp=$$(mktemp -d); rc=0; \
+		if ! unzip -oq "$(DIST_DIR)/$(BINARY)-$(VERSION)-darwin-arm64.zip" -d "$$tmp"; then \
+			echo "verify-release: FAIL — the zip does not unpack. Do not upload it."; rc=1; \
+		elif ! out=$$("$$tmp/$(BINARY)" --version 2>&1); then \
+			echo "verify-release: FAIL — the packaged binary does not run:"; \
+			echo "  $$out"; rc=1; \
+		elif ! printf '%s\n' "$$out" | grep -qF "$(VERSION)"; then \
+			echo "verify-release: FAIL — the packaged binary reports \"$$out\", not $(VERSION)."; \
+			echo "  The zip holds a build from another tag (re-run make package)."; rc=1; \
+		else \
+			echo "  $$out"; \
+			spctl -a -vv -t install "$$tmp/$(BINARY)" 2>&1 | head -2 || true; \
+		fi; \
+		rm -rf "$$tmp"; \
+		exit $$rc
+	@echo "verify-release: OK ($(VERSION), notarized, unpacks, runs, reports its version)"
 
 test:
 	go test ./...
@@ -81,7 +101,13 @@ lint:
 docs-check:
 	@scripts/docs-mirror-check.sh
 
-check: vet lint test docs-check build
+## gate-check: verify-release must reject a bad zip. The gate is only
+## ever run by hand at release time, which is how it stayed green over a
+## chain it had stopped checking.
+gate-check:
+	@scripts/verify-release-selftest.sh
+
+check: vet lint test docs-check gate-check build
 
 ## labels: every operator-facing string in one document (dist/labels.md)
 ## for the read-through before a release: the ja/en UI catalog with verbs

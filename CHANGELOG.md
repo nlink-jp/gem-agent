@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- `make verify-release` fails on a zip that does not unpack, a binary
+  that does not run, and a binary built from another tag. The `|| true`
+  written for the informational `spctl` probe sat at the end of an
+  `unzip && --version && spctl` chain and forgave the whole chain, so a
+  release that could not be unpacked still ended in "verify-release:
+  OK" — the same failing-open shape the comment above that target was
+  written to record
+
 - A wedged MCP server no longer hangs every call to it. `rawCall` wrote
   the request synchronously and started the per-call deadline only
   afterwards, so a server that stopped reading its stdin parked the
@@ -52,6 +60,14 @@
   `internal/banner`, `make build-all` and `make verify-release`
 
 ### Changed
+
+- `make check` runs the release gate against itself
+  (`scripts/verify-release-selftest.sh`, also `make gate-check`): six
+  synthetic dists — no marker, a marker older than its zip, a corrupt
+  zip, a binary that exits non-zero, a binary from another tag, and a
+  good one — and `verify-release` has to reject the five. A gate that
+  runs once by hand at release time is a gate nobody exercises, which is
+  how it kept printing OK over a chain it had stopped checking
 
 - `make check` (docs-mirror-check) now requires every `internal/`
   package in **both** package maps — the architecture reference and

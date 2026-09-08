@@ -29,11 +29,12 @@ on-demand [health check](docs/en/reference/drill.md).
 | Build | `make build` → `dist/gem-agent` (never `go build` directly) |
 | Test | `make test` (or `go test ./...`) |
 | Lint | `make lint` (golangci-lint, org config in `.golangci.yml`) |
-| Vet + lint + test + docs mirror + build | `make check` |
+| Vet + lint + test + docs mirror + release gate + build | `make check` |
 | Docs mirror only | `make docs-check` |
+| Release gate's own test | `make gate-check` — runs `verify-release` against synthetic bad zips |
 | Release binaries | `make build-all` (darwin/arm64 only — signed and notarised by `make package`) |
 | Release archive | `make package` → `dist/gem-agent-vX.Y.Z-darwin-arm64.zip` |
-| Release gate | `make verify-release` — refuses a zip with no notarisation marker, or one rebuilt after its marker. Run it from the repo, then `gh` from here |
+| Release gate | `make verify-release` — refuses a zip with no notarisation marker, one rebuilt after its marker, one that does not unpack, or one whose binary does not run or reports another tag's version. Run it from the repo, then `gh` from here |
 | Operator text, collected | `make labels` → `dist/labels.md` (UI catalog ja/en, cmd notes/errors/help, `--help` pages) |
 
 Version is injected via `-X main.version` from `git describe` — never edit the
@@ -120,7 +121,8 @@ internal/repl/     paste-safe input reader (plain REPL, non-TTY fallback)
 internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate
 internal/diagram/  mermaid → terminal box art (ADR-0042/0063): fence scanner,
                    shape normalization, wrongness guards — no size gates
-scripts/           codesign-darwin.sh / notarize-darwin.sh (org templates, verbatim)
+scripts/           codesign-darwin.sh / notarize-darwin.sh (org templates, verbatim),
+                   docs-mirror-check.sh, verify-release-selftest.sh (make check)
 docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
 ```
 
