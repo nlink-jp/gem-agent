@@ -79,11 +79,25 @@ Every `shell_exec` declares a lane (ADR-0073). The session now carries
 a **ceiling**, and a call runs in the lower of the two. The axis has
 three states:
 
-| state | ceiling | who moves it |
+*Corrected against the code during implementation.* This was first
+written as one tri-state — off / read-only / auto — and that is wrong.
+The ceiling and the watcher that may raise it are **two independent
+settings**, and collapsing them broke both directions: tightening
+destroyed the fact that the session was watching, and lifting silently
+disarmed the watcher the operator had asked for. There is also a fourth
+combination a tri-state cannot express, and it is the ordinary one —
+watching *while* read-only, which is what the session is the moment the
+watcher fires.
+
+| setting | values | who moves it |
 |---|---|---|
-| **off** (default) | `operator` | nobody — today's behaviour, unchanged for anyone who sets nothing, and costing nothing |
-| **read-only** | `read` | the operator, by hand |
-| **auto read-only** | starts at `operator` | the operator, **and** the runtime — which may tighten it to `read` on its own, and may never loosen it. Interactive sessions only (§2) |
+| **the ceiling** | `operator` (default) or `read` | the operator, by hand — and the watcher, upward only |
+| **the watcher** | off (default) or armed | the operator only. Interactive sessions only (§2) |
+
+Neither touches the other. Arming the watcher restricts nothing yet;
+raising the ceiling leaves the watcher armed, so a later read-only
+request is caught the same way the first one was; and lifting the
+ceiling does not disarm what the operator asked for.
 
 It is state the operator owns. `[agent].read_only` sets the session's
 starting state (`"off"`, `"on"`, `"auto"`; default `"off"`), one flag

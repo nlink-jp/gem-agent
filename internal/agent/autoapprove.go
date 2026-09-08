@@ -8,7 +8,6 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/risk"
-	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/nlk/guard"
 	"github.com/nlink-jp/nlk/jsonfix"
@@ -311,7 +310,7 @@ func (a *Agent) evaluateRisk(ctx context.Context, tc llm.ToolCall, withContext b
 	// §5). It is what covers MCP, where no Seatbelt profile reaches and
 	// the rule tier cannot read another server's effects — a judgment,
 	// never the guarantee §3 gives for this runtime's own tools.
-	if withContext && a.ReadOnly() == sandbox.CeilingOn {
+	if withContext && a.CeilingState().ReadOnly {
 		payload += "\n" + readOnlyEvidence
 		prompt += riskEvalReadOnlyAddendum
 	}

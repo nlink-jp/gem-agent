@@ -40,12 +40,12 @@ type Facts struct {
 	// AutoApprove reports that the session begins running mutating
 	// tools unattended.
 	AutoApprove bool
-	// ReadOnly is the session's lane-ceiling state (ADR-0080). It earns
-	// a line because nothing else says it at start: the footer carries
-	// "on" continuously but shows nothing for "auto", which is
-	// invisible until the turn it fires on, and one-shot has no footer
-	// at all. "off" is the default and says nothing.
-	ReadOnly string
+	// ReadOnly is the session's lane ceiling and its watcher (ADR-0080).
+	// It earns a line because nothing else says it at start: the footer
+	// carries the ceiling in force but shows nothing for a watcher that
+	// has not fired, and one-shot has no footer at all. The zero value
+	// is the default and says nothing.
+	ReadOnly sandbox.Ceiling
 	// Notes are startup warnings already phrased by their own subsystem.
 	Notes []string
 }
@@ -132,12 +132,14 @@ func AutoApproveOneShotLine() string {
 // "on" because a session that refuses changes should say so before the
 // operator asks for one, and "auto" because the footer cannot — it
 // shows the ceiling in force, and auto has none yet.
-func ReadOnlyLine(state string) string {
-	switch state {
-	case sandbox.CeilingOn:
+func ReadOnlyLine(c sandbox.Ceiling) string {
+	switch {
+	case c.ReadOnly && c.Auto:
+		return "read-only: ON at start, and watching — /readonly off lifts it; it turns on again when you ask for a read-only session"
+	case c.ReadOnly:
 		return "read-only: ON at start — this session changes nothing outside its scratch; /readonly off lifts it"
-	case sandbox.CeilingAuto:
-		return "read-only: AUTO — off for now; it turns on by itself when you ask for a read-only session"
+	case c.Auto:
+		return "read-only: watching — off for now; it turns on by itself when you ask for a read-only session"
 	}
 	return ""
 }

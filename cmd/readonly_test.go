@@ -1,19 +1,17 @@
 package cmd
 
-// The lane ceiling's three states resolve from three flags and one
-// config key (ADR-0080 §1-2). What is pinned here is the shape of the
-// axis: the flags contradict rather than layer, the auto state has no
-// meaning without a session to watch, and a configured "auto" is read
-// the strict way in one-shot.
+// The ceiling and its watcher are two settings, so the flags resolve
+// independently (ADR-0080 §1). --writable and --read-only are the two
+// ends of one of them; --auto-read-only is the other, and composes.
 
 import (
 	"strings"
 	"testing"
 
-	"github.com/nlink-jp/gem-agent/internal/config"
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
 )
 
-func TestReadOnlyOverrideResolvesOneState(t *testing.T) {
+func TestReadOnlyOverrideResolvesTheCeiling(t *testing.T) {
 	cases := []struct {
 		name                            string
 		writable, readOnly, autoRO, one bool
@@ -21,17 +19,17 @@ func TestReadOnlyOverrideResolvesOneState(t *testing.T) {
 		wantErr                         string
 	}{
 		{name: "no flag", want: ""},
-		{name: "writable", writable: true, want: config.ReadOnlyOff},
-		{name: "read-only", readOnly: true, want: config.ReadOnlyOn},
-		{name: "auto", autoRO: true, want: config.ReadOnlyAuto},
-		{name: "read-only in one-shot", readOnly: true, one: true, want: config.ReadOnlyOn},
-		{name: "writable in one-shot", writable: true, one: true, want: config.ReadOnlyOff},
-		// Three states of one axis: two flags is a contradiction, not a
-		// precedence question to answer quietly.
-		{name: "two flags", writable: true, readOnly: true, wantErr: "at most one"},
-		{name: "all three", writable: true, readOnly: true, autoRO: true, wantErr: "at most one"},
-		// The auto state watches what the operator types; -p has one
-		// input, given at invocation.
+		{name: "writable", writable: true, want: "off"},
+		{name: "read-only", readOnly: true, want: "on"},
+		// The watcher is a different setting: it names no ceiling.
+		{name: "auto alone", autoRO: true, want: ""},
+		// And it composes with either end of the ceiling.
+		{name: "auto with read-only", autoRO: true, readOnly: true, want: "on"},
+		{name: "auto with writable", autoRO: true, writable: true, want: "off"},
+		{name: "read-only in one-shot", readOnly: true, one: true, want: "on"},
+		// Two ends of one setting.
+		{name: "both ends", writable: true, readOnly: true, wantErr: "at most one"},
+		// The watcher watches a session; -p has one input, at launch.
 		{name: "auto in one-shot", autoRO: true, one: true, wantErr: "needs a session"},
 	}
 	for _, tc := range cases {
@@ -53,27 +51,29 @@ func TestReadOnlyOverrideResolvesOneState(t *testing.T) {
 	}
 }
 
-func TestEffectiveReadOnly(t *testing.T) {
+func TestEffectiveCeiling(t *testing.T) {
 	cases := []struct {
-		cfg  string
-		one  bool
-		want string
+		ro, auto, one bool
+		want          sandbox.Ceiling
 	}{
-		{"", false, config.ReadOnlyOff},
-		{"", true, config.ReadOnlyOff},
-		{config.ReadOnlyOff, true, config.ReadOnlyOff},
-		{config.ReadOnlyOn, false, config.ReadOnlyOn},
-		// A restriction only restricts, so unlike auto_approve it needs
-		// no invocation-visibility argument and is honoured in -p.
-		{config.ReadOnlyOn, true, config.ReadOnlyOn},
-		{config.ReadOnlyAuto, false, config.ReadOnlyAuto},
-		// The strict reading: dropping it would lose a restriction
-		// silently where nobody is watching.
-		{config.ReadOnlyAuto, true, config.ReadOnlyOn},
+		{false, false, false, sandbox.Ceiling{}},
+		{true, false, false, sandbox.Ceiling{ReadOnly: true}},
+		{false, true, false, sandbox.Ceiling{Auto: true}},
+		// The combination a tri-state could not express.
+		{true, true, false, sandbox.Ceiling{ReadOnly: true, Auto: true}},
+		// One-shot has no session to watch. A restriction only
+		// restricts, so a configured ceiling is honoured; a configured
+		// watcher becomes the ceiling rather than being dropped, which
+		// would lose it silently where nobody is looking.
+		{false, false, true, sandbox.Ceiling{}},
+		{true, false, true, sandbox.Ceiling{ReadOnly: true}},
+		{false, true, true, sandbox.Ceiling{ReadOnly: true}},
+		{true, true, true, sandbox.Ceiling{ReadOnly: true}},
 	}
 	for _, tc := range cases {
-		if got := effectiveReadOnly(tc.cfg, tc.one); got != tc.want {
-			t.Errorf("effectiveReadOnly(%q, oneShot=%v) = %q, want %q", tc.cfg, tc.one, got, tc.want)
+		if got := effectiveCeiling(tc.ro, tc.auto, tc.one); got != tc.want {
+			t.Errorf("effectiveCeiling(%v, %v, oneShot=%v) = %+v, want %+v",
+				tc.ro, tc.auto, tc.one, got, tc.want)
 		}
 	}
 }

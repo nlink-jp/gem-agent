@@ -1,84 +1,100 @@
 package config
 
+// The ceiling and its watcher are two settings, not one tri-state
+// (ADR-0080 §1), so they load, default and override independently.
+
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-// [agent].read_only is validated, defaulted and overridable, and the
-// override is recorded as flag provenance so /settings can say where
-// the ceiling came from (ADR-0080 §1).
-func TestReadOnlyConfig(t *testing.T) {
-	write := func(t *testing.T, body string) string {
-		t.Helper()
-		p := filepath.Join(t.TempDir(), "config.toml")
-		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		return p
+func writeCfg(t *testing.T, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	const base = "[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\n"
+	return p
+}
 
-	t.Run("default is off", func(t *testing.T) {
-		cfg, err := LoadWithOverrides(write(t, base), Overrides{})
+const cfgBase = "[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\n"
+
+func TestReadOnlyConfigDefaultsOff(t *testing.T) {
+	cfg, err := LoadWithOverrides(writeCfg(t, cfgBase), Overrides{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agent.ReadOnly || cfg.Agent.ReadOnlyAuto {
+		t.Errorf("default = %v/%v, want both off", cfg.Agent.ReadOnly, cfg.Agent.ReadOnlyAuto)
+	}
+}
+
+// All four combinations load, including the one a tri-state could not
+// express: watching while already read-only.
+func TestReadOnlyConfigLoadsBothIndependently(t *testing.T) {
+	for _, tc := range []struct{ ro, auto bool }{
+		{false, false}, {true, false}, {false, true}, {true, true},
+	} {
+		body := cfgBase + "[agent]\n"
+		body += "read_only = " + boolLit(tc.ro) + "\nread_only_auto = " + boolLit(tc.auto) + "\n"
+		cfg, err := LoadWithOverrides(writeCfg(t, body), Overrides{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if cfg.Agent.ReadOnly != ReadOnlyOff {
-			t.Errorf("read_only = %q, want %q", cfg.Agent.ReadOnly, ReadOnlyOff)
+		if cfg.Agent.ReadOnly != tc.ro || cfg.Agent.ReadOnlyAuto != tc.auto {
+			t.Errorf("read_only=%v auto=%v → %v/%v", tc.ro, tc.auto,
+				cfg.Agent.ReadOnly, cfg.Agent.ReadOnlyAuto)
 		}
-	})
-
-	t.Run("configured value is kept", func(t *testing.T) {
-		cfg, err := LoadWithOverrides(write(t, base+"[agent]\nread_only = \"auto\"\n"), Overrides{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if cfg.Agent.ReadOnly != ReadOnlyAuto {
-			t.Errorf("read_only = %q", cfg.Agent.ReadOnly)
-		}
-		if cfg.Sources["agent.read_only"] != FromFile {
-			t.Errorf("provenance = %q, want %q", cfg.Sources["agent.read_only"], FromFile)
-		}
-	})
-
-	t.Run("an unknown state is refused", func(t *testing.T) {
-		_, err := LoadWithOverrides(write(t, base+"[agent]\nread_only = \"maybe\"\n"), Overrides{})
-		if err == nil || !strings.Contains(err.Error(), "read_only") {
-			t.Fatalf("err = %v, want one naming read_only", err)
-		}
-	})
-
-	// The override runs both ways: --writable steps out of a configured
-	// "on", which is what makes the loosening visible on the invocation.
-	t.Run("the flag overrides in both directions", func(t *testing.T) {
-		for _, tc := range []struct{ file, flag, want string }{
-			{"", ReadOnlyOn, ReadOnlyOn},
-			{"auto", ReadOnlyOff, ReadOnlyOff},
-			{"on", ReadOnlyOff, ReadOnlyOff},
-		} {
-			body := base
-			if tc.file != "" {
-				body += "[agent]\nread_only = \"" + tc.file + "\"\n"
-			}
-			cfg, err := LoadWithOverrides(write(t, body), Overrides{ReadOnly: tc.flag})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if cfg.Agent.ReadOnly != tc.want {
-				t.Errorf("file=%q flag=%q → %q, want %q", tc.file, tc.flag, cfg.Agent.ReadOnly, tc.want)
-			}
-			if cfg.Sources["agent.read_only"] != FromFlag {
-				t.Errorf("provenance = %q, want %q", cfg.Sources["agent.read_only"], FromFlag)
+		for _, key := range []string{"agent.read_only", "agent.read_only_auto"} {
+			if cfg.Sources[key] != FromFile {
+				t.Errorf("%s provenance = %q, want %q", key, cfg.Sources[key], FromFile)
 			}
 		}
-	})
+	}
+}
 
-	t.Run("an unknown override is refused", func(t *testing.T) {
-		if _, err := LoadWithOverrides(write(t, base), Overrides{ReadOnly: "maybe"}); err == nil {
-			t.Fatal("accepted an unknown read-only state")
-		}
-	})
+func boolLit(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}
+
+// The ceiling override runs both ways — --writable is how a run steps
+// out of a configured ceiling, which is what makes the loosening
+// visible on the invocation — and it does not touch the watcher.
+func TestReadOnlyOverridesAreIndependent(t *testing.T) {
+	body := cfgBase + "[agent]\nread_only = true\nread_only_auto = true\n"
+	cfg, err := LoadWithOverrides(writeCfg(t, body), Overrides{ReadOnly: "off"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agent.ReadOnly {
+		t.Error("--writable did not lower the ceiling")
+	}
+	if !cfg.Agent.ReadOnlyAuto {
+		t.Error("--writable disarmed the watcher, which is a different setting")
+	}
+	if cfg.Sources["agent.read_only"] != FromFlag {
+		t.Errorf("ceiling provenance = %q", cfg.Sources["agent.read_only"])
+	}
+	if cfg.Sources["agent.read_only_auto"] != FromFile {
+		t.Errorf("watcher provenance = %q, want it untouched", cfg.Sources["agent.read_only_auto"])
+	}
+
+	// And arming the watcher does not raise the ceiling.
+	cfg, err = LoadWithOverrides(writeCfg(t, cfgBase), Overrides{ReadOnlyAuto: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agent.ReadOnly || !cfg.Agent.ReadOnlyAuto {
+		t.Errorf("--auto-read-only → %v/%v, want watcher only", cfg.Agent.ReadOnly, cfg.Agent.ReadOnlyAuto)
+	}
+}
+
+func TestReadOnlyRejectsAnUnknownOverride(t *testing.T) {
+	if _, err := LoadWithOverrides(writeCfg(t, cfgBase), Overrides{ReadOnly: "maybe"}); err == nil {
+		t.Fatal("accepted an unknown read-only override")
+	}
 }

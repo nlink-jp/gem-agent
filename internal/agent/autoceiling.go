@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
-	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/nlk/guard"
 	"github.com/nlink-jp/nlk/jsonfix"
@@ -44,16 +43,20 @@ type ceilingVerdict struct {
 // tokens — and a failure leaves the ceiling where it was, because a
 // failed inference is not evidence of anything.
 func (a *Agent) maybeTightenCeiling(ctx context.Context, input string) {
-	if a.ReadOnly() != sandbox.CeilingAuto || strings.TrimSpace(input) == "" {
+	// Armed, and not already in force: a ceiling that is on has nothing
+	// left to decide, and the watcher stays armed for after it is
+	// lifted.
+	c := a.CeilingState()
+	if !c.Auto || c.ReadOnly || strings.TrimSpace(input) == "" {
 		return
 	}
 	v, err := a.evaluateCeiling(ctx, input)
 	if err != nil || !v.ReadOnly {
 		return
 	}
-	a.SetReadOnly(sandbox.CeilingOn)
+	a.SetReadOnly(true)
 	a.logRecord("mode_change", map[string]any{
-		"setting": "read_only", "to": sandbox.CeilingOn, "by": "auto",
+		"setting": "read_only", "to": "on", "by": "auto",
 		"quote": clipRunes(strings.TrimSpace(v.Quote), 100),
 	})
 	// One line, with its cause and the way back. A state change is worth

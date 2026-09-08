@@ -1,6 +1,8 @@
 package banner
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
+
 	"strings"
 	"testing"
 )
@@ -194,24 +196,28 @@ func TestOneShotAutoApproveNamesTheFlag(t *testing.T) {
 // because the footer shows the ceiling in force and auto has none yet,
 // and "off" — the default — never.
 func TestReadOnlyLine(t *testing.T) {
-	for _, tc := range []struct{ state, want string }{
-		{"", ""},
-		{"off", ""},
-		{"on", "ON at start"},
-		{"auto", "AUTO"},
+	for _, tc := range []struct {
+		state sandbox.Ceiling
+		want  string
+	}{
+		{sandbox.Ceiling{}, ""},
+		{sandbox.Ceiling{ReadOnly: true}, "ON at start"},
+		{sandbox.Ceiling{Auto: true}, "watching"},
+		// The combination a tri-state could not express.
+		{sandbox.Ceiling{ReadOnly: true, Auto: true}, "ON at start, and watching"},
 	} {
 		got := ReadOnlyLine(tc.state)
 		if tc.want == "" {
 			if got != "" {
-				t.Errorf("state %q printed %q", tc.state, got)
+				t.Errorf("state %+v printed %q", tc.state, got)
 			}
 			continue
 		}
 		if !strings.Contains(got, tc.want) {
-			t.Errorf("state %q → %q, want it to contain %q", tc.state, got, tc.want)
+			t.Errorf("state %+v → %q, want it to contain %q", tc.state, got, tc.want)
 		}
 		if !strings.Contains(got, "read-only") {
-			t.Errorf("state %q does not name the mode: %q", tc.state, got)
+			t.Errorf("state %+v does not name the mode: %q", tc.state, got)
 		}
 	}
 	// One-shot has no footer and no /readonly, so its line names the

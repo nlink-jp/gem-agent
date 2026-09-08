@@ -106,14 +106,19 @@ auto_approve = false
 
 # The session's lane ceiling (ADR-0080), an axis of its own: auto-approve
 # decides who answers the gate, this decides what the session may reach.
-#   "off"  the operator lane — today's behaviour, and the default
-#   "on"   the read lane — nothing outside the session scratch may change
-#   "auto" starts at "off" and lets the runtime tighten it to "on" from
-#          what you type; it never loosens it back, and it is ignored in
-#          one-shot -p, where "auto" is read as "on"
-# Override per run with --writable / --read-only / --auto-read-only,
-# or change it mid-session with /readonly.
-read_only = "off"
+# true caps the session at the read lane — nothing outside the session
+# scratch may change. Override per run with --read-only / --writable,
+# or change it mid-session with /readonly on|off.
+read_only = false
+
+# Let the runtime raise the ceiling by itself, from what you type: a
+# message that asks for a read-only session turns read_only on and says
+# so. It never turns it off — that direction is yours. Independent of
+# read_only above: arming this restricts nothing yet, and a ceiling you
+# lift leaves it armed. Interactive only; in one-shot -p there is no
+# session to watch, so a configured true is read as read_only = true
+# rather than dropped. Per run: --auto-read-only, or /readonly auto on|off.
+read_only_auto = false
 
 # Summarise the older part of the conversation when the context window
 # fills, instead of failing the turn (ADR-0006). On by default: this

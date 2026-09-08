@@ -33,29 +33,30 @@ const (
 	LaneOperator
 )
 
-// The session's lane-ceiling states (ADR-0080 §1). They live beside
-// Lane because a ceiling is a lane: Off leaves LaneOperator, which
-// bounds nothing; On is LaneRead; Auto starts at Off and lets the
-// runtime tighten it to On, never the other way.
-const (
-	CeilingOff  = "off"
-	CeilingOn   = "on"
-	CeilingAuto = "auto"
-)
-
-// ValidCeiling reports whether s names a ceiling state. Empty means the
-// default, which is Off.
-func ValidCeiling(s string) bool {
-	switch s {
-	case "", CeilingOff, CeilingOn, CeilingAuto:
-		return true
-	}
-	return false
+// Ceiling is the session's lane ceiling and the watcher that may raise
+// it (ADR-0080 §1-2). The two are **independent**, and a first draft
+// that made them one tri-state (off / on / auto) was wrong in both
+// directions: tightening destroyed the fact that the session was
+// watching, and lifting silently disarmed the watcher the operator had
+// asked for. Arming the watcher restricts nothing yet; lifting the
+// ceiling leaves it armed, so a later read-only request is caught the
+// same way the first one was.
+//
+// It lives beside Lane because a ceiling is a lane: ReadOnly caps the
+// session at LaneRead, and otherwise it is LaneOperator, which bounds
+// nothing.
+type Ceiling struct {
+	// ReadOnly reports that the ceiling is in force right now.
+	ReadOnly bool
+	// Auto reports that the runtime may raise the ceiling from what the
+	// operator types. It may never lower it: that is the direction where
+	// a derived constraint becomes a derived permission.
+	Auto bool
 }
 
-// CeilingFor is the highest lane a session in this state may reach.
-func CeilingFor(state string) Lane {
-	if state == CeilingOn {
+// Lane is the highest lane this session may reach.
+func (c Ceiling) Lane() Lane {
+	if c.ReadOnly {
 		return LaneRead
 	}
 	return LaneOperator

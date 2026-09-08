@@ -106,6 +106,20 @@
   One-shot prints its own line, having neither a footer nor `/readonly`
   — the same argument, and the same shape, as the auto-approve pair.
   Operator report, 2026-09-09
+- **The ceiling and its watcher are two independent settings**, not one
+  three-way switch. As a tri-state, tightening destroyed the fact that
+  the session was watching and lifting silently disarmed the watcher
+  the operator had asked for — and the fourth combination, watching
+  *while* read-only, is what the session is the moment the watcher
+  fires, so the tri-state could not name its own ordinary outcome.
+  `[agent].read_only` and `[agent].read_only_auto` are both booleans;
+  `--read-only` / `--writable` move the ceiling and `--auto-read-only`
+  arms the watcher, so they compose; `/readonly on|off` and
+  `/readonly auto on|off` do the same in a session, and `/readonly`
+  shows both. An approved lift and `/readonly off` leave the watcher
+  armed, so the next read-only request is caught the same way the
+  first one was. ADR-0080 §1 is corrected against the code in the same
+  commit. Operator report, 2026-09-09
 
 ## [0.73.0] - 2026-09-09
 

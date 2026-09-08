@@ -1,9 +1,9 @@
 package cmd
 
-// /readonly both shows the state and sets it, so its text has to
-// describe a state rather than a transition: "the session may change
-// things again" is a lie when nothing changed. Operator report,
-// 2026-09-09 — the command shipped without a test, and this is it.
+// /readonly shows two settings and sets either without touching the
+// other (ADR-0080 §1). Its text describes a state rather than a
+// transition, because showing must not claim a change — operator
+// report, 2026-09-09, twice.
 
 import (
 	"context"
@@ -18,15 +18,15 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
-func readOnlyAgent(t *testing.T, state string) *agent.Agent {
+func readOnlyAgent(t *testing.T, c sandbox.Ceiling) *agent.Agent {
 	t.Helper()
 	reg, err := tools.New(t.TempDir(),
-		func(ctx context.Context, c string) *exec.Cmd { return exec.CommandContext(ctx, "/bin/echo", "x") },
+		func(ctx context.Context, cmd string) *exec.Cmd { return exec.CommandContext(ctx, "/bin/echo", "x") },
 		time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return agent.New(agent.Options{Registry: reg, System: "s", MaxTurns: 3, ReadOnly: state})
+	return agent.New(agent.Options{Registry: reg, System: "s", MaxTurns: 3, Ceiling: c})
 }
 
 func readOnlySlash(t *testing.T, a *agent.Agent, input string, lang uitext.Lang) string {
@@ -38,64 +38,85 @@ func readOnlySlash(t *testing.T, a *agent.Agent, input string, lang uitext.Lang)
 	return out
 }
 
-// Showing must not claim a change. Every state's text is used on both
-// paths, so none of them may be written as a transition.
-func TestReadonlyShowingReportsTheStateWithoutClaimingAChange(t *testing.T) {
-	transitions := []string{"戻りました", "again", "now on", "now off", "switched", "切り替えました"}
+// Showing must not claim a change, in either language, and must not
+// move anything.
+func TestReadonlyShowsWithoutClaimingAChange(t *testing.T) {
+	transitions := []string{"戻りました", "again", "switched", "切り替えました"}
 	for _, lang := range []uitext.Lang{uitext.JA, uitext.EN} {
-		for _, state := range []string{sandbox.CeilingOff, sandbox.CeilingOn, sandbox.CeilingAuto} {
-			a := readOnlyAgent(t, state)
+		for _, c := range []sandbox.Ceiling{
+			{}, {ReadOnly: true}, {Auto: true}, {ReadOnly: true, Auto: true},
+		} {
+			a := readOnlyAgent(t, c)
 			out := readOnlySlash(t, a, "/readonly", lang)
-			// The token the operator actually reads, not a case-folded
-			// match that "/readonly off" inside another state's line
-			// would also satisfy.
-			if !strings.Contains(out, strings.ToUpper(state)) {
-				t.Errorf("%v/%s: the line does not name the state: %q", lang, state, out)
+			want := "OFF"
+			if c.ReadOnly {
+				want = "ON"
+			}
+			if !strings.Contains(out, want) {
+				t.Errorf("%v/%+v: the line does not name the ceiling: %q", lang, c, out)
+			}
+			// The watcher line appears only when armed: off is the
+			// default and its absence says the same thing.
+			if got := strings.Count(out, "\n") > 1; got != c.Auto {
+				t.Errorf("%v/%+v: watcher line present = %v: %q", lang, c, got, out)
 			}
 			for _, verb := range transitions {
 				if strings.Contains(out, verb) {
-					t.Errorf("%v/%s: showing the state claims a change (%q): %q", lang, state, verb, out)
+					t.Errorf("%v/%+v: showing claims a change (%q): %q", lang, c, verb, out)
 				}
 			}
-			// Showing changes nothing.
-			if a.ReadOnly() != state {
-				t.Errorf("%v/%s: showing moved the state to %q", lang, state, a.ReadOnly())
+			if a.CeilingState() != c {
+				t.Errorf("%v/%+v: showing moved the state to %+v", lang, c, a.CeilingState())
 			}
 		}
 	}
 }
 
-func TestReadonlySetsEachState(t *testing.T) {
-	for _, want := range []string{sandbox.CeilingOn, sandbox.CeilingAuto, sandbox.CeilingOff} {
-		a := readOnlyAgent(t, sandbox.CeilingOff)
-		out := readOnlySlash(t, a, "/readonly "+want, uitext.JA)
-		if a.ReadOnly() != want {
-			t.Errorf("/readonly %s → state %q", want, a.ReadOnly())
-		}
-		if !strings.Contains(strings.ToUpper(out), strings.ToUpper(want)) {
-			t.Errorf("/readonly %s: the line does not confirm the state: %q", want, out)
+// Each argument moves one setting and leaves the other alone. A first
+// draft made them one tri-state, so `off` disarmed a watcher nobody
+// asked to give up.
+func TestReadonlySetsEitherSettingIndependently(t *testing.T) {
+	cases := []struct {
+		input string
+		start sandbox.Ceiling
+		want  sandbox.Ceiling
+	}{
+		{"/readonly on", sandbox.Ceiling{Auto: true}, sandbox.Ceiling{ReadOnly: true, Auto: true}},
+		{"/readonly off", sandbox.Ceiling{ReadOnly: true, Auto: true}, sandbox.Ceiling{Auto: true}},
+		{"/readonly auto", sandbox.Ceiling{ReadOnly: true}, sandbox.Ceiling{ReadOnly: true, Auto: true}},
+		{"/readonly auto on", sandbox.Ceiling{}, sandbox.Ceiling{Auto: true}},
+		{"/readonly auto off", sandbox.Ceiling{ReadOnly: true, Auto: true}, sandbox.Ceiling{ReadOnly: true}},
+	}
+	for _, tc := range cases {
+		a := readOnlyAgent(t, tc.start)
+		readOnlySlash(t, a, tc.input, uitext.JA)
+		if got := a.CeilingState(); got != tc.want {
+			t.Errorf("%q from %+v → %+v, want %+v", tc.input, tc.start, got, tc.want)
 		}
 	}
 }
 
-// The ON line names the way back, because that is the state where the
-// operator may need it and the one they may not have set themselves.
+// The ON line names the way back: it is the state an operator may not
+// have set themselves, since the watcher can turn it on.
 func TestReadonlyOnNamesTheWayBack(t *testing.T) {
 	for _, lang := range []uitext.Lang{uitext.JA, uitext.EN} {
-		a := readOnlyAgent(t, sandbox.CeilingOn)
+		a := readOnlyAgent(t, sandbox.Ceiling{ReadOnly: true})
 		if out := readOnlySlash(t, a, "/readonly", lang); !strings.Contains(out, "/readonly off") {
 			t.Errorf("%v: ON does not name the way back: %q", lang, out)
 		}
 	}
 }
 
-func TestReadonlyRejectsAnUnknownStateWithoutChangingAnything(t *testing.T) {
-	a := readOnlyAgent(t, sandbox.CeilingOn)
-	out := readOnlySlash(t, a, "/readonly maybe", uitext.EN)
-	if !strings.Contains(out, "/readonly on|off|auto") {
-		t.Errorf("no usage line: %q", out)
-	}
-	if a.ReadOnly() != sandbox.CeilingOn {
-		t.Errorf("an unknown state moved the ceiling to %q", a.ReadOnly())
+func TestReadonlyRejectsUnknownArgumentsWithoutChangingAnything(t *testing.T) {
+	for _, input := range []string{"/readonly maybe", "/readonly on auto", "/readonly auto maybe"} {
+		start := sandbox.Ceiling{ReadOnly: true, Auto: true}
+		a := readOnlyAgent(t, start)
+		out := readOnlySlash(t, a, input, uitext.EN)
+		if !strings.Contains(out, "/readonly on|off") {
+			t.Errorf("%q: no usage line: %q", input, out)
+		}
+		if a.CeilingState() != start {
+			t.Errorf("%q moved the state to %+v", input, a.CeilingState())
+		}
 	}
 }

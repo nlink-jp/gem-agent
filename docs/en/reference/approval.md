@@ -314,11 +314,17 @@ questions above have nobody to answer them.
 `--auto-read-only` override it for one run, and `/readonly on|off|auto`
 changes it in a session:
 
-| state | ceiling | who moves it |
+Two independent settings, not one three-way switch:
+
+| setting | values | who moves it |
 |---|---|---|
-| `off` (default) | `operator` | nobody — today's behaviour, and it costs nothing |
-| `on` | `read` | you |
-| `auto` | starts at `operator` | you, **and** the runtime — which may tighten it to `read` on its own, and never loosens it |
+| the **ceiling** | `operator` (default) or `read` | you — and the watcher, upward only |
+| the **watcher** | off (default) or armed | you |
+
+Neither touches the other. Arming the watcher restricts nothing yet;
+a ceiling you lift leaves it armed, so the next time you ask for a
+read-only session it is caught the same way; and disarming it does not
+lift a ceiling already in force.
 
 In the `auto` state, once per turn a separate evaluation reads the
 message you typed and decides whether you asked for a session that

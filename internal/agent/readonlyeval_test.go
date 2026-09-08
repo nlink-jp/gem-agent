@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
-	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
@@ -32,7 +31,7 @@ func readOnlyEvalAgent(t *testing.T, b *autoBackend, state string) *Agent {
 		t.Fatal(err)
 	}
 	return New(Options{Backend: b, Registry: reg, Gate: &recordingGate{}, System: "s",
-		MaxTurns: 5, AutoApprove: true, ReadOnly: state})
+		MaxTurns: 5, AutoApprove: true, Ceiling: ceilingFor(state)})
 }
 
 func TestReadOnlyReachesTheEvaluator(t *testing.T) {
@@ -41,11 +40,11 @@ func TestReadOnlyReachesTheEvaluator(t *testing.T) {
 		state string
 		want  bool
 	}{
-		{sandbox.CeilingOn, true},
-		{sandbox.CeilingOff, false},
+		{"on", true},
+		{"off", false},
 		// Auto has not tightened, so the session is not read-only and
 		// the evaluator must not be told that it is.
-		{sandbox.CeilingAuto, false},
+		{"auto", false},
 	} {
 		t.Run(tc.state, func(t *testing.T) {
 			b := &autoBackend{
@@ -86,7 +85,7 @@ func TestReadOnlyEvidenceStatesIntentNotEnforcement(t *testing.T) {
 		},
 		verdict: okVerdict,
 	}
-	a := readOnlyEvalAgent(t, b, sandbox.CeilingOn)
+	a := readOnlyEvalAgent(t, b, "on")
 	if _, err := a.Run(context.Background(), "整理して", nil); err != nil {
 		t.Fatal(err)
 	}

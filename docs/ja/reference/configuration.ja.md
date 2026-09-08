@@ -55,7 +55,8 @@ shell_timeout_sec = 120    # デフォルト
 auto_approve = false       # デフォルト; 起動時から自動承認モードにする
 auto_compact = true        # デフォルト; ウィンドウ接近時に古い履歴を要約
 compact_at_pct = 80        # デフォルト; 発動するウィンドウ占有率
-read_only = "off"          # デフォルト; セッションのレーン上限: "off" | "on" | "auto"
+read_only = false          # デフォルト; セッションを read レーンに抑える
+read_only_auto = false     # デフォルト; 打った内容からランタイムが上限を上げるのを許す
 
 [mcp]
 enabled = true             # デフォルト; false で全 MCP サーバーを無効化

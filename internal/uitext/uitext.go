@@ -228,7 +228,10 @@ type Messages struct {
 	Help    string // the full /help text
 	AutoOn  string
 	AutoOff string
-	// ReadOnlyOn/Off/Auto describe the state, not a transition, and
+	// ReadOnlyOn/Off is the ceiling and ReadOnlyAuto is the watcher —
+	// two independent settings, so /readonly prints one line each and
+	// the watcher line only when it is armed (ADR-0080 §1).
+	// They describe the state, not a transition, and
 	// only the states that constrain explain themselves: OFF is the
 	// default, so "this session may change things" said something
 	// obvious in a way that read as a puzzle (operator report).
@@ -452,7 +455,7 @@ var en = Messages{
   /tools     list tools and each one's current approval gate
   /mcp       list connected MCP servers (/mcp reload reconnects)
   /auto      toggle auto-approve (shift+tab, works mid-run)
-  /readonly  read-only session: on|off|auto (no argument shows the state)
+  /readonly  read-only: on|off · auto on|off arms the watcher · bare shows both
   /compact   summarise the older half of the conversation
   /settings  view and edit settings, with provenance
   /riskbook  view the risk rules; /riskbook learn drafts them from your answers
@@ -488,8 +491,8 @@ keys:
 	CeilingMemoryFmt:       "this session is capped at the %s lane, and a memory write changes what every later session trusts",
 	ReadOnlyOn:             "read-only mode: ON — nothing outside the session scratch changes; /readonly off lifts it\n",
 	ReadOnlyOff:            "read-only mode: OFF\n",
-	ReadOnlyAuto:           "read-only mode: AUTO — OFF for now; it turns ON by itself when you ask for a read-only session\n",
-	ReadOnlyUsage:          "usage: /readonly on|off|auto (no argument shows the current state)\n",
+	ReadOnlyAuto:           "auto read-only: ON — it turns read-only on by itself when you ask for a read-only session\n",
+	ReadOnlyUsage:          "usage: /readonly on|off (the ceiling) · /readonly auto on|off (the watcher) · no argument shows both\n",
 	ReadOnlyAutoOnFmt:      "You asked for %q, so this session is now read-only. /readonly off lifts it",
 	ReadOnlyAutoOnPlain:    "This reads as a read-only session, so it is now read-only. /readonly off lifts it",
 	HistoryCleared:         "history cleared — the next message starts a fresh conversation\n",
@@ -636,7 +639,7 @@ var ja = Messages{
   /tools     ツール一覧と各ツールの現在の承認ゲート
   /mcp       接続中の MCP サーバー一覧（/mcp reload で再接続）
   /auto      auto-approve 切替（shift+tab でも可・実行中も有効）
-  /readonly  読み取り専用セッション: on|off|auto（引数なしで状態表示）
+  /readonly  読み取り専用: on|off・auto on|off で自動切り替え・引数なしで両方表示
   /compact   会話の古い半分を要約
   /settings  設定の表示と編集（出所つき）
   /riskbook  リスクルールの表示。/riskbook learn は回答記録から起草
@@ -672,8 +675,8 @@ var ja = Messages{
 	CeilingMemoryFmt:       "このセッションは %s レーンに抑えられていますが、メモリ書込は後続の全セッションが信頼するものを変えます",
 	ReadOnlyOn:             "読み取り専用モード: ON — スクラッチの外は変更しません。解除は /readonly off\n",
 	ReadOnlyOff:            "読み取り専用モード: OFF\n",
-	ReadOnlyAuto:           "読み取り専用モード: AUTO — 今は OFF。読み取り専用の依頼を打つと自動で ON になります\n",
-	ReadOnlyUsage:          "使い方: /readonly on|off|auto（引数なしで現在の状態を表示）\n",
+	ReadOnlyAuto:           "自動切り替え: ON — 読み取り専用の依頼を打つと自動で ON になります\n",
+	ReadOnlyUsage:          "使い方: /readonly on|off（上限）・/readonly auto on|off（自動切り替え）・引数なしで両方表示\n",
 	ReadOnlyAutoOnFmt:      "%q という依頼のため、読み取り専用モードに切り替えました。解除は /readonly off",
 	ReadOnlyAutoOnPlain:    "読み取り専用の依頼と判断し、読み取り専用モードに切り替えました。解除は /readonly off",
 	HistoryCleared:         "履歴をクリアしました — 次のメッセージから新しい会話が始まります\n",

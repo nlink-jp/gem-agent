@@ -189,7 +189,7 @@ type Options struct {
 	// and a lift the operator approved — and two of them are inside the
 	// agent, so a mirror would need three notifications to stay true.
 	// nil means the footer never shows it.
-	ReadOnlyState func() string
+	ReadOnlyState func() sandbox.Ceiling
 	ToggleAuto    func() bool
 	// CompletePath returns candidate project paths for an @-reference
 	// prefix (Tab completion in the input box).
@@ -289,7 +289,7 @@ type Model struct {
 	slash           SlashHandler
 	toggleAuto      func() bool
 	autoMode        bool
-	readOnlyState   func() string
+	readOnlyState   func() sandbox.Ceiling
 	completePath    func(prefix string) []string
 	completeSlashFn func(prefix string) []string
 	baseCtx         context.Context
@@ -2161,7 +2161,7 @@ func (m Model) footer() string {
 	// The ceiling in force, in the accent color for the same reason auto
 	// mode is: it changes what runs. Only "on" shows — "auto" has no
 	// ceiling yet, and the banner is where that fact lives (ADR-0078).
-	if m.readOnlyState != nil && m.readOnlyState() == sandbox.CeilingOn {
+	if m.readOnlyState != nil && m.readOnlyState().ReadOnly {
 		line = m.st.tool.Render("🔒read-only") + m.st.hint.Render(" · ") + line
 	}
 	if m.autoMode {

@@ -19,6 +19,18 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
+// ceilingFor keeps the tests reading in the operator's three words
+// while the runtime holds the two independent bits behind them.
+func ceilingFor(state string) sandbox.Ceiling {
+	switch state {
+	case "on":
+		return sandbox.Ceiling{ReadOnly: true}
+	case "auto":
+		return sandbox.Ceiling{Auto: true}
+	}
+	return sandbox.Ceiling{}
+}
+
 func ceilingAgent(t *testing.T, state string, extra ...*tools.Tool) *Agent {
 	t.Helper()
 	dir := t.TempDir()
@@ -37,7 +49,7 @@ func ceilingAgent(t *testing.T, state string, extra ...*tools.Tool) *Agent {
 		}
 	}
 	return New(Options{Backend: &mockBackend{}, Registry: reg, Gate: &recordingGate{},
-		System: "s", MaxTurns: 5, ReadOnly: state})
+		System: "s", MaxTurns: 5, Ceiling: ceilingFor(state)})
 }
 
 func shellLane(command, access string) llm.ToolCall {
@@ -82,17 +94,17 @@ func TestCeilingRefusesWhatNeedsAHigherLane(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			a := ceilingAgent(t, sandbox.CeilingOn, mcp, mem)
+			a := ceilingAgent(t, "on", mcp, mem)
 			if got := a.decide(tc.call).OverCeiling; got != tc.refused {
 				t.Errorf("read-only: OverCeiling = %v, want %v", got, tc.refused)
 			}
 			// With no ceiling nothing is over it, whatever the call.
-			off := ceilingAgent(t, sandbox.CeilingOff, mcp, mem)
+			off := ceilingAgent(t, "off", mcp, mem)
 			if off.decide(tc.call).OverCeiling {
 				t.Errorf("ceiling off: %s was refused anyway", tc.name)
 			}
 			// The auto state has not tightened yet, so it is off too.
-			auto := ceilingAgent(t, sandbox.CeilingAuto, mcp, mem)
+			auto := ceilingAgent(t, "auto", mcp, mem)
 			if auto.decide(tc.call).OverCeiling {
 				t.Errorf("auto (untightened): %s was refused anyway", tc.name)
 			}
@@ -129,7 +141,7 @@ func (g *liftGate) ApproveLift(name, detail, purpose, reason string) (bool, stri
 // asked again: a model pushed by a poisoned tool result must not be able
 // to raise one prompt per proposed write (ADR-0080 §4).
 func TestCeilingLiftDeclinedIsNotAskedTwiceInATurn(t *testing.T) {
-	a := ceilingAgent(t, sandbox.CeilingOn)
+	a := ceilingAgent(t, "on")
 	gate := &liftGate{answer: false}
 	a.gate = gate
 
@@ -158,8 +170,8 @@ func TestCeilingLiftDeclinedIsNotAskedTwiceInATurn(t *testing.T) {
 	if denied || out == deniedResult {
 		t.Error("a ceiling refusal was reported as an operator denial")
 	}
-	if a.ReadOnly() != sandbox.CeilingOn {
-		t.Errorf("the ceiling moved on a declined lift: %q", a.ReadOnly())
+	if !a.CeilingState().ReadOnly {
+		t.Errorf("the ceiling moved on a declined lift: %+v", a.CeilingState())
 	}
 
 	if _, _, _, _, err := a.execCallInner(context.Background(), shellLane("touch y", "write")); err != nil {
@@ -173,7 +185,7 @@ func TestCeilingLiftDeclinedIsNotAskedTwiceInATurn(t *testing.T) {
 // Approving is a mode change, and the call the operator was shown then
 // proceeds without a second prompt about the same thing.
 func TestCeilingLiftApprovedTurnsTheModeOff(t *testing.T) {
-	a := ceilingAgent(t, sandbox.CeilingOn)
+	a := ceilingAgent(t, "on")
 	gate := &liftGate{answer: true}
 	a.gate = gate
 
@@ -183,8 +195,8 @@ func TestCeilingLiftApprovedTurnsTheModeOff(t *testing.T) {
 	if len(gate.asked) != 1 {
 		t.Errorf("asked %d times, want 1: %v", len(gate.asked), gate.asked)
 	}
-	if a.ReadOnly() != sandbox.CeilingOff {
-		t.Fatalf("the mode did not change: %q", a.ReadOnly())
+	if a.CeilingState().ReadOnly {
+		t.Fatalf("the mode did not change: %+v", a.CeilingState())
 	}
 	// What follows is an ordinary session again: in the default mode a
 	// mutating call still asks, but as itself — not as another lift.
@@ -202,7 +214,7 @@ func TestCeilingLiftApprovedTurnsTheModeOff(t *testing.T) {
 // A floor is a different question and is asked on its own terms: the
 // lift does not carry a Block-tier call past the floor that stops it.
 func TestCeilingLiftDoesNotCarryACallPastAFloor(t *testing.T) {
-	a := ceilingAgent(t, sandbox.CeilingOn)
+	a := ceilingAgent(t, "on")
 	gate := &liftGate{answer: true}
 	a.gate = gate
 	if _, _, _, _, err := a.execCallInner(context.Background(), shellLane("sudo rm -rf /", "write")); err != nil {
@@ -219,19 +231,50 @@ func TestCeilingLiftDoesNotCarryACallPastAFloor(t *testing.T) {
 	}
 }
 
-// The state is the operator's, and reading it back is how the status
-// line and the evaluator payload stay honest about which one is on.
-func TestCeilingStateRoundTrips(t *testing.T) {
-	a := ceilingAgent(t, "")
-	if a.ReadOnly() != sandbox.CeilingOff || a.Ceiling() != sandbox.LaneOperator {
-		t.Fatalf("empty state = %q / %v", a.ReadOnly(), a.Ceiling())
+// The ceiling and the watcher are independent, and both directions of
+// that matter (ADR-0080 §1). A first draft made them one tri-state, so
+// tightening destroyed the fact that the session was watching and
+// lifting silently disarmed the watcher the operator had asked for.
+func TestCeilingAndWatcherAreIndependent(t *testing.T) {
+	a := ceilingAgent(t, "auto")
+	if c := a.CeilingState(); c.ReadOnly || !c.Auto {
+		t.Fatalf("start = %+v, want the watcher armed and no ceiling", c)
 	}
-	a.SetReadOnly(sandbox.CeilingOn)
-	if a.ReadOnly() != sandbox.CeilingOn || a.Ceiling() != sandbox.LaneRead {
-		t.Fatalf("on = %q / %v", a.ReadOnly(), a.Ceiling())
+	// Raising the ceiling — however it happens — leaves the watcher.
+	a.SetReadOnly(true)
+	if c := a.CeilingState(); !c.ReadOnly || !c.Auto {
+		t.Errorf("after tightening = %+v, want both", c)
 	}
-	a.SetReadOnly(sandbox.CeilingOff)
+	// And lifting it leaves the watcher armed, so a later read-only
+	// request is caught the same way the first one was.
+	a.SetReadOnly(false)
+	if c := a.CeilingState(); c.ReadOnly || !c.Auto {
+		t.Errorf("after lifting = %+v, want the watcher still armed", c)
+	}
+	// Disarming does not lift a ceiling in force, either.
+	a.SetReadOnly(true)
+	a.SetReadOnlyAuto(false)
+	if c := a.CeilingState(); !c.ReadOnly || c.Auto {
+		t.Errorf("after disarming = %+v, want the ceiling kept", c)
+	}
+	if a.Ceiling() != sandbox.LaneRead {
+		t.Errorf("lane = %v, want read", a.Ceiling())
+	}
+	a.SetReadOnly(false)
 	if a.Ceiling() != sandbox.LaneOperator {
-		t.Fatalf("off = %v", a.Ceiling())
+		t.Errorf("lane = %v, want operator", a.Ceiling())
+	}
+}
+
+// An approved lift moves the ceiling and nothing else.
+func TestCeilingLiftLeavesTheWatcherArmed(t *testing.T) {
+	a := ceilingAgent(t, "auto")
+	a.SetReadOnly(true)
+	a.gate = &liftGate{answer: true}
+	if _, _, _, _, err := a.execCallInner(context.Background(), writeCall("f.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if c := a.CeilingState(); c.ReadOnly || !c.Auto {
+		t.Errorf("after an approved lift = %+v, want the watcher still armed", c)
 	}
 }

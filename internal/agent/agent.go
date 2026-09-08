@@ -93,10 +93,12 @@ type Agent struct {
 	gate     Approver
 	log      SessionLog
 	model    string // for the accounting records only (ADR-0057)
-	// readOnly is the lane-ceiling state, read and written under mu:
-	// /readonly changes it mid-session, and in the auto state the
-	// runtime tightens it (never the other way — ADR-0080 §2).
-	readOnly string
+	// ceiling is the lane ceiling and its watcher, read and written
+	// under mu: /readonly changes either, and the watcher raises the
+	// ceiling (never lowers it — ADR-0080 §2). The two are independent,
+	// so raising the ceiling leaves the watcher armed and lifting it
+	// does not disarm what the operator asked for.
+	ceiling sandbox.Ceiling
 	// liftDeclined records that the operator refused to lift the ceiling
 	// this turn; it is reset at the start of each turn.
 	liftDeclined bool
@@ -231,9 +233,9 @@ type Options struct {
 	// calls that never hit the approval prompt (a silent pause reads as
 	// a hang).
 	OnToolCall func(tc llm.ToolCall)
-	// ReadOnly is the session's starting lane-ceiling state (ADR-0080):
-	// sandbox.CeilingOff, CeilingOn or CeilingAuto. Empty means off.
-	ReadOnly string
+	// Ceiling is the session's starting lane ceiling and watcher
+	// (ADR-0080 §1). The zero value is today's behaviour.
+	Ceiling sandbox.Ceiling
 	// Model names the model these calls bill against. Record-keeping
 	// only (ADR-0057): it goes into the usage records so a transcript
 	// can be priced without joining the header, and into an
@@ -339,7 +341,7 @@ func New(opts Options) *Agent {
 		gate:          opts.Gate,
 		log:           opts.Log,
 		model:         opts.Model,
-		readOnly:      opts.ReadOnly,
+		ceiling:       opts.Ceiling,
 		system:        opts.System,
 		maxTurns:      opts.MaxTurns,
 		onToolCall:    opts.OnToolCall,
@@ -591,29 +593,33 @@ func (a *Agent) learnKey(tc llm.ToolCall) string {
 	return key
 }
 
-// ReadOnly reports the lane-ceiling state (ADR-0080 §1).
-func (a *Agent) ReadOnly() string {
+// CeilingState reports the lane ceiling and its watcher (ADR-0080 §1).
+func (a *Agent) CeilingState() sandbox.Ceiling {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.readOnly == "" {
-		return sandbox.CeilingOff
-	}
-	return a.readOnly
+	return a.ceiling
 }
 
-// SetReadOnly changes the ceiling state. Loosening is the operator's
-// act: nothing inside the runtime calls this with a weaker state
-// (ADR-0080 §2).
-func (a *Agent) SetReadOnly(state string) {
+// SetReadOnly turns the ceiling on or off, leaving the watcher alone.
+// Lowering it is the operator's act: nothing inside the runtime calls
+// this with false (ADR-0080 §2).
+func (a *Agent) SetReadOnly(on bool) {
 	a.mu.Lock()
-	a.readOnly = state
+	a.ceiling.ReadOnly = on
 	a.mu.Unlock()
 }
 
-// Ceiling is the highest lane this session may reach. Read-only is the
-// read lane; every other state leaves the operator lane, which bounds
-// nothing (ADR-0080 §1).
-func (a *Agent) Ceiling() sandbox.Lane { return sandbox.CeilingFor(a.ReadOnly()) }
+// SetReadOnlyAuto arms or disarms the watcher, leaving the ceiling
+// alone. Disarming does not lift a ceiling already in force, and
+// arming does not raise one.
+func (a *Agent) SetReadOnlyAuto(on bool) {
+	a.mu.Lock()
+	a.ceiling.Auto = on
+	a.mu.Unlock()
+}
+
+// Ceiling is the highest lane this session may reach.
+func (a *Agent) Ceiling() sandbox.Lane { return a.CeilingState().Lane() }
 
 // AutoCompact reports whether automatic compaction is on.
 func (a *Agent) AutoCompact() bool {
@@ -1266,7 +1272,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		// is not a call (ADR-0080 §4).
 		a.logRecord("ceiling_refused", map[string]any{
 			"name": tc.Name, "lane": a.laneOf(tc),
-			"ceiling": a.Ceiling().String(), "state": a.ReadOnly(),
+			"ceiling": a.Ceiling().String(), "auto": a.CeilingState().Auto,
 			"reason": d.CeilingReason,
 		})
 		refused := "error: " + d.CeilingReason + ". The operator can lift it with /readonly off"
@@ -1284,9 +1290,12 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			}
 			return refused, false, false, floorRan, nil
 		}
-		a.SetReadOnly(sandbox.CeilingOff)
+		// The ceiling only. The watcher the operator armed stays armed,
+		// so a later read-only request is caught the same way the first
+		// one was (ADR-0080 §1).
+		a.SetReadOnly(false)
 		a.logRecord("mode_change", map[string]any{
-			"setting": "read_only", "to": sandbox.CeilingOff, "by": "operator", "at": tc.Name,
+			"setting": "read_only", "to": "off", "by": "operator", "at": tc.Name,
 		})
 		a.telemetry.Approval(tc.Name, "approved", "operator", true, d.CeilingReason, a.laneOf(tc))
 		// The ceiling is gone, so the ordinary rules decide this call

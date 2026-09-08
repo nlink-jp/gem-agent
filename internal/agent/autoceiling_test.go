@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
-	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
@@ -58,7 +57,7 @@ func autoCeilingAgentIn(t *testing.T, b llm.Backend, state string, lang uitext.L
 	}
 	var notices []string
 	a := New(Options{Backend: b, Registry: reg, Gate: &recordingGate{}, System: "s",
-		MaxTurns: 3, ReadOnly: state, Msgs: uitext.For(lang),
+		MaxTurns: 3, Ceiling: ceilingFor(state), Msgs: uitext.For(lang),
 		OnNotice: func(m string) { notices = append(notices, m) }})
 	return a, &notices
 }
@@ -74,12 +73,12 @@ func TestAutoCeilingTightensAndSaysWhy(t *testing.T) {
 		{uitext.JA, "読み取り専用モードに切り替えました"},
 	} {
 		b := &ceilingBackend{verdict: `{"read_only": true, "quote": "変更はしないで"}`}
-		a, notices := autoCeilingAgentIn(t, b, sandbox.CeilingAuto, tc.lang)
+		a, notices := autoCeilingAgentIn(t, b, "auto", tc.lang)
 		if _, err := a.Run(context.Background(), "レビューして。変更はしないで", nil); err != nil {
 			t.Fatal(err)
 		}
-		if a.ReadOnly() != sandbox.CeilingOn {
-			t.Fatalf("%v: state = %q, want on", tc.lang, a.ReadOnly())
+		if !a.CeilingState().ReadOnly {
+			t.Fatalf("%v: state = %+v, want read-only", tc.lang, a.CeilingState())
 		}
 		if len(*notices) != 1 {
 			t.Fatalf("%v: notices = %v", tc.lang, *notices)
@@ -102,12 +101,12 @@ func TestAutoCeilingTightensAndSaysWhy(t *testing.T) {
 
 func TestAutoCeilingDoesNotTightenOnOrdinaryWork(t *testing.T) {
 	b := &ceilingBackend{verdict: `{"read_only": false}`}
-	a, notices := autoCeilingAgent(t, b, sandbox.CeilingAuto)
+	a, notices := autoCeilingAgent(t, b, "auto")
 	if _, err := a.Run(context.Background(), "テストが落ちるので直して", nil); err != nil {
 		t.Fatal(err)
 	}
-	if a.ReadOnly() != sandbox.CeilingAuto {
-		t.Errorf("state = %q, want auto", a.ReadOnly())
+	if a.CeilingState().ReadOnly {
+		t.Errorf("state = %+v, want auto", a.CeilingState())
 	}
 	if len(*notices) != 0 {
 		t.Errorf("said something with nothing to say: %v", *notices)
@@ -117,7 +116,7 @@ func TestAutoCeilingDoesNotTightenOnOrdinaryWork(t *testing.T) {
 // Off spends no tokens: the default costs nothing. On is already
 // tightened and has nothing to decide.
 func TestAutoCeilingRunsOnlyInTheAutoState(t *testing.T) {
-	for _, state := range []string{sandbox.CeilingOff, sandbox.CeilingOn, ""} {
+	for _, state := range []string{"off", "on", ""} {
 		b := &ceilingBackend{verdict: `{"read_only": true, "quote": "x"}`}
 		a, _ := autoCeilingAgent(t, b, state)
 		if _, err := a.Run(context.Background(), "レビューして。変更はしないで", nil); err != nil {
@@ -136,12 +135,12 @@ func TestAutoCeilingFailureLeavesTheStateAlone(t *testing.T) {
 		{err: context.DeadlineExceeded},
 		{verdict: "not json"},
 	} {
-		a, notices := autoCeilingAgent(t, b, sandbox.CeilingAuto)
+		a, notices := autoCeilingAgent(t, b, "auto")
 		if _, err := a.Run(context.Background(), "レビューして", nil); err != nil {
 			t.Fatal(err)
 		}
-		if a.ReadOnly() != sandbox.CeilingAuto {
-			t.Errorf("state = %q, want auto", a.ReadOnly())
+		if a.CeilingState().ReadOnly {
+			t.Errorf("state = %+v, want auto", a.CeilingState())
 		}
 		if len(*notices) != 0 {
 			t.Errorf("notices = %v", *notices)
@@ -153,18 +152,18 @@ func TestAutoCeilingFailureLeavesTheStateAlone(t *testing.T) {
 // turn that reads as ordinary work leaves it on.
 func TestAutoCeilingNeverLoosens(t *testing.T) {
 	b := &ceilingBackend{verdict: `{"read_only": true, "quote": "見るだけ"}`}
-	a, _ := autoCeilingAgent(t, b, sandbox.CeilingAuto)
+	a, _ := autoCeilingAgent(t, b, "auto")
 	if _, err := a.Run(context.Background(), "見るだけにして", nil); err != nil {
 		t.Fatal(err)
 	}
-	if a.ReadOnly() != sandbox.CeilingOn {
-		t.Fatalf("state = %q", a.ReadOnly())
+	if !a.CeilingState().ReadOnly {
+		t.Fatalf("state = %+v", a.CeilingState())
 	}
 	b.verdict = `{"read_only": false}`
 	if _, err := a.Run(context.Background(), "やっぱり直して", nil); err != nil {
 		t.Fatal(err)
 	}
-	if a.ReadOnly() != sandbox.CeilingOn {
-		t.Errorf("the runtime loosened the ceiling by itself: %q", a.ReadOnly())
+	if !a.CeilingState().ReadOnly {
+		t.Errorf("the runtime loosened the ceiling by itself: %+v", a.CeilingState())
 	}
 }

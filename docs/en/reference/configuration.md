@@ -56,7 +56,8 @@ shell_timeout_sec = 120    # default
 auto_approve = false       # default; start sessions in auto-approve mode
 auto_compact = true        # default; summarise older history near the window
 compact_at_pct = 80        # default; share of the window that triggers it
-read_only = "off"          # default; the session's lane ceiling: "off" | "on" | "auto"
+read_only = false          # default; cap the session at the read lane
+read_only_auto = false     # default; let the runtime raise the ceiling from what you type
 
 [mcp]
 enabled = true             # default; false disables ALL MCP servers

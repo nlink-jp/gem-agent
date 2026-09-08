@@ -164,7 +164,8 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	cfg, err := config.LoadWithOverrides(cfgPath, config.Overrides{
-		Model: flagModel, Thinking: flagThinking, MCP: flagMCP, Auto: flagAuto, ReadOnly: roFlag})
+		Model: flagModel, Thinking: flagThinking, MCP: flagMCP, Auto: flagAuto,
+		ReadOnly: roFlag, ReadOnlyAuto: flagAutoRO})
 	if err != nil {
 		return err
 	}
@@ -180,7 +181,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	autoOn := effectiveAuto(cfg.Agent.AutoApprove, oneShot, flagAuto)
 	// The ceiling this run starts with, resolved once for the same
 	// reason (ADR-0080 §1).
-	readOnlyState := effectiveReadOnly(cfg.Agent.ReadOnly, oneShot)
+	ceiling := effectiveCeiling(cfg.Agent.ReadOnly, cfg.Agent.ReadOnlyAuto, oneShot)
 	// UI language, resolved once (ADR-0029): the chrome that follows —
 	// prompts, TUI, slash output — is built with it.
 	uiLang := uitext.Resolve(cfg.TUI.Language, os.Getenv)
@@ -1001,7 +1002,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		RoundReview:  true,
 		OnRoundLimit: onRoundLimit,
 		AutoApprove:  autoOn,
-		ReadOnly:     readOnlyState,
+		Ceiling:      ceiling,
 		OnAutoDecision: func(tc llm.ToolCall, d agent.AutoDecision) {
 			if !d.Approved {
 				return // the escalation shows up in the approval prompt
@@ -1430,7 +1431,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// Same argument for the ceiling: one-shot has no footer to carry
 		// it and no /readonly to type, so the only place this fact can
 		// appear is here (ADR-0080 §1, ADR-0078's test for a line).
-		if ag.ReadOnly() == sandbox.CeilingOn {
+		if ag.CeilingState().ReadOnly {
 			fmt.Fprintln(stderr, banner.ReadOnlyOneShotLine())
 		}
 		// Piped stdin becomes a nonce-wrapped data attachment
@@ -1499,7 +1500,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		SandboxOn: registry.Confined(), ReadLane: registry.ReadLane(),
 		ReadLanePrompts: cfg.Sandbox.ReadLanePrompts,
 		AutoApprove:     ag.AutoApprove(),
-		ReadOnly:        ag.ReadOnly(),
+		ReadOnly:        ag.CeilingState(),
 		Notes:           warnLines,
 	})
 
@@ -1526,7 +1527,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			Banner:        bannerLines,
 			InitialInput:  initialInput,
 			AutoMode:      ag.AutoApprove(),
-			ReadOnlyState: ag.ReadOnly,
+			ReadOnlyState: ag.CeilingState,
 			ToggleAuto: func() bool {
 				ag.SetAutoApprove(!ag.AutoApprove())
 				return ag.AutoApprove()
@@ -1878,45 +1879,40 @@ func effectiveAuto(cfgAuto, oneShot, flagAuto bool) bool {
 // from the prompt's wording, or a scheduled job's write access would
 // become a function of that text (§2).
 func readOnlyOverride(writable, readOnly, autoRO, oneShot bool) (string, error) {
-	given := 0
-	for _, on := range []bool{writable, readOnly, autoRO} {
-		if on {
-			given++
-		}
+	// --writable and --read-only are the two ends of one setting.
+	// --auto-read-only is a different setting, so it composes with
+	// either: "start writable, and watch" is a sentence.
+	if writable && readOnly {
+		return "", errors.New("--writable and --read-only are the two ends of one setting; pass at most one")
 	}
-	if given > 1 {
-		return "", errors.New("--writable, --read-only and --auto-read-only are three states of one setting; pass at most one")
+	if autoRO && oneShot {
+		return "", errors.New("--auto-read-only needs a session to watch; in -p pass --read-only, or --writable to say so")
 	}
 	switch {
-	case autoRO && oneShot:
-		return "", errors.New("--auto-read-only needs a session to watch; in -p pass --read-only, or --writable to say so")
-	case autoRO:
-		return config.ReadOnlyAuto, nil
 	case readOnly:
-		return config.ReadOnlyOn, nil
+		return "on", nil
 	case writable:
-		return config.ReadOnlyOff, nil
+		return "off", nil
 	}
 	return "", nil
 }
 
-// effectiveReadOnly is the ceiling the run actually starts with.
+// effectiveCeiling is the ceiling and watcher the run actually starts
+// with. They are independent settings, so they resolve independently —
+// except in one-shot, where there is no watcher to arm.
 //
-// A configured "auto" is read as "on" in one-shot. Of the two available
-// readings only that one errs the way the rest of ADR-0080 errs:
-// ignoring it would drop a restriction the operator asked for, silently,
-// in the one context with nobody watching. Reading it as "on" refuses
-// the write instead and forces the run that wants it to say --writable
-// on its own command line — which is where ADR-0053 §1 requires a grant
-// to be visible.
-func effectiveReadOnly(cfgValue string, oneShot bool) string {
-	if cfgValue == "" {
-		return config.ReadOnlyOff
+// A configured watcher is read there as a ceiling instead. Of the two
+// available readings only that one errs the way the rest of ADR-0080
+// errs: dropping it would lose a restriction the operator asked for,
+// silently, in the one context with nobody watching. Turning the
+// ceiling on refuses the write instead and forces the run that wants it
+// to say --writable on its own command line — which is where ADR-0053
+// §1 requires a grant to be visible.
+func effectiveCeiling(readOnly, auto, oneShot bool) sandbox.Ceiling {
+	if oneShot {
+		return sandbox.Ceiling{ReadOnly: readOnly || auto}
 	}
-	if oneShot && cfgValue == config.ReadOnlyAuto {
-		return config.ReadOnlyOn
-	}
-	return cfgValue
+	return sandbox.Ceiling{ReadOnly: readOnly, Auto: auto}
 }
 
 // ApproveLift refuses in one-shot: there is nobody to ask, so the
@@ -2386,24 +2382,43 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 			b.WriteString(msgs.AutoOff)
 		}
 	case "/readonly":
-		// The ceiling is the operator's own state (ADR-0080 §1). Nothing
-		// in the runtime loosens it; this is where they do.
-		state := ag.ReadOnly()
-		if sub != "" {
-			if !sandbox.ValidCeiling(sub) {
+		// Two independent settings (ADR-0080 §1): the ceiling in force,
+		// and the watcher that may raise it. `on`/`off` move the first,
+		// `auto on`/`auto off` the second, and neither touches the
+		// other — a lift that disarmed the watcher would take away
+		// something the operator never asked to give up. Nothing in the
+		// runtime lowers the ceiling; this is where they do.
+		arg2 := ""
+		if len(fields) > 2 {
+			arg2 = fields[2]
+		}
+		switch {
+		case sub == "":
+		case sub == "on" || sub == "off":
+			if arg2 != "" {
 				b.WriteString(msgs.ReadOnlyUsage)
 				break
 			}
-			state = sub
-			ag.SetReadOnly(state)
-		}
-		switch state {
-		case sandbox.CeilingOn:
-			b.WriteString(msgs.ReadOnlyOn)
-		case sandbox.CeilingAuto:
-			b.WriteString(msgs.ReadOnlyAuto)
+			ag.SetReadOnly(sub == "on")
+		case sub == "auto" && (arg2 == "" || arg2 == "on"):
+			ag.SetReadOnlyAuto(true)
+		case sub == "auto" && arg2 == "off":
+			ag.SetReadOnlyAuto(false)
 		default:
-			b.WriteString(msgs.ReadOnlyOff)
+			b.WriteString(msgs.ReadOnlyUsage)
+		}
+		if b.Len() == 0 {
+			c := ag.CeilingState()
+			if c.ReadOnly {
+				b.WriteString(msgs.ReadOnlyOn)
+			} else {
+				b.WriteString(msgs.ReadOnlyOff)
+			}
+			// Only when armed: off is the default and the line would say
+			// nothing the absence does not.
+			if c.Auto {
+				b.WriteString(msgs.ReadOnlyAuto)
+			}
 		}
 	case "/usage":
 		b.WriteString(usage())
