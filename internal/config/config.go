@@ -5,6 +5,7 @@ package config
 
 import (
 	"github.com/nlink-jp/gem-agent/internal/bounded"
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
 
 	"fmt"
 	"os"
@@ -284,7 +285,29 @@ type AgentConfig struct {
 	// CompactAtPct is the share of the model's input window at which
 	// compaction fires.
 	CompactAtPct int `toml:"compact_at_pct"`
+	// ReadOnly is the session's starting lane ceiling (ADR-0080), on an
+	// axis of its own: auto-approve decides who answers the gate, this
+	// decides what the session may reach at all. ReadOnlyOff is the
+	// operator lane and today's behaviour; ReadOnlyOn is the read lane,
+	// where the session may not change anything; ReadOnlyAuto starts at
+	// off and lets the runtime tighten it to on from what the operator
+	// types — never the other way, because a derived constraint that can
+	// loosen is a derived permission.
+	ReadOnly string `toml:"read_only"`
 }
+
+// The [agent].read_only states. One enumeration, defined beside the
+// Lane it caps (ADR-0080 §1) — a second copy here would be a list to
+// keep in agreement.
+const (
+	ReadOnlyOff  = sandbox.CeilingOff
+	ReadOnlyOn   = sandbox.CeilingOn
+	ReadOnlyAuto = sandbox.CeilingAuto
+)
+
+// ValidReadOnly reports whether s names a read_only state. Empty means
+// the default, which is off.
+func ValidReadOnly(s string) bool { return sandbox.ValidCeiling(s) }
 
 // HooksConfig holds operator hooks: pre-tool (ADR-0044) and the two
 // context events, session start and prompt submit (ADR-0069). Global
@@ -328,11 +351,12 @@ func defaults() Config {
 		// gemini-3.7-flash, re-measured 2026-09-04 with gemini-3.8-flash:
 		// global and "us" answer, us-central1 404s). Gemini 2.5 users
 		// set a regional location.
-		GCP:       GCPConfig{Location: "global"},
-		Model:     ModelConfig{Safety: "default"},
-		Sandbox:   SandboxConfig{Enabled: true},
-		Approval:  ApprovalConfig{PinTrustedFiles: true},
-		Agent:     AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120, AutoCompact: true, CompactAtPct: 80},
+		GCP:      GCPConfig{Location: "global"},
+		Model:    ModelConfig{Safety: "default"},
+		Sandbox:  SandboxConfig{Enabled: true},
+		Approval: ApprovalConfig{PinTrustedFiles: true},
+		Agent: AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120, AutoCompact: true,
+			CompactAtPct: 80, ReadOnly: ReadOnlyOff},
 		MCP:       MCPConfig{Enabled: true, CallTimeoutSec: 60},
 		TUI:       TUIConfig{Theme: "auto", Language: "auto", ShowThoughts: true},
 		Telemetry: TelemetryConfig{Backend: "gcp", Endpoint: "localhost:4317"},
@@ -353,6 +377,12 @@ type Overrides struct {
 	// child is spawned; "on" forces MCP against a config that
 	// disables it. Empty means the flag was not given.
 	MCP string
+	// ReadOnly overrides [agent].read_only for this run (ADR-0080):
+	// one of the three states, or empty when no flag was given. Unlike
+	// Auto this is not one-way — --writable exists precisely so a run
+	// can step out of a configured "on" or "auto", per invocation and
+	// visibly.
+	ReadOnly string
 	// Auto arms auto-approve for this run (ADR-0053). One-way: the
 	// flag can only arm, so false simply means "flag not given" and
 	// the config value stands.
@@ -422,6 +452,14 @@ func LoadWithOverrides(path string, ov Overrides) (*Config, error) {
 		cfg.Agent.AutoApprove = true
 		cfg.note("agent.auto_approve", FromFlag)
 	}
+	if ov.ReadOnly != "" {
+		if !ValidReadOnly(ov.ReadOnly) {
+			return nil, fmt.Errorf("read-only state must be %q, %q or %q (got %q)",
+				ReadOnlyOff, ReadOnlyOn, ReadOnlyAuto, ov.ReadOnly)
+		}
+		cfg.Agent.ReadOnly = ov.ReadOnly
+		cfg.note("agent.read_only", FromFlag)
+	}
 
 	if err := cfg.validate(); err != nil {
 		return nil, err
@@ -457,7 +495,7 @@ var trackedKeys = []string{
 	"sandbox.enabled", "sandbox.read_lane_deny_exec", "sandbox.read_lane_prompts",
 	"approval.pin_trusted_files",
 	"agent.max_turns", "agent.shell_timeout_sec", "agent.auto_approve",
-	"agent.auto_compact", "agent.compact_at_pct",
+	"agent.auto_compact", "agent.compact_at_pct", "agent.read_only",
 	"mcp.enabled", "mcp.call_timeout_sec",
 	"tui.theme", "tui.language", "tui.show_thoughts",
 	"telemetry.enabled", "telemetry.backend", "telemetry.endpoint", "telemetry.insecure",
@@ -530,6 +568,10 @@ func (c *Config) validate() error {
 	// failed, which is too late to help.
 	if c.Agent.CompactAtPct < 10 || c.Agent.CompactAtPct > 99 {
 		return fmt.Errorf("[agent].compact_at_pct must be between 10 and 99 (got %d)", c.Agent.CompactAtPct)
+	}
+	if !ValidReadOnly(c.Agent.ReadOnly) {
+		return fmt.Errorf("[agent].read_only must be %q, %q or %q (got %q)",
+			ReadOnlyOff, ReadOnlyOn, ReadOnlyAuto, c.Agent.ReadOnly)
 	}
 	if !ValidThinking(c.Model.Thinking) {
 		return fmt.Errorf("[model].thinking must be minimal, low, medium, or high (got %q; empty means the model default)", c.Model.Thinking)

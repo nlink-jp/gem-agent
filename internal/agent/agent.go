@@ -17,6 +17,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mention"
 	"github.com/nlink-jp/gem-agent/internal/policy"
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/telemetry"
 	"github.com/nlink-jp/gem-agent/internal/tools"
@@ -84,6 +85,10 @@ type Agent struct {
 	gate     Approver
 	log      SessionLog
 	model    string // for the accounting records only (ADR-0057)
+	// readOnly is the lane-ceiling state, read and written under mu:
+	// /readonly changes it mid-session, and in the auto state the
+	// runtime tightens it (never the other way — ADR-0080 §2).
+	readOnly string
 	system   string
 	maxTurns int
 
@@ -215,6 +220,9 @@ type Options struct {
 	// calls that never hit the approval prompt (a silent pause reads as
 	// a hang).
 	OnToolCall func(tc llm.ToolCall)
+	// ReadOnly is the session's starting lane-ceiling state (ADR-0080):
+	// sandbox.CeilingOff, CeilingOn or CeilingAuto. Empty means off.
+	ReadOnly string
 	// Model names the model these calls bill against. Record-keeping
 	// only (ADR-0057): it goes into the usage records so a transcript
 	// can be priced without joining the header, and into an
@@ -320,6 +328,7 @@ func New(opts Options) *Agent {
 		gate:          opts.Gate,
 		log:           opts.Log,
 		model:         opts.Model,
+		readOnly:      opts.ReadOnly,
 		system:        opts.System,
 		maxTurns:      opts.MaxTurns,
 		onToolCall:    opts.OnToolCall,
@@ -570,6 +579,30 @@ func (a *Agent) learnKey(tc llm.ToolCall) string {
 	}
 	return key
 }
+
+// ReadOnly reports the lane-ceiling state (ADR-0080 §1).
+func (a *Agent) ReadOnly() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.readOnly == "" {
+		return sandbox.CeilingOff
+	}
+	return a.readOnly
+}
+
+// SetReadOnly changes the ceiling state. Loosening is the operator's
+// act: nothing inside the runtime calls this with a weaker state
+// (ADR-0080 §2).
+func (a *Agent) SetReadOnly(state string) {
+	a.mu.Lock()
+	a.readOnly = state
+	a.mu.Unlock()
+}
+
+// Ceiling is the highest lane this session may reach. Read-only is the
+// read lane; every other state leaves the operator lane, which bounds
+// nothing (ADR-0080 §1).
+func (a *Agent) Ceiling() sandbox.Lane { return sandbox.CeilingFor(a.ReadOnly()) }
 
 // AutoCompact reports whether automatic compaction is on.
 func (a *Agent) AutoCompact() bool {
@@ -1200,6 +1233,20 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		// read-lane call to run unasked, nor a write-lane call to
 		// prompt about (review F7).
 		return "error: " + d.Invalid.Error(), false, false, floorRan, nil
+	}
+	if d.OverCeiling {
+		// Refused, not escalated. The gate can be answered by the
+		// session allowlist, so a ceiling that escalated would be a
+		// ceiling an earlier 'a' could spend (ADR-0080 §2). The text is
+		// deliberately not deniedResult: this is not an operator's
+		// denial, and the learner must not read it as one (ADR-0045).
+		a.logRecord("ceiling_refused", map[string]any{
+			"name": tc.Name, "lane": a.laneOf(tc),
+			"ceiling": a.Ceiling().String(), "state": a.ReadOnly(),
+			"reason": d.CeilingReason,
+		})
+		a.telemetry.Approval(tc.Name, "denied", "ceiling", true, d.CeilingReason, a.laneOf(tc))
+		return "error: " + d.CeilingReason + ". The operator can lift it with /readonly off", false, false, floorRan, nil
 	}
 	if a.gated(d, tc) {
 		approved, reason := false, ""

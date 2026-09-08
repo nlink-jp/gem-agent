@@ -33,6 +33,34 @@ const (
 	LaneOperator
 )
 
+// The session's lane-ceiling states (ADR-0080 §1). They live beside
+// Lane because a ceiling is a lane: Off leaves LaneOperator, which
+// bounds nothing; On is LaneRead; Auto starts at Off and lets the
+// runtime tighten it to On, never the other way.
+const (
+	CeilingOff  = "off"
+	CeilingOn   = "on"
+	CeilingAuto = "auto"
+)
+
+// ValidCeiling reports whether s names a ceiling state. Empty means the
+// default, which is Off.
+func ValidCeiling(s string) bool {
+	switch s {
+	case "", CeilingOff, CeilingOn, CeilingAuto:
+		return true
+	}
+	return false
+}
+
+// CeilingFor is the highest lane a session in this state may reach.
+func CeilingFor(state string) Lane {
+	if state == CeilingOn {
+		return LaneRead
+	}
+	return LaneOperator
+}
+
 // String is the lane's name as the tool argument spells it.
 func (l Lane) String() string {
 	switch l {

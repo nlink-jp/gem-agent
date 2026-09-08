@@ -74,14 +74,16 @@ Tab completion for `@`-paths, `/`-commands, and skill
 names, `!command` shell escape, mermaid fences drawn in place in the
 reply (flowchart / ASCII-label sequence / ER; anything the terminal
 cannot draw faithfully stays source), fourteen slash commands (`/help`
-`/tools` `/mcp` `/auto` `/compact` `/settings` `/riskbook` `/usage`
+`/tools` `/mcp` `/auto` `/readonly` `/compact` `/settings` `/riskbook` `/usage`
 `/memory` `/skills` `/skill` `/version` `/clear` `/quit`), a provenance-first `/settings`
 panel, theme control, and a fully bilingual chrome
 (`[tui].language = auto|ja|en`). A positional argument is the first
 interactive turn — `gem-agent "…"` runs it and hands you the keyboard
 (ADR-0064). Pipes fall back to a plain REPL;
 `-p` runs one-shot (mutating tools denied; `--allow` grants named
-tools per run, `--auto` arms the risk ladder — ADR-0053), and
+tools per run, `--auto` arms the risk ladder — ADR-0053; `--read-only` caps the
+session at the read lane so nothing outside its scratch changes —
+ADR-0080), and
 `data | gem-agent -p "…"` attaches piped stdin as isolated data,
 never as prompt text (ADR-0055). The pipe is read to EOF; if it is
 still open after 2 s, a stderr line says so and names the remedy —

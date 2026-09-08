@@ -180,9 +180,17 @@ verified at startup against probes that must fail. So read-only mode
 declaring `write` or `operator` does not get that profile. Nothing new
 is generated, so there is no new profile to get wrong.
 
-Beside the shell: `write_file` and `edit_file` refuse outside the
-session work directory, and `save_memory` / `delete_memory` refuse —
-they write the state directory, which no lane bounds.
+Beside the shell: `write_file` and `edit_file` refuse, and
+`save_memory` / `delete_memory` refuse — they write the state
+directory, which no lane bounds.
+
+*Corrected against the code during implementation.* This section first
+let the file tools write the session work directory. They may not: the
+read lane's writable area is its own private scratch, not the work
+directory, so allowing the file tools there would have given them reach
+the shell does not have under the same ceiling. One ceiling, one
+answer — the writable place under a `read` ceiling is the read lane's
+scratch, reached the way the lane already allows.
 
 ### 4. A write attempt asks whether to lift the mode
 

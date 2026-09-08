@@ -56,6 +56,7 @@ shell_timeout_sec = 120    # default
 auto_approve = false       # default; start sessions in auto-approve mode
 auto_compact = true        # default; summarise older history near the window
 compact_at_pct = 80        # default; share of the window that triggers it
+read_only = "off"          # default; the session's lane ceiling: "off" | "on" | "auto"
 
 [mcp]
 enabled = true             # default; false disables ALL MCP servers
@@ -359,6 +360,9 @@ the function name is the only place the intent can be said (ADR-0077).
 |---|---|
 | `-p "<prompt>"` | one-shot mode: single turn, stdout, mutating tools denied (unless `--auto` — ADR-0053); piped stdin is attached as nonce-wrapped data, never as prompt text (ADR-0055); it is read to EOF, and a pipe still open after 2 s is announced on stderr (ADR-0067) |
 | `--auto` | start in auto-approve mode (ADR-0004); the only way to arm it in one-shot `-p`, where `[agent].auto_approve` is ignored (ADR-0053) |
+| `--writable` | no lane ceiling — the default, stated. This is how a run steps out of a configured `"on"` or `"auto"`, per invocation and visibly (ADR-0080) |
+| `--read-only` | cap the session at the `read` lane: nothing outside the session scratch may change |
+| `--auto-read-only` | start with no ceiling and let the runtime tighten it from what you type. Interactive only — in `-p` the ceiling is answered on the command line, never inferred from the prompt |
 | `--allow <names>` | per-run approval grants: tool names or `mcp__server__*` prefixes that never ask this run (repeatable or comma-separated; the Block floor still applies — ADR-0053) |
 | `-c` / `--continue` | resume this project's most recent session |
 | `--resume <id>` | resume a specific session |

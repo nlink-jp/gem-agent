@@ -1,6 +1,9 @@
 package agent
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/risk"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
@@ -25,6 +28,13 @@ type Decision struct {
 	// `access` value that names no lane — and is refused before any
 	// gate rather than gated as something it is not (review F7).
 	Invalid error
+	// OverCeiling is set when the session's lane ceiling is below the
+	// lane this call's effect needs (ADR-0080 §3). It is a refusal, not
+	// an escalation: the gate can be answered by the session allowlist,
+	// so a ceiling that escalated would be a ceiling an earlier 'a'
+	// could spend. CeilingReason is the operator-facing why.
+	OverCeiling   bool
+	CeilingReason string
 }
 
 // Floor reports a verdict no policy, allowlist answer or model tier
@@ -73,7 +83,59 @@ func (a *Agent) decide(tc llm.ToolCall) Decision {
 		v = risk.Verdict{Tier: risk.Review, OperatorOnly: true,
 			Reason: "unconfined shell (the sandbox is off): no lane bounds this command — the operator decides, not the model tier"}
 	}
-	return Decision{Tool: tool, Mutating: mutating, Verdict: v}
+	d := Decision{Tool: tool, Mutating: mutating, Verdict: v}
+	if reason, over := overCeiling(tc.Name, mutating, laneOrDefault(tc), a.Ceiling()); over {
+		d.OverCeiling, d.CeilingReason = true, reason
+	}
+	return d
+}
+
+// laneOrDefault is the lane a shell call declared; anything else has no
+// declared lane and reads as the read lane, which never exceeds a
+// ceiling on its own.
+func laneOrDefault(tc llm.ToolCall) sandbox.Lane {
+	if tc.Name != tools.ShellExecName {
+		return sandbox.LaneRead
+	}
+	access, _ := tc.Args["access"].(string)
+	lane, err := sandbox.ParseLane(access)
+	if err != nil {
+		return sandbox.LaneRead // already refused as Invalid
+	}
+	return lane
+}
+
+// overCeiling maps a call to the lane its effect needs and compares it
+// with the session's ceiling, so one setting bounds every tool instead
+// of a list kept per tool (ADR-0080 §3).
+//
+// An MCP tool is never over the ceiling here. The rule tier cannot read
+// another server's effects (ADR-0077), and a ceiling that guessed would
+// be guessing about the one place no profile reaches; ADR-0080 §5 states
+// the ceiling to the model tier instead, which is a judgment and is
+// documented as one.
+func overCeiling(name string, mutating bool, declared, ceiling sandbox.Lane) (string, bool) {
+	if ceiling >= sandbox.LaneOperator {
+		return "", false // no ceiling in force
+	}
+	if name == tools.ShellExecName {
+		if declared <= ceiling {
+			return "", false
+		}
+		return fmt.Sprintf("this session is capped at the %s lane and the command declared %s",
+			ceiling, declared), true
+	}
+	if strings.HasPrefix(name, "mcp__") || !mutating {
+		return "", false
+	}
+	if memoryWrite(name) {
+		return fmt.Sprintf("this session is capped at the %s lane, and a memory write changes what every later session trusts",
+			ceiling), true
+	}
+	if ceiling >= sandbox.LaneWrite {
+		return "", false
+	}
+	return fmt.Sprintf("this session is capped at the %s lane and this tool changes files", ceiling), true
 }
 
 // laneOf names the lane a shell call runs in, for the approval detail

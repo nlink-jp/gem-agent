@@ -59,6 +59,9 @@ var (
 	flagContinue  bool
 	flagResume    string
 	flagAuto      bool
+	flagWritable  bool
+	flagReadOnly  bool
+	flagAutoRO    bool
 	flagAllow     []string
 )
 
@@ -105,6 +108,9 @@ func init() {
 	rootCmd.Flags().StringVarP(&flagPrompt, "prompt", "p", "", "one-shot: run this prompt and exit; mutating tools are denied unless listed in --allow or --auto is set")
 	rootCmd.Flags().BoolVar(&flagAuto, "auto", false, "start in auto-approve mode (required for auto-approve in -p, where [agent].auto_approve is ignored)")
 	rootCmd.Flags().StringSliceVar(&flagAllow, "allow", nil, `tools that never ask this run: tool names or mcp__server__* prefixes (repeatable or comma-separated); blocked commands still ask`)
+	rootCmd.Flags().BoolVar(&flagWritable, "writable", false, "no lane ceiling — the default, stated; use it to step out of a configured [agent].read_only")
+	rootCmd.Flags().BoolVar(&flagReadOnly, "read-only", false, "cap the session at the read lane: nothing outside the session scratch may change")
+	rootCmd.Flags().BoolVar(&flagAutoRO, "auto-read-only", false, "start with no ceiling and let the runtime tighten it to read-only from what you type (interactive only)")
 	rootCmd.Flags().BoolVarP(&flagContinue, "continue", "c", false, "resume this project's most recent session")
 	rootCmd.Flags().StringVar(&flagResume, "resume", "", "resume a specific session id (see: gem-agent sessions)")
 }
@@ -152,11 +158,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		cfgPath = p
 	}
-	cfg, err := config.LoadWithOverrides(cfgPath, config.Overrides{Model: flagModel, Thinking: flagThinking, MCP: flagMCP, Auto: flagAuto})
+	oneShot := flagPrompt != ""
+	roFlag, err := readOnlyOverride(flagWritable, flagReadOnly, flagAutoRO, oneShot)
 	if err != nil {
 		return err
 	}
-	oneShot := flagPrompt != ""
+	cfg, err := config.LoadWithOverrides(cfgPath, config.Overrides{
+		Model: flagModel, Thinking: flagThinking, MCP: flagMCP, Auto: flagAuto, ReadOnly: roFlag})
+	if err != nil {
+		return err
+	}
 	// The first interactive turn, from the positional argument
 	// (ADR-0064). Never combined with -p: the two select different
 	// session shapes, and ambiguity is refused, not resolved.
@@ -167,6 +178,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// Everything downstream — the agent, telemetry — reads this one
 	// effective value, never the raw config field.
 	autoOn := effectiveAuto(cfg.Agent.AutoApprove, oneShot, flagAuto)
+	// The ceiling this run starts with, resolved once for the same
+	// reason (ADR-0080 §1).
+	readOnlyState := effectiveReadOnly(cfg.Agent.ReadOnly, oneShot)
 	// UI language, resolved once (ADR-0029): the chrome that follows —
 	// prompts, TUI, slash output — is built with it.
 	uiLang := uitext.Resolve(cfg.TUI.Language, os.Getenv)
@@ -987,6 +1001,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		RoundReview:  true,
 		OnRoundLimit: onRoundLimit,
 		AutoApprove:  autoOn,
+		ReadOnly:     readOnlyState,
 		OnAutoDecision: func(tc llm.ToolCall, d agent.AutoDecision) {
 			if !d.Approved {
 				return // the escalation shows up in the approval prompt
@@ -1847,6 +1862,55 @@ func effectiveAuto(cfgAuto, oneShot, flagAuto bool) bool {
 	return flagAuto || (cfgAuto && !oneShot)
 }
 
+// readOnlyOverride resolves the three ceiling flags to one state, or ""
+// when none was given. They name the three states of one axis
+// (ADR-0080 §1), so passing two is a contradiction rather than a
+// precedence puzzle. The auto state is interactive-only: a one-shot
+// run's ceiling is answered where the run is launched, never inferred
+// from the prompt's wording, or a scheduled job's write access would
+// become a function of that text (§2).
+func readOnlyOverride(writable, readOnly, autoRO, oneShot bool) (string, error) {
+	given := 0
+	for _, on := range []bool{writable, readOnly, autoRO} {
+		if on {
+			given++
+		}
+	}
+	if given > 1 {
+		return "", errors.New("--writable, --read-only and --auto-read-only are three states of one setting; pass at most one")
+	}
+	switch {
+	case autoRO && oneShot:
+		return "", errors.New("--auto-read-only needs a session to watch; in -p pass --read-only, or --writable to say so")
+	case autoRO:
+		return config.ReadOnlyAuto, nil
+	case readOnly:
+		return config.ReadOnlyOn, nil
+	case writable:
+		return config.ReadOnlyOff, nil
+	}
+	return "", nil
+}
+
+// effectiveReadOnly is the ceiling the run actually starts with.
+//
+// A configured "auto" is read as "on" in one-shot. Of the two available
+// readings only that one errs the way the rest of ADR-0080 errs:
+// ignoring it would drop a restriction the operator asked for, silently,
+// in the one context with nobody watching. Reading it as "on" refuses
+// the write instead and forces the run that wants it to say --writable
+// on its own command line — which is where ADR-0053 §1 requires a grant
+// to be visible.
+func effectiveReadOnly(cfgValue string, oneShot bool) string {
+	if cfgValue == "" {
+		return config.ReadOnlyOff
+	}
+	if oneShot && cfgValue == config.ReadOnlyAuto {
+		return config.ReadOnlyOn
+	}
+	return cfgValue
+}
+
 // denyGate is the one-shot approver: it denies every mutating call with
 // a visible reason instead of blocking on an approval prompt that
 // nothing will answer.
@@ -2159,8 +2223,8 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 func slashCompletions(getSkills func() []skills.Skill) func(string) []string {
 	commands := []string{
 		"/auto", "/clear", "/compact", "/exit", "/help", "/mcp", "/memory",
-		"/quit", "/riskbook", "/settings", "/skill", "/skills", "/tools",
-		"/usage", "/version",
+		"/quit", "/readonly", "/riskbook", "/settings", "/skill", "/skills",
+		"/tools", "/usage", "/version",
 	}
 	return func(prefix string) []string {
 		if rest, ok := strings.CutPrefix(prefix, "/skill "); ok {
@@ -2304,6 +2368,26 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 			b.WriteString(msgs.AutoOn)
 		} else {
 			b.WriteString(msgs.AutoOff)
+		}
+	case "/readonly":
+		// The ceiling is the operator's own state (ADR-0080 §1). Nothing
+		// in the runtime loosens it; this is where they do.
+		state := ag.ReadOnly()
+		if sub != "" {
+			if !sandbox.ValidCeiling(sub) || sub == "" {
+				b.WriteString(msgs.ReadOnlyUsage)
+				break
+			}
+			state = sub
+			ag.SetReadOnly(state)
+		}
+		switch state {
+		case sandbox.CeilingOn:
+			b.WriteString(msgs.ReadOnlyOn)
+		case sandbox.CeilingAuto:
+			b.WriteString(msgs.ReadOnlyAuto)
+		default:
+			b.WriteString(msgs.ReadOnlyOff)
 		}
 	case "/usage":
 		b.WriteString(usage())

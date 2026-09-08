@@ -104,6 +104,17 @@ shell_timeout_sec = 120
 # runtime with shift+tab or /auto regardless of this setting.
 auto_approve = false
 
+# The session's lane ceiling (ADR-0080), an axis of its own: auto-approve
+# decides who answers the gate, this decides what the session may reach.
+#   "off"  the operator lane — today's behaviour, and the default
+#   "on"   the read lane — nothing outside the session scratch may change
+#   "auto" starts at "off" and lets the runtime tighten it to "on" from
+#          what you type; it never loosens it back, and it is ignored in
+#          one-shot -p, where "auto" is read as "on"
+# Override per run with --writable / --read-only / --auto-read-only,
+# or change it mid-session with /readonly.
+read_only = "off"
+
 # Summarise the older part of the conversation when the context window
 # fills, instead of failing the turn (ADR-0006). On by default: this
 # weakens no defense, and a session that dies at the window is not much

@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **The session's lane ceiling** (ADR-0080 §1-3), an axis of its own:
+  `--auto` decides who answers the gate, this decides what the session
+  may reach at all. `[agent].read_only` (`"off"` | `"on"` | `"auto"`)
+  sets it, `--writable` / `--read-only` / `--auto-read-only` override it
+  per invocation, and `/readonly on|off|auto` changes it mid-session.
+  Under a `read` ceiling a `shell_exec` declaring `write` or `operator`
+  is refused, and so are `write_file`, `edit_file`, `save_memory` and
+  `delete_memory`; a read-lane command still runs unasked. The refusal
+  happens before the gate and is not an escalation — a ceiling the
+  session allowlist could answer would be a ceiling an earlier `a`
+  could spend — and it is not the operator-denial text either, so the
+  learner does not read it as a decision they made. An MCP tool is
+  never refused by the ceiling: the rule tier cannot read another
+  server's effects, and ADR-0080 §5 hands that to the model tier
+  instead. One-shot takes `--read-only` or nothing, and a configured
+  `"auto"` is read there as `"on"`: dropping it would lose a
+  restriction silently where nobody is watching
+
 ## [0.73.0] - 2026-09-09
 
 ### Fixed

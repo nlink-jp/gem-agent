@@ -72,14 +72,15 @@ syscall 1 回分で止まり、それ以外は有界の猶予後に放棄 — AD
 `!コマンド` シェルエスケープ、回答中の mermaid フェンスのその場描画
 （flowchart / ASCII ラベルの sequence / ER。端末が忠実に描けない
 ものはソースのまま）、14 のスラッシュコマンド（`/help`
-`/tools` `/mcp` `/auto` `/compact` `/settings` `/riskbook` `/usage`
+`/tools` `/mcp` `/auto` `/readonly` `/compact` `/settings` `/riskbook` `/usage`
 `/memory` `/skills` `/skill` `/version` `/clear` `/quit`）、出所ファーストの `/settings`
 パネル、テーマ、完全二言語のクローム（`[tui].language = auto|ja|en`）。
 位置引数は対話セッションの第 1 ターン — `gem-agent "…"` はそれを
 実行してからキーボードを渡します（ADR-0064）。
 パイプは素の REPL に、`-p` は単発実行に（変更系ツールは拒否 —
 `--allow` で実行単位のツール名指し付与、`--auto` でリスク階梯の
-武装ができます。ADR-0053）。`データ | gem-agent -p "…"` のパイプ
+武装ができます。ADR-0053。`--read-only` はセッションを read レーンに
+抑え、スクラッチの外を変更させません — ADR-0080）。`データ | gem-agent -p "…"` のパイプ
 stdin は隔離データとして添付され、プロンプト文にはなりません
 （ADR-0055）。パイプは EOF まで読みます。2 秒経っても開いたままなら
 stderr に 1 行出して対処を示します — 何も添付しない起動は

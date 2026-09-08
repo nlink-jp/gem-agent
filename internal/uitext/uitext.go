@@ -228,6 +228,10 @@ type Messages struct {
 	Help             string // the full /help text
 	AutoOn           string
 	AutoOff          string
+	ReadOnlyOn       string
+	ReadOnlyOff      string
+	ReadOnlyAuto     string
+	ReadOnlyUsage    string
 	HistoryCleared   string
 	NothingToCompact string
 	// CompactedFmt reports a /compact: messages summarised, kept.
@@ -423,6 +427,7 @@ var en = Messages{
   /tools     list tools and each one's current approval gate
   /mcp       list connected MCP servers (/mcp reload reconnects)
   /auto      toggle auto-approve (shift+tab, works mid-run)
+  /readonly  read-only session: on|off|auto (no argument shows the state)
   /compact   summarise the older half of the conversation
   /settings  view and edit settings, with provenance
   /riskbook  view the risk rules; /riskbook learn drafts them from your answers
@@ -450,6 +455,10 @@ keys:
 `,
 	AutoOn:           "auto-approve: ON — safe changes run unattended; risky ones still ask\n",
 	AutoOff:          "auto-approve: OFF — every change asks\n",
+	ReadOnlyOn:       "read-only: ON — this session may not change anything outside its scratch\n",
+	ReadOnlyOff:      "read-only: OFF — the session may change things again\n",
+	ReadOnlyAuto:     "read-only: AUTO — off for now; it turns on by itself if you ask for a read-only session\n",
+	ReadOnlyUsage:    "usage: /readonly on|off|auto (no argument shows the current state)\n",
 	HistoryCleared:   "history cleared — the next message starts a fresh conversation\n",
 	NothingToCompact: "nothing to compact yet — the conversation is still short",
 	CompactedFmt:     "compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
@@ -594,6 +603,7 @@ var ja = Messages{
   /tools     ツール一覧と各ツールの現在の承認ゲート
   /mcp       接続中の MCP サーバー一覧（/mcp reload で再接続）
   /auto      auto-approve 切替（shift+tab でも可・実行中も有効）
+  /readonly  読み取り専用セッション: on|off|auto（引数なしで状態表示）
   /compact   会話の古い半分を要約
   /settings  設定の表示と編集（出所つき）
   /riskbook  リスクルールの表示。/riskbook learn は回答記録から起草
@@ -621,6 +631,10 @@ var ja = Messages{
 `,
 	AutoOn:           "auto-approve: ON — 安全な変更は無人で実行します。危険なものは引き続き確認します\n",
 	AutoOff:          "auto-approve: OFF — すべての変更で確認します\n",
+	ReadOnlyOn:       "read-only: ON — このセッションはスクラッチの外を変更できません\n",
+	ReadOnlyOff:      "read-only: OFF — 変更できる状態に戻りました\n",
+	ReadOnlyAuto:     "read-only: AUTO — 今は OFF。読み取り専用の依頼を打つと自分で ON になります\n",
+	ReadOnlyUsage:    "使い方: /readonly on|off|auto（引数なしで現在の状態を表示）\n",
 	HistoryCleared:   "履歴をクリアしました — 次のメッセージから新しい会話が始まります\n",
 	NothingToCompact: "まだ /compact の対象がありません — 会話がまだ短いためです",
 	CompactedFmt:     "古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",
