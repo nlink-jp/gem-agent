@@ -24,17 +24,23 @@
   package in **both** package maps — the architecture reference and
   AGENTS.md §Structure. Checking one of the two is how `internal/banner`
   stayed out of AGENTS.md for three releases while the check was green
-- The architecture reference's turn diagram is drawn as an ASCII flow
-  with no right edge, in both languages, and `make check` now refuses a
-  framed row that contains CJK. The Japanese box had rows of 53, 54 and
-  57 columns; padding them to one width fixed it only under one reading
-  (box drawing and arrows are East Asian Ambiguous — one column under
-  the model `internal/tui` pins go-runewidth to, two under a CJK
-  locale's), and redrawing in ASCII still left it ragged in a viewer
-  whose monospace stack has no CJK, where the fallback font's advance is
-  not exactly twice the Latin one. A closing edge over CJK is not a
-  padding bug; left edges, indentation and tree stems hold under any
-  font, so the diagram keeps those and drops the edge
+- The architecture reference's turn diagram is a `mermaid` fence in both
+  languages — the first live one in the doc set — and it draws the loop
+  back into the round that the text form could only note in a caption.
+  Its Japanese box had shipped rows of 53, 54 and 57 columns, and every
+  text repair failed differently: padding to one width is only correct
+  under one width model (box drawing and arrows are East Asian
+  Ambiguous — one column under the model `internal/tui` pins
+  go-runewidth to, two under a CJK locale's), and even all-ASCII stayed
+  ragged in a viewer whose monospace stack has no CJK, where the
+  fallback font's advance is not exactly twice the Latin one. A layout
+  made of spaces is a promise about column widths that a Japanese
+  document cannot keep; a fence hands the layout to the renderer
+- `make check` gained two diagram checks: an en/ja pair's mermaid
+  diagrams must have the same shape (labels are translated and blanked
+  before comparing, the header, node ids and edges are not — fenced
+  blocks were the one thing no check could see), and a framed text row
+  may not contain CJK
 
 ## [0.72.2] - 2026-09-08
 
