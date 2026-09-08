@@ -197,9 +197,15 @@ func (c *Client) Name() string { return c.name }
 // Close kills the server process if running.
 func (c *Client) Close() { c.shutdown() }
 
-func (c *Client) shutdown() {
+func (c *Client) shutdown() { c.shutdownGen(-1) }
+
+// shutdownGen kills the incarnation numbered gen. gen < 0 means
+// "whatever is current" — the same convention send uses. A write that
+// timed out against a dead incarnation's pipe must not kill the
+// successor that replaced it.
+func (c *Client) shutdownGen(gen int) {
 	c.mu.Lock()
-	if c.alive {
+	if c.alive && (gen < 0 || gen == c.gen) {
 		c.alive = false
 		if c.kill != nil {
 			c.kill()
@@ -239,7 +245,9 @@ func (c *Client) ensureStarted(ctx context.Context) error {
 		c.shutdown()
 		return &startError{Server: c.name, Phase: "initialize", Err: err}
 	}
-	if err := c.send(map[string]any{
+	nctx, ncancel := context.WithTimeout(ctx, c.timeout)
+	defer ncancel()
+	if err := c.send(nctx, map[string]any{
 		"jsonrpc": "2.0", "method": "notifications/initialized", "params": map[string]any{},
 	}, -1); err != nil {
 		c.shutdown()
@@ -270,8 +278,13 @@ func (c *Client) readLoop(stdout io.ReadCloser, gen int) {
 			id := *msg.ID
 			go func() {
 				// gen-pinned: after a kill-and-respawn this refusal
-				// belongs to the dead incarnation and is dropped.
-				_ = c.send(map[string]any{
+				// belongs to the dead incarnation and is dropped. The
+				// read loop has no call to inherit a deadline from, so
+				// the refusal gets its own — an unbounded one would park
+				// this goroutine, and wmu with it, for the process's life.
+				rctx, rcancel := context.WithTimeout(context.Background(), c.timeout)
+				defer rcancel()
+				_ = c.send(rctx, map[string]any{
 					"jsonrpc": "2.0", "id": id,
 					"error": map[string]any{"code": -32601, "message": "method not supported by gem-agent"},
 				}, gen)
@@ -337,7 +350,15 @@ func (c *Client) readLoop(stdout io.ReadCloser, gen int) {
 // gen < 0 means "whatever is current". The stdin snapshot is taken
 // under mu — reading the field under wmu alone raced ensureStarted's
 // write of it (ADR-0021).
-func (c *Client) send(v any, gen int) error {
+//
+// The write is bounded by ctx, and so is the wait for wmu. Neither ends
+// on its own: a server that stops reading its stdin fills the pipe and
+// parks the writer forever, and every other caller then parks behind
+// wmu — one wedged server took every call to it, outside any deadline,
+// with nothing left to kill it (review 2026-09-08, F-01). On expiry the
+// child is killed, which closes the pipe's read end and returns the
+// blocked Write with EPIPE, releasing wmu.
+func (c *Client) send(ctx context.Context, v any, gen int) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -351,12 +372,30 @@ func (c *Client) send(v any, gen int) error {
 	if stdin == nil || !alive {
 		return fmt.Errorf("mcp %s: server not running", c.name)
 	}
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	// Writing through the snapshot: if a respawn swapped stdin after it
-	// was taken, this hits the dead pipe and fails — the safe direction.
-	_, err = stdin.Write(append(data, '\n'))
-	return err
+	// Buffered: the goroutine must be able to finish and exit after ctx
+	// expired and this frame's caller has gone.
+	done := make(chan error, 1)
+	go func() {
+		c.wmu.Lock()
+		defer c.wmu.Unlock()
+		// Writing through the snapshot: if a respawn swapped stdin after
+		// it was taken, this hits the dead pipe and fails — the safe
+		// direction.
+		_, err := stdin.Write(append(data, '\n'))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		c.shutdownGen(cur)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return ctx.Err()
+		}
+		return fmt.Errorf("writing to mcp %s timed out after %s "+
+			"(the server stopped reading its stdin; it was killed and restarts on the next call)",
+			c.name, c.timeout)
+	}
 }
 
 // rawCall issues one request and waits for its response, bounded by the
@@ -373,15 +412,21 @@ func (c *Client) rawCall(ctx context.Context, method string, params any) (json.R
 	c.pending[id] = ch
 	c.pmu.Unlock()
 
-	if err := c.send(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}, -1); err != nil {
+	// One deadline covers writing the request and waiting for its
+	// answer. It used to start after the write returned, so a write that
+	// never returned was supervised by nothing at all.
+	tctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	if err := c.send(tctx, map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}, -1); err != nil {
 		c.pmu.Lock()
 		delete(c.pending, id)
 		c.pmu.Unlock()
+		// Not sent: a frame cut short by the deadline carries no
+		// terminating newline, and the server it was going to is dead.
 		return nil, &notSentError{err: err}
 	}
 
-	tctx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
 	select {
 	case msg, ok := <-ch:
 		if !ok {

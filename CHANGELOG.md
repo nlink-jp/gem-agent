@@ -4,6 +4,19 @@
 
 ### Fixed
 
+- A wedged MCP server no longer hangs every call to it. `rawCall` wrote
+  the request synchronously and started the per-call deadline only
+  afterwards, so a server that stopped reading its stdin parked the
+  writer inside `Write` — holding the write lock, and with it every
+  other call to that server — with no deadline over any of it and
+  nothing left running to reach the kill. The write and the wait for
+  the answer are now under one deadline, and the two other senders (the
+  `initialized` notification, and the read loop's `-32601` refusal of a
+  server-initiated request) have deadlines of their own instead of
+  none. On expiry the child is killed, which releases the parked write,
+  and the call reports itself as not sent — a frame cut short never
+  reached the server as a request
+
 - `write_file` keeps an overwritten file's permission bits. Replacing
   by rename installs a new inode, and the mode was being supplied per
   call site: `edit_file` passed the stat'd mode and was right, while

@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -35,7 +36,7 @@ func TestStaleGenerationSendIsDropped(t *testing.T) {
 	c.mu.Lock()
 	c.stdin, c.alive, c.gen = gen1, true, 1
 	c.mu.Unlock()
-	if err := c.send(map[string]any{"id": 1, "from": "gen1"}, 1); err != nil {
+	if err := c.send(context.Background(), map[string]any{"id": 1, "from": "gen1"}, 1); err != nil {
 		t.Fatal(err)
 	}
 
@@ -45,11 +46,11 @@ func TestStaleGenerationSendIsDropped(t *testing.T) {
 	c.mu.Unlock()
 
 	// A refusal produced by gen 1's read loop arrives late.
-	if err := c.send(map[string]any{"id": 7, "from": "stale-gen1"}, 1); err != nil {
+	if err := c.send(context.Background(), map[string]any{"id": 7, "from": "stale-gen1"}, 1); err != nil {
 		t.Fatalf("stale send must be a silent drop, got %v", err)
 	}
 	// A current-generation frame still goes through.
-	if err := c.send(map[string]any{"id": 2, "from": "gen2"}, -1); err != nil {
+	if err := c.send(context.Background(), map[string]any{"id": 2, "from": "gen2"}, -1); err != nil {
 		t.Fatal(err)
 	}
 
@@ -67,7 +68,7 @@ func TestStaleGenerationSendIsDropped(t *testing.T) {
 // A send with no live server errors instead of dereferencing nil stdin.
 func TestSendWithoutServerFailsClosed(t *testing.T) {
 	c := newClient("x", nil, 0, "test")
-	if err := c.send(map[string]any{"id": 1}, -1); err == nil {
+	if err := c.send(context.Background(), map[string]any{"id": 1}, -1); err == nil {
 		t.Error("send with no server must error")
 	}
 }
