@@ -1339,16 +1339,21 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		// the allowlist may not, and `gated` below refuses a `never`
 		// policy the same way. The model tier still judges it — that is
 		// ADR-0080 §5, and it is a judgment rather than a guarantee.
-		if !mustPrompt && d.CeilingUnbounded {
-			mustPrompt = true
-			reason = a.msgs.CeilingUnboundedReason
-		}
-		if !mustPrompt && d.Floor() {
+		if d.Floor() {
 			mustPrompt = true
 			// Shown on the prompt, so the operator sees why an
 			// earlier 'a' did not stick — and the deny-default that
 			// a reason triggers is exactly right for Block.
 			reason = d.Verdict.Reason
+		}
+		if d.CeilingUnbounded {
+			mustPrompt = true
+			// After the floor, and only if it said nothing: a Block or
+			// operator-lane verdict is the more important sentence, and
+			// setting this first hid it (independent review).
+			if reason == "" {
+				reason = a.msgs.CeilingUnboundedReason
+			}
 		}
 		// A tool the operator marked "always" skips the ladder: the
 		// question is settled, and spending a model round on it would

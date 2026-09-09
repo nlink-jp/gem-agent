@@ -71,7 +71,7 @@ func Lines(f Facts) []string {
 	if f.AutoApprove {
 		out = append(out, AutoApproveLine())
 	}
-	out = append(out, ReadOnlyLines(f.ReadOnly)...)
+	out = append(out, ReadOnlyLines(f.ReadOnly, f.SandboxOn && f.ReadLane)...)
 	for _, n := range f.Notes {
 		out = append(out, "warning: "+n)
 	}
@@ -135,9 +135,17 @@ func AutoApproveOneShotLine() string {
 // for one. The watcher, because the footer cannot: it carries the
 // ceiling in force, and an armed watcher has none yet, so without this
 // the fact is invisible until the turn it fires on.
-func ReadOnlyLines(c sandbox.Ceiling) []string {
+// confined is the sandbox as this machine established it: with the
+// lanes off, the ceiling still refuses the file tools and a shell call
+// that declares write or operator, but a read-lane declaration is no
+// longer bounded by anything, so the unqualified sentence would be
+// false (independent review).
+func ReadOnlyLines(c sandbox.Ceiling, confined bool) []string {
 	var out []string
-	if c.ReadOnly {
+	switch {
+	case c.ReadOnly && !confined:
+		out = append(out, "read-only: ON at start — but the sandbox is off, so a shell command declaring the read lane is bounded by nothing; /readonly off lifts the rest")
+	case c.ReadOnly:
 		out = append(out, "read-only: ON at start — this session changes nothing outside its scratch; /readonly off lifts it")
 	}
 	if c.Auto {
@@ -151,7 +159,10 @@ func ReadOnlyLines(c sandbox.Ceiling) []string {
 // flag — the same shape as the auto-approve pair above. It names
 // --writable, not "drop --read-only": the ceiling may have come from
 // config, where there is no flag to drop (independent review).
-func ReadOnlyOneShotLine() string {
+func ReadOnlyOneShotLine(confined bool) string {
+	if !confined {
+		return "read-only: ON — but the sandbox is off, so a shell command declaring the read lane is bounded by nothing; pass --writable to allow the rest"
+	}
 	return "read-only: ON — this run changes nothing outside its scratch; pass --writable to allow changes"
 }
 

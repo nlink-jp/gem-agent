@@ -209,7 +209,7 @@ func TestReadOnlyLines(t *testing.T) {
 		{sandbox.Ceiling{ReadOnly: true, Auto: true},
 			[]string{"read-only: ON at start", "auto read-only: ON"}},
 	} {
-		got := ReadOnlyLines(tc.state)
+		got := ReadOnlyLines(tc.state, true)
 		if len(got) != len(tc.want) {
 			t.Errorf("state %+v → %d lines, want %d: %q", tc.state, len(got), len(tc.want), got)
 			continue
@@ -223,7 +223,35 @@ func TestReadOnlyLines(t *testing.T) {
 	// One-shot has no footer and no /readonly, so its line names the
 	// flag instead — the same shape as the auto-approve pair. There is
 	// no watcher there to report.
-	if !strings.Contains(ReadOnlyOneShotLine(), "--writable") {
-		t.Errorf("the one-shot line does not name the escape: %q", ReadOnlyOneShotLine())
+	if !strings.Contains(ReadOnlyOneShotLine(true), "--writable") {
+		t.Errorf("the one-shot line does not name the escape: %q", ReadOnlyOneShotLine(true))
+	}
+}
+
+// With the lanes off, the ceiling still refuses the file tools and a
+// write- or operator-declaring shell call, but a read-lane declaration
+// is bounded by nothing — so the sentence "changes nothing outside its
+// scratch" is false, and the banner printed it directly beneath
+// "sandbox: off" (independent review).
+func TestReadOnlyLinesUnconfined(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		line string
+	}{
+		{"banner", ReadOnlyLines(sandbox.Ceiling{ReadOnly: true}, false)[0]},
+		{"one-shot", ReadOnlyOneShotLine(false)},
+	} {
+		if strings.Contains(tc.line, "changes nothing") {
+			t.Errorf("%s claims the lanes' guarantee with the lanes off: %q", tc.name, tc.line)
+		}
+		if !strings.Contains(tc.line, "sandbox is off") {
+			t.Errorf("%s does not say why the guarantee is narrower: %q", tc.name, tc.line)
+		}
+	}
+	// The watcher line is about the watcher, not the lanes: it must not
+	// change when the sandbox is off.
+	armed := ReadOnlyLines(sandbox.Ceiling{Auto: true}, false)
+	if len(armed) != 1 || !strings.Contains(armed[0], "auto read-only: ON") {
+		t.Errorf("the watcher line moved with the sandbox: %q", armed)
 	}
 }

@@ -403,9 +403,16 @@ approves runs without asking you. If that trade is wrong for a server,
 `[mcp] exclude` (ADR-0077) removes it from the session entirely.
 
 **What the ceiling does not reach at all**: a `!` command you typed
-(it runs in the `operator` lane, as your own shell would), your
-configured hooks, and — because the lanes are what enforce it — a
-session started with `--no-sandbox`.
+(it runs in the `operator` lane, as your own shell would) and your
+configured hooks.
+
+**Under `--no-sandbox` it reaches less, not nothing.** The refusal is
+decided before the tool runs, so the file tools and a `shell_exec` that
+declares the `write` or `operator` lane are refused exactly as they
+would be with the lanes on. What is lost is the floor beneath that: a
+command declaring the `read` lane is no longer confined to the scratch,
+so a mislabelled command can write. The startup banner says so in place
+of the ordinary guarantee.
 
 ## Per-tool approval policy (ADR-0008)
 

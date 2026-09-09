@@ -1432,7 +1432,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// it and no /readonly to type, so the only place this fact can
 		// appear is here (ADR-0080 §1, ADR-0078's test for a line).
 		if ag.CeilingState().ReadOnly {
-			fmt.Fprintln(stderr, banner.ReadOnlyOneShotLine())
+			fmt.Fprintln(stderr, banner.ReadOnlyOneShotLine(registry.Confined() && registry.ReadLane()))
 		}
 		// Piped stdin becomes a nonce-wrapped data attachment
 		// (ADR-0055) — never prompt text: the -p string alone is the
