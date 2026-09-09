@@ -1786,11 +1786,15 @@ func (m Model) settingsFrame() string {
 	if m.height <= 0 || m.height < minSettingsHeight {
 		return m.settingsView() + "\n" + m.footer() + "\n"
 	}
-	total, within := m.height, m.height+1
+	total, within, sep := m.height, m.height+1, ""
 	if m.settingsTotal > 0 {
-		total, within = m.settingsTotal, m.settingsTotal+1
+		// Under the conversation, one blank row separates the last
+		// printed line from the title — without it the two ran
+		// together (operator report, v0.75.1). It is part of the
+		// frame, so the row window gives up one row for it.
+		total, within, sep = m.settingsTotal, m.settingsTotal, "\n"
 	}
-	panel := m.settingsViewIn(within)
+	panel := sep + m.settingsViewIn(within)
 	footer := m.footer() + "\n"
 	body := panel + "\n" + footer
 	if gap := total - (strings.Count(body, "\n") + 1); gap > 0 {

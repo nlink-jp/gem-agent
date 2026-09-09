@@ -79,8 +79,13 @@ func TestSettingsPanelSitsBelowTheConversationWhenItFits(t *testing.T) {
 	if got, want := len(lines), 40-1-8; got != want {
 		t.Fatalf("frame is %d lines, want the %d rows below the printed content", got, want)
 	}
-	if !strings.Contains(lines[0], m.msgs.SettingsTitle) {
-		t.Errorf("first frame row is %q, want the panel title right below the conversation", lines[0])
+	// One blank row separates the conversation from the title
+	// (operator report, v0.75.1: without it the two ran together).
+	if strings.TrimSpace(lines[0]) != "" {
+		t.Errorf("first frame row is %q, want a blank separator under the conversation", lines[0])
+	}
+	if !strings.Contains(lines[1], m.msgs.SettingsTitle) {
+		t.Errorf("second frame row is %q, want the panel title", lines[1])
 	}
 	if strings.TrimSpace(lines[len(lines)-1]) != "" || strings.TrimSpace(lines[len(lines)-2]) == "" {
 		t.Errorf("footer is not on the frame's last content row:\n%s", view)

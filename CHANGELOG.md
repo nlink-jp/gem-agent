@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- When `/settings` opens under the conversation, a blank row now
+  separates the last printed line from the panel's title; in 0.75.1
+  the two ran together. The frame's height is unchanged — the row
+  window gives up one row for the separator.
+
 ## [0.75.1] - 2026-09-10
 
 ### Fixed
