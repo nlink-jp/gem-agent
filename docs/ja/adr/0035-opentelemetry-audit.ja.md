@@ -31,7 +31,9 @@ SIEM はログをネイティブに消費し、オペレーターのスタック
 mutating・切詰め詳細・所要・結果 ok/error/denied）、
 `approval.decision`（ツール・判定・経路: operator / allowlist /
 policy / auto-rule / auto-model・must_prompt・切詰め理由）、
-`compaction`、`media.upload`（バイト数・dedupe）。リソース属性:
+`mode.change`（実行中に操作者かランタイムが動かしたセッション設定:
+setting・to・by — ADR-0080）、`compaction`、`media.upload`
+（バイト数・dedupe）。リソース属性:
 サービス名/バージョン・セッション id・プロジェクトディレクトリ・
 ホスト。
 

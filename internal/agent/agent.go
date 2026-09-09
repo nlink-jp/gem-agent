@@ -635,6 +635,7 @@ func (a *Agent) recordModeChange(setting string, on bool, by string) {
 		to = "on"
 	}
 	a.logRecord("mode_change", map[string]any{"setting": setting, "to": to, "by": by})
+	a.telemetry.ModeChange(setting, to, by)
 }
 
 // Ceiling is the highest lane this session may reach.
@@ -1288,13 +1289,20 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		// so neither an 'a', a "never" policy (the ceiling is tested
 		// before the policy gate) nor the model tier answers it. A mode
 		// is not a call (ADR-0080 §4).
-		a.logRecord("ceiling_refused", map[string]any{
-			"name": tc.Name, "lane": a.laneOf(tc),
-			"ceiling": a.Ceiling().String(), "auto": a.CeilingState().Auto,
-			"reason": d.CeilingReason,
-		})
+// The record is written where the outcome is known, not here:
+		// logging "refused" on detection put a ceiling_refused in the
+		// transcript for every call the operator then let through
+		// (independent review).
+		record := func(outcome string) {
+			a.logRecord("ceiling_"+outcome, map[string]any{
+				"name": tc.Name, "lane": a.laneOf(tc),
+				"ceiling": a.Ceiling().String(), "auto": a.CeilingState().Auto,
+				"reason": d.CeilingReason,
+			})
+		}
 		refused := "error: " + d.CeilingReason + ". The operator can lift it with /readonly off"
 		if a.liftDeclined {
+			record("refused")
 			a.telemetry.Approval(tc.Name, "denied", "ceiling", true, d.CeilingReason, a.laneOf(tc))
 			// The dialog is suppressed, not the denial: without this the
 			// second and later refusals of a turn happened entirely off
@@ -1308,6 +1316,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		ok, denyReason := a.gate.ApproveLift(tc.Name, detail, purpose, a.ceilingPrompt(d, tc))
 		if !ok {
 			a.liftDeclined = true
+			record("refused")
 			a.telemetry.Approval(tc.Name, "denied", "ceiling", true, d.CeilingReason, a.laneOf(tc))
 			if denyReason != "" {
 				return refused + ". " + denyReason, false, false, floorRan, nil
@@ -1318,7 +1327,13 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		// so a later read-only request is caught the same way the first
 		// one was (ADR-0080 §1).
 		a.SetReadOnly(false, "operator")
-		a.telemetry.Approval(tc.Name, "approved", "operator", true, d.CeilingReason, a.laneOf(tc))
+		// A mode change, not this call's approval. SetReadOnly above
+		// already emitted mode.change; this record is what names the
+		// call that raised the question. Emitting an approval here as
+		// well both double-counted the call — the ordinary gate below
+		// emits its own row — and said the operator had approved
+		// something that gate could still deny (independent review).
+		record("lifted")
 		// The ceiling is gone, and that is the whole of what was
 		// answered. The call now goes through the ordinary rules — the
 		// tool policy, the ladder, the gate — exactly as if the ceiling

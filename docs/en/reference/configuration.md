@@ -390,7 +390,9 @@ clipped detail, duration, outcome — `ok`, `error`, `denied`, `skipped`,
 `write`, `operator`, prefixed `unverified:` or `unconfined:` when the
 sandbox did not back it), `tool.late_return` (an abandoned call
 that returned after all — ADR-0065; carries `origin_session_id`),
-`approval.decision` (decision, which layer made it, and the lane), `turn.end`, `model.usage`, `compaction`,
+`approval.decision` (decision, which layer made it, and the lane),
+`mode.change` (a session setting moved mid-run — which setting, to what,
+by whom), `turn.end`, `model.usage`, `compaction`,
 `media.upload`, `integration.reload` (an in-session `/mcp reload` or
 `/skills reload` changed the tool surface — ADR-0039) — with
 service/session/project/host resource attributes. Cloud Logging entries

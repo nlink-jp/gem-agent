@@ -353,6 +353,20 @@ func (s *Sink) Approval(tool, decision, source string, mustPrompt bool, reason, 
 	s.emit("approval.decision", attrs...)
 }
 
+// ModeChange records a session setting the operator moved mid-run
+// (ADR-0080 §4). It is not an approval.decision: lifting the ceiling
+// answers "may this session change things again", not "may this call
+// run", and emitting it as an approval both double-counted the call —
+// the ordinary gate emits its own row straight after — and claimed the
+// operator had approved a call the gate might still deny (independent
+// review). `by` is who moved it: the operator, or the watcher.
+func (s *Sink) ModeChange(setting, to, by string) {
+	s.emit("mode.change",
+		attribute.String("setting", setting),
+		attribute.String("to", to),
+		attribute.String("by", by))
+}
+
 // Usage carries the same buckets as the transcript's accounting record
 // (ADR-0057, ADR-0066): thoughts bill as output, cached is a discounted
 // share of the prompt, and tool_prompt is built-in tool results fed

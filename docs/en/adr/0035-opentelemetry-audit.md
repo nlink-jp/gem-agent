@@ -32,7 +32,9 @@ Events: `session.start` / `session.end`, `turn.start` / `turn.end`
 mutating, clipped detail, duration, outcome ok/error/denied),
 `approval.decision` (tool, decision, source: operator / allowlist /
 policy / auto-rule / auto-model, must_prompt, clipped reason),
-`compaction`, `media.upload` (bytes, deduped). Resource attributes:
+`mode.change` (a session setting the operator or the runtime moved
+mid-run: setting, to, by — ADR-0080), `compaction`, `media.upload`
+(bytes, deduped). Resource attributes:
 service name/version, session id, project directory, host.
 
 ### 2. Default OFF, and only YOUR config can turn it on

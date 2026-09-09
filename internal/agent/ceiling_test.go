@@ -476,6 +476,37 @@ func TestCeilingChangesAreRecorded(t *testing.T) {
 	}
 }
 
+// The transcript says what happened, not what was proposed. The record
+// was written at detection, so a call the operator then let through
+// still left a "ceiling_refused" behind it — the one record an audit
+// would count (independent review).
+func TestCeilingRecordsTheOutcomeNotTheProposal(t *testing.T) {
+	for _, tc := range []struct {
+		answer bool
+		want   string
+	}{
+		{false, "ceiling_refused"},
+		{true, "ceiling_lifted"},
+	} {
+		a := ceilingAgent(t, "on")
+		a.gate = &liftGate{answer: tc.answer}
+		log := &capturingLog{}
+		a.log = log
+		if _, _, _, _, err := a.execCallInner(context.Background(), shellLane("touch x", "write")); err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, kind := range log.kinds {
+			if strings.HasPrefix(kind, "ceiling_") {
+				got = append(got, kind)
+			}
+		}
+		if len(got) != 1 || got[0] != tc.want {
+			t.Errorf("lift answered %v → records %v, want exactly [%s]", tc.answer, got, tc.want)
+		}
+	}
+}
+
 // Each refusal kind gets its own sentence. The shell one names the lane
 // the call declared, memory names what a memory write costs, and the
 // rest says "state", not "files" — web_search is mutating for its
