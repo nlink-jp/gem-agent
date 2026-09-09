@@ -102,6 +102,12 @@ type Agent struct {
 	// liftDeclined records that the operator refused to lift the ceiling
 	// this turn; it is reset at the start of each turn.
 	liftDeclined bool
+	// modeStartLogged guards the one-time record of what the modes
+	// began as. Without it a transcript held only the changes, and a
+	// reader could not tell whether "read_only=off by operator" left a
+	// session that started on or one the watcher had tightened
+	// (independent review).
+	modeStartLogged bool
 	system       string
 	maxTurns     int
 
@@ -629,6 +635,23 @@ func (a *Agent) SetReadOnlyAuto(on bool, by string) {
 	}
 }
 
+// logModeStart writes the modes' starting values once per session, so
+// the mode_change records after it have something to be changes from.
+func (a *Agent) logModeStart() {
+	a.mu.Lock()
+	already := a.modeStartLogged
+	a.modeStartLogged = true
+	c := a.ceiling
+	a.mu.Unlock()
+	if already {
+		return
+	}
+	a.logRecord("mode_start", map[string]any{
+		"read_only": c.ReadOnly, "read_only_auto": c.Auto,
+		"auto_approve": a.AutoApprove(),
+	})
+}
+
 func (a *Agent) recordModeChange(setting string, on bool, by string) {
 	to := "off"
 	if on {
@@ -744,6 +767,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 	// to raise one prompt per proposed write until the operator
 	// clears it to make them stop.
 	a.liftDeclined = false
+	a.logModeStart()
 	// The auto state decides the ceiling from this turn's message,
 	// before any tool call in it (ADR-0080 §2). It only ever
 	// tightens, so a wrong answer costs a restriction the operator

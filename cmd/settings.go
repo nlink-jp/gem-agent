@@ -45,6 +45,23 @@ type settingsStore struct {
 	// value the panel just replaced — the display claimed config.toml
 	// authored values it never held (review round 2).
 	sessionEdits map[string]bool
+	// startValues is what the live session settings read the first time
+	// the panel was built — startup, since root.go builds it there.
+	// sessionEdits only knows about the panel's own edits, so a ceiling
+	// moved by /readonly, shift+tab, the lift dialog or the watcher was
+	// shown with its startup provenance: a live "true" attributed to a
+	// config.toml that says false (independent review, 2026-09-09).
+	startValues map[string]string
+}
+
+// liveSource is settingSource for a row whose value comes from the
+// running agent rather than from config. A value that has moved since
+// startup was moved by this session, whoever in it did the moving.
+func (s *settingsStore) liveSource(key, live string) string {
+	if start, ok := s.startValues[key]; ok && start != live {
+		return "session"
+	}
+	return s.settingSource(key)
 }
 
 // settingSource is Config.Source with the session-edit override.
@@ -86,6 +103,19 @@ func (s *settingsStore) Rebuild() (tui.SettingsData, error) {
 
 // data renders the current state as panel rows.
 func (s *settingsStore) data() tui.SettingsData {
+	autoApprove := strconv.FormatBool(s.ag.AutoApprove())
+	ceiling := s.ag.CeilingState()
+	readOnly, readOnlyAuto := strconv.FormatBool(ceiling.ReadOnly), strconv.FormatBool(ceiling.Auto)
+	if s.startValues == nil {
+		// The first build is the startup build (root.go calls data()
+		// before the first prompt), so this is the baseline every later
+		// build compares against.
+		s.startValues = map[string]string{
+			"agent.auto_approve":   autoApprove,
+			"agent.read_only":      readOnly,
+			"agent.read_only_auto": readOnlyAuto,
+		}
+	}
 	d := tui.SettingsData{ProjectDir: abbreviateHome(s.projectDir)}
 	ro := func(section, label, value, key, detail string) {
 		d.Rows = append(d.Rows, tui.SettingRow{
@@ -155,7 +185,7 @@ func (s *settingsStore) data() tui.SettingsData {
 	// Editable: what can take effect without rebuilding anything.
 	d.Rows = append(d.Rows,
 		tui.SettingRow{Section: "session", Label: "agent.auto_approve",
-			Value: strconv.FormatBool(s.ag.AutoApprove()), Source: s.settingSource("agent.auto_approve"),
+			Value: autoApprove, Source: s.liveSource("agent.auto_approve", autoApprove),
 			Values: []string{"false", "true"}},
 		tui.SettingRow{Section: "session", Label: "agent.auto_compact",
 			Value: strconv.FormatBool(s.ag.AutoCompact()), Source: s.settingSource("agent.auto_compact"),
@@ -166,10 +196,10 @@ func (s *settingsStore) data() tui.SettingsData {
 		// flag provenance in /settings" (independent review,
 		// 2026-09-09).
 		tui.SettingRow{Section: "session", Label: "agent.read_only",
-			Value: strconv.FormatBool(s.ag.CeilingState().ReadOnly), Source: s.settingSource("agent.read_only"),
+			Value: readOnly, Source: s.liveSource("agent.read_only", readOnly),
 			Values: []string{"false", "true"}},
 		tui.SettingRow{Section: "session", Label: "agent.read_only_auto",
-			Value: strconv.FormatBool(s.ag.CeilingState().Auto), Source: s.settingSource("agent.read_only_auto"),
+			Value: readOnlyAuto, Source: s.liveSource("agent.read_only_auto", readOnlyAuto),
 			Values: []string{"false", "true"}},
 	)
 	// Read-only by design (review round 2): the row was editable but

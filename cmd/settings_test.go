@@ -218,3 +218,82 @@ func TestSettingsMarksAnIgnoredProjectEntry(t *testing.T) {
 		t.Errorf("trusted row = %+v", row)
 	}
 }
+
+// The ceiling and its watcher are rows the panel can move, and the ADR
+// promised their provenance would be visible there. Nothing covered
+// either half (independent review, pass 2).
+func TestSettingsCeilingRowsMoveAndReportSession(t *testing.T) {
+	s := newStore(t)
+	s.cfg.Sources = map[string]string{
+		"agent.read_only": config.FromFile, "agent.read_only_auto": config.FromFile,
+	}
+	d := s.data() // the startup build: the baseline for "has it moved?"
+
+	for _, label := range []string{"agent.read_only", "agent.read_only_auto"} {
+		row, ok := rowFor(d, label)
+		if !ok {
+			t.Fatalf("%s has no row", label)
+		}
+		if row.Value != "false" || row.Source != config.FromFile {
+			t.Errorf("%s at startup = %+v", label, row)
+		}
+	}
+
+	d, line := s.Apply(tui.SettingChange{Label: "agent.read_only", Value: "true"})
+	if !s.ag.CeilingState().ReadOnly {
+		t.Error("the row did not reach the agent")
+	}
+	if !strings.Contains(line, "read-only: true") {
+		t.Errorf("scrollback line = %q", line)
+	}
+	row, _ := rowFor(d, "agent.read_only")
+	if row.Value != "true" || row.Source != "session" {
+		t.Errorf("after the edit = %+v, want true/session", row)
+	}
+	// The watcher is the other setting and must not have moved with it.
+	if row, _ := rowFor(d, "agent.read_only_auto"); row.Value != "false" || row.Source != config.FromFile {
+		t.Errorf("the watcher moved with the ceiling: %+v", row)
+	}
+
+	d, _ = s.Apply(tui.SettingChange{Label: "agent.read_only_auto", Value: "true"})
+	if !s.ag.CeilingState().Auto {
+		t.Error("the watcher row did not reach the agent")
+	}
+	if row, _ := rowFor(d, "agent.read_only_auto"); row.Value != "true" || row.Source != "session" {
+		t.Errorf("watcher after the edit = %+v", row)
+	}
+}
+
+// Provenance follows the value, not the panel. /readonly, shift+tab, the
+// lift dialog and the watcher all move these settings without the panel
+// hearing about it, and the row then showed a live value credited to the
+// config file that says the opposite (independent review, pass 2).
+func TestSettingsLiveRowsCreditTheSessionForChangesMadeElsewhere(t *testing.T) {
+	s := newStore(t)
+	s.cfg.Sources = map[string]string{
+		"agent.read_only": config.FromFile, "agent.auto_approve": config.FromFile,
+	}
+	s.data() // startup baseline
+
+	// Moved behind the panel's back, the way every other surface does it.
+	s.ag.SetReadOnly(true, "auto")
+	s.ag.SetAutoApprove(true)
+
+	d := s.data()
+	for _, label := range []string{"agent.read_only", "agent.auto_approve"} {
+		row, _ := rowFor(d, label)
+		if row.Value != "true" {
+			t.Errorf("%s row does not show the live value: %+v", label, row)
+		}
+		if row.Source != "session" {
+			t.Errorf("%s credits %q for a value this session set", label, row.Source)
+		}
+	}
+
+	// And back again: a value returned to where it started is the
+	// startup layer's again, not the session's.
+	s.ag.SetReadOnly(false, "operator")
+	if row, _ := rowFor(s.data(), "agent.read_only"); row.Source != config.FromFile {
+		t.Errorf("restored value still credited to the session: %+v", row)
+	}
+}

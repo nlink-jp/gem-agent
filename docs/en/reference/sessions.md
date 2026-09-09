@@ -22,6 +22,16 @@ Each message names what to do instead. A session that was compacted
 resumes compacted, rather than re-inflating to the size it was shrunk
 from.
 
+**The conversation comes back; the session's modes do not.** Auto-approve
+and the read-only ceiling and its watcher are resolved from config and
+the flags on the resuming command line, exactly as they are for a fresh
+session — a stored `read-only: on` would otherwise arrive without a
+command line that says so, which is the opposite of ADR-0053's rule that
+a grant, or a restriction, is visible where the run is launched. The
+transcript records what the modes started as (`mode_start`) and every
+change after it, so what was in force at any point is readable; it is
+not replayed.
+
 The JSONL transcript is both the log and the resume source, recorded in
 full fidelity (Gemini reasoning tokens included, which the API requires
 on replay). It therefore holds the full text of every file the agent
