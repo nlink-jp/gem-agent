@@ -81,14 +81,24 @@ panel, theme control, and a fully bilingual chrome
 interactive turn — `gem-agent "…"` runs it and hands you the keyboard
 (ADR-0064). Pipes fall back to a plain REPL;
 `-p` runs one-shot (mutating tools denied; `--allow` grants named
-tools per run, `--auto` arms the risk ladder — ADR-0053; `--read-only` caps the
-session at the read lane so nothing outside its scratch changes —
-ADR-0080), and
+tools per run, `--auto` arms the risk ladder — ADR-0053), and
 `data | gem-agent -p "…"` attaches piped stdin as isolated data,
 never as prompt text (ADR-0055). The pipe is read to EOF; if it is
 still open after 2 s, a stderr line says so and names the remedy —
 launch with `< /dev/null` when nothing is meant to be attached
 (ADR-0067).
+
+**[Read-only is a mode](docs/en/reference/approval.md)** — a session
+ceiling on a separate axis from approval: `--read-only` caps the session
+at the read lane, so a write, a memory save or a shell command asking
+for more is refused before any gate rather than escalated to one, and
+nothing outside the session scratch changes. `--auto-read-only` lets the
+runtime turn it on when you ask for a session that changes nothing; it
+only ever tightens. `/readonly on|off` and `/readonly auto on|off` move
+either in a session, `--writable` opts a run out of a configured one,
+and the status line and startup banner carry the state. A call over the
+ceiling asks whether to lift the mode — a different question from
+approving the call, which is asked separately afterwards (ADR-0080).
 
 **[Built-in tools](docs/en/reference/tools.md)** — orientation
 (`list_files`/`list_tree`/`search_files`, ignore-aware: dependency and
