@@ -8,6 +8,12 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | オペレータ:「思考レベルの設定もあるとよいと考えました」 |
 
+*ADR-0082 により改訂: §2 の「リスク側呼び出しは同じバックエンドに乗る」は
+`[model].risk` と `[model].risk_thinking` が共に未設定の間だけ成り立つ。どちらかが
+設定された時点でモデル層 — リスク評価・進捗レビュー・read-only ウォッチャー — は
+専用の枠で走り、このレベルを継承しない。圧縮は引き続きメインバックエンドで
+このレベルのまま。*
+
 ## Context
 
 Gemini 3 はリクエスト単位の思考レベル（MINIMAL / LOW / MEDIUM / HIGH）を

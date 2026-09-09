@@ -8,6 +8,12 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator: a thinking-level setting would be good to have |
 
+*Amended by ADR-0082: §2's "the risk side-calls ride the same backend"
+holds only while `[model].risk` and `[model].risk_thinking` are unset.
+Once either is set, the model tier — risk evaluation, progress review,
+read-only watcher — runs on a slot of its own and never inherits this
+level. Compaction still rides the main backend at this level.*
+
 ## Context
 
 Gemini 3 exposes a per-request thinking level (MINIMAL / LOW / MEDIUM /
