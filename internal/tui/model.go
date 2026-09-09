@@ -2158,22 +2158,30 @@ func (m Model) footer() string {
 		parts = append(parts, m.projectDir)
 	}
 	line := m.st.hint.Render(strings.Join(parts, " · "))
-	// One badge, in the accent color for the same reason auto mode is:
-	// it changes what runs. Which one says what will happen — the
-	// ceiling when it is in force, and the watcher when it is armed and
-	// waiting, since a watcher is dormant while the ceiling is already
-	// up and only matters after a lift. Two badges would spend the line
-	// saying one of them does nothing.
+	// One badge carrying both settings: the padlock is the ceiling right
+	// now, the word is which mode the session is in. With the watcher
+	// armed the ceiling moves without the operator touching it, so its
+	// current value has to be on screen even when it is off — an open
+	// padlock, dim, because nothing is in force. Without the watcher the
+	// ceiling only moves when they move it, so off is the default and
+	// says nothing at all.
 	//
 	// The word is the one /readonly and the banner use, and it is not
 	// "auto": that is the approval ladder's, and ADR-0080 §1 asks for
 	// two indicators rather than one blurred word.
 	if m.readOnlyState != nil {
+		badge := ""
+		style := m.st.tool
 		switch c := m.readOnlyState(); {
-		case c.ReadOnly:
-			line = m.st.tool.Render("🔒read-only") + m.st.hint.Render(" · ") + line
+		case c.Auto && c.ReadOnly:
+			badge = "🔒auto-read-only"
 		case c.Auto:
-			line = m.st.tool.Render("🔒auto-read-only") + m.st.hint.Render(" · ") + line
+			badge, style = "🔓auto-read-only", m.st.hint
+		case c.ReadOnly:
+			badge = "🔒read-only"
+		}
+		if badge != "" {
+			line = style.Render(badge) + m.st.hint.Render(" · ") + line
 		}
 	}
 	if m.autoMode {

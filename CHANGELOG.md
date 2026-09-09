@@ -134,8 +134,14 @@
   them does nothing. Without this, a watcher armed mid-session with
   `/readonly auto on` had no lasting surface at all. The word is not
   `auto`: that one is the approval ladder's, and ADR-0080 §1 asks for
-  two indicators rather than one blurred word. Operator report,
-  2026-09-09
+  two indicators rather than one blurred word.
+
+  The badge carries both settings: the padlock is the ceiling right
+  now, the word is the mode. With the watcher armed the ceiling moves
+  without the operator touching it, so its current value stays on
+  screen either way — `🔓auto-read-only`, dim, when nothing is in
+  force. Without the watcher, off is the default and says nothing.
+  Operator report, 2026-09-09
 
 ## [0.73.0] - 2026-09-09
 

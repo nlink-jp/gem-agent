@@ -103,42 +103,58 @@ func TestModeChangeIgnoresTheAnswersItDoesNotOffer(t *testing.T) {
 	}
 }
 
-// The footer carries the ceiling in force, continuously, for the same
-// reason it carries auto mode: it changes what runs (ADR-0080 §1).
-func TestFooterShowsTheCeilingInForce(t *testing.T) {
+// The footer carries both settings in one badge (ADR-0080 §1): the
+// padlock is the ceiling right now, the word is the mode. A watcher
+// armed mid-session had no lasting surface before this, and an armed
+// watcher that had not fired hid the ceiling it was about to move.
+func TestFooterBadgeCarriesBothSettings(t *testing.T) {
 	state := sandbox.Ceiling{}
 	m := New(Options{Msgs: uitext.For(uitext.JA), Theme: "notty",
 		ReadOnlyState: func() sandbox.Ceiling { return state }})
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = next.(Model)
 
-	if strings.Contains(m.View(), "read-only") {
-		t.Errorf("both off is the default and says nothing:\n%s", m.View())
+	for _, tc := range []struct {
+		state sandbox.Ceiling
+		want  string // "" = no badge at all
+	}{
+		// Nothing armed, nothing in force: the default says nothing.
+		{sandbox.Ceiling{}, ""},
+		// The operator moves the ceiling themselves here, so only the
+		// state that constrains shows.
+		{sandbox.Ceiling{ReadOnly: true}, "🔒read-only"},
+		// Armed: the ceiling moves without them, so its current value is
+		// on screen either way — open padlock when nothing is in force.
+		{sandbox.Ceiling{Auto: true}, "🔓auto-read-only"},
+		{sandbox.Ceiling{Auto: true, ReadOnly: true}, "🔒auto-read-only"},
+	} {
+		state = tc.state
+		v := m.View()
+		if tc.want == "" {
+			if strings.Contains(v, "read-only") {
+				t.Errorf("%+v: the default printed a badge:\n%s", tc.state, v)
+			}
+			continue
+		}
+		if !strings.Contains(v, tc.want) {
+			t.Errorf("%+v: want %q in the footer:\n%s", tc.state, tc.want, v)
+		}
+		// One badge, not two.
+		if strings.Count(v, "read-only") != 1 {
+			t.Errorf("%+v: want exactly one badge:\n%s", tc.state, v)
+		}
 	}
-	// Armed and waiting: the badge says what will happen.
-	state = sandbox.Ceiling{Auto: true}
-	if !strings.Contains(m.View(), "🔒auto-read-only") {
-		t.Errorf("an armed watcher is not shown:\n%s", m.View())
-	}
-	// In force: the ceiling's badge, and only it — a watcher is dormant
-	// while the ceiling is up, so a second badge would say that one of
-	// them does nothing.
-	state = sandbox.Ceiling{ReadOnly: true, Auto: true}
-	v := m.View()
-	if !strings.Contains(v, "🔒read-only") || strings.Contains(v, "🔒auto-read-only") {
-		t.Errorf("want the ceiling badge alone:\n%s", v)
-	}
+
 	// Not the approval ladder's word (ADR-0080 §1: two indicators, never
 	// one blurred one).
-	if strings.Contains(v, "🔒auto ") {
-		t.Errorf("the ceiling badge borrowed auto mode's word:\n%s", v)
+	state = sandbox.Ceiling{Auto: true, ReadOnly: true}
+	if strings.Contains(m.View(), "🔒auto ") {
+		t.Errorf("the badge borrowed auto mode's word:\n%s", m.View())
 	}
-	// It is read live, so a change from anywhere shows without the TUI
-	// being told: /readonly, the watcher, and an approved lift all move
-	// it, and two of the three are inside the agent. A lift leaves the
-	// watcher armed, so the badge falls back to it rather than vanishing.
+	// Read live: /readonly, the watcher and an approved lift all move
+	// the state, and two of the three are inside the agent.
 	state = sandbox.Ceiling{Auto: true}
-	if v := m.View(); strings.Contains(v, "🔒read-only ") || !strings.Contains(v, "🔒auto-read-only") {
-		t.Errorf("after a lift, want the watcher badge:\n%s", v)
+	if !strings.Contains(m.View(), "🔓auto-read-only") {
+		t.Errorf("the footer did not follow a lift:\n%s", m.View())
 	}
 }
