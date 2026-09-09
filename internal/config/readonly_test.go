@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -95,8 +96,29 @@ func TestReadOnlyOverridesAreIndependent(t *testing.T) {
 	}
 }
 
+// Both overrides refuse a value they do not understand, and each says
+// which one it was: the watcher's branch had no test, so a typo there
+// could have silently armed nothing (independent review, pass 2).
 func TestReadOnlyRejectsAnUnknownOverride(t *testing.T) {
-	if _, err := LoadWithOverrides(writeCfg(t, cfgBase), Overrides{ReadOnly: "maybe"}); err == nil {
-		t.Fatal("accepted an unknown read-only override")
+	for _, tc := range []struct {
+		name string
+		ov   Overrides
+		want string
+	}{
+		{"ceiling", Overrides{ReadOnly: "maybe"}, "read-only override"},
+		{"watcher", Overrides{ReadOnlyAuto: "maybe"}, "read-only-auto override"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := LoadWithOverrides(writeCfg(t, cfgBase), tc.ov)
+			if err == nil {
+				t.Fatalf("accepted an unknown override: %+v", cfg.Agent)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error does not name the setting: %v", err)
+			}
+			if !strings.Contains(err.Error(), `"maybe"`) {
+				t.Errorf("error does not quote what was passed: %v", err)
+			}
+		})
 	}
 }

@@ -2448,9 +2448,17 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 		}
 		if b.Len() == 0 {
 			c := ag.CeilingState()
-			if c.ReadOnly {
+			// Same reservation the banner makes: with the lanes off the
+			// ceiling reaches less, and the state line must not promise
+			// what only the lanes give (independent review). A nil
+			// registry is the tests' agent-only fixture.
+			confined := registry == nil || (registry.Confined() && registry.ReadLane())
+			switch {
+			case c.ReadOnly && !confined:
+				b.WriteString(msgs.ReadOnlyOnUnconfined)
+			case c.ReadOnly:
 				b.WriteString(msgs.ReadOnlyOn)
-			} else {
+			default:
 				b.WriteString(msgs.ReadOnlyOff)
 			}
 			// Only when armed: off is the default and the line would say

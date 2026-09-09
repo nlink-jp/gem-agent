@@ -179,3 +179,37 @@ func TestAutoSlashSetsAndToggles(t *testing.T) {
 		}
 	}
 }
+
+// The state line makes the same reservation the banner makes: with the
+// lanes off the ceiling still refuses the file tools and a write- or
+// operator-declaring shell call, but nothing bounds a command that
+// declares the read lane, so "nothing outside the scratch changes" is
+// not a sentence /readonly may print (independent review, pass 2).
+func TestReadonlyOnDoesNotPromiseWhatTheLanesAreNotGiving(t *testing.T) {
+	reg, err := tools.New(t.TempDir(), nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A registry with no lane runner has no verified read lane, which
+	// is the state the wording exists for.
+	if reg.Confined() && reg.ReadLane() {
+		t.Fatal("fixture has a verified read lane; it cannot exercise this")
+	}
+	a := readOnlyAgent(t, sandbox.Ceiling{ReadOnly: true})
+	for _, lang := range []uitext.Lang{uitext.EN, uitext.JA} {
+		out, isErr, _ := slashOutput("/readonly", a, reg, nil, nil, slashReloads{}, nil, nil, nil, "", uitext.For(lang), nil)
+		if isErr {
+			t.Fatalf("%v: %q", lang, out)
+		}
+		if strings.Contains(out, "nothing outside") || strings.Contains(out, "スクラッチの外は変更しません") {
+			t.Errorf("%v: claims the lanes' guarantee with the lanes off: %q", lang, out)
+		}
+		if !strings.Contains(out, "sandbox") {
+			t.Errorf("%v: does not say why the guarantee is narrower: %q", lang, out)
+		}
+		// Still the way back, in both wordings.
+		if !strings.Contains(out, "/readonly off") {
+			t.Errorf("%v: no way back: %q", lang, out)
+		}
+	}
+}

@@ -256,8 +256,14 @@ type Messages struct {
 	CeilingUnboundedReason string
 	CeilingStateFmt        string
 	CeilingMemoryFmt       string
-	ReadOnlyOn             string
-	ReadOnlyOff            string
+	ReadOnlyOn string
+	// ReadOnlyOnUnconfined is the same state under --no-sandbox, where
+	// the refusal still reaches the file tools and a write- or
+	// operator-declaring shell call but nothing bounds a command that
+	// declares the read lane — so the plain sentence would promise what
+	// only the lanes can give (independent review).
+	ReadOnlyOnUnconfined string
+	ReadOnlyOff          string
 	ReadOnlyAuto           string
 	ReadOnlyUsage          string
 	// ReadOnlyAutoOnFmt: %s = the operator's own words that decided it.
@@ -507,6 +513,7 @@ keys:
 	CeilingStateFmt:        "this session is capped at the %s lane, and this tool changes state outside it",
 	CeilingMemoryFmt:       "this session is capped at the %s lane, and a memory write changes what every later session trusts",
 	ReadOnlyOn:             "read-only mode: ON — nothing outside the session scratch changes; /readonly off lifts it\n",
+	ReadOnlyOnUnconfined:   "read-only mode: ON — but the sandbox is off, so a shell command declaring the read lane is bounded by nothing; /readonly off lifts the rest\n",
 	ReadOnlyOff:            "read-only mode: OFF\n",
 	ReadOnlyAuto:           "auto read-only: ON — it turns read-only on by itself when you ask for a read-only session\n",
 	ReadOnlyUsage:          "usage: /readonly on|off (the ceiling) · /readonly auto on|off (the watcher) · no argument shows both\n",
@@ -694,6 +701,7 @@ var ja = Messages{
 	CeilingStateFmt:        "このセッションは %s レーンに抑えられていますが、このツールはスクラッチの外の状態を変更します",
 	CeilingMemoryFmt:       "このセッションは %s レーンに抑えられていますが、メモリ書込は後続の全セッションが信頼するものを変えます",
 	ReadOnlyOn:             "読み取り専用モード: ON — スクラッチの外は変更しません。解除は /readonly off\n",
+	ReadOnlyOnUnconfined:   "読み取り専用モード: ON — ただし sandbox が off のため、read レーンを宣言したシェルコマンドは何にも縛られません。残りの解除は /readonly off\n",
 	ReadOnlyOff:            "読み取り専用モード: OFF\n",
 	ReadOnlyAuto:           "自動切り替え: ON — 読み取り専用の依頼を打つと自動で ON になります\n",
 	ReadOnlyUsage:          "使い方: /readonly on|off（上限）・/readonly auto on|off（自動切り替え）・引数なしで両方表示\n",
