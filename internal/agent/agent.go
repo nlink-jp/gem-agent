@@ -1296,6 +1296,12 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		refused := "error: " + d.CeilingReason + ". The operator can lift it with /readonly off"
 		if a.liftDeclined {
 			a.telemetry.Approval(tc.Name, "denied", "ceiling", true, d.CeilingReason, a.laneOf(tc))
+			// The dialog is suppressed, not the denial: without this the
+			// second and later refusals of a turn happened entirely off
+			// screen — in one-shot, where the dialog is the only thing
+			// that ever printed, and in the TUI, where the operator saw
+			// the model retry with nothing said (independent review).
+			a.notify(fmt.Sprintf(a.msgs.CeilingRefusedAgainFmt, tc.Name))
 			return refused, false, false, floorRan, nil
 		}
 		detail, purpose := a.Describe(tc)

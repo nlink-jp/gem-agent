@@ -110,7 +110,7 @@ func init() {
 	rootCmd.Flags().StringSliceVar(&flagAllow, "allow", nil, `tools that never ask this run: tool names or mcp__server__* prefixes (repeatable or comma-separated); blocked commands still ask`)
 	rootCmd.Flags().BoolVar(&flagWritable, "writable", false, "no lane ceiling — the default, stated; use it to step out of a configured [agent].read_only")
 	rootCmd.Flags().BoolVar(&flagReadOnly, "read-only", false, "cap the session at the read lane: nothing outside the session scratch may change")
-	rootCmd.Flags().BoolVar(&flagAutoRO, "auto-read-only", false, "start with no ceiling and let the runtime tighten it to read-only from what you type (interactive only)")
+	rootCmd.Flags().BoolVar(&flagAutoRO, "auto-read-only", false, "let the runtime tighten the ceiling to read-only from what you type; the starting ceiling is unchanged, so pair it with --writable to be sure of starting off (interactive only)")
 	rootCmd.Flags().BoolVarP(&flagContinue, "continue", "c", false, "resume this project's most recent session")
 	rootCmd.Flags().StringVar(&flagResume, "resume", "", "resume a specific session id (see: gem-agent sessions)")
 }

@@ -402,6 +402,13 @@ approves runs without asking you. If that trade is wrong for a server,
 `"always"` in the tool policy keeps it in front of you, and
 `[mcp] exclude` (ADR-0077) removes it from the session entirely.
 
+**In `-p --read-only`, that means every MCP call is denied** — reads
+included, and `--allow` does not change it. The two sentences above
+compose: nothing standing may answer the call, and one-shot has nobody
+to ask. If a read-only run needs its MCP tools, `--auto` gives the model
+tier the decision (it is told what you asked for); `--writable` drops
+the ceiling and says so on the command line.
+
 **What the ceiling does not reach at all**: a `!` command you typed
 (it runs in the `operator` lane, as your own shell would) and your
 configured hooks.

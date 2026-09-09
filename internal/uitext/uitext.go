@@ -267,6 +267,14 @@ type Messages struct {
 	// already says (operator report).
 	ReadOnlyAutoOnFmt   string
 	ReadOnlyAutoOnPlain string
+	// CeilingRefusedAgainFmt: %s = the tool. The lift dialog is asked
+	// once a turn — a model that keeps trying is not worth re-asking
+	// about. But the refusals kept happening with nothing on screen, so
+	// in one-shot only the first denial was ever printed and in the TUI
+	// the operator watched the model stall for no stated reason
+	// (independent review). This is the line the suppressed dialog owes
+	// them.
+	CeilingRefusedAgainFmt string
 	HistoryCleared      string
 	NothingToCompact    string
 	// CompactedFmt reports a /compact: messages summarised, kept.
@@ -504,6 +512,7 @@ keys:
 	ReadOnlyUsage:          "usage: /readonly on|off (the ceiling) · /readonly auto on|off (the watcher) · no argument shows both\n",
 	ReadOnlyAutoOnFmt:      "You asked for %q, so this session is now read-only. /readonly off lifts it",
 	ReadOnlyAutoOnPlain:    "This reads as a read-only session, so it is now read-only. /readonly off lifts it",
+	CeilingRefusedAgainFmt: "%s refused: read-only is still on. You declined to lift it this turn, so this one was not asked",
 	HistoryCleared:         "history cleared — the next message starts a fresh conversation\n",
 	NothingToCompact:       "nothing to compact yet — the conversation is still short",
 	CompactedFmt:           "compacted %d earlier messages into a summary; %d kept verbatim. Detail from the summarised part is now second-hand",
@@ -690,6 +699,7 @@ var ja = Messages{
 	ReadOnlyUsage:          "使い方: /readonly on|off（上限）・/readonly auto on|off（自動切り替え）・引数なしで両方表示\n",
 	ReadOnlyAutoOnFmt:      "%q という依頼のため、読み取り専用モードに切り替えました。解除は /readonly off",
 	ReadOnlyAutoOnPlain:    "読み取り専用の依頼と判断し、読み取り専用モードに切り替えました。解除は /readonly off",
+	CeilingRefusedAgainFmt: "%s を拒否: 読み取り専用モードのままです。このターンで解除しないと答えたため、確認は出していません",
 	HistoryCleared:         "履歴をクリアしました — 次のメッセージから新しい会話が始まります\n",
 	NothingToCompact:       "まだ /compact の対象がありません — 会話がまだ短いためです",
 	CompactedFmt:           "古いメッセージ %d 件を要約に畳みました; %d 件はそのまま保持。要約された部分の詳細は伝聞になります",

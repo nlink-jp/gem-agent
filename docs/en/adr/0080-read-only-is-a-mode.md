@@ -108,10 +108,16 @@ each; in a session, `/readonly on|off` moves the ceiling and
 line, and every change is recorded with who made it.
 
 ```
-gem-agent --writable          # off — today's behaviour, stated
-gem-agent --read-only          # the ceiling is read for this session
-gem-agent --auto-read-only     # off, and the runtime may tighten it
+gem-agent --writable                     # off, and unwatched — today's behaviour, stated
+gem-agent --read-only                    # the ceiling is read for this session
+gem-agent --auto-read-only               # the runtime may tighten it; the ceiling starts wherever config left it
+gem-agent --writable --auto-read-only    # off, and the runtime may tighten it
 ```
+
+The last two are not the same line said twice. `--auto-read-only` moves
+the watcher and nothing else, so under a configured `read_only = true`
+it starts read-only *and* watching. Only pairing it with `--writable`
+states both bits.
 
 A flag for the default state has to exist because the config key does:
 `--writable` is how a session opts out of a configured `"on"` or

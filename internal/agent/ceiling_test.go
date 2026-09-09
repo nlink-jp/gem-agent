@@ -183,6 +183,57 @@ func TestCeilingLiftDeclinedIsNotAskedTwiceInATurn(t *testing.T) {
 	}
 }
 
+// The dialog is asked once a turn; the denials are not once a turn.
+// Without a line for the suppressed ones, one-shot printed only the
+// first refusal of a run — the mode question is the only thing denyGate
+// prints — and the TUI showed the operator nothing while the model
+// retried (independent review).
+func TestCeilingSuppressedRefusalStillSpeaks(t *testing.T) {
+	a := ceilingAgent(t, "on")
+	a.gate = &liftGate{answer: false}
+	var notices []string
+	a.onNotice = func(msg string) { notices = append(notices, msg) }
+
+	for _, cmd := range []string{"touch x", "touch y", "touch z"} {
+		if _, _, _, _, err := a.execCallInner(context.Background(), shellLane(cmd, "write")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The first refusal spoke through the dialog, so it owes no notice;
+	// the two the dialog never saw do.
+	if len(notices) != 2 {
+		t.Fatalf("notices = %d, want 2 (one per suppressed refusal): %q", len(notices), notices)
+	}
+	for _, n := range notices {
+		if !strings.Contains(n, "shell_exec") {
+			t.Errorf("the notice does not name the call: %q", n)
+		}
+	}
+}
+
+// The suppression is per turn, so a new turn asks again: an operator
+// who declined a lift while asking one thing has not answered for the
+// next thing they ask. Nothing covered the reset (independent review).
+func TestCeilingLiftDeclineDoesNotOutlastTheTurn(t *testing.T) {
+	a := ceilingAgent(t, "on")
+	gate := &liftGate{answer: false}
+	a.gate = gate
+	a.backend = &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{shellLane("touch x", "write")}},
+		{Content: "done"},
+		{ToolCalls: []llm.ToolCall{shellLane("touch y", "write")}},
+		{Content: "done"},
+	}}
+	for _, turn := range []string{"最初の依頼", "次の依頼"} {
+		if _, err := a.Run(context.Background(), turn, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(gate.asked) != 2 {
+		t.Errorf("asked %d times over two turns, want 2: %v", len(gate.asked), gate.asked)
+	}
+}
+
 // Approving is a mode change and nothing more. The call then goes
 // through the ordinary rules, which is a second, separate question —
 // treating the lift as the call's approval spent an "always" policy

@@ -363,7 +363,7 @@ the function name is the only place the intent can be said (ADR-0077).
 | `--auto` | start in auto-approve mode (ADR-0004); the only way to arm it in one-shot `-p`, where `[agent].auto_approve` is ignored (ADR-0053) |
 | `--writable` | no lane ceiling — the default, stated. This is how a run steps out of a configured `"on"` or `"auto"`, per invocation and visibly (ADR-0080) |
 | `--read-only` | cap the session at the `read` lane: nothing outside the session scratch may change |
-| `--auto-read-only` | start with no ceiling and let the runtime tighten it from what you type. Interactive only — in `-p` the ceiling is answered on the command line, never inferred from the prompt |
+| `--auto-read-only` | let the runtime tighten the ceiling from what you type. It arms the watcher only: the starting ceiling stays whatever `read_only` and the other two flags make it, so `--writable --auto-read-only` is the invocation that starts off *and* watches. Interactive only — in `-p` the ceiling is answered on the command line, never inferred from the prompt |
 | `--allow <names>` | per-run approval grants: tool names or `mcp__server__*` prefixes that never ask this run (repeatable or comma-separated; the Block floor still applies — ADR-0053) |
 | `-c` / `--continue` | resume this project's most recent session |
 | `--resume <id>` | resume a specific session |
