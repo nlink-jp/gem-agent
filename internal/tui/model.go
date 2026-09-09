@@ -1793,12 +1793,22 @@ func (m Model) viewContent() string {
 			reasonText = "⚠ " + clip(req.Reason, 200)
 		}
 		detailText := req.Detail
+		// The mode change says what yes means, and it is a line of the
+		// box like any other: it has to wrap with them, or it sets the
+		// box's width and pushes the border off the screen (operator
+		// report — this line was rendered straight from the catalog).
+		consequenceText := ""
+		if req.ModeChange {
+			consequenceText = m.msgs.CeilingLiftConsequence
+		}
 		if inner := m.width - 6; m.width > 0 && inner >= 20 {
 			purposeText = ansi.Hardwrap(purposeText, inner, true)
 			reasonText = ansi.Hardwrap(reasonText, inner, true)
 			detailText = ansi.Hardwrap(detailText, inner, true)
+			consequenceText = ansi.Hardwrap(consequenceText, inner, true)
 		}
-		budget -= strings.Count(purposeText, "\n") + strings.Count(reasonText, "\n")
+		budget -= strings.Count(purposeText, "\n") + strings.Count(reasonText, "\n") +
+			strings.Count(consequenceText, "\n")
 		if budget < 0 {
 			budget = 0
 		}
@@ -1840,7 +1850,7 @@ func (m Model) viewContent() string {
 		} else {
 			hint := m.msgs.ApprovalHint
 			if req.ModeChange {
-				body += "\n" + m.st.tool.Render(m.msgs.CeilingLiftConsequence)
+				body += "\n" + m.st.tool.Render(consequenceText)
 				hint = m.msgs.CeilingLiftHint
 			}
 			body += "\n" + m.optionsLine() + "\n" + m.st.hint.Render(hint)

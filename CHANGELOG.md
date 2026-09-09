@@ -81,7 +81,11 @@
   has its own approver method (no allowlist to return, none to
   register), its own title and consequence line from the language
   catalog, and three answers; typing `a` or `p` does nothing and the
-  selection cannot reach them. Operator report, 2026-09-09
+  selection cannot reach them. Its consequence line is one sentence and
+  wraps with the rest of the box — rendered straight from the catalog,
+  it set the box's width and pushed the border off the screen, and a
+  test now fails on any dialog row past the terminal. Operator report,
+  2026-09-09
 - `/readonly` says `読み取り専用モード: OFF` rather than explaining that
   the session may change things. OFF is the default, so spelling out
   its consequence stated the obvious in a shape that read as a puzzle;

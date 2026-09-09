@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
@@ -32,8 +34,8 @@ func TestModeChangeDialogSaysWhatIsBeingDecided(t *testing.T) {
 		lang        uitext.Lang
 		title, cons string
 	}{
-		{uitext.JA, "read-only を解除しますか", "はい"},
-		{uitext.EN, "Lift read-only?", "Yes turns read-only off"},
+		{uitext.JA, "read-only を解除しますか", "このセッションの残りで"},
+		{uitext.EN, "Lift read-only?", "rest of this session"},
 	} {
 		m, _ := modeChangeModel(t, tc.lang)
 		v := m.View()
@@ -52,6 +54,14 @@ func TestModeChangeDialogSaysWhatIsBeingDecided(t *testing.T) {
 		// The call stays visible — it is what raised the question.
 		if !strings.Contains(v, "path=test.txt") {
 			t.Errorf("%v: the triggering call is not shown:\n%s", tc.lang, v)
+		}
+		// And every line stays inside the box: a line rendered straight
+		// from the catalog set the box's width and pushed the border off
+		// the screen (operator report).
+		for _, row := range strings.Split(v, "\n") {
+			if w := ansi.StringWidth(row); w > 120 {
+				t.Errorf("%v: a dialog row is %d columns wide, past the terminal:\n%s", tc.lang, w, row)
+			}
 		}
 	}
 }

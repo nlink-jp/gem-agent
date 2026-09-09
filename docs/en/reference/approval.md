@@ -361,7 +361,8 @@ not an escalation — the gate can be answered by the session allowlist,
 so a ceiling that escalated would be one an earlier `a` could spend.
 What you are asked instead is a different question, in a dialog of its
 own: **lift read-only?**, with the call that raised it on screen and a
-line saying what yes and no each do. It offers `y` / `n` / `N` and
+line saying what yes means — it lifts read-only for the rest of the
+session, not just for this call. It offers `y` / `n` / `N` and
 nothing else — "allow for this session" and "always allow" are answers
 about a tool, and an `a` on the ordinary dialog registers the tool in
 the session allowlist even where the allowlist may not answer, which
