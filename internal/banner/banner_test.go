@@ -255,3 +255,42 @@ func TestReadOnlyLinesUnconfined(t *testing.T) {
 		t.Errorf("the watcher line moved with the sandbox: %q", armed)
 	}
 }
+
+// An unverified read lane is not an absent sandbox. read_lane_prompts
+// is the operator asking for MORE gating, and a failed startup probe
+// still leaves the read profile applied and every shell_exec gated — so
+// in both the ceiling's sentence stands. The first version of this
+// keyed on SandboxOn && ReadLane and printed "the sandbox is off"
+// directly beneath "sandbox: enabled", to the most cautious
+// configuration the tool has (second independent review).
+func TestReadOnlyLineSurvivesAnUnverifiedReadLane(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		f    Facts
+	}{
+		{"read_lane_prompts", Facts{ReadOnly: sandbox.Ceiling{ReadOnly: true},
+			SandboxOn: true, ReadLane: false, ReadLanePrompts: true}},
+		{"probe failed", Facts{ReadOnly: sandbox.Ceiling{ReadOnly: true},
+			SandboxOn: true, ReadLane: false}},
+	} {
+		lines := Lines(tc.f)
+		var sandboxLine, roLine string
+		for _, l := range lines {
+			if strings.HasPrefix(l, "sandbox:") {
+				sandboxLine = l
+			}
+			if strings.HasPrefix(l, "read-only:") {
+				roLine = l
+			}
+		}
+		if !strings.Contains(sandboxLine, "enabled") {
+			t.Fatalf("%s: fixture is not a sandbox-on case: %q", tc.name, sandboxLine)
+		}
+		if strings.Contains(roLine, "sandbox is off") {
+			t.Errorf("%s: the banner contradicts itself:\n  %s\n  %s", tc.name, sandboxLine, roLine)
+		}
+		if !strings.Contains(roLine, "changes nothing outside its scratch") {
+			t.Errorf("%s: the guarantee was withdrawn where it holds: %q", tc.name, roLine)
+		}
+	}
+}

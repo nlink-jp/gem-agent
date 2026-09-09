@@ -14,6 +14,16 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/tui"
 )
 
+// Compile-time first: a gate that loses the method is a build error,
+// not a test failure, and the test below then only has to say which
+// gates the list is meant to cover.
+var (
+	_ agent.OnceApprover = (*approve.Gate)(nil)
+	_ agent.OnceApprover = (*tui.Gate)(nil)
+	_ agent.OnceApprover = denyGate{}
+	_ agent.OnceApprover = searchDenyGate{}
+)
+
 func TestEveryGateTheBinaryUsesCanAskOnce(t *testing.T) {
 	gates := map[string]agent.Approver{
 		"plain REPL":     approve.New(nil, nil),

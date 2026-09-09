@@ -71,7 +71,7 @@ func Lines(f Facts) []string {
 	if f.AutoApprove {
 		out = append(out, AutoApproveLine())
 	}
-	out = append(out, ReadOnlyLines(f.ReadOnly, f.SandboxOn && f.ReadLane)...)
+	out = append(out, ReadOnlyLines(f.ReadOnly, f.SandboxOn)...)
 	for _, n := range f.Notes {
 		out = append(out, "warning: "+n)
 	}
@@ -135,11 +135,19 @@ func AutoApproveOneShotLine() string {
 // for one. The watcher, because the footer cannot: it carries the
 // ceiling in force, and an armed watcher has none yet, so without this
 // the fact is invisible until the turn it fires on.
-// confined is the sandbox as this machine established it: with the
-// lanes off, the ceiling still refuses the file tools and a shell call
-// that declares write or operator, but a read-lane declaration is no
-// longer bounded by anything, so the unqualified sentence would be
-// false (independent review).
+// confined is the sandbox as this machine established it. With it off,
+// the ceiling still refuses the file tools and a shell call that
+// declares write or operator, but a read-lane declaration is no longer
+// bounded by anything, so the unqualified sentence would be false
+// (independent review).
+//
+// It is Registry.Confined() alone, never Confined() && ReadLane(): an
+// unverified read lane — the operator's own read_lane_prompts, or a
+// failed startup probe — still applies the read profile AND gates the
+// call, so the guarantee holds harder there, not less. The first
+// version of this used the conjunction and told the most cautious
+// configuration in the tool that its sandbox was off (second
+// independent review).
 func ReadOnlyLines(c sandbox.Ceiling, confined bool) []string {
 	var out []string
 	switch {

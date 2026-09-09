@@ -362,7 +362,7 @@ the function name is the only place the intent can be said (ADR-0077).
 | `-p "<prompt>"` | one-shot mode: single turn, stdout, mutating tools denied (unless `--auto` — ADR-0053); piped stdin is attached as nonce-wrapped data, never as prompt text (ADR-0055); it is read to EOF, and a pipe still open after 2 s is announced on stderr (ADR-0067) |
 | `--auto` | start in auto-approve mode (ADR-0004); the only way to arm it in one-shot `-p`, where `[agent].auto_approve` is ignored (ADR-0053) |
 | `--writable` | no lane ceiling — the default, stated. This is how a run steps out of a configured `"on"` or `"auto"`, per invocation and visibly (ADR-0080) |
-| `--read-only` | cap the session at the `read` lane: nothing outside the session scratch may change |
+| `--read-only` | cap the session at the `read` lane: nothing outside the session scratch may change. With `--no-sandbox` the refusal still reaches the file tools and any write- or operator-declaring `shell_exec`, but a read-lane declaration is bounded by nothing, and the startup line says so |
 | `--auto-read-only` | let the runtime tighten the ceiling from what you type. It arms the watcher only: the starting ceiling stays whatever `read_only` and the other two flags make it, so `--writable --auto-read-only` is the invocation that starts off *and* watches. Interactive only — in `-p` the ceiling is answered on the command line, never inferred from the prompt |
 | `--allow <names>` | per-run approval grants: tool names or `mcp__server__*` prefixes that never ask this run (repeatable or comma-separated; the Block floor still applies — ADR-0053) |
 | `-c` / `--continue` | resume this project's most recent session |

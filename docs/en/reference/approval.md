@@ -390,7 +390,9 @@ bound them. Two things happen instead.
 session `a` and a `"never"` policy do not apply to an MCP call: both were
 answers about a session with no ceiling, and the ceiling is the newer,
 narrower statement. In the default mode that means you are asked, every
-time.
+time — and the prompt does not offer `a` or `p` at all, because a key
+the ceiling will not honour would do nothing when you pressed it and
+everything once you lifted the mode.
 
 **And the mode is stated to the model tier** as what you asked for —
 never as a control that is enforcing. Under `--auto` that tier judges

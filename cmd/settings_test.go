@@ -297,3 +297,31 @@ func TestSettingsLiveRowsCreditTheSessionForChangesMadeElsewhere(t *testing.T) {
 		t.Errorf("restored value still credited to the session: %+v", row)
 	}
 }
+
+// One rule per row: a setting returned to its startup value reads as the
+// startup layer's again, whichever surface moved it. The panel's own
+// edit history must not outvote the value, or the same net change reads
+// differently depending on where the operator typed it (second
+// independent review).
+func TestSettingsProvenanceAgreesAcrossSurfaces(t *testing.T) {
+	viaPanel := newStore(t)
+	viaPanel.cfg.Sources = map[string]string{"agent.read_only": config.FromFile}
+	viaPanel.data()
+	viaPanel.Apply(tui.SettingChange{Label: "agent.read_only", Value: "true"})
+	d, _ := viaPanel.Apply(tui.SettingChange{Label: "agent.read_only", Value: "false"})
+	panelRow, _ := rowFor(d, "agent.read_only")
+
+	viaSlash := newStore(t)
+	viaSlash.cfg.Sources = map[string]string{"agent.read_only": config.FromFile}
+	viaSlash.data()
+	viaSlash.ag.SetReadOnly(true, "operator")
+	viaSlash.ag.SetReadOnly(false, "operator")
+	slashRow, _ := rowFor(viaSlash.data(), "agent.read_only")
+
+	if panelRow.Value != slashRow.Value || panelRow.Source != slashRow.Source {
+		t.Errorf("same net change reads differently: panel %+v vs /readonly %+v", panelRow, slashRow)
+	}
+	if panelRow.Source != config.FromFile {
+		t.Errorf("a value back at its startup value is still credited to the session: %+v", panelRow)
+	}
+}

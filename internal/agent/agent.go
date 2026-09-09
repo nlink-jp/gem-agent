@@ -108,8 +108,8 @@ type Agent struct {
 	// session that started on or one the watcher had tightened
 	// (independent review).
 	modeStartLogged bool
-	system       string
-	maxTurns     int
+	system          string
+	maxTurns        int
 
 	onToolCall    func(tc llm.ToolCall)
 	onUsage       func(u llm.Usage)
@@ -440,6 +440,12 @@ func (a *Agent) Restart(log SessionLog) {
 	// call has nothing to correct; the tool_late_return record and
 	// the audit event still capture the effect.
 	a.lateNotices = nil
+	// A new transcript needs its own baseline. Without this the guard
+	// stayed set from the first session of the process, so a /clear
+	// session collected mode_change records with no mode_start to read
+	// them against — the exact gap the record exists to close (second
+	// independent review).
+	a.modeStartLogged = false
 	a.mu.Unlock()
 }
 
@@ -653,6 +659,13 @@ func (a *Agent) logModeStart() {
 }
 
 func (a *Agent) recordModeChange(setting string, on bool, by string) {
+	// Before the change, always: /readonly, shift+tab and the settings
+	// panel all reach a mode at the prompt, before any turn. Logging
+	// the baseline only from Run put mode_change first and then
+	// recorded the already-changed value as the start, which reads as
+	// "launched restricted" for a session the operator restricted
+	// themselves (second independent review).
+	a.logModeStart()
 	to := "off"
 	if on {
 		to = "on"
@@ -685,11 +698,19 @@ func (a *Agent) AutoApprove() bool {
 	return a.auto
 }
 
-// SetAutoApprove turns auto-approve mode on or off (UI toggle).
+// SetAutoApprove turns auto-approve mode on or off (UI toggle). Like
+// the ceiling's setters it records the change, so mode_start's third
+// field has changes to be a baseline for: shift+tab, /auto and the
+// settings row moved the runtime's largest authority setting and left
+// nothing in the transcript at all (second independent review).
 func (a *Agent) SetAutoApprove(on bool) {
 	a.mu.Lock()
+	changed := a.auto != on
 	a.auto = on
 	a.mu.Unlock()
+	if changed {
+		a.recordModeChange("auto_approve", on, "operator")
+	}
 }
 
 // AddContext appends an out-of-band note to the conversation history
@@ -1313,14 +1334,21 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		// so neither an 'a', a "never" policy (the ceiling is tested
 		// before the policy gate) nor the model tier answers it. A mode
 		// is not a call (ADR-0080 §4).
-// The record is written where the outcome is known, not here:
+		// The record is written where the outcome is known, not here:
 		// logging "refused" on detection put a ceiling_refused in the
 		// transcript for every call the operator then let through
 		// (independent review).
+		// The ceiling is read here, not at call time: record("lifted")
+		// runs after SetReadOnly, and reading it there put
+		// `ceiling: operator` in the same record as `reason: capped at
+		// the read lane`, so an audit grouping by that field bucketed
+		// every lifted call — the ones that ran — under the ceiling
+		// that replaced it (second independent review).
+		atRefusal := a.CeilingState()
 		record := func(outcome string) {
 			a.logRecord("ceiling_"+outcome, map[string]any{
 				"name": tc.Name, "lane": a.laneOf(tc),
-				"ceiling": a.Ceiling().String(), "auto": a.CeilingState().Auto,
+				"ceiling": atRefusal.Lane().String(), "auto": atRefusal.Auto,
 				"reason": d.CeilingReason,
 			})
 		}
@@ -1371,7 +1399,19 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		// operator was told about it (independent review, 2026-09-09).
 		// The dialog says only that yes lifts read-only; it does not say
 		// the call runs, and now it does not.
+		liftReason := d.CeilingReason
 		d = a.decide(tc)
+		if !a.gated(d, tc) {
+			// Unless there is no ordinary gate to reach. A `never`
+			// policy — or a one-shot --allow grant, the same policy for
+			// one run — lets the re-decided call run without asking, so
+			// the row "the ordinary gate emits straight after" never
+			// comes and the operator's own yes left no per-call record
+			// anywhere. That is the most permissive shape the ceiling
+			// can be lifted into, and it was the one that lost its row
+			// (second independent review).
+			a.telemetry.Approval(tc.Name, "approved", "operator", true, liftReason, a.laneOf(tc))
+		}
 	}
 	if a.gated(d, tc) {
 		approved, reason := false, ""
@@ -1393,12 +1433,13 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		}
 		if d.CeilingUnbounded {
 			mustPrompt = true
-			// After the floor, and only if it said nothing: a Block or
-			// operator-lane verdict is the more important sentence, and
-			// setting this first hid it (independent review).
-			if reason == "" {
-				reason = a.msgs.CeilingUnboundedReason
-			}
+			// The sentence itself is added at the gate, below: it has
+			// to survive the ladder, which overwrites `reason`
+			// wholesale when it escalates. Setting it here guarded on
+			// `reason == ""` looked like it deferred to the floor, but
+			// Floor() is unreachable for an mcp__ tool — the only
+			// overwrite that happens is the one it did not guard
+			// (second independent review).
 		}
 		// A tool the operator marked "always" skips the ladder: the
 		// question is settled, and spending a model round on it would
@@ -1459,6 +1500,18 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			// "gate" covers the operator and the session allowlist —
 			// the gates answer as one (ADR-0035 v1 granularity).
 			detail, purpose := a.Describe(tc)
+			// The ceiling's sentence is the only thing on the prompt
+			// that explains the two missing answers, so it survives
+			// whatever else set the reason and follows it: a Block
+			// verdict or the ladder's objection is why this is being
+			// asked at all, and that leads.
+			if d.CeilingUnbounded {
+				if reason == "" {
+					reason = a.msgs.CeilingUnboundedReason
+				} else {
+					reason += " · " + a.msgs.CeilingUnboundedReason
+				}
+			}
 			ok, fromAllowlist, denyReason := a.askGate(tc, detail, purpose, reason, mustPrompt, d)
 			decision := "denied"
 			if ok {

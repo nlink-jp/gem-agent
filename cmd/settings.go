@@ -58,8 +58,16 @@ type settingsStore struct {
 // running agent rather than from config. A value that has moved since
 // startup was moved by this session, whoever in it did the moving.
 func (s *settingsStore) liveSource(key, live string) string {
-	if start, ok := s.startValues[key]; ok && start != live {
-		return "session"
+	if start, ok := s.startValues[key]; ok {
+		if start != live {
+			return "session"
+		}
+		// Back where it started, however it got there. Falling through
+		// to settingSource here would consult sessionEdits, so the same
+		// net change read "session" when the panel made it and
+		// "config.toml" when /readonly did — two rules for one row
+		// (second independent review).
+		return s.cfg.Source(key)
 	}
 	return s.settingSource(key)
 }

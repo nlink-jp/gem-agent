@@ -16,6 +16,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/policy"
+	"github.com/nlink-jp/gem-agent/internal/risk"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
@@ -498,6 +499,39 @@ func TestCeilingUnboundedCallsAreAskedOnceOnly(t *testing.T) {
 	}
 }
 
+// Under --auto the ladder overwrites the escalation reason wholesale,
+// and it did so over the one sentence that explains the two answers the
+// dialog no longer offers — so the operator saw an ordinary title,
+// three options and a line about the risk evaluator, with nothing
+// saying why 'a' and 'p' were gone (second independent review).
+func TestCeilingUnboundedReasonSurvivesTheLadder(t *testing.T) {
+	mcp := &tools.Tool{Name: "mcp__vault__patch", Description: "d", Mutating: true,
+		Run: func(ctx context.Context, args map[string]any) (string, error) { return "ok", nil }}
+	call := llm.ToolCall{ID: "m", Name: "mcp__vault__patch", Args: map[string]any{"k": "v"}}
+
+	a := ceilingAgent(t, "on", mcp)
+	a.auto = true
+	// A backend whose risk round escalates, so the ladder sets a reason
+	// of its own on the way to the gate.
+	a.backend = &autoBackend{verdict: `{"approve": false, "confidence": 0.9, "reason": "not confident"}`}
+	gate := &onceGate{answer: false}
+	a.gate = gate
+	if _, _, _, _, err := a.execCallInner(context.Background(), call); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.once) != 1 {
+		t.Fatalf("once=%v asked=%v", gate.once, gate.asked)
+	}
+	if !strings.Contains(gate.once[0], "read-only") {
+		t.Errorf("the ladder's reason displaced the ceiling's: %q", gate.once[0])
+	}
+	// And the ladder's own objection is not lost either — it is why the
+	// call is being asked about at all.
+	if !strings.Contains(gate.once[0], "not confident") {
+		t.Errorf("the ceiling's reason displaced the ladder's: %q", gate.once[0])
+	}
+}
+
 // A gate that does not implement OnceApprover still gets asked — the
 // interface is optional, and falling silent would be worse than falling
 // back.
@@ -663,5 +697,27 @@ func TestCeilingUnboundedUnderAuto(t *testing.T) {
 				t.Error("an earlier 'a' could have answered it")
 			}
 		})
+	}
+}
+
+// askGate hardcodes fromAllowlist=false on the once path, which is
+// correct only because an mcp__ call can never be OperatorOnly:
+// operatorWrite = ok && OperatorOnly && !fromAllowlist would otherwise
+// start granting the write-guard on a path that never consults the
+// allowlist. That invariant lives in another package and nothing pinned
+// it (second independent review).
+func TestMCPCallsAreNeverOperatorOnly(t *testing.T) {
+	for _, name := range []string{
+		"mcp__vault__patch", "mcp__srv__shell_exec", "mcp__srv__write_file",
+		"mcp__srv__save_memory", "mcp__x__y",
+	} {
+		for _, mutating := range []bool{false, true} {
+			v := risk.Classify(name, mutating,
+				map[string]any{"command": "sudo rm -rf /", "path": "/etc/hosts"}, "/p", "/w")
+			if v.OperatorOnly {
+				t.Errorf("%s (mutating=%v) is OperatorOnly: askGate's fromAllowlist=false "+
+					"would grant operatorWrite without an allowlist consultation", name, mutating)
+			}
+		}
 	}
 }

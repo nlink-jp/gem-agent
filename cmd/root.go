@@ -1432,7 +1432,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// it and no /readonly to type, so the only place this fact can
 		// appear is here (ADR-0080 §1, ADR-0078's test for a line).
 		if ag.CeilingState().ReadOnly {
-			fmt.Fprintln(stderr, banner.ReadOnlyOneShotLine(registry.Confined() && registry.ReadLane()))
+			fmt.Fprintln(stderr, banner.ReadOnlyOneShotLine(registry.Confined()))
 		}
 		// Piped stdin becomes a nonce-wrapped data attachment
 		// (ADR-0055) — never prompt text: the -p string alone is the
@@ -2459,7 +2459,7 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 			// ceiling reaches less, and the state line must not promise
 			// what only the lanes give (independent review). A nil
 			// registry is the tests' agent-only fixture.
-			confined := registry == nil || (registry.Confined() && registry.ReadLane())
+			confined := registry == nil || registry.Confined()
 			switch {
 			case c.ReadOnly && !confined:
 				b.WriteString(msgs.ReadOnlyOnUnconfined)

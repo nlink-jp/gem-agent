@@ -190,10 +190,17 @@ func TestReadonlyOnDoesNotPromiseWhatTheLanesAreNotGiving(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A registry with no lane runner has no verified read lane, which
-	// is the state the wording exists for.
-	if reg.Confined() && reg.ReadLane() {
-		t.Fatal("fixture has a verified read lane; it cannot exercise this")
+	// --no-sandbox, as buildExecFn establishes it: a lane runner that
+	// applies no cage and an empty Enforcement. A registry with no lane
+	// runner at all reports *confined* (the unconfined floor is the
+	// operator's explicit flag), so the earlier version of this test
+	// could not reach the state it claimed to (second independent
+	// review).
+	reg.SetLaneExec(func(ctx context.Context, command string, lane sandbox.Lane) *exec.Cmd {
+		return exec.CommandContext(ctx, "/bin/bash", "-c", command)
+	}, sandbox.Enforcement{})
+	if reg.Confined() {
+		t.Fatal("fixture is still confined; it cannot exercise this")
 	}
 	a := readOnlyAgent(t, sandbox.Ceiling{ReadOnly: true})
 	for _, lang := range []uitext.Lang{uitext.EN, uitext.JA} {

@@ -114,10 +114,17 @@
 - A new `mode.change` telemetry event records a session setting moved
   mid-run — which setting, to what, by whom — and the transcript gains a
   `mode_start` record so the `mode_change` entries after it have
-  something to be changes from. Lifting the ceiling emits the mode
-  event, not an `approval.decision`: it answers whether the session may
-  change things again, not whether the call may run, and the ordinary
-  gate emits the call's own row straight after.
+  something to be changes from. The baseline is written before the first
+  change rather than at the first turn (`/readonly` and shift+tab are
+  reachable at the prompt), a `/clear` session gets its own, and
+  auto-approve now records its changes too: it was named in the baseline
+  while shift+tab, `/auto` and the settings row moved it silently.
+  Lifting the ceiling emits the mode event rather than an
+  `approval.decision` for the call — it answers whether the session may
+  change things again, not whether the call may run — except where the
+  lift is the only question the call gets, which is a `never` policy or
+  a one-shot `--allow` grant; there the operator's yes is the call's
+  approval and is recorded as one.
 - The ceiling's transcript record names the outcome rather than the
   proposal: `ceiling_refused` when the call is refused, `ceiling_lifted`
   when the operator lifted the mode. It was written at detection, so a
@@ -133,13 +140,15 @@
 
 ### Fixed
 
-- With the sandbox off, or its read lane unverified on this machine, the
-  banner, the one-shot line and `/readonly` no longer promise that
-  nothing outside the session scratch changes. The refusal still reaches
-  the file tools and any write- or operator-declaring `shell_exec` — it
-  is decided before the tool runs — but a command declaring the read
-  lane is then bounded by nothing, and the banner printed the
-  unqualified guarantee directly beneath "sandbox: DISABLED". The
+- With the sandbox off, the banner, the one-shot line and `/readonly` no
+  longer promise that nothing outside the session scratch changes. The
+  refusal still reaches the file tools and any write- or
+  operator-declaring `shell_exec` — it is decided before the tool runs —
+  but a command declaring the read lane is then bounded by nothing, and
+  the banner printed the unqualified guarantee directly beneath
+  "sandbox: DISABLED". An *unverified* read lane is not that case and
+  keeps the full sentence: `read_lane_prompts`, and a failed startup
+  probe, both leave the cage applied and add a prompt on top. The
   approval reference had the opposite error, listing a `--no-sandbox`
   session among what the ceiling does not reach at all.
 - A ceiling refusal the lift dialog was not asked about — the dialog is

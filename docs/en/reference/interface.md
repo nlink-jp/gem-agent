@@ -280,6 +280,12 @@ give for a question about a session setting (ADR-0080 §4). Answering
 `y` turns read-only off; the call then goes through the ordinary
 approval above, which is a second question.
 
+An MCP call made while read-only is on gets the ordinary dialog with the
+same two answers removed, for the neighbouring reason: the ceiling
+refuses to let `a` or `p` settle a call it cannot bound, so pressing one
+would take effect only later, once the mode was lifted (ADR-0080 §5).
+The `⚠` line says so, and the key help drops the two letters.
+
 The highlight starts on *allow*, except for a call auto-approve
 escalated, where it starts on *deny* so a reflexive Enter cannot approve
 it. Long call details are budgeted to the terminal height with the

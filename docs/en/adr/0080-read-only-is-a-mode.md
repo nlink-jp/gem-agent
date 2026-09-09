@@ -278,8 +278,11 @@ external send, and leaves searches approved.
 
 **And no standing answer settles such a call.** A session `a` and a
 `never` policy do not apply to an MCP call while the ceiling is up —
-both were answers about a session with no ceiling — so the operator is
-asked every time. The prompt therefore does not *offer* them either:
+both were answers about a session with no ceiling — so in the default
+mode the operator is asked every time. (Under `--auto` the model tier
+still judges it first, as the paragraph above says, and in `-p` the
+refusal is final: what holds in every mode is that no standing answer
+settles it.) The prompt therefore does not *offer* them either:
 they are absent from its labels, its selection and its letter
 shortcuts, exactly as they are from §4's mode question. Offering a key
 the ceiling will not honour would buy the operator nothing at the

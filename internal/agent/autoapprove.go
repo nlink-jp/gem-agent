@@ -309,10 +309,13 @@ func (a *Agent) evaluateRisk(ctx context.Context, tc llm.ToolCall, withContext b
 			}
 		}
 	}
-	// The session mode joins every evaluation while it is on (ADR-0080
-	// §5). It is what covers MCP, where no Seatbelt profile reaches and
-	// the rule tier cannot read another server's effects — a judgment,
-	// never the guarantee §3 gives for this runtime's own tools.
+	// The session mode joins the aligned round while it is on (ADR-0080
+	// §5, composed by ADR-0081 — the baseline stays free of anything
+	// from this turn). It is what covers MCP, where no Seatbelt profile
+	// reaches and the rule tier cannot read another server's effects —
+	// a judgment, never the guarantee §3 gives for this runtime's own
+	// tools. "Every evaluation" here outlived ADR-0081 exactly as the
+	// turnInput comment above did (second independent review).
 	if withContext && a.CeilingState().ReadOnly {
 		payload += "\n" + readOnlyEvidence
 		prompt += riskEvalReadOnlyAddendum
