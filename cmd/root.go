@@ -181,7 +181,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	autoOn := effectiveAuto(cfg.Agent.AutoApprove, oneShot, flagAuto)
 	// The ceiling this run starts with, resolved once for the same
 	// reason (ADR-0080 §1).
-	ceiling := effectiveCeiling(cfg.Agent.ReadOnly, cfg.Agent.ReadOnlyAuto, oneShot)
+	ceiling := effectiveCeiling(cfg.Agent, oneShot)
 	// UI language, resolved once (ADR-0029): the chrome that follows —
 	// prompts, TUI, slash output — is built with it.
 	uiLang := uitext.Resolve(cfg.TUI.Language, os.Getenv)
@@ -1917,11 +1917,14 @@ func readOnlyOverride(writable, readOnly, autoRO, oneShot bool) (ceiling, auto s
 // ceiling on refuses the write instead and forces the run that wants it
 // to say --writable on its own command line — which is where ADR-0053
 // §1 requires a grant to be visible.
-func effectiveCeiling(readOnly, auto, oneShot bool) sandbox.Ceiling {
+// It takes the whole [agent] section rather than two bools: the two are
+// the same type and adjacent, so a call site could swap them and every
+// test in the tree would still pass (independent review, 2026-09-09).
+func effectiveCeiling(a config.AgentConfig, oneShot bool) sandbox.Ceiling {
 	if oneShot {
-		return sandbox.Ceiling{ReadOnly: readOnly || auto}
+		return sandbox.Ceiling{ReadOnly: a.ReadOnly || a.ReadOnlyAuto}
 	}
-	return sandbox.Ceiling{ReadOnly: readOnly, Auto: auto}
+	return sandbox.Ceiling{ReadOnly: a.ReadOnly, Auto: a.ReadOnlyAuto}
 }
 
 // ApproveLift refuses in one-shot: there is nobody to ask, so the

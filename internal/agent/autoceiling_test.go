@@ -149,21 +149,48 @@ func TestAutoCeilingFailureLeavesTheStateAlone(t *testing.T) {
 }
 
 // Nothing in the runtime loosens the ceiling: once tightened, a later
-// turn that reads as ordinary work leaves it on.
+// turn that reads as ordinary work leaves it on. And the watcher does
+// not even run while the ceiling is in force — there is nothing left
+// for it to decide, and the earlier version of this test passed
+// whether or not that guard existed (independent review, 2026-09-09).
 func TestAutoCeilingNeverLoosens(t *testing.T) {
 	b := &ceilingBackend{verdict: `{"read_only": true, "quote": "見るだけ"}`}
 	a, _ := autoCeilingAgent(t, b, "auto")
 	if _, err := a.Run(context.Background(), "見るだけにして", nil); err != nil {
 		t.Fatal(err)
 	}
-	if !a.CeilingState().ReadOnly {
-		t.Fatalf("state = %+v", a.CeilingState())
+	if c := a.CeilingState(); !c.ReadOnly || !c.Auto {
+		t.Fatalf("state = %+v, want the ceiling up and the watcher still armed", c)
 	}
+	rounds := len(b.systems)
+	if rounds != 1 {
+		t.Fatalf("watcher rounds = %d, want 1", rounds)
+	}
+
+	// Already in force: the watcher has nothing to decide and spends
+	// nothing, whatever the next turn says.
 	b.verdict = `{"read_only": false}`
 	if _, err := a.Run(context.Background(), "やっぱり直して", nil); err != nil {
 		t.Fatal(err)
 	}
-	if !a.CeilingState().ReadOnly {
-		t.Errorf("the runtime loosened the ceiling by itself: %+v", a.CeilingState())
+	if len(b.systems) != rounds {
+		t.Errorf("the watcher ran again with the ceiling already up: %d rounds", len(b.systems))
+	}
+	if c := a.CeilingState(); !c.ReadOnly {
+		t.Errorf("the runtime loosened the ceiling by itself: %+v", c)
+	}
+
+	// And after the operator lifts it, the watcher is still armed and
+	// runs again — a lift releases the ceiling, not the watcher.
+	a.SetReadOnly(false, "operator")
+	b.verdict = `{"read_only": true, "quote": "確認だけ"}`
+	if _, err := a.Run(context.Background(), "確認だけして", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(b.systems) != rounds+1 {
+		t.Errorf("the watcher did not run after the lift: %d rounds", len(b.systems))
+	}
+	if c := a.CeilingState(); !c.ReadOnly || !c.Auto {
+		t.Errorf("state after the lift and a new request = %+v", c)
 	}
 }

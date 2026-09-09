@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 )
 
@@ -89,7 +90,7 @@ func TestReadOnlyFlagsComposeWithConfig(t *testing.T) {
 			if auto != "" {
 				roAuto = auto == "on"
 			}
-			if got := effectiveCeiling(ro, roAuto, tc.one); got != tc.want {
+			if got := effectiveCeiling(config.AgentConfig{ReadOnly: ro, ReadOnlyAuto: roAuto}, tc.one); got != tc.want {
 				t.Errorf("got %+v, want %+v", got, tc.want)
 			}
 		})
@@ -116,7 +117,7 @@ func TestEffectiveCeiling(t *testing.T) {
 		{true, true, true, sandbox.Ceiling{ReadOnly: true}},
 	}
 	for _, tc := range cases {
-		if got := effectiveCeiling(tc.ro, tc.auto, tc.one); got != tc.want {
+		if got := effectiveCeiling(config.AgentConfig{ReadOnly: tc.ro, ReadOnlyAuto: tc.auto}, tc.one); got != tc.want {
 			t.Errorf("effectiveCeiling(%v, %v, oneShot=%v) = %+v, want %+v",
 				tc.ro, tc.auto, tc.one, got, tc.want)
 		}

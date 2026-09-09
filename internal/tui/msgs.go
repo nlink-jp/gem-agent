@@ -173,12 +173,6 @@ func (g *Gate) SetProgram(p sender) {
 	g.mu.Unlock()
 }
 
-// Approve implements agent.Approver. Fails closed when no program is
-// bound. mustPrompt says the session allowlist may not answer this call
-// (Block-tier, or an "always" policy — ADR-0021 §5); an 'a' answered on
-// such a prompt still registers, for future non-Block calls. A denial
-// may carry the operator's typed reason (ADR-0060), which rides back
-// to the agent verbatim.
 // ApproveLift asks the mode question. No allowlist is consulted and
 // none is registered, whatever the operator presses: the dialog does
 // not offer that answer, and this method could not honour it.
@@ -199,6 +193,12 @@ func (g *Gate) ApproveLift(toolName, detail, purpose, reason string) (bool, stri
 	return false, answer.Reason
 }
 
+// Approve implements agent.Approver. Fails closed when no program is
+// bound. mustPrompt says the session allowlist may not answer this call
+// (Block-tier, or an "always" policy — ADR-0021 §5); an 'a' answered on
+// such a prompt still registers, for future non-Block calls. A denial
+// may carry the operator's typed reason (ADR-0060), which rides back
+// to the agent verbatim.
 func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (approved, fromAllowlist bool, denyReason string) {
 	g.mu.Lock()
 	if !mustPrompt && g.always[toolName] {

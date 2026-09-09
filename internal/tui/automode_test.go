@@ -15,16 +15,18 @@ import (
 
 // autoModel drives the real submit path, so an interception that misses
 // shows up as the footer disagreeing with the agent.
-func autoModel(t *testing.T, start bool) (Model, *bool) {
+func autoModel(t *testing.T, start bool) (Model, *bool, *capture) {
 	t.Helper()
 	agentOn := start
+	c := &capture{}
 	m := New(Options{Msgs: uitext.For(uitext.JA), Theme: "notty", ModelName: "m",
+		Printer:    c.printer,
 		AutoMode:   agentOn,
 		AutoState:  func() bool { return agentOn },
 		ToggleAuto: func() bool { agentOn = !agentOn; return agentOn },
 	})
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	return next.(Model), &agentOn
+	return next.(Model), &agentOn, c
 }
 
 func submit(t *testing.T, m Model, input string) Model {
@@ -52,7 +54,7 @@ func TestAutoCommandFormsKeepTheFooterTrue(t *testing.T) {
 		{"/auto on", true, true},
 		{"/auto off", false, false},
 	} {
-		m, agentOn := autoModel(t, tc.start)
+		m, agentOn, _ := autoModel(t, tc.start)
 		m = submit(t, m, tc.input)
 		if *agentOn != tc.want {
 			t.Errorf("%q from %v: agent = %v, want %v", tc.input, tc.start, *agentOn, tc.want)
@@ -67,13 +69,20 @@ func TestAutoCommandFormsKeepTheFooterTrue(t *testing.T) {
 // ignored — which is how `/auto on` came to toggle.
 func TestAutoCommandRefusesAnUnknownArgument(t *testing.T) {
 	for _, input := range []string{"/auto maybe", "/auto on off"} {
-		m, agentOn := autoModel(t, false)
+		m, agentOn, c := autoModel(t, false)
 		m = submit(t, m, input)
 		if *agentOn {
 			t.Errorf("%q changed the mode", input)
 		}
 		if footerSaysAuto(m) {
 			t.Errorf("%q: footer says auto:\n%s", input, m.View())
+		}
+		// "and says so" — the earlier version asserted only that
+		// nothing changed, so a TUI that swallowed the line silently
+		// would have passed (independent review, 2026-09-09). The line
+		// goes to scrollback, not the view.
+		if !strings.Contains(c.all(), "/auto on|off") {
+			t.Errorf("%q: no usage line: %q", input, c.all())
 		}
 	}
 }

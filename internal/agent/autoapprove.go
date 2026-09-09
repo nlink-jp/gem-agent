@@ -214,7 +214,7 @@ func (a *Agent) decideAuto(ctx context.Context, tc llm.ToolCall) AutoDecision {
 	}
 	if !baseline.Approve || baseline.Confidence < minConfidence {
 		// Context may not rescue this, so there is nothing to ask it.
-		return escalation(v, baseline, "")
+		return escalation(v, baseline)
 	}
 	verdict, err := a.evaluateRisk(ctx, tc, true)
 	if err != nil {
@@ -226,12 +226,12 @@ func (a *Agent) decideAuto(ctx context.Context, tc llm.ToolCall) AutoDecision {
 			Confidence: verdict.Confidence, ConfidenceKnown: true,
 			Reason: strings.TrimSpace(verdict.Reason)}
 	}
-	return escalation(v, verdict, "")
+	return escalation(v, verdict)
 }
 
 // escalation renders the not-approved outcome of a model round, naming
 // the confidence when the round approved but was not sure enough.
-func escalation(v risk.Verdict, got riskVerdict, prefix string) AutoDecision {
+func escalation(v risk.Verdict, got riskVerdict) AutoDecision {
 	reason := strings.TrimSpace(got.Reason)
 	if reason == "" {
 		reason = v.Reason
@@ -240,7 +240,7 @@ func escalation(v risk.Verdict, got riskVerdict, prefix string) AutoDecision {
 		reason = fmt.Sprintf("%s (confidence %.2f below %.2f)", reason, got.Confidence, minConfidence)
 	}
 	return AutoDecision{Tier: v.Tier, ModelConsulted: true,
-		Confidence: got.Confidence, ConfidenceKnown: true, Reason: prefix + reason}
+		Confidence: got.Confidence, ConfidenceKnown: true, Reason: reason}
 }
 
 // evaluateRisk asks the model tier about one call. The call is described

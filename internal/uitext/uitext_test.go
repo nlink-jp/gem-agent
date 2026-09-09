@@ -105,9 +105,9 @@ func TestBroadReason(t *testing.T) {
 // languages: adding a slash command without documenting it fails here.
 func TestHelpListsEveryCommand(t *testing.T) {
 	commands := []string{
-		"/auto", "/clear", "/compact", "/help", "/mcp", "/memory", "/riskbook",
-		"/quit", "/settings", "/skill", "/skills", "/tools", "/usage",
-		"/version",
+		"/auto", "/clear", "/compact", "/help", "/mcp", "/memory", "/readonly",
+		"/riskbook", "/quit", "/settings", "/skill", "/skills", "/tools",
+		"/usage", "/version",
 	}
 	sort.Strings(commands)
 	for _, lang := range []Lang{JA, EN} {

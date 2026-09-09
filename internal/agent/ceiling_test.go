@@ -424,3 +424,41 @@ func TestCeilingChangesAreRecorded(t *testing.T) {
 		}
 	}
 }
+
+// Each refusal kind gets its own sentence. The shell one names the lane
+// the call declared, memory names what a memory write costs, and the
+// rest says "state", not "files" — web_search is mutating for its
+// egress and changes no file (independent review, 2026-09-09).
+func TestCeilingReasonNamesTheRightThing(t *testing.T) {
+	egress := &tools.Tool{Name: "web_search", Description: "Search the web.", Mutating: true,
+		Parameters: map[string]any{"type": "object"},
+		Run:        func(context.Context, map[string]any) (string, error) { return "", nil }}
+	mem := &tools.Tool{Name: "save_memory", Description: "Remember.", Mutating: true,
+		Parameters: map[string]any{"type": "object"},
+		Run:        func(context.Context, map[string]any) (string, error) { return "", nil }}
+	a := ceilingAgent(t, "on", egress, mem)
+
+	for _, tc := range []struct {
+		call    llm.ToolCall
+		want    string
+		wantNot string
+	}{
+		{shellLane("touch x", "write"), "declared write", ""},
+		{llm.ToolCall{ID: "c", Name: "save_memory", Args: map[string]any{}}, "later session", ""},
+		{writeCall("f.txt"), "changes state", "changes files"},
+		// The one the false sentence was written for.
+		{llm.ToolCall{ID: "c", Name: "web_search", Args: map[string]any{"query": "x"}}, "changes state", "files"},
+	} {
+		d := a.decide(tc.call)
+		if !d.OverCeiling {
+			t.Fatalf("%s was not refused", tc.call.Name)
+		}
+		got := a.ceilingPrompt(d, tc.call)
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("%s: reason %q lacks %q", tc.call.Name, got, tc.want)
+		}
+		if tc.wantNot != "" && strings.Contains(got, tc.wantNot) {
+			t.Errorf("%s: reason %q says %q, which is not true of it", tc.call.Name, got, tc.wantNot)
+		}
+	}
+}

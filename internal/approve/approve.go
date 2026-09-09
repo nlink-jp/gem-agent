@@ -50,18 +50,6 @@ func purposeOrNone(purpose string) string {
 	return purpose
 }
 
-// Approve asks the user whether the named tool may run. detail is a short
-// human-readable summary of what the call will do (command line, file
-// path); purpose is the model's own one-sentence declaration of why it
-// wants the call (ADR-0047 — context for the human, never a gate input);
-// reason, when non-empty, says why auto-approve escalated instead
-// of running it. mustPrompt says the session allowlist may not answer
-// this call (Block-tier, or an "always" policy — ADR-0021 §5); answering
-// 'a' on such a prompt still registers the allowlist, which future
-// non-Block calls use. 'N' denies with a typed reason (ADR-0060),
-// read from the next line; an empty reason line is a plain deny.
-// EOF or read errors deny — failing closed is the only safe default
-// for an approval gate.
 // ApproveLift asks the mode question (ADR-0080 §4). It offers y/n/N and
 // nothing else: "always this session" is an answer to a question about a
 // tool, and this one is about the session.
@@ -94,6 +82,18 @@ func (g *Gate) ApproveLift(toolName, detail, purpose, reason string) (bool, stri
 	}
 }
 
+// Approve asks the user whether the named tool may run. detail is a short
+// human-readable summary of what the call will do (command line, file
+// path); purpose is the model's own one-sentence declaration of why it
+// wants the call (ADR-0047 — context for the human, never a gate input);
+// reason, when non-empty, says why auto-approve escalated instead
+// of running it. mustPrompt says the session allowlist may not answer
+// this call (Block-tier, or an "always" policy — ADR-0021 §5); answering
+// 'a' on such a prompt still registers the allowlist, which future
+// non-Block calls use. 'N' denies with a typed reason (ADR-0060),
+// read from the next line; an empty reason line is a plain deny.
+// EOF or read errors deny — failing closed is the only safe default
+// for an approval gate.
 func (g *Gate) Approve(toolName, detail, purpose, reason string, mustPrompt bool) (approved, fromAllowlist bool, denyReason string) {
 	if !mustPrompt && g.always[toolName] {
 		// One keystroke standing in for this call: the learner must

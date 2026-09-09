@@ -120,3 +120,49 @@ func TestReadonlyRejectsUnknownArgumentsWithoutChangingAnything(t *testing.T) {
 		}
 	}
 }
+
+// /auto through the shared slash handler — the plain REPL's path, which
+// had no test at all. The TUI intercepts /auto, so nothing exercised
+// this branch even though it is where the argument used to be ignored
+// (independent review, 2026-09-09).
+func TestAutoSlashSetsAndToggles(t *testing.T) {
+	cases := []struct {
+		input string
+		start bool
+		want  bool
+		isErr bool
+	}{
+		{"/auto", false, true, false},
+		{"/auto", true, false, false},
+		{"/auto on", false, true, false},
+		{"/auto on", true, true, false},
+		{"/auto off", true, false, false},
+		{"/auto off", false, false, false},
+		{"/auto maybe", true, true, true},
+	}
+	for _, tc := range cases {
+		a := readOnlyAgent(t, sandbox.Ceiling{})
+		a.SetAutoApprove(tc.start)
+		out, isErr, _ := slashOutput(tc.input, a, nil, nil, nil, slashReloads{}, nil, nil, nil, "",
+			uitext.For(uitext.EN), nil)
+		if isErr != tc.isErr {
+			t.Errorf("%q from %v: isErr = %v, want %v (%q)", tc.input, tc.start, isErr, tc.isErr, out)
+		}
+		if a.AutoApprove() != tc.want {
+			t.Errorf("%q from %v: auto = %v, want %v", tc.input, tc.start, a.AutoApprove(), tc.want)
+		}
+		if tc.isErr {
+			if !strings.Contains(out, "/auto on|off") {
+				t.Errorf("%q: no usage line: %q", tc.input, out)
+			}
+			continue
+		}
+		want := "OFF"
+		if tc.want {
+			want = "ON"
+		}
+		if !strings.Contains(out, want) {
+			t.Errorf("%q: the line does not confirm the state: %q", tc.input, out)
+		}
+	}
+}

@@ -174,9 +174,10 @@ func overCeiling(name string, mutating bool, declared, ceiling sandbox.Lane) (ce
 		return ceilingMemory, fmt.Sprintf(
 			"this session is capped at the %s lane, and a memory write changes what every later session trusts", ceiling)
 	}
-	if ceiling >= sandbox.LaneWrite {
-		return ceilingWithin, ""
-	}
+	// No `ceiling >= LaneWrite` case: Ceiling.Lane yields LaneRead or
+	// LaneOperator only, and LaneOperator returned above. A write
+	// ceiling — expressible, not decided (ADR-0080 §1) — would need one,
+	// and that is where to add it.
 	return ceilingState, fmt.Sprintf("this session is capped at the %s lane, and this tool changes state outside it", ceiling)
 }
 

@@ -98,6 +98,9 @@
 
 ### Fixed
 
+- The one-shot read-only line names `--writable` rather than telling
+  the operator to drop `--read-only`, which may never have been passed:
+  the ceiling can come from config, where there is no flag to drop
 - `/auto on` turned auto-approve on and left the footer saying it was
   off. The TUI intercepted `/auto` by matching the whole line, so any
   form with an argument fell through to the shared slash handler, which

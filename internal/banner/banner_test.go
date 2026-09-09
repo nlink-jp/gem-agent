@@ -223,7 +223,7 @@ func TestReadOnlyLines(t *testing.T) {
 	// One-shot has no footer and no /readonly, so its line names the
 	// flag instead — the same shape as the auto-approve pair. There is
 	// no watcher there to report.
-	if !strings.Contains(ReadOnlyOneShotLine(), "--read-only") {
-		t.Errorf("the one-shot line does not name the flag: %q", ReadOnlyOneShotLine())
+	if !strings.Contains(ReadOnlyOneShotLine(), "--writable") {
+		t.Errorf("the one-shot line does not name the escape: %q", ReadOnlyOneShotLine())
 	}
 }

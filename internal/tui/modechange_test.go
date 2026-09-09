@@ -163,19 +163,12 @@ func TestFooterBadgeCarriesBothSettings(t *testing.T) {
 	if strings.Contains(m.View(), "🔒auto ") {
 		t.Errorf("the badge borrowed auto mode's word:\n%s", m.View())
 	}
-	// Every badge is rendered the same way, so the padlock stays the
-	// only signal: a dim badge beside a bright ⚡auto reads as absent.
-	for _, c := range []sandbox.Ceiling{
-		{ReadOnly: true}, {Auto: true}, {Auto: true, ReadOnly: true},
-	} {
-		state = c
-		plain := New(Options{Msgs: uitext.For(uitext.JA), Theme: "notty",
-			ReadOnlyState: func() sandbox.Ceiling { return c }})
-		next, _ := plain.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-		if !strings.Contains(next.(Model).View(), "read-only") {
-			t.Errorf("%+v: no badge at all:\n%s", c, next.(Model).View())
-		}
-	}
+	// The badge's style is not asserted here and cannot be: the test
+	// themes render without colour. It is structural instead — the
+	// footer has one Render call for the badge, with no branch, so
+	// there is no dim variant to drift back to (independent review,
+	// 2026-09-09: the earlier assertion here re-checked the text and
+	// called it a styling test).
 
 	// Read live: /readonly, the watcher and an approved lift all move
 	// the state, and two of the three are inside the agent. After a lift

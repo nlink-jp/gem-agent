@@ -148,9 +148,11 @@ func ReadOnlyLines(c sandbox.Ceiling) []string {
 
 // ReadOnlyOneShotLine is the same fact for `-p`, where there is no
 // footer to carry it and no /readonly to type. The next command is the
-// flag — the same shape as the auto-approve pair above.
+// flag — the same shape as the auto-approve pair above. It names
+// --writable, not "drop --read-only": the ceiling may have come from
+// config, where there is no flag to drop (independent review).
 func ReadOnlyOneShotLine() string {
-	return "read-only: ON — this run changes nothing outside its scratch; drop --read-only to allow changes"
+	return "read-only: ON — this run changes nothing outside its scratch; pass --writable to allow changes"
 }
 
 // SandboxLine returns the sandbox line only when the sandbox is not in
