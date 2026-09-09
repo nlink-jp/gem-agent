@@ -127,6 +127,15 @@
   reason — the ceiling because a session that refuses changes should
   say so before you ask for one, the watcher because the footer cannot
   carry it. Operator report, 2026-09-09
+- The status line shows an armed watcher too: `🔒auto-read-only` while
+  it is waiting, `🔒read-only` while the ceiling is in force, and never
+  both — a watcher is dormant while the ceiling is up and only matters
+  after a lift, so a second badge would spend the line saying one of
+  them does nothing. Without this, a watcher armed mid-session with
+  `/readonly auto on` had no lasting surface at all. The word is not
+  `auto`: that one is the approval ladder's, and ADR-0080 §1 asks for
+  two indicators rather than one blurred word. Operator report,
+  2026-09-09
 
 ## [0.73.0] - 2026-09-09
 

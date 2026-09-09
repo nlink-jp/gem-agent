@@ -202,12 +202,12 @@ func TestReadOnlyLines(t *testing.T) {
 	}{
 		{sandbox.Ceiling{}, nil},
 		{sandbox.Ceiling{ReadOnly: true}, []string{"read-only: ON at start"}},
-		{sandbox.Ceiling{Auto: true}, []string{"read-only watcher: armed"}},
+		{sandbox.Ceiling{Auto: true}, []string{"auto read-only: ON"}},
 		// Both, each on its own line — the combination the tri-state
 		// could not name, and the one a session is in the moment the
 		// watcher fires.
 		{sandbox.Ceiling{ReadOnly: true, Auto: true},
-			[]string{"read-only: ON at start", "read-only watcher: armed"}},
+			[]string{"read-only: ON at start", "auto read-only: ON"}},
 	} {
 		got := ReadOnlyLines(tc.state)
 		if len(got) != len(tc.want) {

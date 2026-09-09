@@ -141,7 +141,7 @@ func ReadOnlyLines(c sandbox.Ceiling) []string {
 		out = append(out, "read-only: ON at start — this session changes nothing outside its scratch; /readonly off lifts it")
 	}
 	if c.Auto {
-		out = append(out, "read-only watcher: armed — it turns read-only on by itself when you ask for a read-only session")
+		out = append(out, "auto read-only: ON — it turns read-only on by itself when you ask for a read-only session")
 	}
 	return out
 }

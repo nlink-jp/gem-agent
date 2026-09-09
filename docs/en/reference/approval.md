@@ -326,6 +326,12 @@ a ceiling you lift leaves it armed, so the next time you ask for a
 read-only session it is caught the same way; and disarming it does not
 lift a ceiling already in force.
 
+The status line carries one badge, naming what will happen:
+`🔒read-only` while the ceiling is in force, `🔒auto-read-only` while
+the watcher is armed and waiting. Never both — a watcher is dormant
+while the ceiling is up, and only matters after a lift. The startup
+banner names whichever is not the default, a line each.
+
 In the `auto` state, once per turn a separate evaluation reads the
 message you typed and decides whether you asked for a session that
 changes nothing. If it says yes the mode switches on and one line says

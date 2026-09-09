@@ -113,21 +113,32 @@ func TestFooterShowsTheCeilingInForce(t *testing.T) {
 	m = next.(Model)
 
 	if strings.Contains(m.View(), "read-only") {
-		t.Errorf("off is the default and says nothing in the footer:\n%s", m.View())
+		t.Errorf("both off is the default and says nothing:\n%s", m.View())
 	}
+	// Armed and waiting: the badge says what will happen.
 	state = sandbox.Ceiling{Auto: true}
-	if strings.Contains(m.View(), "read-only") {
-		t.Errorf("auto has no ceiling in force yet:\n%s", m.View())
+	if !strings.Contains(m.View(), "🔒auto-read-only") {
+		t.Errorf("an armed watcher is not shown:\n%s", m.View())
 	}
-	state = sandbox.Ceiling{ReadOnly: true}
-	if !strings.Contains(m.View(), "read-only") {
-		t.Errorf("the footer does not show the ceiling in force:\n%s", m.View())
+	// In force: the ceiling's badge, and only it — a watcher is dormant
+	// while the ceiling is up, so a second badge would say that one of
+	// them does nothing.
+	state = sandbox.Ceiling{ReadOnly: true, Auto: true}
+	v := m.View()
+	if !strings.Contains(v, "🔒read-only") || strings.Contains(v, "🔒auto-read-only") {
+		t.Errorf("want the ceiling badge alone:\n%s", v)
+	}
+	// Not the approval ladder's word (ADR-0080 §1: two indicators, never
+	// one blurred one).
+	if strings.Contains(v, "🔒auto ") {
+		t.Errorf("the ceiling badge borrowed auto mode's word:\n%s", v)
 	}
 	// It is read live, so a change from anywhere shows without the TUI
-	// being told: /readonly, the auto state, and an approved lift all
-	// move it, and two of the three are inside the agent.
+	// being told: /readonly, the watcher, and an approved lift all move
+	// it, and two of the three are inside the agent. A lift leaves the
+	// watcher armed, so the badge falls back to it rather than vanishing.
 	state = sandbox.Ceiling{Auto: true}
-	if strings.Contains(m.View(), "read-only") {
-		t.Errorf("the footer kept a ceiling that was lifted:\n%s", m.View())
+	if v := m.View(); strings.Contains(v, "🔒read-only ") || !strings.Contains(v, "🔒auto-read-only") {
+		t.Errorf("after a lift, want the watcher badge:\n%s", v)
 	}
 }

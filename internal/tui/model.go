@@ -2158,11 +2158,23 @@ func (m Model) footer() string {
 		parts = append(parts, m.projectDir)
 	}
 	line := m.st.hint.Render(strings.Join(parts, " · "))
-	// The ceiling in force, in the accent color for the same reason auto
-	// mode is: it changes what runs. Only "on" shows — "auto" has no
-	// ceiling yet, and the banner is where that fact lives (ADR-0078).
-	if m.readOnlyState != nil && m.readOnlyState().ReadOnly {
-		line = m.st.tool.Render("🔒read-only") + m.st.hint.Render(" · ") + line
+	// One badge, in the accent color for the same reason auto mode is:
+	// it changes what runs. Which one says what will happen — the
+	// ceiling when it is in force, and the watcher when it is armed and
+	// waiting, since a watcher is dormant while the ceiling is already
+	// up and only matters after a lift. Two badges would spend the line
+	// saying one of them does nothing.
+	//
+	// The word is the one /readonly and the banner use, and it is not
+	// "auto": that is the approval ladder's, and ADR-0080 §1 asks for
+	// two indicators rather than one blurred word.
+	if m.readOnlyState != nil {
+		switch c := m.readOnlyState(); {
+		case c.ReadOnly:
+			line = m.st.tool.Render("🔒read-only") + m.st.hint.Render(" · ") + line
+		case c.Auto:
+			line = m.st.tool.Render("🔒auto-read-only") + m.st.hint.Render(" · ") + line
+		}
 	}
 	if m.autoMode {
 		// Auto mode changes what runs without asking — it must be
