@@ -1335,11 +1335,10 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		// may not be answered by the gates' session allowlist. One
 		// decision (ADR-0073 §4), read here and in the ladder.
 		mustPrompt := a.callPolicy(tc) == policy.AlwaysAsk
-		// A call the ceiling cannot bound is the operator's while the
-		// ceiling is in force: no session allowlist and no model tier
-		// answers for it (ADR-0080 §5). The rule tier cannot read another
-		// server's effects, so "ask" is the only honest answer, and an
-		// earlier 'a' is not one.
+		// No standing shortcut answers a call the ceiling cannot bound:
+		// the allowlist may not, and `gated` below refuses a `never`
+		// policy the same way. The model tier still judges it — that is
+		// ADR-0080 §5, and it is a judgment rather than a guarantee.
 		if !mustPrompt && d.CeilingUnbounded {
 			mustPrompt = true
 			reason = a.msgs.CeilingUnboundedReason
@@ -1613,9 +1612,7 @@ func (a *Agent) takeLateNotices() []string {
 // because of one config line, so a Block verdict still asks.
 func (a *Agent) gated(d Decision, tc llm.ToolCall) bool {
 	if d.CeilingUnbounded {
-		// Not even a `never` policy: it was written for a session with
-		// no ceiling, and the ceiling is the newer, narrower statement.
-		return true
+		return true // a `never` policy predates the ceiling
 	}
 	switch a.callPolicy(tc) {
 	case policy.AlwaysAsk:

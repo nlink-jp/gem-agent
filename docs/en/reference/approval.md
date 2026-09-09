@@ -355,8 +355,10 @@ the evaluation does not run at all, so the default costs nothing.
 
 Under a `read` ceiling a call whose effect needs a higher lane is
 **refused before the gate**: a `shell_exec` declaring `write` or
-`operator`, and `write_file`, `edit_file`, `save_memory`,
-`delete_memory`. A read-lane command still runs unasked. The refusal is
+`operator`, and every mutating built-in — `write_file`, `edit_file`,
+`save_memory`, `delete_memory`, and also `web_search` and `web_fetch`,
+which are mutating for their egress. A read-only session cannot search
+the web without lifting the ceiling. A read-lane command still runs unasked. The refusal is
 not an escalation — the gate can be answered by the session allowlist,
 so a ceiling that escalated would be one an earlier `a` could spend.
 What you are asked instead is a different question, in a dialog of its
@@ -368,26 +370,37 @@ about a tool, and an `a` on the ordinary dialog registers the tool in
 the session allowlist even where the allowlist may not answer, which
 would grant exactly what the ceiling withholds. No `"never"` policy and
 no model tier answers it either: a mode is not a call. Answering yes changes the mode for
-the rest of the session and the call you were shown proceeds, except
-where a floor applies: a Block-tier call or the `operator` lane is
-another question again and is asked on its own terms. Declining refuses
+the rest of the session, and nothing more: the call then goes through
+the ordinary rules as if the ceiling had never been there, so in the
+default mode a mutating call asks again — as itself this time — an
+`"always"` policy still gets its own prompt, and under `--auto` the
+ladder still runs. Declining refuses
 the call **and stops the question for the rest of the turn**, so a model
 pushed by a poisoned tool result cannot raise one prompt per proposed
 write. None of it is a denial you made, so the decision record does not
 read it as one. In `-p` there is nobody to ask and the refusal is final,
 which is what `--read-only` is for.
 
-**MCP tools are not refused by the ceiling — they become yours.** An MCP
-server runs outside every Seatbelt profile and the rule tier cannot tell
-a read tool from a write tool on someone else's machine, so the ceiling
-does not pretend to bound them. While it is in force, every MCP call
-asks **you**: no session `a`, no `"never"` policy and no model tier
-answers one. The mode is also stated to the model tier as what you asked
-for — never as a control that is enforcing — but that tier only runs
-under `--auto`, which is why the prompt is the guarantee and the
-evaluator is the extra. A judgment is not the kernel denial the lanes
-give this runtime's own tools, and the two are deliberately not blurred.
-`[mcp] exclude` (ADR-0077) is still the instrument that removes a tool.
+**MCP tools are not refused by the ceiling.** An MCP server runs outside
+every Seatbelt profile and the rule tier cannot tell a read tool from a
+write tool on someone else's machine, so the ceiling does not pretend to
+bound them. Two things happen instead.
+
+**No standing shortcut answers one.** While the ceiling is in force, a
+session `a` and a `"never"` policy do not apply to an MCP call: both were
+answers about a session with no ceiling, and the ceiling is the newer,
+narrower statement. In the default mode that means you are asked, every
+time.
+
+**And the mode is stated to the model tier** as what you asked for —
+never as a control that is enforcing. Under `--auto` that tier judges
+the call with your read-only request in view: measured, it escalates a
+vault write and lets a search through. That is a **judgment**, not the
+kernel denial the lanes give this runtime's own tools, and the two are
+deliberately not blurred: under `--auto` an MCP call the evaluator
+approves runs without asking you. If that trade is wrong for a server,
+`"always"` in the tool policy keeps it in front of you, and
+`[mcp] exclude` (ADR-0077) removes it from the session entirely.
 
 **What the ceiling does not reach at all**: a `!` command you typed
 (it runs in the `operator` lane, as your own shell would), your

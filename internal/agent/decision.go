@@ -43,16 +43,23 @@ type Decision struct {
 	// CeilingUnbounded is set when the ceiling is in force and this
 	// call's effects are outside what it can bound — an MCP tool, whose
 	// server runs outside every Seatbelt profile and whose effects the
-	// rule tier cannot read (ADR-0077). The ceiling does not refuse
-	// those, but it may not let them run unseen either: the operator
-	// answers, and no session allowlist, `never` policy or model tier
-	// answers for them.
+	// rule tier cannot read (ADR-0077).
 	//
-	// Without this, a read-only session ran an allowlisted MCP write
-	// with no prompt at all while the banner said it changed nothing
-	// (independent review, 2026-09-09). §5 states the mode to the model
-	// tier, but that tier only runs under --auto — and ADR-0080 §2 names
-	// the manual mode as the case the ceiling exists for.
+	// What it buys is narrow and deliberate: no standing shortcut
+	// answers such a call. A session allowlist and a `never` policy were
+	// both written for a session with no ceiling, and the ceiling is the
+	// newer, narrower statement — a read-only session ran an allowlisted
+	// MCP write with no prompt at all while the banner said it changed
+	// nothing (independent review).
+	//
+	// It does NOT take the call away from the model tier. ADR-0080 §5
+	// puts the mode in front of that tier on purpose, and it was
+	// measured escalating an MCP write and passing an MCP read; making
+	// these operator-only would remove the judgment the ADR chose and
+	// stop every lookup in a read-only session. §5 is a judgment, §3 is
+	// the kernel denial, and the ADR says not to blur them — the
+	// documents that promised "every MCP call asks you" were the ones
+	// in the wrong.
 	CeilingUnbounded bool
 }
 

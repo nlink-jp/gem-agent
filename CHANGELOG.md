@@ -19,8 +19,10 @@
   recorded with who made it.
 - **Under the ceiling, a call whose effect needs a higher lane is
   refused before the gate** — a `shell_exec` declaring `write` or
-  `operator`, and `write_file`, `edit_file`, `save_memory`,
-  `delete_memory`. Refused, not escalated: the gate can be answered by
+  `operator`, and every mutating built-in: `write_file`, `edit_file`,
+  `save_memory`, `delete_memory`, and `web_search` / `web_fetch`, which
+  are mutating for their egress, so a read-only session cannot search
+  the web without lifting the ceiling. Refused, not escalated: the gate can be answered by
   the session allowlist, so a ceiling that escalated would be one an
   earlier `a` could spend. It is not the operator-denial text either,
   so the decision record does not read it as a decision they made.
@@ -28,12 +30,17 @@
   outside the session scratch and is the one boundary verified at
   startup against probes that must fail — the mode caps the lane rather
   than generating a new profile.
-- **An MCP call under the ceiling is the operator's.** An MCP server
-  runs outside every Seatbelt profile and the rule tier cannot read its
-  effects, so the ceiling does not pretend to bound it — but while the
-  ceiling is in force no session `a`, no `"never"` policy and no model
-  tier answers one either. The mode is also stated to the risk
-  evaluator as the operator's *intent* rather than as enforcement:
+- **No standing shortcut answers an MCP call under the ceiling.** An MCP
+  server runs outside every Seatbelt profile and the rule tier cannot
+  read its effects, so the ceiling does not pretend to bound it — but a
+  session `a` and a `"never"` policy do not apply to one while the
+  ceiling is in force: both were answers about a session with no
+  ceiling. In the default mode the operator is asked every time. Under
+  `--auto` the model tier still judges the call, with the mode in view,
+  and an approval there runs without asking — a judgment, not the
+  kernel denial the lanes give this runtime's own tools, and the ADR
+  says not to blur them. The mode reaches that tier as the operator's
+  *intent* rather than as enforcement:
   measured 2026-09-09, state-shaped wording produced identical verdicts
   but made the model report an MCP write as "not permitted", which is
   false and is shown to the operator.

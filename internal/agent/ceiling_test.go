@@ -462,3 +462,48 @@ func TestCeilingReasonNamesTheRightThing(t *testing.T) {
 		}
 	}
 }
+
+// Under --auto the model tier still judges an unbounded call — that is
+// ADR-0080 §5, measured escalating an MCP write and passing an MCP read,
+// and making these operator-only would have removed it and stopped every
+// lookup in a read-only session. What the ceiling guarantees is narrower
+// and is what the two reviews found missing: no standing shortcut
+// answers one. When the ladder escalates, the operator is asked and an
+// earlier 'a' does not answer for them.
+func TestCeilingUnboundedUnderAuto(t *testing.T) {
+	mcp := &tools.Tool{Name: "mcp__vault__patch", Description: "Patch a note.", Mutating: true,
+		Parameters: map[string]any{"type": "object"},
+		Run:        func(context.Context, map[string]any) (string, error) { return "PATCHED", nil }}
+	call := llm.ToolCall{ID: "c", Name: "mcp__vault__patch", Args: map[string]any{}}
+
+	for _, tc := range []struct {
+		name       string
+		verdict    string
+		wantPrompt bool
+	}{
+		// The measured case: the mode is in the aligned round's payload
+		// and the write is escalated, so the operator decides.
+		{"the ladder escalates", `{"approve": false, "confidence": 0.95, "reason": "read-only"}`, true},
+		// And when it approves, it has judged the call with the mode in
+		// view. A judgment, not the kernel denial §3 gives.
+		{"the ladder approves", `{"approve": true, "confidence": 0.99, "reason": "a read"}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := &autoBackend{responses: []*llm.Response{{Content: "done"}}, verdict: tc.verdict}
+			a := ceilingAgent(t, "on", mcp)
+			a.backend = b
+			a.SetAutoApprove(true)
+			gate := &ceilingAllowGate{always: map[string]bool{"mcp__vault__patch": true}}
+			a.gate = gate
+			if _, _, _, _, err := a.execCallInner(context.Background(), call); err != nil {
+				t.Fatal(err)
+			}
+			if got := len(gate.prompts) == 1; got != tc.wantPrompt {
+				t.Fatalf("operator asked = %v, want %v (prompts=%v)", got, tc.wantPrompt, gate.prompts)
+			}
+			if tc.wantPrompt && !gate.mustPrompts[0] {
+				t.Error("an earlier 'a' could have answered it")
+			}
+		})
+	}
+}
