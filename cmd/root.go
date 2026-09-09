@@ -2419,12 +2419,19 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 		if len(fields) > 2 {
 			arg2 = fields[2]
 		}
+		// A typo is an error here exactly as it is for /auto, which
+		// shares this grammar: the TUI dims an errored line and the
+		// plain REPL's caller can tell a rejection from a report. The
+		// two disagreed, and a test pinned the disagreement in place
+		// (independent review).
+		bad := false
 		switch {
 		case len(fields) > 3:
 			// Trailing words are a typo, in every form. The `auto`
 			// branch used to match on arg2 alone, so `/readonly auto on
 			// nonsense` armed the watcher silently.
 			b.WriteString(msgs.ReadOnlyUsage)
+			bad = true
 		case sub == "":
 		case (sub == "on" || sub == "off") && arg2 == "":
 			ag.SetReadOnly(sub == "on", "operator")
@@ -2434,6 +2441,10 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 			ag.SetReadOnlyAuto(false, "operator")
 		default:
 			b.WriteString(msgs.ReadOnlyUsage)
+			bad = true
+		}
+		if bad {
+			return b.String(), true, false
 		}
 		if b.Len() == 0 {
 			c := ag.CeilingState()

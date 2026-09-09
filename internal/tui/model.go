@@ -691,10 +691,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AutoApproved:
 		return m, m.emit(m.st.tool.Render(fmt.Sprintf(m.msgs.AutoApprovedFmt, msg.Tier, msg.Reason)))
 
-	case AutoMode:
-		m.autoMode = bool(msg)
-		return m, nil
-
 	case initialSubmit:
 		// The argv first message enters the same submit() the Enter
 		// key uses (ADR-0064): !shell, slash commands, /skill

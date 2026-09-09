@@ -65,9 +65,6 @@ type AutoApproved struct {
 	Tier   string
 }
 
-// AutoMode reports the current auto-approve state for the status line.
-type AutoMode bool
-
 // Attached reports what @-references pulled in, and what they could not
 // — a silently dropped reference would look like the file was read.
 type Attached struct {

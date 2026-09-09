@@ -332,12 +332,35 @@ func TestAutoModeToggleAndIndicator(t *testing.T) {
 		t.Fatal("shift+tab should turn auto mode off again")
 	}
 
-	// External state changes (config default, /auto in the plain REPL)
-	// arrive as a message.
-	next, _ := m.Update(AutoMode(true))
-	m = next.(Model)
+}
+
+// The footer reads the agent, not a copy of it. An AutoMode message
+// used to exist for "external state changes" and nothing ever sent one;
+// worse, it wrote a field the footer stopped reading the moment
+// AutoState was wired, so the message would have been silently
+// ineffective in every real session — and this test passed only because
+// it left AutoState unset (independent review). What actually keeps the
+// footer honest is pinned here instead.
+func TestAutoIndicatorFollowsTheAgentNotACopy(t *testing.T) {
+	c := &capture{}
+	state := false
+	m := New(Options{
+		Printer: c.printer,
+		RenderFactory: func(width int) func(string) string {
+			return func(s string) string { return s }
+		},
+		Slash:     slashStub,
+		ModelName: "m",
+		AutoState: func() bool { return state },
+	})
+	if strings.Contains(m.View(), "auto") {
+		t.Error("auto indicator must be absent while the agent says off")
+	}
+	// Moved behind the TUI's back — a lift dialog, the plain REPL path,
+	// anything that reaches the agent without a message.
+	state = true
 	if !strings.Contains(m.View(), "auto") {
-		t.Error("AutoMode message should update the indicator")
+		t.Error("the footer did not follow the agent")
 	}
 }
 

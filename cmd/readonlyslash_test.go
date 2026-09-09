@@ -31,11 +31,17 @@ func readOnlyAgent(t *testing.T, c sandbox.Ceiling) *agent.Agent {
 
 func readOnlySlash(t *testing.T, a *agent.Agent, input string, lang uitext.Lang) string {
 	t.Helper()
-	out, isErr, _ := slashOutput(input, a, nil, nil, nil, slashReloads{}, nil, nil, nil, "", uitext.For(lang), nil)
+	out, isErr := readOnlySlashErr(t, a, input, lang)
 	if isErr {
 		t.Fatalf("%s reported an error: %q", input, out)
 	}
 	return out
+}
+
+func readOnlySlashErr(t *testing.T, a *agent.Agent, input string, lang uitext.Lang) (string, bool) {
+	t.Helper()
+	out, isErr, _ := slashOutput(input, a, nil, nil, nil, slashReloads{}, nil, nil, nil, "", uitext.For(lang), nil)
+	return out, isErr
 }
 
 // Showing must not claim a change, in either language, and must not
@@ -108,12 +114,19 @@ func TestReadonlyOnNamesTheWayBack(t *testing.T) {
 }
 
 func TestReadonlyRejectsUnknownArgumentsWithoutChangingAnything(t *testing.T) {
-	for _, input := range []string{"/readonly maybe", "/readonly on auto", "/readonly auto maybe"} {
+	// `/readonly auto on nonsense` takes the trailing-words branch;
+	// the rest take the default. Both are typos and both must answer
+	// like one.
+	for _, input := range []string{"/readonly maybe", "/readonly on auto", "/readonly auto maybe", "/readonly auto on nonsense"} {
 		start := sandbox.Ceiling{ReadOnly: true, Auto: true}
 		a := readOnlyAgent(t, start)
-		out := readOnlySlash(t, a, input, uitext.EN)
+		out, isErr := readOnlySlashErr(t, a, input, uitext.EN)
 		if !strings.Contains(out, "/readonly on|off") {
 			t.Errorf("%q: no usage line: %q", input, out)
+		}
+		// The same answer /auto gives a typo: the TUI dims the line.
+		if !isErr {
+			t.Errorf("%q was not reported as an error", input)
 		}
 		if a.CeilingState() != start {
 			t.Errorf("%q moved the state to %+v", input, a.CeilingState())
