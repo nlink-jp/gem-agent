@@ -81,18 +81,23 @@ func TestRiskModelBench(t *testing.T) {
 	if project == "" {
 		t.Skip("GEM_TEST_PROJECT not set")
 	}
-	home, _ := os.UserHomeDir()
-	workDir := filepath.Join(home, ".local/state/gem-agent/work/benchabc")
+	// A session work directory of this test's own: the payload names
+	// it, and the mkdir case targets it, so any writable path serves.
+	workDir := filepath.Join(t.TempDir(), "work")
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// The operator's base rulebook rides along when there is one, as it
+	// does in production (ADR-0050); without one the bench still runs
+	// and says so, so the numbers can be re-derived on another machine.
+	home, _ := os.UserHomeDir()
 	book, err := riskbook.Load(filepath.Join(home, ".config/gem-agent/config.toml"), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	rulebook := book.Compose()
 	if strings.TrimSpace(rulebook) == "" {
-		t.Fatal("no rulebook loaded")
+		fmt.Println("note: no operator rulebook found — evaluating without one")
 	}
 
 	mcpTools := []benchTool{
@@ -140,6 +145,9 @@ func TestRiskModelBench(t *testing.T) {
 			}
 		}
 		configs = keep
+		if len(configs) == 0 {
+			t.Fatalf("RISKBENCH_CONFIGS=%q matched no configuration", sel)
+		}
 	}
 	reps := 2
 	if v, err := strconv.Atoi(os.Getenv("RISKBENCH_REPS")); err == nil && v > 0 {
@@ -177,7 +185,9 @@ func TestRiskModelBench(t *testing.T) {
 			}
 		}
 		run.agent = New(Options{Backend: run.rec, Registry: reg, System: "sys", MaxTurns: 5, AutoApprove: true})
-		run.agent.SetRulebook(rulebook)
+		if rulebook != "" {
+			run.agent.SetRulebook(rulebook)
+		}
 		if err := run.agent.registry.UseWorkDir(workDir); err != nil {
 			t.Fatal(err)
 		}

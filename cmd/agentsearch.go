@@ -80,13 +80,18 @@ func (searchDenyGate) ApproveOnce(string, string, string, string) (bool, string)
 // agenticSearchOptions wires registerAgenticSearch. onToolCall may be
 // nil; everything else is required (sink may be the no-op Sink).
 type agenticSearchOptions struct {
-	backend    llm.Backend // main model — multi-round tool judgment is the job
-	modelName  string
-	log        agent.SessionLog
-	tally      *usageTally
-	sink       *telemetry.Sink
-	onToolCall func(tc llm.ToolCall) // child tool activity, for live display
-	onToolDone func(tc llm.ToolCall) // child tool finished (TUI stall detector)
+	backend   llm.Backend // main model — multi-round tool judgment is the job
+	modelName string
+	// The model tier's slot (ADR-0082): the child's progress review is
+	// a model-tier call and must run where the parent's does. nil/""
+	// means the main backend/name, as in the parent.
+	riskBackend llm.Backend
+	riskModel   string
+	log         agent.SessionLog
+	tally       *usageTally
+	sink        *telemetry.Sink
+	onToolCall  func(tc llm.ToolCall) // child tool activity, for live display
+	onToolDone  func(tc llm.ToolCall) // child tool finished (TUI stall detector)
 }
 
 // registerAgenticSearch adds agentic_file_search (ADR-0037): a child
@@ -141,11 +146,14 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 			var rounds int
 			var childUsage llm.Usage
 			sub := agent.New(agent.Options{
-				Backend:  opts.backend,
-				Registry: subReg,
-				Gate:     searchDenyGate{},
-				System:   searchAgentPrompt,
-				MaxTurns: searchAgentMaxTurns,
+				Backend:     opts.backend,
+				Model:       opts.modelName,
+				RiskBackend: opts.riskBackend,
+				RiskModel:   opts.riskModel,
+				Registry:    subReg,
+				Gate:        searchDenyGate{},
+				System:      searchAgentPrompt,
+				MaxTurns:    searchAgentMaxTurns,
 				// No transcript: the child's internals are ephemeral like
 				// ADR-0014's side-calls — only the report enters the main
 				// history (and main transcript), and replaying child

@@ -860,11 +860,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// conversation. Its tool calls render as "↳ tool" so the operator
 	// watches the delegation happen instead of a silent pause.
 	if err := registerAgenticSearch(registry, agenticSearchOptions{
-		backend:   backend,
-		modelName: cfg.Model.Name,
-		log:       sideLog,
-		tally:     tally,
-		sink:      sink,
+		backend:     backend,
+		modelName:   cfg.Model.Name,
+		riskBackend: riskBackend,
+		riskModel:   riskModel,
+		log:         sideLog,
+		tally:       tally,
+		sink:        sink,
 		onToolCall: func(tc llm.ToolCall) {
 			if prog != nil {
 				prog.Send(tui.ToolCall{Name: "↳ " + tc.Name, Detail: agent.CallDetail(tc)})

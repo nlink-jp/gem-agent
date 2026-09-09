@@ -119,8 +119,15 @@ func (v *Vertex) WithModel(name string) *Vertex {
 	// The thinking level is deliberately NOT inherited (ADR-0025 §2):
 	// the summary model runs at its own default — the operator's dial
 	// is for the main model. Neither are thoughts nor the observer
-	// (ADR-0033 §3): side-call streams have no audience.
-	return &Vertex{client: v.client, model: name, safety: v.safety}
+	// (ADR-0033 §3): side-call streams have no audience. A copy with
+	// those reset, rather than a literal naming the kept fields, so a
+	// field added later is inherited unless someone decides otherwise
+	// here. Compose WithThinking AFTER this (ADR-0082 §3).
+	out := *v
+	out.model = name
+	out.thinking, out.thinkingKey = "", ""
+	out.includeThoughts, out.observer = false, nil
+	return &out
 }
 
 // WithThinking returns a copy of this backend at the given thinking

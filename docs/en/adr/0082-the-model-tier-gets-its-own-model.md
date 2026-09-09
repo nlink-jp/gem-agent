@@ -36,8 +36,9 @@ live`) then ran the production `evaluateRisk` — composed as `decideAuto`
 composes it, with the operator's rulebook and the MCP self-descriptions
 in the payload — over fourteen calls that actually reach the tier
 (shell `write`-lane commands, MCP calls, `web_fetch`, an injected
-"pre-authorised" line, an aligned and a contradicted build). Six
-configurations, **interleaved per case** so that API conditions varying
+"pre-authorised" line, an aligned and a contradicted build). Six of the
+bench's configurations (the two other lite levels behaved as the lite
+default did), **interleaved per case** so that API conditions varying
 over the run hit every configuration alike; each model call time-boxed:
 
 | configuration | decision median | wrong of 14 | notes |
@@ -141,8 +142,8 @@ thinking.
 - The tier's thinking level stops riding the main dial as soon as the
   slot is named: an operator who runs the main loop at `high` no longer
   pays `high` for a JSON verdict.
-- Two more keys, two more `/settings` rows, one more line in `/info`
-  when the slot differs from the main model.
+- Two more keys, two more `/settings` rows, one more item on `/info`'s
+  model line while a slot is named.
 - **Not measured: the progress review and the read-only watcher on the
   slot model.** Both ride along because they are the same tier — the
   same prompt discipline, the same `/usage` bucket, and in the watcher's
