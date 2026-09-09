@@ -2187,17 +2187,23 @@ func (m Model) footer() string {
 	// two indicators rather than one blurred word.
 	if m.readOnlyState != nil {
 		badge := ""
-		style := m.st.tool
 		switch c := m.readOnlyState(); {
 		case c.Auto && c.ReadOnly:
 			badge = "🔒auto-read-only"
 		case c.Auto:
-			badge, style = "auto-read-only", m.st.hint
+			badge = "auto-read-only"
 		case c.ReadOnly:
 			badge = "🔒read-only"
 		}
 		if badge != "" {
-			line = style.Render(badge) + m.st.hint.Render(" · ") + line
+			// The accent color, like auto mode's, in every state it
+			// shows. The armed-but-not-in-force badge was dim, on the
+			// reasoning that nothing is in force — but that put the
+			// line saying "the ceiling can move under you" in the
+			// faintest style available, and beside a bright ⚡auto it
+			// reads as absent. The padlock is the signal; colour was a
+			// second, weaker one saying the same thing worse.
+			line = m.st.tool.Render(badge) + m.st.hint.Render(" · ") + line
 		}
 	}
 	if m.autoMode {

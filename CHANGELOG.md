@@ -143,8 +143,12 @@
   The badge carries both settings: the padlock is the ceiling right
   now, the word is the mode. With the watcher armed the ceiling moves
   without the operator touching it, so its current value stays on
-  screen either way — the word alone, dim, when nothing is in force.
-  Without the watcher, off is the default and says nothing. The
+  screen either way — the word alone when nothing is in force. Without
+  the watcher, off is the default and says nothing. Every badge is
+  rendered in the accent color, like auto mode's: the armed-but-not-in-
+  force one was dim, which put the line saying "the ceiling can move
+  under you" in the faintest style available and let a bright `⚡auto`
+  beside it read as absent. The
   padlock's *presence* is the signal rather than its picture: 🔓 differs
   from 🔒 by the tilt of a shackle and reads as the same glyph in a
   terminal.

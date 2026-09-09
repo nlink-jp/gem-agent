@@ -332,7 +332,7 @@ ceiling right now, the word is the mode.
 | | ceiling off | ceiling on |
 |---|---|---|
 | watcher off | nothing | `🔒read-only` |
-| watcher armed | `auto-read-only` (dim) | `🔒auto-read-only` |
+| watcher armed | `auto-read-only` | `🔒auto-read-only` |
 
 The padlock's **presence** is the signal, not its picture: an open
 padlock differs from a closed one by the tilt of a shackle and reads as
