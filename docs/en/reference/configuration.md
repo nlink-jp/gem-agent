@@ -43,6 +43,12 @@ name = "<gemini model id>"
 # thinking = "high"         # optional; Gemini 3 thinking level: minimal|low|medium|high
 #                           # (unset = model default; supported levels are model-dependent;
 #                           #  summarize model unaffected — ADR-0025)
+# risk = "<judge model>"    # optional; the model tier — auto mode's risk evaluation, the
+#                           # progress review, the read-only watcher (ADR-0082); unset = main model
+# risk_thinking = "low"     # optional; that slot's thinking level (unset = its model's default;
+#                           #  with risk also unset, the tier follows model.thinking).
+#                           # A cheaper judge is not a safer one: run the model-tier bench
+#                           # (CHANGELOG, ADR-0082) before pointing risk at a model it has not seen
 # safety = "default"        # default | relaxed | off (see Content filters)
 
 [sandbox]

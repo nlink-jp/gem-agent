@@ -113,7 +113,7 @@ func (a *Agent) evaluateProgress(ctx context.Context) (progressVerdict, error) {
 	if err != nil {
 		return progressVerdict{}, fmt.Errorf("isolation failed: %w", err)
 	}
-	resp, err := a.backend.ChatStream(ctx, tag.Expand(progressEvalPrompt),
+	resp, err := a.tierBackend().ChatStream(ctx, tag.Expand(progressEvalPrompt),
 		[]llm.Message{{Role: llm.RoleUser, Content: wrapped}}, nil, nil)
 	if err != nil {
 		return progressVerdict{}, err
@@ -123,7 +123,7 @@ func (a *Agent) evaluateProgress(ctx context.Context) (progressVerdict, error) {
 	a.stats.RiskPrompt += resp.PromptTokens
 	a.stats.RiskOutput += resp.OutputTokens
 	a.mu.Unlock()
-	a.logUsage(session.UsageProgress, resp.Usage())
+	a.logUsageAs(session.UsageProgress, a.tierModel(), resp.Usage())
 
 	var v progressVerdict
 	if err := jsonfix.ExtractTo(resp.Content, &v); err != nil {

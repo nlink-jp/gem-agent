@@ -93,6 +93,14 @@ type Agent struct {
 	gate     Approver
 	log      SessionLog
 	model    string // for the accounting records only (ADR-0057)
+	// riskBackend answers the model tier — risk evaluation, progress
+	// review, and the read-only watcher (ADR-0082) — when the operator
+	// named a slot; nil means the tier rides backend. riskModel is the
+	// slot's name for the accounting records, "" meaning model. Resolved
+	// at each call (tierBackend / tierModel), not at construction, so
+	// they follow backend and model wherever those are swapped.
+	riskBackend llm.Backend
+	riskModel   string
 	// ceiling is the lane ceiling and its watcher, read and written
 	// under mu: /readonly changes either, and the watcher raises the
 	// ceiling (never lowers it — ADR-0080 §2). The two are independent,
@@ -248,6 +256,12 @@ type Options struct {
 	// auto_decision the model tier answered, so a verdict can be read
 	// back against the model that gave it. The backend picks the model.
 	Model string
+	// RiskBackend, when set, answers the model tier instead of Backend
+	// (ADR-0082): the risk evaluation and the progress review. RiskModel
+	// names it for the records; both empty means the tier rides Backend
+	// under Model, as before.
+	RiskBackend llm.Backend
+	RiskModel   string
 	// OnUsage, when set, receives per-round token usage (prompt tokens
 	// approximate the current context size; output tokens the round's
 	// generation; cached tokens the share of the prompt served from the
@@ -347,6 +361,8 @@ func New(opts Options) *Agent {
 		gate:          opts.Gate,
 		log:           opts.Log,
 		model:         opts.Model,
+		riskBackend:   opts.RiskBackend,
+		riskModel:     opts.RiskModel,
 		ceiling:       opts.Ceiling,
 		system:        opts.System,
 		maxTurns:      opts.MaxTurns,
@@ -1468,7 +1484,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 				// evaluator_model names which model ran, since the
 				// evaluation is a side call whose spend is logged
 				// separately.
-				rec["evaluator_model"] = a.model
+				rec["evaluator_model"] = a.tierModel()
 				rec["min_confidence"] = minConfidence
 				if d.ConfidenceKnown {
 					rec["confidence"] = d.Confidence
@@ -1816,11 +1832,34 @@ func (a *Agent) notify(msg string) {
 // review, compaction — because a tally that lives only in memory is
 // gone when the process exits, and the API never reports cost.
 func (a *Agent) logUsage(source string, u llm.Usage) {
+	a.logUsageAs(source, a.model, u)
+}
+
+// tierBackend is the backend the model tier runs on (ADR-0082 §1-2):
+// the slot when the operator named one, otherwise the main backend.
+func (a *Agent) tierBackend() llm.Backend {
+	if a.riskBackend != nil {
+		return a.riskBackend
+	}
+	return a.backend
+}
+
+// tierModel is the model the model tier bills against (ADR-0082 §4).
+func (a *Agent) tierModel() string {
+	if a.riskModel != "" {
+		return a.riskModel
+	}
+	return a.model
+}
+
+// logUsageAs is logUsage for a call that did not run on the main model
+// — the model tier's, which bills against the risk slot (ADR-0082 §4).
+func (a *Agent) logUsageAs(source, model string, u llm.Usage) {
 	if u.Empty() {
 		return
 	}
 	a.logRecord(session.KindUsage, session.UsageRecord{
-		Source: source, Model: a.model,
+		Source: source, Model: model,
 		Prompt: u.Prompt, Output: u.Output, Thoughts: u.Thoughts,
 		Cached: u.Cached, ToolPrompt: u.ToolPrompt, Total: u.Total,
 	})

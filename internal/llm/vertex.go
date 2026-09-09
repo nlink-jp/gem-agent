@@ -24,6 +24,10 @@ type Vertex struct {
 	// (ADR-0025); empty means the model's own default. Set once at
 	// construction — deliberately immutable (no live edit, no mutex).
 	thinking genai.ThinkingLevel
+	// thinkingKey names the config key the level came from, for the 400
+	// hint; "" is [model].thinking, WithThinking sets the slot's key
+	// (ADR-0082).
+	thinkingKey string
 	// includeThoughts asks the model for thought summaries, streamed
 	// to the observer for display and NEVER stored (ADR-0033 §3).
 	includeThoughts bool
@@ -119,6 +123,27 @@ func (v *Vertex) WithModel(name string) *Vertex {
 	return &Vertex{client: v.client, model: name, safety: v.safety}
 }
 
+// WithThinking returns a copy of this backend at the given thinking
+// level ("" = the model's own default) — the [model].risk_thinking
+// slot (ADR-0082 §2-3). Composes with WithModel: the receiver is not
+// changed, so the main backend keeps the operator's dial.
+func (v *Vertex) WithThinking(level string) *Vertex {
+	out := *v
+	out.thinking = ThinkingLevel(level)
+	// The 400 hint below names the key the operator has to edit.
+	out.thinkingKey = "[model].risk_thinking"
+	return &out
+}
+
+// thinkingKeyName is the config key the thinking level came from, for
+// the error that tells the operator what to change.
+func (v *Vertex) thinkingKeyName() string {
+	if v.thinkingKey == "" {
+		return "[model].thinking"
+	}
+	return v.thinkingKey
+}
+
 // ContextWindow fetches the model's input token limit from the model
 // metadata. Callers treat failures as "unknown", never fatal — a
 // footer statistic must never block the session.
@@ -201,7 +226,7 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 			// in ADR-0025) and the raw API error never names the knob
 			// (review round 2).
 			if v.thinking != "" && strings.Contains(streamErr.Error(), "400") {
-				return nil, fmt.Errorf("vertex AI stream: %w (note: [model].thinking = %q — this model may not support that level; unset it or pick another)", streamErr, v.thinking)
+				return nil, fmt.Errorf("vertex AI stream: %w (note: %s = %q — this model may not support that level; unset it or pick another)", streamErr, v.thinkingKeyName(), v.thinking)
 			}
 			return nil, fmt.Errorf("vertex AI stream: %w", streamErr)
 		}

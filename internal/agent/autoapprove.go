@@ -329,7 +329,7 @@ func (a *Agent) evaluateRisk(ctx context.Context, tc llm.ToolCall, withContext b
 		return riskVerdict{}, fmt.Errorf("isolation failed: %w", err)
 	}
 
-	resp, err := a.backend.ChatStream(ctx, tag.Expand(prompt),
+	resp, err := a.tierBackend().ChatStream(ctx, tag.Expand(prompt),
 		[]llm.Message{{Role: llm.RoleUser, Content: wrapped}}, nil, nil)
 	if err != nil {
 		return riskVerdict{}, err
@@ -343,7 +343,7 @@ func (a *Agent) evaluateRisk(ctx context.Context, tc llm.ToolCall, withContext b
 	a.stats.RiskOutput += resp.OutputTokens
 	a.mu.Unlock()
 	// …and on disk: the tally above dies with the process (ADR-0057).
-	a.logUsage(session.UsageRisk, resp.Usage())
+	a.logUsageAs(session.UsageRisk, a.tierModel(), resp.Usage())
 
 	var verdict riskVerdict
 	// Models wrap JSON in prose or fences often enough that a plain

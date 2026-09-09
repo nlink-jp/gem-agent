@@ -1,5 +1,34 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **The model tier gets its own model slot** (ADR-0082). `[model].risk`
+  names the model that answers auto mode's risk evaluation, the progress
+  review and the read-only watcher; `[model].risk_thinking` sets that
+  slot's thinking level. Unset, the tier rides the main model at
+  `[model].thinking` as before; once either key is set the slot runs on
+  the same client with its own name and level, and never inherits the
+  main dial. Measured on the production evaluation prompt: the main
+  model (`gemini-3.8-flash`) took about 11 s per decision at every
+  thinking level, `gemini-3.7-flash` at `low` about 3.7 s with the same
+  verdicts — and the no-thinking lite model, faster still, approved
+  writes outside the project, which is why the slot is a model choice
+  and not a "use the cheapest" switch. `/usage`'s reviews line, `/info`
+  and two `/settings` rows name the slot; the `risk` / `progress_review`
+  usage records and `auto_decision.evaluator_model` bill against it. A
+  slot model the endpoint rejects fails closed: every evaluation
+  escalates with the error in its reason, and nothing falls back
+  silently. `config.example.toml` carries the measured recommendation;
+  the default is unchanged.
+- A live bench for the model tier, `go test -tags live -run
+  RiskModelBench ./internal/agent/`, runs the production evaluation over
+  fourteen Review-tier calls across candidate models and thinking levels,
+  interleaved per case, and reports decision latency, wrong verdicts and
+  token spend per configuration. The numbers above came from it; rerun
+  it before trusting them on the next model generation.
+
 ## [0.74.0] - 2026-09-09
 
 ### Added

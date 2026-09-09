@@ -21,6 +21,11 @@ type infoSnapshot struct {
 	Model        string
 	SummaryModel string
 	Thinking     string // "" = model default
+	// The model tier's slot (ADR-0082): shown only when RiskSlot, since
+	// otherwise the tier is the main model at the main level.
+	RiskModel    string
+	RiskThinking string // "" = model default
+	RiskSlot     bool
 	Usage        agent.UsageStats
 	MaxTurns     int
 	ShellTimeout int
@@ -83,6 +88,13 @@ func renderInfo(s infoSnapshot) string {
 	fmt.Fprintf(&b, "model: %s (thinking: %s)", s.Model, thinking)
 	if s.SummaryModel != "" && s.SummaryModel != s.Model {
 		fmt.Fprintf(&b, " · summary model: %s", s.SummaryModel)
+	}
+	if s.RiskSlot {
+		rt := s.RiskThinking
+		if rt == "" {
+			rt = "model default"
+		}
+		fmt.Fprintf(&b, " · risk model: %s (thinking: %s)", s.RiskModel, rt)
 	}
 	b.WriteString("\n")
 

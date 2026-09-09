@@ -47,6 +47,23 @@ name = "gemini-3.8-flash"
 # not disappear on a preview's schedule.
 #summary = "gemini-3.5-flash-lite"
 
+# Model for the model tier — the risk evaluation behind auto mode, the
+# progress review, and the read-only watcher (ADR-0082). Unset means the
+# main model at [model].thinking. Measured 2026-09-10 on the production
+# evaluation prompt: gemini-3.8-flash took ~11 s per decision at every
+# thinking level (the endpoint's time, not the reasoning's);
+# gemini-3.7-flash at "low" took ~3.7 s with the same verdicts; the
+# no-thinking lite model was faster still but approved writes it should
+# not have, so it is not the answer here. Shares the main model's client.
+# A model the endpoint rejects makes every evaluation fail closed, with
+# the error in the escalation's reason — there is no silent fallback.
+#risk = "gemini-3.7-flash"
+
+# Thinking level for that slot (minimal|low|medium|high). Unset means the
+# slot model's own default; a slot never inherits [model].thinking. Set
+# on its own, it puts the main model's name on a slot at that level.
+#risk_thinking = "low"
+
 # Content-filter policy for the four configurable harm categories:
 #   default — the provider's own thresholds
 #   relaxed — block only high-confidence hits

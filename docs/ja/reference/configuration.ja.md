@@ -42,6 +42,12 @@ name = "<gemini model id>"
 # thinking = "high"         # 任意; Gemini 3 の思考レベル: minimal|low|medium|high
 #                           # (未設定 = モデル既定。対応レベルはモデル依存。
 #                           #  要約モデルには効かない — ADR-0025)
+# risk = "<judge model>"    # 任意; モデル層 — auto モードのリスク評価・進捗レビュー・
+#                           # read-only ウォッチャー（ADR-0082）; 未設定 = メインモデル
+# risk_thinking = "low"     # 任意; その枠の思考レベル（未設定 = その枠モデルの既定。
+#                           #  risk も未設定なら層は model.thinking に従う）。
+#                           # 安い判定器は安全な判定器ではない: 見たことのないモデルに
+#                           # risk を向ける前にモデル層ベンチ（CHANGELOG・ADR-0082）を回すこと
 # safety = "default"        # default | relaxed | off（コンテンツフィルタ参照）
 
 [sandbox]

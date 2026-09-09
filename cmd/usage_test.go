@@ -53,7 +53,7 @@ func TestUsageReportStatement(t *testing.T) {
 	// tool's input (measured 953 of 1054).
 	tally.add("web_fetch", "light-model", 900, 60, 1091)
 
-	out := usageReport(ag, tally, "main-model", "light-model")
+	out := usageReport(ag, tally, "main-model", "judge-model")
 	for _, want := range []string{
 		"main loop (main-model):",
 		"rounds 2 · prompt 22.0k · output 500",
@@ -74,7 +74,7 @@ func TestUsageReportStatement(t *testing.T) {
 
 	// A fresh session is honest about having nothing to report.
 	fresh := agent.New(agent.Options{Backend: mb, Registry: reg, System: "s", MaxTurns: 5})
-	if out := usageReport(fresh, newUsageTally(), "m", "l"); !strings.Contains(out, "no requests yet") {
+	if out := usageReport(fresh, newUsageTally(), "m", "j"); !strings.Contains(out, "no requests yet") {
 		t.Errorf("fresh report = %q", out)
 	}
 }

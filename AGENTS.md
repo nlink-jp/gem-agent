@@ -618,6 +618,16 @@ a new hook) is an architecture change and takes the same rows as a
   The agent emits OnToolDone after every call; the TUI re-arms on that.
   Set the flag AFTER `beginTurnStats()`, which resets it — the
   `/riskbook learn` path set it before and silently lost the suppression.
+- **The model tier has its own backend and model name** (ADR-0082) —
+  `a.riskBackend` / `a.riskModel` answer the risk evaluation, the progress
+  review and the read-only watcher, and their `usage` records and
+  `auto_decision.evaluator_model` carry `riskModel`, not `a.model`. Both
+  default to the main backend/name when `[model].risk` and
+  `[model].risk_thinking` are unset; once either is set the slot is
+  `backend.WithModel(...).WithThinking(...)` and never inherits
+  `[model].thinking`. A new model-tier call site must use the pair, and
+  `logUsageAs(source, a.riskModel, …)`, or it bills and judges on the
+  wrong model. Compaction stays on the main backend.
 - **Every model call must leave a `usage` record** (ADR-0057) — the API
   reports tokens and never money, so cost is reconstructed from the
   transcript; a new backend call site that skips `logUsage` (agent side)

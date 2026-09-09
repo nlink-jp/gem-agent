@@ -140,6 +140,8 @@ func (s *settingsStore) data() tui.SettingsData {
 	ro("backend", "model.safety", s.cfg.Model.Safety, "model.safety", needsRestart)
 	ro("backend", "model.summary", summaryLabel(s.cfg.Model.Summary), "model.summary", needsRestart)
 	ro("backend", "model.thinking", thinkingLabel(s.cfg.Model.Thinking), "model.thinking", needsRestart)
+	ro("backend", "model.risk", riskModelLabel(s.cfg.Model), "model.risk", needsRestart)
+	ro("backend", "model.risk_thinking", riskThinkingLabel(s.cfg.Model), "model.risk_thinking", needsRestart)
 	ro("backend", "model.context_window", contextWindowLabel(s.cfg.Model.ContextWindow),
 		"model.context_window", "auto-detected when unset")
 	// The measured state, not the configured one: --no-sandbox is never
@@ -598,6 +600,28 @@ func writeSettingsTable(out io.Writer, d tui.SettingsData) {
 	}
 	_ = tw.Flush()
 	fmt.Fprintln(out, "\nrun gem-agent in a terminal for the interactive panel")
+}
+
+// riskModelLabel renders the model tier's model as what it means
+// (ADR-0082 §2): unset is the main model.
+func riskModelLabel(m config.ModelConfig) string {
+	if m.Risk == "" {
+		return "(main model)"
+	}
+	return m.Risk
+}
+
+// riskThinkingLabel renders the slot's level as what it means: unset
+// is the slot model's own default once a slot is named, and the main
+// level while the tier still rides the main backend.
+func riskThinkingLabel(m config.ModelConfig) string {
+	if m.RiskThinking != "" {
+		return m.RiskThinking
+	}
+	if m.RiskSlot() {
+		return "(model default)"
+	}
+	return "(follows model.thinking)"
 }
 
 // summaryLabel renders "" as what it means.

@@ -76,7 +76,7 @@ func (a *Agent) evaluateCeiling(ctx context.Context, input string) (ceilingVerdi
 	if err != nil {
 		return ceilingVerdict{}, fmt.Errorf("isolation failed: %w", err)
 	}
-	resp, err := a.backend.ChatStream(ctx, tag.Expand(ceilingEvalPrompt),
+	resp, err := a.tierBackend().ChatStream(ctx, tag.Expand(ceilingEvalPrompt),
 		[]llm.Message{{Role: llm.RoleUser, Content: wrapped}}, nil, nil)
 	if err != nil {
 		return ceilingVerdict{}, err
@@ -87,7 +87,7 @@ func (a *Agent) evaluateCeiling(ctx context.Context, input string) (ceilingVerdi
 	a.stats.RiskPrompt += resp.PromptTokens
 	a.stats.RiskOutput += resp.OutputTokens
 	a.mu.Unlock()
-	a.logUsage(session.UsageRisk, resp.Usage())
+	a.logUsageAs(session.UsageRisk, a.tierModel(), resp.Usage())
 
 	var v ceilingVerdict
 	if err := jsonfix.ExtractTo(resp.Content, &v); err != nil {

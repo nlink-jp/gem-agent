@@ -652,6 +652,15 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	} else {
 		summaryBackend = backend.WithModel(summaryModel)
 	}
+	// --- the model tier: risk evaluation, progress review, and the
+	// read-only watcher run on their own slot once the operator names
+	// one (ADR-0082). Same client; a nil backend means "ride the main
+	// backend", which is what the agent does with it.
+	riskModel := cfg.Model.RiskModel()
+	var riskBackend llm.Backend
+	if cfg.Model.RiskSlot() {
+		riskBackend = backend.WithModel(riskModel).WithThinking(cfg.Model.RiskThinking)
+	}
 	// sideLog forwards to the transcript in use: /clear swaps it
 	// (ADR-0071 §2), and a tool that captured the value at startup wrote
 	// its usage records to the closed file (review round 4).
@@ -821,6 +830,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			Model:          cfg.Model.Name,
 			SummaryModel:   summaryModel,
 			Thinking:       cfg.Model.Thinking,
+			RiskModel:      riskModel,
+			RiskThinking:   cfg.Model.RiskThinking,
+			RiskSlot:       cfg.Model.RiskSlot(),
 			Usage:          ag.Usage(),
 			MaxTurns:       cfg.Agent.MaxTurns,
 			ShellTimeout:   cfg.Agent.ShellTimeoutSec,
@@ -896,14 +908,17 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		Msgs: msgs,
 		// Accounting only (ADR-0057): the model name that goes into
 		// this session's usage records.
-		Model:    cfg.Model.Name,
-		Backend:  backend,
-		Registry: registry,
-		Gate:     gate,
-		Log:      sessionLog,
-		System:   composeSystem(),
-		MaxTurns: cfg.Agent.MaxTurns,
-		Policy:   approvalPolicy,
+		Model:   cfg.Model.Name,
+		Backend: backend,
+		// The model tier's slot (ADR-0082); nil rides Backend.
+		RiskBackend: riskBackend,
+		RiskModel:   riskModel,
+		Registry:    registry,
+		Gate:        gate,
+		Log:         sessionLog,
+		System:      composeSystem(),
+		MaxTurns:    cfg.Agent.MaxTurns,
+		Policy:      approvalPolicy,
 		// load_skill results are operator-authored instructions, not
 		// data; its reads are confined to skill directories (ADR-0010).
 		InstructionTools: []string{skills.ToolName},
@@ -1585,7 +1600,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			Slash: func(in string) (string, bool, bool) {
 				return slashOutput(in, ag, registry, mcpSummary, skillsList,
 					slashReloads{mcp: reloadMCP, skills: reloadSkills},
-					func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
+					func() string { return usageReport(ag, tally, cfg.Model.Name, riskModel) },
 					func() string { return memoryListing(memBase, projectDir) },
 					rbRunner.Command, appVersion, msgs, onClear)
 			},
@@ -1693,7 +1708,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		if strings.HasPrefix(input, "/") {
 			out, _, quit := slashOutput(input, ag, registry, mcpSummary, skillsList,
 				slashReloads{mcp: reloadMCP, skills: reloadSkills},
-				func() string { return usageReport(ag, tally, cfg.Model.Name, summaryModel) },
+				func() string { return usageReport(ag, tally, cfg.Model.Name, riskModel) },
 				func() string { return memoryListing(memBase, projectDir) },
 				rbRunner.Command, appVersion, msgs, onClear)
 			fmt.Fprint(stderr, out)

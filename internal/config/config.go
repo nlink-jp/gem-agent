@@ -247,6 +247,32 @@ type ModelConfig struct {
 	// (ADR-0025): "minimal", "low", "medium", or "high". Empty means
 	// the model's own default. The summary model is unaffected.
 	Thinking string `toml:"thinking"`
+	// Risk names the model the model tier runs on — the risk
+	// evaluation and the progress review (ADR-0082). Empty means the
+	// main model.
+	Risk string `toml:"risk"`
+	// RiskThinking sets the model tier's thinking level, in Thinking's
+	// vocabulary. Empty means the model's own default once the slot is
+	// named, and the main level while it is not (ADR-0082 §2): a slot
+	// never inherits the main dial, and the slot exists as soon as
+	// either key is set.
+	RiskThinking string `toml:"risk_thinking"`
+}
+
+// RiskSlot reports whether the model tier runs on a slot of its own:
+// either [model].risk or [model].risk_thinking is set (ADR-0082 §2).
+// When false, the tier rides the main backend as it always did.
+func (m ModelConfig) RiskSlot() bool {
+	return m.Risk != "" || m.RiskThinking != ""
+}
+
+// RiskModel is the model the model tier bills against: the slot's
+// model, or the main model while the slot is unset or names no model.
+func (m ModelConfig) RiskModel() string {
+	if m.Risk != "" {
+		return m.Risk
+	}
+	return m.Name
 }
 
 // ValidThinking reports whether s is an accepted [model].thinking value.
@@ -487,7 +513,7 @@ func applyEnv(cfg *Config) {
 var trackedKeys = []string{
 	"gcp.project", "gcp.location",
 	"model.name", "model.context_window", "model.safety", "model.summary",
-	"model.thinking", "gcp.bucket",
+	"model.thinking", "model.risk", "model.risk_thinking", "gcp.bucket",
 	"sandbox.enabled", "sandbox.read_lane_deny_exec", "sandbox.read_lane_prompts",
 	"approval.pin_trusted_files",
 	"agent.max_turns", "agent.shell_timeout_sec", "agent.auto_approve",
@@ -568,6 +594,9 @@ func (c *Config) validate() error {
 	}
 	if !ValidThinking(c.Model.Thinking) {
 		return fmt.Errorf("[model].thinking must be minimal, low, medium, or high (got %q; empty means the model default)", c.Model.Thinking)
+	}
+	if !ValidThinking(c.Model.RiskThinking) {
+		return fmt.Errorf("[model].risk_thinking must be minimal, low, medium, or high (got %q; empty means the model default)", c.Model.RiskThinking)
 	}
 	switch c.Model.Safety {
 	case "default", "relaxed", "off":
