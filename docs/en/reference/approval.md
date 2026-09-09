@@ -332,10 +332,13 @@ ceiling right now, the word is the mode.
 | | ceiling off | ceiling on |
 |---|---|---|
 | watcher off | nothing | `🔒read-only` |
-| watcher armed | `🔓auto-read-only` (dim) | `🔒auto-read-only` |
+| watcher armed | `auto-read-only` (dim) | `🔒auto-read-only` |
 
-With the watcher armed the ceiling moves without you touching it, so
-its current value stays on screen even when it is off. Without the
+The padlock's **presence** is the signal, not its picture: an open
+padlock differs from a closed one by the tilt of a shackle and reads as
+the same glyph in a terminal. With the watcher armed the ceiling moves
+without you touching it, so its current value stays on screen even when
+it is off. Without the
 watcher it moves only when you move it, so off is the default and says
 nothing. The startup banner names whichever setting is not the default,
 a line each.

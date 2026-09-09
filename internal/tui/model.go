@@ -2161,10 +2161,16 @@ func (m Model) footer() string {
 	// One badge carrying both settings: the padlock is the ceiling right
 	// now, the word is which mode the session is in. With the watcher
 	// armed the ceiling moves without the operator touching it, so its
-	// current value has to be on screen even when it is off — an open
-	// padlock, dim, because nothing is in force. Without the watcher the
+	// current value has to be on screen even when it is off — the word
+	// alone, dim, because nothing is in force. Without the watcher the
 	// ceiling only moves when they move it, so off is the default and
 	// says nothing at all.
+	//
+	// The signal is the padlock's PRESENCE, not its picture. 🔓 (open
+	// padlock) differs from 🔒 by the tilt of a shackle and reads as the
+	// same glyph at terminal sizes — reported after using it. One glyph
+	// appearing and disappearing cannot be misread, and it leaves the
+	// padlock with exactly one meaning: in force.
 	//
 	// The word is the one /readonly and the banner use, and it is not
 	// "auto": that is the approval ladder's, and ADR-0080 §1 asks for
@@ -2176,7 +2182,7 @@ func (m Model) footer() string {
 		case c.Auto && c.ReadOnly:
 			badge = "🔒auto-read-only"
 		case c.Auto:
-			badge, style = "🔓auto-read-only", m.st.hint
+			badge, style = "auto-read-only", m.st.hint
 		case c.ReadOnly:
 			badge = "🔒read-only"
 		}

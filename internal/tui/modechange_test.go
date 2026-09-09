@@ -124,8 +124,10 @@ func TestFooterBadgeCarriesBothSettings(t *testing.T) {
 		// state that constrains shows.
 		{sandbox.Ceiling{ReadOnly: true}, "🔒read-only"},
 		// Armed: the ceiling moves without them, so its current value is
-		// on screen either way — open padlock when nothing is in force.
-		{sandbox.Ceiling{Auto: true}, "🔓auto-read-only"},
+		// on screen either way — the word alone when nothing is in
+		// force. The padlock's presence is the signal, because 🔓 and 🔒
+		// read as the same glyph in a terminal.
+		{sandbox.Ceiling{Auto: true}, "auto-read-only"},
 		{sandbox.Ceiling{Auto: true, ReadOnly: true}, "🔒auto-read-only"},
 	} {
 		state = tc.state
@@ -152,9 +154,14 @@ func TestFooterBadgeCarriesBothSettings(t *testing.T) {
 		t.Errorf("the badge borrowed auto mode's word:\n%s", m.View())
 	}
 	// Read live: /readonly, the watcher and an approved lift all move
-	// the state, and two of the three are inside the agent.
+	// the state, and two of the three are inside the agent. After a lift
+	// the padlock is gone — its presence is what says "in force".
 	state = sandbox.Ceiling{Auto: true}
-	if !strings.Contains(m.View(), "🔓auto-read-only") {
-		t.Errorf("the footer did not follow a lift:\n%s", m.View())
+	v := m.View()
+	if !strings.Contains(v, "auto-read-only") {
+		t.Errorf("the footer did not follow a lift:\n%s", v)
+	}
+	if strings.Contains(v, "🔒") || strings.Contains(v, "🔓") {
+		t.Errorf("a padlock survived the lift:\n%s", v)
 	}
 }

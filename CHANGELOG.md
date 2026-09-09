@@ -139,8 +139,11 @@
   The badge carries both settings: the padlock is the ceiling right
   now, the word is the mode. With the watcher armed the ceiling moves
   without the operator touching it, so its current value stays on
-  screen either way — `🔓auto-read-only`, dim, when nothing is in
-  force. Without the watcher, off is the default and says nothing.
+  screen either way — the word alone, dim, when nothing is in force.
+  Without the watcher, off is the default and says nothing. The
+  padlock's *presence* is the signal rather than its picture: 🔓 differs
+  from 🔒 by the tilt of a shackle and reads as the same glyph in a
+  terminal.
   Operator report, 2026-09-09
 
 ## [0.73.0] - 2026-09-09
