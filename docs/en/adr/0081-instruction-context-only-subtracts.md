@@ -66,7 +66,11 @@ Anything reaching the evaluator through the context can only **remove**
 approvals. Attacker bytes that survive into the operator's prompt can
 cause extra escalations — a denial of convenience — and cannot cause an
 approval the context-free decision would not have made. The floor is
-exactly the pre-ADR-0038 evaluator.
+the **context-free** evaluator, which is what ADR-0038 added the
+instruction to: the baseline round still carries the rulebook
+(ADR-0050) and, for an MCP call, the tool's own self-description
+(ADR-0046) — those are information about the call, not context around
+it, so they were never what the composition subtracts.
 
 This also bounds the cage-as-licence reading ADR-0080 §5 looked for:
 under the composition, no statement in the context can produce an

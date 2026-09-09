@@ -168,12 +168,19 @@ cron entry shows, not somewhere else. A restriction is the same
 sentence read the other way. Inferring it from the prompt would make a
 scheduled job's write access depend on how its prompt happens to be
 worded, so a harmless edit to that text could silently hand back
-everything the restriction was there to withhold. One-shot therefore has two forms and no third:
+everything the restriction was there to withhold. Every form of one-shot
+therefore answers the ceiling on the command line:
 
 ```
 gem-agent -p "…" --read-only    # ceiling read
+gem-agent -p "…" --writable     # ceiling operator, over a configured "on"
 gem-agent -p "…"                # ceiling operator, as today
 ```
+
+`--writable` is the third of them and not an exception to the rule: it
+is how the invocation overrides a configured restriction, in writing,
+where a reader of the cron entry can see it. What one-shot has no form
+of is inference — nothing about the ceiling is read out of the prompt.
 
 The whole ceiling question is answered where the run is launched, and
 answered by a person.

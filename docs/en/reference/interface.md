@@ -203,7 +203,7 @@ in the input box as one message, never one LLM call per line.
 | `/tools` | available tools with each one's LIVE approval gate |
 | `/mcp` | connected MCP servers with their scope; `/mcp reload` reconnects them (ADR-0039) |
 | `/auto` | auto-approve: `on`, `off`, or no argument to toggle (shift+tab toggles too, and works mid-run) |
-| `/readonly` | the session's lane ceiling and its watcher, two independent settings: `on` / `off` move the ceiling, `auto on` / `auto off` arm the watcher (bare `auto` arms it), and no argument shows both. `on` caps the session at the `read` lane, so nothing outside its scratch changes — a separate axis from `/auto`, which decides who answers the gate rather than what the session may reach (ADR-0080) |
+| `/readonly` | the session's lane ceiling and its watcher, two independent settings: `on` / `off` move the ceiling, `auto on` / `auto off` arm the watcher (bare `auto` arms it), and no argument shows both. `on` caps the session at the `read` lane, so nothing outside its scratch changes (with the sandbox off, or its read lane unverified, the line says which part of that it cannot promise) — a separate axis from `/auto`, which decides who answers the gate rather than what the session may reach (ADR-0080) |
 | `/compact` | summarise the older half of the conversation now |
 | `/settings` | every setting with its provenance; edit policy, session toggles, and which MCP servers and functions this session has (ADR-0077 — Enter opens a server, ←→ turns one on or off) |
 | `/riskbook` | the risk rules the auto-mode reviewer reads; `learn` drafts them from your answers (ADR-0050) |
@@ -271,6 +271,14 @@ switched on.
 - `p` — allow, and never ask about this tool again: writes the policy
   file and says so. Deliberately separate from `a` — one is a session
   convenience, the other edits a file on disk
+
+**The mode dialog is the same box with three answers.** When read-only
+refuses a call, what you are asked is whether to lift the mode, not
+whether to run the call — so `a` and `p` are absent from it in every
+route, including the letter shortcuts: there is no standing grant to
+give for a question about a session setting (ADR-0080 §4). Answering
+`y` turns read-only off; the call then goes through the ordinary
+approval above, which is a second question.
 
 The highlight starts on *allow*, except for a call auto-approve
 escalated, where it starts on *deny* so a reflexive Enter cannot approve

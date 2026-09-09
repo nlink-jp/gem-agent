@@ -272,11 +272,14 @@ func (a *Agent) evaluateRisk(ctx context.Context, tc llm.ToolCall, withContext b
 		payload += "\nsession work directory: " + wd
 	}
 	payload += "\narguments: " + string(args)
-	// The operator's typed request joins the payload on every
-	// evaluation (ADR-0038, cutoff removed by ADR-0054) — the one
-	// context channel an injection attacker cannot write, at round 0
-	// and round 40 alike. Inside the same wrap: it is evidence, and
-	// pasted text within it must not command the reviewer.
+	// The operator's typed request joins the payload on the aligned
+	// round (ADR-0038, cutoff removed by ADR-0054, composed by
+	// ADR-0081) — the one context channel an injection attacker cannot
+	// write, at round 0 and round 40 alike. "Every evaluation" was true
+	// until ADR-0081 made the baseline round context-free, and the
+	// comment outlived it (independent review). Inside the same wrap:
+	// it is evidence, and pasted text within it must not command the
+	// reviewer.
 	prompt := riskEvalPrompt
 	// The operator's risk rulebook joins every evaluation while one is
 	// in force (ADR-0050): hand-written base + reviewed project layer,
