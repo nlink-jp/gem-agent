@@ -183,6 +183,12 @@ type Options struct {
 	// AutoMode is the initial auto-approve state; ToggleAuto flips it
 	// (shift+tab) and returns the new state.
 	AutoMode bool
+	// AutoState reports auto-approve live. A mirrored bool goes stale
+	// the first time something changes the mode without telling the
+	// TUI — which `/auto on` did, having slipped past an exact-string
+	// interception into the shared slash handler. The ceiling never had
+	// that bug because it was read, not mirrored.
+	AutoState func() bool
 	// ReadOnlyState reports the session's lane-ceiling state (ADR-0080
 	// §1). A getter rather than a mirrored field: the ceiling changes
 	// from three places — /readonly, the auto state tightening itself,
@@ -289,6 +295,7 @@ type Model struct {
 	slash           SlashHandler
 	toggleAuto      func() bool
 	autoMode        bool
+	autoState       func() bool
 	readOnlyState   func() sandbox.Ceiling
 	completePath    func(prefix string) []string
 	completeSlashFn func(prefix string) []string
@@ -374,6 +381,7 @@ func New(opts Options) Model {
 		slash:           opts.Slash,
 		toggleAuto:      opts.ToggleAuto,
 		autoMode:        opts.AutoMode,
+		autoState:       opts.AutoState,
 		readOnlyState:   opts.ReadOnlyState,
 		completePath:    opts.CompletePath,
 		completeSlashFn: opts.CompleteSlash,
@@ -1512,8 +1520,14 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	// model, so the footer's ⚡auto marker went stale — it reported
 	// auto ON while every change asked (found live in the ADR-0060
 	// release E2E; ADR-0004 requires the mode visible at all times).
-	if input == "/auto" && m.toggleAuto != nil {
-		return m.toggleAutoMode(m.echoLine(">", input))
+	// Matched on the command word, not the whole line: `/auto on` is
+	// still /auto, and an exact-string test sent it to the shared
+	// handler instead — which flips the agent's flag, cannot see this
+	// model, and left the footer reporting the opposite of the truth
+	// (operator report). The footer reads the state live now as well,
+	// so the two defences are independent.
+	if strings.Fields(input)[0] == "/auto" && m.toggleAuto != nil {
+		return m.setAutoMode(input, m.echoLine(">", input))
 	}
 
 	// /skill expands into a turn (ADR-0010): echo what the operator
@@ -1952,12 +1966,49 @@ func longestCommonPrefix(candidates []string) string {
 	return prefix
 }
 
+// autoOn is auto-approve as it is right now: the live state when the
+// caller wired one, and the mirrored field otherwise.
+func (m Model) autoOn() bool {
+	if m.autoState != nil {
+		return m.autoState()
+	}
+	return m.autoMode
+}
+
 // toggleAutoMode flips auto-approve and announces the new state. It
 // works during a run as well as at the prompt; the agent reads the flag
 // per tool call, so the change lands on the next one (a call already
 // waiting at the approval dialog still needs its answer).
 // echo is the command the operator typed, or "" when the toggle came
 // from shift+tab — there is nothing to echo for a key.
+// setAutoMode reads `/auto`, `/auto on` and `/auto off`. The bare form
+// toggles; the other two say which state they want, which is the
+// grammar /readonly uses and the one an operator reaches for. An
+// unknown argument changes nothing and says so — it used to be ignored,
+// so `/auto on` toggled and could turn auto OFF while the line said ON.
+func (m Model) setAutoMode(input, echo string) (tea.Model, tea.Cmd) {
+	if m.toggleAuto == nil {
+		return m, nil
+	}
+	want := !m.autoOn()
+	if fields := strings.Fields(input); len(fields) > 1 {
+		if len(fields) > 2 || (fields[1] != "on" && fields[1] != "off") {
+			return m, m.emitJoined(echo, m.st.errS.Render("✗ "+strings.TrimSpace(m.msgs.AutoUsage)))
+		}
+		want = fields[1] == "on"
+	}
+	if want == m.autoOn() {
+		// Already there: say so rather than flipping to the opposite of
+		// what was asked for.
+		state := strings.TrimSpace(m.msgs.AutoOff)
+		if want {
+			state = strings.TrimSpace(m.msgs.AutoOn)
+		}
+		return m, m.emitJoined(m.takeLive(), echo, m.st.tool.Render(state))
+	}
+	return m.toggleAutoMode(echo)
+}
+
 func (m Model) toggleAutoMode(echo string) (tea.Model, tea.Cmd) {
 	if m.toggleAuto == nil {
 		return m, nil
@@ -1967,7 +2018,7 @@ func (m Model) toggleAutoMode(echo string) (tea.Model, tea.Cmd) {
 	// documented as the same toggle, and the two paths announced it in
 	// different words — one of them never localized (review round 2).
 	state := strings.TrimSpace(m.msgs.AutoOff)
-	if m.autoMode {
+	if m.autoOn() {
 		state = strings.TrimSpace(m.msgs.AutoOn)
 	}
 	// One write: the notice lands after the output it followed, with a
@@ -2206,7 +2257,7 @@ func (m Model) footer() string {
 			line = m.st.tool.Render(badge) + m.st.hint.Render(" · ") + line
 		}
 	}
-	if m.autoMode {
+	if m.autoOn() {
 		// Auto mode changes what runs without asking — it must be
 		// visible at all times, and in the accent color, not the dim one.
 		line = m.st.tool.Render("⚡auto") + m.st.hint.Render(" · ") + line

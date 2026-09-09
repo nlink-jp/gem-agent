@@ -228,6 +228,10 @@ type Messages struct {
 	Help    string // the full /help text
 	AutoOn  string
 	AutoOff string
+	// AutoUsage: /auto takes on|off as well as toggling, the same
+	// grammar /readonly uses. An ignored argument is how `/auto on`
+	// came to toggle instead.
+	AutoUsage string
 	// ReadOnlyOn/Off is the ceiling and ReadOnlyAuto is the watcher —
 	// two independent settings, so /readonly prints one line each and
 	// the watcher line only when it is armed (ADR-0080 §1).
@@ -454,7 +458,7 @@ var en = Messages{
   /help      show this help
   /tools     list tools and each one's current approval gate
   /mcp       list connected MCP servers (/mcp reload reconnects)
-  /auto      toggle auto-approve (shift+tab, works mid-run)
+  /auto      auto-approve: on|off, or bare to toggle (shift+tab too)
   /readonly  read-only: on|off · auto on|off arms the watcher · bare shows both
   /compact   summarise the older half of the conversation
   /settings  view and edit settings, with provenance
@@ -483,6 +487,7 @@ keys:
 `,
 	AutoOn:                 "auto-approve: ON — safe changes run unattended; risky ones still ask\n",
 	AutoOff:                "auto-approve: OFF — every change asks\n",
+	AutoUsage:              "usage: /auto on|off (no argument toggles)\n",
 	CeilingLiftTitle:       "Lift read-only?",
 	CeilingLiftConsequence: "Yes lifts read-only for the rest of this session.",
 	CeilingLiftHint:        "←→/Tab to choose · Enter to answer · y/n/N · Esc refuses",
@@ -638,7 +643,7 @@ var ja = Messages{
   /help      このヘルプ
   /tools     ツール一覧と各ツールの現在の承認ゲート
   /mcp       接続中の MCP サーバー一覧（/mcp reload で再接続）
-  /auto      auto-approve 切替（shift+tab でも可・実行中も有効）
+  /auto      auto-approve: on|off、引数なしで切替（shift+tab でも可）
   /readonly  読み取り専用: on|off・auto on|off で自動切り替え・引数なしで両方表示
   /compact   会話の古い半分を要約
   /settings  設定の表示と編集（出所つき）
@@ -667,6 +672,7 @@ var ja = Messages{
 `,
 	AutoOn:                 "auto-approve: ON — 安全な変更は無人で実行します。危険なものは引き続き確認します\n",
 	AutoOff:                "auto-approve: OFF — すべての変更で確認します\n",
+	AutoUsage:              "使い方: /auto on|off（引数なしで切り替え）\n",
 	CeilingLiftTitle:       "read-only を解除しますか",
 	CeilingLiftConsequence: "「はい」はこのセッションの残りで read-only を解除します",
 	CeilingLiftHint:        "←→/Tab 選択 · Enter 決定 · y/n/N 直接指定 · Esc 拒否",

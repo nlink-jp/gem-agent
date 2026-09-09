@@ -1527,6 +1527,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			Banner:        bannerLines,
 			InitialInput:  initialInput,
 			AutoMode:      ag.AutoApprove(),
+			AutoState:     ag.AutoApprove,
 			ReadOnlyState: ag.CeilingState,
 			ToggleAuto: func() bool {
 				ag.SetAutoApprove(!ag.AutoApprove())
@@ -2375,7 +2376,22 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 			return b.String(), true, false
 		}
 	case "/auto":
-		ag.SetAutoApprove(!ag.AutoApprove())
+		// on|off as well as toggling, the same grammar /readonly uses.
+		// The argument used to be ignored, so `/auto on` toggled — and
+		// could turn auto OFF while the line it printed said ON
+		// (operator report). In the TUI this case is unreachable: the
+		// model intercepts /auto so the footer cannot go stale.
+		switch sub {
+		case "":
+			ag.SetAutoApprove(!ag.AutoApprove())
+		case "on":
+			ag.SetAutoApprove(true)
+		case "off":
+			ag.SetAutoApprove(false)
+		default:
+			b.WriteString(msgs.AutoUsage)
+			return b.String(), true, false
+		}
 		if ag.AutoApprove() {
 			b.WriteString(msgs.AutoOn)
 		} else {

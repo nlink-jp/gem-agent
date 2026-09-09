@@ -148,11 +148,26 @@
   rendered in the accent color, like auto mode's: the armed-but-not-in-
   force one was dim, which put the line saying "the ceiling can move
   under you" in the faintest style available and let a bright `⚡auto`
-  beside it read as absent. The
-  padlock's *presence* is the signal rather than its picture: 🔓 differs
-  from 🔒 by the tilt of a shackle and reads as the same glyph in a
-  terminal.
-  Operator report, 2026-09-09
+  beside it read as absent. The padlock's *presence* is the signal
+  rather than its picture: 🔓 differs from 🔒 by the tilt of a shackle
+  and reads as the same glyph in a terminal. Operator report,
+  2026-09-09
+- `/auto on` turned auto-approve on and left the footer saying it was
+  off. The TUI intercepted `/auto` by matching the whole line, so any
+  form with an argument fell through to the shared slash handler, which
+  flips the agent's flag and cannot reach the model — the exact
+  staleness the interception exists to prevent, reintroduced by the
+  argument. It now matches the command word, **and** the footer reads
+  auto-approve live rather than mirroring it, so a path that changes
+  the mode without telling the TUI can no longer leave the marker
+  wrong. The ceiling never had this bug because it was read, not
+  mirrored
+- `/auto` takes `on` and `off`, the grammar `/readonly` uses. The
+  argument was ignored, so `/auto on` toggled — and could turn
+  auto-approve OFF while the line it printed said ON. Asking for the
+  state it is already in now says so instead of flipping, and an
+  unknown argument changes nothing and prints usage. Operator report,
+  2026-09-09
 
 ## [0.73.0] - 2026-09-09
 
