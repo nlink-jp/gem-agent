@@ -73,11 +73,12 @@ this ADR decides, and *read-only mode* is what the operator calls it.
 
 ## Decision
 
-### 1. The session has a lane ceiling, and it has three states
+### 1. The session has a lane ceiling and a watcher, and they are independent
 
 Every `shell_exec` declares a lane (ADR-0073). The session now carries
-a **ceiling**, and a call runs in the lower of the two. The axis has
-three states:
+a **ceiling**. A call whose effect needs a lane above it is refused —
+not silently downgraded to the ceiling's lane, which would run something
+other than what was asked for. Two settings:
 
 *Corrected against the code during implementation.* This was first
 written as one tri-state — off / read-only / auto — and that is wrong.
@@ -99,11 +100,12 @@ raising the ceiling leaves the watcher armed, so a later read-only
 request is caught the same way the first one was; and lifting the
 ceiling does not disarm what the operator asked for.
 
-It is state the operator owns. `[agent].read_only` sets the session's
-starting state (`"off"`, `"on"`, `"auto"`; default `"off"`), one flag
-names each state on the command line, and `/readonly on|off|auto`
-changes it mid-session. The state is shown in the status line and
-recorded when it changes.
+It is state the operator owns, and two booleans say it:
+`[agent].read_only` starts the ceiling in force, `[agent].read_only_auto`
+arms the watcher, both default false. On the command line one flag moves
+each; in a session, `/readonly on|off` moves the ceiling and
+`/readonly auto on|off` the watcher. The state is shown in the status
+line, and every change is recorded with who made it.
 
 ```
 gem-agent --writable          # off — today's behaviour, stated
@@ -123,12 +125,12 @@ A `write` ceiling — the project may change, the `operator` lane is
 refused rather than asked about — is expressible in the same mechanism
 and is not decided here. One value answers the question that was asked.
 
-**On `--auto`.** The third state's name collides with the MITL ladder's
-and the two are unrelated: `--auto` is who answers the gate, this is
+**On `--auto`.** The watcher's name collides with the MITL ladder's and
+the two are unrelated: `--auto` is who answers the gate, this is
 what the session may reach. The status line must therefore show them as
 two indicators, never one combined word.
 
-### 2. In the auto state the ceiling tightens by itself, and never loosens
+### 2. With the watcher armed the ceiling tightens by itself, and never loosens
 
 Once per operator turn, an evaluation of what the operator typed may
 conclude that the session sounds read-only. In that state it **switches
@@ -190,8 +192,9 @@ what makes the loosening invocation-visible.
 private scratch, no network. All three lane profiles are built once at
 startup and selected per call, and the read lane is the one boundary
 verified at startup against probes that must fail. So read-only mode
-**caps the lane** rather than swapping a profile: a `shell_exec`
-declaring `write` or `operator` does not get that profile. Nothing new
+**refuses past the ceiling** rather than swapping a profile: a
+`shell_exec` declaring `write` or `operator` does not get that profile,
+and is not quietly re-run as a read-lane command either. Nothing new
 is generated, so there is no new profile to get wrong.
 
 Beside the shell: `write_file` and `edit_file` refuse, and
@@ -235,8 +238,9 @@ the decision to keep the smoother flow is the operator's.
 
 ### 5. The mode is stated to the risk evaluator
 
-The evaluation payload carries the mode as a mechanical line, present
-whenever it is on — and it states the operator's **intent**, not the
+The evaluation payload carries the mode as a mechanical line in the
+aligned round (ADR-0081 §1 keeps the baseline round free of anything
+from this turn), present whenever it is on — and it states the operator's **intent**, not the
 enforcement:
 
 > the operator has asked for this session to run read-only — they want

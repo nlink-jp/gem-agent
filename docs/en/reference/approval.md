@@ -311,8 +311,8 @@ all**, so it works in the default mode and in `-p` as well, where the
 questions above have nobody to answer them.
 
 `[agent].read_only` sets the state, `--writable` / `--read-only` /
-`--auto-read-only` override it for one run, and `/readonly on|off|auto`
-changes it in a session:
+`--auto-read-only` override it for one run, and `/readonly on|off` /
+`/readonly auto on|off` change them in a session:
 
 Two independent settings, not one three-way switch:
 
@@ -377,14 +377,22 @@ write. None of it is a denial you made, so the decision record does not
 read it as one. In `-p` there is nobody to ask and the refusal is final,
 which is what `--read-only` is for.
 
-**MCP tools are not refused by the ceiling.** An MCP server runs outside
-every Seatbelt profile and the rule tier cannot tell a read tool from a
-write tool on someone else's machine. Instead the mode is stated to the
-model tier as what you asked for — never as a control that is enforcing
-— and it weighs the call against it the way it already weighs your
-typed request. That is a judgment, not the kernel denial the lanes give
-this runtime's own tools, and the two are deliberately not blurred.
+**MCP tools are not refused by the ceiling — they become yours.** An MCP
+server runs outside every Seatbelt profile and the rule tier cannot tell
+a read tool from a write tool on someone else's machine, so the ceiling
+does not pretend to bound them. While it is in force, every MCP call
+asks **you**: no session `a`, no `"never"` policy and no model tier
+answers one. The mode is also stated to the model tier as what you asked
+for — never as a control that is enforcing — but that tier only runs
+under `--auto`, which is why the prompt is the guarantee and the
+evaluator is the extra. A judgment is not the kernel denial the lanes
+give this runtime's own tools, and the two are deliberately not blurred.
 `[mcp] exclude` (ADR-0077) is still the instrument that removes a tool.
+
+**What the ceiling does not reach at all**: a `!` command you typed
+(it runs in the `operator` lane, as your own shell would), your
+configured hooks, and — because the lanes are what enforce it — a
+session started with `--no-sandbox`.
 
 ## Per-tool approval policy (ADR-0008)
 

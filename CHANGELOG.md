@@ -4,170 +4,110 @@
 
 ### Added
 
-- **The session's lane ceiling** (ADR-0080 §1-3), an axis of its own:
-  `--auto` decides who answers the gate, this decides what the session
-  may reach at all. `[agent].read_only` (`"off"` | `"on"` | `"auto"`)
-  sets it, `--writable` / `--read-only` / `--auto-read-only` override it
-  per invocation, and `/readonly on|off|auto` changes it mid-session.
-  Under a `read` ceiling a `shell_exec` declaring `write` or `operator`
-  is refused, and so are `write_file`, `edit_file`, `save_memory` and
-  `delete_memory`; a read-lane command still runs unasked. The refusal
-  happens before the gate and is not an escalation — a ceiling the
-  session allowlist could answer would be a ceiling an earlier `a`
-  could spend — and it is not the operator-denial text either, so the
-  learner does not read it as a decision they made. An MCP tool is
-  never refused by the ceiling: the rule tier cannot read another
-  server's effects, and ADR-0080 §5 hands that to the model tier
-  instead. One-shot takes `--read-only` or nothing, and a configured
-  `"auto"` is read there as `"on"`: dropping it would lose a
-  restriction silently where nobody is watching
-- **The session mode reaches the risk evaluator** (ADR-0080 §5), which
-  is what covers MCP: an MCP server runs outside every Seatbelt profile
-  and the rule tier cannot read its effects, so the ceiling exempts it
-  and tells the model tier instead. The line states what the operator
-  asked for, never what enforces it — measured 2026-09-09, state-shaped
-  wording produced identical verdicts but made the model report an MCP
-  write as "not permitted", which is false and is shown to the
-  operator. A judgment, not the kernel denial the lanes give this
-  runtime's own tools, and the approval reference says so
-- **A call over the ceiling asks whether to lift it** (ADR-0080 §4)
-  rather than refusing outright. The question is must-prompt, so no
-  `a`, no `"never"` policy and no model tier answers it — a mode is not
-  a call. Yes changes the mode and the call proceeds, except past a
-  floor: a Block-tier call or the `operator` lane is asked again on its
-  own terms. Declining refuses the call and stops the question for the
-  rest of the turn, so a model pushed by a poisoned tool result cannot
-  raise one prompt per proposed write. In `-p` the deny gate answers,
-  so the refusal is final and its reason goes to stderr
-- **The `auto` state tightens the ceiling by itself** (ADR-0080 §2):
-  once per turn a separate evaluation reads the operator's message and,
-  if it asks for a session that changes nothing, switches read-only on
-  and prints one line — the change, the words that decided it, and
-  `/readonly off`. It never switches it off. Tightening can only refuse
-  more, so a wrong answer costs a liftable restriction, while loosening
-  is where a guess becomes a permission; a failed or unparseable
-  evaluation leaves the state untouched. In `off` the evaluation does
-  not run, so the default spends no tokens
+- **A read-only mode for the session** (ADR-0080), on an axis of its
+  own: auto-approve decides who answers the gate, this decides what the
+  session may reach at all — so it works in the default mode and in
+  `-p`, where the gate's questions have nobody to answer them. Two
+  independent settings say it: a **ceiling** (in force now) and a
+  **watcher** that may raise it. `[agent].read_only` and
+  `[agent].read_only_auto` set them, `--read-only` / `--writable` /
+  `--auto-read-only` override them per run, `/readonly on|off` and
+  `/readonly auto on|off` change them in a session, and `/settings` has
+  a row for each with its provenance. Neither touches the other:
+  arming the watcher restricts nothing yet, a ceiling that is lifted
+  leaves it armed, and disarming it lifts nothing. Every change is
+  recorded with who made it.
+- **Under the ceiling, a call whose effect needs a higher lane is
+  refused before the gate** — a `shell_exec` declaring `write` or
+  `operator`, and `write_file`, `edit_file`, `save_memory`,
+  `delete_memory`. Refused, not escalated: the gate can be answered by
+  the session allowlist, so a ceiling that escalated would be one an
+  earlier `a` could spend. It is not the operator-denial text either,
+  so the decision record does not read it as a decision they made.
+  Enforcement is the `read` lane, which already denies everything
+  outside the session scratch and is the one boundary verified at
+  startup against probes that must fail — the mode caps the lane rather
+  than generating a new profile.
+- **An MCP call under the ceiling is the operator's.** An MCP server
+  runs outside every Seatbelt profile and the rule tier cannot read its
+  effects, so the ceiling does not pretend to bound it — but while the
+  ceiling is in force no session `a`, no `"never"` policy and no model
+  tier answers one either. The mode is also stated to the risk
+  evaluator as the operator's *intent* rather than as enforcement:
+  measured 2026-09-09, state-shaped wording produced identical verdicts
+  but made the model report an MCP write as "not permitted", which is
+  false and is shown to the operator.
+- **A call over the ceiling asks whether to lift it** (ADR-0080 §4), in
+  a dialog of its own: its own title, a line saying what yes means, and
+  three answers. "Allow for this session" and "always allow" are
+  answers about a tool, and an `a` on the ordinary dialog registers the
+  tool even where the allowlist may not answer. Yes changes the mode
+  and nothing else — the call then goes through the ordinary rules, so
+  an `"always"` policy still gets its own prompt and the ladder still
+  runs. Declining refuses the call and stops the question for the rest
+  of the turn, so a model pushed by a poisoned tool result cannot raise
+  one prompt per proposed write. In `-p` the deny gate answers and the
+  refusal is final.
+- **With the watcher armed, the ceiling tightens by itself** (ADR-0080
+  §2): once per turn a separate evaluation reads the operator's message
+  and, if it asks for a session that changes nothing, turns read-only
+  on and prints one line — the change, the words that decided it, and
+  `/readonly off`. It never turns it off. Tightening only refuses more,
+  so a wrong answer costs a liftable restriction, while loosening is
+  where a guess becomes a permission; a failed or unparseable
+  evaluation leaves the state untouched. With the watcher off the
+  evaluation does not run, so the default spends no tokens. Interactive
+  only: in `-p` the ceiling is answered on the command line, never
+  inferred from the prompt's wording, and a configured watcher is read
+  there as a ceiling rather than dropped.
+- **The state is visible.** The status line carries one badge holding
+  both settings — the padlock is the ceiling right now, the word is the
+  mode — and the startup banner names whichever setting is not the
+  default, a line each. One-shot prints its own line, having neither a
+  footer nor `/readonly`.
+- **ADR-0080** and **ADR-0081** are accepted, with the live
+  measurements they were decided on.
+
+### Changed
+
 - **The model tier is two composed rounds** (ADR-0081): a *baseline*
   that sees the call and the operator's standing configuration but
   nothing from this turn's conversation, and — only if that approves —
   an *aligned* round given the typed request and the session mode.
   `approve` is the AND of the two, so what reaches the evaluator
-  through the context can remove an approval and never create one,
-  with the pre-ADR-0038 evaluator as the floor. A composition rather
-  than a prompt asking the model to treat alignment as escalation-only,
+  through the context can remove an approval and never create one, with
+  the pre-ADR-0038 evaluator as the floor. A composition rather than a
+  prompt asking the model to treat alignment as escalation-only,
   because the property has to hold against a model that ignores what it
   was asked. A baseline that escalates ends the call there. `safe`
   calls run no round at all — ADR-0081 §1 said otherwise and is
-  corrected against the code in the same commit: that bullet was
-  inherited from ADR-0080's second draft, and the accepted ADR-0080
-  answers it with the lane ceiling instead. Review-tier calls the
-  baseline approves now cost two evaluator rounds instead of one; the
-  baseline is cacheable by tool and arguments and that is not built
-- `/readonly` shows the current state as well as setting one, and its
-  lines were written as transitions — showing an unchanged session said
-  "変更できる状態に戻りました" / "the session may change things again"
-  when nothing had changed. They describe the state now, and the ON line
-  names `/readonly off`, which is the state an operator may not have set
-  themselves. The command had shipped with no test; it has one, and it
-  fails against the reported wording
-- The read-only lift is asked as a **mode change**, in its own dialog.
-  It had reused the tool-approval prompt, which titled it "approval
-  required: write_file", carried an English reason onto a Japanese
-  screen, and offered "allow for this session" and "always allow" —
-  answers about a tool. Worse, `a` there registers the tool in the
-  session allowlist even where the allowlist may not answer, so one
-  keystroke granted exactly what the ceiling withholds. The lift now
-  has its own approver method (no allowlist to return, none to
-  register), its own title and consequence line from the language
-  catalog, and three answers; typing `a` or `p` does nothing and the
-  selection cannot reach them. Its consequence line is one sentence and
-  wraps with the rest of the box — rendered straight from the catalog,
-  it set the box's width and pushed the border off the screen, and a
-  test now fails on any dialog row past the terminal. Operator report,
-  2026-09-09
-- `/readonly` says `読み取り専用モード: OFF` rather than explaining that
-  the session may change things. OFF is the default, so spelling out
-  its consequence stated the obvious in a shape that read as a puzzle;
-  only the states that constrain explain themselves now, and the
-  Japanese lines name the mode instead of carrying a bare English
-  label. Operator report, 2026-09-09
-- The notice the `auto` state prints when it turns read-only on reads
-  as the transition it is: `"…" という依頼のため、読み取り専用モードに
-  切り替えました。解除は /readonly off`. It had also stated what
-  read-only then prevents, which repeats what the mode's own name
-  says. Cause, change, way back — nothing else. Its test now covers
-  both languages; it had only ever checked the English one, which is
-  not the one that was reported. Operator report, 2026-09-09
-- **The ceiling is visible**: the TUI footer carries `🔒read-only`
-  while it is in force, beside `⚡auto` and for the same reason — it
-  changes what runs — and the startup banner names a non-default state.
-  Both were required by ADR-0080 §1 and neither was built. The footer
-  reads the state live rather than mirroring it, because the ceiling
-  moves from three places and two are inside the agent. `auto` gets a
-  banner line but no footer badge: it has no ceiling in force yet, and
-  the banner is the only place that fact appears before it fires.
-  One-shot prints its own line, having neither a footer nor `/readonly`
-  — the same argument, and the same shape, as the auto-approve pair.
-  Operator report, 2026-09-09
-- **The ceiling and its watcher are two independent settings**, not one
-  three-way switch. As a tri-state, tightening destroyed the fact that
-  the session was watching and lifting silently disarmed the watcher
-  the operator had asked for — and the fourth combination, watching
-  *while* read-only, is what the session is the moment the watcher
-  fires, so the tri-state could not name its own ordinary outcome.
-  `[agent].read_only` and `[agent].read_only_auto` are both booleans;
-  `--read-only` / `--writable` move the ceiling and `--auto-read-only`
-  arms the watcher, so they compose; `/readonly on|off` and
-  `/readonly auto on|off` do the same in a session, and `/readonly`
-  shows both. An approved lift and `/readonly off` leave the watcher
-  armed, so the next read-only request is caught the same way the
-  first one was. ADR-0080 §1 is corrected against the code in the same
-  commit. Operator report, 2026-09-09
-- The banner reports the ceiling and the watcher as two lines, in
-  `/readonly`'s shape, rather than folding the combinations into one
-  compound sentence: an operator who has read one surface should not
-  have to learn the other. Each still earns its line for its own
-  reason — the ceiling because a session that refuses changes should
-  say so before you ask for one, the watcher because the footer cannot
-  carry it. Operator report, 2026-09-09
-- The status line shows an armed watcher too: `🔒auto-read-only` while
-  it is waiting, `🔒read-only` while the ceiling is in force, and never
-  both — a watcher is dormant while the ceiling is up and only matters
-  after a lift, so a second badge would spend the line saying one of
-  them does nothing. Without this, a watcher armed mid-session with
-  `/readonly auto on` had no lasting surface at all. The word is not
-  `auto`: that one is the approval ladder's, and ADR-0080 §1 asks for
-  two indicators rather than one blurred word.
+  corrected against the code, that bullet having been inherited from a
+  draft the accepted ADR-0080 replaced. **A Review-tier call the
+  baseline approves now costs two evaluator rounds instead of one, and
+  a verdict that used to be carried to approval by an aligned
+  instruction must now also pass the context-free decision, so some
+  calls that ran will escalate.** The baseline is cacheable by tool and
+  arguments; that is not built.
+- `/auto` takes `on` and `off`, the grammar `/readonly` uses. The
+  argument was ignored, so `/auto on` toggled — and could turn
+  auto-approve OFF while the line it printed said ON. Asking for the
+  state it is already in now says so instead of flipping, and an
+  unknown argument changes nothing and prints usage.
+- `make check` runs the release gate against itself, and requires every
+  relative link in either INDEX to resolve.
 
-  The badge carries both settings: the padlock is the ceiling right
-  now, the word is the mode. With the watcher armed the ceiling moves
-  without the operator touching it, so its current value stays on
-  screen either way — the word alone when nothing is in force. Without
-  the watcher, off is the default and says nothing. Every badge is
-  rendered in the accent color, like auto mode's: the armed-but-not-in-
-  force one was dim, which put the line saying "the ceiling can move
-  under you" in the faintest style available and let a bright `⚡auto`
-  beside it read as absent. The padlock's *presence* is the signal
-  rather than its picture: 🔓 differs from 🔒 by the tilt of a shackle
-  and reads as the same glyph in a terminal. Operator report,
-  2026-09-09
+### Fixed
+
 - `/auto on` turned auto-approve on and left the footer saying it was
   off. The TUI intercepted `/auto` by matching the whole line, so any
   form with an argument fell through to the shared slash handler, which
   flips the agent's flag and cannot reach the model — the exact
   staleness the interception exists to prevent, reintroduced by the
-  argument. It now matches the command word, **and** the footer reads
+  argument. It matches the command word now, **and** the footer reads
   auto-approve live rather than mirroring it, so a path that changes
   the mode without telling the TUI can no longer leave the marker
-  wrong. The ceiling never had this bug because it was read, not
-  mirrored
-- `/auto` takes `on` and `off`, the grammar `/readonly` uses. The
-  argument was ignored, so `/auto on` toggled — and could turn
-  auto-approve OFF while the line it printed said ON. Asking for the
-  state it is already in now says so instead of flipping, and an
-  unknown argument changes nothing and prints usage. Operator report,
-  2026-09-09
+  wrong.
+
 
 ## [0.73.0] - 2026-09-09
 
