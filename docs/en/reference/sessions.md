@@ -30,7 +30,8 @@ command line that says so, which is the opposite of ADR-0053's rule that
 a grant, or a restriction, is visible where the run is launched. The
 transcript records what the modes started as (`mode_start`) and every
 change after it, so what was in force at any point is readable; it is
-not replayed.
+not replayed. A resumed session appends its own `mode_start` to the same
+file, so the baseline for any point is the last one before it.
 
 The JSONL transcript is both the log and the resume source, recorded in
 full fidelity (Gemini reasoning tokens included, which the API requires

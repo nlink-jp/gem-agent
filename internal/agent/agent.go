@@ -1549,6 +1549,15 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			if denyReason != "" {
 				record["deny_reason"] = denyReason
 			}
+			// Which kind of must-prompt this was. `must_prompt` alone
+			// cannot tell "the ceiling removed 'a' and 'p' from this
+			// prompt" from any other unconditional ask, and the learner
+			// should not read a yes given without the standing answers
+			// as though the operator had declined to give one (second
+			// independent review).
+			if d.CeilingUnbounded {
+				record["no_standing"] = true
+			}
 			a.logRecord("gate_decision", record)
 			if !ok {
 				if denyReason != "" {
