@@ -13,7 +13,10 @@
   `[agent].read_only_auto` set them, `--read-only` / `--writable` /
   `--auto-read-only` override them per run, `/readonly on|off` and
   `/readonly auto on|off` change them in a session, and `/settings` has
-  a row for each with its provenance. Neither touches the other:
+  a row for each, whose provenance follows the value: a setting moved by
+  any surface — `/readonly`, shift+tab, the lift dialog, the watcher —
+  reads as this session's, and one moved back reads as the startup
+  layer's again. Neither touches the other:
   arming the watcher restricts nothing yet, a ceiling that is lifted
   leaves it armed, and disarming it lifts nothing. Every change is
   recorded with who made it.
@@ -35,7 +38,11 @@
   read its effects, so the ceiling does not pretend to bound it — but a
   session `a` and a `"never"` policy do not apply to one while the
   ceiling is in force: both were answers about a session with no
-  ceiling. In the default mode the operator is asked every time. Under
+  ceiling. In the default mode the operator is asked every time, and the
+  prompt does not offer `a` or `p` at all — a key the ceiling will not
+  honour would do nothing when pressed and everything once the mode was
+  lifted, writing a session allowlist entry, or for `p` a global
+  cross-session policy file, that began applying only afterwards. Under
   `--auto` the model tier still judges the call, with the mode in view,
   and an approval there runs without asking — a judgment, not the
   kernel denial the lanes give this runtime's own tools, and the ADR
@@ -83,7 +90,9 @@
   an *aligned* round given the typed request and the session mode.
   `approve` is the AND of the two, so what reaches the evaluator
   through the context can remove an approval and never create one, with
-  the pre-ADR-0038 evaluator as the floor. A composition rather than a
+  the context-free evaluator as the floor — the baseline still carries
+  the rulebook and an MCP tool's self-description, which are information
+  about the call rather than context around it. A composition rather than a
   prompt asking the model to treat alignment as escalation-only,
   because the property has to hold against a model that ignores what it
   was asked. A baseline that escalates ends the call there. `safe`
@@ -102,9 +111,42 @@
   unknown argument changes nothing and prints usage.
 - `make check` runs the release gate against itself, and requires every
   relative link in either INDEX to resolve.
+- A new `mode.change` telemetry event records a session setting moved
+  mid-run — which setting, to what, by whom — and the transcript gains a
+  `mode_start` record so the `mode_change` entries after it have
+  something to be changes from. Lifting the ceiling emits the mode
+  event, not an `approval.decision`: it answers whether the session may
+  change things again, not whether the call may run, and the ordinary
+  gate emits the call's own row straight after.
+- The ceiling's transcript record names the outcome rather than the
+  proposal: `ceiling_refused` when the call is refused, `ceiling_lifted`
+  when the operator lifted the mode. It was written at detection, so a
+  call the operator then let through still left a "refused" record
+  behind it.
+- `/readonly` reports an unknown argument as an error, the way `/auto`
+  does with the same grammar — the TUI dims an errored line, and the two
+  disagreed.
+- `--continue` / `--resume` restore the conversation, not the session's
+  modes; the ceiling and auto-approve are resolved from config and the
+  resuming command line, as they are for a fresh session. Now stated in
+  the sessions reference.
 
 ### Fixed
 
+- With the sandbox off, or its read lane unverified on this machine, the
+  banner, the one-shot line and `/readonly` no longer promise that
+  nothing outside the session scratch changes. The refusal still reaches
+  the file tools and any write- or operator-declaring `shell_exec` — it
+  is decided before the tool runs — but a command declaring the read
+  lane is then bounded by nothing, and the banner printed the
+  unqualified guarantee directly beneath "sandbox: DISABLED". The
+  approval reference had the opposite error, listing a `--no-sandbox`
+  session among what the ceiling does not reach at all.
+- A ceiling refusal the lift dialog was not asked about — the dialog is
+  asked once a turn — now prints a line of its own. In one-shot that
+  dialog is the only thing that ever printed, so only the first denial
+  of a whole run was visible; in the TUI the operator watched the model
+  retry with nothing said.
 - The one-shot read-only line names `--writable` rather than telling
   the operator to drop `--read-only`, which may never have been passed:
   the ceiling can come from config, where there is no flag to drop
