@@ -24,7 +24,11 @@ func TestSettingsCloseKeepsFooterAtBottom(t *testing.T) {
 	if panel < 20 {
 		t.Fatalf("panel is %d lines — setup too small to overflow", panel)
 	}
-	if want := 40 - 1 - panel; m.hold.printed != want {
+	want := 40 - 1 - panel
+	if want < 0 {
+		want = 0 // a full-height panel scrolls everything out
+	}
+	if m.hold.printed != want {
 		t.Errorf("printed = %d after the overflow render, want self-healed %d", m.hold.printed, want)
 	}
 

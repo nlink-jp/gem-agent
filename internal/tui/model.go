@@ -280,6 +280,10 @@ type Model struct {
 	settings        *SettingsData
 	settingsCursor  int
 	settingsScope   string
+	// settingsTotal is the panel frame's height for the current opening
+	// (settingsPlan): the free rows below the conversation, or 0 for
+	// the terminal's full height. Fixed at open, recomputed on resize.
+	settingsTotal int
 	// settingsCollapsed is UI state, keyed by group (an MCP server
 	// name): the panel's two levels (ADR-0077 §3). Groups open closed.
 	settingsCollapsed map[string]bool
@@ -570,11 +574,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// sequence — tea.Sequence guarantees the order — and
 			// exactly once: cleared here so a resize cannot resubmit.
 			m.initialInput = ""
+			if m.phase == phaseSettings {
+				m.settingsTotal = m.settingsPlan()
+			}
 			return m, tea.Sequence(cmds...)
 		case resized:
 			m.hold.printed = 0 // the clear empties the viewport
 			m.hold.lastTotal = 0
+			if m.phase == phaseSettings {
+				m.settingsTotal = m.settingsPlan()
+			}
 			return m, tea.ClearScreen
+		}
+		if m.phase == phaseSettings {
+			// A grow: the same rows are free plus the new ones.
+			m.settingsTotal = m.settingsPlan()
 		}
 		return m, nil
 
@@ -1655,13 +1669,21 @@ type bottomHold struct {
 func (m Model) View() string {
 	content := clipLines(m.viewContent(), m.width)
 	if m.height > 0 {
-		// The managed view must never exceed height-1 lines: an
-		// over-tall frame scrolls the terminal and permanently desyncs
-		// the printed-line counter (the settings-panel lesson, ADR-0021
-		// generalises it). Drop from the top — the input box and footer
-		// at the bottom are what the operator must always see.
-		if lines := strings.Split(content, "\n"); len(lines) > m.height-1 {
-			lines = lines[len(lines)-(m.height-1):]
+		// The managed view must never exceed the terminal's height: a
+		// taller frame is cut by the renderer itself and the printed-line
+		// counter cannot follow what it never saw (the settings-panel
+		// lesson, ADR-0021 generalises it). Drop from the top — the input
+		// box and footer at the bottom are what the operator must always
+		// see. Ordinary frames are capped one row short, matching the
+		// pad below that keeps the bottom row free; only the settings
+		// panel, which means to scroll everything away, may use the
+		// whole height (settingsFrame).
+		cap := m.height - 1
+		if m.phase == phaseSettings {
+			cap = m.height
+		}
+		if lines := strings.Split(content, "\n"); len(lines) > cap {
+			lines = lines[len(lines)-cap:]
 			content = strings.Join(lines, "\n")
 		}
 		core := strings.Count(content, "\n") + 1
@@ -1672,6 +1694,18 @@ func (m Model) View() string {
 		// rows scrolls the terminal and moves the frame anchor up by
 		// the overflow; the counter must follow reality.
 		if avail := m.height - 1 - m.hold.printed; core > avail {
+			// Physically the anchor lands at height-core: a frame of
+			// core rows drawn from row printed+1 scrolls the terminal by
+			// printed+core-height and then occupies the bottom row too
+			// (measured 2026-09-10 in a 100x30 tmux pane: five printed
+			// rows and a 29-row frame scrolled four, leaving one). The
+			// counter deliberately reads one less: every later frame is
+			// positioned relative to this one by the renderer, and the
+			// pad and hold arithmetic keep the bottom row free, so the
+			// convention holds together (ADR-0024's test pins it). The
+			// one place absolute rows matter — a frame that means to
+			// scroll everything away — therefore has to be the full
+			// height, not height-1: see settingsFrame.
 			m.hold.printed = m.height - 1 - core
 			if m.hold.printed < 0 {
 				m.hold.printed = 0
@@ -1704,6 +1738,65 @@ func (m Model) View() string {
 		}
 	}
 	return content
+}
+
+// settingsFitRows is the fewest free rows worth laying the panel out
+// under the conversation: below it the row window would show two or
+// three settings, and scrolling to a full screen reads better.
+const settingsFitRows = 12
+
+// settingsPlan decides the panel frame's height for this opening: the
+// rows free below the printed content when there are enough of them,
+// or 0 for the terminal's full height. Called when the panel opens and
+// again on a resize (which clears the screen, so the answer changes).
+func (m Model) settingsPlan() int {
+	if m.height <= 0 || m.hold == nil {
+		return 0
+	}
+	if avail := m.height - 1 - m.hold.printed; avail >= settingsFitRows {
+		return avail
+	}
+	return 0
+}
+
+// settingsFrame lays the panel out top-aligned: it starts on the row
+// right below the printed content, the footer stays on the bottom row,
+// and the rows between are blank. Every other frame is bottom-pinned,
+// which for a panel meant a band of empty rows between the conversation
+// and the title (operator report 2026-09-10, on v0.75.0; their
+// diagnosis — the bottom alignment — named this half of it).
+//
+// While enough rows remain (settingsFitRows), the panel's row window is
+// budgeted against those rows and the frame is exactly that tall, so
+// opening it scrolls nothing and closing it gives the screen back as
+// it was. Otherwise the frame is exactly the terminal's height: it has
+// to scroll then, and a frame of the full height scrolls every printed
+// row out, so the self-heal (ADR-0028) lands at zero and no stray row
+// is left above the panel or, after ESC, above the input.
+//
+// The choice is made once, when the panel opens (settingsPlan), and
+// held until it closes. Deriving it from the printed counter on every
+// View looked equivalent and was not: the full-height frame heals the
+// counter to zero on its first View, the next View — before the
+// renderer's tick painted anything — then saw the whole screen free,
+// chose the fitted height-1 frame instead, and that is what reached the
+// terminal: one row short, one printed row left standing (measured
+// 2026-09-10, raw bytes under `script` in a 100x30 tmux pane).
+func (m Model) settingsFrame() string {
+	if m.height <= 0 || m.height < minSettingsHeight {
+		return m.settingsView() + "\n" + m.footer() + "\n"
+	}
+	total, within := m.height, m.height+1
+	if m.settingsTotal > 0 {
+		total, within = m.settingsTotal, m.settingsTotal+1
+	}
+	panel := m.settingsViewIn(within)
+	footer := m.footer() + "\n"
+	body := panel + "\n" + footer
+	if gap := total - (strings.Count(body, "\n") + 1); gap > 0 {
+		return panel + strings.Repeat("\n", gap+1) + footer
+	}
+	return body
 }
 
 // maxApprovalDetailLines bounds the approval box's detail body; hidden
@@ -1746,7 +1839,7 @@ func clipLines(s string, width int) string {
 func (m Model) viewContent() string {
 	switch m.phase {
 	case phaseSettings:
-		return m.settingsView() + "\n" + m.footer() + "\n"
+		return m.settingsFrame()
 	case phaseRunning:
 		// The input box renders here too: ADR-0007 promises "the
 		// operator sees what they are writing" while a turn runs, and

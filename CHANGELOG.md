@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- `/settings` opens directly below the conversation instead of at the
+  bottom of the screen, and closing it gives the screen back as it was.
+  The panel was bottom-aligned like every other frame — a band of blank
+  rows between the conversation and the title — and sized one row short
+  of the screen, so opening it scrolled everything above away except
+  the last printed line, which then sat alone at the top of an empty
+  screen after ESC. Now the title sits right under the last printed
+  row, the footer stays on the bottom row, and a panel that fits scrolls
+  nothing; one that needs more rows than remain uses the terminal's
+  full height, decided once when it opens, so nothing is left stranded
+  above it. Measured in a tmux pane rather than reasoned: a frame one
+  row short of the screen scrolls one row too few, which is exactly the
+  stray line. The terminal's own scrollback still holds whatever a
+  full-screen panel scrolled past.
+
 ## [0.75.0] - 2026-09-10
 
 ### Added

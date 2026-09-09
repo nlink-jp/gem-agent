@@ -98,6 +98,9 @@ func (m Model) openSettings() (tea.Model, tea.Cmd) {
 	// exists to end.
 	m.settingsCollapsed = withNewGroupsClosed(nil, data.Rows)
 	m.phase = phaseSettings
+	// Where the frame goes is decided here and held until the close
+	// (settingsFrame explains why it cannot be re-derived per View).
+	m.settingsTotal = m.settingsPlan()
 	return m, nil
 }
 
@@ -249,18 +252,26 @@ func (m Model) cycleSetting(delta int) (tea.Model, tea.Cmd) {
 // panel ran 2-3 lines over on a 40-line terminal). So the row list is
 // budgeted against the real chrome rather than a guessed margin.
 func (m Model) settingsView() string {
+	return m.settingsViewIn(m.height)
+}
+
+// settingsViewIn renders the panel budgeted so that the frame built
+// from it — panel, footer, trailing newline — fits in height-1 rows.
+// settingsFrame passes the terminal's height, or the free rows below
+// the conversation plus one, depending on where the panel goes.
+func (m Model) settingsViewIn(height int) string {
 	rows := m.visibleRows()
 	// Below this there is no honest layout: the header, one row, the
 	// scope line, the footer and the trailing newline already exceed the
 	// screen. Say so rather than overflowing it.
-	if m.height > 0 && m.height < minSettingsHeight {
+	if height > 0 && height < minSettingsHeight {
 		return m.st.user.Render(m.msgs.SettingsTitle) + "\n" +
 			m.st.hint.Render(m.msgs.SettingsTooShort)
 	}
 	// Chrome outside the row list: this function's header and scope
 	// lines, the footer viewContent appends, its trailing newline, and
 	// one spare row so the panel never sits flush against the bottom.
-	budget := m.height - 5
+	budget := height - 5
 	if budget < 1 {
 		budget = 1
 	}

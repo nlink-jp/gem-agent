@@ -1426,10 +1426,13 @@ func TestSettingsViewNeverExceedsTheTerminal(t *testing.T) {
 					continue
 				}
 				m.settingsCursor = cursor
+				// The settings frame may use the whole height — that is
+				// how it scrolls every printed row out (settingsFrame) —
+				// but never more: the renderer cuts what exceeds it.
 				got := strings.Count(m.View(), "\n") + 1
-				if got > height-1 {
+				if got > height {
 					t.Errorf("tools=%d height=%d cursor=%d: view is %d lines, want at most %d",
-						tools, height, cursor, got, height-1)
+						tools, height, cursor, got, height)
 				}
 			}
 		}
