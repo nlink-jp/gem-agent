@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.75.0] - 2026-09-10
 
 ### Added
 
@@ -26,8 +26,11 @@
   RiskModelBench ./internal/agent/`, runs the production evaluation over
   fourteen Review-tier calls across candidate models and thinking levels,
   interleaved per case, and reports decision latency, wrong verdicts and
-  token spend per configuration. The numbers above came from it; rerun
-  it before trusting them on the next model generation.
+  token spend per configuration. The numbers above came from it, and a
+  second pass before this release repeated them (3.7-flash at `low`:
+  3.68 s, no false approval, the same single false escalation as the
+  main model); rerun it before trusting them on the next model
+  generation.
 
 ## [0.74.0] - 2026-09-09
 

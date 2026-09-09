@@ -129,10 +129,17 @@ thinking.
 
 - With the measured setting, a Review-tier decision answers in about
   3.7 s instead of about 11 s, at equal verdict quality on the bench.
-  The bench is fourteen cases at one pass; before the release that
-  recommends the setting, a second bench pass and a real session on the
-  slot with zero false approvals are on the checklist, and the
-  operator's own transcripts (`evaluator_model` now says which model
+  The bench was fourteen cases at one pass when this was decided; the
+  release checklist asked for a second pass and a real session. Both
+  done 2026-09-10 before v0.75.0: the second pass gave 3.7-flash / low
+  3.68 s per decision, 0 false approvals, and the one false escalation
+  (`python gen > docs`) that 3.8-flash / high also produced — identical
+  verdicts to the current model, at a quarter of its 14.8 s; the lite
+  model approved the vault write again. In a real `-p --auto` session
+  on the slot, a Review-tier `go test` was approved and an MCP vault
+  write escalated ("modifies external Obsidian vault outside the
+  project directory", 0.95), both billed to `gemini-3.7-flash`. The
+  operator's own transcripts (`evaluator_model` says which model
   judged) are the ongoing measurement.
 - **The slot is a free dial, and a cheaper model is not a safer one.**
   Validation constrains the level, not the model name: the operator can
