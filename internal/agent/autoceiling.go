@@ -54,9 +54,8 @@ func (a *Agent) maybeTightenCeiling(ctx context.Context, input string) {
 	if err != nil || !v.ReadOnly {
 		return
 	}
-	a.SetReadOnly(true)
-	a.logRecord("mode_change", map[string]any{
-		"setting": "read_only", "to": "on", "by": "auto",
+	a.SetReadOnly(true, "auto")
+	a.logRecord("ceiling_auto", map[string]any{
 		"quote": clipRunes(strings.TrimSpace(v.Quote), 100),
 	})
 	// One line, with its cause and the way back. A state change is worth

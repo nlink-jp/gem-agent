@@ -160,6 +160,17 @@ func (s *settingsStore) data() tui.SettingsData {
 		tui.SettingRow{Section: "session", Label: "agent.auto_compact",
 			Value: strconv.FormatBool(s.ag.AutoCompact()), Source: s.settingSource("agent.auto_compact"),
 			Values: []string{"false", "true"}},
+		// The lane ceiling and its watcher (ADR-0080 §1). Both were in
+		// trackedKeys, so their provenance was computed and shown
+		// nowhere — the ADR promised --writable would be "recorded with
+		// flag provenance in /settings" (independent review,
+		// 2026-09-09).
+		tui.SettingRow{Section: "session", Label: "agent.read_only",
+			Value: strconv.FormatBool(s.ag.CeilingState().ReadOnly), Source: s.settingSource("agent.read_only"),
+			Values: []string{"false", "true"}},
+		tui.SettingRow{Section: "session", Label: "agent.read_only_auto",
+			Value: strconv.FormatBool(s.ag.CeilingState().Auto), Source: s.settingSource("agent.read_only_auto"),
+			Values: []string{"false", "true"}},
 	)
 	// Read-only by design (review round 2): the row was editable but
 	// applied NOTHING — styles and the glamour renderer are built once
@@ -344,6 +355,14 @@ func (s *settingsStore) Apply(ch tui.SettingChange) (tui.SettingsData, string) {
 		s.ag.SetAutoCompact(ch.Value == "true")
 		s.markSessionEdit("agent.auto_compact")
 		return s.data(), "auto-compact: " + ch.Value + " (this session)"
+	case "agent.read_only":
+		s.ag.SetReadOnly(ch.Value == "true", "operator")
+		s.markSessionEdit("agent.read_only")
+		return s.data(), "read-only: " + ch.Value + " (this session)"
+	case "agent.read_only_auto":
+		s.ag.SetReadOnlyAuto(ch.Value == "true", "operator")
+		s.markSessionEdit("agent.read_only_auto")
+		return s.data(), "auto read-only: " + ch.Value + " (this session)"
 	}
 	return s.data(), ""
 }

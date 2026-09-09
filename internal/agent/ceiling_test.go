@@ -271,26 +271,26 @@ func TestCeilingAndWatcherAreIndependent(t *testing.T) {
 		t.Fatalf("start = %+v, want the watcher armed and no ceiling", c)
 	}
 	// Raising the ceiling — however it happens — leaves the watcher.
-	a.SetReadOnly(true)
+	a.SetReadOnly(true, "test")
 	if c := a.CeilingState(); !c.ReadOnly || !c.Auto {
 		t.Errorf("after tightening = %+v, want both", c)
 	}
 	// And lifting it leaves the watcher armed, so a later read-only
 	// request is caught the same way the first one was.
-	a.SetReadOnly(false)
+	a.SetReadOnly(false, "test")
 	if c := a.CeilingState(); c.ReadOnly || !c.Auto {
 		t.Errorf("after lifting = %+v, want the watcher still armed", c)
 	}
 	// Disarming does not lift a ceiling in force, either.
-	a.SetReadOnly(true)
-	a.SetReadOnlyAuto(false)
+	a.SetReadOnly(true, "test")
+	a.SetReadOnlyAuto(false, "test")
 	if c := a.CeilingState(); !c.ReadOnly || c.Auto {
 		t.Errorf("after disarming = %+v, want the ceiling kept", c)
 	}
 	if a.Ceiling() != sandbox.LaneRead {
 		t.Errorf("lane = %v, want read", a.Ceiling())
 	}
-	a.SetReadOnly(false)
+	a.SetReadOnly(false, "test")
 	if a.Ceiling() != sandbox.LaneOperator {
 		t.Errorf("lane = %v, want operator", a.Ceiling())
 	}
@@ -299,7 +299,7 @@ func TestCeilingAndWatcherAreIndependent(t *testing.T) {
 // An approved lift moves the ceiling and nothing else.
 func TestCeilingLiftLeavesTheWatcherArmed(t *testing.T) {
 	a := ceilingAgent(t, "auto")
-	a.SetReadOnly(true)
+	a.SetReadOnly(true, "test")
 	a.gate = &liftGate{answer: true}
 	if _, _, _, _, err := a.execCallInner(context.Background(), writeCall("f.txt")); err != nil {
 		t.Fatal(err)
@@ -386,5 +386,41 @@ func TestCeilingMakesUnboundedCallsTheOperatorsOwn(t *testing.T) {
 	}
 	if len(gate.prompts) != 0 {
 		t.Errorf("the ceiling was off and the operator was asked anyway: %v", gate.prompts)
+	}
+}
+
+// Every ceiling change leaves a record, whoever made it: the record is
+// written by the setter, so a new caller cannot forget one. /readonly
+// changed the ceiling with no record at all while the ADR said every
+// change was recorded (independent review, 2026-09-09).
+func TestCeilingChangesAreRecorded(t *testing.T) {
+	a := ceilingAgent(t, "off")
+	log := &capturingLog{}
+	a.log = log
+
+	a.SetReadOnly(true, "operator")
+	a.SetReadOnlyAuto(true, "operator")
+	a.SetReadOnly(true, "operator")  // no change, no record
+	a.SetReadOnlyAuto(false, "auto") // a change
+
+	var got []string
+	for i, kind := range log.kinds {
+		if kind != "mode_change" {
+			continue
+		}
+		rec, ok := log.data[i].(map[string]any)
+		if !ok {
+			t.Fatalf("mode_change payload is %T", log.data[i])
+		}
+		got = append(got, rec["setting"].(string)+"="+rec["to"].(string)+" by "+rec["by"].(string))
+	}
+	want := []string{"read_only=on by operator", "read_only_auto=on by operator", "read_only_auto=off by auto"}
+	if len(got) != len(want) {
+		t.Fatalf("records = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("record %d = %q, want %q", i, got[i], want[i])
+		}
 	}
 }

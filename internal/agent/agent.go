@@ -602,20 +602,39 @@ func (a *Agent) CeilingState() sandbox.Ceiling {
 
 // SetReadOnly turns the ceiling on or off, leaving the watcher alone.
 // Lowering it is the operator's act: nothing inside the runtime calls
-// this with false (ADR-0080 §2).
-func (a *Agent) SetReadOnly(on bool) {
+// this with false (ADR-0080 §2). by names who moved it, and the record
+// is written here rather than at each call site — /readonly changed the
+// ceiling with no record at all while the ADR said every change was
+// recorded (independent review, 2026-09-09).
+func (a *Agent) SetReadOnly(on bool, by string) {
 	a.mu.Lock()
+	changed := a.ceiling.ReadOnly != on
 	a.ceiling.ReadOnly = on
 	a.mu.Unlock()
+	if changed {
+		a.recordModeChange("read_only", on, by)
+	}
 }
 
 // SetReadOnlyAuto arms or disarms the watcher, leaving the ceiling
 // alone. Disarming does not lift a ceiling already in force, and
 // arming does not raise one.
-func (a *Agent) SetReadOnlyAuto(on bool) {
+func (a *Agent) SetReadOnlyAuto(on bool, by string) {
 	a.mu.Lock()
+	changed := a.ceiling.Auto != on
 	a.ceiling.Auto = on
 	a.mu.Unlock()
+	if changed {
+		a.recordModeChange("read_only_auto", on, by)
+	}
+}
+
+func (a *Agent) recordModeChange(setting string, on bool, by string) {
+	to := "off"
+	if on {
+		to = "on"
+	}
+	a.logRecord("mode_change", map[string]any{"setting": setting, "to": to, "by": by})
 }
 
 // Ceiling is the highest lane this session may reach.
@@ -1292,10 +1311,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		// The ceiling only. The watcher the operator armed stays armed,
 		// so a later read-only request is caught the same way the first
 		// one was (ADR-0080 §1).
-		a.SetReadOnly(false)
-		a.logRecord("mode_change", map[string]any{
-			"setting": "read_only", "to": "off", "by": "operator", "at": tc.Name,
-		})
+		a.SetReadOnly(false, "operator")
 		a.telemetry.Approval(tc.Name, "approved", "operator", true, d.CeilingReason, a.laneOf(tc))
 		// The ceiling is gone, and that is the whole of what was
 		// answered. The call now goes through the ordinary rules — the

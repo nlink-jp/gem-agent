@@ -62,7 +62,14 @@ type ceilingKind int
 const (
 	ceilingWithin ceilingKind = iota
 	ceilingShell
-	ceilingFiles
+	// ceilingState covers every other mutating built-in. It says
+	// "changes state outside the session scratch" rather than naming
+	// files, because the set is not only the file tools: web_search and
+	// web_fetch are mutating for their egress, and telling the operator
+	// a search "changes files" is a sentence that is simply untrue
+	// (independent review, 2026-09-09). A truthful generic beats a
+	// per-tool list nobody keeps in sync.
+	ceilingState
 	ceilingMemory
 )
 
@@ -170,7 +177,7 @@ func overCeiling(name string, mutating bool, declared, ceiling sandbox.Lane) (ce
 	if ceiling >= sandbox.LaneWrite {
 		return ceilingWithin, ""
 	}
-	return ceilingFiles, fmt.Sprintf("this session is capped at the %s lane and this tool changes files", ceiling)
+	return ceilingState, fmt.Sprintf("this session is capped at the %s lane, and this tool changes state outside it", ceiling)
 }
 
 // ceilingPrompt renders the refusal for the operator, from the language
@@ -183,7 +190,7 @@ func (a *Agent) ceilingPrompt(d Decision, tc llm.ToolCall) string {
 	case ceilingMemory:
 		return fmt.Sprintf(a.msgs.CeilingMemoryFmt, ceiling)
 	default:
-		return fmt.Sprintf(a.msgs.CeilingFilesFmt, ceiling)
+		return fmt.Sprintf(a.msgs.CeilingStateFmt, ceiling)
 	}
 }
 

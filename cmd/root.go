@@ -2417,17 +2417,18 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 			arg2 = fields[2]
 		}
 		switch {
+		case len(fields) > 3:
+			// Trailing words are a typo, in every form. The `auto`
+			// branch used to match on arg2 alone, so `/readonly auto on
+			// nonsense` armed the watcher silently.
+			b.WriteString(msgs.ReadOnlyUsage)
 		case sub == "":
-		case sub == "on" || sub == "off":
-			if arg2 != "" {
-				b.WriteString(msgs.ReadOnlyUsage)
-				break
-			}
-			ag.SetReadOnly(sub == "on")
+		case (sub == "on" || sub == "off") && arg2 == "":
+			ag.SetReadOnly(sub == "on", "operator")
 		case sub == "auto" && (arg2 == "" || arg2 == "on"):
-			ag.SetReadOnlyAuto(true)
+			ag.SetReadOnlyAuto(true, "operator")
 		case sub == "auto" && arg2 == "off":
-			ag.SetReadOnlyAuto(false)
+			ag.SetReadOnlyAuto(false, "operator")
 		default:
 			b.WriteString(msgs.ReadOnlyUsage)
 		}
