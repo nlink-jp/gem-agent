@@ -1459,7 +1459,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			// "gate" covers the operator and the session allowlist —
 			// the gates answer as one (ADR-0035 v1 granularity).
 			detail, purpose := a.Describe(tc)
-			ok, fromAllowlist, denyReason := a.gate.Approve(tc.Name, detail, purpose, reason, mustPrompt)
+			ok, fromAllowlist, denyReason := a.askGate(tc, detail, purpose, reason, mustPrompt, d)
 			decision := "denied"
 			if ok {
 				decision = "approved"
@@ -1650,6 +1650,33 @@ func (a *Agent) takeLateNotices() []string {
 	notes := a.lateNotices
 	a.lateNotices = nil
 	return notes
+}
+
+// OnceApprover is the optional half of Approver: a gate that can ask a
+// question no standing grant may answer. It is optional so the many
+// small test gates need not carry a method they never reach — a gate
+// without it falls back to Approve — and exported so every gate the
+// binary actually uses can be pinned to it by a test.
+type OnceApprover interface {
+	ApproveOnce(toolName, detail, purpose, reason string) (approved bool, denyReason string)
+}
+
+// askGate puts the call to the operator. A call the ceiling cannot bound
+// goes through the once-only question instead of the ordinary dialog:
+// 'a' and 'p' are refused an answer while the ceiling is up
+// (mustPrompt), so offering them buys the operator nothing now and
+// silently registers a session allowlist entry — or writes a global,
+// cross-session policy file — that starts applying the moment they lift
+// the mode. An answer whose only effect is one you cannot see when you
+// give it is not an answer to offer (independent review, pass 2).
+func (a *Agent) askGate(tc llm.ToolCall, detail, purpose, reason string, mustPrompt bool, d Decision) (ok, fromAllowlist bool, denyReason string) {
+	if d.CeilingUnbounded {
+		if g, is := a.gate.(OnceApprover); is {
+			ok, denyReason = g.ApproveOnce(tc.Name, detail, purpose, reason)
+			return ok, false, denyReason
+		}
+	}
+	return a.gate.Approve(tc.Name, detail, purpose, reason, mustPrompt)
 }
 
 // gated reports whether this call goes through the approval machinery at

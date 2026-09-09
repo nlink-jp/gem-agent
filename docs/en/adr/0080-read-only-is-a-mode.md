@@ -276,6 +276,19 @@ cannot tell a read tool from a write tool on someone else's machine.
 Measured above: the mode escalates an aligned vault write and an
 external send, and leaves searches approved.
 
+**And no standing answer settles such a call.** A session `a` and a
+`never` policy do not apply to an MCP call while the ceiling is up —
+both were answers about a session with no ceiling — so the operator is
+asked every time. The prompt therefore does not *offer* them either:
+they are absent from its labels, its selection and its letter
+shortcuts, exactly as they are from §4's mode question. Offering a key
+the ceiling will not honour would buy the operator nothing at the
+moment they pressed it, and would silently register a session
+allowlist entry — or, for `p`, write a global, cross-session policy
+file — that began applying the instant they lifted the mode. An answer
+whose only effect is one you cannot see when you give it is not an
+answer to offer.
+
 Two things this is not. It is **not** a guarantee — §3 is a kernel
 denial, §5 is a judgment, and the difference must not be blurred in the
 UI or in the CHANGELOG. And it is **not** the prose channel widening:

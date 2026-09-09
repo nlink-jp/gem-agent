@@ -58,12 +58,15 @@ func (m Model) approvalLabels() []string {
 }
 
 // approvalAnswerCount bounds the labels, the selection wrap and the
-// letter shortcuts together, so the three cannot disagree. A mode change
-// has three answers: 'a' would register the tool in the session
-// allowlist and 'p' would write a policy, and both answer a question
-// about a tool rather than the one on screen (ADR-0080 §4).
+// letter shortcuts together, so the three cannot disagree. Two
+// questions have three answers. A mode change: 'a' would register the
+// tool in the session allowlist and 'p' would write a policy, and both
+// answer a question about a tool rather than the one on screen
+// (ADR-0080 §4). A call the ceiling cannot bound: the same two answers
+// are refused while the ceiling is up, so pressing one would buy
+// nothing now and take effect the moment the mode was lifted (§5).
 func (m Model) approvalAnswerCount() int {
-	if m.approval != nil && m.approval.ModeChange {
+	if m.approval != nil && (m.approval.ModeChange || m.approval.NoStanding) {
 		return 3
 	}
 	return len(approvalAnswers)
@@ -1859,9 +1862,14 @@ func (m Model) viewContent() string {
 				m.st.hint.Render(m.msgs.ApprovalReasonHint)
 		} else {
 			hint := m.msgs.ApprovalHint
-			if req.ModeChange {
+			switch {
+			case req.ModeChange:
 				body += "\n" + m.st.tool.Render(consequenceText)
 				hint = m.msgs.CeilingLiftHint
+			case req.NoStanding:
+				// Same question, two fewer keys — the reason line above
+				// already says why they are gone.
+				hint = m.msgs.ApprovalHintNoStanding
 			}
 			body += "\n" + m.optionsLine() + "\n" + m.st.hint.Render(hint)
 		}

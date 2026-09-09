@@ -1927,6 +1927,13 @@ func effectiveCeiling(a config.AgentConfig, oneShot bool) sandbox.Ceiling {
 	return sandbox.Ceiling{ReadOnly: a.ReadOnly, Auto: a.ReadOnlyAuto}
 }
 
+// ApproveOnce refuses like Approve: the answer set differs, the
+// absence of a human does not.
+func (d denyGate) ApproveOnce(toolName, detail, _, reason string) (bool, string) {
+	fmt.Fprintf(d.out, "[denied: %s %s — %s]\n", toolName, detail, reason)
+	return false, ""
+}
+
 // ApproveLift refuses in one-shot: there is nobody to ask, so the
 // ceiling holds and the reason goes to stderr like every other denial
 // here (ADR-0080 §4). --read-only is how a run says it meant this.

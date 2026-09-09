@@ -82,6 +82,46 @@ func (g *Gate) ApproveLift(toolName, detail, purpose, reason string) (bool, stri
 	}
 }
 
+// ApproveOnce asks about a call no standing grant may answer — an MCP
+// call while the read-only ceiling is in force (ADR-0080 §5). It is
+// Approve without 'a': the allowlist is neither consulted nor
+// registered, because an 'a' here would do nothing until the operator
+// lifted the mode and then start applying invisibly.
+func (g *Gate) ApproveOnce(toolName, detail, purpose, reason string) (bool, string) {
+	fmt.Fprintf(g.out, "\n[approval] %s\n  %s\n", toolName, detail)
+	fmt.Fprintf(g.out, "  ↪ %s\n", purposeOrNone(purpose))
+	if reason != "" {
+		fmt.Fprintf(g.out, "  ⚠ %s\n", reason)
+	}
+	fmt.Fprint(g.out, "  allow this call? [y]es / [n]o / [N]o with reason: ")
+	for {
+		line, err := g.in.ReadString('\n')
+		if err != nil && line == "" {
+			fmt.Fprintln(g.out, "(no input — denied)")
+			return false, ""
+		}
+		if strings.TrimSpace(line) == "N" {
+			fmt.Fprint(g.out, "  deny reason (empty = deny without one): ")
+			reasonLine, rerr := g.in.ReadString('\n')
+			if rerr != nil && reasonLine == "" {
+				return false, ""
+			}
+			return false, strings.TrimSpace(reasonLine)
+		}
+		switch strings.ToLower(strings.TrimSpace(line)) {
+		case "y", "yes":
+			return true, ""
+		case "n", "no", "":
+			return false, ""
+		default:
+			fmt.Fprint(g.out, "  please answer y / n / N: ")
+			if err != nil {
+				return false, ""
+			}
+		}
+	}
+}
+
 // Approve asks the user whether the named tool may run. detail is a short
 // human-readable summary of what the call will do (command line, file
 // path); purpose is the model's own one-sentence declaration of why it

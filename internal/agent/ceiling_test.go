@@ -115,6 +115,27 @@ func TestCeilingRefusesWhatNeedsAHigherLane(t *testing.T) {
 
 // liftGate answers the ceiling's lift question and records how it was
 // asked. A mode is not a call, so the question must be must-prompt.
+// onceGate records which of the two questions each call arrived as.
+type onceGate struct {
+	answer bool
+	asked  []string // the ordinary dialog
+	once   []string // the no-standing dialog
+}
+
+func (g *onceGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
+	g.asked = append(g.asked, name+"|"+reason)
+	return g.answer, false, ""
+}
+
+func (g *onceGate) ApproveOnce(name, detail, purpose, reason string) (bool, string) {
+	g.once = append(g.once, name+"|"+reason)
+	return g.answer, ""
+}
+
+func (g *onceGate) ApproveLift(name, detail, purpose, reason string) (bool, string) {
+	return false, ""
+}
+
 type liftGate struct {
 	answer      bool
 	asked       []string
@@ -437,6 +458,61 @@ func TestCeilingMakesUnboundedCallsTheOperatorsOwn(t *testing.T) {
 	}
 	if len(gate.prompts) != 0 {
 		t.Errorf("the ceiling was off and the operator was asked anyway: %v", gate.prompts)
+	}
+}
+
+// A call the ceiling cannot bound is asked once, with no standing
+// answer offered. `a` and `p` are refused while the ceiling is up, so
+// the keystroke bought nothing then and everything later: the entry
+// registered silently and began applying the moment the operator lifted
+// the mode — a session allowlist entry, or in `p`'s case a global,
+// cross-session policy file (independent review, pass 2).
+func TestCeilingUnboundedCallsAreAskedOnceOnly(t *testing.T) {
+	mcp := &tools.Tool{Name: "mcp__vault__patch", Description: "d", Mutating: true,
+		Run: func(ctx context.Context, args map[string]any) (string, error) { return "ok", nil }}
+	call := llm.ToolCall{ID: "m", Name: "mcp__vault__patch", Args: map[string]any{"k": "v"}}
+
+	a := ceilingAgent(t, "on", mcp)
+	gate := &onceGate{answer: true}
+	a.gate = gate
+	if _, _, _, _, err := a.execCallInner(context.Background(), call); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.once) != 1 || len(gate.asked) != 0 {
+		t.Fatalf("once=%v asked=%v, want the once-only question", gate.once, gate.asked)
+	}
+	if !strings.Contains(gate.once[0], "read-only") {
+		t.Errorf("the reason does not say why: %q", gate.once[0])
+	}
+
+	// With no ceiling it is the ordinary dialog again: the answers this
+	// removes are removed by the mode, not by the tool being MCP.
+	a = ceilingAgent(t, "off", mcp)
+	gate = &onceGate{answer: true}
+	a.gate = gate
+	if _, _, _, _, err := a.execCallInner(context.Background(), call); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.once) != 0 || len(gate.asked) != 1 {
+		t.Errorf("once=%v asked=%v, want the ordinary dialog", gate.once, gate.asked)
+	}
+}
+
+// A gate that does not implement OnceApprover still gets asked — the
+// interface is optional, and falling silent would be worse than falling
+// back.
+func TestCeilingUnboundedFallsBackToApprove(t *testing.T) {
+	mcp := &tools.Tool{Name: "mcp__vault__patch", Description: "d", Mutating: true,
+		Run: func(ctx context.Context, args map[string]any) (string, error) { return "ok", nil }}
+	a := ceilingAgent(t, "on", mcp)
+	gate := &ceilingAllowGate{}
+	a.gate = gate
+	if _, _, _, _, err := a.execCallInner(context.Background(),
+		llm.ToolCall{ID: "m", Name: "mcp__vault__patch", Args: map[string]any{}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.prompts) != 1 {
+		t.Errorf("a gate without ApproveOnce was asked %d times, want 1", len(gate.prompts))
 	}
 }
 

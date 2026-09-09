@@ -182,3 +182,72 @@ func TestFooterBadgeCarriesBothSettings(t *testing.T) {
 		t.Errorf("a padlock survived the lift:\n%s", v)
 	}
 }
+
+// The same three answers, for a different reason: the call the ceiling
+// cannot bound is an ordinary tool approval, but 'a' and 'p' are
+// refused an answer while the ceiling is up, so pressing one buys
+// nothing then and starts applying invisibly the moment the mode is
+// lifted (ADR-0080 §5, independent review pass 2).
+func noStandingModel(t *testing.T, lang uitext.Lang) (Model, chan ApprovalAnswer) {
+	t.Helper()
+	m := New(Options{Msgs: uitext.For(lang), Theme: "notty"})
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = next.(Model)
+	resp := make(chan ApprovalAnswer, 1)
+	next, _ = m.Update(ApprovalRequest{Tool: "mcp__vault__patch", Detail: "note=x",
+		Reason:     "read-only が ON ですが、このツールは上限が縛れない別サーバーで動きます",
+		NoStanding: true, Resp: resp})
+	return next.(Model), resp
+}
+
+func TestNoStandingApprovalKeepsTheQuestionAndDropsTheGrants(t *testing.T) {
+	m, resp := noStandingModel(t, uitext.JA)
+	v := m.View()
+	// Still a tool approval: the title and the call are the ordinary
+	// ones, unlike the mode change.
+	if !strings.Contains(v, "mcp__vault__patch") {
+		t.Errorf("the call is not on screen:\n%s", v)
+	}
+	if strings.Contains(v, uitext.For(uitext.JA).CeilingLiftTitle) {
+		t.Errorf("a tool approval rendered as the mode question:\n%s", v)
+	}
+	for _, gone := range []string{"このセッション中は許可 (a)", "今後も許可 (p)"} {
+		if strings.Contains(v, gone) {
+			t.Errorf("offers a standing answer the ceiling will not honour, %q:\n%s", gone, v)
+		}
+	}
+	for _, kept := range []string{"許可 (y)", "拒否 (n)", "理由を添えて拒否 (N)"} {
+		if !strings.Contains(v, kept) {
+			t.Errorf("dropped %q:\n%s", kept, v)
+		}
+	}
+	// The key help must not advertise them either.
+	if strings.Contains(v, "y/n/N/a/p") {
+		t.Errorf("the hint still names a/p:\n%s", v)
+	}
+	// And the keys do nothing.
+	m.approvalAt = m.approvalAt.Add(-2 * approvalGrace)
+	for _, key := range []string{"a", "p"} {
+		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		m = next.(Model)
+		select {
+		case ans := <-resp:
+			t.Errorf("%q answered with %q", key, string(ans.Key))
+		default:
+		}
+	}
+	if m.approval == nil {
+		t.Error("a key the dialog does not offer dismissed it")
+	}
+	// y still allows the call itself.
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = next.(Model)
+	select {
+	case ans := <-resp:
+		if ans.Key != 'y' {
+			t.Errorf("y answered %q", string(ans.Key))
+		}
+	default:
+		t.Error("y did not answer the dialog")
+	}
+}

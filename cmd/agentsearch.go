@@ -72,6 +72,11 @@ func (searchDenyGate) ApproveLift(string, string, string, string) (bool, string)
 	return false, ""
 }
 
+// Nor can it answer a once-only question: same reasoning, same answer.
+func (searchDenyGate) ApproveOnce(string, string, string, string) (bool, string) {
+	return false, ""
+}
+
 // agenticSearchOptions wires registerAgenticSearch. onToolCall may be
 // nil; everything else is required (sink may be the no-op Sink).
 type agenticSearchOptions struct {

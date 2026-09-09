@@ -77,7 +77,11 @@ type Messages struct {
 	ApproveDenyReason string // dialog answer: deny with a typed reason (ADR-0060)
 	ApproveAlways     string // dialog answer: allow for the session
 	ApprovePersist    string // dialog answer: persist never-ask (ADR-0009 §5)
-	ApprovalHint      string // key help under the dialog
+	ApprovalHint string // key help under the dialog
+	// ApprovalHintNoStanding is the same help for a call no standing
+	// answer may settle: the two keys it drops are the two the dialog
+	// does not offer.
+	ApprovalHintNoStanding string
 	// Reason field (ADR-0060): the label above the input, its
 	// placeholder, and the key help while it is open.
 	ApprovalReasonPrompt      string
@@ -390,6 +394,7 @@ var en = Messages{
 	ApproveAlways:             "allow this session (a)",
 	ApprovePersist:            "allow permanently (p)",
 	ApprovalHint:              "←→/Tab select · Enter confirm · y/n/N/a/p direct · Esc denies",
+	ApprovalHintNoStanding:    "←→/Tab select · Enter confirm · y/n/N direct · Esc denies",
 	ApprovalReasonPrompt:      "deny reason:",
 	ApprovalReasonPlaceholder: "why this call should not run, or what to do instead…",
 	ApprovalReasonHint:        "Enter send · empty Enter denies without a reason · Esc back",
@@ -509,7 +514,7 @@ keys:
 	CeilingLiftConsequence: "Yes lifts read-only for the rest of this session.",
 	CeilingLiftHint:        "←→/Tab to choose · Enter to answer · y/n/N · Esc refuses",
 	CeilingShellFmt:        "this session is capped at the %s lane, and the command declared %s",
-	CeilingUnboundedReason: "read-only is on, and this tool runs on another server the ceiling cannot bound — so no earlier \"always\" answers it while read-only is on",
+	CeilingUnboundedReason: "read-only is on, and this tool runs on another server the ceiling cannot bound — so it asks every time, and no answer here carries past this call",
 	CeilingStateFmt:        "this session is capped at the %s lane, and this tool changes state outside it",
 	CeilingMemoryFmt:       "this session is capped at the %s lane, and a memory write changes what every later session trusts",
 	ReadOnlyOn:             "read-only mode: ON — nothing outside the session scratch changes; /readonly off lifts it\n",
@@ -578,6 +583,7 @@ var ja = Messages{
 	ApproveAlways:             "このセッション中は許可 (a)",
 	ApprovePersist:            "今後も許可 (p)",
 	ApprovalHint:              "←→/Tab 選択 · Enter 決定 · y/n/N/a/p 直接指定 · Esc 拒否",
+	ApprovalHintNoStanding:    "←→/Tab 選択 · Enter 決定 · y/n/N 直接指定 · Esc 拒否",
 	ApprovalReasonPrompt:      "拒否理由:",
 	ApprovalReasonPlaceholder: "拒否する理由や、代わりにすべきこと…",
 	ApprovalReasonHint:        "Enter 送信 · 空 Enter は理由なし拒否 · Esc で戻る",
@@ -697,7 +703,7 @@ var ja = Messages{
 	CeilingLiftConsequence: "「はい」はこのセッションの残りで read-only を解除します",
 	CeilingLiftHint:        "←→/Tab 選択 · Enter 決定 · y/n/N 直接指定 · Esc 拒否",
 	CeilingShellFmt:        "このセッションは %s レーンに抑えられていますが、このコマンドは %s を宣言しています",
-	CeilingUnboundedReason: "read-only が ON ですが、このツールは上限が縛れない別サーバーで動きます。そのため read-only の間は、以前の「常に許可」では通りません",
+	CeilingUnboundedReason: "read-only が ON ですが、このツールは上限が縛れない別サーバーで動きます。そのため毎回確認し、ここでの回答はこのコール限りです",
 	CeilingStateFmt:        "このセッションは %s レーンに抑えられていますが、このツールはスクラッチの外の状態を変更します",
 	CeilingMemoryFmt:       "このセッションは %s レーンに抑えられていますが、メモリ書込は後続の全セッションが信頼するものを変えます",
 	ReadOnlyOn:             "読み取り専用モード: ON — スクラッチの外は変更しません。解除は /readonly off\n",

@@ -140,6 +140,13 @@ type ApprovalRequest struct {
 	// answers about a tool, and an 'a' here would register the tool in
 	// the allowlist, granting exactly what the ceiling withholds.
 	ModeChange bool
+	// NoStanding marks an ordinary tool approval that no standing
+	// answer may settle — an MCP call while the ceiling is in force
+	// (ADR-0080 §5). The question is the usual one, so the title and
+	// the consequence stay as they are; what goes is 'a' and 'p', which
+	// the ceiling refuses to honour anyway and which would therefore
+	// take effect only later, invisibly.
+	NoStanding bool
 	Resp       chan ApprovalAnswer
 }
 
@@ -183,6 +190,28 @@ func (g *Gate) ApproveLift(toolName, detail, purpose, reason string) (bool, stri
 	resp := make(chan ApprovalAnswer, 1)
 	prog.Send(ApprovalRequest{Tool: toolName, Detail: detail, Purpose: purpose,
 		Reason: reason, ModeChange: true, Resp: resp})
+	answer := <-resp
+	if answer.Key == 'y' {
+		return true, ""
+	}
+	return false, answer.Reason
+}
+
+// ApproveOnce asks the ordinary approval question with the standing
+// answers removed. The dialog does not offer 'a' or 'p', and this
+// method could not honour them: while the ceiling is up the allowlist
+// may not answer, so the keystroke's only effect would be one the
+// operator cannot see until they lift the mode (ADR-0080 §5).
+func (g *Gate) ApproveOnce(toolName, detail, purpose, reason string) (bool, string) {
+	g.mu.Lock()
+	prog := g.prog
+	g.mu.Unlock()
+	if prog == nil {
+		return false, ""
+	}
+	resp := make(chan ApprovalAnswer, 1)
+	prog.Send(ApprovalRequest{Tool: toolName, Detail: detail, Purpose: purpose,
+		Reason: reason, NoStanding: true, Resp: resp})
 	answer := <-resp
 	if answer.Key == 'y' {
 		return true, ""
