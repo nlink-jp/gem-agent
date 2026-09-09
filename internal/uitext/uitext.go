@@ -251,6 +251,9 @@ type Messages struct {
 	CeilingLiftConsequence string
 	CeilingLiftHint        string
 	CeilingShellFmt        string
+	// CeilingUnboundedReason explains why a call the ceiling cannot
+	// bound is asked about anyway, every time.
+	CeilingUnboundedReason string
 	CeilingFilesFmt        string
 	CeilingMemoryFmt       string
 	ReadOnlyOn             string
@@ -492,6 +495,7 @@ keys:
 	CeilingLiftConsequence: "Yes lifts read-only for the rest of this session.",
 	CeilingLiftHint:        "←→/Tab to choose · Enter to answer · y/n/N · Esc refuses",
 	CeilingShellFmt:        "this session is capped at the %s lane, and the command declared %s",
+	CeilingUnboundedReason: "read-only is on, and this tool runs on another server that the ceiling cannot bound — so it asks you every time",
 	CeilingFilesFmt:        "this session is capped at the %s lane, and this tool changes files",
 	CeilingMemoryFmt:       "this session is capped at the %s lane, and a memory write changes what every later session trusts",
 	ReadOnlyOn:             "read-only mode: ON — nothing outside the session scratch changes; /readonly off lifts it\n",
@@ -677,6 +681,7 @@ var ja = Messages{
 	CeilingLiftConsequence: "「はい」はこのセッションの残りで read-only を解除します",
 	CeilingLiftHint:        "←→/Tab 選択 · Enter 決定 · y/n/N 直接指定 · Esc 拒否",
 	CeilingShellFmt:        "このセッションは %s レーンに抑えられていますが、このコマンドは %s を宣言しています",
+	CeilingUnboundedReason: "read-only が ON ですが、このツールは上限が縛れない別サーバーで動きます。そのため毎回確認します",
 	CeilingFilesFmt:        "このセッションは %s レーンに抑えられていますが、このツールはファイルを変更します",
 	CeilingMemoryFmt:       "このセッションは %s レーンに抑えられていますが、メモリ書込は後続の全セッションが信頼するものを変えます",
 	ReadOnlyOn:             "読み取り専用モード: ON — スクラッチの外は変更しません。解除は /readonly off\n",

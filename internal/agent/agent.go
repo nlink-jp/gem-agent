@@ -1261,7 +1261,6 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		// prompt about (review F7).
 		return "error: " + d.Invalid.Error(), false, false, floorRan, nil
 	}
-	operatorLifted := false
 	if d.OverCeiling {
 		// The ceiling is not an escalation: the gate can be answered by
 		// the session allowlist, so a ceiling that escalated would be a
@@ -1298,21 +1297,37 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			"setting": "read_only", "to": "off", "by": "operator", "at": tc.Name,
 		})
 		a.telemetry.Approval(tc.Name, "approved", "operator", true, d.CeilingReason, a.laneOf(tc))
-		// The ceiling is gone, so the ordinary rules decide this call
-		// now. The operator has just seen it and said yes, which stands
-		// as its approval — except where a floor applies, and a Block
-		// verdict or an operator-only lane is a different question again
-		// that has to be asked on its own terms.
+		// The ceiling is gone, and that is the whole of what was
+		// answered. The call now goes through the ordinary rules — the
+		// tool policy, the ladder, the gate — exactly as if the ceiling
+		// had never been there.
+		//
+		// A first version treated the lift as this call's approval too,
+		// on the reasoning that the operator had just seen it. That
+		// bought more than the dialog offered: an `"always"` policy was
+		// spent without its own prompt, and under auto the call skipped
+		// decideAuto entirely, so turning read-only ON reduced what the
+		// operator was told about it (independent review, 2026-09-09).
+		// The dialog says only that yes lifts read-only; it does not say
+		// the call runs, and now it does not.
 		d = a.decide(tc)
-		operatorLifted = !d.Floor()
 	}
-	if a.gated(d, tc) && !operatorLifted {
+	if a.gated(d, tc) {
 		approved, reason := false, ""
 		// The floor (ADR-0021 §5): a Block-tier call, an OperatorOnly
 		// Review (ADR-0072 §4.5), or a tool whose policy is "always",
 		// may not be answered by the gates' session allowlist. One
 		// decision (ADR-0073 §4), read here and in the ladder.
 		mustPrompt := a.callPolicy(tc) == policy.AlwaysAsk
+		// A call the ceiling cannot bound is the operator's while the
+		// ceiling is in force: no session allowlist and no model tier
+		// answers for it (ADR-0080 §5). The rule tier cannot read another
+		// server's effects, so "ask" is the only honest answer, and an
+		// earlier 'a' is not one.
+		if !mustPrompt && d.CeilingUnbounded {
+			mustPrompt = true
+			reason = a.msgs.CeilingUnboundedReason
+		}
 		if !mustPrompt && d.Floor() {
 			mustPrompt = true
 			// Shown on the prompt, so the operator sees why an
@@ -1581,6 +1596,11 @@ func (a *Agent) takeLateNotices() []string {
 // shell_exec above all — must not become "run anything unattended"
 // because of one config line, so a Block verdict still asks.
 func (a *Agent) gated(d Decision, tc llm.ToolCall) bool {
+	if d.CeilingUnbounded {
+		// Not even a `never` policy: it was written for a session with
+		// no ceiling, and the ceiling is the newer, narrower statement.
+		return true
+	}
 	switch a.callPolicy(tc) {
 	case policy.AlwaysAsk:
 		return true

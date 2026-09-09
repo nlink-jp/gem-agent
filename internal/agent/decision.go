@@ -40,6 +40,20 @@ type Decision struct {
 	// instead of shipping this sentence to a Japanese screen (ADR-0079).
 	CeilingReason string
 	CeilingKind   ceilingKind
+	// CeilingUnbounded is set when the ceiling is in force and this
+	// call's effects are outside what it can bound — an MCP tool, whose
+	// server runs outside every Seatbelt profile and whose effects the
+	// rule tier cannot read (ADR-0077). The ceiling does not refuse
+	// those, but it may not let them run unseen either: the operator
+	// answers, and no session allowlist, `never` policy or model tier
+	// answers for them.
+	//
+	// Without this, a read-only session ran an allowlisted MCP write
+	// with no prompt at all while the banner said it changed nothing
+	// (independent review, 2026-09-09). §5 states the mode to the model
+	// tier, but that tier only runs under --auto — and ADR-0080 §2 names
+	// the manual mode as the case the ceiling exists for.
+	CeilingUnbounded bool
 }
 
 // ceilingKind names why a call exceeded the ceiling.
@@ -99,11 +113,17 @@ func (a *Agent) decide(tc llm.ToolCall) Decision {
 			Reason: "unconfined shell (the sandbox is off): no lane bounds this command — the operator decides, not the model tier"}
 	}
 	d := Decision{Tool: tool, Mutating: mutating, Verdict: v}
-	if kind, reason := overCeiling(tc.Name, mutating, laneOrDefault(tc), a.Ceiling()); kind != ceilingWithin {
+	ceiling := a.Ceiling()
+	if kind, reason := overCeiling(tc.Name, mutating, laneOrDefault(tc), ceiling); kind != ceilingWithin {
 		d.OverCeiling, d.CeilingKind, d.CeilingReason = true, kind, reason
 	}
+	d.CeilingUnbounded = ceiling < sandbox.LaneOperator && strings.HasPrefix(tc.Name, mcpPrefix)
 	return d
 }
+
+// mcpPrefix names a tool that belongs to an MCP server. One spelling,
+// read by the ceiling's exemption and by its must-prompt rule.
+const mcpPrefix = "mcp__"
 
 // laneOrDefault is the lane a shell call declared; anything else has no
 // declared lane and reads as the read lane, which never exceeds a
@@ -140,7 +160,7 @@ func overCeiling(name string, mutating bool, declared, ceiling sandbox.Lane) (ce
 		return ceilingShell, fmt.Sprintf(
 			"this session is capped at the %s lane and the command declared %s", ceiling, declared)
 	}
-	if strings.HasPrefix(name, "mcp__") || !mutating {
+	if strings.HasPrefix(name, mcpPrefix) || !mutating {
 		return ceilingWithin, ""
 	}
 	if memoryWrite(name) {

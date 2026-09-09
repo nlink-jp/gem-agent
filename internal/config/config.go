@@ -366,9 +366,11 @@ type Overrides struct {
 	// is not one-way — --writable exists precisely so a run can step out
 	// of a configured ceiling, per invocation and visibly.
 	ReadOnly string
-	// ReadOnlyAuto arms the watcher for this run (--auto-read-only).
-	// One-way, like Auto: the flag can only arm.
-	ReadOnlyAuto bool
+	// ReadOnlyAuto overrides [agent].read_only_auto: "on" or "off",
+	// empty when no flag moved it. Not one-way — --writable means "this
+	// run is writable", which includes not being watched, or a
+	// configured watcher would re-tighten what the flag just released.
+	ReadOnlyAuto string
 	// Auto arms auto-approve for this run (ADR-0053). One-way: the
 	// flag can only arm, so false simply means "flag not given" and
 	// the config value stands.
@@ -446,9 +448,13 @@ func LoadWithOverrides(path string, ov Overrides) (*Config, error) {
 	default:
 		return nil, fmt.Errorf(`read-only override must be "on" or "off" (got %q)`, ov.ReadOnly)
 	}
-	if ov.ReadOnlyAuto {
-		cfg.Agent.ReadOnlyAuto = true
+	switch ov.ReadOnlyAuto {
+	case "":
+	case "on", "off":
+		cfg.Agent.ReadOnlyAuto = ov.ReadOnlyAuto == "on"
 		cfg.note("agent.read_only_auto", FromFlag)
+	default:
+		return nil, fmt.Errorf(`read-only-auto override must be "on" or "off" (got %q)`, ov.ReadOnlyAuto)
 	}
 
 	if err := cfg.validate(); err != nil {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/policy"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
@@ -182,8 +183,11 @@ func TestCeilingLiftDeclinedIsNotAskedTwiceInATurn(t *testing.T) {
 	}
 }
 
-// Approving is a mode change, and the call the operator was shown then
-// proceeds without a second prompt about the same thing.
+// Approving is a mode change and nothing more. The call then goes
+// through the ordinary rules, which is a second, separate question —
+// treating the lift as the call's approval spent an "always" policy
+// without its prompt and skipped the ladder entirely (independent
+// review, 2026-09-09).
 func TestCeilingLiftApprovedTurnsTheModeOff(t *testing.T) {
 	a := ceilingAgent(t, "on")
 	gate := &liftGate{answer: true}
@@ -192,22 +196,48 @@ func TestCeilingLiftApprovedTurnsTheModeOff(t *testing.T) {
 	if _, _, _, _, err := a.execCallInner(context.Background(), writeCall("f.txt")); err != nil {
 		t.Fatal(err)
 	}
-	if len(gate.asked) != 1 {
-		t.Errorf("asked %d times, want 1: %v", len(gate.asked), gate.asked)
-	}
 	if a.CeilingState().ReadOnly {
 		t.Fatalf("the mode did not change: %+v", a.CeilingState())
 	}
-	// What follows is an ordinary session again: in the default mode a
-	// mutating call still asks, but as itself — not as another lift.
+	if len(gate.asked) != 2 {
+		t.Fatalf("asked %d times, want 2 (the mode, then the call): %v", len(gate.asked), gate.asked)
+	}
+	if !gate.lifts[0] || gate.lifts[1] {
+		t.Errorf("questions = %v, want the mode change then a tool approval", gate.lifts)
+	}
+
+	// What follows is an ordinary session again: the ceiling is gone, so
+	// the next write asks as itself and not as another lift.
+	if _, _, _, _, err := a.execCallInner(context.Background(), writeCall("f.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.asked) != 3 || gate.lifts[2] {
+		t.Errorf("the ceiling asked again after it was lifted: %v", gate.lifts)
+	}
+}
+
+// The lift answers the ceiling's question, never the tool's. A tool the
+// operator marked "always" still gets its own prompt, and under auto the
+// ladder still runs — before this, a lift skipped both.
+func TestCeilingLiftDoesNotSpendTheToolsOwnGate(t *testing.T) {
+	pol, _, err := policy.Build(map[string]string{"write_file": "always"}, nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := ceilingAgent(t, "on")
+	a.policy = pol
+	gate := &liftGate{answer: true}
+	a.gate = gate
 	if _, _, _, _, err := a.execCallInner(context.Background(), writeCall("f.txt")); err != nil {
 		t.Fatal(err)
 	}
 	if len(gate.asked) != 2 {
-		t.Fatalf("the next write did not go through the ordinary gate: %v", gate.asked)
+		t.Fatalf("asked %d times, want 2: %v", len(gate.asked), gate.asked)
 	}
-	if gate.lifts[1] {
-		t.Error("the ceiling asked again after it was lifted")
+	// The second is the tool's own must-prompt question, not the lift.
+	if gate.lifts[1] || !gate.mustPrompts[1] {
+		t.Errorf("the \"always\" policy was spent by the lift: lifts=%v mustPrompts=%v",
+			gate.lifts, gate.mustPrompts)
 	}
 }
 
@@ -276,5 +306,85 @@ func TestCeilingLiftLeavesTheWatcherArmed(t *testing.T) {
 	}
 	if c := a.CeilingState(); c.ReadOnly || !c.Auto {
 		t.Errorf("after an approved lift = %+v, want the watcher still armed", c)
+	}
+}
+
+// ceilingAllowGate answers from a session allowlist the way the real gates
+// do after the operator has pressed 'a' once.
+type ceilingAllowGate struct {
+	always      map[string]bool
+	prompts     []string
+	mustPrompts []bool
+	reasons     []string
+}
+
+func (g *ceilingAllowGate) Approve(name, detail, purpose, reason string, mustPrompt bool) (bool, bool, string) {
+	if !mustPrompt && g.always[name] {
+		return true, true, "" // answered without the operator
+	}
+	g.prompts = append(g.prompts, name)
+	g.mustPrompts = append(g.mustPrompts, mustPrompt)
+	g.reasons = append(g.reasons, reason)
+	return true, false, ""
+}
+func (g *ceilingAllowGate) ApproveLift(name, detail, purpose, reason string) (bool, string) {
+	return false, ""
+}
+
+// A call the ceiling cannot bound — an MCP tool, whose server runs
+// outside every profile — is the operator's while the ceiling is in
+// force. Before this, an allowlisted MCP write ran with no prompt at
+// all while the banner said the session changed nothing (independent
+// review, 2026-09-09).
+func TestCeilingMakesUnboundedCallsTheOperatorsOwn(t *testing.T) {
+	mcp := &tools.Tool{Name: "mcp__vault__patch", Description: "Patch a note.", Mutating: true,
+		Parameters: map[string]any{"type": "object"},
+		Run:        func(context.Context, map[string]any) (string, error) { return "PATCHED", nil }}
+	call := llm.ToolCall{ID: "c", Name: "mcp__vault__patch", Args: map[string]any{"path": "n.md"}}
+
+	// With the ceiling on, neither an allowlist entry nor a "never"
+	// policy answers it.
+	for _, tc := range []struct {
+		name string
+		pol  map[string]string
+	}{
+		{"session allowlist", nil},
+		{"never policy", map[string]string{"mcp__vault__patch": "never"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := ceilingAgent(t, "on", mcp)
+			if tc.pol != nil {
+				pol, _, err := policy.Build(tc.pol, nil, nil, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				a.policy = pol
+			}
+			gate := &ceilingAllowGate{always: map[string]bool{"mcp__vault__patch": true}}
+			a.gate = gate
+			if _, _, _, _, err := a.execCallInner(context.Background(), call); err != nil {
+				t.Fatal(err)
+			}
+			if len(gate.prompts) != 1 {
+				t.Fatalf("the operator was asked %d times, want 1: %v", len(gate.prompts), gate.prompts)
+			}
+			if !gate.mustPrompts[0] {
+				t.Error("the question was answerable by the allowlist")
+			}
+			if !strings.Contains(gate.reasons[0], "read-only") {
+				t.Errorf("the reason does not say why: %q", gate.reasons[0])
+			}
+		})
+	}
+
+	// With no ceiling, nothing changes: the allowlist answers as before.
+	a := ceilingAgent(t, "off", mcp)
+	gate := &ceilingAllowGate{always: map[string]bool{"mcp__vault__patch": true}}
+	a.gate = gate
+	if _, _, _, _, err := a.execCallInner(context.Background(), call); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.prompts) != 0 {
+		t.Errorf("the ceiling was off and the operator was asked anyway: %v", gate.prompts)
 	}
 }

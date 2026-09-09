@@ -159,13 +159,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		cfgPath = p
 	}
 	oneShot := flagPrompt != ""
-	roFlag, err := readOnlyOverride(flagWritable, flagReadOnly, flagAutoRO, oneShot)
+	roFlag, roAutoFlag, err := readOnlyOverride(flagWritable, flagReadOnly, flagAutoRO, oneShot)
 	if err != nil {
 		return err
 	}
 	cfg, err := config.LoadWithOverrides(cfgPath, config.Overrides{
 		Model: flagModel, Thinking: flagThinking, MCP: flagMCP, Auto: flagAuto,
-		ReadOnly: roFlag, ReadOnlyAuto: flagAutoRO})
+		ReadOnly: roFlag, ReadOnlyAuto: roAutoFlag})
 	if err != nil {
 		return err
 	}
@@ -1879,23 +1879,31 @@ func effectiveAuto(cfgAuto, oneShot, flagAuto bool) bool {
 // run's ceiling is answered where the run is launched, never inferred
 // from the prompt's wording, or a scheduled job's write access would
 // become a function of that text (§2).
-func readOnlyOverride(writable, readOnly, autoRO, oneShot bool) (string, error) {
+func readOnlyOverride(writable, readOnly, autoRO, oneShot bool) (ceiling, auto string, err error) {
 	// --writable and --read-only are the two ends of one setting.
 	// --auto-read-only is a different setting, so it composes with
 	// either: "start writable, and watch" is a sentence.
 	if writable && readOnly {
-		return "", errors.New("--writable and --read-only are the two ends of one setting; pass at most one")
+		return "", "", errors.New("--writable and --read-only are the two ends of one setting; pass at most one")
 	}
 	if autoRO && oneShot {
-		return "", errors.New("--auto-read-only needs a session to watch; in -p pass --read-only, or --writable to say so")
+		return "", "", errors.New("--auto-read-only needs a session to watch; in -p pass --read-only, or --writable to say so")
 	}
 	switch {
 	case readOnly:
-		return "on", nil
+		ceiling = "on"
 	case writable:
-		return "off", nil
+		// Both bits. "This run is writable" has to include "and is not
+		// watched", or a configured watcher re-tightens what the flag
+		// just released — and in -p, where the watcher is folded into
+		// the ceiling, --writable left the run read-only with no
+		// command-line escape at all (independent review, 2026-09-09).
+		ceiling, auto = "off", "off"
 	}
-	return "", nil
+	if autoRO {
+		auto = "on" // explicit, so it wins over --writable's implied off
+	}
+	return ceiling, auto, nil
 }
 
 // effectiveCeiling is the ceiling and watcher the run actually starts

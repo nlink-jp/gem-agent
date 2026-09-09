@@ -66,15 +66,17 @@ func boolLit(b bool) string {
 // visible on the invocation — and it does not touch the watcher.
 func TestReadOnlyOverridesAreIndependent(t *testing.T) {
 	body := cfgBase + "[agent]\nread_only = true\nread_only_auto = true\n"
+	// Either bit can be moved alone at this layer; which flags move
+	// which is readOnlyOverride's job, tested in cmd.
 	cfg, err := LoadWithOverrides(writeCfg(t, body), Overrides{ReadOnly: "off"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.Agent.ReadOnly {
-		t.Error("--writable did not lower the ceiling")
+		t.Error("the ceiling override did not lower the ceiling")
 	}
 	if !cfg.Agent.ReadOnlyAuto {
-		t.Error("--writable disarmed the watcher, which is a different setting")
+		t.Error("a ceiling override moved the watcher, which is a different setting")
 	}
 	if cfg.Sources["agent.read_only"] != FromFlag {
 		t.Errorf("ceiling provenance = %q", cfg.Sources["agent.read_only"])
@@ -84,7 +86,7 @@ func TestReadOnlyOverridesAreIndependent(t *testing.T) {
 	}
 
 	// And arming the watcher does not raise the ceiling.
-	cfg, err = LoadWithOverrides(writeCfg(t, cfgBase), Overrides{ReadOnlyAuto: true})
+	cfg, err = LoadWithOverrides(writeCfg(t, cfgBase), Overrides{ReadOnlyAuto: "on"})
 	if err != nil {
 		t.Fatal(err)
 	}
