@@ -65,6 +65,8 @@ const (
 	UsageWebFetch      = "web_fetch"
 	UsageFileSearch    = "agentic_file_search"
 	UsageRiskbookLearn = "riskbook_learn"
+	// UsageLibrarian is the find_tools side call (ADR-0083 §2).
+	UsageLibrarian = "librarian"
 )
 
 // UsageRecord is one model call's spend. The buckets are the ones
