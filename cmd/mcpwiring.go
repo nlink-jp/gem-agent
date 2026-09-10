@@ -5,6 +5,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
@@ -20,6 +21,12 @@ func advertisePredicate(cfg *config.Config, adv *mcpAdvertiser) func(name string
 		return nil
 	}
 	return adv.Advertise
+}
+
+// registeredIn is setInventory's registry predicate: the inventory also
+// lists the names an exclusion removed, and those are not tools.
+func registeredIn(registry *tools.Registry) func(name string) bool {
+	return func(name string) bool { _, ok := registry.Get(name); return ok }
 }
 
 // afterToolHook is Options.AfterTool, on the same condition.

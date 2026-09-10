@@ -540,7 +540,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// "on-request". It records committed loads to the transcript in use.
 	adv := newMCPAdvertiser(cfg.MCP.OnRequest(), cfg.MCP.Preload, flagAllow, liveLog{get: func() agent.SessionLog { return sessionLog }})
 	mcpClients, mcpSummary, mcpInv := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, grant, mcpFilter)
-	adv.setInventory(mcpInv)
+	adv.setInventory(mcpInv, registeredIn(registry))
 	if resumedID != "" && cfg.MCP.OnRequest() {
 		// A resumed session sees what it saw (ADR-0083 §8): the loads
 		// its transcript recorded, re-advertised; what is gone, named.
@@ -931,6 +931,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	composeSystem := func() string {
 		return buildSystemPrompt(projectDir, workDir, projectContext) + skills.PromptSection(skillsList) + memorySection + mcpOnRequestSection(adv.PromptLines())
 	}
+	// syncAdvertised follows an inventory change (a reconnect, from
+	// /mcp reload or the settings panel): the advertiser re-resolves
+	// its sets, the declarations are rebuilt, and the system prompt's
+	// server list is recomposed (ADR-0083 §5, §8). ag is set below and
+	// every caller runs after that.
+	syncAdvertised := func() {
+		adv.setInventory(mcpInv, registeredIn(registry))
+		ag.RefreshTools()
+		ag.SetSystem(composeSystem())
+	}
 	// writes pairs the agent's before/after hooks around an
 	// operator-approved write (ADR-0074 §1).
 	writes := &writeGuard{}
@@ -1178,9 +1188,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		mcpClients, mcpSummary, mcpInv = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, grant, mcpFilter)
 		// Loads survive a reconnect by name; the librarian's flags do
-		// not (ADR-0083 §8).
-		adv.setInventory(mcpInv)
-		ag.RefreshTools()
+		// not (ADR-0083 §8). The server list in the system prompt
+		// follows the inventory, as the skills section follows a
+		// skills reload.
+		syncAdvertised()
 		mcpTools := 0
 		for _, t := range registry.List() {
 			if strings.HasPrefix(t.Name, "mcp__") {
@@ -1269,7 +1280,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		mcpClients = others
 		mcpSummary = mcpInv.summaryLines()
-		ag.RefreshTools()
+		// The panel's per-server reconnect changes the inventory as
+		// /mcp reload does; the advertiser must follow, or the tools it
+		// re-registered are undeclarable for the rest of the session
+		// (implementation review).
+		syncAdvertised()
 		settings.inv = mcpInv
 		mcpTools := mcpToolCount(registry)
 		sink.Reload("mcp", len(mcpClients), mcpTools)

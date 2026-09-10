@@ -45,7 +45,7 @@ func librarianRegistry(t *testing.T) (*tools.Registry, *mcpAdvertiser) {
 		}
 	}
 	adv := newMCPAdvertiser(true, nil, nil, nil)
-	adv.setInventory(advInventory(map[string][]string{"whois-lookup": {"lookup"}, "slack": {"send"}, "helper": {"exec"}}))
+	adv.setInventory(advInventory(map[string][]string{"whois-lookup": {"lookup"}, "slack": {"send"}, "helper": {"exec"}}), everything)
 	return reg, adv
 }
 
@@ -94,8 +94,11 @@ func TestFindToolsStagesValidatedAnswer(t *testing.T) {
 	if adv.Advertise("mcp__helper__exec") {
 		t.Error("a flagged tool was advertised: flags must beat recommendations")
 	}
-	if !strings.Contains(be.systems[0], "catalogue_") || !strings.Contains(be.users[0], "Task from the agent: look up") {
-		t.Error("catalogue must ride nonce-wrapped and the task must follow it")
+	// The catalogue rides nonce-wrapped in the system prompt — the
+	// cache-stable prefix — and only the task is in the user message.
+	if !strings.Contains(be.systems[0], "catalogue_") || !strings.Contains(be.systems[0], "mcp__whois-lookup__lookup: Registration") ||
+		strings.Contains(be.users[0], "mcp__whois-lookup__lookup") || !strings.HasPrefix(be.users[0], "Task from the agent: look up") {
+		t.Error("catalogue must ride nonce-wrapped in the system prompt and the task alone in the user message")
 	}
 	if !strings.Contains(be.systems[0], "in Japanese") {
 		t.Error("the answer language was not requested")

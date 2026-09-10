@@ -20,10 +20,10 @@ import (
 // Every server's tools are registered; under [mcp].advertise =
 // "on-request" only a loaded tool is advertised — loaded by the model
 // through mcp_load (a whole server) or find_tools (single tools), or by
-// the operator through [mcp].preload, a --allow grant naming the server,
-// or /mcp load. A withheld tool (flagged by the librarian) is advertised
-// to nobody whatever else says, and the same predicate refuses it at
-// dispatch (ADR-0083 §1, §6).
+// the operator through [mcp].preload, a --allow grant naming the server
+// or the tool, or /mcp load. A withheld tool (flagged by the librarian)
+// is advertised to nobody whatever else says, and the same predicate
+// refuses it at dispatch (ADR-0083 §1, §6).
 //
 // Loads staged by a tool are applied by the agent loop, not by the
 // tool: a tool's Run is on its own goroutine and may be abandoned
@@ -32,7 +32,10 @@ import (
 type mcpAdvertiser struct {
 	mu        sync.Mutex
 	onRequest bool
-	preload   map[string]bool // server names, as configured or sanitised
+	// preload names servers advertised from the start, as configured or
+	// sanitised; preloadTools names single tools a --allow grant named.
+	preload      map[string]bool
+	preloadTools map[string]bool
 	// loadedServers and loadedTools are what the session has loaded;
 	// owner maps a registered tool name to its server and present is
 	// every server that registered tools — both rebuilt from the
@@ -43,6 +46,11 @@ type mcpAdvertiser struct {
 	owner         map[string]string
 	present       map[string]bool
 	pending       map[string]*pendingLoad // call id -> staged effect
+	// dead remembers the ids of abandoned calls (a bounded ring): a
+	// Run that stages after its call was abandoned finds its id here
+	// and is dropped, instead of leaving an entry nobody reaps.
+	dead     map[string]bool
+	deadRing []string
 	// log receives the mcp_advertise records a resumed session replays
 	// (ADR-0083 §8); nil logs nothing.
 	log agent.SessionLog
@@ -56,8 +64,9 @@ type pendingLoad struct {
 }
 
 // mcpAdvertiseRecord is the transcript record of a committed load: what
-// a resumed session re-advertises. Withheld tools are deliberately not
-// in it — flags are not persisted (ADR-0083 §6).
+// a resumed session re-advertises. Only what the load newly advertised
+// is recorded, and only when it advertised something; withheld tools
+// are deliberately absent — flags are not persisted (ADR-0083 §6).
 type mcpAdvertiseRecord struct {
 	Servers []string `json:"servers,omitempty"`
 	Tools   []string `json:"tools,omitempty"`
@@ -71,47 +80,57 @@ const (
 	// catalogSentenceCap bounds the one-line description mcp_load
 	// returns per tool, in runes.
 	catalogSentenceCap = 160
+	// deadRingSize bounds the abandoned-id memory.
+	deadRingSize = 64
 )
 
 func newMCPAdvertiser(onRequest bool, preload []string, allow []string, log agent.SessionLog) *mcpAdvertiser {
-	a := &mcpAdvertiser{onRequest: onRequest, preload: map[string]bool{}, log: log}
+	a := &mcpAdvertiser{onRequest: onRequest, preload: map[string]bool{}, preloadTools: map[string]bool{}, log: log, dead: map[string]bool{}}
 	for _, name := range preload {
 		if name = strings.TrimSpace(name); name != "" {
 			a.preload[name] = true
 		}
 	}
-	for _, name := range serversFromAllow(allow) {
+	servers, toolNames := grantsFromAllow(allow)
+	for _, name := range servers {
 		a.preload[name] = true
+	}
+	for _, name := range toolNames {
+		a.preloadTools[name] = true
 	}
 	a.reset()
 	return a
 }
 
-// serversFromAllow reads the servers a --allow grant names: an entry of
-// the form mcp__<server>__* is the operator's declaration that this run
-// needs that server, so it is advertised from the start — a pipeline
-// must not depend on the model remembering to load (ADR-0083 §7). The
-// name is the sanitised one the prefix carries; setInventory matches
-// it against sanitised server names.
-func serversFromAllow(patterns []string) []string {
-	var out []string
+// grantsFromAllow reads what a --allow grant names: mcp__<server>__* is
+// the operator's declaration that this run needs the server, and
+// mcp__<server>__<tool> that it needs that tool — either is advertised
+// from the start, since a pipeline must not depend on the model
+// remembering to load (ADR-0083 §7). Names are the sanitised ones the
+// prefix carries; setInventory matches servers under either spelling
+// and tools by their registered name.
+func grantsFromAllow(patterns []string) (servers, toolNames []string) {
 	for _, p := range patterns {
 		p = strings.TrimSpace(p)
 		rest, ok := strings.CutPrefix(p, "mcp__")
 		if !ok {
 			continue
 		}
-		server, ok := strings.CutSuffix(rest, "__*")
-		if !ok || server == "" || strings.Contains(server, "__") {
+		if server, ok := strings.CutSuffix(rest, "__*"); ok {
+			if server != "" && !strings.Contains(server, "__") {
+				servers = append(servers, server)
+			}
 			continue
 		}
-		out = append(out, server)
+		if server, tool, ok := strings.Cut(rest, "__"); ok && server != "" && tool != "" && tool != "*" {
+			toolNames = append(toolNames, p)
+		}
 	}
-	return out
+	return servers, toolNames
 }
 
-// reset returns to the starting state: preloaded servers only, nothing
-// withheld, nothing staged.
+// reset returns to the starting state: preloaded servers and tools only,
+// nothing withheld, nothing staged.
 func (a *mcpAdvertiser) reset() {
 	a.loadedServers = map[string]bool{}
 	a.loadedTools = map[string]bool{}
@@ -125,13 +144,18 @@ func (a *mcpAdvertiser) reset() {
 
 // resolvePreload marks present servers named by a preload under either
 // spelling (the configured name, or the sanitised name a --allow pattern
-// carries).
+// carries), and registered tools a --allow grant named.
 func (a *mcpAdvertiser) resolvePreload() {
 	for want := range a.preload {
 		for server := range a.present {
 			if want == server || want == sanitizeToolName(server) {
 				a.loadedServers[server] = true
 			}
+		}
+	}
+	for name := range a.preloadTools {
+		if _, ok := a.owner[name]; ok {
+			a.loadedTools[name] = true
 		}
 	}
 }
@@ -145,11 +169,13 @@ func (a *mcpAdvertiser) Reset() {
 }
 
 // setInventory rebuilds the tool→server map from what the servers
-// registered. Loads survive by name across a reconnect (ADR-0083 §8):
-// a server or tool that is still there stays loaded; the flags are
-// cleared, because the descriptions may have changed and the next
-// librarian call judges them again.
-func (a *mcpAdvertiser) setInventory(inv mcpInventory) {
+// registered, keeping only names the registry actually holds — the
+// inventory also lists the names an exclusion removed, and those are
+// not tools (ADR-0077). Loads survive by name across a reconnect
+// (ADR-0083 §8): a server or tool that is still there stays loaded;
+// the flags are cleared, because the descriptions may have changed
+// and the next librarian call judges them again.
+func (a *mcpAdvertiser) setInventory(inv mcpInventory, registered func(name string) bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.owner = map[string]string{}
@@ -157,7 +183,7 @@ func (a *mcpAdvertiser) setInventory(inv mcpInventory) {
 	for server, names := range inv.registered {
 		has := false
 		for _, n := range names {
-			if strings.HasPrefix(n, mcpToolPrefix(server)) {
+			if strings.HasPrefix(n, mcpToolPrefix(server)) && (registered == nil || registered(n)) {
 				a.owner[n] = server
 				has = true
 			}
@@ -192,39 +218,35 @@ func (a *mcpAdvertiser) Advertise(name string) bool {
 }
 
 // Stage records a tool call's effect under its id, to be applied by
-// Commit when the loop accepts the call's result. An empty id (a tool
-// run outside the loop) applies at once.
+// AfterTool when the loop accepts the call's result — the empty id
+// included, which a caller outside the loop commits the same way. A
+// stage arriving after its call was abandoned is dropped.
 func (a *mcpAdvertiser) Stage(callID string, servers, toolNames []string, withheld map[string]string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	p := &pendingLoad{servers: servers, tools: toolNames, withheld: withheld}
-	if callID == "" {
-		a.apply(p)
+	if a.dead[callID] {
 		return
 	}
-	a.pending[callID] = p
+	a.pending[callID] = &pendingLoad{servers: servers, tools: toolNames, withheld: withheld}
 }
 
-// apply commits one staged effect and writes its record.
-func (a *mcpAdvertiser) apply(p *pendingLoad) bool {
+// apply commits one staged effect and records what it newly advertised.
+// Caller holds mu.
+func (a *mcpAdvertiser) apply(p *pendingLoad, record bool) bool {
 	changed := false
 	rec := mcpAdvertiseRecord{}
 	for _, s := range p.servers {
 		if a.present[s] && !a.loadedServers[s] {
 			a.loadedServers[s] = true
-			changed = true
-		}
-		if a.present[s] {
 			rec.Servers = append(rec.Servers, s)
+			changed = true
 		}
 	}
 	for _, n := range p.tools {
-		if _, ok := a.owner[n]; ok && !a.loadedTools[n] {
+		if _, ok := a.owner[n]; ok && !a.loadedTools[n] && !a.loadedServers[a.owner[n]] {
 			a.loadedTools[n] = true
-			changed = true
-		}
-		if _, ok := a.owner[n]; ok {
 			rec.Tools = append(rec.Tools, n)
+			changed = true
 		}
 	}
 	for n, why := range p.withheld {
@@ -235,7 +257,7 @@ func (a *mcpAdvertiser) apply(p *pendingLoad) bool {
 			a.withheld[n] = why
 		}
 	}
-	if a.log != nil && (len(rec.Servers) > 0 || len(rec.Tools) > 0) {
+	if record && a.log != nil && (len(rec.Servers) > 0 || len(rec.Tools) > 0) {
 		_ = a.log.Log(mcpAdvertiseKind, rec)
 	}
 	return changed
@@ -248,38 +270,42 @@ func (a *mcpAdvertiser) AfterTool(tc llm.ToolCall, abandoned bool) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	p, ok := a.pending[tc.ID]
+	delete(a.pending, tc.ID)
+	if abandoned {
+		a.remember(tc.ID)
+		return false
+	}
 	if !ok {
 		return false
 	}
-	delete(a.pending, tc.ID)
-	if abandoned {
-		return false
+	return a.apply(p, true)
+}
+
+// remember adds an abandoned call id to the bounded ring. Caller holds mu.
+func (a *mcpAdvertiser) remember(id string) {
+	if a.dead[id] {
+		return
 	}
-	return a.apply(p)
+	a.dead[id] = true
+	a.deadRing = append(a.deadRing, id)
+	if len(a.deadRing) > deadRingSize {
+		delete(a.dead, a.deadRing[0])
+		a.deadRing = a.deadRing[1:]
+	}
 }
 
 // LoadServerNow advertises one server at the operator's request (/mcp
-// load, a replay) — between turns, so applied at once. Unknown names
-// are refused with the names that exist.
-func (a *mcpAdvertiser) LoadServerNow(server string) error { return a.loadServer(server, true) }
-
-// loadServer is LoadServerNow with the record optional: a replay
-// re-advertises what the transcript already holds and must not write
-// it again.
-func (a *mcpAdvertiser) loadServer(server string, record bool) error {
+// load) — between turns, so applied at once. Unknown names are refused
+// with the names that exist. The operator's load also lifts the
+// librarian's flags on that server: it is the override ADR-0083 §6
+// names.
+func (a *mcpAdvertiser) LoadServerNow(server string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.present[server] {
 		return a.unknownServer(server)
 	}
-	saved := a.log
-	if !record {
-		a.log = nil
-	}
-	a.apply(&pendingLoad{servers: []string{server}})
-	a.log = saved
-	// The operator's load also lifts the librarian's flags on that
-	// server: /mcp load is the override ADR-0083 §6 names.
+	a.apply(&pendingLoad{servers: []string{server}}, true)
 	for n, s := range a.owner {
 		if s == server {
 			delete(a.withheld, n)
@@ -288,28 +314,31 @@ func (a *mcpAdvertiser) loadServer(server string, record bool) error {
 	return nil
 }
 
-// LoadToolsNow advertises named tools at once (a replay). Names that no
-// longer exist are returned, not skipped silently (ADR-0083 §8).
-func (a *mcpAdvertiser) LoadToolsNow(names []string) (missing []string) {
+// replayLoads re-advertises what a transcript recorded (ADR-0083 §8),
+// writing no new record — the transcript already holds the one being
+// replayed. Names that are gone are returned, not skipped silently.
+func (a *mcpAdvertiser) replayLoads(servers, toolNames []string) (loaded int, missing []string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	var have []string
-	for _, n := range names {
+	p := &pendingLoad{}
+	for _, s := range servers {
+		if a.present[s] {
+			p.servers = append(p.servers, s)
+			loaded++
+		} else {
+			missing = append(missing, s)
+		}
+	}
+	for _, n := range toolNames {
 		if _, ok := a.owner[n]; ok {
-			have = append(have, n)
+			p.tools = append(p.tools, n)
+			loaded++
 		} else {
 			missing = append(missing, n)
 		}
 	}
-	if len(have) > 0 {
-		// Replayed loads write no new record: the transcript already
-		// holds the one being replayed.
-		saved := a.log
-		a.log = nil
-		a.apply(&pendingLoad{tools: have})
-		a.log = saved
-	}
-	return missing
+	a.apply(p, false)
+	return loaded, missing
 }
 
 func (a *mcpAdvertiser) unknownServer(server string) error {
@@ -388,10 +417,10 @@ func (a *mcpAdvertiser) Status(server string) string {
 	switch {
 	case loaded == 0:
 		parts = append(parts, "not loaded")
-	case loaded == len(names):
+	case loaded == len(names)-held:
 		parts = append(parts, "loaded")
 	default:
-		parts = append(parts, fmt.Sprintf("%d of %d loaded", loaded, len(names)))
+		parts = append(parts, fmt.Sprintf("%d of %d loaded", loaded, len(names)-held))
 	}
 	if held > 0 {
 		parts = append(parts, fmt.Sprintf("%d withheld", held))
@@ -469,7 +498,9 @@ func toolLine(registry *tools.Registry, server, name string) string {
 }
 
 // registerMCPLoadTool registers mcp_load (ADR-0083 §4). The load is
-// staged under the call id and applied by the loop.
+// staged under the call id and applied by the loop. Withheld tools are
+// neither listed nor described: the flag exists to keep their text out
+// of the model's context, and the model cannot call them anyway.
 func registerMCPLoadTool(registry *tools.Registry, adv *mcpAdvertiser) error {
 	return registry.Register(&tools.Tool{
 		Name: MCPLoadName,
@@ -493,12 +524,21 @@ func registerMCPLoadTool(registry *tools.Registry, adv *mcpAdvertiser) error {
 			adv.mu.Lock()
 			present := adv.present[server]
 			already := !adv.onRequest || adv.loadedServers[server]
-			names := adv.serverTools(server)
-			adv.mu.Unlock()
+			var names []string
+			held := 0
+			for _, n := range adv.serverTools(server) {
+				if _, h := adv.withheld[n]; h {
+					held++
+					continue
+				}
+				names = append(names, n)
+			}
+			var err error
 			if !present {
-				adv.mu.Lock()
-				err := adv.unknownServer(server)
-				adv.mu.Unlock()
+				err = adv.unknownServer(server)
+			}
+			adv.mu.Unlock()
+			if err != nil {
 				return "", err
 			}
 			adv.Stage(tools.CallID(ctx), []string{server}, nil, nil)
@@ -510,6 +550,9 @@ func registerMCPLoadTool(registry *tools.Registry, adv *mcpAdvertiser) error {
 			}
 			for _, n := range names {
 				b.WriteString(toolLine(registry, server, n) + "\n")
+			}
+			if held > 0 {
+				fmt.Fprintf(&b, "%d tool(s) of this server are withheld this session; the operator can see them with /mcp.\n", held)
 			}
 			return b.String(), nil
 		},
@@ -528,18 +571,9 @@ func replayAdvertised(path string, adv *mcpAdvertiser) (loaded int, missing []st
 		if json.Unmarshal(data, &rec) != nil {
 			return nil
 		}
-		for _, s := range rec.Servers {
-			if e := adv.loadServer(s, false); e != nil {
-				missing = append(missing, s)
-			} else {
-				loaded++
-			}
-		}
-		if len(rec.Tools) > 0 {
-			gone := adv.LoadToolsNow(rec.Tools)
-			missing = append(missing, gone...)
-			loaded += len(rec.Tools) - len(gone)
-		}
+		n, gone := adv.replayLoads(rec.Servers, rec.Tools)
+		loaded += n
+		missing = append(missing, gone...)
 		return nil
 	})
 	return loaded, missing, err

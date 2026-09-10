@@ -133,10 +133,13 @@ then the catalogue — one line per registered MCP tool with its server,
 name, description clipped to `librarianDescriptionCap` runes (its own
 constant; ADR-0046's 600 was budgeted for one description per call,
 this pays it 243 times and is tuned separately) and parameter names,
-no schemas — wrapped in a fresh per-call nonce tag. About 19k tokens
-on the operator's configuration; the prefix is stable, so the
-implicit cache holds it between calls a few minutes apart. The
-`why` strings are requested in the session's language (uitext).
+no schemas — wrapped in a nonce tag that lives as long as the session
+(ADR-0018 §1-2: reuse is safe because `Wrap` refuses content carrying
+the tag name), and placed in the system prompt, with only the task in
+the user message. About 19k tokens on the operator's configuration;
+every call's prefix is byte-identical, so the implicit cache holds it
+between calls a few minutes apart. The `why` strings are requested in
+the session's language (uitext).
 
 It answers `{"tools": [{name, why}], "flagged": [{name, why}],
 "note": "…"}`. The runtime validates both lists against the registry:
@@ -234,8 +237,11 @@ request" removes most of the 67k without an extra round on the common
 investigation path. `--allow mcp__<server>__*` preloads that server in
 every mode: the grant is the operator's declaration that the run needs
 it, and a `-p` pipeline must not depend on the model remembering to
-ask. Both match on the registered (sanitised) server name, the name
-the flag already uses.
+ask. `--allow mcp__<server>__<tool>` preloads that one tool for the
+same reason. Both match on the registered (sanitised) names, the names
+the flag already uses. A session allowlist entry or a grant for a tool
+the librarian later withholds stays recorded and is simply unreachable
+until `/mcp load` lifts the flag.
 
 ### 8. Persistence, reload, and accounting
 
@@ -256,8 +262,10 @@ block precedes it); early in a session that is a few thousand tokens.
 
 ### 9. Release gates
 
-Before implementation starts: a second interleaved pass of the probe
-(ADR-0082's precedent), so the table above is not a single sample.
+Before implementation started: a second interleaved pass of the probe
+(ADR-0082's precedent) — done 2026-09-10, with the table's numbers
+repeated to the call (3.8-flash and 3.7-flash 17/18, 0 recommended,
+18/18 flagged; the lite model recommending the plant again).
 
 Before `on-request` is recommended in the example config:
 

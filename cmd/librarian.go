@@ -97,19 +97,24 @@ func librarianCatalogue(registry *tools.Registry) string {
 // askLibrarian runs one librarian call and validates its answer against
 // the registry. Any failure is an error: nothing loads on a failed call
 // (ADR-0083 §2, no fallback).
-func askLibrarian(ctx context.Context, backend llm.Backend, registry *tools.Registry, task, language string) (librarianAnswer, error) {
+//
+// The catalogue rides in the system prompt under a tag that lives as
+// long as the session (ADR-0018 §1-2: reuse is safe because Wrap refuses
+// content carrying the tag name), so every call's prefix is byte-
+// identical and the implicit cache can hold the 19k tokens between
+// calls; only the task, in the user message, differs.
+func askLibrarian(ctx context.Context, backend llm.Backend, registry *tools.Registry, tag guard.Tag, task, language string) (librarianAnswer, error) {
 	catalogue := librarianCatalogue(registry)
 	if strings.TrimSpace(catalogue) == "" {
 		return librarianAnswer{}, errors.New("no MCP tool is registered this session")
 	}
-	tag := guard.NewTagWithPrefix("catalogue")
 	wrapped, err := tag.Wrap(catalogue)
 	if err != nil {
 		return librarianAnswer{}, fmt.Errorf("a tool description contains text that looks like a prompt tag; the catalogue cannot be read safely: %w", err)
 	}
-	system := tag.Expand(fmt.Sprintf(librarianPrompt, language))
+	system := tag.Expand(fmt.Sprintf(librarianPrompt, language)) + "\n\n" + wrapped
 	resp, err := backend.ChatStream(ctx, system,
-		[]llm.Message{{Role: llm.RoleUser, Content: wrapped + "\n\nTask from the agent: " + strings.TrimSpace(task)}}, nil, nil)
+		[]llm.Message{{Role: llm.RoleUser, Content: "Task from the agent: " + strings.TrimSpace(task)}}, nil, nil)
 	if err != nil {
 		return librarianAnswer{}, err
 	}
@@ -143,6 +148,7 @@ func askLibrarian(ctx context.Context, backend llm.Backend, registry *tools.Regi
 // and the flags are staged under the call id and applied by the loop;
 // the result tells the model what it will have from the next round.
 func registerFindToolsTool(registry *tools.Registry, adv *mcpAdvertiser, backend llm.Backend, modelName string, log sessionLogger, tally *usageTally, language string) error {
+	tag := guard.NewTagWithPrefix("catalogue") // one per session: the cache-stable prefix
 	return registry.Register(&tools.Tool{
 		Name: FindToolsName,
 		Description: "Ask the tool librarian which MCP tools to load for a task. Describe the task in your own " +
@@ -162,7 +168,7 @@ func registerFindToolsTool(registry *tools.Registry, adv *mcpAdvertiser, backend
 			if strings.TrimSpace(task) == "" {
 				return "", errors.New("task is required")
 			}
-			ans, err := askLibrarian(ctx, backend, registry, task, language)
+			ans, err := askLibrarian(ctx, backend, registry, tag, task, language)
 			if tally != nil && !ans.Usage.Empty() {
 				tally.add(FindToolsName, modelName, ans.Usage.Prompt, ans.Usage.Output, ans.Usage.ToolPrompt)
 			}

@@ -251,7 +251,12 @@ load.
   name is refused with the servers that exist.
 
 Loading changes what the model reads and nothing else: a loaded tool
-is approved, risk-evaluated and policed exactly as before.
+is approved, risk-evaluated and policed exactly as before. `--allow
+mcp__<server>__*` preloads a server and `--allow mcp__<server>__<tool>`
+one tool, so a pipeline never depends on the model remembering to
+load; a session allowlist entry or a grant for a tool the librarian
+withheld stays recorded and is unreachable until `/mcp load` lifts
+the flag.
 
 ## The rest
 
