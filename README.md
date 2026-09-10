@@ -163,6 +163,13 @@ skill names its directory, as in Claude Code, so its own scripts run)
 servers, or the single functions of them, that a session does not have:
 an excluded server is never started, an excluded function is never
 declared, and a read/write server can be kept for its read half (ADR-0077).
+`[mcp].advertise = "on-request"` (an opt-in) keeps every server
+connected but declares a tool to the model only once loaded — by the
+model through `find_tools`, a librarian side call that reads the whole
+catalogue and names the tools for the task, or `mcp_load`; or by you
+through `preload`, `--allow`, or `/mcp load` — and withholds tools whose
+descriptions address the assistant instead of describing a tool
+(ADR-0083).
 
 **[Configuration](docs/en/reference/configuration.md)** — the full
 config reference, precedence, CLI flags, content-filter behaviour,

@@ -259,6 +259,27 @@ call_timeout_sec = 60
 #  "obsidian/search_and_replace",
 #]
 
+# What of the connected servers the model is shown (ADR-0083). "all"
+# (the default) declares every registered tool on every request —
+# today's behaviour. "on-request" declares an MCP tool only once it is
+# loaded: by the model, through find_tools (a librarian side call reads
+# the whole catalogue as untrusted data and names the tools for the
+# task the model describes) or mcp_load (a server the model already
+# knows), or by you, through preload, --allow mcp__<server>__*, or
+# /mcp load. The librarian also withholds tools whose descriptions
+# address the assistant instead of describing a tool; /mcp shows them
+# and /mcp load overrides. Measured on 243 tools: the declarations are
+# 67k of a 73k first-round prompt, and the librarian recovers the
+# prescribed servers in about 3.5 s. Loading changes what the model
+# reads and nothing else — approval, risk evaluation and policy apply
+# to a loaded tool exactly as before.
+#advertise = "on-request"
+
+# Servers advertised from the start under "on-request": what you use
+# every session. Small servers cost little; the large ones are what
+# on-request saves, so preload the lookups and let the rest load.
+#preload = ["tor-exit-lookup", "icloud-relay-lookup", "asn-lookup"]
+
 [tui]
 # Interactive UI theme: "auto" detects the terminal background at
 # startup, "dark"/"light" force it when detection guesses wrong, and

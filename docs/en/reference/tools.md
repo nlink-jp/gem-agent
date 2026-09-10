@@ -225,6 +225,34 @@ Web content is untrusted: digests return as ordinarily nonce-wrapped
 tool results, and the fetch prompt carries the defensive framing for
 the layer that cannot be wrapped.
 
+## On-request MCP: `find_tools`, `mcp_load` (ADR-0083)
+
+Present only under `[mcp].advertise = "on-request"`. Every MCP tool is
+registered, gated and recorded exactly as under `"all"`, but the
+model's tool list carries only what was loaded; the system prompt
+lists the connected servers with their tool counts and says how to
+load.
+
+- **`find_tools(task)`** — the model describes the task in its own
+  words; a one-shot side call, the librarian, reads the whole
+  catalogue (every registered MCP tool's name, description and
+  parameter names, nonce-wrapped as untrusted data) and names the
+  tools to load. They join the model's list from the next round; the
+  result lists them with the librarian's reason. Tools whose
+  descriptions address the assistant rather than describe a tool are
+  **withheld** — absent from the list and unreachable by name — and
+  shown on `/mcp`; `/mcp load <server>` overrides. Names the
+  librarian invents are ignored and said so. The call bills the
+  librarian's slot (`[model].librarian`, unset = the model tier's
+  backend) and fails closed: on any error nothing loads.
+- **`mcp_load(server)`** — when the model already knows the server
+  (mcp-tactics names them), it loads the whole server without a
+  librarian round; the result lists the server's tools. An unknown
+  name is refused with the servers that exist.
+
+Loading changes what the model reads and nothing else: a loaded tool
+is approved, risk-evaluated and policed exactly as before.
+
 ## The rest
 
 `load_skill` (skills — see [integration](integration.md)),

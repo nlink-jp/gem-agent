@@ -54,7 +54,9 @@ ADR-0073 §4）、`internal/archtest`（構造規則を固定する AST テス�
 **エージェント中核は UI を知らない。** `Approver` インターフェースと一連の
 コールバック（`OnToolCall` / `OnToolDone` / `OnUsage` / `OnNotice` / `OnAutoDecision` /
 `OnAttach` / `OnRoundLimit` / `BeforeOperatorWrite`・`OnOperatorWrite` — 操作者が
-操作者専用として承認した書込の前後の対、ADR-0074）、注入される 3 つの能力
+操作者専用として承認した書込の前後の対、ADR-0074。`Advertise`・`AfterTool` —
+どの登録ツールを宣言するかと、ツールが仕込んだロードをループ側で適用するフック、
+ADR-0083）、注入される 3 つの能力
 （`PreToolHook` — 操作者の pre-tool フック、ADR-0044。`ClipboardImage` と `MediaUpload` —
 クリップボードと GCS メディアの経路、ADR-0027/0028）、そして nil で監査が無効になるテレメトリシンクを
 受け取るだけで、

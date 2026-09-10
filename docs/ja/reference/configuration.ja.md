@@ -48,6 +48,9 @@ name = "<gemini model id>"
 #                           #  risk も未設定なら層は model.thinking に従う）。
 #                           # 安い判定器は安全な判定器ではない: 見たことのないモデルに
 #                           # risk を向ける前にモデル層ベンチ（CHANGELOG・ADR-0082）を回すこと
+# librarian = "<judge model>"        # 任意; [mcp].advertise = "on-request" の find_tools 司書
+#                                    # （ADR-0083）; 未設定 = モデル層のバックエンド
+# librarian_thinking = "low"         # 任意; その枠の思考レベル。規則は risk_thinking と同じ
 # safety = "default"        # default | relaxed | off（コンテンツフィルタ参照）
 
 [sandbox]
@@ -68,6 +71,11 @@ read_only_auto = false     # デフォルト; 打った内容からランタイ�
 enabled = true             # デフォルト; false で全 MCP サーバーを無効化
 call_timeout_sec = 60      # デフォルト
 # exclude = ["chrome-pilot", "obsidian/patch_vault_file"]   # 下記参照
+# advertise = "all"        # デフォルト; "on-request" は MCP ツールをロードされてから宣言する —
+#                          # モデルが（find_tools で司書に尋ねる / mcp_load でサーバーを名指す）か、
+#                          # あなたが（preload・--allow mcp__<server>__*・/mcp load）（ADR-0083）。
+#                          # opt-in: 未設定なら従来どおり全ツールが宣言される
+# preload = ["tor-exit-lookup", "asn-lookup"]   # on-request で最初から広告するサーバー
 
 [tui]
 theme = "auto"             # auto | dark | light | plain

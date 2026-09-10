@@ -331,6 +331,11 @@ type Messages struct {
 	// UnknownCommandFmt: %s = the input that matched no command.
 	UnknownCommandFmt string
 	MCPNone           string // /mcp with nothing connected
+	// On-request advertisement (ADR-0083): /mcp load's answers and the
+	// withheld line of /mcp's listing.
+	MCPAllAdvertised string // /mcp load under [mcp].advertise = "all"
+	MCPLoadedFmt     string // %s = server name
+	MCPWithheldFmt   string // %s = tool name, %s = the librarian's reason
 	// Integration reload results (ADR-0039).
 	MCPDisabled       string // /mcp reload while [mcp].enabled=false / --mcp off
 	MCPReloadedFmt    string // fmt: servers (int), tools (int)
@@ -542,6 +547,9 @@ keys:
 	PromptHookAttachedFmt:  "user_prompt_submit hook attached %d bytes of context as data",
 	UnknownCommandFmt:      "unknown command %q — /help lists commands\n",
 	MCPNone:                "no MCP servers connected — define them in ~/.config/gem-agent/mcp.json (global) or the project's .mcp.json (project; wins name collisions)\n",
+	MCPAllAdvertised:       "every MCP tool is already in the model's tool list ([mcp].advertise = \"all\") — nothing to load\n",
+	MCPLoadedFmt:           "%s loaded — its tools are in the model's tool list from the next turn\n",
+	MCPWithheldFmt:         "  withheld: %s — %s (/mcp load <server> overrides)\n",
 	MCPDisabled:            "MCP is disabled for this session ([mcp].enabled=false or --mcp off) — restart to enable it\n",
 	MCPReloadedFmt:         "mcp reloaded: %d server(s), %d tool(s)\n",
 	SkillsReloadedFmt:      "skills reloaded: %d found\n",
@@ -731,6 +739,9 @@ var ja = Messages{
 	PromptHookAttachedFmt:  "user_prompt_submit フックが %d バイトのコンテキストをデータとして添付しました",
 	UnknownCommandFmt:      "未知のコマンド %q — /help に一覧があります\n",
 	MCPNone:                "MCP サーバー未接続 — ~/.config/gem-agent/mcp.json（グローバル）またはプロジェクトの .mcp.json（プロジェクト側が名前衝突で優先）で定義します\n",
+	MCPAllAdvertised:       "MCP ツールはすべてモデルのツール一覧に入っています（[mcp].advertise = \"all\"） — ロードするものはありません\n",
+	MCPLoadedFmt:           "%s をロードしました — そのツールは次のターンからモデルのツール一覧に入ります\n",
+	MCPWithheldFmt:         "  差し止め: %s — %s（/mcp load <サーバー> で解除）\n",
 	MCPDisabled:            "MCP はこのセッションでは無効です（[mcp].enabled=false または --mcp off）— 有効化するには再起動してください\n",
 	MCPReloadedFmt:         "MCP を再接続しました: %d サーバー・%d ツール\n",
 	SkillsReloadedFmt:      "skill を再読込しました: %d 件\n",

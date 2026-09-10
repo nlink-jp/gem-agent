@@ -631,6 +631,17 @@ a new hook) is an architecture change and takes the same rows as a
   and `logUsageAs(source, a.tierModel(), …)`, or it bills and judges on
   the wrong model; a child agent (`cmd/agentsearch.go`) must be handed
   `RiskBackend`/`RiskModel` too. Compaction stays on the main backend.
+- **Registered is not advertised under `[mcp].advertise = "on-request"`**
+  (ADR-0083) — `cmd/mcpadvertise.go` owns the advertised and withheld
+  sets; `Options.Advertise` is its predicate and serves BOTH `toolDefs`
+  and dispatch (a refused name gets the unknown-tool wording, recorded
+  as `tool_not_advertised`). A load is never applied inside a tool's
+  `Run` — that goroutine may be abandoned (ADR-0065) — it is staged under
+  `tools.CallID(ctx)` and committed by `Options.AfterTool` on the loop's
+  goroutine, which then calls `RefreshTools`. `find_tools` (the librarian,
+  `cmd/librarian.go`) and `mcp_load` stage; `/mcp load` and a resume replay
+  apply directly, between turns. Under `"all"` both options are nil: do not
+  route anything through the advertiser unless `cfg.MCP.OnRequest()`.
 - **Every model call must leave a `usage` record** (ADR-0057) — the API
   reports tokens and never money, so cost is reconstructed from the
   transcript; a new backend call site that skips `logUsage` (agent side)

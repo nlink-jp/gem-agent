@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **MCP tools advertised on request, chosen by a librarian** (ADR-0083),
+  as an opt-in: `[mcp].advertise = "on-request"`. Every MCP tool still
+  registers, is gated and recorded as before, but the model's tool list
+  carries only what was loaded — by the model, through `find_tools`
+  (a side call that reads the whole catalogue as untrusted data and
+  names the tools for the task it describes) or `mcp_load <server>`;
+  or by you, through `[mcp].preload`, `--allow mcp__<server>__*`, or
+  `/mcp load <server>`. The librarian also flags descriptions that
+  address the assistant instead of describing a tool; a flagged tool
+  is withheld — absent from the list and unreachable by name — until
+  `/mcp load` overrides it, and nothing the librarian says approves
+  anything. Measured on the operator's 243 tools with a planted
+  lobbying server: `gemini-3.7-flash` at `low` recovers 17 of 18
+  prescribed servers, never recommends the plant and flags it every
+  time, in about 3.5 s on a 19k-token catalogue, twice over. The
+  librarian runs on `[model].librarian` / `[model].librarian_thinking`,
+  unset meaning the model tier's backend. `/mcp` shows each server's
+  status and the withheld tools; `/settings` gains the four keys;
+  `agent_info` reports registered, advertised and withheld counts; a
+  resumed session re-advertises what its transcript recorded and names
+  what is gone. Unset, nothing changes: every tool is declared as it
+  was.
+
 ## [0.75.2] - 2026-09-10
 
 ### Fixed

@@ -201,7 +201,7 @@ in the input box as one message, never one LLM call per line.
 |---|---|
 | `/help` | commands, file references, shell escape, keys |
 | `/tools` | available tools with each one's LIVE approval gate |
-| `/mcp` | connected MCP servers with their scope; `/mcp reload` reconnects them (ADR-0039) |
+| `/mcp` | connected MCP servers with their scope; `/mcp reload` reconnects them (ADR-0039). Under `[mcp].advertise = "on-request"` each line also says what of the server the model can see, the tools the librarian withheld are listed with its reason, and `/mcp load <server>` puts a server's tools in the model's list by hand — the override for a withheld tool (ADR-0083) |
 | `/auto` | auto-approve: `on`, `off`, or no argument to toggle (shift+tab toggles too, and works mid-run) |
 | `/readonly` | the session's lane ceiling and its watcher, two independent settings: `on` / `off` move the ceiling, `auto on` / `auto off` arm the watcher (bare `auto` arms it), and no argument shows both. `on` caps the session at the `read` lane, so nothing outside its scratch changes (with the sandbox off, or its read lane unverified, the line says which part of that it cannot promise) — a separate axis from `/auto`, which decides who answers the gate rather than what the session may reach (ADR-0080) |
 | `/compact` | summarise the older half of the conversation now |

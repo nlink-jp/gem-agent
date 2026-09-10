@@ -1213,13 +1213,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// Between turns, so the declarations are rebuilt here.
 	loadMCP := func(server string) string {
 		if !cfg.MCP.OnRequest() {
-			return "every MCP tool is already advertised ([mcp].advertise = \"all\"); nothing to load\n"
+			return msgs.MCPAllAdvertised
 		}
 		if err := adv.LoadServerNow(server); err != nil {
 			return "error: " + err.Error() + "\n"
 		}
 		ag.RefreshTools()
-		return server + " loaded — its tools are in the model's tool list from the next turn\n"
+		return fmt.Sprintf(msgs.MCPLoadedFmt, server)
 	}
 	// The panel writes an exclusion for one server and then asks for
 	// this: the filter is re-derived from the files it just changed, and
@@ -2604,7 +2604,7 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 			}
 			if reload.mcpWithheld != nil {
 				for _, w := range reload.mcpWithheld() {
-					fmt.Fprintf(&b, "  withheld: %s — %s (/mcp load <server> overrides)\n", w.Name, w.Why)
+					fmt.Fprintf(&b, msgs.MCPWithheldFmt, w.Name, w.Why)
 				}
 			}
 		}

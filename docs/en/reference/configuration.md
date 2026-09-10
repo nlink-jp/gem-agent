@@ -49,6 +49,9 @@ name = "<gemini model id>"
 #                           #  with risk also unset, the tier follows model.thinking).
 #                           # A cheaper judge is not a safer one: run the model-tier bench
 #                           # (CHANGELOG, ADR-0082) before pointing risk at a model it has not seen
+# librarian = "<judge model>"        # optional; the find_tools librarian under [mcp].advertise =
+#                                    # "on-request" (ADR-0083); unset = the model tier's backend
+# librarian_thinking = "low"         # optional; that slot's thinking level, risk_thinking's rules
 # safety = "default"        # default | relaxed | off (see Content filters)
 
 [sandbox]
@@ -69,6 +72,11 @@ read_only_auto = false     # default; let the runtime raise the ceiling from wha
 enabled = true             # default; false disables ALL MCP servers
 call_timeout_sec = 60      # default
 # exclude = ["chrome-pilot", "obsidian/patch_vault_file"]   # see below
+# advertise = "all"        # default; "on-request" declares an MCP tool only once loaded —
+#                          # by the model (find_tools asks the librarian, mcp_load names a
+#                          # server) or by you (preload, --allow mcp__<server>__*, /mcp load)
+#                          # (ADR-0083). An opt-in: unset, every tool is declared as before
+# preload = ["tor-exit-lookup", "asn-lookup"]   # servers advertised from the start under on-request
 
 [tui]
 theme = "auto"             # auto | dark | light | plain
