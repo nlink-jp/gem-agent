@@ -535,7 +535,21 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- MCP servers from the project's .mcp.json (drop-in) ---
+	// What of them the model is shown is the advertiser's (ADR-0083):
+	// everything under [mcp].advertise = "all", loaded tools only under
+	// "on-request". It records committed loads to the transcript in use.
+	adv := newMCPAdvertiser(cfg.MCP.OnRequest(), cfg.MCP.Preload, flagAllow, liveLog{get: func() agent.SessionLog { return sessionLog }})
 	mcpClients, mcpSummary, mcpInv := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, grant, mcpFilter)
+	adv.setInventory(mcpInv)
+	if resumedID != "" && cfg.MCP.OnRequest() {
+		// A resumed session sees what it saw (ADR-0083 §8): the loads
+		// its transcript recorded, re-advertised; what is gone, named.
+		if _, missing, err := replayAdvertised(sessionPath, adv); err != nil {
+			fmt.Fprintf(stderr, "warning: MCP loads of the resumed session were not replayed: %v\n", err)
+		} else if len(missing) > 0 {
+			fmt.Fprintf(stderr, "warning: the resumed session had loaded %s, which this session does not have\n", strings.Join(missing, ", "))
+		}
+	}
 	defer func() {
 		for _, c := range mcpClients {
 			c.Close()
@@ -672,6 +686,26 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// fetch on the lightweight one. Both egress-gated by default.
 	if err := registerWebTools(registry, backend, summaryBackend, cfg.Model.Name, summaryModel, sideLog, tally); err != nil {
 		return err
+	}
+	// --- on-request MCP (ADR-0083): the two loading tools, and the
+	// librarian's slot — its own when named, otherwise the backend the
+	// model tier resolves to (§2). Registered only under on-request, so
+	// an operator who did not opt in has today's tool list exactly.
+	librarianModel, librarianBackend := riskModel, riskBackend
+	if librarianBackend == nil {
+		librarianBackend = backend
+	}
+	if cfg.Model.LibrarianSlot() {
+		librarianModel = cfg.Model.LibrarianModel()
+		librarianBackend = backend.WithModel(librarianModel).WithThinking(cfg.Model.LibrarianThinking)
+	}
+	if cfg.MCP.OnRequest() {
+		if err := registerMCPLoadTool(registry, adv); err != nil {
+			return err
+		}
+		if err := registerFindToolsTool(registry, adv, librarianBackend, librarianModel, sideLog, tally, librarianLanguage(uiLang)); err != nil {
+			return err
+		}
 	}
 
 	// The TUI needs a real terminal on both ends (ADR-0002); piped use
@@ -824,6 +858,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// ag.Run, so the pointer is always set by then.
 	var ag *agent.Agent
 	if err := registerInfoTool(registry, func() infoSnapshot {
+		mcpRegistered, mcpAdvertised, mcpWithheld := adv.Counts()
 		return infoSnapshot{
 			Version:        cmd.Root().Version,
 			OSVersion:      macOSVersion(),
@@ -833,6 +868,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			RiskModel:      riskModel,
 			RiskThinking:   cfg.Model.RiskThinking,
 			RiskSlot:       cfg.Model.RiskSlot(),
+			MCPOnRequest:   cfg.MCP.OnRequest(),
+			MCPRegistered:  mcpRegistered,
+			MCPAdvertised:  mcpAdvertised,
+			MCPWithheld:    mcpWithheld,
 			Usage:          ag.Usage(),
 			MaxTurns:       cfg.Agent.MaxTurns,
 			ShellTimeout:   cfg.Agent.ShellTimeoutSec,
@@ -890,7 +929,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// prohibition and a format instruction were measured steering the
 	// model away from the behavior its own prior already had.
 	composeSystem := func() string {
-		return buildSystemPrompt(projectDir, workDir, projectContext) + skills.PromptSection(skillsList) + memorySection
+		return buildSystemPrompt(projectDir, workDir, projectContext) + skills.PromptSection(skillsList) + memorySection + mcpOnRequestSection(adv.PromptLines())
 	}
 	// writes pairs the agent's before/after hooks around an
 	// operator-approved write (ADR-0074 §1).
@@ -915,12 +954,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// The model tier's slot (ADR-0082); nil rides Backend.
 		RiskBackend: riskBackend,
 		RiskModel:   riskModel,
-		Registry:    registry,
-		Gate:        gate,
-		Log:         sessionLog,
-		System:      composeSystem(),
-		MaxTurns:    cfg.Agent.MaxTurns,
-		Policy:      approvalPolicy,
+		// Registered is not advertised under on-request (ADR-0083);
+		// nil for both keeps today's behaviour.
+		Advertise: advertisePredicate(cfg, adv),
+		AfterTool: afterToolHook(cfg, adv),
+		Registry:  registry,
+		Gate:      gate,
+		Log:       sessionLog,
+		System:    composeSystem(),
+		MaxTurns:  cfg.Agent.MaxTurns,
+		Policy:    approvalPolicy,
 		// load_skill results are operator-authored instructions, not
 		// data; its reads are confined to skill directories (ADR-0010).
 		InstructionTools: []string{skills.ToolName},
@@ -1134,6 +1177,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			}
 		}
 		mcpClients, mcpSummary, mcpInv = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, grant, mcpFilter)
+		// Loads survive a reconnect by name; the librarian's flags do
+		// not (ADR-0083 §8).
+		adv.setInventory(mcpInv)
 		ag.RefreshTools()
 		mcpTools := 0
 		for _, t := range registry.List() {
@@ -1162,6 +1208,19 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		return b.String()
 	}
 	reloadMCP := func() string { return reconnectMCP(true) }
+	// loadMCP is /mcp load <server>: the operator advertises a server
+	// by hand, lifting the librarian's flags on it (ADR-0083 §6).
+	// Between turns, so the declarations are rebuilt here.
+	loadMCP := func(server string) string {
+		if !cfg.MCP.OnRequest() {
+			return "every MCP tool is already advertised ([mcp].advertise = \"all\"); nothing to load\n"
+		}
+		if err := adv.LoadServerNow(server); err != nil {
+			return "error: " + err.Error() + "\n"
+		}
+		ag.RefreshTools()
+		return server + " loaded — its tools are in the model's tool list from the next turn\n"
+	}
 	// The panel writes an exclusion for one server and then asks for
 	// this: the filter is re-derived from the files it just changed, and
 	// that one server is reconnected under it (ADR-0039 + ADR-0077 §3).
@@ -1406,6 +1465,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// 4): the file tools' second root, the sandbox profile, the MCP
 		// intake (it reads the registry), and the system prompt — a
 		// cleared conversation has no cached prefix to protect.
+		// A cleared session starts unloaded, preloads aside (ADR-0083
+		// §8); the rebuilt system prompt below carries the same list.
+		adv.Reset()
+		ag.RefreshTools()
 		notes = append(notes, rotateWorkDir(registry, shellExec, sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec, cfg.Sandbox.ReadLanePrompts, trustpin.Parents(projectDir, persistentSnap), func() { ag.SetSystem(composeSystem()) })...)
 		// A cleared session restarts what carries its identity (ADR-0071
 		// addendum): telemetry is re-resourced with the new id, and the
@@ -1601,7 +1664,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			},
 			Slash: func(in string) (string, bool, bool) {
 				return slashOutput(in, ag, registry, mcpSummary, skillsList,
-					slashReloads{mcp: reloadMCP, skills: reloadSkills},
+					slashReloads{mcp: reloadMCP, skills: reloadSkills, mcpLoad: loadMCP, mcpStatus: adv.Status, mcpWithheld: adv.Withheld},
 					func() string { return usageReport(ag, tally, cfg.Model.Name, riskModel) },
 					func() string { return memoryListing(memBase, projectDir) },
 					rbRunner.Command, appVersion, msgs, onClear)
@@ -1709,7 +1772,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		if strings.HasPrefix(input, "/") {
 			out, _, quit := slashOutput(input, ag, registry, mcpSummary, skillsList,
-				slashReloads{mcp: reloadMCP, skills: reloadSkills},
+				slashReloads{mcp: reloadMCP, skills: reloadSkills, mcpLoad: loadMCP, mcpStatus: adv.Status, mcpWithheld: adv.Withheld},
 				func() string { return usageReport(ag, tally, cfg.Model.Name, riskModel) },
 				func() string { return memoryListing(memBase, projectDir) },
 				rbRunner.Command, appVersion, msgs, onClear)
@@ -2346,6 +2409,12 @@ func resolveTheme(configured string) string {
 type slashReloads struct {
 	mcp    func() string
 	skills func() string
+	// mcpLoad is /mcp load <server> (ADR-0083 §6, the operator's
+	// override); mcpStatus and mcpWithheld decorate /mcp's listing.
+	// All three may be nil.
+	mcpLoad     func(server string) string
+	mcpStatus   func(server string) string
+	mcpWithheld func() []WithheldTool
 }
 
 func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, reload slashReloads, usage func() string, memoryInfo func() string, riskbookCmd func(args []string) (string, bool), version string, msgs *uitext.Messages, onClear func() string) (output string, isErr bool, quit bool) {
@@ -2357,6 +2426,13 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 	sub := ""
 	if len(fields) > 1 {
 		sub = fields[1]
+	}
+	if fields[0] == "/mcp" && sub == "load" {
+		if len(fields) < 3 || reload.mcpLoad == nil {
+			fmt.Fprintf(&b, msgs.UnknownCommandFmt, input)
+			return b.String(), true, false
+		}
+		return reload.mcpLoad(fields[2]), false, false
 	}
 	if (fields[0] == "/mcp" || fields[0] == "/skills") && sub != "" {
 		var fn func() string
@@ -2517,7 +2593,19 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 			b.WriteString(msgs.MCPNone)
 		} else {
 			for _, s := range mcpSummary {
+				// What the model can see of the server, under
+				// on-request (ADR-0083); nothing to add under "all".
+				if reload.mcpStatus != nil {
+					if st := reload.mcpStatus(strings.Fields(s)[0]); st != "" {
+						s += " — " + st
+					}
+				}
 				b.WriteString("  " + s + "\n")
+			}
+			if reload.mcpWithheld != nil {
+				for _, w := range reload.mcpWithheld() {
+					fmt.Fprintf(&b, "  withheld: %s — %s (/mcp load <server> overrides)\n", w.Name, w.Why)
+				}
 			}
 		}
 	default:

@@ -142,6 +142,8 @@ func (s *settingsStore) data() tui.SettingsData {
 	ro("backend", "model.thinking", thinkingLabel(s.cfg.Model.Thinking), "model.thinking", needsRestart)
 	ro("backend", "model.risk", riskModelLabel(s.cfg.Model), "model.risk", needsRestart)
 	ro("backend", "model.risk_thinking", riskThinkingLabel(s.cfg.Model), "model.risk_thinking", needsRestart)
+	ro("backend", "model.librarian", librarianModelLabel(s.cfg.Model), "model.librarian", needsRestart)
+	ro("backend", "model.librarian_thinking", librarianThinkingLabel(s.cfg.Model), "model.librarian_thinking", needsRestart)
 	ro("backend", "model.context_window", contextWindowLabel(s.cfg.Model.ContextWindow),
 		"model.context_window", "auto-detected when unset")
 	// The measured state, not the configured one: --no-sandbox is never
@@ -168,6 +170,10 @@ func (s *settingsStore) data() tui.SettingsData {
 	// message instead of seeing the real cause here (review round 2).
 	ro("limits", "mcp.enabled", strconv.FormatBool(s.cfg.MCP.Enabled), "mcp.enabled",
 		"false disables ALL MCP servers, global and project")
+	ro("limits", "mcp.advertise", s.cfg.MCP.Advertise, "mcp.advertise",
+		"on-request declares an MCP tool only once loaded (find_tools, mcp_load, preload, /mcp load); restart to change")
+	ro("limits", "mcp.preload", preloadLabel(s.cfg.MCP.Preload), "mcp.preload",
+		"servers advertised from the start under on-request")
 	ro("telemetry", "telemetry.enabled", strconv.FormatBool(s.cfg.Telemetry.Enabled), "telemetry.enabled",
 		"audit events to Cloud Logging or an OTLP collector; applies at next start")
 	if s.cfg.Telemetry.Enabled {
@@ -622,6 +628,35 @@ func riskThinkingLabel(m config.ModelConfig) string {
 		return "(model default)"
 	}
 	return "(follows model.thinking)"
+}
+
+// librarianModelLabel renders the librarian's model as what it means
+// (ADR-0083 §2): unset is the model tier's backend.
+func librarianModelLabel(m config.ModelConfig) string {
+	if m.Librarian == "" {
+		return "(model tier)"
+	}
+	return m.Librarian
+}
+
+// librarianThinkingLabel: unset is the slot model's default once a slot
+// is named, and the model tier's level while it rides the tier.
+func librarianThinkingLabel(m config.ModelConfig) string {
+	if m.LibrarianThinking != "" {
+		return m.LibrarianThinking
+	}
+	if m.LibrarianSlot() {
+		return "(model default)"
+	}
+	return "(follows the model tier)"
+}
+
+// preloadLabel renders the preload list, or what an empty one means.
+func preloadLabel(servers []string) string {
+	if len(servers) == 0 {
+		return "(none)"
+	}
+	return strings.Join(servers, ", ")
 }
 
 // summaryLabel renders "" as what it means.

@@ -26,20 +26,27 @@ type infoSnapshot struct {
 	RiskModel    string
 	RiskThinking string // "" = model default
 	RiskSlot     bool
-	Usage        agent.UsageStats
-	MaxTurns     int
-	ShellTimeout int
-	AutoApprove  bool
-	AutoCompact  bool
-	CompactAtPct int
-	SandboxOn    bool
-	ProjectDir   string
-	SessionID    string // "" when the log is disabled
-	WorkDir      string // "" when there is no session work directory
-	MCPServers   []string
-	SkillCount   int
-	MemoryOn     bool
-	MediaBucket  bool
+	// MCP advertisement under on-request (ADR-0083 §8): how many MCP
+	// tools are registered, how many the model can see, how many the
+	// librarian withheld. Shown only when MCPOnRequest.
+	MCPOnRequest  bool
+	MCPRegistered int
+	MCPAdvertised int
+	MCPWithheld   int
+	Usage         agent.UsageStats
+	MaxTurns      int
+	ShellTimeout  int
+	AutoApprove   bool
+	AutoCompact   bool
+	CompactAtPct  int
+	SandboxOn     bool
+	ProjectDir    string
+	SessionID     string // "" when the log is disabled
+	WorkDir       string // "" when there is no session work directory
+	MCPServers    []string
+	SkillCount    int
+	MemoryOn      bool
+	MediaBucket   bool
 	// ProjectTrusted: false means the project's OWN instruction files,
 	// .mcp.json, and skills were not loaded (ADR-0023). Without this
 	// line the model misdiagnosed missing tools as missing
@@ -97,6 +104,10 @@ func renderInfo(s infoSnapshot) string {
 		fmt.Fprintf(&b, " · risk model: %s (thinking: %s)", s.RiskModel, rt)
 	}
 	b.WriteString("\n")
+	if s.MCPOnRequest {
+		fmt.Fprintf(&b, "mcp tools: %d registered · %d in your tool list · %d withheld — find_tools or mcp_load loads more\n",
+			s.MCPRegistered, s.MCPAdvertised, s.MCPWithheld)
+	}
 
 	u := s.Usage
 	switch {

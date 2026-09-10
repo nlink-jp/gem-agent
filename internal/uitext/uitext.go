@@ -479,7 +479,7 @@ var en = Messages{
 	Help: `commands:
   /help      show this help
   /tools     list tools and each one's current approval gate
-  /mcp       list connected MCP servers (/mcp reload reconnects)
+  /mcp       list connected MCP servers (/mcp reload reconnects · /mcp load <server> loads one)
   /auto      auto-approve: on|off, or bare to toggle (shift+tab too)
   /readonly  read-only: on|off · auto on|off arms the watcher · bare shows both
   /compact   summarise the older half of the conversation
@@ -668,7 +668,7 @@ var ja = Messages{
 	Help: `コマンド:
   /help      このヘルプ
   /tools     ツール一覧と各ツールの現在の承認ゲート
-  /mcp       接続中の MCP サーバー一覧（/mcp reload で再接続）
+  /mcp       接続中の MCP サーバー一覧（/mcp reload で再接続 · /mcp load <サーバー> で 1 つロード）
   /auto      auto-approve: on|off、引数なしで切替（shift+tab でも可）
   /readonly  読み取り専用: on|off・auto on|off で自動切り替え・引数なしで両方表示
   /compact   会話の古い半分を要約
