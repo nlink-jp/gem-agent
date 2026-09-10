@@ -101,6 +101,11 @@ type Agent struct {
 	// they follow backend and model wherever those are swapped.
 	riskBackend llm.Backend
 	riskModel   string
+	// advertise and afterTool are Options.Advertise / Options.AfterTool
+	// (ADR-0083); nil means every registered tool is declared and no
+	// hook runs.
+	advertise func(name string) bool
+	afterTool func(tc llm.ToolCall, abandoned bool) bool
 	// ceiling is the lane ceiling and its watcher, read and written
 	// under mu: /readonly changes either, and the watcher raises the
 	// ceiling (never lowers it — ADR-0080 §2). The two are independent,
@@ -262,6 +267,19 @@ type Options struct {
 	// under Model, as before.
 	RiskBackend llm.Backend
 	RiskModel   string
+	// Advertise, when set, decides which registered tools are declared
+	// to the model (ADR-0083 §1). A tool it refuses is also unreachable
+	// by name at dispatch — the same predicate serves both, so a name
+	// the model holds from a transcript or a skill cannot reach an
+	// unadvertised tool. nil declares everything, as before the record.
+	Advertise func(name string) bool
+	// AfterTool, when set, runs on the loop's goroutine after each tool
+	// call returns or is abandoned (ADR-0065), with the call and whether
+	// it was abandoned. It returns true when the declarations must be
+	// rebuilt before the next model call — a load a tool staged under
+	// its call id was committed (ADR-0083 §3). The loop, not the tool,
+	// applies the change: a tool's Run may still be running late.
+	AfterTool func(tc llm.ToolCall, abandoned bool) bool
 	// OnUsage, when set, receives per-round token usage (prompt tokens
 	// approximate the current context size; output tokens the round's
 	// generation; cached tokens the share of the prompt served from the
@@ -349,7 +367,7 @@ type Options struct {
 
 // New creates an agent.
 func New(opts Options) *Agent {
-	defs, purposeTools := toolDefs(opts.Registry)
+	defs, purposeTools := toolDefs(opts.Registry, opts.Advertise)
 	if opts.Msgs == nil {
 		// English, so a caller that never asked for a language still
 		// gets sentences rather than empty format strings.
@@ -363,6 +381,8 @@ func New(opts Options) *Agent {
 		model:         opts.Model,
 		riskBackend:   opts.RiskBackend,
 		riskModel:     opts.RiskModel,
+		advertise:     opts.Advertise,
+		afterTool:     opts.AfterTool,
 		ceiling:       opts.Ceiling,
 		system:        opts.System,
 		maxTurns:      opts.MaxTurns,
@@ -753,7 +773,7 @@ func (a *Agent) AttachData(ref, kind, content string) {
 // a turn is in flight — so it shares AddContext's single-writer
 // discipline.
 func (a *Agent) RefreshTools() {
-	a.toolDefs, a.purposeTools = toolDefs(a.registry)
+	a.toolDefs, a.purposeTools = toolDefs(a.registry, a.advertise)
 }
 
 // SetSystem replaces the system prompt (ADR-0039: a skills reload
@@ -1311,6 +1331,14 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		}
 		return fmt.Sprintf("error: unknown tool %q", tc.Name), false, false, floorRan, nil
 	}
+	// Registered but not advertised (ADR-0083 §1): the model was never
+	// given this declaration, so a call by name — from a resumed
+	// transcript, a skill's prose, or a guess — is answered exactly as
+	// an unknown name is. The distinction is kept in the record.
+	if a.advertise != nil && !a.advertise(tc.Name) {
+		a.logRecord("tool_not_advertised", map[string]any{"name": tc.Name})
+		return fmt.Sprintf("error: unknown tool %q", tc.Name), false, false, floorRan, nil
+	}
 	// Operator pre-tool hooks run before the ladder (ADR-0044 §2): the
 	// org's guards exist to catch the agent's lapses deterministically,
 	// so nothing downstream may overrule a deny.
@@ -1586,7 +1614,14 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 	if operatorWrite && a.beforeOpWrite != nil {
 		a.beforeOpWrite(tc)
 	}
-	out, state, err := a.runWithFloor(ctx, tool, tc)
+	// The call id rides the context so a tool can stage an effect the
+	// loop applies (ADR-0083 §3); the hook below runs on this goroutine
+	// once the floor has decided, so a late Run never rebuilds the
+	// declarations by itself.
+	out, state, err := a.runWithFloor(tools.WithCallID(ctx, tc.ID), tool, tc)
+	if a.afterTool != nil && a.afterTool(tc, state == floorAbandoned) {
+		a.RefreshTools()
+	}
 	if state == floorAbandoned {
 		return abandonedResult, false, false, state, nil
 	}

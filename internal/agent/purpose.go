@@ -125,10 +125,17 @@ func appendRequired(existing any, name string) []string {
 // the purpose argument into every approval-gated tool. Built-ins and
 // MCP tools go through the same path, so no tool definition repeats the
 // boilerplate and a freshly loaded server is covered automatically.
-func toolDefs(registry *tools.Registry) ([]llm.ToolDef, map[string]bool) {
+func toolDefs(registry *tools.Registry, advertise func(name string) bool) ([]llm.ToolDef, map[string]bool) {
 	var defs []llm.ToolDef
 	injected := map[string]bool{}
 	for _, t := range registry.List() {
+		// Registered is not advertised (ADR-0083 §1): a tool the
+		// predicate refuses is declared to nobody. The purpose map is
+		// keyed by registered name and computed over what is declared,
+		// so stripping on execution keys the same names.
+		if advertise != nil && !advertise(t.Name) {
+			continue
+		}
 		params := t.Parameters
 		if gatedForPurpose(t) {
 			params = withPurposeParam(params)

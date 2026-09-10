@@ -212,7 +212,21 @@ type MCPConfig struct {
 	// named here is declared, so an operator who sets nothing sees
 	// today's behaviour and .mcp.json keeps the meaning it has.
 	Exclude []string `toml:"exclude"`
+	// Advertise decides what the model is shown of the connected
+	// servers (ADR-0083): "all" (the default — every registered tool is
+	// declared, today's behaviour) or "on-request" (tools are declared
+	// only once loaded: by the model through find_tools / mcp_load, or
+	// by the operator through Preload, --allow, or /mcp load).
+	Advertise string `toml:"advertise"`
+	// Preload names servers advertised from the start under
+	// "on-request" — what the operator uses every session. Ignored
+	// under "all", where everything is advertised anyway.
+	Preload []string `toml:"preload"`
 }
+
+// OnRequest reports whether MCP tools are advertised on request
+// (ADR-0083) rather than all at once.
+func (m MCPConfig) OnRequest() bool { return m.Advertise == "on-request" }
 
 // GCPConfig identifies the Vertex AI project.
 type GCPConfig struct {
@@ -257,6 +271,29 @@ type ModelConfig struct {
 	// never inherits the main dial, and the slot exists as soon as
 	// either key is set.
 	RiskThinking string `toml:"risk_thinking"`
+	// Librarian names the model that answers find_tools (ADR-0083 §2):
+	// a judgment over server-authored text, like the model tier's.
+	// Empty means the backend the model tier resolves to.
+	Librarian string `toml:"librarian"`
+	// LibrarianThinking is that slot's level, in Thinking's vocabulary
+	// and with RiskThinking's semantics.
+	LibrarianThinking string `toml:"librarian_thinking"`
+}
+
+// LibrarianSlot reports whether the librarian runs on a slot of its
+// own (ADR-0083 §2): either key set. When false it rides the model
+// tier's backend, whatever that resolves to.
+func (m ModelConfig) LibrarianSlot() bool {
+	return m.Librarian != "" || m.LibrarianThinking != ""
+}
+
+// LibrarianModel is the model the librarian bills against when it has
+// a slot: the named one, or the main model for a level-only slot.
+func (m ModelConfig) LibrarianModel() string {
+	if m.Librarian != "" {
+		return m.Librarian
+	}
+	return m.Name
 }
 
 // RiskSlot reports whether the model tier runs on a slot of its own:
@@ -367,7 +404,7 @@ func defaults() Config {
 		Sandbox:   SandboxConfig{Enabled: true},
 		Approval:  ApprovalConfig{PinTrustedFiles: true},
 		Agent:     AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120, AutoCompact: true, CompactAtPct: 80},
-		MCP:       MCPConfig{Enabled: true, CallTimeoutSec: 60},
+		MCP:       MCPConfig{Enabled: true, CallTimeoutSec: 60, Advertise: "all"},
 		TUI:       TUIConfig{Theme: "auto", Language: "auto", ShowThoughts: true},
 		Telemetry: TelemetryConfig{Backend: "gcp", Endpoint: "localhost:4317"},
 	}
@@ -513,13 +550,14 @@ func applyEnv(cfg *Config) {
 var trackedKeys = []string{
 	"gcp.project", "gcp.location",
 	"model.name", "model.context_window", "model.safety", "model.summary",
-	"model.thinking", "model.risk", "model.risk_thinking", "gcp.bucket",
+	"model.thinking", "model.risk", "model.risk_thinking",
+	"model.librarian", "model.librarian_thinking", "gcp.bucket",
 	"sandbox.enabled", "sandbox.read_lane_deny_exec", "sandbox.read_lane_prompts",
 	"approval.pin_trusted_files",
 	"agent.max_turns", "agent.shell_timeout_sec", "agent.auto_approve",
 	"agent.auto_compact", "agent.compact_at_pct",
 	"agent.read_only", "agent.read_only_auto",
-	"mcp.enabled", "mcp.call_timeout_sec",
+	"mcp.enabled", "mcp.call_timeout_sec", "mcp.advertise", "mcp.preload",
 	"tui.theme", "tui.language", "tui.show_thoughts",
 	"telemetry.enabled", "telemetry.backend", "telemetry.endpoint", "telemetry.insecure",
 	"telemetry.headers_file",
@@ -585,6 +623,14 @@ func (c *Config) validate() error {
 	}
 	if c.MCP.CallTimeoutSec <= 0 {
 		return fmt.Errorf("[mcp].call_timeout_sec must be positive")
+	}
+	switch c.MCP.Advertise {
+	case "all", "on-request":
+	default:
+		return fmt.Errorf("[mcp].advertise must be all or on-request (got %q)", c.MCP.Advertise)
+	}
+	if !ValidThinking(c.Model.LibrarianThinking) {
+		return fmt.Errorf("[model].librarian_thinking must be minimal, low, medium, or high (got %q; empty means the model default)", c.Model.LibrarianThinking)
 	}
 	// Below ~10% compaction would fire constantly and summarise nothing
 	// useful; at 100% it would fire after the request that already
