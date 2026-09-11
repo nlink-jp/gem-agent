@@ -642,6 +642,21 @@ a new hook) is an architecture change and takes the same rows as a
   `cmd/librarian.go`) and `mcp_load` stage; `/mcp load` and a resume replay
   apply directly, between turns. Under `"all"` both options are nil: do not
   route anything through the advertiser unless `cfg.MCP.OnRequest()`.
+- **The shell's environment is `laneEnv`, and toolchain caches live in the
+  scratch** (ADR-0084) — every lane gets `GOCACHE` under the read lane's
+  scratch via `toolchainCacheEnv`, the one list of redirected caches (Go
+  only; add another toolchain only after measuring its failure). The read
+  lane's directory (`go-build`) and the approved lanes' (`go-build-approved`)
+  are separate, and neither is the operator's `~/Library/Caches`: the read
+  lane runs unasked and a shared content-addressed cache is a poisoning
+  route into whatever consumes it next. The
+  prompt says compile/vet/test are read-lane work; keep the prompt, the
+  `shell_exec` description and this fact in agreement. A one-shot run
+  passes `Options.Unattended`, and denial text comes from
+  `a.deniedText()` / `a.deniedWithReason()` / `a.ceilingRefused()` — do
+  not add a refusal string that tells an unattended model to "ask the
+  user", and do not route it to the write tools, which are exactly what
+  a plain `-p` run denies (`unattendedRoute` is the one closing line).
 - **Every model call must leave a `usage` record** (ADR-0057) — the API
   reports tokens and never money, so cost is reconstructed from the
   transcript; a new backend call site that skips `logUsage` (agent side)

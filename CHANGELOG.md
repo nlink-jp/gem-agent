@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Compiling, vetting and testing run in the read lane, unasked**
+  (ADR-0084, lagent ADR-0008 ported). Every `shell_exec` now runs with
+  `GOCACHE` under the session's private scratch — the one directory the
+  read lane may write — so `go vet` and `go test` no longer fail on the
+  build cache under `~/Library/Caches` and no longer need the
+  approval-gated write lane; a build that writes its binary into the
+  project still does. The cache is the session's, never your shared
+  one, and the read lane's is separate from the approved lanes'. The
+  system prompt and `shell_exec`'s description say so, and the
+  prompt's "a denial is a decision — ask how to proceed" rule is gone:
+  the denial carries its own route now.
+- **A one-shot denial names what still runs.** In `-p`, a denied call
+  no longer tells the model to ask a user who is not there; it says the
+  run is unattended and names what runs without approval — the
+  read-only file tools and the read-lane shell — or to finish and state
+  what remains undone. The read-only ceiling's refusal does the same.
+
+### Fixed
+
+- `list_tree dirs_only` on a directory with files and no subdirectories
+  lists the files instead of reporting "(empty directory)", which cost
+  every such orientation a `list_files` round.
+
 ## [0.76.0] - 2026-09-12
 
 ### Added

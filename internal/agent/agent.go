@@ -104,8 +104,9 @@ type Agent struct {
 	// advertise and afterTool are Options.Advertise / Options.AfterTool
 	// (ADR-0083); nil means every registered tool is declared and no
 	// hook runs.
-	advertise func(name string) bool
-	afterTool func(tc llm.ToolCall, abandoned bool) bool
+	advertise  func(name string) bool
+	afterTool  func(tc llm.ToolCall, abandoned bool) bool
+	unattended bool // Options.Unattended
 	// ceiling is the lane ceiling and its watcher, read and written
 	// under mu: /readonly changes either, and the watcher raises the
 	// ceiling (never lowers it — ADR-0080 §2). The two are independent,
@@ -280,6 +281,10 @@ type Options struct {
 	// its call id was committed (ADR-0083 §3). The loop, not the tool,
 	// applies the change: a tool's Run may still be running late.
 	AfterTool func(tc llm.ToolCall, abandoned bool) bool
+	// Unattended says nobody can answer a gate in this run (one-shot,
+	// ADR-0065): a denial then names what can still run instead of a
+	// user to ask (ADR-0084 §2).
+	Unattended bool
 	// OnUsage, when set, receives per-round token usage (prompt tokens
 	// approximate the current context size; output tokens the round's
 	// generation; cached tokens the share of the prompt served from the
@@ -383,6 +388,7 @@ func New(opts Options) *Agent {
 		riskModel:     opts.RiskModel,
 		advertise:     opts.Advertise,
 		afterTool:     opts.AfterTool,
+		unattended:    opts.Unattended,
 		ceiling:       opts.Ceiling,
 		system:        opts.System,
 		maxTurns:      opts.MaxTurns,
@@ -1245,13 +1251,52 @@ func wrapUntrusted(content string, tag guard.Tag) string {
 // misclassification.
 const deniedResult = "Tool execution denied by the user. Do not retry the same call; ask the user how to proceed instead."
 
+// deniedUnattended is the same denial in a run with nobody to ask
+// (ADR-0084 §2). "Ask the user" sent a one-shot run's model into prose
+// — it stopped acting and described the change it would have made —
+// so the route this text names is the one that exists.
+//
+// It names only what runs in every one-shot configuration: the
+// read-only file tools and the read-lane shell. Without --auto or
+// --allow the write tools are exactly what was just denied, so naming
+// "the file tools" routed the model into a second denial; and under
+// --auto the model tier does approve, so "nothing needing approval can
+// run" was false there (independent review).
+const deniedUnattended = "Tool execution denied: this run is unattended (one-shot), so no one can approve this call. Do not retry it. Continue with what runs without approval — the read-only file tools, and shell_exec in the read lane — or finish and state what remains undone."
+
+// unattendedRoute is the closing every unattended refusal shares: the
+// reasoned denial and the read-only ceiling append it in place of the
+// line that named an absent operator.
+const unattendedRoute = "This run is unattended (one-shot): continue with what runs without approval — the read-only file tools, and shell_exec in the read lane — or finish and state what remains undone."
+
+// deniedText picks the denial the run can act on.
+func (a *Agent) deniedText() string {
+	if a.unattended {
+		return deniedUnattended
+	}
+	return deniedResult
+}
+
 // deniedWithReason renders a denial that carries the operator's typed
 // reason (ADR-0060 §2): guidance delivered in the denial function
-// response, the one slot the API leaves open mid-round.
-func deniedWithReason(reason string) string {
-	return "Tool execution denied by the user, who gave this reason:\n" +
-		reason +
-		"\nDo not retry the same call; follow the reason, or ask the user how to proceed."
+// response, the one slot the API leaves open mid-round. Unattended,
+// the closing line names the route instead of a user (ADR-0084 §2).
+func (a *Agent) deniedWithReason(reason string) string {
+	closing := "\nDo not retry the same call; follow the reason, or ask the user how to proceed."
+	if a.unattended {
+		closing = "\nDo not retry the same call; follow the reason. " + unattendedRoute
+	}
+	return "Tool execution denied by the user, who gave this reason:\n" + reason + closing
+}
+
+// ceilingRefused renders the read-only ceiling's refusal (ADR-0080).
+// Interactive, it names the command that lifts the mode; unattended,
+// nobody is there to type it, so it names the route (ADR-0084 §2).
+func (a *Agent) ceilingRefused(reason string) string {
+	if a.unattended {
+		return "error: " + reason + ". " + unattendedRoute
+	}
+	return "error: " + reason + ". The operator can lift it with /readonly off"
 }
 
 // execCall wraps execCallInner with the ADR-0035 tool.call audit
@@ -1396,7 +1441,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 				"reason": d.CeilingReason,
 			})
 		}
-		refused := "error: " + d.CeilingReason + ". The operator can lift it with /readonly off"
+		refused := a.ceilingRefused(d.CeilingReason)
 		if a.liftDeclined {
 			record("refused")
 			a.telemetry.Approval(tc.Name, "denied", "ceiling", true, d.CeilingReason, a.laneOf(tc))
@@ -1605,9 +1650,9 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			a.logRecord("gate_decision", record)
 			if !ok {
 				if denyReason != "" {
-					return deniedWithReason(denyReason), true, false, floorRan, nil
+					return a.deniedWithReason(denyReason), true, false, floorRan, nil
 				}
-				return deniedResult, true, false, floorRan, nil
+				return a.deniedText(), true, false, floorRan, nil
 			}
 		}
 	}

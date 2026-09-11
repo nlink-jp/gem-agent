@@ -968,12 +968,15 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// nil for both keeps today's behaviour.
 		Advertise: advertisePredicate(cfg, adv),
 		AfterTool: afterToolHook(cfg, adv),
-		Registry:  registry,
-		Gate:      gate,
-		Log:       sessionLog,
-		System:    composeSystem(),
-		MaxTurns:  cfg.Agent.MaxTurns,
-		Policy:    approvalPolicy,
+		// A one-shot run has nobody to ask (ADR-0065); its denials name
+		// the route instead (ADR-0084 §2).
+		Unattended: oneShot,
+		Registry:   registry,
+		Gate:       gate,
+		Log:        sessionLog,
+		System:     composeSystem(),
+		MaxTurns:   cfg.Agent.MaxTurns,
+		Policy:     approvalPolicy,
 		// load_skill results are operator-authored instructions, not
 		// data; its reads are confined to skill directories (ADR-0010).
 		InstructionTools: []string{skills.ToolName},
@@ -2229,18 +2232,50 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, 
 	return func(ctx context.Context, command string, lane sandbox.Lane) *exec.Cmd {
 		argv := sandbox.Wrap(profiles[lane], shell, command)
 		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-		if lane == sandbox.LaneRead {
-			// The read lane runs unasked: it does not get the operator's
-			// exported secrets to print (review F-07), and its
-			// temporary directory is the private scratch.
-			env := sandbox.ScrubEnv(os.Environ())
-			if scratch != "" {
-				env = append(env, "TMPDIR="+scratch, "TMP="+scratch, "TEMP="+scratch)
-			}
-			cmd.Env = env
-		}
+		cmd.Env = laneEnv(lane, scratch, os.Environ())
 		return cmd
 	}, enf, notes, nil
+}
+
+// laneEnv is the environment a shell command runs with. The read lane
+// runs unasked: it does not get the operator's exported secrets to
+// print (review F-07), and its temporary directory is the private
+// scratch. Every lane gets the toolchain caches pointed into that
+// scratch (ADR-0084 §1): no lane may write a cache under ~/Library, so
+// a build failed in the read lane and was sent to the write lane for a
+// reason unrelated to the task — and the read lane must not write a
+// shared cache anyway.
+func laneEnv(lane sandbox.Lane, scratch string, parent []string) []string {
+	env := parent
+	if lane == sandbox.LaneRead {
+		env = sandbox.ScrubEnv(parent)
+		if scratch != "" {
+			env = append(env, "TMPDIR="+scratch, "TMP="+scratch, "TEMP="+scratch)
+		}
+	}
+	if scratch != "" {
+		env = append(env, toolchainCacheEnv(scratch, lane)...)
+	}
+	return env
+}
+
+// toolchainCacheEnv is the one list of toolchain caches redirected into
+// the session scratch (ADR-0084 §1). Go alone today: its build cache
+// under ~/Library/Caches was measured failing in the read lane. Another
+// toolchain joins when a measurement shows the same failure.
+//
+// The unasked lane and the approved lanes get separate directories.
+// Go's cache is content-addressed and trusted on read, so one shared
+// directory would let a read-lane command — which runs unasked, and
+// can be steered by what it read — plant an object that an approved
+// build later links and the operator then runs (independent review).
+// The read lane's cache is its own; write and operator share theirs.
+func toolchainCacheEnv(scratch string, lane sandbox.Lane) []string {
+	dir := "go-build-approved"
+	if lane == sandbox.LaneRead {
+		dir = "go-build"
+	}
+	return []string{"GOCACHE=" + filepath.Join(scratch, dir)}
 }
 
 // readScratchDir creates the read lane's private scratch directory:

@@ -80,7 +80,8 @@ panel, theme control, and a fully bilingual chrome
 (`[tui].language = auto|ja|en`). A positional argument is the first
 interactive turn — `gem-agent "…"` runs it and hands you the keyboard
 (ADR-0064). Pipes fall back to a plain REPL;
-`-p` runs one-shot (mutating tools denied; `--allow` grants named
+`-p` runs one-shot (mutating tools denied, and the denial tells the
+model what still runs rather than to ask you; `--allow` grants named
 tools per run, `--auto` arms the risk ladder — ADR-0053), and
 `data | gem-agent -p "…"` attaches piped stdin as isolated data,
 never as prompt text (ADR-0055). The pipe is read to EOF; if it is
@@ -131,8 +132,10 @@ review second — edits to instruction and configuration files such as
 instruction and configuration files are pinned by content so a changed
 one asks again before it is loaded), shell commands judged by
 the Seatbelt lane they declare rather than by their text (a read-lane
-command runs unasked; the write lane cannot touch `AGENTS.md` or
-`.git/config`; the operator lane is yours alone), a runtime note when an
+command runs unasked — compile, vet and test included, the toolchain
+cache riding the session scratch in every lane; the write lane cannot
+touch `AGENTS.md` or `.git/config`; the operator lane is yours alone —
+ADR-0084), a runtime note when an
 MCP server answers three calls in a row with the same error — the model
 is told whose words the error is and to report to you rather than
 investigate — a per-tool approval policy with scope-aware resolution and

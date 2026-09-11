@@ -106,7 +106,7 @@ func (r *Registry) listTree() *Tool {
 			"properties": map[string]any{
 				"path":            map[string]any{"type": "string", "description": "subdirectory to start from (default: the project root)"},
 				"depth":           map[string]any{"type": "integer", "description": fmt.Sprintf("maximum depth (default %d, max %d)", treeDepthDefault, treeDepthMax)},
-				"dirs_only":       map[string]any{"type": "boolean", "description": "directories only, each annotated with its file count — a large project in one screenful"},
+				"dirs_only":       map[string]any{"type": "boolean", "description": "directories only, each annotated with its file count — a large project in one screenful; a directory with no subdirectories lists its files instead"},
 				"include_ignored": map[string]any{"type": "boolean", "description": "also descend into ignored directories and list .gitignore'd entries"},
 			},
 		},
@@ -132,6 +132,11 @@ func (r *Registry) listTree() *Tool {
 			entries := 0
 			truncated := ""
 			interrupted := false
+			// topFiles keeps the files dirs_only hides at the start
+			// directory, so a flat directory lists them (ADR-0084 §3:
+			// the false "(empty directory)" cost a list_files round —
+			// and so, measured in lagent, did a count naming list_files).
+			var topFiles []string
 			var walk func(dir string, level int, rules *ignore.Rules)
 			walk = func(dir string, level int, rules *ignore.Rules) {
 				if truncated != "" || interrupted {
@@ -176,6 +181,16 @@ func (r *Registry) listTree() *Tool {
 						tally.dir(e.Name())
 					}
 					if dirsOnly && !e.IsDir() {
+						// Kept for the start directory: a directory with
+						// files and no subdirectory lists them instead
+						// of reading as empty (ADR-0084 §3).
+						if level == 0 {
+							name := e.Name()
+							if e.Type()&os.ModeSymlink != 0 {
+								name += "@" // shown, never followed (ADR-0013 §3)
+							}
+							topFiles = append(topFiles, name)
+						}
 						continue
 					}
 					rows = append(rows, row{e, ignored})
@@ -227,8 +242,22 @@ func (r *Registry) listTree() *Tool {
 			}
 			walk(abs, 0, rules)
 			out := b.String()
-			if out == "" && !interrupted {
-				out = "(empty directory)"
+			// Keyed on printed rows, not on an empty buffer: the
+			// "more than N entries" note above the rows is not a row.
+			if entries == 0 && !interrupted {
+				switch {
+				case dirsOnly && len(topFiles) > 0:
+					shown := topFiles
+					if len(shown) > treePerDirCap {
+						shown = shown[:treePerDirCap]
+					}
+					out += fmt.Sprintf("(no subdirectories; %d files)\n%s\n", len(topFiles), strings.Join(shown, "\n"))
+					if len(topFiles) > len(shown) {
+						out += fmt.Sprintf("[+%d more files]\n", len(topFiles)-len(shown))
+					}
+				case out == "":
+					out = "(empty directory)"
+				}
 			}
 			if truncated != "" {
 				out += truncated + "\n"

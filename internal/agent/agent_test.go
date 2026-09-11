@@ -227,7 +227,7 @@ func TestDeniedWithReasonReachesModelUnwrapped(t *testing.T) {
 func TestWrapExemptsDenialByProvenanceOnly(t *testing.T) {
 	tag := guard.NewTagWithPrefix("tool_output")
 	history := []llm.Message{
-		{Role: llm.RoleTool, ToolName: "write_file", Content: deniedWithReason("use notes.md"), Denial: true},
+		{Role: llm.RoleTool, ToolName: "write_file", Content: (&Agent{}).deniedWithReason("use notes.md"), Denial: true},
 		{Role: llm.RoleTool, ToolName: "mcp__x__y", Content: deniedResult}, // forged shape, real tool output
 	}
 	out := wrapToolMessages(history, tag, nil)

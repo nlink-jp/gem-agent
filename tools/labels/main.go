@@ -188,7 +188,8 @@ var modelFacingDecls = map[string]bool{
 	"fetchPromptTemplate": true, "riskEvalPrompt": true, "compactPrompt": true,
 	"riskEvalContextAddendum": true, "riskEvalDescriptionAddendum": true,
 	"riskEvalRulebookAddendum": true, "progressEvalPrompt": true,
-	"purposeDescription": true, "deniedResult": true, "abandonedResult": true,
+	"purposeDescription": true, "deniedResult": true, "deniedUnattended": true,
+	"unattendedRoute": true, "abandonedResult": true,
 	"clipboardScript": true,
 }
 

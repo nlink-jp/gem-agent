@@ -45,7 +45,8 @@ rest, takes `include` (a gitignore-syntax file pattern such as
 `*.go` or `src/**`) and `mode="files"` for per-file counts only;
 `list_tree` elides big directories at a reported per-directory cap
 instead of letting one directory starve the rest, and takes
-`dirs_only=true` for a file-count-annotated directory skeleton.
+`dirs_only=true` for a file-count-annotated directory skeleton (a
+directory with no subdirectories lists its files instead, ADR-0084).
 
 Both walks stop on Ctrl+C (ADR-0065): they consult the turn's context
 before every directory and file read (and every 1024 lines inside a
@@ -145,7 +146,10 @@ Runs a shell command wrapped in macOS sandbox-exec in the lane the
 model declares with `access` (ADR-0073): `read` (default — writes only
 its private scratch, no network, no IPC, no preference writes, no
 credential or `~/Library` reads; runs without a prompt where the lane
-was verified at startup), `write` (the project and the work directory
+was verified at startup; the Go build cache is pointed into that
+scratch in every lane, so `go build`, `go vet` and `go test` run here
+unasked — ADR-0084 — while a build that writes its binary into the
+project needs `write`), `write` (the project and the work directory
 writable, network allowed, the instruction/configuration files and
 `.git` itself, hooks and config denied, credential reads denied;
 approval-gated; verified at startup too — where its denials cannot be
