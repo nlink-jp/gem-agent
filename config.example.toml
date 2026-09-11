@@ -64,6 +64,16 @@ name = "gemini-3.8-flash"
 # on its own, it puts the main model's name on a slot at that level.
 #risk_thinking = "low"
 
+# Model for the find_tools librarian under [mcp].advertise =
+# "on-request" (ADR-0083): a judgment over server-authored text, like
+# the model tier's. Unset means the backend the model tier resolves to
+# — the risk slot when one is named, otherwise the main model. Same
+# slot rules as risk / risk_thinking; the lite models fail this job
+# the way they fail the risk evaluation (measured), so leave this on a
+# flash-class model.
+#librarian = "gemini-3.7-flash"
+#librarian_thinking = "low"
+
 # Content-filter policy for the four configurable harm categories:
 #   default — the provider's own thresholds
 #   relaxed — block only high-confidence hits
