@@ -158,8 +158,14 @@ max_turns = 50
 - **Gemini 3 thought signature echo-back implemented from Phase 1** — the known trap
   where the second round of a tool-call loop fails with 400. Capture/replay follows the
   shell-agent-v2 ADR-0009 pattern
-- **MCP cancellation** — the protocol has no cancel notification; interruption is
-  implemented as child-process kill-and-respawn
+- **MCP cancellation** — interruption is implemented as child-process
+  kill-and-respawn. *Correction (2026-09-12):* the original text said "the
+  protocol has no cancel notification"; that was wrong. MCP has defined
+  `notifications/cancelled` (`requestId`, `reason`) since its first published
+  version, 2024-11-05. The receiver may ignore it (most servers do, and
+  nothing is acknowledged either way), so gem-agent does not send it — a
+  notification the receiver may discard cannot unblock the waiting reader;
+  only the kill does
 
 ### Out of scope (explicit)
 

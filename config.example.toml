@@ -260,7 +260,9 @@ compact_at_pct = 80
 enabled = true
 
 # Per-call timeout for MCP tools, in seconds. On timeout the server
-# child is killed and respawned on the next call (MCP has no cancel).
+# child is killed and respawned on the next call. MCP's
+# notifications/cancelled is not sent first: the receiver may ignore it,
+# and the kill is what reliably unblocks the call.
 call_timeout_sec = 60
 
 # What this session does not have (ADR-0077). An entry is a server, or

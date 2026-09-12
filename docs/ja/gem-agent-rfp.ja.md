@@ -152,8 +152,12 @@ max_turns = 50
 - **Gemini 3 thought signature echo-back を Phase 1 から実装** — tool-call ループ
   2 周目で 400 になる既知の罠。capture/replay は shell-agent-v2 ADR-0009 の
   パターンを踏襲
-- **MCP キャンセル** — プロトコルにキャンセル通知が無いため、中断は子プロセス
-  kill-and-respawn で実装
+- **MCP キャンセル** — 中断は子プロセス kill-and-respawn で実装。*訂正
+  （2026-09-12）:* 原文は「プロトコルにキャンセル通知が無いため」としていたが
+  誤り。MCP は初版 2024-11-05 から `notifications/cancelled`（`requestId`・
+  `reason`）を定義している。ただし受信側は無視してよく（大半のサーバーは無視し、
+  どちらにせよ応答は無い）、gem-agent は送らない — 捨ててよい通知では読み取り
+  待ちを解除できず、確実なのは kill だけである
 
 ### Out of scope（明示的除外）
 

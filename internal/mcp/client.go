@@ -113,9 +113,14 @@ type Tool struct {
 type spawnFunc func() (io.WriteCloser, io.ReadCloser, func(), error)
 
 // Client is a stdio MCP client for one server. Calls are synchronous; a
-// timed-out or cancelled call kills the child (MCP has no cancel
-// notification — kill-and-respawn is the only interruption mechanism)
-// and the next call respawns it lazily.
+// timed-out or cancelled call kills the child and the next call respawns
+// it lazily. MCP does define notifications/cancelled (requestId, reason;
+// in the spec since 2024-11-05), but the receiver may ignore it — most
+// servers do — and nothing acknowledges it either way, so the kill is
+// what reliably unblocks the reader. gem-agent does not send it: the
+// kill follows in the same step, which leaves a cooperating server no
+// time to act, and a server that stopped reading its stdin would park
+// the write, and the kill behind it, for the send's whole deadline.
 type Client struct {
 	name    string
 	spawn   spawnFunc
@@ -446,7 +451,9 @@ func (c *Client) rawCall(ctx context.Context, method string, params any) (json.R
 		c.pmu.Lock()
 		delete(c.pending, id)
 		c.pmu.Unlock()
-		// No cancel notification exists in MCP: kill and respawn lazily.
+		// Kill and respawn lazily. notifications/cancelled is not sent
+		// first — the receiver may ignore it and acknowledges nothing, so
+		// the kill would follow regardless (see the Client comment).
 		c.shutdown()
 		return nil, fmt.Errorf("%s timed out after %s (server killed; it restarts on the next call)", method, c.timeout)
 	}

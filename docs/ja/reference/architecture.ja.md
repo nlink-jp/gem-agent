@@ -270,8 +270,9 @@ flags > `GEMAGENT_*` > `GOOGLE_CLOUD_*` > file > defaults。モデル名は常�
 スキル・`.gem-agent.toml` が承認ポリシーを緩めてよいかをゲートし、プロジェクトの何かを
 読む前に決まる。MCP サーバーは `~/.config/gem-agent/mcp.json` と
 `<project>/.mcp.json`（Claude Code 形式）から読み、名前衝突はプロジェクト側が勝つ。
-MCP にキャンセルは無いので、タイムアウトした呼び出しはサーバー子プロセスを kill し、
-次回呼び出しで再起動する。`/mcp reload` と `/skills reload`（ADR-0039）は
+タイムアウトした呼び出しはサーバー子プロセスを kill し、次回呼び出しで再起動する
+（MCP の `notifications/cancelled` は受信側が無視してよいので gem-agent は送らず、
+読み取り待ちを確実に解除する kill だけを使う）。`/mcp reload` と `/skills reload`（ADR-0039）は
 セッション途中で起動時の経路を、起動時の trust 判定の下でピンを再照合して再実行する
 （その後に変わったファイルは外して名指しする）— ツール宣言と
 システムプロンプトの skill 節が追随し、リロードは監査される。`--mcp on|off` は

@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Docs — MCP does define `notifications/cancelled`; the receiver may ignore it
+
+- The RFP, the architecture and integration references, the config
+  example and the MCP client's comments said the protocol has no cancel
+  notification. It has had `notifications/cancelled` (`requestId`,
+  `reason`) since its first published version, 2024-11-05; the receiver
+  may ignore it, and most servers do. The RFP carries an in-place
+  correction note. The behaviour is unchanged: gem-agent does not send
+  the notification, because nothing acknowledges it and the kill that
+  follows is what reliably unblocks the reader — kill-and-respawn stays.
+
 ## [0.77.1] - 2026-09-12
 
 ### Fixed

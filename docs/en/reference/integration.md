@@ -64,7 +64,9 @@ consecutive calls in a turn with one identical error text gets named in
 a runtime note that asks the model to report to you instead of
 investigating (ADR-0075; see [tools](tools.md) for the three shapes and
 [sessions](sessions.md) for the `mcp_fault` record). Timed-out calls kill the server
-child (MCP has no cancel) and it respawns lazily on the next call.
+child (MCP's `notifications/cancelled` may be ignored by the receiver, so
+gem-agent does not send it; the kill is what reliably unblocks) and it
+respawns lazily on the next call.
 
 **`/mcp reload`** (ADR-0039) reconnects everything mid-session — full
 restart, config re-read, fresh tool lists — without losing the

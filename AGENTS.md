@@ -217,6 +217,11 @@ a new hook) is an architecture change and takes the same rows as a
 - **Never write from the MCP read loop** — a blocking write while the peer
   is not reading deadlocks both directions (internal/mcp refuses server
   requests from a goroutine; caught by the pipe-based tests).
+- **MCP's `notifications/cancelled` is not sent** — the spec defines it
+  (since 2024-11-05) but the receiver may ignore it and acknowledges
+  nothing, so a timed-out or cancelled call is ended by kill-and-respawn
+  alone (internal/mcp/client.go). Do not describe this as "MCP has no
+  cancel": it has one that may be ignored.
 - **Every `Tool.Run` consults its context** (ADR-0065). The agent's floor
   guarantees the RETURN of a cancelled call (abandoned 1 s after the cancel,
   result discarded, effect possibly still landing), never the STOP — a walk

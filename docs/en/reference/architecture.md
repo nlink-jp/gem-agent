@@ -304,8 +304,10 @@ grant gates `.mcp.json`, the project skills and whether
 `.gem-agent.toml` may loosen the approval policy, and it is decided
 before anything of the project is read. MCP servers come
 from `~/.config/gem-agent/mcp.json` and `<project>/.mcp.json` in Claude
-Code format; the project wins a name collision. MCP has no cancel, so a
-timed-out call kills the server child and the next call respawns it.
+Code format; the project wins a name collision. A timed-out call kills
+the server child and the next call respawns it (MCP's
+`notifications/cancelled` may be ignored by the receiver, so gem-agent
+does not send it — the kill is what reliably unblocks the reader).
 `/mcp reload` and `/skills reload` (ADR-0039) re-run the startup paths
 mid-session under the startup trust decision with the pins re-checked
 (a file that changed since is left out and named) — tool declarations and
