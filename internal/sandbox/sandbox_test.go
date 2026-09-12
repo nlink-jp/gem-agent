@@ -693,3 +693,60 @@ func TestChildEnvRemovesOnlyTheRuntimesOwn(t *testing.T) {
 		t.Errorf("ChildEnv does not read runtimeOwnEnv: %v", got)
 	}
 }
+
+// ADR-0086: the cage the file tools' reads run in, measured against the
+// real kernel. Content and metadata are refused, the committed
+// template is not, and the name is still listed — the last of those is
+// why ADR-0086 §3 stops withholding names.
+func TestFileReadProfileRefusesContentAndListsNames(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-only")
+	}
+	if err := Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
+	}
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		".env": "SECRET=x\n", ".env.example": "SECRET=\n", "notes.txt": "ordinary\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	profile := FileReadProfile(filepath.Dir(dir))
+	run := func(command string) error {
+		argv := Wrap(profile, "/bin/bash", command)
+		return exec.Command(argv[0], argv[1:]...).Run()
+	}
+	for _, c := range []struct {
+		what    string
+		command string
+		refused bool
+	}{
+		{"content of .env", "cat " + shellQuote(filepath.Join(dir, ".env")), true},
+		{"metadata of .env", "stat " + shellQuote(filepath.Join(dir, ".env")), true},
+		{"the committed template", "cat " + shellQuote(filepath.Join(dir, ".env.example")), false},
+		{"an ordinary file", "cat " + shellQuote(filepath.Join(dir, "notes.txt")), false},
+		{"writing anything", "echo x > " + shellQuote(filepath.Join(dir, "w.txt")), true},
+		{"the network", "exec 3<>/dev/tcp/127.0.0.1/1", true},
+		// The kernel bounds content, not names: the listing still shows
+		// .env, which is why the walks stopped hiding it.
+		{"listing the directory", "ls -a " + shellQuote(dir) + " | grep -q '^\\.env$'", false},
+	} {
+		err := run(c.command)
+		if c.refused && err == nil {
+			t.Errorf("the file-read cage allowed %s", c.what)
+		}
+		if !c.refused && err != nil {
+			t.Errorf("the file-read cage refused %s: %v", c.what, err)
+		}
+	}
+	// And the probe the runtime gates on agrees with all of that.
+	probeDir := t.TempDir()
+	if err := VerifyFileReadLane(probeDir, func(profile, command string) error {
+		argv := Wrap(profile, "/bin/bash", command)
+		return exec.Command(argv[0], argv[1:]...).Run()
+	}); err != nil {
+		t.Errorf("VerifyFileReadLane: %v", err)
+	}
+}

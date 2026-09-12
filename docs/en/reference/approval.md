@@ -195,13 +195,18 @@ same list** (ADR-0085): `read_file`, `view_image`, `read_document`,
 `file_info` (every path of a batch) and `summarize_file` on a matching
 path — judged on the real path, so a link to `.env` is a `.env` read —
 are *uncertain* and skip tier 2 like a write to `AGENTS.md`: you answer,
-in every mode; an earlier `a`, a `"never"` policy or `--allow` does not,
+in every mode. **The kernel, not that list, is the boundary** (ADR-0086):
+those reads run in a child under a profile that denies the credential
+list, so a path the list does not recognise is still refused at the
+open, and the refusal reaches you as the same question. The bytes never
+exist before you answer; an earlier `a`, a `"never"` policy or `--allow` does not,
 `-p` denies with the reason, and the file-search child's gate refuses.
-The walks — `search_files`, `list_tree`, `list_files` — do not prompt:
-a credential-named entry is withheld (a credential-named directory is
-never entered) and the result says how many —
-`[N credential-named entries skipped — reading one needs the
-operator's approval]`. An `@` attachment you type is your yes and is
+The walks — `search_files`, `list_tree`, `list_files` — do not prompt
+and no longer hide anything (ADR-0086 §3): a credential-named entry is
+listed like any other, because the kernel lists names and refuses
+content, and a name was never the secret. `search_files` names a file
+it could not read — `[not read: sub/.env — reading one needs the
+operator's approval]` — the shape `grep -r` has. An `@` attachment you type is your yes and is
 unchanged. A secret stored elsewhere — a
 token in `~/.config/<tool>/config.toml`, say (ADR-0076) — is readable in
 the read and write lanes and by the read tools, and in the write lane

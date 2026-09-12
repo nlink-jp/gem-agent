@@ -509,6 +509,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(stderr, "warning: session work directory not readable by the file tools: %v\n", err)
 		}
 	}
+	// The file tools' reads run in a child under a profile that denies
+	// the credential list at the kernel (ADR-0086), proven on this
+	// machine before it is trusted. Where it cannot be proven the reads
+	// stay in process with the matcher as the boundary, and the note
+	// says so rather than letting the banner imply a cage.
+	if probeDir := fileProbeDir(workDir); probeDir != "" {
+		if note := installFileChild(registry, home, probeDir); note != "" {
+			fmt.Fprintf(stderr, "warning: %s\n", note)
+		}
+	}
 
 	// --- project instruction files (drop-in: AGENTS.md and friends,
 	// including ancestor directories, exactly as other agents read them)

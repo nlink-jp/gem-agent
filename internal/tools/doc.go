@@ -87,6 +87,11 @@ func (r *Registry) readDocument() *Tool {
 		},
 		Mutating: false,
 		Run: func(ctx context.Context, args map[string]any) (string, error) {
+			// The kernel adjudicates this read (ADR-0086 §1): in the
+			// child, credential material cannot be opened at all.
+			if out, err, ok := r.viaChild(ctx, "read_document", args); ok {
+				return out, err
+			}
 			p, _ := args["path"].(string)
 			abs, err := r.resolvePath(p)
 			if err != nil {

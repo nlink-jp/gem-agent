@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Security
+
+- **The kernel reads the file** (ADR-0086). The file tools never made
+  ADR-0073's move to the kernel: they are in-process Go code, so
+  `sandbox.CredentialPath` was the boundary and a miss there was the
+  file's content in the transcript rather than a missing prompt. Since
+  the lanes landed that matcher's list gained one entry while its
+  matching rule changed six times, four of them in one release, each
+  from a review finding and each a spelling the previous rule had not
+  considered. `read_file`, `view_image`, `read_document`, `file_info`,
+  `search_files` and `summarize_file` now perform their reads in a
+  child of this binary under a profile built from the same
+  `internal/sandbox` list, which denies credential material at the
+  kernel — measured: `cat .env` and `stat .env` refused,
+  `.env.example` read, `grep -r` skipping that one file, at 27 ms per
+  spawn against a call that already costs a model round. A refused open
+  is the operator's question, and on approval the read runs in process,
+  which is the operator lane's authority applied to a file tool. The
+  matcher stays only to raise the prompt without spending a spawn: a
+  miss in it now costs a spawn and a blunter prompt, never a leak.
+  Verified at startup like the shell lanes; where it cannot be
+  verified the reads stay in process and the banner says so.
+- **The walks stop hiding names** (ADR-0086 §3, withdrawing ADR-0085
+  §2). The kernel lists names and refuses content, so a name was never
+  the secret and withholding it was a second rule over the same
+  unbounded spelling domain. `list_files` and `list_tree` list a
+  credential-named entry like any other and carry no credential code at
+  all; `search_files` names the file it could not read
+  (`[not read: sub/.env — reading one needs the operator's approval]`),
+  the shape `grep -r` has. `credentialSkipNote` and the walk
+  withholding are deleted, and with them the contradiction where lagent
+  reported names and gem-agent reported a count.
+
 ### Changed
 
 - **The operator's environment is no longer filtered, and the runtime's

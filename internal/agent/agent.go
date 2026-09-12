@@ -17,6 +17,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mention"
 	"github.com/nlink-jp/gem-agent/internal/policy"
+	"github.com/nlink-jp/gem-agent/internal/risk"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/telemetry"
@@ -1665,7 +1666,21 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 	// loop applies (ADR-0083 §3); the hook below runs on this goroutine
 	// once the floor has decided, so a late Run never rebuilds the
 	// declarations by itself.
-	out, state, err := a.runWithFloor(tools.WithCallID(ctx, tc.ID), tool, tc)
+	runCtx := tools.WithCallID(ctx, tc.ID)
+	if d.Verdict.CredentialRead {
+		// The operator answered the credential prompt above; the cage
+		// would refuse what they just allowed (ADR-0086 §2).
+		runCtx = tools.WithDirectRead(runCtx)
+	}
+	out, state, err := a.runWithFloor(runCtx, tool, tc)
+	if errors.Is(err, tools.ErrCredentialRead) {
+		// The kernel refused a path the rule tier did not recognise.
+		// The read has produced no bytes, so nothing has reached the
+		// model; the operator gets the same question they would have
+		// got had the matcher seen it, and on a yes the call runs in
+		// process (ADR-0086 §2).
+		out, state, err = a.credentialRetry(ctx, tool, tc)
+	}
 	if a.afterTool != nil && a.afterTool(tc, state == floorAbandoned) {
 		a.RefreshTools()
 	}
@@ -1983,4 +1998,38 @@ func clip(s string, limit int) string {
 		return s
 	}
 	return string(r[:limit]) + "…"
+}
+
+// credentialRetry asks the operator about a read the kernel refused and
+// the rule tier did not predict (ADR-0086 §2), and runs it in process
+// on a yes. It is must-prompt like every other operator-only verdict:
+// no session allowlist, no `never` policy, no model tier, and in an
+// unattended run the gate denies and the model is told why.
+func (a *Agent) credentialRetry(ctx context.Context, tool *tools.Tool, tc llm.ToolCall) (string, floorState, error) {
+	detail, purpose := a.Describe(tc)
+	reason := tools.ErrCredentialRead.Error()
+	ok, _, denyReason := a.askGate(tc, detail, purpose, reason, true, Decision{
+		Tool: tool, Verdict: risk.Verdict{Tier: risk.Review, OperatorOnly: true, CredentialRead: true, Reason: reason},
+	})
+	a.telemetry.Approval(tc.Name, approvalDecision(ok), "gate", true, reason, a.laneOf(tc))
+	a.logRecord("gate_decision", map[string]any{
+		"name": tc.Name, "decision": approvalDecision(ok), "must_prompt": true,
+		"key": a.learnKey(tc), "detail": clip(detail, 300), "source": "operator",
+		"credential_read": true,
+	})
+	if !ok {
+		if denyReason != "" {
+			return a.deniedWithReason(denyReason), floorRan, nil
+		}
+		return a.deniedText(), floorRan, nil
+	}
+	return a.runWithFloor(tools.WithDirectRead(tools.WithCallID(ctx, tc.ID)), tool, tc)
+}
+
+// approvalDecision renders a gate answer for the audit records.
+func approvalDecision(ok bool) string {
+	if ok {
+		return "approved"
+	}
+	return "denied"
 }

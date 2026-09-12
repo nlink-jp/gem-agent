@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-09-13) — implemented and unreleased |
+| Status | **Accepted** (2026-09-13) — implemented; §2 withdrawn by ADR-0086 |
 | Date | 2026-09-13 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

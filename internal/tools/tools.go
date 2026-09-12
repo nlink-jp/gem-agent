@@ -118,6 +118,8 @@ type Registry struct {
 	// so a work directory rotated after the child was built is the
 	// child's too.
 	parent *Registry
+	// child runs the covered reads in a sandboxed process (ADR-0086).
+	child fileChild
 	// excluded holds the registry names the MCP filter removed
 	// (ADR-0077). They are not registered, so a call naming one is
 	// refused by the executor like any name it cannot resolve — this
@@ -477,15 +479,15 @@ func (r *Registry) gitignoreReader(path string, cap int64) ([]byte, error) {
 // listing and the read is not searched at all — a match past the cap
 // would be missing from a result presented as complete (review after
 // v0.68.2).
-func (r *Registry) readForSearch(abs string) ([]byte, bool) {
+func (r *Registry) readForSearch(abs string) ([]byte, bool, error) {
 	data, more, err := r.readFileCapped(abs, searchFileCap)
 	if err != nil || more {
-		return nil, false
+		return nil, false, err
 	}
 	if bytes.IndexByte(data[:min(len(data), binarySniff)], 0) >= 0 {
-		return nil, false // binary
+		return nil, false, nil // binary
 	}
-	return data, true
+	return data, true, nil
 }
 
 // readDirIn lists the directory at abs through its root: a directory
@@ -838,6 +840,11 @@ func (r *Registry) viewImage() *Tool {
 		},
 		Mutating: false,
 		Run: func(ctx context.Context, args map[string]any) (string, error) {
+			// The kernel adjudicates this read (ADR-0086 §1): in the
+			// child, credential material cannot be opened at all.
+			if out, err, ok := r.viaChild(ctx, "view_image", args); ok {
+				return out, err
+			}
 			p, _ := args["path"].(string)
 			data, mime, err := r.ReadImage(p)
 			if err != nil {
@@ -1144,8 +1151,7 @@ func (r *Registry) listFiles() *Tool {
 		Name: "list_files",
 		Description: "List directory entries inside the project. Directories are " +
 			"suffixed with '/'; dependency/build directories and .gitignore'd entries are " +
-			"marked [ignored] — prefer not to descend into those. Credential-named entries " +
-			"(.env, keys, credential stores) are skipped and counted. Use this to explore the " +
+			"marked [ignored] — prefer not to descend into those. Use this to explore the " +
 			"project structure before reading or editing.",
 		Parameters: map[string]any{
 			"type": "object",
@@ -1165,29 +1171,14 @@ func (r *Registry) listFiles() *Tool {
 			if err != nil {
 				return "", err
 			}
-			// A credential-named directory is never listed (ADR-0085
-			// §2); the rule reads the real path, so a link to one is
-			// the same directory.
-			realDir, ok := realRootOf(dir)
-			if !ok {
-				return "", fmt.Errorf("resolve %s: a link in the path is broken or its target is not accessible", p)
-			}
-			if sandbox.CredentialPath(realDir) {
-				return credentialSkipNote(1), nil
-			}
 			entries, more, err := r.readDirIn(dir)
 			if err != nil {
 				return "", err
 			}
 			rules := ignore.RootWith(r.projectDir, dir, false, r.gitignoreReader)
 			var names []string
-			credential := 0 // entries withheld under the credential rule (ADR-0085 §2)
 			for _, e := range entries {
 				n := e.Name()
-				if sandbox.CredentialPath(filepath.Join(realDir, n)) {
-					credential++
-					continue
-				}
 				if e.IsDir() {
 					n += "/"
 				}
@@ -1209,9 +1200,6 @@ func (r *Registry) listFiles() *Tool {
 			if more {
 				names = append(names, fmt.Sprintf("[the directory has more than %d entries — the listing stopped there]", DirEntryCap))
 			}
-			if s := credentialSkipNote(credential); s != "" {
-				names = append(names, s)
-			}
 			if len(names) == 0 {
 				return "(empty directory)", nil
 			}
@@ -1227,7 +1215,7 @@ func (r *Registry) readFile() *Tool {
 			"Pass start_line/end_line (1-based, inclusive) to read a window instead of the whole " +
 			"file — pair with search_files results (path:line) and prefer windows for large files: " +
 			"everything read here is replayed on every later round. Large reads are truncated. " +
-			"A credential-named file (.env, keys, credential stores) is read only with the operator's approval.",
+			"A credential file (.env, keys, credential stores) is read only with the operator's approval.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1247,6 +1235,11 @@ func (r *Registry) readFile() *Tool {
 			"required": []string{"path"},
 		},
 		Run: func(ctx context.Context, args map[string]any) (string, error) {
+			// The kernel adjudicates this read (ADR-0086 §1): in the
+			// child, credential material cannot be opened at all.
+			if out, err, ok := r.viaChild(ctx, "read_file", args); ok {
+				return out, err
+			}
 			p, ok := strArg(args, "path")
 			if !ok {
 				return "", errors.New("path is required")

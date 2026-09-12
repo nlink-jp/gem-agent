@@ -182,12 +182,17 @@ answered …`・`rejected the call …`・`gem-agent could not complete …`）�
 同じ一覧に従います**（ADR-0085）: 一致するパス — 実パスで判定するので `.env` への
 リンクは `.env` の読取 — への `read_file`・`view_image`・`read_document`・
 `file_info`（バッチの全パス）・`summarize_file` は `AGENTS.md` への書込と同じく
-*不確実*で第 2 層を飛ばします: 全モードであなたが答え、以前の `a`・`"never"`
+*不確実*で第 2 層を飛ばします: 全モードであなたが答えます。**境界はその一覧では
+なくカーネルです**（ADR-0086）: これらの読取は資格情報一覧を拒むプロファイルの
+子で走るので、一覧が認識しないパスでも open で拒まれ、その拒否が同じ問いとして
+あなたに届きます。あなたが答える前にバイトは存在しません。以前の `a`・`"never"`
 ポリシー・`--allow` は答えず、`-p` は理由付きで拒否し、ファイル検索の子の
 ゲートは拒みます。walk — `search_files`・`list_tree`・`list_files` — は
-確認しません: 資格情報名のエントリは差し止め（資格情報名のディレクトリには
-決して入らず）、結果が件数を告げます — `[N credential-named entries skipped —
-reading one needs the operator's approval]`。あなたが打つ `@` 添付は
+確認せず、何も隠さなくなりました（ADR-0086 §3）: カーネルは名前を出して内容を
+拒むので名前はそもそも秘密ではなく、資格情報名のエントリも他と同じく列挙され
+ます。`search_files` は読めなかったファイルを名指します —
+`[not read: sub/.env — reading one needs the operator's approval]` —
+`grep -r` が持つ形です。あなたが打つ `@` 添付は
 あなたの yes であり、変わりません。それ以外に
 置かれた秘密 — たとえば `~/.config/<tool>/config.toml` のトークン（ADR-0076）— は
 read/write レーンと read ツールで読め、write レーンではネットワークで外へ

@@ -198,3 +198,63 @@ func TestUnattendedRunDeniesACredentialRead(t *testing.T) {
 		}
 	}
 }
+
+// ADR-0086 §2: the kernel is the boundary and the matcher is only the
+// prompt-raiser. When the matcher misses, the child's refusal produces
+// no bytes, the operator gets the same question, and on a yes the read
+// runs in process — the operator lane's authority applied to a file
+// tool. When the matcher hits, the approved call must not go to the
+// child at all: the cage would refuse what the operator just allowed.
+func TestKernelRefusalBecomesTheOperatorsQuestion(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{readCall("c1", "notes.txt")}},
+		{Content: "done"},
+	}}
+	gate := &laneGate{}
+	_, reg := newAgent(t, mb, gate, 5)
+	credentialProject(t, reg)
+	// A child that refuses everything: the matcher sees nothing wrong
+	// with notes.txt, so only the kernel's answer can raise the gate.
+	var childCalls int
+	reg.SetFileChild(func(context.Context, string, map[string]any) (string, error) {
+		childCalls++
+		return "", tools.ErrCredentialRead
+	})
+	a := New(Options{Backend: mb, Registry: reg, Gate: gate, System: "s", MaxTurns: 5})
+	if _, err := a.Run(context.Background(), "read", nil); err != nil {
+		t.Fatal(err)
+	}
+	if childCalls != 1 {
+		t.Errorf("the read did not go through the child: %d calls", childCalls)
+	}
+	if len(gate.asked) != 1 || !gate.mustPrompt[0] {
+		t.Errorf("the kernel's refusal must reach the operator as a must-prompt: asked=%v mustPrompt=%v", gate.asked, gate.mustPrompt)
+	}
+	// laneGate denies, so the model is told; the bytes never existed.
+	if r := resultSeen(mb, 1); !strings.Contains(r, "denied") {
+		t.Errorf("a refused-and-declined read = %q", r)
+	}
+
+	// The approved credential read bypasses the child entirely.
+	mb2 := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{readCall("c1", ".env")}},
+		{Content: "done"},
+	}}
+	approve := &allowlistGate{}
+	_, reg2 := newAgent(t, mb2, approve, 5)
+	credentialProject(t, reg2)
+	reg2.SetFileChild(func(context.Context, string, map[string]any) (string, error) {
+		t.Error("an approved credential read went to the cage that would refuse it")
+		return "", tools.ErrCredentialRead
+	})
+	a2 := New(Options{Backend: mb2, Registry: reg2, Gate: approve, System: "s", MaxTurns: 5})
+	if _, err := a2.Run(context.Background(), "read", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(approve.prompted) != 1 || !strings.Contains(approve.prompted[0], "path=.env") {
+		t.Errorf("the credential read must prompt: %v", approve.prompted)
+	}
+	if r := resultSeen(mb2, 1); !strings.Contains(r, credentialSecret) {
+		t.Errorf("the approved read did not run in process: %q", r)
+	}
+}

@@ -60,6 +60,12 @@ type Verdict struct {
 	// the operator. A shell command in the operator lane (ADR-0073) is
 	// the same verdict: the lane can write those files.
 	OperatorOnly bool
+	// CredentialRead marks the OperatorOnly verdict that is a read of
+	// credential material (ADR-0086 §2). The kernel refuses that read
+	// in the sandboxed child, so once the operator has approved it the
+	// call must run in process — the operator lane's authority applied
+	// to a file tool. Nothing else reads this flag.
+	CredentialRead bool
 }
 
 // blockPattern is one dangerous-shell rule.
@@ -210,7 +216,7 @@ func credentialRead(args map[string]any, projectDir string) (Verdict, bool) {
 			if rel := projectRelative(p, projectDir); rel != "" {
 				shown = rel
 			}
-			return Verdict{Tier: Review, OperatorOnly: true,
+			return Verdict{Tier: Review, OperatorOnly: true, CredentialRead: true,
 				Reason: "reads credential material (" + shown + ") — the operator decides, not the model tier"}, true
 		}
 	}

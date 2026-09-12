@@ -396,20 +396,19 @@ func TestNavWalksSkipGitPointerFile(t *testing.T) {
 	}
 }
 
-// ADR-0085 §2: the walks never read a credential-named file, never
-// enter a credential-named directory, and do not list either — and they
-// say how many they withheld. The committed templates are ordinary
-// files. One rule: sandbox.CredentialPath on the real path.
-func TestWalksWithholdCredentialNamedEntries(t *testing.T) {
+// ADR-0086 §3: the walks list a credential-named entry like any other.
+// The kernel lists names and refuses content, so a name was never the
+// secret, and withholding it was a second rule over the same unbounded
+// spelling domain. What a walk cannot read, it names.
+func TestWalksListNamesAndNameWhatTheyCannotRead(t *testing.T) {
 	r := navProject(t)
 	dir := r.ProjectDir()
 	for path, content := range map[string]string{
-		".env":               "TOKEN=maxRetries-hunter2\n",
-		"sub/.env.local":     "maxRetries=secret\n",
-		".ssh/id_rsa":        "maxRetries PRIVATE\n",
-		".env.example":       "TOKEN=maxRetries-placeholder\n",
-		"credentials.json":   "{\"maxRetries\": \"cred\"}\n",
-		"sub/credentials.md": "maxRetries documented\n",
+		".env":             "TOKEN=maxRetries-hunter2\n",
+		"sub/.env.local":   "maxRetries=secret\n",
+		".ssh/id_rsa":      "maxRetries PRIVATE\n",
+		".env.example":     "TOKEN=maxRetries-placeholder\n",
+		"credentials.json": "{\"maxRetries\": \"cred\"}\n",
 	} {
 		full := filepath.Join(dir, path)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -419,102 +418,41 @@ func TestWalksWithholdCredentialNamedEntries(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// search_files: the needle sits in every withheld file; none of them
-	// is read, the template and the ordinary file are, and the count
-	// names what was withheld (.env, sub/.env.local, the .ssh directory
-	// as one entry, credentials.json).
-	out, err := run(t, r, "search_files", map[string]any{"pattern": "maxRetries"})
+	// Names are listed: the operator asked for the listing, and reading
+	// one of these is the question the file tools ask separately.
+	out, err := run(t, r, "list_files", map[string]any{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, leaked := range []string{"hunter2", "=secret", "PRIVATE", "\"cred\"", ".env:", ".env.local", "id_rsa", "credentials.json"} {
-		if strings.Contains(out, leaked) {
-			t.Errorf("search_files read or named a credential file (%q):\n%s", leaked, out)
-		}
-	}
-	for _, want := range []string{".env.example:1", "sub/credentials.md:1", "[4 credential-named entries skipped", "operator's approval]"} {
+	for _, want := range []string{".env", ".ssh/", "credentials.json", ".env.example"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("search_files missing %q:\n%s", want, out)
+			t.Errorf("list_files hid %q:\n%s", want, out)
 		}
 	}
-	// list_tree: withheld and counted; the template is listed.
+	if strings.Contains(out, "credential-named") {
+		t.Errorf("list_files still carries the withholding footer:\n%s", out)
+	}
 	out, err = run(t, r, "list_tree", map[string]any{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, absent := range []string{".env\n", ".env.local", ".ssh", "id_rsa", "credentials.json"} {
-		if strings.Contains(out, absent) {
-			t.Errorf("list_tree listed a credential-named entry (%q):\n%s", absent, out)
-		}
-	}
-	for _, want := range []string{".env.example", "credentials.md", "[4 credential-named entries skipped"} {
+	for _, want := range []string{".env", "id_rsa", "credentials.json"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("list_tree missing %q:\n%s", want, out)
+			t.Errorf("list_tree hid %q:\n%s", want, out)
 		}
 	}
-	// list_files at the root: .env, .ssh/ and credentials.json withheld.
-	out, err = run(t, r, "list_files", map[string]any{})
+	// A file the walk cannot open is named, not silently absent — the
+	// shape `grep -r` has. In production the refusal comes from the
+	// sandbox; here an unreadable mode produces the same error.
+	blocked := filepath.Join(dir, "unreadable.txt")
+	if err := os.WriteFile(blocked, []byte("maxRetries here\n"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	out, err = run(t, r, "search_files", map[string]any{"pattern": "maxRetries"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, absent := range []string{".env\n", ".ssh/", "credentials.json"} {
-		if strings.Contains(out, absent) {
-			t.Errorf("list_files listed a credential-named entry (%q):\n%s", absent, out)
-		}
-	}
-	for _, want := range []string{".env.example", "[3 credential-named entries skipped"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("list_files missing %q:\n%s", want, out)
-		}
-	}
-	// A listing with nothing withheld carries no count line.
-	out, err = run(t, r, "list_files", map[string]any{"path": "docs"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(out, "credential-named") {
-		t.Errorf("a clean listing carries the skip note:\n%s", out)
-	}
-	// The rule reads the REAL path (independent review, A1): a link
-	// named `mylink` at `.ssh` is `.ssh`, and a credential-named root —
-	// however spelled — is never entered by any walk.
-	if err := os.Symlink(".ssh", filepath.Join(dir, "mylink")); err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range []struct {
-		tool string
-		args map[string]any
-	}{
-		{"search_files", map[string]any{"pattern": "maxRetries", "path": "mylink"}},
-		{"search_files", map[string]any{"pattern": "maxRetries", "path": ".ssh"}},
-		{"list_tree", map[string]any{"path": "mylink"}},
-		{"list_tree", map[string]any{"path": ".ssh"}},
-		{"list_files", map[string]any{"path": "mylink"}},
-		{"list_files", map[string]any{"path": ".ssh"}},
-	} {
-		out, err := run(t, r, c.tool, c.args)
-		if err != nil {
-			t.Fatalf("%s %v: %v", c.tool, c.args, err)
-		}
-		if strings.Contains(out, "PRIVATE") || strings.Contains(out, "id_rsa") || !strings.Contains(out, "[1 credential-named entry skipped") {
-			t.Errorf("%s %v entered a credential-named root:\n%s", c.tool, c.args, out)
-		}
-	}
-	// A directory holding only credential-named entries is not "empty":
-	// the skip note alone says what it holds (independent review, A9).
-	if err := os.MkdirAll(filepath.Join(dir, "onlycred"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "onlycred", ".env"), []byte("x=1\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, tool := range []string{"list_tree", "list_files"} {
-		out, err := run(t, r, tool, map[string]any{"path": "onlycred"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(out, "empty directory") || !strings.Contains(out, "[1 credential-named entry skipped") {
-			t.Errorf("%s on an only-credential directory:\n%s", tool, out)
-		}
+	if !strings.Contains(out, "[not read: unreadable.txt") || !strings.Contains(out, "operator's approval") {
+		t.Errorf("search_files did not name the file it could not read:\n%s", out)
 	}
 }

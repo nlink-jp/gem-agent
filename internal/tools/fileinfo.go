@@ -49,6 +49,11 @@ func (r *Registry) fileInfo() *Tool {
 		},
 		Mutating: false,
 		Run: func(ctx context.Context, args map[string]any) (string, error) {
+			// The kernel adjudicates this read (ADR-0086 §1): in the
+			// child, credential material cannot be opened at all.
+			if out, err, ok := r.viaChild(ctx, "file_info", args); ok {
+				return out, err
+			}
 			paths, err := fileInfoPaths(args)
 			if err != nil {
 				return "", err

@@ -15,7 +15,9 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -23,7 +25,6 @@ import (
 	"strings"
 
 	"github.com/nlink-jp/gem-agent/internal/ignore"
-	"github.com/nlink-jp/gem-agent/internal/sandbox"
 )
 
 const (
@@ -58,44 +59,6 @@ const (
 // content. This is stated in the tool descriptions rather than done
 // silently.
 var vcsDirs = map[string]bool{".git": true, ".hg": true, ".svn": true}
-
-// credentialSkipNote renders what a walk withheld under the credential
-// rule (ADR-0085 §2): the count, never the names — the walks do not
-// prompt, and a listing that named `.env` would be the read that asks
-// offered on every round. Empty when nothing was withheld.
-func credentialSkipNote(n int) string {
-	if n == 0 {
-		return ""
-	}
-	return fmt.Sprintf("[%d credential-named %s skipped — reading one needs the operator's approval]", n, plural(n, "entry", "entries"))
-}
-
-// realRootOf resolves a walk's root for the credential rule. resolvePath
-// admits a spelling whose target lies inside the roots and returns the
-// spelling, so a link named `mylink` at `.aws` would be walked as
-// `mylink/…` and judged on that name (independent review of ADR-0085,
-// A1). resolvePath resolved the same root a moment ago, so a root that
-// does not resolve here was retargeted in between; the walk refuses
-// rather than judge the spelling (second review pass, F4).
-func realRootOf(root string) (string, bool) {
-	real, err := resolveExisting(root)
-	if err != nil || real == "" {
-		return "", false
-	}
-	return real, true
-}
-
-// credentialEntry judges one entry of a walk by its real path: the
-// resolved root plus the entry's position under it. Entries below the
-// root are real directories and files, because the walks never follow
-// a linked entry (ADR-0013 §3), so this is the entry's real path.
-func credentialEntry(realRoot, root, full string) bool {
-	rel, err := filepath.Rel(root, full)
-	if err != nil {
-		return sandbox.CredentialPath(full)
-	}
-	return sandbox.CredentialPath(filepath.Join(realRoot, rel))
-}
 
 // ignoreTally aggregates what a walk skipped, for the honesty footer
 // (ADR-0052: every skip is reported).
@@ -137,8 +100,7 @@ func (r *Registry) listTree() *Tool {
 			"an optional subdirectory. Dependency and build directories (node_modules, vendor, dist, " +
 			"target, …) and .gitignore'd entries are skipped — ignored directories still appear, " +
 			"marked [ignored], and every skip is reported; pass include_ignored=true to include them. " +
-			"VCS internals (.git and friends) are skipped; symlinks are shown but not followed; " +
-			"credential-named entries (.env, keys, credential stores) are skipped and counted. Big " +
+			"VCS internals (.git and friends) are skipped; symlinks are shown but not followed. Big " +
 			"directories are elided at a reported per-directory cap. To orient in a large project, " +
 			"start with dirs_only=true, then descend. Prefer this over repeated list_files calls.",
 		Parameters: map[string]any{
@@ -164,21 +126,12 @@ func (r *Registry) listTree() *Tool {
 				depth = min(int(d), treeDepthMax)
 			}
 			dirsOnly, _ := args["dirs_only"].(bool)
-			// A credential-named root is never entered (ADR-0085 §2).
-			realRoot, ok := realRootOf(abs)
-			if !ok {
-				return "", fmt.Errorf("resolve %s: a link in the path is broken or its target is not accessible", p)
-			}
-			if sandbox.CredentialPath(realRoot) {
-				return credentialSkipNote(1), nil
-			}
 			includeIgnored, _ := args["include_ignored"].(bool)
 			rules := ignore.RootWith(r.projectDir, abs, includeIgnored, r.gitignoreReader)
 			tally := &ignoreTally{}
 
 			var b strings.Builder
 			entries := 0
-			credential := 0 // entries withheld under the credential rule (ADR-0085 §2)
 			truncated := ""
 			interrupted := false
 			// topFiles keeps the files dirs_only hides at the start
@@ -219,14 +172,6 @@ func (r *Registry) listTree() *Tool {
 					// A submodule's .git is a file, not a directory —
 					// VCS plumbing is skipped by name either way.
 					if vcsDirs[e.Name()] {
-						continue
-					}
-					// Withheld, counted (ADR-0085 §2): the name is the
-					// read that asks, offered on every round. Judged on
-					// the real path (the root resolved; nothing below
-					// it is a followed link).
-					if credentialEntry(realRoot, abs, filepath.Join(dir, e.Name())) {
-						credential++
 						continue
 					}
 					ignored := rules.Ignored(e.Name(), e.IsDir())
@@ -312,10 +257,7 @@ func (r *Registry) listTree() *Tool {
 					if len(topFiles) > len(shown) {
 						out += fmt.Sprintf("[+%d more files]\n", len(topFiles)-len(shown))
 					}
-				case out == "" && credential == 0:
-					// With credential-named entries withheld the
-					// directory is not empty; the skip note says what
-					// it holds (independent review of ADR-0085, A9).
+				case out == "":
 					out = "(empty directory)"
 				}
 			}
@@ -326,9 +268,6 @@ func (r *Registry) listTree() *Tool {
 				// A partial tree is a result, never silently a whole
 				// one (ADR-0052's rule applied to ADR-0065's cut).
 				out += "[interrupted — the tree above is partial]\n"
-			}
-			if s := credentialSkipNote(credential); s != "" {
-				out += s + "\n"
 			}
 			if s := tally.summary(); s != "" {
 				out += s + "\n"
@@ -367,9 +306,9 @@ func (r *Registry) searchFiles() *Tool {
 			"skipped and reported — pass include_ignored=true to search them too. For a broad " +
 			"\"where does this live\" question, start with mode=\"files\" (per-file counts only) " +
 			"and narrow with include (gitignore-style file pattern, e.g. \"*.go\" or \"src/**\") " +
-			"or path. Binary files, VCS internals, symlinks, files over 2MB and credential-named " +
-			"files (.env, keys, credential stores) are skipped; caps and skips are reported. " +
-			"Prefer this over reading files wholesale to locate something.",
+			"or path. Binary files, VCS internals, symlinks and files over 2MB are skipped; caps and " +
+			"skips are reported, and a file the sandbox would not let this tool read is named rather " +
+			"than hidden. Prefer this over reading files wholesale to locate something.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -383,6 +322,11 @@ func (r *Registry) searchFiles() *Tool {
 			"required": []string{"pattern"},
 		},
 		Run: func(ctx context.Context, args map[string]any) (string, error) {
+			// The kernel adjudicates this read (ADR-0086 §1): in the
+			// child, credential material cannot be opened at all.
+			if out, err, ok := r.viaChild(ctx, "search_files", args); ok {
+				return out, err
+			}
 			pattern, _ := args["pattern"].(string)
 			if pattern == "" {
 				return "", fmt.Errorf("pattern is required")
@@ -412,23 +356,14 @@ func (r *Registry) searchFiles() *Tool {
 			if err != nil {
 				return "", err
 			}
-			// A credential-named root is never entered (ADR-0085 §2),
-			// whatever it was called: the rule reads the real path.
-			realRoot, ok := realRootOf(abs)
-			if !ok {
-				return "", fmt.Errorf("resolve %s: a link in the path is broken or its target is not accessible", p)
-			}
-			if sandbox.CredentialPath(realRoot) {
-				return credentialSkipNote(1), nil
-			}
 			includeIgnored, _ := args["include_ignored"].(bool)
 			rules := ignore.RootWith(r.projectDir, abs, includeIgnored, r.gitignoreReader)
 			tally := &ignoreTally{}
 
 			var b strings.Builder
 			totalMatches, filesHit, filesScanned, filteredOut, shownLines := 0, 0, 0, 0, 0
-			unwalked := 0   // directories cut at DirEntryCap
-			credential := 0 // entries withheld under the credential rule (ADR-0085 §2)
+			unwalked := 0        // directories cut at DirEntryCap
+			var refused []string // files the kernel would not let us read (ADR-0086 §3)
 			capped := false
 			interrupted := false
 			var walk func(dir string, rules *ignore.Rules)
@@ -467,14 +402,6 @@ func (r *Registry) searchFiles() *Tool {
 						continue // a submodule's .git is a file — skip by name either way
 					}
 					full := filepath.Join(dir, e.Name())
-					// Credential material is never read here, and a
-					// credential-named directory is never entered: one
-					// rule (sandbox.CredentialPath) on the real path,
-					// the count reported (ADR-0085 §2).
-					if credentialEntry(realRoot, abs, full) {
-						credential++
-						continue
-					}
 					if e.IsDir() {
 						if rules.Ignored(e.Name(), true) {
 							tally.dir(e.Name())
@@ -496,8 +423,14 @@ func (r *Registry) searchFiles() *Tool {
 					if err != nil || info.Size() > searchFileCap || isImageExt(e.Name()) {
 						continue
 					}
-					data, ok := r.readForSearch(full)
+					data, ok, readErr := r.readForSearch(full)
 					if !ok {
+						// A file the cage refused is named, not hidden:
+						// the shape `grep -r` has, and the shape every
+						// skip takes (ADR-0086 §3).
+						if errors.Is(readErr, fs.ErrPermission) && len(refused) < searchPerFileCap {
+							refused = append(refused, relOrDot(r.projectDir, full))
+						}
 						continue
 					}
 					filesScanned++
@@ -573,8 +506,8 @@ func (r *Registry) searchFiles() *Tool {
 			if unwalked > 0 {
 				out += fmt.Sprintf("\n[%d director%s had more than %d entries — the rest of each was not searched]", unwalked, plural(unwalked, "y", "ies"), DirEntryCap)
 			}
-			if s := credentialSkipNote(credential); s != "" {
-				out += "\n" + s
+			if len(refused) > 0 {
+				out += fmt.Sprintf("\n[not read: %s — reading one needs the operator's approval]", strings.Join(refused, ", "))
 			}
 			if s := tally.summary(); s != "" {
 				out += "\n" + s

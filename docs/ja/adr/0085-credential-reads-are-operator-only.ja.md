@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted**（2026-09-13） — 実装済み・未リリース |
+| Status | **Accepted**（2026-09-13） — 実装済み。§2 は ADR-0086 により撤回 |
 | Date | 2026-09-13 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

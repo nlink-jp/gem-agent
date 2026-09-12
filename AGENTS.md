@@ -102,6 +102,8 @@ internal/workdir/  per-session work directory (ADR-0058): layout under the state
                    confirmation-gated, never a live session's directory
 cmd/workdirs.go    `workdirs` list + `clean` (ADR-0059): the remedy the startup note points at
 internal/telemetry/ opt-in audit events (ADR-0035): metadata only, Cloud Logging or OTLP, Sub(label) for child agents
+cmd/filechild.go   the sandboxed child the covered reads run in (ADR-0086):
+                   the hidden `__file-read` subcommand, the spawn, the startup probe
 cmd/settings.go    /settings panel content + edits (ADR-0009)
 internal/mention/  @-reference parsing, project-confined resolution, completion
 internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery
@@ -449,6 +451,27 @@ a new hook) is an architecture change and takes the same rows as a
   fix the profile (and extend `TestLaneEnforcement`), never the regex.
   A read-lane call is non-mutating (`Tool.MutatesWith`) only when the
   registry has a verified read lane (`SetLaneExec(fn, sandbox.Enforcement{Confined: true, ReadLane: true})`).
+- **The kernel reads the file** (ADR-0086) — the covered reads
+  (`read_file`, `view_image`, `read_document`, `file_info`,
+  `search_files`, and `summarize_file` through `read_file`) run in a
+  child of this binary under `sandbox.FileReadProfile`, which denies
+  `sandbox.CredentialFilters` at the kernel. `Registry.SetFileChild`
+  injects it the way `SetLaneExec` injects the lanes, after
+  `sandbox.VerifyFileReadLane` proves on this machine that the cage
+  refuses `.env` and reads an ordinary file; unproven, the reads stay
+  in process and the note says so. A refused open comes back as
+  `tools.ErrCredentialRead`, which `Agent.credentialRetry` turns into
+  the operator's question and, on a yes, re-runs under
+  `tools.WithDirectRead` — the operator lane's authority, and the
+  reason an approved credential read must NOT go to the child. So the
+  Go matcher raises the prompt and the kernel is the boundary: a miss
+  costs a spawn and a blunter prompt, never a leak. **Never add a
+  matching rule to close a reported "hole"** — an entry in
+  `internal/sandbox` is the mechanism working; a rule about how paths
+  compare is the signal the boundary is in the wrong place (the
+  matcher changed six times in one release before this).
+  Hard links, copies and secrets in unlisted files are the written
+  ceiling, not holes.
 - **One list, four enforcers** (ADR-0073 §3, ADR-0085) —
   `sandbox.PersistentFiles` / `PersistentFile` and
   `sandbox.CredentialFilters` / `CredentialPath` are read by the profile
@@ -458,9 +481,9 @@ a new hook) is an architecture change and takes the same rows as a
   are `Review` + `OperatorOnly` (must-prompt in every mode, denied in
   `-p`, the model tier never consulted — `credentialRead` in
   `internal/risk`, judged on the real path like the write tools), and
-  the walks (`search_files`, `list_tree`, `list_files`) withhold such an
-  entry and report the count (`credentialSkipNote`) instead of
-  prompting. `ScratchDirs` / `ScratchFiles` likewise. Adding a
+  the walks judge no names at all since ADR-0086 §3: they list every
+  entry and `search_files` names what the kernel would not let it read.
+  `ScratchDirs` / `ScratchFiles` likewise. Adding a
   persistent file or a credential location means adding it there,
   nowhere else — never a second check in a tool. **Name checks
   fold case**: the default APFS volume does, so a check keyed on exact

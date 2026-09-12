@@ -293,13 +293,13 @@ func TestReadForSearchSkipsOversize(t *testing.T) {
 	if err := os.WriteFile(p, []byte(strings.Repeat("a", searchFileCap+1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := r.readForSearch(p); ok {
+	if _, ok, _ := r.readForSearch(p); ok {
 		t.Fatal("a file past the cap was searched partially")
 	}
 	if err := os.WriteFile(p, []byte("needle\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if data, ok := r.readForSearch(p); !ok || !strings.Contains(string(data), "needle") {
+	if data, ok, _ := r.readForSearch(p); !ok || !strings.Contains(string(data), "needle") {
 		t.Fatal("a file within the cap was not read")
 	}
 }

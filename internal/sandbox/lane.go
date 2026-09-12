@@ -782,3 +782,73 @@ func ChildEnv(env []string) []string {
 	}
 	return out
 }
+
+// FileReadProfile is the cage the file tools' reads run in (ADR-0086).
+// It exists because the file tools do not pass through Seatbelt at all:
+// they are in-process Go code opening through os.Root, so until now the
+// only thing between `read_file .env` and the model was a matcher
+// written in Go, and a miss there was the file's content in the
+// transcript rather than a missing prompt.
+//
+// It grants nothing and takes three things away: every write, the
+// network, and the credential list — the same CredentialFilters every
+// other enforcer reads, with the .env template re-allow after it
+// because Seatbelt is last-match-wins. Project confinement stays in Go
+// (os.Root refuses an escape at the syscall, ADR-0072 §4); the kernel
+// is given exactly one job, which is that in this process credential
+// material cannot be opened.
+//
+// Measured: under this shape `cat .env` and `stat .env` are refused,
+// `.env.example` reads, and `ls` still lists the name — the kernel
+// bounds content and metadata, not names, which is why ADR-0086 §3
+// stops withholding names.
+func FileReadProfile(home string) string {
+	var b strings.Builder
+	b.WriteString("(version 1)\n")
+	b.WriteString("(allow default)\n")
+	b.WriteString("(deny file-write*)\n")
+	b.WriteString("(deny network*)\n")
+	deny, allow := CredentialFilters(home)
+	b.WriteString("(deny file-read*\n")
+	for _, f := range deny {
+		fmt.Fprintf(&b, "    %s\n", f)
+	}
+	b.WriteString(")\n(allow file-read*\n")
+	for _, f := range allow {
+		fmt.Fprintf(&b, "    %s\n", f)
+	}
+	b.WriteString(")\n")
+	return b.String()
+}
+
+// VerifyFileReadLane probes the profile the way the shell lanes are
+// probed (ADR-0073 §7, ADR-0086 §5): a credential-named file it must
+// refuse and an ordinary file it must read, both created for the probe
+// and removed. A runtime that cannot confirm both keeps reading in
+// process with the Go matcher as the boundary and says so — a degraded
+// state that claimed the kernel was watching would be worse than the
+// matcher.
+//
+// run is the caller's spawn: it runs the probe command under the
+// profile and returns its error, if any.
+func VerifyFileReadLane(dir string, run func(profile, command string) error) error {
+	if err := Available(); err != nil {
+		return err
+	}
+	secret := filepath.Join(dir, ".env")
+	plain := filepath.Join(dir, "probe-ordinary.txt")
+	for _, f := range []struct{ path, data string }{{secret, "PROBE=1\n"}, {plain, "ordinary\n"}} {
+		if err := os.WriteFile(f.path, []byte(f.data), 0o600); err != nil {
+			return fmt.Errorf("the file-read probe cannot write %s: %w", filepath.Base(f.path), err)
+		}
+		defer func(p string) { _ = os.Remove(p) }(f.path)
+	}
+	profile := FileReadProfile(filepath.Dir(dir))
+	if err := run(profile, "cat "+shellQuote(plain)); err != nil {
+		return fmt.Errorf("the file-read cage cannot read an ordinary file: %w", err)
+	}
+	if err := run(profile, "cat "+shellQuote(secret)); err == nil {
+		return fmt.Errorf("the file-read cage allowed a credential-named file")
+	}
+	return nil
+}
