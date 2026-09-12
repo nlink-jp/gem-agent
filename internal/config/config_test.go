@@ -448,3 +448,39 @@ func TestLoadProjectRefusesOversizeFile(t *testing.T) {
 		t.Fatalf("oversize project config accepted: %v", err)
 	}
 }
+
+// ADR-0084 §1: the scratch-cache table ships with Go's row, a file
+// adds rows to it and removes one with an empty value, and the
+// table refuses what is not a cache — loader variables, the variables
+// laneEnv decides, and directories that are not one name.
+func TestScratchCachesTable(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("GEMAGENT_PROJECT", "p")
+	t.Setenv("GEMAGENT_MODEL", "m")
+	cfg, err := Load(filepath.Join(t.TempDir(), "none.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Sandbox.Caches(); len(got) != 1 || got["GOCACHE"] != "go-build" {
+		t.Errorf("default table = %v", got)
+	}
+	path := writeConfig(t, "[sandbox.scratch_caches]\nGOCACHE = \"\"\nPIP_CACHE_DIR = \"pip\"\nUV_CACHE_DIR = \"uv\"\n")
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Sandbox.Caches(); len(got) != 2 || got["PIP_CACHE_DIR"] != "pip" || got["UV_CACHE_DIR"] != "uv" {
+		t.Errorf("table with Go removed = %v", got)
+	}
+	if cfg.Source("sandbox.scratch_caches") != FromFile {
+		t.Errorf("provenance = %q", cfg.Source("sandbox.scratch_caches"))
+	}
+	for _, bad := range []string{
+		"DYLD_INSERT_LIBRARIES = \"x\"", "LD_PRELOAD = \"x\"", "TMPDIR = \"t\"", "PATH = \"p\"",
+		"\"not a name\" = \"x\"", "GOCACHE = \"../out\"", "GOCACHE = \"a/b\"", "GOCACHE = \".\"",
+	} {
+		if _, err := Load(writeConfig(t, "[sandbox.scratch_caches]\n"+bad+"\n")); err == nil || !strings.Contains(err.Error(), "sandbox.scratch_caches") {
+			t.Errorf("%s: accepted (err=%v)", bad, err)
+		}
+	}
+}

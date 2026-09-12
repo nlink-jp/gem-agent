@@ -112,6 +112,18 @@ enabled = true
 # Keep the approval prompt for read-lane commands too (the kernel cage
 # still applies; only "runs unasked" is given up).
 #read_lane_prompts = false
+# Toolchain caches every shell_exec points into the session scratch
+# (ADR-0084): environment variable = directory name under it. The read
+# lane gets the name, the approved lanes "<name>-approved". Go's build
+# cache is the shipped row, which is why go vet / go test run in the
+# read lane; add your toolchain's cache variable, or set a row to ""
+# to remove it. Regenerable caches only — never a module or registry
+# store, and the loader variables are refused.
+#[sandbox.scratch_caches]
+#GOCACHE = "go-build"
+#PIP_CACHE_DIR = "pip"
+#UV_CACHE_DIR = "uv"
+#npm_config_cache = "npm"
 
 [agent]
 # Round budget for one turn. Reaching it is an intervention, not a

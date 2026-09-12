@@ -6,12 +6,17 @@
 
 - **Compiling, vetting and testing run in the read lane, unasked**
   (ADR-0084, lagent ADR-0008 ported). Every `shell_exec` now runs with
-  `GOCACHE` under the session's private scratch — the one directory the
-  read lane may write — so `go vet` and `go test` no longer fail on the
-  build cache under `~/Library/Caches` and no longer need the
-  approval-gated write lane; a build that writes its binary into the
-  project still does. The cache is the session's, never your shared
-  one, and the read lane's is separate from the approved lanes'. The
+  the toolchain caches in the new `[sandbox].scratch_caches` table
+  pointed under the session's private scratch — the one directory the
+  read lane may write. Go's `GOCACHE` is the shipped row, so `go vet`
+  and `go test` no longer fail on the build cache under
+  `~/Library/Caches` and no longer need the approval-gated write lane;
+  a build that writes its binary into the project still does. Add your
+  own toolchain's cache variable as a row (`PIP_CACHE_DIR = "pip"`), or
+  set a row to `""` to remove it; loader variables are refused, and the
+  table is global config only. The caches are the session's, never your
+  shared ones, and the read lane's are separate from the approved
+  lanes'. `/settings` shows the table. The
   system prompt and `shell_exec`'s description say so, and the
   prompt's "a denial is a decision — ask how to proceed" rule is gone:
   the denial carries its own route now.

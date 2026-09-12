@@ -5,6 +5,7 @@ package config
 
 import (
 	"github.com/nlink-jp/gem-agent/internal/bounded"
+	"regexp"
 
 	"fmt"
 	"os"
@@ -331,6 +332,53 @@ type SandboxConfig struct {
 	// (ADR-0073 §5 — the opt-out from "runs unasked"): the kernel cage
 	// still applies, the operator is asked as for any other call.
 	ReadLanePrompts bool `toml:"read_lane_prompts"`
+	// ScratchCaches is the table of toolchain caches redirected into
+	// the session scratch (ADR-0084 §1): environment variable → the
+	// directory name under the scratch. Every shell_exec runs with each
+	// variable pointing there — the read lane at the name itself, the
+	// approved lanes at "<name>-approved" — so a build cache no lane
+	// may write under ~/Library stops sending inspection to the write
+	// lane. Only regenerable caches belong here; the default row is
+	// Go's. An empty value removes a row (the default one included).
+	// Global config only: a project file could otherwise aim a loader
+	// variable at a directory the read lane writes.
+	ScratchCaches map[string]string `toml:"scratch_caches"`
+}
+
+// Caches is the scratch-cache table with removed rows dropped and the
+// values as directory names: what laneEnv consumes.
+func (s SandboxConfig) Caches() map[string]string {
+	out := map[string]string{}
+	for name, dir := range s.ScratchCaches {
+		if dir != "" {
+			out[name] = dir
+		}
+	}
+	return out
+}
+
+// scratchCacheName is the shape of an environment variable name.
+var scratchCacheName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// scratchCacheReserved are variables the table may not set: the ones
+// laneEnv already decides, and the loader variables, which would turn
+// a directory the read lane writes into code the approved lanes load.
+var scratchCacheReserved = map[string]bool{"PATH": true, "HOME": true, "TMPDIR": true, "TMP": true, "TEMP": true, "SHELL": true, "USER": true}
+
+func validateScratchCaches(caches map[string]string) error {
+	for name, dir := range caches {
+		switch {
+		case !scratchCacheName.MatchString(name):
+			return fmt.Errorf("sandbox.scratch_caches: %q is not an environment variable name", name)
+		case scratchCacheReserved[name], strings.HasPrefix(name, "DYLD_"), strings.HasPrefix(name, "LD_"):
+			return fmt.Errorf("sandbox.scratch_caches: %s cannot be redirected (not a cache)", name)
+		case dir == "":
+			// A removed row.
+		case dir == "." || dir == ".." || strings.ContainsAny(dir, `/\`):
+			return fmt.Errorf("sandbox.scratch_caches: %s = %q must be a single directory name under the scratch", name, dir)
+		}
+	}
+	return nil
 }
 
 // AgentConfig holds agent-loop tunables.
@@ -401,7 +449,7 @@ func defaults() Config {
 		// set a regional location.
 		GCP:       GCPConfig{Location: "global"},
 		Model:     ModelConfig{Safety: "default"},
-		Sandbox:   SandboxConfig{Enabled: true},
+		Sandbox:   SandboxConfig{Enabled: true, ScratchCaches: map[string]string{"GOCACHE": "go-build"}},
 		Approval:  ApprovalConfig{PinTrustedFiles: true},
 		Agent:     AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120, AutoCompact: true, CompactAtPct: 80},
 		MCP:       MCPConfig{Enabled: true, CallTimeoutSec: 60, Advertise: "all"},
@@ -553,6 +601,7 @@ var trackedKeys = []string{
 	"model.thinking", "model.risk", "model.risk_thinking",
 	"model.librarian", "model.librarian_thinking", "gcp.bucket",
 	"sandbox.enabled", "sandbox.read_lane_deny_exec", "sandbox.read_lane_prompts",
+	"sandbox.scratch_caches",
 	"approval.pin_trusted_files",
 	"agent.max_turns", "agent.shell_timeout_sec", "agent.auto_approve",
 	"agent.auto_compact", "agent.compact_at_pct",
@@ -564,6 +613,9 @@ var trackedKeys = []string{
 }
 
 func (c *Config) validate() error {
+	if err := validateScratchCaches(c.Sandbox.ScratchCaches); err != nil {
+		return err
+	}
 	for i, h := range c.Hooks.PreToolUse {
 		if strings.TrimSpace(h.Matcher) == "" {
 			return fmt.Errorf("hooks.pre_tool_use[%d]: matcher is required (a tool name, \"a|b\", or \"*\")", i)

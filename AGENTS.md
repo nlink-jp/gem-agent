@@ -643,13 +643,17 @@ a new hook) is an architecture change and takes the same rows as a
   apply directly, between turns. Under `"all"` both options are nil: do not
   route anything through the advertiser unless `cfg.MCP.OnRequest()`.
 - **The shell's environment is `laneEnv`, and toolchain caches live in the
-  scratch** (ADR-0084) — every lane gets `GOCACHE` under the read lane's
-  scratch via `toolchainCacheEnv`, the one list of redirected caches (Go
-  only; add another toolchain only after measuring its failure). The read
-  lane's directory (`go-build`) and the approved lanes' (`go-build-approved`)
-  are separate, and neither is the operator's `~/Library/Caches`: the read
-  lane runs unasked and a shared content-addressed cache is a poisoning
-  route into whatever consumes it next. The
+  scratch** (ADR-0084) — `toolchainCacheEnv` renders the operator's table
+  `[sandbox].scratch_caches` (`config.SandboxConfig.Caches()`; shipped row
+  `GOCACHE = "go-build"`) as variables pointed under the read lane's
+  scratch. Do not add a toolchain in code: it is a row in the table. The
+  read lane's directory (the row's name) and the approved lanes'
+  (`<name>-approved`) are separate, and neither is the operator's
+  `~/Library/Caches`: the read lane runs unasked and a shared
+  content-addressed cache is a poisoning route into whatever consumes it
+  next. `validateScratchCaches` refuses the loader variables and the ones
+  `laneEnv` decides; the table is global config only (the project file's
+  struct has no `[sandbox]`). The
   prompt says compile/vet/test are read-lane work; keep the prompt, the
   `shell_exec` description and this fact in agreement. A one-shot run
   passes `Options.Unattended`, and denial text comes from

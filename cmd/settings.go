@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -161,6 +162,8 @@ func (s *settingsStore) data() tui.SettingsData {
 		Source: "measured",
 		Detail: "established by probes at startup — restart with or without --no-sandbox to change it",
 	})
+	ro("safety", "sandbox.scratch_caches", scratchCachesLabel(s.cfg.Sandbox.Caches()), "sandbox.scratch_caches",
+		"toolchain caches every shell_exec points into the session scratch (the read lane's directory is separate from the approved lanes'); restart to change")
 	ro("limits", "agent.max_turns", strconv.Itoa(s.cfg.Agent.MaxTurns), "agent.max_turns", "")
 	ro("limits", "agent.shell_timeout_sec", strconv.Itoa(s.cfg.Agent.ShellTimeoutSec), "agent.shell_timeout_sec", "")
 	ro("limits", "agent.compact_at_pct", strconv.Itoa(s.cfg.Agent.CompactAtPct)+"%", "agent.compact_at_pct", "")
@@ -687,4 +690,22 @@ func contextWindowLabel(n int) string {
 		return "(auto-detect)"
 	}
 	return strconv.Itoa(n)
+}
+
+// scratchCachesLabel renders the scratch-cache table for the panel:
+// "GOCACHE→go-build, PIP_CACHE_DIR→pip", or "(none)".
+func scratchCachesLabel(caches map[string]string) string {
+	if len(caches) == 0 {
+		return "(none)"
+	}
+	names := make([]string, 0, len(caches))
+	for name := range caches {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	parts := make([]string, len(names))
+	for i, name := range names {
+		parts[i] = name + "→" + caches[name]
+	}
+	return strings.Join(parts, ", ")
 }
