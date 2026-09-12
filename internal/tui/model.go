@@ -1607,6 +1607,18 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		out, isErr, quit := m.slash(input)
+		// /clear empties the conversation on the agent's side, and the
+		// footer's context gauge is a mirror fed only by Usage rounds:
+		// it kept showing the discarded conversation's size — and its
+		// cache share — until the next round reported (operator
+		// report). Same shape as the /auto marker above: the shared
+		// handler cannot see this model, so the command word says what
+		// changed. Every branch of the handler's /clear empties the
+		// history (a new session, or cleared in place when one cannot
+		// be opened), so the reset does not depend on its outcome.
+		if strings.Fields(input)[0] == "/clear" {
+			m.resetContextGauge()
+		}
 		text := strings.TrimRight(out, "\n")
 		if isErr {
 			// Errors must stand out — dim meta styling here is how an
@@ -2291,6 +2303,17 @@ func (m Model) optionsLine() string {
 		parts = append(parts, "  "+label)
 	}
 	return strings.Join(parts, "   ")
+}
+
+// resetContextGauge returns the footer's context fields to the
+// session-start state: a cleared conversation has no measured size, and
+// no cache share, until its first round reports one. The cumulative
+// total is not a gauge and stays — /usage and the exit summary count
+// the process, not the conversation.
+func (m *Model) resetContextGauge() {
+	m.ctxTokens = 0
+	m.promptTokens = 0
+	m.cachedTokens = 0
 }
 
 // footer is the persistent status line: model, context occupancy vs the

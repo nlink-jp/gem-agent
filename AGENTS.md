@@ -885,3 +885,10 @@ a new hook) is an architecture change and takes the same rows as a
   everything on a toggle respawned 25 processes inside the Bubble Tea
   update loop; the keys typed meanwhile queued behind it (field report,
   post-v0.72.0).
+- **The footer's `ctx`/`cache` gauge is a mirror.** It follows each
+  round's `Usage` message and is reset on the `/clear` command word in
+  `internal/tui/model.go` — the shared slash handler empties the
+  conversation but cannot see the model (the same shape as the `/auto`
+  marker). A new slash command that empties the conversation must reset
+  it the same way; a third such case is the signal to make the handler
+  declare its effect instead of matching command words.

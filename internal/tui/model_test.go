@@ -652,6 +652,61 @@ func TestFooterShowsModelUsageAndProject(t *testing.T) {
 	}
 }
 
+// /clear empties the conversation in the agent, but the footer's ctx
+// gauge is a mirror fed by Usage rounds only: it kept showing the
+// discarded conversation's size and cache share until the next round
+// (operator report). The command word resets it, the way /auto keeps
+// its marker; the cumulative total counts the process and stays.
+func TestSlashClearResetsContextGauge(t *testing.T) {
+	c := &capture{}
+	m := New(Options{
+		StartTurn: func(ctx context.Context, input string) {},
+		Slash:     slashStub,
+		Printer:   c.printer,
+		RenderFactory: func(width int) func(string) string {
+			return func(s string) string { return s }
+		},
+		ModelName:  "gemini-3.7-flash",
+		ProjectDir: "~/works/demo",
+	})
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = next.(Model)
+	next, _ = m.Update(ContextWindow{Tokens: 1_048_576})
+	m = next.(Model)
+	next, _ = m.Update(Usage{Prompt: 11800, Output: 500, Cached: 5900})
+	m = next.(Model)
+	if v := m.footer(); !strings.Contains(v, "ctx 12.3k/1.0M (1%)") || !strings.Contains(v, "cache 50%") {
+		t.Fatalf("precondition: gauge not loaded: %q", v)
+	}
+
+	// Another slash command leaves the gauge alone.
+	m.ta.SetValue("/help")
+	m = press(m, enter())
+	if v := m.footer(); !strings.Contains(v, "ctx 12.3k/1.0M (1%)") {
+		t.Errorf("/help must not touch the gauge: %q", v)
+	}
+
+	m.ta.SetValue("/clear")
+	m = press(m, enter())
+	v := m.footer()
+	if !strings.Contains(v, "ctx –/1.0M") {
+		t.Errorf("after /clear the gauge must return to the placeholder: %q", v)
+	}
+	if strings.Contains(v, "cache") {
+		t.Errorf("after /clear the cache share is the old conversation's: %q", v)
+	}
+	if !strings.Contains(v, "total 12.3k") {
+		t.Errorf("total counts the process, not the conversation: %q", v)
+	}
+
+	// The next round measures the new conversation.
+	next, _ = m.Update(Usage{Prompt: 1000, Output: 200})
+	m = next.(Model)
+	if v := m.footer(); !strings.Contains(v, "ctx 1.2k/1.0M (0%)") || !strings.Contains(v, "total 13.5k") {
+		t.Errorf("first round after /clear: %q", v)
+	}
+}
+
 func TestHumanTokens(t *testing.T) {
 	cases := map[int]string{999: "999", 1000: "1.0k", 12345: "12.3k", 1_048_576: "1.0M"}
 	for n, want := range cases {

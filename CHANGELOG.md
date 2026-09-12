@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- The footer's `ctx` gauge (and its cache share) is reset by `/clear`.
+  It is a mirror fed by each round's usage, and the shared slash
+  handler that empties the conversation cannot see the TUI, so the
+  discarded conversation's size stayed on screen until the next round
+  reported (operator report). The `total` figure counts the process
+  and is unchanged.
+
 ## [0.77.0] - 2026-09-12
 
 ### Changed
