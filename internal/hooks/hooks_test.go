@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -76,15 +77,50 @@ func TestFailOpenWithNotice(t *testing.T) {
 			t.Errorf("%s: expected one warning, got %v", name, notes)
 		}
 	}
-	// Plain informational output is not a failure and not a verdict.
+	// Plain output is not a failure and not a verdict: the call
+	// proceeds, and the session is told (TestPlainOutputIsReported).
 	deny, _, notes := run(t, Hook{Matcher: "*", Command: `echo checked`}, "shell_exec", nil)
-	if deny || len(notes) != 0 {
+	if deny || len(notes) != 1 {
 		t.Errorf("informational output: deny=%v notes=%v", deny, notes)
 	}
 	// An explicit allow decision is pass-through, not a bypass.
 	deny, _, _ = run(t, Hook{Matcher: "*", Command: `echo '{"hookSpecificOutput":{"permissionDecision":"allow"}}'`}, "shell_exec", nil)
 	if deny {
 		t.Error("allow denied")
+	}
+}
+
+// System risk review 2026-09-13 (R06): exit 0 with stdout that is not a
+// JSON verdict was the one fail-open path that said nothing — a guard
+// that printed a debug line before its verdict, or a malformed verdict,
+// passed every call in silence. It still passes (hooks only tighten,
+// ADR-0044 §3) and now the operator is told. The normal pass — exit 0
+// with nothing on stdout — stays silent, and a JSON verdict that does
+// not deny is a verdict, not noise.
+func TestPlainOutputIsReported(t *testing.T) {
+	for name, c := range map[string]struct {
+		command string
+		notes   int
+	}{
+		"plain text":                 {`echo checked`, 1},
+		"debug line before the JSON": {`echo debug; echo '{"decision":"block","reason":"x"}'`, 1},
+		"malformed JSON":             {`echo '{"decision": block}'`, 1},
+		"empty stdout":               {`exit 0`, 0},
+		"whitespace only":            {`printf '  \n\n'`, 0},
+		"allow verdict":              {`echo '{"hookSpecificOutput":{"permissionDecision":"allow"}}'`, 0},
+		"stderr only":                {`echo note >&2`, 0},
+	} {
+		deny, _, notes := run(t, Hook{Matcher: "*", Command: c.command}, "shell_exec", nil)
+		if deny {
+			t.Errorf("%s: denied — output that is not a verdict must not deny", name)
+		}
+		if len(notes) != c.notes {
+			t.Errorf("%s: notes = %v, want %d", name, notes, c.notes)
+			continue
+		}
+		if c.notes == 1 && (!strings.Contains(notes[0], "not a verdict") || !strings.Contains(notes[0], fmt.Sprintf("%q", c.command)) || !strings.Contains(notes[0], "proceeds")) {
+			t.Errorf("%s: the notice must name the hook, the fact and the outcome: %q", name, notes[0])
+		}
 	}
 }
 

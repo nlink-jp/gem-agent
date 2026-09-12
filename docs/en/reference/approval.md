@@ -33,10 +33,13 @@ returned to the model as the tool result, so it corrects and retries
 (verified live: the org's relative-path guard denied a `sed -i`
 inside gem-agent, the full reason reached the model, and the file
 stayed untouched). Anything short of an explicit deny — a crash, a
-timeout, unparseable output — proceeds with a warning: hooks only
-ever tighten, and a broken guard script must not brick the fallback
-tool. Hooks cover the model's calls only; the operator's own
-`!command` escape does not pass through them.
+timeout, output that is not a JSON verdict (a debug line printed
+before the JSON counts) — proceeds with a warning; only the normal
+pass, exit 0 with nothing on stdout, is silent. Hooks only ever
+tighten, and a broken guard script must not brick the fallback tool —
+but it must not stop guarding in silence either. Hooks cover the
+model's calls only; the operator's own `!command` escape does not pass
+through them.
 
 Two further events, `[[hooks.session_start]]` and
 `[[hooks.user_prompt_submit]]` (ADR-0069), are not gates on a call:

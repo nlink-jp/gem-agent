@@ -20,6 +20,21 @@
   are dropped, the three exports survive. ADR-0073 §3 carries an
   *Amended* note.
 
+### Fixed
+
+- **A pre-tool hook that exits 0 with output that is not a verdict is
+  reported.** ADR-0044 §3 promised a warning for unparseable output;
+  the runtime warned on a non-zero exit and a timeout only, and exit 0
+  with non-JSON stdout proceeded in silence — a guard that printed a
+  debug line before its verdict JSON, or whose verdict came out
+  malformed, had silently stopped guarding (system risk review
+  2026-09-13, chapter 14 / R06). The session now says
+  `hook "…" printed output that is not a verdict — the call proceeds`.
+  Still fail-open: hooks only tighten, and the normal pass (exit 0,
+  empty stdout) stays silent; a JSON verdict that does not deny is a
+  pass without a notice. ADR-0044 carries an *Amended* note recording
+  Claude Code's documented contract for such output.
+
 ## [0.77.3] - 2026-09-13
 
 ### Security

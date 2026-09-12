@@ -182,11 +182,14 @@ them — for `shell_exec` the command string is `tool_input.command`.
   unchanged; or
 - exit with code 2, the reason on stderr.
 
-Everything else is a pass: exit 0 with no output (or informational
-output) sends the call on to the normal approval ladder — a hook can
-refuse a call but never approve one. A crash, a timeout
-(`timeout_sec`, default 10), or unparseable output proceeds with a
-warning in the session.
+Everything else is a pass — a hook can refuse a call but never approve
+one. Exit 0 with no output sends the call on to the normal approval
+ladder silently. Exit 0 with output that is not a JSON verdict sends
+it on too, and the session says so (`hook "…" printed output that is
+not a verdict — the call proceeds`): a guard that prints a debug line
+before its verdict, or whose verdict comes out malformed, would
+otherwise be a guard that had silently stopped guarding. A crash or a
+timeout (`timeout_sec`, default 10) proceeds with a warning as well.
 
 A complete minimal hook:
 

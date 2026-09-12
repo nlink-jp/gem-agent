@@ -263,6 +263,14 @@ func exitCode2(err error) bool {
 // exit, unparseable output, timeout — lets the call proceed to the
 // normal approval ladder: hooks only ever tighten (ADR-0044 §3). The
 // hook runs in s.CWD and is told which session is calling.
+//
+// Every fail-open path is reported except the one that is the normal
+// pass: exit 0 with nothing on stdout. Exit 0 with output that is not
+// a JSON verdict proceeds too, and says so — a guard that printed a
+// debug line before its verdict, or whose verdict came out malformed,
+// was a guard that had silently stopped guarding (system risk review
+// 2026-09-13, R06). Claude Code's documented contract shows such
+// stdout to the user in transcript mode; the notice is that view.
 func (r *Runner) Pre(ctx context.Context, s Session, name string, args map[string]any) (deny bool, reason string) {
 	for _, h := range r.hooks.PreToolUse {
 		if !matches(h.Matcher, name) {
@@ -286,6 +294,8 @@ func (r *Runner) Pre(ctx context.Context, s Session, name string, args map[strin
 			if blocked, why := v.denies(); blocked {
 				return true, orDefault(why, "blocked by a pre-tool hook")
 			}
+		} else if strings.TrimSpace(out.stdout) != "" {
+			r.notify(fmt.Sprintf("hook %q printed output that is not a verdict — the call proceeds", h.Command))
 		}
 	}
 	return false, ""

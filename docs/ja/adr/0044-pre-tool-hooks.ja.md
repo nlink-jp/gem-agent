@@ -8,6 +8,21 @@
 | 決定者 | nlink-jp メンテナ |
 | 契機 | オペレーター: Claude Code の Hook に相当するものを gem-agent に搭載できるか。組織の PreToolUse ガードは「手順書は注意が緩んだ瞬間にこそ破られるので、制御はエージェントの外に置く」ために存在する — そしてフォールバックの瞬間にそれが消える |
 
+*2026-09-13 の修正（v0.77.3 後）: §3 は解析不能な出力に警告を約束していたが、
+ランタイムが警告していたのは非ゼロ exit とタイムアウトだけで、exit 0 かつ
+stdout が JSON 判定でない場合は無言で続行していた（システムリスクレビュー
+2026-09-13、14 章 / R06: 判定の前にデバッグ行を印字するガードや、判定が
+壊れて出たガードは、無言で守るのをやめている）。いまは exit 0 の stdout が
+JSON 文書でなければすべて
+`hook "…" printed output that is not a verdict — the call proceeds`
+としてオペレーターに報告する。通常の素通り — exit 0 で stdout が空 — は
+無言のままで、JSON 文書はどの項目を持とうと判定として扱う（`allow` や未知の
+項目は通知なしの素通り）。失敗方式は変わらない: コールは続行し、フックは
+締める方向にしか働かない。Claude Code の文書上の契約（hooks リファレンス。
+ここでは実測していない）では、PreToolUse フックの exit 0 の stdout は
+transcript モードで利用者に表示され、判定には影響しない — 素の stdout は
+両ランタイムで許され、両方で人に届く。この通知は gem-agent 側のその表示である。*
+
 ## Context（背景）
 
 組織は Claude Code の `PreToolUse` フック（`guard-recursive-write.py`）
