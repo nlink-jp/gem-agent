@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.77.2] - 2026-09-13
 
 ### Security
 
@@ -15,7 +15,9 @@
   changed it, and the names fold case like the rest of the list. It is
   not content-pinned (`trustpin.ConfigNames` is unchanged): gem-agent
   never reads it, so a pin would re-ask about a file this runtime does
-  not load — lagent pins only its own pair the same way.
+  not load — lagent pins only its own pair the same way. The
+  `shell_exec` description and its write-lane denial note now name the
+  full list.
 
 ### Docs — MCP does define `notifications/cancelled`; the receiver may ignore it
 
