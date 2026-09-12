@@ -1610,7 +1610,9 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			if fromAllowlist {
 				source = "allowlist"
 			}
-			operatorWrite = ok && d.Verdict.OperatorOnly && !fromAllowlist
+			// A write: an operator-only READ (ADR-0085) is not what the
+			// pin hooks are for.
+			operatorWrite = ok && d.Mutating && d.Verdict.OperatorOnly && !fromAllowlist
 			a.telemetry.Approval(tc.Name, decision, "gate", mustPrompt, reason, a.laneOf(tc))
 			// The transcript record (ADR-0045 §7) survives /learn's
 			// withdrawal (ADR-0049 §2): telemetry is opt-in and

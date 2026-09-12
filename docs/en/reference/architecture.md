@@ -198,7 +198,9 @@ every other function. The rule tier judges file tools by exact target
 on the real path (a write into the files later sessions trust — the
 instruction files, `.mcp.json`, `.gem-agent.toml`, the sibling
 runtime's `.lagent.toml`, `.git` — is operator-only, never lifted by an
-allowlist or the model tier), and
+allowlist or the model tier; a read tool on a credential path —
+`.env`, keys, the sandbox's one credential list — is operator-only the
+same way, and the walks withhold such entries with a count, ADR-0085), and
 shell commands by a Block floor alone (`sudo`, `rm -rf`, `curl | sh`
 and kin) — for everything else about a command the lane decides
 (ADR-0073): a verified read-lane command is not mutating and passes no

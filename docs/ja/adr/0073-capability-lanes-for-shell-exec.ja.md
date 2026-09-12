@@ -126,6 +126,14 @@ administrator privileges`、全レーンで。パターンは助言的で寛容�
 定数にテストでピン留めされ、子への新しい export はそこへの 1 行であって
 接頭辞ではない。*
 
+*2026-09-13 の修正（ADR-0085 による）: 資格情報一覧に 4 つ目の強制者が付いた。
+read ツール（`read_file`・`view_image`・`read_document`・`file_info`・
+`summarize_file`）もパスを `CredentialPath` で判定し — 一致は操作者だけが
+答えられる Review — walk は一致するエントリを差し止めて件数を報告する。
+それまで read ツールは一覧を参照せず、プロジェクト内の `read_file .env` は
+全モードで Safe だった（システムリスクレビュー 2026-09-13、R02）。一覧は
+引き続き `internal/sandbox` に 1 つ。*
+
 ### 4. アーキテクチャテストがクラス B・C・E を閉じる
 
 `internal/archtest` が非テスト全ファイルの AST を歩き、次で失敗する:

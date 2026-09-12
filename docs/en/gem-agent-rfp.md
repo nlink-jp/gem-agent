@@ -59,6 +59,7 @@ amended by ADR-0073 (the shell's lane, not its text, decides):
 | `shell_exec` in the `read` lane (kernel-enforced: private scratch only, no network, no IPC) | auto-approved once the lane is verified at startup |
 | Mutating tools (`write_file`, `edit_file`, `shell_exec` in the `write` lane, memory writes, web egress) | per-call approval |
 | Writes into the files later sessions trust, `shell_exec` in the `operator` lane, any unsandboxed command | operator-only: the human answers, no allowlist or model tier lifts it |
+| A read tool (`read_file`, `view_image`, `read_document`, `file_info`, `summarize_file`) on a credential path — `.env`, keys, credential stores, the sandbox's one list (ADR-0085) | operator-only: the human answers in every mode, denied in `-p`; the walks withhold such entries and report the count |
 | MCP tools (from external servers) | per-call approval, never auto-approvable to Safe |
 
 The approval prompt offers "always allow in this session", which registers the tool in
@@ -142,7 +143,8 @@ max_turns = 50
 2. **MITL approval gates within that reach** — `write`-lane commands, file writes,
    memory writes, web egress and MCP calls ask per call, with a session-scoped
    allowlist; writes into the instruction/configuration files, `operator`-lane and
-   unsandboxed commands are operator-only. Project trust is granted once per
+   unsandboxed commands are operator-only, and so is a read tool on a credential
+   path (ADR-0085). Project trust is granted once per
    directory (ADR-0023) and pinned to the content it covers (ADR-0074): a changed
    `AGENTS.md`, `.mcp.json`, `.gem-agent.toml` or project skill asks again before
    it is loaded

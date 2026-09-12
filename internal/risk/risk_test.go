@@ -282,3 +282,47 @@ func TestTmpAliasIsTheProject(t *testing.T) {
 		t.Errorf("aliased AGENTS.md = %v (%s), want operator-only", v.Tier, v.Reason)
 	}
 }
+
+// ADR-0085: a read tool on a credential path is Review that only the
+// operator may answer — the file-tool analogue of the operator lane
+// being the only lane that may read credentials. The rule is the write
+// tools' own (sandbox.CredentialPath, templates re-allowed, case
+// folded); the walks are not judged here — they withhold and count.
+func TestCredentialReadsAreOperatorOnly(t *testing.T) {
+	readTools := []string{"read_file", "view_image", "read_document", "file_info", "summarize_file"}
+	for _, tool := range readTools {
+		for _, p := range []string{".env", "sub/.env.local", ".ENV", "id_rsa", "keys/id_ed25519", "credentials.json",
+			"gcp/my-service-account.json", "~/.ssh/id_rsa", proj + "/.env", ".npmrc", proj + "/.aws/credentials"} {
+			v := Classify(tool, false, map[string]any{"path": p}, proj, "")
+			if v.Tier != Review || !v.OperatorOnly {
+				t.Errorf("%s(%q) = %v operatorOnly=%v (%s), want operator-only review", tool, p, v.Tier, v.OperatorOnly, v.Reason)
+			}
+		}
+		for _, p := range []string{".env.example", ".env.sample", ".env.template", ".env.dist", ".envrc", "README.md",
+			"src/main.go", "environment.md", "/etc/passwd", proj + "/docs/env.md"} {
+			if v := Classify(tool, false, map[string]any{"path": p}, proj, ""); v.Tier != Safe {
+				t.Errorf("%s(%q) = %v (%s), want safe", tool, p, v.Tier, v.Reason)
+			}
+		}
+	}
+	// file_info's batch: one credential path in twenty is enough.
+	v := Classify("file_info", false, map[string]any{"paths": []any{"README.md", "src/a.go", "sub/.env"}}, proj, "")
+	if v.Tier != Review || !v.OperatorOnly {
+		t.Errorf("file_info batch with .env = %v operatorOnly=%v, want operator-only review", v.Tier, v.OperatorOnly)
+	}
+	if v := Classify("file_info", false, map[string]any{"paths": []any{"README.md", ".env.example"}}, proj, ""); v.Tier != Safe {
+		t.Errorf("file_info batch without a credential = %v (%s), want safe", v.Tier, v.Reason)
+	}
+	// The walks never prompt: they withhold the entry and report the
+	// count inside the result instead (ADR-0085 §2).
+	for _, tool := range []string{"search_files", "list_tree", "list_files"} {
+		if v := Classify(tool, false, map[string]any{"path": ".ssh", "pattern": "x"}, proj, ""); v.Tier != Safe {
+			t.Errorf("%s on a credential dir = %v (%s), want safe (the walk withholds and counts)", tool, v.Tier, v.Reason)
+		}
+	}
+	// The verdict is a floor the ladder reads (OperatorOnly), not Block:
+	// reading a secret with the operator's yes is legitimate work.
+	if v := Classify("read_file", false, map[string]any{"path": ".env"}, proj, ""); v.Tier == Block {
+		t.Error("a credential read must be operator-only Review, not Block")
+	}
+}

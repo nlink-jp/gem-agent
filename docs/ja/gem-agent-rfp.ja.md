@@ -58,6 +58,7 @@
 | `read` レーンの `shell_exec`（カーネル強制: 専用 scratch のみ書込可、ネットワーク・IPC 無し） | 起動時にレーンが検証されれば自動許可 |
 | 変更系ツール（`write_file`・`edit_file`・`write` レーンの `shell_exec`・メモリ書込・Web 送信） | 都度承認 |
 | 後続セッションが信頼するファイルへの書込・`operator` レーンの `shell_exec`・sandbox 無しのコマンド | 操作者専用: 人間が答える。allowlist もモデル層も解除しない |
+| 資格情報パス — `.env`・鍵・資格情報ストア、sandbox の唯一の一覧（ADR-0085）— への read ツール（`read_file`・`view_image`・`read_document`・`file_info`・`summarize_file`） | 操作者専用: 全モードで人間が答え、`-p` では拒否。walk はそのエントリを差し止めて件数を報告する |
 | MCP ツール（外部サーバー由来） | 都度承認。構造的に Safe へ落ちない |
 
 承認プロンプトでは「このセッションでは常に許可」を選択でき、セッション内
@@ -136,7 +137,8 @@ max_turns = 50
    Block の床としてだけ残る
 2. **その範囲の内側の MITL 承認ゲート** — `write` レーンのコマンド・ファイル書込・
    メモリ書込・Web 送信・MCP 呼出は都度承認 + セッション内 allowlist。指示/設定ファイル
-   への書込・`operator` レーン・sandbox 無しのコマンドは操作者専用。プロジェクト信頼は
+   への書込・`operator` レーン・sandbox 無しのコマンドは操作者専用で、資格情報パスへの
+   read ツールも同じ（ADR-0085）。プロジェクト信頼は
    ディレクトリごとに一度付与し（ADR-0023）、覆う内容にピン留めする（ADR-0074）:
    変化した `AGENTS.md`・`.mcp.json`・`.gem-agent.toml`・プロジェクトスキルは読み込む前に
    再確認する

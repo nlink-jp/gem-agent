@@ -75,7 +75,8 @@ internal/mcpfilter/ the one predicate behind `[mcp] exclude` (ADR-0077): is this
 internal/ignore/   ignore-aware enumeration (ADR-0052): builtin dir list + full
                    gitignore matcher (in-repo, git check-ignore cross-checked)
 internal/risk/     rule tier of the auto-approve ladder (pure, no model); exact
-                   for file-tool paths (persistent files OperatorOnly, ADR-0072),
+                   for file-tool paths (persistent files OperatorOnly, ADR-0072;
+                   credential paths OperatorOnly for the read tools, ADR-0085),
                    a Block floor only for shell text — the lane decides the rest
                    (ADR-0073); the shared lists come from internal/sandbox
 internal/policy/   per-tool approval policy (ADR-0008), pure resolver; also the
@@ -448,11 +449,20 @@ a new hook) is an architecture change and takes the same rows as a
   fix the profile (and extend `TestLaneEnforcement`), never the regex.
   A read-lane call is non-mutating (`Tool.MutatesWith`) only when the
   registry has a verified read lane (`SetLaneExec(fn, sandbox.Enforcement{Confined: true, ReadLane: true})`).
-- **One list, three enforcers** (ADR-0073 §3) — `sandbox.PersistentFiles`
-  / `PersistentFile` and `sandbox.CredentialFilters` / `CredentialPath`
-  are read by the profile builder and by the file tools' verdict;
-  `ScratchDirs` / `ScratchFiles` likewise. Adding a persistent file or a
-  credential location means adding it there, nowhere else. **Name checks
+- **One list, four enforcers** (ADR-0073 §3, ADR-0085) —
+  `sandbox.PersistentFiles` / `PersistentFile` and
+  `sandbox.CredentialFilters` / `CredentialPath` are read by the profile
+  builder, by the write tools' verdict (Block), by the shell Block floor
+  and, since ADR-0085, by the read tools: `read_file` / `view_image` /
+  `read_document` / `file_info` / `summarize_file` on a credential path
+  are `Review` + `OperatorOnly` (must-prompt in every mode, denied in
+  `-p`, the model tier never consulted — `credentialRead` in
+  `internal/risk`, judged on the real path like the write tools), and
+  the walks (`search_files`, `list_tree`, `list_files`) withhold such an
+  entry and report the count (`credentialSkipNote`) instead of
+  prompting. `ScratchDirs` / `ScratchFiles` likewise. Adding a
+  persistent file or a credential location means adding it there,
+  nowhere else — never a second check in a tool. **Name checks
   fold case**: the default APFS volume does, so a check keyed on exact
   case protects nothing there (`agents.md` is `AGENTS.md`; a created
   `.git/hooks/PRE-COMMIT` runs). Seatbelt was measured to fold already;

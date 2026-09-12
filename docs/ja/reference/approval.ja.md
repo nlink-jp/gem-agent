@@ -88,7 +88,8 @@ purpose なしで届いたコールもそのまま実行でき、プロンプト
 TUI を使わない plain stdin ゲートは `y`/`n`/`N`/`a`）、拒否は拒否側に
 倒れます。`a` は危険側には届きません: Block 判定のコール（sudo・再帰
 削除・クレデンシャルパス等）、操作者専用の書込（指示・設定ファイル、
-`operator` シェルレーン）と "always" ポリシーのツールは以後も必ず
+`operator` シェルレーン）、操作者専用の読取（資格情報名のファイルへの
+read ツール、ADR-0085）と "always" ポリシーのツールは以後も必ず
 確認します（ADR-0021）。
 
 `N` は**理由を添えて拒否**します（ADR-0060）: 1 行の入力欄が開き、
@@ -141,7 +142,7 @@ answered …`・`rejected the call …`・`gem-agent could not complete …`）�
    このセッションで既に `a` と答えていれば、allowlist が答え、
    プロンプトは出ません。無条件にあなたへ届くのは **must-prompt**
    のコールだけ: Block 層・`operator` レーン・非封じ込めシェル・
-   `"always"` ポリシーです。したがって*エスカレートした*と
+   操作者専用の書込と読取（下記）・`"always"` ポリシーです。したがって*エスカレートした*と
    *あなたが確認された*は同じ文ではありません: モデル層が拒んだ
    コールはここへ来ますが、以前あなたがそのツールに打った `a` が
    答えることがあります。MCP ツールで最も広く効きます（`a` は同じ
@@ -177,9 +178,19 @@ answered …`・`rejected the call …`・`gem-agent could not complete …`）�
 `~/.docker/config.json`・`~/.git-credentials`・シェル履歴・`~/.netrc`・`~/.npmrc`・
 `~/.pypirc`・`~/.vault-token`・`~/.claude.json`、および場所を問わず `.env`
 （`.example`/`.sample`/`.template`/`.dist` は除く）・`id_rsa` 類・`credentials.json`・
-`*service-account*.json`・`application_default_credentials.json`。それ以外に
+`*service-account*.json`・`application_default_credentials.json`。**read ツールも
+同じ一覧に従います**（ADR-0085）: 一致するパス — 実パスで判定するので `.env` への
+リンクは `.env` の読取 — への `read_file`・`view_image`・`read_document`・
+`file_info`（バッチの全パス）・`summarize_file` は `AGENTS.md` への書込と同じく
+*不確実*で第 2 層を飛ばします: 全モードであなたが答え、以前の `a`・`"never"`
+ポリシー・`--allow` は答えず、`-p` は理由付きで拒否し、ファイル検索の子の
+ゲートは拒みます。walk — `search_files`・`list_tree`・`list_files` — は
+確認しません: 資格情報名のエントリは差し止め（資格情報名のディレクトリには
+決して入らず）、結果が件数を告げます — `[N credential-named entries skipped —
+reading one needs the operator's approval]`。あなたが打つ `@` 添付は
+あなたの yes であり、変わりません。それ以外に
 置かれた秘密 — たとえば `~/.config/<tool>/config.toml` のトークン（ADR-0076）— は
-read/write レーンで読め、write レーンではネットワークで外へ
+read/write レーンと read ツールで読め、write レーンではネットワークで外へ
 出せます — そこの判定者はモデル層で、`never` ポリシー下では誰もいません。
 
 偽の宣言は何も得ません: `read` は檻を狭めるだけ、`write`・`operator` は
@@ -497,7 +508,9 @@ stdin は読みません。端末でない stdin は EOF まで読みます — 
 残します。単発モードのレーン別: 検証済み read レーンはフラグ無しで走り、
 write レーンは `--allow shell_exec` か `--auto` が要り、operator レーンは
 フラグに関わらず拒否（聞く相手がいない）、`--no-sandbox` 下では全
-`shell_exec` が拒否です。
+`shell_exec` が拒否です。read ツールもフラグ無しで走りますが、どのフラグも
+開かない例外が 1 つあります: 資格情報名のファイル（`.env`・鍵・資格情報
+ストア — ADR-0085）の読取は拒否され、理由が `[denied: …]` 行に載ります。
 
 ## リスクルールブック（ADR-0050）
 

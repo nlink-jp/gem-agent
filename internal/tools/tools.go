@@ -1144,7 +1144,8 @@ func (r *Registry) listFiles() *Tool {
 		Name: "list_files",
 		Description: "List directory entries inside the project. Directories are " +
 			"suffixed with '/'; dependency/build directories and .gitignore'd entries are " +
-			"marked [ignored] — prefer not to descend into those. Use this to explore the " +
+			"marked [ignored] — prefer not to descend into those. Credential-named entries " +
+			"(.env, keys, credential stores) are withheld and counted. Use this to explore the " +
 			"project structure before reading or editing.",
 		Parameters: map[string]any{
 			"type": "object",
@@ -1170,8 +1171,13 @@ func (r *Registry) listFiles() *Tool {
 			}
 			rules := ignore.RootWith(r.projectDir, dir, false, r.gitignoreReader)
 			var names []string
+			credential := 0 // entries withheld under the credential rule (ADR-0085 §2)
 			for _, e := range entries {
 				n := e.Name()
+				if sandbox.CredentialPath(filepath.Join(dir, n)) {
+					credential++
+					continue
+				}
 				if e.IsDir() {
 					n += "/"
 				}
@@ -1193,6 +1199,9 @@ func (r *Registry) listFiles() *Tool {
 			if more {
 				names = append(names, fmt.Sprintf("[the directory has more than %d entries — the listing stopped there]", DirEntryCap))
 			}
+			if s := credentialSkipNote(credential); s != "" {
+				names = append(names, s)
+			}
 			if len(names) == 0 {
 				return "(empty directory)", nil
 			}
@@ -1207,7 +1216,8 @@ func (r *Registry) readFile() *Tool {
 		Description: "Read a file inside the project and return its content. " +
 			"Pass start_line/end_line (1-based, inclusive) to read a window instead of the whole " +
 			"file — pair with search_files results (path:line) and prefer windows for large files: " +
-			"everything read here is replayed on every later round. Large reads are truncated.",
+			"everything read here is replayed on every later round. Large reads are truncated. " +
+			"A credential-named file (.env, keys, credential stores) is read only with the operator's approval.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

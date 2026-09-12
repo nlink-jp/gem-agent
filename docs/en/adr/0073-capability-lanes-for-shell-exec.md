@@ -141,6 +141,15 @@ one map in `internal/sandbox` (`RuntimeExports`), pinned to the
 exporting packages' constants by a test, and a new export for
 children is a row there, never a prefix.*
 
+*Amended 2026-09-13 by ADR-0085: the credential list has a fourth
+enforcer. The read tools (`read_file`, `view_image`, `read_document`,
+`file_info`, `summarize_file`) judge their path by `CredentialPath`
+too — a match is Review only the operator may answer — and the walks
+withhold a matching entry and report the count. Until then the read
+tools never consulted the list: `read_file .env` inside the project
+was Safe in every mode (system risk review 2026-09-13, R02). Still one
+list, in `internal/sandbox`.*
+
 ### 4. Architecture tests close classes B, C and E
 
 `internal/archtest` walks the AST of every non-test file and fails on:

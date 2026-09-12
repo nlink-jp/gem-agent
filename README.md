@@ -128,7 +128,10 @@ your one-line "do this instead" to the model inside the denial itself,
 a session allowlist that never covers
 Block-tier calls, an opt-in two-tier auto-approve (rules first, model
 review second — edits to instruction and configuration files such as
-`AGENTS.md` and `.mcp.json` always ask you, and a trusted project's
+`AGENTS.md` and `.mcp.json` always ask you, a read of a credential-named
+file — `.env`, keys, credential stores — asks you in every mode and is
+denied in `-p` while the walks withhold such entries and say how many,
+and a trusted project's
 instruction and configuration files are pinned by content so a changed
 one asks again before it is loaded), shell commands judged by
 the Seatbelt lane they declare rather than by their text (a read-lane

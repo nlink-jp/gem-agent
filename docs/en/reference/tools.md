@@ -48,6 +48,16 @@ instead of letting one directory starve the rest, and takes
 `dirs_only=true` for a file-count-annotated directory skeleton (a
 directory with no subdirectories lists its files instead, ADR-0084).
 
+All three walks withhold a credential-named entry — `.env` and its
+variants (not the committed `.env.example` / `.sample` / `.template` /
+`.dist`), `id_rsa` and kin, `credentials.json`, `*service-account*.json`,
+a `.ssh/` or `.aws/` directory: the sandbox's one credential list
+(ADR-0085 §2). `search_files` never reads one and never descends into
+a credential-named directory; `list_tree` and `list_files` do not list
+one. None of them prompts; each reports the count —
+`[N credential-named entries skipped — reading one needs the
+operator's approval]`.
+
 Both walks stop on Ctrl+C (ADR-0065): they consult the turn's context
 before every directory and file read (and every 1024 lines inside a
 file), so an interrupt on a slow filesystem costs one syscall, not
@@ -63,6 +73,15 @@ the whole file — annotated, never masquerading as the full text, and
 with no line-number prefixes, which would poison `edit_file`'s
 exact-match contract. Everything the model reads is replayed on every
 later round, so windows are the default working style.
+
+A credential-named file is read only with the operator's yes
+(ADR-0085): `read_file`, `summarize_file`, `view_image`, `read_document`
+and `file_info` on a path matching the sandbox's credential list —
+judged on the real path, so a link to `.env` is a `.env` read — prompt
+in every mode, are never answered by a session `a`, a `"never"` policy
+or `--allow`, never go to the model tier, and are denied in `-p`. The
+committed templates (`.env.example` and friends) are ordinary files.
+See [approval](approval.md).
 
 `summarize_file` returns a short summary instead of the bytes, produced
 by `[model].summary` — a lightweight model sharing the main model's

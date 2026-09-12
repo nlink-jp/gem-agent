@@ -19,6 +19,27 @@
   by the secret-name rule: `GEMAGENT_API_KEY=x` and `GEMAGENT_TOKEN=x`
   are dropped, the three exports survive. ADR-0073 §3 carries an
   *Amended* note.
+- **Credential paths are operator-only for the read tools too
+  (ADR-0085).** The one credential list (`sandbox.CredentialPath`) was
+  enforced by the read and write lanes, by `write_file` / `edit_file`
+  (Block) and by the shell Block floor — never by the read tools, so
+  `read_file .env` inside the project was Safe in every mode and its
+  content flowed to the model and the transcript (system risk review
+  2026-09-13, chapter 10 / R02). Now `read_file`, `view_image`,
+  `read_document`, `file_info` (every entry of a `paths` batch) and
+  `summarize_file` on a path matching the list — judged on the real
+  path, so a link to `.env` is a `.env` read; the `.env.example` /
+  `.sample` / `.template` / `.dist` templates stay ordinary — are
+  `Review` with `OperatorOnly`: they prompt in the default gate and
+  under `--auto` with the model tier never consulted, a session `a`, a
+  `"never"` policy or `--allow read_file` does not answer them, `-p`
+  denies them with the reason, and the file-search child's gate refuses
+  them. `search_files`, `list_tree` and `list_files` do not prompt:
+  they withhold a credential-named entry (a credential-named directory
+  is never entered) and report the count —
+  `[N credential-named entries skipped — reading one needs the
+  operator's approval]`. `@` attachments are unchanged. No list was
+  added: one list, four enforcers (ADR-0073 §3 amended).
 
 ### Fixed
 

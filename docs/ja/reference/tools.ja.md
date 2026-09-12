@@ -45,6 +45,16 @@ README 内のマッチ、`node_modules` に 86% 食われたツリー上限）�
 ます（サブディレクトリの無いディレクトリは代わりにファイルを列挙、
 ADR-0084）。
 
+3 つの walk はいずれも資格情報名のエントリを差し止めます — `.env` と
+その変種（コミットされる `.env.example` / `.sample` / `.template` /
+`.dist` は除く）・`id_rsa` 類・`credentials.json`・`*service-account*.json`・
+`.ssh/` や `.aws/` ディレクトリ: sandbox の唯一の資格情報一覧です
+（ADR-0085 §2）。`search_files` はそれを決して読まず、資格情報名の
+ディレクトリへ決して降りません。`list_tree` と `list_files` はそれを
+列挙しません。どれも確認はせず、各ツールが件数を報告します —
+`[N credential-named entries skipped — reading one needs the
+operator's approval]`。
+
 両 walk は Ctrl+C で止まります（ADR-0065）: ディレクトリ・ファイル
 の読み取りごと（ファイル内でも 1024 行ごと）にターンの context を
 参照するので、遅いファイルシステム上の中断のコストは syscall 1 回分
@@ -59,6 +69,15 @@ above are partial]`・`[interrupted — the tree above is partial]` —
 （注記付きで、部分が全体のふりをしない — 行番号プレフィックスは
 付けません。`edit_file` の完全一致契約を毒するので）。モデルが読んだ
 ものは以後の全ラウンドで再送されるため、窓読みが基本の作業様式です。
+
+資格情報名のファイルはオペレーターの yes があるときだけ読めます
+（ADR-0085）: sandbox の資格情報一覧に一致するパス — 実パスで判定する
+ので `.env` へのリンクは `.env` の読取 — への `read_file`・
+`summarize_file`・`view_image`・`read_document`・`file_info` は全モードで
+確認し、セッションの `a`・`"never"` ポリシー・`--allow` は決して答えず、
+モデル層には決して行かず、`-p` では拒否されます。コミットされる
+テンプレート（`.env.example` など）は通常のファイルです。
+[承認](approval.ja.md)を参照。
 
 `summarize_file` はバイト列の代わりに短い要約を返します — 書くのは
 `[model].summary` の軽量モデル（メインモデルとクライアント共有）、

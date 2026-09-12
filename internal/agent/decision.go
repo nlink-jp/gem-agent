@@ -102,20 +102,13 @@ func (a *Agent) decide(tc llm.ToolCall) Decision {
 	}
 	mutating := tool.MutatesFor(tc.Args)
 	args := tc.Args
-	if tc.Name == "write_file" || tc.Name == "edit_file" {
+	if pathJudged[tc.Name] {
 		// Judge what the file IS by its real name: a link named
 		// `notes.md` pointing at `AGENTS.md` is an AGENTS.md write
-		// (final review R2). An unresolvable path keeps its spelling
-		// and fails at the open as before.
-		if p, ok := tc.Args["path"].(string); ok {
-			if real, err := a.registry.RealPath(p); err == nil && real != "" {
-				args = make(map[string]any, len(tc.Args))
-				for k, v := range tc.Args {
-					args[k] = v
-				}
-				args["path"] = real
-			}
-		}
+		// (final review R2), and one pointing at `.env` is a `.env`
+		// read (ADR-0085). An unresolvable path keeps its spelling and
+		// fails at the open as before.
+		args = a.withRealPaths(tc.Args)
 	}
 	v := risk.Classify(tc.Name, mutating, args, a.registry.ProjectDir(), a.registry.WorkDir())
 	if tc.Name == tools.ShellExecName && !a.registry.Confined() && v.Tier != risk.Block {
@@ -133,6 +126,58 @@ func (a *Agent) decide(tc llm.ToolCall) Decision {
 	}
 	d.CeilingUnbounded = ceiling < sandbox.LaneOperator && strings.HasPrefix(tc.Name, mcpPrefix)
 	return d
+}
+
+// pathJudged names the file tools whose verdict depends on what the
+// file at `path` (or each of file_info's `paths`) IS: the write tools
+// (persistent files, ADR-0072 §1.4) and the read tools (credential
+// material, ADR-0085). Their arguments are resolved to real paths
+// before the rule tier reads them.
+var pathJudged = map[string]bool{
+	"write_file": true, "edit_file": true,
+	"read_file": true, "view_image": true, "read_document": true,
+	"file_info": true, "summarize_file": true,
+}
+
+// withRealPaths returns args with `path` and every entry of `paths`
+// resolved through the registry where they resolve; the map is copied
+// only when something changed, and a path that does not resolve keeps
+// its spelling.
+func (a *Agent) withRealPaths(in map[string]any) map[string]any {
+	out := in
+	copied := false
+	set := func(k string, v any) {
+		if !copied {
+			out = make(map[string]any, len(in))
+			for k, v := range in {
+				out[k] = v
+			}
+			copied = true
+		}
+		out[k] = v
+	}
+	if p, ok := in["path"].(string); ok {
+		if real, err := a.registry.RealPath(p); err == nil && real != "" && real != p {
+			set("path", real)
+		}
+	}
+	if raw, ok := in["paths"].([]any); ok {
+		resolved := make([]any, len(raw))
+		changed := false
+		for i, v := range raw {
+			resolved[i] = v
+			if p, ok := v.(string); ok {
+				if real, err := a.registry.RealPath(p); err == nil && real != "" && real != p {
+					resolved[i] = real
+					changed = true
+				}
+			}
+		}
+		if changed {
+			set("paths", resolved)
+		}
+	}
+	return out
 }
 
 // mcpPrefix names a tool that belongs to an MCP server. One spelling,

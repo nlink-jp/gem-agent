@@ -113,6 +113,14 @@ func Classify(toolName string, mutating bool, args map[string]any, projectDir, w
 		// still something the operator wants to see).
 		return classifyShell(args, mutating)
 	}
+	if credentialReadTools[toolName] {
+		// Before the read-only shortcut (ADR-0085): a read of
+		// credential material is the operator's alone, as the operator
+		// lane is the only lane that may read it.
+		if v, ok := credentialRead(args); ok {
+			return v
+		}
+	}
 	if !mutating {
 		return Verdict{Tier: Safe, Reason: "read-only tool"}
 	}
@@ -150,6 +158,45 @@ func Classify(toolName string, mutating bool, args map[string]any, projectDir, w
 		return Verdict{Tier: Review, Reason: "external MCP tool — effects unknown to the rule tier"}
 	}
 	return Verdict{Tier: Review, Reason: "unrecognised tool"}
+}
+
+// credentialReadTools are the built-ins that put one named file's
+// content — or, for file_info, its type and hashes — in front of the
+// model. Non-mutating, so they pass no gate, except when the path
+// names credential material (ADR-0085). The walks (search_files,
+// list_tree, list_files) are not here: they withhold such entries and
+// report the count instead of prompting.
+var credentialReadTools = map[string]bool{
+	"read_file": true, "view_image": true, "read_document": true,
+	"file_info": true, "summarize_file": true,
+}
+
+// credentialRead judges a read tool's path arguments — `path`, and
+// file_info's `paths` batch — by the one credential rule the write
+// tools and the profile use (ADR-0085): a match is Review that only
+// the operator may answer. The read and write lanes deny these files
+// at the kernel and the operator lane alone may read them; the file
+// tools mirror that lane with the operator's own answer. The
+// .env templates are re-allowed by the same rule.
+func credentialRead(args map[string]any) (Verdict, bool) {
+	var paths []string
+	if p, _ := args["path"].(string); p != "" {
+		paths = append(paths, p)
+	}
+	if raw, ok := args["paths"].([]any); ok {
+		for _, v := range raw {
+			if s, ok := v.(string); ok && s != "" {
+				paths = append(paths, s)
+			}
+		}
+	}
+	for _, p := range paths {
+		if hasCredentialPath(p) {
+			return Verdict{Tier: Review, OperatorOnly: true,
+				Reason: "reads credential material — the operator decides, not the model tier"}, true
+		}
+	}
+	return Verdict{}, false
 }
 
 // classifyShell judges a shell_exec call (ADR-0073): the Block floor

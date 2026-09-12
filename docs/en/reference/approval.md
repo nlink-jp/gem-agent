@@ -91,8 +91,10 @@ the session, `p` persists never-ask to the policy file (`p` is a TUI
 answer; the plain-stdin gate used when the TUI is off offers
 `y`/`n`/`N`/`a`), deny fails closed. `a` never covers the dangerous cases: Block-tier calls (sudo,
 recursive deletes, credential paths, …), operator-only writes (the
-instruction and configuration files, the `operator` shell lane) and
-tools pinned to `"always"` by policy keep asking regardless (ADR-0021).
+instruction and configuration files, the `operator` shell lane),
+operator-only reads (a read tool on a credential-named file, ADR-0085)
+and tools pinned to `"always"` by policy keep asking regardless
+(ADR-0021).
 
 `N` denies **with a typed reason** (ADR-0060): a one-line field opens,
 and what you type rides back to the model inside the denial itself —
@@ -147,7 +149,8 @@ call. Each mutating call then goes through:
    *or* the session allowlist — if you already answered `a` for that
    tool name this session, the allowlist answers and no prompt is
    drawn. Only a **must-prompt** call reaches you unconditionally:
-   Block-tier, the `operator` lane, unconfined shell, or an `"always"`
+   Block-tier, the `operator` lane, unconfined shell, an operator-only
+   write or read (below), or an `"always"`
    policy. So *escalated* and *you were asked* are not the same
    sentence: a model tier that refuses a call sends it here, and an `a`
    you typed earlier for that tool may still answer it. This is widest
@@ -187,11 +190,23 @@ The credential list is a bounded set (`sandbox.CredentialFilters`):
 `~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.vault-token`, `~/.claude.json`,
 and anywhere `.env` (not its `.example`/`.sample`/`.template`/`.dist`
 twins), `id_rsa` and kin, `credentials.json`, `*service-account*.json`,
-`application_default_credentials.json`. A secret stored elsewhere — a
+`application_default_credentials.json`. **The read tools honour the
+same list** (ADR-0085): `read_file`, `view_image`, `read_document`,
+`file_info` (every path of a batch) and `summarize_file` on a matching
+path — judged on the real path, so a link to `.env` is a `.env` read —
+are *uncertain* and skip tier 2 like a write to `AGENTS.md`: you answer,
+in every mode; an earlier `a`, a `"never"` policy or `--allow` does not,
+`-p` denies with the reason, and the file-search child's gate refuses.
+The walks — `search_files`, `list_tree`, `list_files` — do not prompt:
+a credential-named entry is withheld (a credential-named directory is
+never entered) and the result says how many —
+`[N credential-named entries skipped — reading one needs the
+operator's approval]`. An `@` attachment you type is your yes and is
+unchanged. A secret stored elsewhere — a
 token in `~/.config/<tool>/config.toml`, say (ADR-0076) — is readable in
-the read and write lanes, and in the write lane can leave
-over the network — the model tier is the judge there, and under a
-`never` policy nobody is.
+the read and write lanes and by the read tools, and in the write lane
+can leave over the network — the model tier is the judge there, and
+under a `never` policy nobody is.
 
 A false declaration gains nothing: `read` can only tighten the cage,
 `write` and `operator` only add scrutiny. A command the read lane
@@ -531,7 +546,10 @@ unattended, while `--auto` keeps the model tier as the judge. Per
 lane in one-shot mode: a verified read lane runs with no flag at all;
 the write lane needs `--allow shell_exec` or `--auto`; the operator
 lane is denied whatever the flags (nobody to ask); under
-`--no-sandbox` every `shell_exec` is denied.
+`--no-sandbox` every `shell_exec` is denied. The read tools run with no
+flag too, with one exception that no flag opens: a read of a
+credential-named file (`.env`, keys, credential stores — ADR-0085) is
+denied, its reason on the `[denied: …]` line.
 
 ## The risk rulebook (ADR-0050)
 
