@@ -59,9 +59,8 @@ SESSION_COOKIE  BEARER  LICENSE_KEY  PAT
 ```
 
 `NPM_TOKEN` is caught and `OPENAI_KEY` is not, and no amount of added
-words converges. That half needs the same move in the other direction,
-an allowlist of the variables a read-lane command is given, and it is
-not decided here; this ADR is about the file tools.
+words converges. That half has no kernel to move to and is decided
+separately in ADR-0087; this ADR is about the file tools.
 
 ### What the kernel actually does
 
