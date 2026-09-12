@@ -710,7 +710,37 @@ func shellQuote(s string) string {
 // PATH, HOME, LANG, the toolchain variables — passes through.
 var secretEnvRe = regexp.MustCompile(`(?i)(token|secret|passw|api[_-]?key|credential|private[_-]?key|access[_-]?key|auth)`)
 
-// ScrubEnv returns env without the variables secretEnvRe names.
+// runtimeExports are the variables the runtime itself puts in front of
+// its children — the session work directory (ADR-0058), the session id
+// (ADR-0069 addendum 2) and the project directory (ADR-0071 §3). A
+// read-lane command keeps them by name, and only them: there is no
+// prefix exemption. The previous `GEMAGENT_` prefix rule kept nothing
+// secret today, but it was the structure that lets the sibling
+// runtime's `LAGENT_API_KEY` into its read lane (system risk review
+// 2026-09-13, R01), and a `GEMAGENT_API_KEY` some later release
+// exported would have walked through it unread. The names are pinned
+// to the exporting packages' constants by a test; a new export for
+// children is a row here, never a prefix.
+var runtimeExports = map[string]bool{
+	"GEMAGENT_WORK_DIR":    true,
+	"GEMAGENT_SESSION_ID":  true,
+	"GEMAGENT_PROJECT_DIR": true,
+}
+
+// RuntimeExports returns, sorted, the variable names ScrubEnv keeps
+// whatever they look like: the runtime's own exports for children.
+func RuntimeExports() []string {
+	names := make([]string, 0, len(runtimeExports))
+	for n := range runtimeExports {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// ScrubEnv returns env without the variables secretEnvRe names. The
+// runtime's own exports (runtimeExports) are kept by name; every other
+// variable, whatever its prefix, is judged by its name alone.
 func ScrubEnv(env []string) []string {
 	out := make([]string, 0, len(env))
 	for _, kv := range env {
@@ -718,7 +748,7 @@ func ScrubEnv(env []string) []string {
 		if i := strings.IndexByte(kv, '='); i >= 0 {
 			name = kv[:i]
 		}
-		if strings.HasPrefix(name, "GEMAGENT_") || !secretEnvRe.MatchString(name) {
+		if runtimeExports[name] || !secretEnvRe.MatchString(name) {
 			out = append(out, kv)
 		}
 	}

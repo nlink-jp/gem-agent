@@ -127,6 +127,20 @@ as this section requires: the profile, the file tools and the risk floor
 follow. The configuration home itself stays readable (ADR-0076 §1); this
 is the list doing what it is for, not that decision reopened.*
 
+*Amended 2026-09-13 (after v0.77.3): the read lane's environment (§6)
+keeps the runtime's own exports for children — `GEMAGENT_WORK_DIR`,
+`GEMAGENT_SESSION_ID`, `GEMAGENT_PROJECT_DIR` — by name, and every
+other variable, the `GEMAGENT_` prefix included, goes through the
+secret-name rule. Until now the prefix was exempt as a whole. No
+`GEMAGENT_` variable carries a secret today (the configuration names
+are `GEMAGENT_PROJECT`, `GEMAGENT_LOCATION`, `GEMAGENT_MODEL`), but the
+exemption was the structure that lets the sibling runtime's
+`LAGENT_API_KEY` into its read lane (system risk review 2026-09-13,
+R01), and the class is closed rather than the instance: the list is
+one map in `internal/sandbox` (`RuntimeExports`), pinned to the
+exporting packages' constants by a test, and a new export for
+children is a row there, never a prefix.*
+
 ### 4. Architecture tests close classes B, C and E
 
 `internal/archtest` walks the AST of every non-test file and fails on:

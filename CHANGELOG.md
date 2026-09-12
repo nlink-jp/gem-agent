@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+
+- **The read lane keeps the runtime's own exports by name, not by
+  prefix.** `sandbox.ScrubEnv` kept every `GEMAGENT_*` variable before
+  the secret-name rule ran. No such variable carries a secret today
+  (the configuration names are `GEMAGENT_PROJECT` / `GEMAGENT_LOCATION`
+  / `GEMAGENT_MODEL`), but the exemption is the same structure that
+  lets lagent's `LAGENT_API_KEY` into its read lane (system risk review
+  2026-09-13, R01), and a `GEMAGENT_API_KEY` a later release exported
+  would have passed through it. The read lane now keeps exactly the
+  three variables the runtime exports for children —
+  `GEMAGENT_WORK_DIR`, `GEMAGENT_SESSION_ID`, `GEMAGENT_PROJECT_DIR`
+  (`sandbox.RuntimeExports`, pinned to the exporting packages'
+  constants by a test) — and judges every other name, prefix or not,
+  by the secret-name rule: `GEMAGENT_API_KEY=x` and `GEMAGENT_TOKEN=x`
+  are dropped, the three exports survive. ADR-0073 §3 carries an
+  *Amended* note.
+
 ## [0.77.3] - 2026-09-13
 
 ### Security

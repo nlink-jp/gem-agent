@@ -114,6 +114,18 @@ administrator privileges`、全レーンで。パターンは助言的で寛容�
 設定ホーム自体は読めるまま（ADR-0076 §1）。これは一覧の本来の仕事であり、
 あの決定の再開ではない。*
 
+*2026-09-13 の修正（v0.77.3 後）: read レーンの環境（§6）は、ランタイム自身が
+子へ export する変数 — `GEMAGENT_WORK_DIR`・`GEMAGENT_SESSION_ID`・
+`GEMAGENT_PROJECT_DIR` — を名前で残し、それ以外の変数は `GEMAGENT_` 接頭辞を
+含めてすべて秘密名の規則を通る。これまでは接頭辞が丸ごと免除されていた。
+今日 `GEMAGENT_` の変数に秘密を運ぶものはない（設定名は `GEMAGENT_PROJECT`・
+`GEMAGENT_LOCATION`・`GEMAGENT_MODEL`）が、この免除は同居ランタイムの
+`LAGENT_API_KEY` を read レーンへ通してしまう構造そのものであり（システム
+リスクレビュー 2026-09-13、R01）、閉じるのは事例ではなくクラスである: 一覧は
+`internal/sandbox` の map 1 つ（`RuntimeExports`）で、export 元パッケージの
+定数にテストでピン留めされ、子への新しい export はそこへの 1 行であって
+接頭辞ではない。*
+
 ### 4. アーキテクチャテストがクラス B・C・E を閉じる
 
 `internal/archtest` が非テスト全ファイルの AST を歩き、次で失敗する:

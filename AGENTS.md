@@ -661,7 +661,14 @@ a new hook) is an architecture change and takes the same rows as a
   content-addressed cache is a poisoning route into whatever consumes it
   next. `validateScratchCaches` refuses the loader variables and the ones
   `laneEnv` decides; the table is global config only (the project file's
-  struct has no `[sandbox]`). The
+  struct has no `[sandbox]`). `sandbox.ScrubEnv` keeps the runtime's
+  own exports for children by NAME (`sandbox.RuntimeExports`:
+  `GEMAGENT_WORK_DIR`, `GEMAGENT_SESSION_ID`, `GEMAGENT_PROJECT_DIR`,
+  pinned to the `workdir` / `session` constants by a test) and judges
+  every other variable by the secret-name rule — never re-add a prefix
+  exemption: `GEMAGENT_` was exempt as a whole, which is the structure
+  that leaks lagent's `LAGENT_API_KEY` (risk review R01). A new export
+  for children is a row in that map. The
   prompt says compile/vet/test are read-lane work; keep the prompt, the
   `shell_exec` description and this fact in agreement. A one-shot run
   passes `Options.Unattended`, and denial text comes from

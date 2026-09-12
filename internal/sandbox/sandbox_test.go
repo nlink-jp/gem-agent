@@ -6,9 +6,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nlink-jp/gem-agent/internal/session"
+	"github.com/nlink-jp/gem-agent/internal/workdir"
 )
 
 func TestProfileContainsResolvedDirs(t *testing.T) {
@@ -637,5 +641,40 @@ func TestWriteLaneDeniesPersistentParents(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(filepath.Join(proj, "sub/deep/CLAUDE.md")); string(got) != "rules\n" {
 		t.Errorf("CLAUDE.md changed: %q", got)
+	}
+}
+
+// System risk review 2026-09-13 (R01, closed as a class): the read
+// lane keeps the runtime's own exports by NAME, never by prefix. A
+// `GEMAGENT_` variable that looks like a secret is scrubbed like any
+// other — no such variable carries a secret today, and the prefix
+// exemption was the structure that leaks the sibling runtime's
+// LAGENT_API_KEY. The kept names are exactly the constants the
+// exporting packages use, so a renamed export cannot silently start
+// being scrubbed and a new one cannot be kept without a row here.
+func TestScrubEnvKeepsRuntimeExportsByName(t *testing.T) {
+	env := ScrubEnv([]string{
+		"GEMAGENT_API_KEY=x", "GEMAGENT_TOKEN=x", "GEMAGENT_AUTH=x", "GEMAGENT_CLIENT_SECRET=x",
+		"GEMAGENT_WORK_DIR=/w", "GEMAGENT_SESSION_ID=s", "GEMAGENT_PROJECT_DIR=/p",
+		// The operator's own configuration variables carry no secret
+		// and pass on their names, not on their prefix.
+		"GEMAGENT_STATE_DIR=/state", "GEMAGENT_PROJECT=proj", "GEMAGENT_MODEL=m",
+	})
+	got := strings.Join(env, " ")
+	for _, gone := range []string{"GEMAGENT_API_KEY", "GEMAGENT_TOKEN", "GEMAGENT_AUTH", "GEMAGENT_CLIENT_SECRET"} {
+		if strings.Contains(got, gone) {
+			t.Errorf("%s survived the scrub on its prefix: %v", gone, env)
+		}
+	}
+	for _, kept := range []string{"GEMAGENT_WORK_DIR=/w", "GEMAGENT_SESSION_ID=s", "GEMAGENT_PROJECT_DIR=/p",
+		"GEMAGENT_STATE_DIR=/state", "GEMAGENT_PROJECT=proj", "GEMAGENT_MODEL=m"} {
+		if !strings.Contains(got, kept) {
+			t.Errorf("%s was scrubbed: %v", kept, env)
+		}
+	}
+	want := []string{workdir.ProjectEnvVar, session.EnvVar, workdir.EnvVar}
+	sort.Strings(want)
+	if got := RuntimeExports(); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("RuntimeExports() = %v, want the exporting packages' constants %v", got, want)
 	}
 }
