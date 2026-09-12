@@ -169,3 +169,24 @@ read tools and withheld from the walks, in one edit.
   unconsulted; an unattended run denies and the content never enters
   the history); the walks (`.env` and a `.ssh/` directory withheld
   with a count, `.env.example` searched and listed).
+
+## Independent review (2026-09-13, before v0.78.0)
+
+A reader who did not write the change reviewed the release diff
+(CONVENTIONS §Verify with an independent pass). Findings and what was
+done with each:
+
+| # | Finding | Outcome |
+|---|---|---|
+| A1 (Medium) | The walks judged the spelled path: `search_files path="mylink"` with `mylink → .aws` read `.aws/credentials` | Adopted — the root is resolved and a credential-named root is never entered (§2) |
+| A2 (Low) | `CredentialPath` matched a list entry as a suffix (`keys.ssh`, `my.netrc`) | Adopted — whole path segments (§1) |
+| A10 (Nit) | The file tools judged a path through the shell floor's word splitter | Adopted — the whole path (§1) |
+| A4 (Low) | The prompt did not name the matched path in a `paths` batch | Adopted — the reason names it (§1) |
+| A8 (Nit) | Two hand-kept copies of the read-tool list | Adopted — `risk.JudgesPath` |
+| A9 (Nit) | `list_tree` said "(empty directory)" beside the skip note | Adopted |
+| C | The scrub test could not show the export exemption's effect | Adopted — `keepEnvName` is tested with a secret-looking name listed and unlisted |
+| B | The child row and the `paths` batch were untested | Adopted — tests added |
+| A3 (Low) | A project rooted under `~/.claude` or a `/x.ssh/` path makes every read a prompt | Not adopted: the profile already denies those reads to the unasked lanes, and a project inside a credential store is the operator's placement; the count line names the rule |
+| A5 (Low) | A spelling that does not resolve prompts for a read that then fails at the open | Not adopted: the write tools show the same attempt as Block; the prompt is the operator seeing it, as §1 says |
+| A6 (Low) | The read-only ceiling (ADR-0080) does not refuse a credential read | Not adopted: the ceiling bounds what a session changes, and a read changes nothing — the prompt is the control; recorded here so the ADR-0080 analogy is not read as a ceiling rule |
+| A7 (Low) | A link retargeted between `withRealPaths` and the open is read as judged | Not adopted now: the same class as the write tools' check-then-open (ADR-0072 §4 refuses an escape at the open, not a retarget inside the roots); a design pass, not a release patch |

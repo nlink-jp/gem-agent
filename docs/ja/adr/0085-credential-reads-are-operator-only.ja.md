@@ -148,3 +148,23 @@ entries skipped — reading one needs the operator's approval]` — ADR-0052 が
   `"never"` ポリシーでも確認は残る。`--auto` はモデル層を参照せず確認する。
   無人実行は拒否し、内容は履歴に入らない）。walk（`.env` と `.ssh/`
   ディレクトリは件数付きで差し止め、`.env.example` は検索・列挙される）。
+
+## 独立レビュー（2026-09-13、v0.78.0 前）
+
+変更を書いていない読み手がリリース diff をレビューした（CONVENTIONS §Verify with
+an independent pass）。所見とその扱い:
+
+| # | 所見 | 結果 |
+|---|---|---|
+| A1（Medium） | walk は綴りのパスで判定していた: `mylink → .aws` で `search_files path="mylink"` が `.aws/credentials` を読んだ | 採用 — 根を解決し、資格情報名の根には決して入らない（§2） |
+| A2（Low） | `CredentialPath` が一覧項目を末尾一致で照合していた（`keys.ssh`・`my.netrc`） | 採用 — パスセグメント全体で一致（§1） |
+| A10（Nit） | file ツールがシェル床の語分割でパスを判定していた | 採用 — path 全体（§1） |
+| A4（Low） | `paths` バッチでプロンプトが一致したパスを名指さない | 採用 — 理由文が名指す（§1） |
+| A8（Nit） | read ツール一覧の手書きコピーが 2 つ | 採用 — `risk.JudgesPath` |
+| A9（Nit） | `list_tree` が skip 注記の隣に「(empty directory)」を出す | 採用 |
+| C | scrub のテストが export 免除の効果を示せない | 採用 — `keepEnvName` を秘密らしい名前の一覧あり/なしでテスト |
+| B | 子の行と `paths` バッチが未検証 | 採用 — テスト追加 |
+| A3（Low） | `~/.claude` 配下や `/x.ssh/` を含むパスのプロジェクトでは全読取が確認になる | 不採用: プロファイルが既に無確認レーンのその読取を拒み、資格情報ストア内のプロジェクトは操作者の配置。件数行が規則を名指す |
+| A5（Low） | 解決できない綴りは、open で失敗する読取を確認する | 不採用: write ツールは同じ試行を Block として見せる。確認は操作者がそれを見ることであり、§1 のとおり |
+| A6（Low） | read-only 上限（ADR-0080）は資格情報の読取を拒まない | 不採用: 上限はセッションが変えるものを縛り、読取は何も変えない — 制御は確認である。ADR-0080 の相似を上限の規則と読まれないようここに記録 |
+| A7（Low） | `withRealPaths` と open の間にリンクを付け替えると判定どおりに読まれる | 今回は不採用: write ツールの check-then-open と同じクラス（ADR-0072 §4 は open で脱出を拒むが、根の内側の付け替えは拒まない）。設計パスの対象であり、リリース時のパッチではない |

@@ -8,7 +8,8 @@
   prefix.** `sandbox.ScrubEnv` kept every `GEMAGENT_*` variable before
   the secret-name rule ran. No such variable carries a secret today
   (the configuration names are `GEMAGENT_PROJECT` / `GEMAGENT_LOCATION`
-  / `GEMAGENT_MODEL`), but the exemption is the same structure that
+  / `GEMAGENT_MODEL` / `GEMAGENT_STATE_DIR`, the diagnostic switch
+  `GEMAGENT_MCP_STDERR`), but the exemption is the same structure that
   lets lagent's `LAGENT_API_KEY` into its read lane (system risk review
   2026-09-13, R01), and a `GEMAGENT_API_KEY` a later release exported
   would have passed through it. The read lane now keeps exactly the

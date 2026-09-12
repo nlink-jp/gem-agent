@@ -352,8 +352,8 @@ a new hook) is an architecture change and takes the same rows as a
   everything else — exit 0 with non-JSON stdout included: that was the
   one silent path (risk review R06), and a debug line printed before the
   verdict JSON is exactly it — and runs before the approval ladder in
-  every mode. The only silent outcome is the normal pass, exit 0 with
-  empty stdout. The
+  every mode. The silent outcomes are the normal pass (exit 0, empty
+  stdout), a JSON verdict that does not deny, and stderr-only output. The
   payload carries gem-agent's real tool name; only the matcher speaks both
   vocabularies. Never add an "allow" bypass: hooks tighten, the ladder
   decides.

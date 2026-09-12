@@ -119,7 +119,8 @@ administrator privileges`、全レーンで。パターンは助言的で寛容�
 `GEMAGENT_PROJECT_DIR` — を名前で残し、それ以外の変数は `GEMAGENT_` 接頭辞を
 含めてすべて秘密名の規則を通る。これまでは接頭辞が丸ごと免除されていた。
 今日 `GEMAGENT_` の変数に秘密を運ぶものはない（設定名は `GEMAGENT_PROJECT`・
-`GEMAGENT_LOCATION`・`GEMAGENT_MODEL`）が、この免除は同居ランタイムの
+`GEMAGENT_LOCATION`・`GEMAGENT_MODEL`・`GEMAGENT_STATE_DIR`、診断スイッチは
+`GEMAGENT_MCP_STDERR`）が、この免除は同居ランタイムの
 `LAGENT_API_KEY` を read レーンへ通してしまう構造そのものであり（システム
 リスクレビュー 2026-09-13、R01）、閉じるのは事例ではなくクラスである: 一覧は
 `internal/sandbox` の map 1 つ（`RuntimeExports`）で、export 元パッケージの

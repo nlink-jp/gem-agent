@@ -14,10 +14,10 @@ timeout only — exit 0 with stdout that was not a JSON verdict proceeded
 in silence (system risk review 2026-09-13, chapter 14 / R06: a guard
 that prints a debug line before its verdict, or whose verdict comes
 out malformed, has silently stopped guarding). Now every exit-0 stdout
-that is not a JSON document is reported to the operator as
+that is not a JSON object is reported to the operator as
 `hook "…" printed output that is not a verdict — the call proceeds`;
 the normal pass — exit 0 with nothing on stdout — stays silent, and a
-JSON document is taken as a verdict whatever fields it carries (an
+JSON object is taken as a verdict whatever fields it carries (an
 `allow` or an unknown field is a pass without a notice). The failure
 mode is unchanged: the call proceeds, hooks only tighten. Claude Code's
 documented contract (its hooks reference, not measured here) shows a

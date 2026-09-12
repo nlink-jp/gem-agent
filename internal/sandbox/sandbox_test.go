@@ -685,4 +685,18 @@ func TestScrubEnvKeepsRuntimeExportsByName(t *testing.T) {
 	if got := RuntimeExports(); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("RuntimeExports() = %v, want the exporting packages' constants %v", got, want)
 	}
+	// The exemption's effect, not only the list's contents: a name that
+	// looks like a secret survives exactly when the list names it. None
+	// of today's exports needs the exemption (their names carry no
+	// secret word), so this is the only place the mechanism shows.
+	secretLike := "GEMAGENT_AUTH_TOKEN"
+	if keepEnvName(secretLike, map[string]bool{secretLike: true}) != true {
+		t.Errorf("%s listed as an export was scrubbed", secretLike)
+	}
+	if keepEnvName(secretLike, map[string]bool{}) != false {
+		t.Errorf("%s unlisted survived on its prefix", secretLike)
+	}
+	if keepEnvName("GEMAGENT_WORK_DIR", map[string]bool{}) != true {
+		t.Error("GEMAGENT_WORK_DIR needs no exemption: its name carries no secret word")
+	}
 }

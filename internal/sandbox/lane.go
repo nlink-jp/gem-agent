@@ -759,9 +759,19 @@ func ScrubEnv(env []string) []string {
 		if i := strings.IndexByte(kv, '='); i >= 0 {
 			name = kv[:i]
 		}
-		if runtimeExports[name] || !secretEnvRe.MatchString(name) {
+		if keepEnvName(name, runtimeExports) {
 			out = append(out, kv)
 		}
 	}
 	return out
+}
+
+// keepEnvName is ScrubEnv's rule for one variable: kept when exports
+// names it, or when its name does not look like a secret. The map is
+// a parameter so the exemption's effect can be pinned by a test —
+// none of today's exports looks like a secret, so ScrubEnv alone
+// cannot show that the list, not luck, keeps them (independent
+// review of the v0.78.0 diff, C).
+func keepEnvName(name string, exports map[string]bool) bool {
+	return exports[name] || !secretEnvRe.MatchString(name)
 }

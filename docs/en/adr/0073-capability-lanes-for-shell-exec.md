@@ -133,7 +133,8 @@ keeps the runtime's own exports for children — `GEMAGENT_WORK_DIR`,
 other variable, the `GEMAGENT_` prefix included, goes through the
 secret-name rule. Until now the prefix was exempt as a whole. No
 `GEMAGENT_` variable carries a secret today (the configuration names
-are `GEMAGENT_PROJECT`, `GEMAGENT_LOCATION`, `GEMAGENT_MODEL`), but the
+are `GEMAGENT_PROJECT`, `GEMAGENT_LOCATION`, `GEMAGENT_MODEL`,
+`GEMAGENT_STATE_DIR`; the diagnostic switch `GEMAGENT_MCP_STDERR`), but the
 exemption was the structure that lets the sibling runtime's
 `LAGENT_API_KEY` into its read lane (system risk review 2026-09-13,
 R01), and the class is closed rather than the instance: the list is
