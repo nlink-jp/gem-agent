@@ -261,16 +261,25 @@ func TestLateReturnAfterRestartStaysWithTheOldSession(t *testing.T) {
 	if notes := a.takeLateNotices(); len(notes) != 0 {
 		t.Errorf("the new conversation received the old session's note: %v", notes)
 	}
-	// The audit event names the session that made the call.
+	// The audit event names the session that made the call. It is
+	// emitted after the transcript record the loop above waited for,
+	// so it is waited for on its own: under a loaded full-suite run the
+	// record's poll won the race and this read nothing (flaked once at
+	// the v0.78.0 release gate).
 	var late *telemetry.RecordedEvent
-	for _, ev := range rec.Events() {
-		if ev.Name == "tool.late_return" {
-			e := ev
-			late = &e
+	for late == nil {
+		for _, ev := range rec.Events() {
+			if ev.Name == "tool.late_return" {
+				e := ev
+				late = &e
+			}
 		}
-	}
-	if late == nil {
-		t.Fatal("no tool.late_return event")
+		if late == nil {
+			if time.Now().After(deadline) {
+				t.Fatal("no tool.late_return event")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 	if late.Attrs["origin_session_id"] != "recording" {
 		t.Errorf("origin_session_id = %q, want the old session", late.Attrs["origin_session_id"])
