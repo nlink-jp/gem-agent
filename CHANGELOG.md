@@ -1,5 +1,37 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **The operator's environment is no longer filtered, and the runtime's
+  own variables no longer reach any child** (ADR-0087). The read lane's
+  environment scrub is deleted: it covered one child of six — the write
+  and operator lane shells, the `!` shell, MCP servers and hooks all
+  received the environment whole — and the one it covered passed
+  `OPENAI_KEY`, `GH_PAT` and `GPG_PASSPHRASE` while catching
+  `NPM_TOKEN`. Which variable the program a command runs needs is not a
+  question gem-agent can answer, and an allowlist would move the
+  unbounded list rather than remove it. **A bare `env` in the read lane
+  now prints what you exported**, as it already did in every other
+  lane; the environment gem-agent is launched with reaches every child
+  it spawns, and the remedy is the operator's: launch it from a shell
+  that does not hold what you would not give the model.
+  In exchange, the one set the runtime does know exhaustively — its own
+  `GEMAGENT_` namespace — is now handled correctly in the other
+  direction. `sandbox.ChildEnv` removes `GEMAGENT_PROJECT`,
+  `GEMAGENT_LOCATION`, `GEMAGENT_MODEL`, `GEMAGENT_STATE_DIR` and
+  `GEMAGENT_MCP_STDERR` from every child, while the three exported for
+  children (`GEMAGENT_WORK_DIR`, `GEMAGENT_SESSION_ID`,
+  `GEMAGENT_PROJECT_DIR`) pass. The two halves partition the namespace
+  and an architecture test refuses a `GEMAGENT_` literal in neither, so
+  a variable a later release reads for itself never reaches a child —
+  the class system risk review R01 named, closed by construction rather
+  than by a regex recognising the word `key`. A nested `gem-agent` in a
+  shell lane now reads its own config file instead of inheriting the
+  parent's; an MCP server wanting a `GEMAGENT_` value takes it from the
+  `env` block of the MCP configuration.
+
 ## [0.78.0] - 2026-09-13
 
 ### Security

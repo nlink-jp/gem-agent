@@ -577,21 +577,9 @@ func TestReadLaneDeniesAWorkDirUnderASharedRoot(t *testing.T) {
 	}
 }
 
-// Review F-07 / F-10: the read lane's environment carries no exported
-// secrets, and the denial hint reads the tail of the output only.
-func TestScrubEnvAndHintTail(t *testing.T) {
-	env := ScrubEnv([]string{"PATH=/bin", "HOME=/Users/x", "GITHUB_TOKEN=abc", "AWS_SECRET_ACCESS_KEY=k", "GEMAGENT_SESSION_ID=s", "MY_API_KEY=z", "GOFLAGS=-mod=mod", "OPENAI_api_key=q"})
-	got := strings.Join(env, " ")
-	for _, gone := range []string{"GITHUB_TOKEN", "AWS_SECRET", "MY_API_KEY", "OPENAI_api_key"} {
-		if strings.Contains(got, gone) {
-			t.Errorf("%s survived the scrub: %v", gone, env)
-		}
-	}
-	for _, kept := range []string{"PATH=", "HOME=", "GEMAGENT_SESSION_ID", "GOFLAGS"} {
-		if !strings.Contains(got, kept) {
-			t.Errorf("%s was scrubbed: %v", kept, env)
-		}
-	}
+// The denial hint reads the tail of the output only (review F-10): a
+// refusal quoted early in a long log is not the lane refusing.
+func TestDeniedHintReadsTheTail(t *testing.T) {
 	if DeniedHint("grep: permission denied appears in this log line\n" + strings.Repeat("ok\n", 300) + "[exit status 1]") {
 		t.Error("a denial quoted early in a long output must not read as the lane's refusal")
 	}
@@ -652,58 +640,56 @@ func TestWriteLaneDeniesPersistentParents(t *testing.T) {
 	}
 }
 
-// System risk review 2026-09-13 (R01, closed as a class): the read
-// lane keeps the runtime's own exports by NAME, never by prefix. A
-// `GEMAGENT_` variable that looks like a secret is scrubbed like any
-// other — no such variable carries a secret today, and the prefix
-// exemption was the structure that leaks the sibling runtime's
-// LAGENT_API_KEY. The kept names are exactly the constants the
-// exporting packages use, so a renamed export cannot silently start
-// being scrubbed and a new one cannot be kept without a row here.
-func TestScrubEnvKeepsRuntimeExportsByName(t *testing.T) {
-	env := ScrubEnv([]string{
-		"GEMAGENT_API_KEY=x", "GEMAGENT_TOKEN=x", "GEMAGENT_AUTH=x", "GEMAGENT_CLIENT_SECRET=x",
+// ADR-0087: the runtime removes its own configuration variables from
+// every child and touches nothing else. The old scrub did the reverse
+// — it kept all of GEMAGENT_ and guessed, from a name, which of the
+// operator's variables were secrets — and that guess is gone.
+//
+// System risk review R01 asked for a GEMAGENT_API_KEY that cannot
+// reach a child. It cannot, and not because anything recognises the
+// word "key": a variable a later release reads for itself goes in
+// runtimeOwnEnv, and the architecture test refuses a GEMAGENT_ name
+// that sits in neither half.
+func TestChildEnvRemovesOnlyTheRuntimesOwn(t *testing.T) {
+	env := ChildEnv([]string{
+		// The runtime's own: removed.
+		"GEMAGENT_STATE_DIR=/state", "GEMAGENT_PROJECT=proj",
+		"GEMAGENT_LOCATION=global", "GEMAGENT_MODEL=m", "GEMAGENT_MCP_STDERR=1",
+		// The runtime's exports for children: kept.
 		"GEMAGENT_WORK_DIR=/w", "GEMAGENT_SESSION_ID=s", "GEMAGENT_PROJECT_DIR=/p",
-		// The operator's own configuration variables carry no secret
-		// and pass on their names, not on their prefix.
-		"GEMAGENT_STATE_DIR=/state", "GEMAGENT_PROJECT=proj", "GEMAGENT_MODEL=m",
+		// The operator's world, untouched — including every name the
+		// withdrawn scrub would have taken.
+		"PATH=/bin", "HOME=/Users/x", "GOFLAGS=-mod=mod",
+		"GITHUB_TOKEN=abc", "AWS_SECRET_ACCESS_KEY=k", "OPENAI_KEY=z", "GH_PAT=p",
 	})
 	got := strings.Join(env, " ")
-	for _, gone := range []string{"GEMAGENT_API_KEY", "GEMAGENT_TOKEN", "GEMAGENT_AUTH", "GEMAGENT_CLIENT_SECRET"} {
+	for _, gone := range []string{"GEMAGENT_STATE_DIR", "GEMAGENT_PROJECT=", "GEMAGENT_LOCATION", "GEMAGENT_MODEL", "GEMAGENT_MCP_STDERR"} {
 		if strings.Contains(got, gone) {
-			t.Errorf("%s survived the scrub on its prefix: %v", gone, env)
+			t.Errorf("%s reached a child: %v", gone, env)
 		}
 	}
-	for _, kept := range []string{"GEMAGENT_WORK_DIR=/w", "GEMAGENT_SESSION_ID=s", "GEMAGENT_PROJECT_DIR=/p",
-		"GEMAGENT_STATE_DIR=/state", "GEMAGENT_PROJECT=proj", "GEMAGENT_MODEL=m"} {
+	for _, kept := range []string{
+		"GEMAGENT_WORK_DIR=/w", "GEMAGENT_SESSION_ID=s", "GEMAGENT_PROJECT_DIR=/p",
+		"PATH=/bin", "HOME=/Users/x", "GOFLAGS=-mod=mod",
+		"GITHUB_TOKEN=abc", "AWS_SECRET_ACCESS_KEY=k", "OPENAI_KEY=z", "GH_PAT=p",
+	} {
 		if !strings.Contains(got, kept) {
-			t.Errorf("%s was scrubbed: %v", kept, env)
+			t.Errorf("%s was removed: %v", kept, env)
 		}
 	}
+	// The exports are exactly the constants the exporting packages use,
+	// so a renamed export cannot silently start being removed.
 	want := []string{workdir.ProjectEnvVar, session.EnvVar, workdir.EnvVar}
 	sort.Strings(want)
-	if got := RuntimeExports(); strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("RuntimeExports() = %v, want the exporting packages' constants %v", got, want)
+	if got := ChildExportNames(); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("ChildExportNames() = %v, want the exporting packages' constants %v", got, want)
 	}
-	// The exemption's effect, not only the list's contents: a name that
-	// looks like a secret survives exactly when the list names it. None
-	// of today's exports needs the exemption (their names carry no
-	// secret word), so this is the only place the mechanism shows.
-	secretLike := "GEMAGENT_AUTH_TOKEN"
-	if keepEnvName(secretLike, map[string]bool{secretLike: true}) != true {
-		t.Errorf("%s listed as an export was scrubbed", secretLike)
-	}
-	if keepEnvName(secretLike, map[string]bool{}) != false {
-		t.Errorf("%s unlisted survived on its prefix", secretLike)
-	}
-	if keepEnvName("GEMAGENT_WORK_DIR", map[string]bool{}) != true {
-		t.Error("GEMAGENT_WORK_DIR needs no exemption: its name carries no secret word")
-	}
-	// And the wiring: ScrubEnv reads runtimeExports itself, not a copy
-	// or nil (second review pass, F3).
-	runtimeExports[secretLike] = true
-	defer delete(runtimeExports, secretLike)
-	if got := ScrubEnv([]string{secretLike + "=x", "OTHER_TOKEN=y"}); len(got) != 1 || got[0] != secretLike+"=x" {
-		t.Errorf("ScrubEnv does not read runtimeExports: %v", got)
+	// The mechanism, shown on a name nothing else would catch: it is
+	// removed because the list names it, not because it looks like
+	// anything.
+	runtimeOwnEnv["GEMAGENT_QUIET_NAME"] = true
+	defer delete(runtimeOwnEnv, "GEMAGENT_QUIET_NAME")
+	if got := ChildEnv([]string{"GEMAGENT_QUIET_NAME=x", "QUIET_NAME=y"}); len(got) != 1 || got[0] != "QUIET_NAME=y" {
+		t.Errorf("ChildEnv does not read runtimeOwnEnv: %v", got)
 	}
 }

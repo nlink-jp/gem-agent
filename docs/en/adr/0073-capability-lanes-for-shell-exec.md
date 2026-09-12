@@ -138,7 +138,10 @@ are `GEMAGENT_PROJECT`, `GEMAGENT_LOCATION`, `GEMAGENT_MODEL`,
 exemption was the structure that lets the sibling runtime's
 `LAGENT_API_KEY` into its read lane (system risk review 2026-09-13,
 R01), and the class is closed rather than the instance: the list is
-one map in `internal/sandbox` (`RuntimeExports`), pinned to the
+one map in `internal/sandbox` (withdrawn in turn by ADR-0087, which
+deletes the scrub and inverts the rule: the runtime's own namespace is
+removed from every child and the operator's environment is not touched),
+pinned to the
 exporting packages' constants by a test, and a new export for
 children is a row there, never a prefix.*
 

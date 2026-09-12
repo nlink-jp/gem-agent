@@ -714,64 +714,71 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// secretEnvRe names environment variables a read-lane command does not
-// inherit: the operator's exported tokens, keys and passwords. The
-// read lane runs unasked and its output reaches the model, so what a
-// bare `env` prints is bounded here (review F-07). Everything else —
-// PATH, HOME, LANG, the toolchain variables — passes through.
-var secretEnvRe = regexp.MustCompile(`(?i)(token|secret|passw|api[_-]?key|credential|private[_-]?key|access[_-]?key|auth)`)
+// runtimeOwnEnv are the variables gem-agent reads for itself: its
+// configuration inputs and its own diagnostic switches. Nobody else
+// reads this namespace, so this is the one set of environment names
+// the runtime knows exhaustively — and the one set it may act on
+// (ADR-0087). They are removed from every child it spawns.
+//
+// The operator's own environment is not touched. Which variable the
+// program a read-lane command runs needs is not a question this
+// runtime can answer, and the scrub that used to guess at it covered
+// one child of six while passing OPENAI_KEY and GH_PAT.
+var runtimeOwnEnv = map[string]bool{
+	"GEMAGENT_STATE_DIR":  true,
+	"GEMAGENT_PROJECT":    true,
+	"GEMAGENT_LOCATION":   true,
+	"GEMAGENT_MODEL":      true,
+	"GEMAGENT_MCP_STDERR": true,
+}
 
-// runtimeExports are the variables the runtime itself puts in front of
-// its children — the session work directory (ADR-0058), the session id
-// (ADR-0069 addendum 2) and the project directory (ADR-0071 §3). A
-// read-lane command keeps them by name, and only them: there is no
-// prefix exemption. The previous `GEMAGENT_` prefix rule kept nothing
-// secret today, but it was the structure that lets the sibling
-// runtime's `LAGENT_API_KEY` into its read lane (system risk review
-// 2026-09-13, R01), and a `GEMAGENT_API_KEY` some later release
-// exported would have walked through it unread. The names are pinned
-// to the exporting packages' constants by a test; a new export for
-// children is a row here, never a prefix.
-var runtimeExports = map[string]bool{
+// childExportEnv are the variables the runtime puts in FRONT of its
+// children — the session work directory (ADR-0058), the session id
+// (ADR-0069 addendum 2) and the project directory (ADR-0071 §3). They
+// exist for children, so they pass.
+//
+// Together with runtimeOwnEnv this is a partition of the GEMAGENT_
+// namespace, and an architecture test requires every GEMAGENT_ literal
+// in the tree to sit in exactly one half. A variable a later release
+// reads for itself therefore never reaches a child, whatever it is
+// called: the old prefix rule had the right domain and the wrong
+// direction — it kept all of GEMAGENT_ and guessed about the rest.
+var childExportEnv = map[string]bool{
 	"GEMAGENT_WORK_DIR":    true,
 	"GEMAGENT_SESSION_ID":  true,
 	"GEMAGENT_PROJECT_DIR": true,
 }
 
-// RuntimeExports returns, sorted, the variable names ScrubEnv keeps
-// whatever they look like: the runtime's own exports for children.
-func RuntimeExports() []string {
-	names := make([]string, 0, len(runtimeExports))
-	for n := range runtimeExports {
-		names = append(names, n)
+// OwnEnvNames and ChildExportNames return the two halves, sorted, for
+// the architecture test that pins the partition.
+func OwnEnvNames() []string { return sortedEnvKeys(runtimeOwnEnv) }
+
+// ChildExportNames is OwnEnvNames' other half.
+func ChildExportNames() []string { return sortedEnvKeys(childExportEnv) }
+
+func sortedEnvKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
 	}
-	sort.Strings(names)
-	return names
+	sort.Strings(out)
+	return out
 }
 
-// ScrubEnv returns env without the variables secretEnvRe names. The
-// runtime's own exports (runtimeExports) are kept by name; every other
-// variable, whatever its prefix, is judged by its name alone.
-func ScrubEnv(env []string) []string {
+// ChildEnv returns env without the runtime's own configuration
+// variables (ADR-0087 §2). Every other variable passes untouched,
+// including the exports of childExportEnv, which the runtime set for
+// children in the first place.
+func ChildEnv(env []string) []string {
 	out := make([]string, 0, len(env))
 	for _, kv := range env {
 		name := kv
 		if i := strings.IndexByte(kv, '='); i >= 0 {
 			name = kv[:i]
 		}
-		if keepEnvName(name, runtimeExports) {
+		if !runtimeOwnEnv[name] {
 			out = append(out, kv)
 		}
 	}
 	return out
-}
-
-// keepEnvName is ScrubEnv's rule for one variable: kept when exports
-// names it, or when its name does not look like a secret. The map is
-// a parameter so the exemption's effect can be pinned by a test —
-// none of today's exports looks like a secret, so ScrubEnv alone
-// cannot show that the list, not luck, keeps them (independent
-// review of the v0.78.0 diff, C).
-func keepEnvName(name string, exports map[string]bool) bool {
-	return exports[name] || !secretEnvRe.MatchString(name)
 }

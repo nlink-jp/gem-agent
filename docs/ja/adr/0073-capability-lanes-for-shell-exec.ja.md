@@ -123,7 +123,9 @@ administrator privileges`、全レーンで。パターンは助言的で寛容�
 `GEMAGENT_MCP_STDERR`）が、この免除は同居ランタイムの
 `LAGENT_API_KEY` を read レーンへ通してしまう構造そのものであり（システム
 リスクレビュー 2026-09-13、R01）、閉じるのは事例ではなくクラスである: 一覧は
-`internal/sandbox` の map 1 つ（`RuntimeExports`）で、export 元パッケージの
+`internal/sandbox` の map 1 つ（ADR-0087 がさらにこれを撤回する: scrub を削除し
+規則を反転して、ランタイム自身の名前空間を全ての子から外し、操作者の環境には
+触れない）で、export 元パッケージの
 定数にテストでピン留めされ、子への新しい export はそこへの 1 行であって
 接頭辞ではない。*
 

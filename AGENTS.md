@@ -675,14 +675,19 @@ a new hook) is an architecture change and takes the same rows as a
   content-addressed cache is a poisoning route into whatever consumes it
   next. `validateScratchCaches` refuses the loader variables and the ones
   `laneEnv` decides; the table is global config only (the project file's
-  struct has no `[sandbox]`). `sandbox.ScrubEnv` keeps the runtime's
-  own exports for children by NAME (`sandbox.RuntimeExports`:
-  `GEMAGENT_WORK_DIR`, `GEMAGENT_SESSION_ID`, `GEMAGENT_PROJECT_DIR`,
-  pinned to the `workdir` / `session` constants by a test) and judges
-  every other variable by the secret-name rule — never re-add a prefix
-  exemption: `GEMAGENT_` was exempt as a whole, which is the structure
-  that leaks lagent's `LAGENT_API_KEY` (risk review R01). A new export
-  for children is a row in that map. The
+  struct has no `[sandbox]`). **The operator's environment is not
+  filtered** (ADR-0087) — no lane, no MCP server, no hook gets a
+  scrubbed environment, because which variable a program needs is not
+  answerable here; the withdrawn scrub covered one child of six and
+  passed `OPENAI_KEY` while catching `NPM_TOKEN`. What every child
+  loses is the runtime's own namespace: `sandbox.ChildEnv` removes
+  `sandbox.runtimeOwnEnv` and keeps `sandbox.childExportEnv` (the
+  three `workdir` / `session` constants). The two halves partition
+  `GEMAGENT_`, and `internal/archtest`
+  `TestRuntimeEnvNamespaceIsPartitioned` fails on a `GEMAGENT_` literal
+  in neither half or a listed name the tree no longer uses — so a later
+  `GEMAGENT_API_KEY` cannot reach a child, and nothing has to recognise
+  the word `key`. Apply `ChildEnv` at any new spawn site. The
   prompt says compile/vet/test are read-lane work; keep the prompt, the
   `shell_exec` description and this fact in agreement. A one-shot run
   passes `Options.Unattended`, and denial text comes from

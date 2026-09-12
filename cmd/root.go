@@ -2238,18 +2238,19 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, 
 	}, enf, notes, nil
 }
 
-// laneEnv is the environment a shell command runs with. The read lane
-// runs unasked: it does not get the operator's exported secrets to
-// print (review F-07), and its temporary directory is the private
-// scratch. Every lane gets the toolchain caches pointed into that
-// scratch (ADR-0084 §1): no lane may write a cache under ~/Library, so
-// a build failed in the read lane and was sent to the write lane for a
-// reason unrelated to the task — and the read lane must not write a
-// shared cache anyway.
+// laneEnv is the environment a shell command runs with. Every lane
+// gets the parent's environment minus the runtime's own configuration
+// variables (ADR-0087): the operator's exported variables are not
+// filtered, because which one the program a command runs needs is not
+// a question this runtime can answer. The read lane's temporary
+// directory is the private scratch, and every lane's toolchain caches
+// are pointed into it (ADR-0084 §1): no lane may write a cache under
+// ~/Library, and the read lane must not write a shared cache anyway.
 func laneEnv(lane sandbox.Lane, scratch string, caches map[string]string, parent []string) []string {
-	env := parent
+	// The runtime's own configuration variables go to no child
+	// (ADR-0087 §2); the operator's environment is not touched.
+	env := sandbox.ChildEnv(parent)
 	if lane == sandbox.LaneRead {
-		env = sandbox.ScrubEnv(parent)
 		if scratch != "" {
 			env = append(env, "TMPDIR="+scratch, "TMP="+scratch, "TEMP="+scratch)
 		}

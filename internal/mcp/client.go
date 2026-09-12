@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"github.com/nlink-jp/gem-agent/internal/bounded"
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
 
 	"bufio"
 	"context"
@@ -153,7 +154,10 @@ func NewStdio(name string, cfg ServerConfig, timeout time.Duration, clientVersio
 		// wrapper's child — the server behind an npx or uvx launcher —
 		// outlived a timeout that killed only the direct child.
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-		cmd.Env = os.Environ()
+		// The runtime's own configuration variables reach no child
+		// (ADR-0087 §2). A server that wants one takes it from its own
+		// `env` block below, where a server's inputs belong.
+		cmd.Env = sandbox.ChildEnv(os.Environ())
 		for k, v := range cfg.Env {
 			cmd.Env = append(cmd.Env, k+"="+v)
 		}

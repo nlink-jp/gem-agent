@@ -12,10 +12,12 @@ import (
 // ADR-0084 §1: every lane's shell runs with the scratch-cache table
 // pointed into the session scratch — the read lane at the table's
 // directory, the approved lanes at a separate one — and the read lane
-// additionally scrubs the operator's secrets and points its temporary
-// directory at the scratch.
+// additionally points its temporary directory at the scratch.
+//
+// ADR-0087: no lane filters the operator's environment. What every
+// lane does lose is the runtime's own configuration variables.
 func TestLaneEnvPointsToolchainCacheAtScratch(t *testing.T) {
-	parent := []string{"HOME=/Users/x", "MY_API_TOKEN=secret", "PATH=/usr/bin"}
+	parent := []string{"HOME=/Users/x", "MY_API_TOKEN=secret", "PATH=/usr/bin", "GEMAGENT_MODEL=m"}
 	caches := map[string]string{"GOCACHE": "go-build", "PIP_CACHE_DIR": "pip"}
 	for _, lane := range []sandbox.Lane{sandbox.LaneRead, sandbox.LaneWrite, sandbox.LaneOperator} {
 		env := laneEnv(lane, "/work/scratch", caches, parent)
@@ -32,22 +34,26 @@ func TestLaneEnvPointsToolchainCacheAtScratch(t *testing.T) {
 			}
 		}
 		hasTmp := slices.Contains(env, "TMPDIR=/work/scratch")
-		hasSecret := slices.Contains(env, "MY_API_TOKEN=secret")
-		if lane == sandbox.LaneRead && (!hasTmp || hasSecret) {
-			t.Errorf("read lane: TMPDIR=%v secret=%v", hasTmp, hasSecret)
+		if (lane == sandbox.LaneRead) != hasTmp {
+			t.Errorf("%v: TMPDIR=%v", lane, hasTmp)
 		}
-		if lane != sandbox.LaneRead && (hasTmp || !hasSecret) {
-			t.Errorf("%v: must inherit the parent environment untouched: %v", lane, env)
+		// The operator's variables pass in every lane, whatever they
+		// are called; the runtime's own reach no lane at all.
+		if !slices.Contains(env, "MY_API_TOKEN=secret") {
+			t.Errorf("%v: the operator's environment was filtered: %v", lane, env)
+		}
+		if slices.Contains(env, "GEMAGENT_MODEL=m") {
+			t.Errorf("%v: a runtime configuration variable reached the child: %v", lane, env)
 		}
 	}
 	// No scratch (read lane disabled): nothing is redirected, and the
-	// write lane is exactly the parent.
-	if env := laneEnv(sandbox.LaneWrite, "", caches, parent); !slices.Equal(env, parent) {
+	// write lane is the parent minus the runtime's own.
+	if env := laneEnv(sandbox.LaneWrite, "", caches, parent); !slices.Equal(env, sandbox.ChildEnv(parent)) {
 		t.Errorf("write lane without scratch changed the environment: %v", env)
 	}
-	// The read lane without a scratch still scrubs secrets and gets no
-	// cache pointed at a directory that does not exist.
-	if env := laneEnv(sandbox.LaneRead, "", caches, parent); slices.Contains(env, "MY_API_TOKEN=secret") || slices.ContainsFunc(env, func(s string) bool { return strings.HasPrefix(s, "GOCACHE=") || strings.HasPrefix(s, "TMPDIR=") }) {
+	// The read lane without a scratch gets no cache pointed at a
+	// directory that does not exist, and still keeps the operator's.
+	if env := laneEnv(sandbox.LaneRead, "", caches, parent); !slices.Contains(env, "MY_API_TOKEN=secret") || slices.ContainsFunc(env, func(s string) bool { return strings.HasPrefix(s, "GOCACHE=") || strings.HasPrefix(s, "TMPDIR=") }) {
 		t.Errorf("read lane without scratch: %v", env)
 	}
 	// The table renders in name order, so the environment is stable
