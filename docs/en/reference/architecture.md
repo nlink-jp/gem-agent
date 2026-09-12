@@ -196,8 +196,9 @@ rule tier's tier, the operator-only floor, the lane — and every gate
 reads that result; an architecture test keeps the rule tier out of
 every other function. The rule tier judges file tools by exact target
 on the real path (a write into the files later sessions trust — the
-instruction files, `.mcp.json`, `.gem-agent.toml`, `.git` — is
-operator-only, never lifted by an allowlist or the model tier), and
+instruction files, `.mcp.json`, `.gem-agent.toml`, the sibling
+runtime's `.lagent.toml`, `.git` — is operator-only, never lifted by an
+allowlist or the model tier), and
 shell commands by a Block floor alone (`sudo`, `rm -rf`, `curl | sh`
 and kin) — for everything else about a command the lane decides
 (ADR-0073): a verified read-lane command is not mutating and passes no

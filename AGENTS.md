@@ -550,12 +550,15 @@ a new hook) is an architecture change and takes the same rows as a
 - **Persistent files are `OperatorOnly`** (ADR-0072 §1.4) —
   `persistentTarget` makes `.git/` writes Block and writes to
   `AGENTS.md` / `AGENT.md` / `CLAUDE.md` / `GEMINI.md` / `.mcp.json` /
-  `.gem-agent.toml` / `.claude/` Review with `Verdict.OperatorOnly`,
+  `.gem-agent.toml` / `.lagent.toml` / `.claude/` Review with `Verdict.OperatorOnly`,
   which `decideAuto` honours exactly like the memory exclusion: the
   model tier is never consulted. It applies to the file tools and to
   shell redirects; do not "optimise" it back to Safe for the org's own
   AGENTS.md edits — one prompt is the price of the evaluator not being
-  the proposer.
+  the proposer. The sibling runtime's `.lagent.toml` is on the list
+  (the two share projects, and lagent protects `.gem-agent.toml` in
+  turn) but not in `trustpin.ConfigNames`: gem-agent never reads it,
+  so there is nothing for a pin to guard.
 - **The file-search child runs no pre-tool hook** (ADR-0072 §3) — its
   subset is read-only and `searchDenyGate` refuses mutation; an org
   guard keyed on reads does not see the child's. The one place hooks

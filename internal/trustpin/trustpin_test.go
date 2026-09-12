@@ -104,6 +104,9 @@ func TestSnapshotAndParents(t *testing.T) {
 	write(t, filepath.Join(proj, "sub/deep/CLAUDE.md"), "c\n")
 	write(t, filepath.Join(proj, "vendor/x/.git/hooks/pre-commit"), "#!/bin/sh\n")
 	write(t, filepath.Join(proj, "vendor/x/.git/config"), "[core]\n")
+	// The sibling runtime's config is on the persistent list too: the
+	// snapshot and the protected parents must follow the one list.
+	write(t, filepath.Join(proj, "cfg/.lagent.toml"), "[approval]\n")
 	write(t, filepath.Join(proj, "src/main.go"), "package main\n")
 	if err := os.Symlink("AGENTS.md", filepath.Join(proj, "sub/GEMINI.md")); err != nil {
 		t.Fatal(err)
@@ -112,7 +115,7 @@ func TestSnapshotAndParents(t *testing.T) {
 	if cut {
 		t.Error("cut on a tiny tree")
 	}
-	for _, want := range []string{"AGENTS.md", "sub/deep/CLAUDE.md", "vendor/x/.git/hooks/pre-commit", "vendor/x/.git/config"} {
+	for _, want := range []string{"AGENTS.md", "sub/deep/CLAUDE.md", "vendor/x/.git/hooks/pre-commit", "vendor/x/.git/config", "cfg/.lagent.toml"} {
 		if !strings.HasPrefix(snap[want], "sha256:") {
 			t.Errorf("%s missing: %v", want, snap)
 		}
@@ -128,6 +131,7 @@ func TestSnapshotAndParents(t *testing.T) {
 		filepath.Join(proj, "sub"): true, filepath.Join(proj, "sub/deep"): true,
 		filepath.Join(proj, "vendor"): true, filepath.Join(proj, "vendor/x"): true,
 		filepath.Join(proj, "vendor/x/.git"): true, filepath.Join(proj, "vendor/x/.git/hooks"): true,
+		filepath.Join(proj, "cfg"): true,
 	}
 	got := map[string]bool{}
 	for _, p := range parents {

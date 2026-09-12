@@ -61,6 +61,9 @@ bash と起動されるプログラムの振る舞いを推測するためにあ
 | **write** | ADR-0001 のプロファイル（プロジェクト・作業ディレクトリ・scratch）**に加えて**永続ファイル（`.git/hooks`・`.git/info`・`.git/config`・`AGENTS.md`・`CLAUDE.md`・`AGENT.md`・`GEMINI.md`・`.mcp.json`・`.gem-agent.toml`・`.claude/`、プロジェクト配下の任意の深さ）への `(deny file-write*)`。資格情報の読取は引き続き拒否 | 従来どおり ADR-0004 のラダー（Block 床 → モデル層 → 人間）、既定モードでは人間 | モデルが `access: "write"` を宣言 |
 | **operator** | ADR-0001 のプロファイルそのまま: 永続ファイル書込可、資格情報読取可 | 操作者のみ — モデル層・セッションの `a`・`--allow` が決して持ち上げない OperatorOnly 床 | モデルが `access: "operator"` を宣言。操作者が打った `!command` 経路はここで走る |
 
+*2026-09-12 の修正: write 行の永続ファイル一覧には同居ランタイムの `.lagent.toml`
+も含まれる — §3 の注記を参照。*
+
 ツールは引数 `access` を 1 つ得る（欠落は `read`）。これは**信頼しない権限要求
 であり、要求だけでは権限は付与されない**: `read` の宣言は最も狭い檻を選び、
 `write`・`operator` の宣言はコールを、より広い檻を付与しうるゲートへ回す。
@@ -94,6 +97,13 @@ administrator privileges`、全レーンで。パターンは助言的で寛容�
 （後続セッションが信頼するもの）と `CredentialFilters` / `CredentialPath`
 （operator レーン以外が読めないもの）。カーネルが拒むものとツールが拒むものの
 不一致は、レビューではなく構成上あり得ない。
+
+*2026-09-12 の修正（v0.77.1 後）: §1 の表とこの節の永続ファイル一覧に同居
+ランタイムの `.lagent.toml` を加えた。gem-agent と lagent はプロジェクトを
+共有し、片方しか守らないファイルはもう片方のモデルが書き換えうる — lagent は
+初版から `.gem-agent.toml` を守っており、この非対称を閉じた。この節の
+とおり `internal/sandbox` にだけ追加。`trustpin.ConfigNames` はピン留め
+しない — gem-agent はこのファイルを読まず、ピンは消費するものだけを守る。*
 
 ### 4. アーキテクチャテストがクラス B・C・E を閉じる
 

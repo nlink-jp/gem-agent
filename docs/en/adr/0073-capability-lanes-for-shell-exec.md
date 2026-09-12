@@ -64,6 +64,9 @@ decision:
 | **write** | the ADR-0001 profile (project, work directory, scratch) **plus** `(deny file-write*)` on the persistent files (`.git/hooks`, `.git/info`, `.git/config`, `AGENTS.md`, `CLAUDE.md`, `AGENT.md`, `GEMINI.md`, `.mcp.json`, `.gem-agent.toml`, `.claude/`, at any depth under the project); credential reads stay denied | the ADR-0004 ladder as today (Block floor → model tier → human), or the human in the default mode | the model declares `access: "write"` |
 | **operator** | the ADR-0001 profile unchanged: persistent files writable, credentials readable | the operator only — an OperatorOnly floor the model tier, a session `a` and a `--allow` grant never lift | the model declares `access: "operator"`; the `!command` route, which the operator typed, runs here |
 
+*Amended 2026-09-12: the write row's persistent-file list also holds the
+sibling runtime's `.lagent.toml` — see the note under §3.*
+
 The tool gains one argument, `access` (`read` when missing). It is an
 **untrusted request for capability, and the request alone grants
 nothing**: declaring `read` selects the tightest cage, declaring `write`
@@ -104,6 +107,15 @@ verdict: `PersistentFiles` / `PersistentFile` (what later sessions trust)
 and `CredentialFilters` / `CredentialPath` (what no lane but the operator's
 may read). A disagreement between what the kernel denies and what the
 tools refuse is impossible by construction, not by review.
+
+*Amended 2026-09-12 (after v0.77.1): the persistent-file list of the §1
+table and of this section gains the sibling runtime's `.lagent.toml`.
+gem-agent and lagent share projects, and a file only one of them
+protects is a file the other's model may rewrite — lagent has protected
+`.gem-agent.toml` since its first release; this closes the asymmetry.
+Added in `internal/sandbox` alone, as this section requires;
+`trustpin.ConfigNames` does not pin it, because gem-agent never reads
+it and a pin guards only what is consumed.*
 
 ### 4. Architecture tests close classes B, C and E
 

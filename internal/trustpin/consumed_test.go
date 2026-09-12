@@ -48,6 +48,9 @@ func TestPinName(t *testing.T) {
 		"AGENTS.md": "AGENTS.md", ".gem-agent.toml": ".gem-agent.toml",
 		".claude/skills/x/SKILL.md": ".claude/skills/x", ".claude/skills/x/refs/a.md": ".claude/skills/x",
 		".claude/skills/x": ".claude/skills/x", ".claude/skills": "", "sub/AGENTS.md": "", "README.md": "",
+		// The sibling runtime's config is persistent (the write lane
+		// denies it, the file tools ask) but not consumed, so not a pin.
+		".lagent.toml": "", ".LAGENT.toml": "",
 	}
 	for in, want := range cases {
 		if got := PinName("", in); got != want {

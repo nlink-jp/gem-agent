@@ -144,12 +144,12 @@ func TestLaneProfiles(t *testing.T) {
 }
 
 func TestPersistentAndCredentialRulesAgree(t *testing.T) {
-	for _, rel := range []string{"AGENTS.md", "sub/CLAUDE.md", ".git", "sub/.git", ".git/hooks/pre-commit", ".git/config", "vendor/x/.git/config.lock", ".claude/skills/a/SKILL.md", ".mcp.json", "docs/.gem-agent.toml"} {
+	for _, rel := range []string{"AGENTS.md", "sub/CLAUDE.md", ".git", "sub/.git", ".git/hooks/pre-commit", ".git/config", "vendor/x/.git/config.lock", ".claude/skills/a/SKILL.md", ".mcp.json", "docs/.gem-agent.toml", ".lagent.toml", "sub/.lagent.toml"} {
 		if !PersistentFile(rel) {
 			t.Errorf("%q not persistent", rel)
 		}
 	}
-	for _, rel := range []string{"README.md", ".git/index", ".git/objects/ab/cd", "src/agents.go", "gitconfig", ".github/workflows/x.yml"} {
+	for _, rel := range []string{"README.md", ".git/index", ".git/objects/ab/cd", "src/agents.go", "gitconfig", ".github/workflows/x.yml", "lagent.toml", ".lagent.toml.bak", "docs/lagent.toml.md"} {
 		if PersistentFile(rel) {
 			t.Errorf("%q wrongly persistent", rel)
 		}
@@ -168,9 +168,9 @@ func TestPersistentAndCredentialRulesAgree(t *testing.T) {
 
 // TestLaneEnforcement runs real sandbox-exec: the read lane denies a
 // project write, the network and a preference write; the write lane
-// allows the project write but denies AGENTS.md, .git/hooks and a
-// credential read through every spelling probed in ADR-0073; the
-// operator lane allows all of them.
+// allows the project write but denies AGENTS.md, the sibling runtime's
+// .lagent.toml, .git/hooks and a credential read through every spelling
+// probed in ADR-0073; the operator lane allows all of them.
 func TestLaneEnforcement(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("sandbox-exec is macOS-only")
@@ -201,7 +201,7 @@ func TestLaneEnforcement(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for name, body := range map[string]string{"AGENTS.md": "rules\n", ".git/config": "cfg\n", "home/.ssh/id_rsa": "secret\n", ".env": "K=v\n", ".env.example": "K=\n", "home/Library/Cookies/x": "c\n", "home/Library/Caches/x": "c\n", "home/.gemini/oauth_creds.json": "{}\n"} {
+	for name, body := range map[string]string{"AGENTS.md": "rules\n", ".lagent.toml": "[approval]\n", ".git/config": "cfg\n", "home/.ssh/id_rsa": "secret\n", ".env": "K=v\n", ".env.example": "K=\n", "home/Library/Cookies/x": "c\n", "home/Library/Caches/x": "c\n", "home/.gemini/oauth_creds.json": "{}\n"} {
 		if err := os.WriteFile(filepath.Join(proj, name), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -223,6 +223,7 @@ func TestLaneEnforcement(t *testing.T) {
 		return cmd.Run()
 	}
 	agents := filepath.Join(proj, "AGENTS.md")
+	lagentToml := filepath.Join(proj, ".lagent.toml")
 	cases := []struct {
 		lane    Lane
 		command string
@@ -243,6 +244,9 @@ func TestLaneEnforcement(t *testing.T) {
 		{LaneWrite, "echo pwned > " + agents, false, "write lane denies a redirect onto AGENTS.md"},
 		{LaneWrite, "echo pwned > " + filepath.Join(proj, "t.txt") + " && mv " + filepath.Join(proj, "t.txt") + " " + agents, false, "write lane denies a rename onto AGENTS.md"},
 		{LaneWrite, "rm " + agents, false, "write lane denies removing AGENTS.md"},
+		{LaneWrite, "echo pwned > " + lagentToml, false, "write lane denies a redirect onto the sibling runtime's .lagent.toml"},
+		{LaneWrite, "echo pwned > " + filepath.Join(proj, "t2.txt") + " && mv " + filepath.Join(proj, "t2.txt") + " " + lagentToml, false, "write lane denies a rename onto .lagent.toml"},
+		{LaneWrite, "rm " + lagentToml, false, "write lane denies removing .lagent.toml"},
 		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/hooks/pre-commit"), false, "write lane denies a hook"},
 		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/index"), true, "write lane allows ordinary .git writes"},
 		{LaneWrite, "cat " + filepath.Join(fakeHome, ".ssh/id_rsa"), false, "write lane denies a credential read"},
@@ -261,6 +265,7 @@ func TestLaneEnforcement(t *testing.T) {
 		{LaneOperator, "cd " + shellQuote(proj) + " && git init -q . && test -f .git/config", true, "operator lane allows git init"},
 		{LaneOperator, "cat " + filepath.Join(fakeHome, ".ssh/id_rsa"), true, "operator lane allows a credential read"},
 		{LaneOperator, "echo ok > " + agents, true, "operator lane allows AGENTS.md"},
+		{LaneOperator, "echo ok > " + lagentToml, true, "operator lane allows .lagent.toml"},
 	}
 	for _, c := range cases {
 		err := run(c.lane, c.command)
@@ -273,6 +278,9 @@ func TestLaneEnforcement(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(agents); string(got) != "ok\n" {
 		t.Errorf("AGENTS.md = %q: the write lane changed it or the operator lane could not", got)
+	}
+	if got, _ := os.ReadFile(lagentToml); string(got) != "ok\n" {
+		t.Errorf(".lagent.toml = %q: the write lane changed it or the operator lane could not", got)
 	}
 	if st, err := os.Stat(filepath.Join(proj, ".git")); err != nil || !st.IsDir() {
 		t.Errorf(".git is no longer the repository directory: %v %v", st, err)

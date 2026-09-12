@@ -151,20 +151,23 @@ func TestFileToolPaths(t *testing.T) {
 
 // Writes into what later sessions trust are the operator's alone; the
 // version-control internals are Block (ADR-0072 §1.4). The list is
-// sandbox.PersistentFile — the same one the write lane denies.
+// sandbox.PersistentFile — the same one the write lane denies — and it
+// holds the sibling runtime's .lagent.toml: the two runtimes share
+// projects, and a file only one of them protects is a file the other's
+// model may rewrite.
 func TestPersistentTargetsAreNotOrdinaryEdits(t *testing.T) {
 	for _, p := range []string{".git/hooks/pre-commit", ".git/config", proj + "/.git/HEAD", "sub/.git/info/exclude"} {
 		if v := Classify("write_file", true, map[string]any{"path": p, "content": "x"}, proj, ""); v.Tier != Block {
 			t.Errorf("write_file(%q) = %v, want block", p, v.Tier)
 		}
 	}
-	for _, p := range []string{"AGENTS.md", "docs/CLAUDE.md", "AGENT.md", "GEMINI.md", ".mcp.json", ".gem-agent.toml", ".claude/skills/x/SKILL.md", proj + "/AGENTS.md"} {
+	for _, p := range []string{"AGENTS.md", "docs/CLAUDE.md", "AGENT.md", "GEMINI.md", ".mcp.json", ".gem-agent.toml", ".lagent.toml", "sub/.lagent.toml", ".LAGENT.toml", proj + "/.lagent.toml", ".claude/skills/x/SKILL.md", proj + "/AGENTS.md"} {
 		v := Classify("edit_file", true, map[string]any{"path": p, "old": "a", "new": "b"}, proj, "")
 		if v.Tier != Review || !v.OperatorOnly {
 			t.Errorf("edit_file(%q) = %v operatorOnly=%v, want operator-only review", p, v.Tier, v.OperatorOnly)
 		}
 	}
-	for _, p := range []string{"README.md", "agents.go", ".github/workflows/ci.yml", "src/main.go"} {
+	for _, p := range []string{"README.md", "agents.go", ".github/workflows/ci.yml", "src/main.go", "lagent.toml", "docs/lagent.toml.md"} {
 		if v := Classify("write_file", true, map[string]any{"path": p, "content": "x"}, proj, ""); v.Tier != Safe {
 			t.Errorf("write_file(%q) = %v (%s), want safe", p, v.Tier, v.Reason)
 		}

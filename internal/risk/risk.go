@@ -258,9 +258,10 @@ func projectRelative(p, projectDir string) string {
 // file is (ADR-0072 §4). Version-control internals are Block: a hook
 // or a config value under .git/ runs outside the sandbox on the
 // operator's next git command, and no file tool has business there.
-// The instruction files, the runtime's own configuration and the
-// .claude directory — sandbox.PersistentFile, the one list the write
-// lane's profile also denies (ADR-0073 §3) — are Review that only the
+// The instruction files, the runtime's own configuration, the sibling
+// runtime's (.lagent.toml) and the .claude directory —
+// sandbox.PersistentFile, the one list the write lane's profile also
+// denies (ADR-0073 §3) — are Review that only the
 // operator may answer: the edit persists into what every later session
 // trusts, so the evaluator-is-the-proposer objection of ADR-0020 §4
 // applies to it exactly as to memory.

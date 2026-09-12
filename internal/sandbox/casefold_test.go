@@ -82,6 +82,7 @@ func TestLanesFoldCase(t *testing.T) {
 		"echo x > .Mcp.json":                  ".Mcp.json",
 		"mkdir -p .Claude/skills/x":           ".Claude",
 		"echo x > .Gem-Agent.toml":            ".Gem-Agent.toml",
+		"echo x > .Lagent.toml":               ".Lagent.toml",
 		"mkdir sub && echo x > sub/Gemini.MD": "sub/Gemini.MD",
 	}
 	for command, path := range writes {
@@ -134,7 +135,7 @@ func TestLanesFoldCase(t *testing.T) {
 // created ".git/hooks/PRE-COMMIT" is the hook git runs.
 func TestPersistentFileFoldsCase(t *testing.T) {
 	for _, rel := range []string{
-		"agents.md", "Agents.md", "sub/claude.MD", ".Mcp.json", ".GEM-AGENT.toml",
+		"agents.md", "Agents.md", "sub/claude.MD", ".Mcp.json", ".GEM-AGENT.toml", ".LAGENT.toml", "sub/.Lagent.TOML",
 		".GIT", ".git/HOOKS/pre-commit", ".git/hooks/PRE-COMMIT", ".GIT/config", ".git/CONFIG.lock", ".Claude/skills/x/SKILL.md",
 	} {
 		if !PersistentFile(rel) {

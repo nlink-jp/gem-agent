@@ -228,7 +228,9 @@ audit record carries `lane=unconfined:<declared>`.
 through the file tools is *blocked* — a hook or a config value there
 runs outside the sandbox on your next git command. A write to
 `AGENTS.md`, `AGENT.md`, `CLAUDE.md`, `GEMINI.md`, `.mcp.json`,
-`.gem-agent.toml` or anything under `.claude/` through `write_file` or
+`.gem-agent.toml`, the sibling runtime's `.lagent.toml` (the two share
+projects, and a file only one of them protects is a file the other's
+model may rewrite) or anything under `.claude/` through `write_file` or
 `edit_file` is *uncertain* and skips tier 2: the edit persists into
 what every later session takes instructions or configuration from, so
 the party that proposed it cannot be its judge (the memory rule below,
@@ -643,7 +645,9 @@ Two gates run before anything loads:
 - **Trust is given to content, not to the directory name** (ADR-0074).
   When you trust a project, the files that trust covers — the
   instruction files at the root, `.mcp.json`, `.gem-agent.toml`, each
-  project skill — are pinned by SHA-256 beside the trust record. On
+  project skill — are pinned by SHA-256 beside the trust record (the
+  sibling runtime's `.lagent.toml` is a persistent file, not a pin:
+  gem-agent never reads it, so there is nothing for a pin to guard). On
   every start, `/clear` and reload the current content is compared:
   unchanged loads as before; a file that changed (a `git pull`, a
   swapped parent directory, an edit in your editor) asks once at an

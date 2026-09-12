@@ -112,6 +112,9 @@ model tier as before, since they are no longer Safe. In auto mode this
 costs one prompt per instruction-file edit — the price of the
 evaluator not being the proposer.
 
+*Amended 2026-09-12: the list also holds the sibling runtime's
+`.lagent.toml` (see the note under ADR-0073 §3).*
+
 ## 2. Fixed — the seams
 
 ### 2.1 `/clear` rotated the work directory for the environment only (high)

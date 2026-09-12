@@ -130,7 +130,10 @@ var DefaultDenyExec = []string{
 // sessions trust, anchored under projectDir at any depth: the
 // version-control hooks, config and info directory, the instruction
 // files (AGENTS.md, CLAUDE.md, AGENT.md, GEMINI.md), the runtime's own
-// configuration (.mcp.json, .gem-agent.toml) and the .claude directory.
+// configuration (.mcp.json, .gem-agent.toml), the sibling runtime's
+// (.lagent.toml — the two share projects, and a file only one of them
+// protects is a file the other's model may rewrite; lagent protects
+// .gem-agent.toml in turn) and the .claude directory.
 // The write lane denies writes to them; the operator lane allows them.
 // The same set decides the file tools' OperatorOnly verdict (ADR-0072
 // §1.4), so the two cannot disagree.
@@ -148,7 +151,7 @@ func PersistentFiles(projectDir string) []string {
 		fmt.Sprintf(`(regex #"%s\.git/config(\.lock)?$")`, anchor),
 		fmt.Sprintf(`(regex #"%s\.claude(/|$)")`, anchor),
 		fmt.Sprintf(`(regex #"%s(AGENTS|AGENT|CLAUDE|GEMINI)\.md$")`, anchor),
-		fmt.Sprintf(`(regex #"%s(\.mcp\.json|\.gem-agent\.toml)$")`, anchor),
+		fmt.Sprintf(`(regex #"%s(\.mcp\.json|\.gem-agent\.toml|\.lagent\.toml)$")`, anchor),
 	}
 }
 
@@ -178,7 +181,7 @@ func PersistentFile(rel string) bool {
 		}
 	}
 	switch filepath.Base(c) {
-	case "agents.md", "agent.md", "claude.md", "gemini.md", ".mcp.json", ".gem-agent.toml":
+	case "agents.md", "agent.md", "claude.md", "gemini.md", ".mcp.json", ".gem-agent.toml", ".lagent.toml":
 		return true
 	}
 	return false

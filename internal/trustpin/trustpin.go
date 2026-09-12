@@ -47,7 +47,15 @@ const (
 // ADR-0011).
 const SkillsDir = ".claude/skills"
 
-// ConfigNames are the runtime's own project configuration files.
+// ConfigNames are the runtime's own project configuration files — what
+// gem-agent consumes, so what a pin must cover. The sibling runtime's
+// .lagent.toml is a persistent file (sandbox.PersistentFile: the write
+// lane denies it and the file tools ask the operator) but not a pin:
+// gem-agent never reads it, so a change there alters nothing this
+// runtime loads, and a pin over it would ask the operator to re-approve
+// a file this runtime does not use. lagent pins only its own pair the
+// same way. Snapshot still covers it, so a session that changes it is
+// reported.
 var ConfigNames = []string{".mcp.json", ".gem-agent.toml"}
 
 // Compute digests what gem-agent would consume from projectDir. Files

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Security
+
+- **The sibling runtime's `.lagent.toml` is a persistent file.**
+  gem-agent and lagent share projects, and lagent has protected
+  `.gem-agent.toml` since its first release, while gem-agent treated
+  `.lagent.toml` as an ordinary project file: Safe under `--auto`,
+  writable in the write lane. It now sits in the one list
+  (`sandbox.PersistentFiles`, ADR-0073 §3): the write lane's profile
+  denies it, `write_file` / `edit_file` to it ask you and never the
+  model tier, the persistent-file snapshot reports a session that
+  changed it, and the names fold case like the rest of the list. It is
+  not content-pinned (`trustpin.ConfigNames` is unchanged): gem-agent
+  never reads it, so a pin would re-ask about a file this runtime does
+  not load — lagent pins only its own pair the same way.
+
 ### Docs — MCP does define `notifications/cancelled`; the receiver may ignore it
 
 - The RFP, the architecture and integration references, the config
