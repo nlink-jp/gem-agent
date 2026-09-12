@@ -165,9 +165,17 @@ func TestPersistentAndCredentialRulesAgree(t *testing.T) {
 	}
 	// A checkout of the bridge itself, and the rest of the configuration
 	// home (ADR-0076 §1), are not credential material.
-	for _, p := range []string{".env.example", "environment.go", "README.md", "src/main.go", ".envrc-notes.md", ".claude/skills/x/SKILL.md", "docs/.gemini/notes.md", "mcp-bridge/config.json", "~/.config/git/ignore"} {
+	for _, p := range []string{".env.example", "environment.go", "README.md", "src/main.go", ".envrc-notes.md", ".claude/skills/x/SKILL.md", "docs/.gemini/notes.md", "mcp-bridge/config.json", "~/.config/git/ignore",
+		// Whole segments only (independent review of ADR-0085, A2): a
+		// name that merely ends in a list entry is an ordinary file.
+		"keys.ssh", "deploy.azure", "charts.kube/values.yaml", "data.aws/x", "my.netrc", "settings.claude.json", "docs/notes about .ssh keys.md"} {
 		if CredentialPath(p) {
 			t.Errorf("%q wrongly credential", p)
+		}
+	}
+	for _, p := range []string{".ssh", ".ssh/config", "x/.ssh", "sub/.ssh/id_ed25519", "/proj/.kube/config", ".netrc", "sub/.docker/config.json"} {
+		if !CredentialPath(p) {
+			t.Errorf("%q not credential (segment form)", p)
 		}
 	}
 }

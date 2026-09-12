@@ -89,6 +89,30 @@ func TestCredentialReadIsMustPromptAndTemplatesAreNot(t *testing.T) {
 	}
 }
 
+// file_info's paths batch is resolved entry by entry: a link to .env
+// among ordinary names prompts, and the reason names the target.
+func TestFileInfoBatchIsJudgedOnRealPaths(t *testing.T) {
+	mb := &mockBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "c1", Name: "file_info", Args: map[string]any{"paths": []any{"notes.txt", ".env.example"}}}}},
+		{ToolCalls: []llm.ToolCall{{ID: "c2", Name: "file_info", Args: map[string]any{"paths": []any{"notes.txt", "notes-link.txt"}}}}},
+		{Content: "done"},
+	}}
+	gate := &laneGate{}
+	_, reg := newAgent(t, mb, gate, 5)
+	credentialProject(t, reg)
+	a := New(Options{Backend: mb, Registry: reg, Gate: gate, System: "s", MaxTurns: 5})
+	if _, err := a.Run(context.Background(), "inspect", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(gate.asked) != 1 || !strings.Contains(gate.asked[0], "notes-link.txt") || !gate.mustPrompt[0] {
+		t.Errorf("the batch holding a link to .env must prompt, the clean batch must not: asked=%v mustPrompt=%v", gate.asked, gate.mustPrompt)
+	}
+	d := a.decide(llm.ToolCall{ID: "x", Name: "file_info", Args: map[string]any{"paths": []any{"notes.txt", "notes-link.txt"}}})
+	if !d.Verdict.OperatorOnly || !strings.Contains(d.Verdict.Reason, "(.env)") {
+		t.Errorf("verdict = %+v, want operator-only naming .env", d.Verdict)
+	}
+}
+
 // A "never" policy for read_file (and the one-shot --allow grant it
 // stands for) lifts the ordinary gate, not the floor (ADR-0072 §4.9).
 func TestNeverPolicyKeepsTheCredentialReadFloor(t *testing.T) {

@@ -56,10 +56,16 @@ R02 は高と評価する。
 `risk.Classify` は名指しの read ツール 5 つを非変更系のショートカットより先に
 判定する: `path` — `file_info` では `paths` のいずれかの要素 — が資格情報の
 規則に一致すれば、判定は `OperatorOnly` 付きの `Review`。規則は write ツール
-自身のもの: `sandbox.CredentialPath` の上の `hasCredentialPath`、`.env.example`
-/ `.sample` / `.template` / `.dist` の再許可を含み、名前は一覧の他と同じく
-ケースを畳む。第 2 の一覧は存在しない。read ツールは `internal/sandbox` の
-一覧を読む。
+自身のもの: path 全体に当てる `sandbox.CredentialPath`（シェル床の語分割
+`hasCredentialPath` はコマンド文字列用 — `notes about .ssh keys.md` という
+ファイルは 1 つのパスであり、末尾が一覧の項目に一致するだけの `keys.ssh` は
+通常のファイル。独立レビュー A2/A10）、`.env.example` / `.sample` /
+`.template` / `.dist` の再許可を含み、名前は一覧の他と同じくケースを畳む。
+第 2 の一覧は存在しない。read ツールは `internal/sandbox` の一覧を読み、
+エージェントが判定前にパスを解決するツールの一覧は `risk.JudgesPath` の 1 つ。
+理由文は一致したパスをプロジェクト相対で名指す — `reads credential material
+(sub/.env)` — 20 件の `paths` バッチでは承認詳細の切り詰めがその項目を押し
+出しうるし、リンクの綴りはその指す先ではないからである（A4）。
 
 判定は実パス上で行う。`Agent.decide` は read ツールについても `write_file` /
 `edit_file` と同じく（ADR-0072 最終レビュー R2）`path` と `paths` を

@@ -276,3 +276,34 @@ func TestSearchAgentSumsEveryBucketIntoOneRecord(t *testing.T) {
 		t.Errorf("record = %+v, want %+v", recs[0], want)
 	}
 }
+
+// ADR-0085 §1: a credential read inside the child reaches its gate and
+// is refused — never prompted, the operator cannot see this
+// conversation — and the secret enters neither the child's context nor
+// the report.
+func TestSearchAgentRefusesACredentialRead(t *testing.T) {
+	sb := &scriptBackend{responses: []*llm.Response{
+		{ToolCalls: []llm.ToolCall{{ID: "1", Name: "read_file", Args: map[string]any{"path": ".env"}}}},
+		{Content: ".env could not be read (denied). 見つからなかったもの: 秘密の値。"},
+	}}
+	reg, _, _, _ := searchSetup(t, sb)
+	if err := os.WriteFile(filepath.Join(reg.ProjectDir(), ".env"), []byte("SECRET_TOKEN=hunter2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runSearch(t, reg, map[string]any{"question": "what is in .env?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := sb.messages[len(sb.messages)-1]
+	if res := last[len(last)-1].Content; !strings.Contains(res, "denied") {
+		t.Errorf("the child's credential read was not refused: %q", res)
+	}
+	for _, m := range last {
+		if strings.Contains(m.Content, "hunter2") {
+			t.Fatalf("the secret entered the child's context: %q", m.Content)
+		}
+	}
+	if strings.Contains(out, "hunter2") {
+		t.Fatal("the secret reached the report")
+	}
+}

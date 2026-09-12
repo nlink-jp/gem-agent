@@ -102,7 +102,7 @@ func (a *Agent) decide(tc llm.ToolCall) Decision {
 	}
 	mutating := tool.MutatesFor(tc.Args)
 	args := tc.Args
-	if pathJudged[tc.Name] {
+	if risk.JudgesPath(tc.Name) {
 		// Judge what the file IS by its real name: a link named
 		// `notes.md` pointing at `AGENTS.md` is an AGENTS.md write
 		// (final review R2), and one pointing at `.env` is a `.env`
@@ -126,17 +126,6 @@ func (a *Agent) decide(tc llm.ToolCall) Decision {
 	}
 	d.CeilingUnbounded = ceiling < sandbox.LaneOperator && strings.HasPrefix(tc.Name, mcpPrefix)
 	return d
-}
-
-// pathJudged names the file tools whose verdict depends on what the
-// file at `path` (or each of file_info's `paths`) IS: the write tools
-// (persistent files, ADR-0072 §1.4) and the read tools (credential
-// material, ADR-0085). Their arguments are resolved to real paths
-// before the rule tier reads them.
-var pathJudged = map[string]bool{
-	"write_file": true, "edit_file": true,
-	"read_file": true, "view_image": true, "read_document": true,
-	"file_info": true, "summarize_file": true,
 }
 
 // withRealPaths returns args with `path` and every entry of `paths`

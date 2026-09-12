@@ -248,13 +248,12 @@ func CredentialPath(p string) bool {
 			}
 			continue
 		}
-		d = strings.ToLower(d)
-		if strings.Contains(lower, d+"/") || strings.HasSuffix(lower, d) {
+		if pathSegments(lower, strings.ToLower(d)) {
 			return true
 		}
 	}
 	for _, f := range credentialFiles {
-		if strings.HasSuffix(lower, strings.ToLower(f)) {
+		if pathSegments(lower, strings.ToLower(f)) {
 			return true
 		}
 	}
@@ -270,6 +269,18 @@ func CredentialPath(p string) bool {
 		return true
 	}
 	return false
+}
+
+// pathSegments reports whether p (lower-cased, slash-separated) holds
+// name as whole path segments — `x/.ssh/y`, `.ssh/y`, `x/.ssh`, `.ssh`
+// — and not as the tail of a longer name: `keys.ssh`, `deploy.azure`
+// and `my.netrc` are ordinary files (independent review of ADR-0085,
+// A2: the suffix match was a false Block for the write tools and a
+// silently withheld entry for the walks). name may span several
+// segments (`.config/gcloud`, `.docker/config.json`).
+func pathSegments(p, name string) bool {
+	return p == name || strings.HasPrefix(p, name+"/") ||
+		strings.HasSuffix(p, "/"+name) || strings.Contains(p, "/"+name+"/")
 }
 
 func envTemplate(base string) bool {

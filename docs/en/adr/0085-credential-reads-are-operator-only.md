@@ -63,11 +63,19 @@ aside:
 `risk.Classify` judges the five named read tools before the
 non-mutating shortcut: when `path` — or, for `file_info`, any entry of
 `paths` — matches the credential rule, the verdict is `Review` with
-`OperatorOnly`. The rule is the write tools' own: `hasCredentialPath`
-over `sandbox.CredentialPath`, the `.env.example` / `.sample` /
+`OperatorOnly`. The rule is the write tools' own: `sandbox.CredentialPath`
+on the whole path (the shell floor's word-splitting `hasCredentialPath`
+is for command text — a file named `notes about .ssh keys.md` is one
+path, and a name that merely ends in a list entry, `keys.ssh`, is
+ordinary; independent review, A2/A10), the `.env.example` / `.sample` /
 `.template` / `.dist` re-allow included, names folded like the rest of
 the list. No second list exists; the read tools read the one in
-`internal/sandbox`.
+`internal/sandbox`, and `risk.JudgesPath` is the one list of the tools
+whose path the agent resolves before judging. The reason names the
+path that matched, project-relative — `reads credential material
+(sub/.env)` — because a `paths` batch of twenty can push the entry
+past the approval detail's clip, and a link's spelling is not its
+target (A4).
 
 Judged on the real path. `Agent.decide` resolves `path` and `paths`
 through `Registry.RealPath` for the read tools as it does for

@@ -1,6 +1,9 @@
 package risk
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const proj = "/tmp/project"
 
@@ -324,5 +327,25 @@ func TestCredentialReadsAreOperatorOnly(t *testing.T) {
 	// reading a secret with the operator's yes is legitimate work.
 	if v := Classify("read_file", false, map[string]any{"path": ".env"}, proj, ""); v.Tier == Block {
 		t.Error("a credential read must be operator-only Review, not Block")
+	}
+	// The reason names the path that matched, project-relative (A4): in
+	// a paths batch the detail may clip it, and a link's spelling is not
+	// its target.
+	v = Classify("file_info", false, map[string]any{"paths": []any{"README.md", proj + "/sub/.env"}}, proj, "")
+	if !strings.Contains(v.Reason, "(sub/.env)") {
+		t.Errorf("reason does not name the path: %q", v.Reason)
+	}
+	// A file-tool path is judged whole, never word-split like shell text
+	// (A10); a name that merely ends in a list entry is ordinary (A2).
+	for _, tool := range []string{"read_file", "write_file"} {
+		for _, p := range []string{"docs/notes about .ssh keys.md", "keys.ssh", "deploy.azure", "my.netrc"} {
+			if v := Classify(tool, tool == "write_file", map[string]any{"path": p, "content": "x"}, proj, ""); v.Tier != Safe {
+				t.Errorf("%s(%q) = %v (%s), want safe", tool, p, v.Tier, v.Reason)
+			}
+		}
+	}
+	// The shell floor keeps its word split: the command names the file.
+	if v := shell(`cat "~/.ssh/id_rsa"`, "read", false); v.Tier != Block {
+		t.Errorf("shell floor lost the word split: %v", v.Tier)
 	}
 }

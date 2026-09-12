@@ -117,7 +117,7 @@ func Classify(toolName string, mutating bool, args map[string]any, projectDir, w
 		// Before the read-only shortcut (ADR-0085): a read of
 		// credential material is the operator's alone, as the operator
 		// lane is the only lane that may read it.
-		if v, ok := credentialRead(args); ok {
+		if v, ok := credentialRead(args, projectDir); ok {
 			return v
 		}
 	}
@@ -171,14 +171,28 @@ var credentialReadTools = map[string]bool{
 	"file_info": true, "summarize_file": true,
 }
 
+// JudgesPath reports the built-in tools whose verdict depends on what
+// the file at `path` — or at each entry of file_info's `paths` — IS:
+// the write tools (persistent files, ADR-0072 §1.4) and the read tools
+// of credentialReadTools (credential material, ADR-0085). Agent.decide
+// resolves their arguments to real paths before Classify reads them;
+// this is the one list both sides read (independent review, A8: a
+// second copy in the agent could name a tool this one did not).
+func JudgesPath(name string) bool {
+	return name == "write_file" || name == "edit_file" || credentialReadTools[name]
+}
+
 // credentialRead judges a read tool's path arguments — `path`, and
 // file_info's `paths` batch — by the one credential rule the write
 // tools and the profile use (ADR-0085): a match is Review that only
 // the operator may answer. The read and write lanes deny these files
 // at the kernel and the operator lane alone may read them; the file
 // tools mirror that lane with the operator's own answer. The
-// .env templates are re-allowed by the same rule.
-func credentialRead(args map[string]any) (Verdict, bool) {
+// .env templates are re-allowed by the same rule. The reason names
+// the path that matched — in a `paths` batch the approval detail may
+// clip it away, and a link's spelling is not its target (independent
+// review, A4).
+func credentialRead(args map[string]any, projectDir string) (Verdict, bool) {
 	var paths []string
 	if p, _ := args["path"].(string); p != "" {
 		paths = append(paths, p)
@@ -191,9 +205,13 @@ func credentialRead(args map[string]any) (Verdict, bool) {
 		}
 	}
 	for _, p := range paths {
-		if hasCredentialPath(p) {
+		if sandbox.CredentialPath(p) {
+			shown := p
+			if rel := projectRelative(p, projectDir); rel != "" {
+				shown = rel
+			}
 			return Verdict{Tier: Review, OperatorOnly: true,
-				Reason: "reads credential material — the operator decides, not the model tier"}, true
+				Reason: "reads credential material (" + shown + ") — the operator decides, not the model tier"}, true
 		}
 	}
 	return Verdict{}, false
@@ -261,7 +279,10 @@ func classifyPath(p, projectDir, workDir string) (Verdict, bool) {
 	if p == "" {
 		return Verdict{Tier: Review, Reason: "missing path argument"}, true
 	}
-	if hasCredentialPath(p) {
+	// The whole path, never the shell text's word split: a file named
+	// `notes about .ssh keys.md` is one path (independent review of
+	// ADR-0085, A10).
+	if sandbox.CredentialPath(p) {
 		return Verdict{Tier: Block, Reason: "path looks like credential material"}, true
 	}
 	if filepath.IsAbs(p) {
@@ -541,10 +562,11 @@ func outsideRootsReason(what, workDir string) string {
 	return what + " outside the project and session work directories"
 }
 
-// hasCredentialPath reports credential material named anywhere in s —
-// a file-tool path or a shell command — by the one rule the sandbox
-// profile enforces (sandbox.CredentialPath). For a command every word
-// is tried, quotes removed, so `cat "~/.ssh/id_rsa"` is seen.
+// hasCredentialPath reports credential material named anywhere in a
+// shell command by the one rule the sandbox profile enforces
+// (sandbox.CredentialPath): every word is tried, quotes removed, so
+// `cat "~/.ssh/id_rsa"` is seen. The file tools judge their path
+// whole (classifyPath, credentialRead).
 func hasCredentialPath(s string) bool {
 	if sandbox.CredentialPath(s) {
 		return true
