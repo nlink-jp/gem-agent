@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.77.3] - 2026-09-13
 
 ### Security
 
