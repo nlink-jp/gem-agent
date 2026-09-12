@@ -193,6 +193,11 @@ var credentialDirs = []string{
 	".ssh", ".aws", ".kube", ".gnupg", ".config/gcloud", ".config/gh",
 	// Agent and cloud token stores (review F-07, V5).
 	".gemini", ".codex", ".claude", ".azure", ".terraform.d", "Library/Keychains",
+	// The MCP OAuth bridge's home: config.json holds pre-registered
+	// client secrets and static API-key headers, state/<server>/tokens.json
+	// the access tokens (ADR-0076's trigger; ADR-0073 §3 note of
+	// 2026-09-13). The rest of ~/.config stays readable (ADR-0076 §1).
+	".config/mcp-bridge",
 }
 
 // homeOnlyDirs are credentialDirs names that also occur inside projects

@@ -154,12 +154,14 @@ func TestPersistentAndCredentialRulesAgree(t *testing.T) {
 			t.Errorf("%q wrongly persistent", rel)
 		}
 	}
-	for _, p := range []string{"~/.ssh/id_rsa", ".env", ".env.local", "/x/credentials.json", "~/.aws/credentials", "sa-service-account.json", "~/.netrc", "~/.gemini/oauth_creds.json", "~/.claude/.credentials.json", "~/.claude.json", "~/Library/Keychains/login.keychain-db"} {
+	for _, p := range []string{"~/.ssh/id_rsa", ".env", ".env.local", "/x/credentials.json", "~/.aws/credentials", "sa-service-account.json", "~/.netrc", "~/.gemini/oauth_creds.json", "~/.claude/.credentials.json", "~/.claude.json", "~/Library/Keychains/login.keychain-db", "~/.config/mcp-bridge/config.json", "~/.config/mcp-bridge/state/github/tokens.json", "/Users/x/.config/mcp-bridge", "~/.Config/MCP-Bridge/config.json"} {
 		if !CredentialPath(p) {
 			t.Errorf("%q not credential", p)
 		}
 	}
-	for _, p := range []string{".env.example", "environment.go", "README.md", "src/main.go", ".envrc-notes.md", ".claude/skills/x/SKILL.md", "docs/.gemini/notes.md"} {
+	// A checkout of the bridge itself, and the rest of the configuration
+	// home (ADR-0076 §1), are not credential material.
+	for _, p := range []string{".env.example", "environment.go", "README.md", "src/main.go", ".envrc-notes.md", ".claude/skills/x/SKILL.md", "docs/.gemini/notes.md", "mcp-bridge/config.json", "~/.config/git/ignore"} {
 		if CredentialPath(p) {
 			t.Errorf("%q wrongly credential", p)
 		}
@@ -196,12 +198,12 @@ func TestLaneEnforcement(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, d := range []string{"home/Library/Cookies", "home/Library/Caches", "home/.gemini"} {
+	for _, d := range []string{"home/Library/Cookies", "home/Library/Caches", "home/.gemini", "home/.config/mcp-bridge/state/github", "home/.config/git"} {
 		if err := os.MkdirAll(filepath.Join(proj, d), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for name, body := range map[string]string{"AGENTS.md": "rules\n", ".lagent.toml": "[approval]\n", ".git/config": "cfg\n", "home/.ssh/id_rsa": "secret\n", ".env": "K=v\n", ".env.example": "K=\n", "home/Library/Cookies/x": "c\n", "home/Library/Caches/x": "c\n", "home/.gemini/oauth_creds.json": "{}\n"} {
+	for name, body := range map[string]string{"AGENTS.md": "rules\n", ".lagent.toml": "[approval]\n", ".git/config": "cfg\n", "home/.ssh/id_rsa": "secret\n", ".env": "K=v\n", ".env.example": "K=\n", "home/Library/Cookies/x": "c\n", "home/Library/Caches/x": "c\n", "home/.gemini/oauth_creds.json": "{}\n", "home/.config/mcp-bridge/config.json": "{}\n", "home/.config/mcp-bridge/state/github/tokens.json": "{}\n", "home/.config/git/ignore": "*.o\n"} {
 		if err := os.WriteFile(filepath.Join(proj, name), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -262,6 +264,11 @@ func TestLaneEnforcement(t *testing.T) {
 		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, "Library/Cookies/x")), false, "read lane denies the user's Library (design review V2)"},
 		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, "Library/Caches/x")), true, "read lane allows toolchain caches under Library"},
 		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, ".gemini/oauth_creds.json")), false, "read lane denies agent token stores (review F-07)"},
+		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, ".config/mcp-bridge/config.json")), false, "read lane denies the MCP bridge's configuration (the ADR-0076 trigger)"},
+		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, ".config/mcp-bridge/state/github/tokens.json")), false, "read lane denies the MCP bridge's token store"},
+		{LaneWrite, "cat " + shellQuote(filepath.Join(fakeHome, ".config/mcp-bridge/config.json")), false, "write lane denies the MCP bridge's configuration"},
+		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, ".config/git/ignore")), true, "read lane still reads the rest of the configuration home (ADR-0076 §1)"},
+		{LaneOperator, "cat " + shellQuote(filepath.Join(fakeHome, ".config/mcp-bridge/config.json")), true, "operator lane allows the MCP bridge's configuration"},
 		{LaneOperator, "cd " + shellQuote(proj) + " && git init -q . && test -f .git/config", true, "operator lane allows git init"},
 		{LaneOperator, "cat " + filepath.Join(fakeHome, ".ssh/id_rsa"), true, "operator lane allows a credential read"},
 		{LaneOperator, "echo ok > " + agents, true, "operator lane allows AGENTS.md"},

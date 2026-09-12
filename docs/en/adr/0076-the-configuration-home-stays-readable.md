@@ -10,6 +10,18 @@
 | Amends | ADR-0011 §3 (the symlink into `~/.claude/skills` is withdrawn) |
 | Relates to | ADR-0073 §1/§3 (the credential list and its three enforcers), ADR-0075 (the trigger that stops the investigation) |
 
+*Amended 2026-09-13 (after v0.77.2): `~/.config/mcp-bridge` — the first
+file of the trigger and the token store beside it — is on the credential
+list (ADR-0073 §3, note of the same date), as a directory entry beside
+`~/.config/gcloud` and `~/.config/gh`. §1's mechanism stands — `~/.config`
+is not denied, the finite list is what decides — and its "nor are the two
+files of the incident" now holds for the second file only:
+`~/.config/gem-agent/mcp.json` remains off the list. Of the two decision
+points under "Not adopted", the
+bridge's wiring is answered by this entry — a directory, not a literal,
+because its tokens live in a subtree — and the Block floor on `~/.config`
+paths stays not adopted.*
+
 ## Context
 
 ### What happened
@@ -18,7 +30,8 @@ The two files the read lane read hold credentials by design.
 `~/.config/mcp-bridge/config.json` exists to hold pre-registered OAuth
 client credentials; `~/.config/gem-agent/mcp.json` holds each server's
 command and `env`, where API keys conventionally go. Neither is on the
-credential list (ADR-0073 §3), which names 12 directories and 9 files.
+credential list (ADR-0073 §3), which at the time named 12 directories
+and 9 files.
 Measured on the operator's machine by file name only, `~/.config` holds
 52 tool directories, and 13 of their `config.toml` / `config.json` files
 carry a key named exactly `token`, `api_key` or `secret` (16 with a
@@ -88,6 +101,9 @@ two files of the incident. A plain-text token stored under a tool's
 configuration directory is readable in the read and write lanes, as the
 approval reference already states; that boundary now carries this
 example.
+
+*Amended 2026-09-13: `~/.config/mcp-bridge` is on the list — see the note
+under the table. `~/.config` still is not.*
 
 ### 2. The behaviour is addressed at its trigger
 

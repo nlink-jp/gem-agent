@@ -99,7 +99,7 @@ func TestLanesFoldCase(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(proj, "nohome", ".ssh"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{"nohome/.ssh/id_rsa", "sub2/.env", "sub2/service-account.json"} {
+	for _, f := range []string{"nohome/.ssh/id_rsa", "sub2/.env", "sub2/service-account.json", "nohome/.config/mcp-bridge/config.json"} {
 		_ = os.MkdirAll(filepath.Dir(filepath.Join(proj, f)), 0o755)
 		if err := os.WriteFile(filepath.Join(proj, f), []byte("SECRET\n"), 0o600); err != nil {
 			t.Fatal(err)
@@ -120,6 +120,7 @@ func TestLanesFoldCase(t *testing.T) {
 	}
 	for _, command := range []string{
 		"cat nohome/.SSH/id_rsa", "cat nohome/.ssh/ID_RSA", "cat sub2/.ENV", "cat sub2/Service-Account.json",
+		"cat nohome/.Config/MCP-Bridge/config.json",
 	} {
 		if out := run(readProfile, command); strings.Contains(out, "SECRET") {
 			t.Errorf("read lane: %q read the credential", command)

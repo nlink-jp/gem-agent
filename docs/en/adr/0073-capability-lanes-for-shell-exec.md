@@ -117,6 +117,16 @@ Added in `internal/sandbox` alone, as this section requires;
 `trustpin.ConfigNames` does not pin it, because gem-agent never reads
 it and a pin guards only what is consumed.*
 
+*Amended 2026-09-13 (after v0.77.2): the credential list gains
+`~/.config/mcp-bridge`, the MCP OAuth bridge's home — its `config.json`
+holds pre-registered client secrets and static API-key headers, its
+`state/<server>/tokens.json` the access tokens, and the read lane read
+the first of them unasked (ADR-0076's trigger). A directory entry beside
+`~/.config/gcloud` and `~/.config/gh`, added in `internal/sandbox` alone,
+as this section requires: the profile, the file tools and the risk floor
+follow. The configuration home itself stays readable (ADR-0076 §1); this
+is the list doing what it is for, not that decision reopened.*
+
 ### 4. Architecture tests close classes B, C and E
 
 `internal/archtest` walks the AST of every non-test file and fails on:

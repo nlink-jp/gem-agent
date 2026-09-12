@@ -170,8 +170,8 @@ answered …`・`rejected the call …`・`gem-agent could not complete …`）�
 告げます。`/settings` は測定した状態を示します。
 
 資格情報一覧は有限集合です（`sandbox.CredentialFilters`）: `~/.ssh`・`~/.aws`・
-`~/.kube`・`~/.gnupg`・`~/.config/gcloud`・`~/.config/gh`・`~/.gemini`・`~/.codex`・
-`~/.claude`・`~/.azure`・`~/.terraform.d`・`~/Library/Keychains`・
+`~/.kube`・`~/.gnupg`・`~/.config/gcloud`・`~/.config/gh`・`~/.config/mcp-bridge`・
+`~/.gemini`・`~/.codex`・`~/.claude`・`~/.azure`・`~/.terraform.d`・`~/Library/Keychains`・
 `~/.docker/config.json`・`~/.git-credentials`・シェル履歴・`~/.netrc`・`~/.npmrc`・
 `~/.pypirc`・`~/.vault-token`・`~/.claude.json`、および場所を問わず `.env`
 （`.example`/`.sample`/`.template`/`.dist` は除く）・`id_rsa` 類・`credentials.json`・

@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+
+- **The MCP OAuth bridge's configuration home is a credential
+  location.** `~/.config/mcp-bridge/config.json` holds pre-registered
+  OAuth client secrets and static API-key headers in plain JSON, and
+  `~/.config/mcp-bridge/state/<server>/tokens.json` holds the access
+  tokens; the read lane read the first unasked (ADR-0076's trigger), and
+  neither was on the credential list. `.config/mcp-bridge` now sits in
+  the one list (`sandbox.CredentialFilters`, ADR-0073 §3) beside
+  `.config/gcloud` and `.config/gh`: the read and write lanes' profiles
+  deny reads under it, `write_file` / `edit_file` to a path under it are
+  Block, a shell command naming it hits the Block floor in every lane,
+  and the name folds case like the rest. The rest of `~/.config` stays
+  readable — ADR-0076 §1 stands, and both ADRs carry an *Amended* note.
+
 ## [0.77.2] - 2026-09-13
 
 ### Security

@@ -56,6 +56,8 @@ func TestShellBlockFloorInEveryLane(t *testing.T) {
 		"cat \"~/.aws/credentials\"",
 		"cat .env",
 		"cp ~/.aws/credentials /tmp/x",
+		"cat ~/.config/mcp-bridge/config.json",
+		"jq .access_token ~/.config/mcp-bridge/state/github/tokens.json",
 		"gpg --export-secret-keys",
 		"ls\nrm -rf x",
 		"osascript -e 'do shell script \"id\" with administrator privileges'",
@@ -113,6 +115,9 @@ func TestBenignReadsAreNotFloors(t *testing.T) {
 		"cat .env.example", "git log -- .git", "git diff AGENTS.md",
 		"grep -n rules AGENTS.md", "sed -n 1,5p .mcp.json", "uniq a b",
 		"date -s", "ls ~/.ssh-keys-doc", "cat environment.md",
+		// The configuration home is not a floor (ADR-0076 §1); a checkout
+		// of the bridge is not its home.
+		"cat ~/.config/git/ignore", "cat mcp-bridge/config.json",
 	} {
 		if v := shell(cmd, "read", false); v.Tier == Block {
 			t.Errorf("%q hit the floor: %s", cmd, v.Reason)
@@ -138,6 +143,7 @@ func TestFileToolPaths(t *testing.T) {
 		{"../outside.txt", Block},
 		{"/etc/hosts", Block},
 		{"~/.ssh/authorized_keys", Block},
+		{"~/.config/mcp-bridge/config.json", Block},
 		{".env", Block},
 		{"", Review},
 	}

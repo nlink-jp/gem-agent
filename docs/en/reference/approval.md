@@ -178,12 +178,12 @@ is yours to answer, and the banner says which expectation failed.
 
 The credential list is a bounded set (`sandbox.CredentialFilters`):
 `~/.ssh`, `~/.aws`, `~/.kube`, `~/.gnupg`, `~/.config/gcloud`,
-`~/.config/gh`, `~/.gemini`, `~/.codex`, `~/.claude`, `~/.azure`,
-`~/.terraform.d`, `~/Library/Keychains`, `~/.docker/config.json`,
-`~/.git-credentials`, the shell histories, `~/.netrc`, `~/.npmrc`,
-`~/.pypirc`, `~/.vault-token`, `~/.claude.json`, and anywhere `.env`
-(not its `.example`/`.sample`/`.template`/`.dist` twins), `id_rsa` and
-kin, `credentials.json`, `*service-account*.json`,
+`~/.config/gh`, `~/.config/mcp-bridge`, `~/.gemini`, `~/.codex`,
+`~/.claude`, `~/.azure`, `~/.terraform.d`, `~/Library/Keychains`,
+`~/.docker/config.json`, `~/.git-credentials`, the shell histories,
+`~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.vault-token`, `~/.claude.json`,
+and anywhere `.env` (not its `.example`/`.sample`/`.template`/`.dist`
+twins), `id_rsa` and kin, `credentials.json`, `*service-account*.json`,
 `application_default_credentials.json`. A secret stored elsewhere — a
 token in `~/.config/<tool>/config.toml`, say (ADR-0076) — is readable in
 the read and write lanes, and in the write lane can leave

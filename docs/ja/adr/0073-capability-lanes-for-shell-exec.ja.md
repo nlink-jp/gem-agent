@@ -105,6 +105,15 @@ administrator privileges`、全レーンで。パターンは助言的で寛容�
 とおり `internal/sandbox` にだけ追加。`trustpin.ConfigNames` はピン留め
 しない — gem-agent はこのファイルを読まず、ピンは消費するものだけを守る。*
 
+*2026-09-13 の修正（v0.77.2 後）: 資格情報一覧に MCP OAuth ブリッジのホーム
+`~/.config/mcp-bridge` を加えた — その `config.json` は事前登録クライアントの
+秘密と静的な API キーヘッダを、`state/<server>/tokens.json` はアクセストークンを
+持ち、前者は read レーンが無確認で読んだファイル（ADR-0076 の契機）である。
+`~/.config/gcloud`・`~/.config/gh` と並ぶディレクトリ項目で、この節のとおり
+`internal/sandbox` にだけ追加: プロファイル・file ツール・リスク床が追随する。
+設定ホーム自体は読めるまま（ADR-0076 §1）。これは一覧の本来の仕事であり、
+あの決定の再開ではない。*
+
 ### 4. アーキテクチャテストがクラス B・C・E を閉じる
 
 `internal/archtest` が非テスト全ファイルの AST を歩き、次で失敗する:
