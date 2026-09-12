@@ -1145,7 +1145,7 @@ func (r *Registry) listFiles() *Tool {
 		Description: "List directory entries inside the project. Directories are " +
 			"suffixed with '/'; dependency/build directories and .gitignore'd entries are " +
 			"marked [ignored] — prefer not to descend into those. Credential-named entries " +
-			"(.env, keys, credential stores) are withheld and counted. Use this to explore the " +
+			"(.env, keys, credential stores) are skipped and counted. Use this to explore the " +
 			"project structure before reading or editing.",
 		Parameters: map[string]any{
 			"type": "object",
@@ -1165,6 +1165,13 @@ func (r *Registry) listFiles() *Tool {
 			if err != nil {
 				return "", err
 			}
+			// A credential-named directory is never listed (ADR-0085
+			// §2); the rule reads the real path, so a link to one is
+			// the same directory.
+			realDir := realRootOf(dir)
+			if sandbox.CredentialPath(realDir) {
+				return credentialSkipNote(1), nil
+			}
 			entries, more, err := r.readDirIn(dir)
 			if err != nil {
 				return "", err
@@ -1174,7 +1181,7 @@ func (r *Registry) listFiles() *Tool {
 			credential := 0 // entries withheld under the credential rule (ADR-0085 §2)
 			for _, e := range entries {
 				n := e.Name()
-				if sandbox.CredentialPath(filepath.Join(dir, n)) {
+				if sandbox.CredentialPath(filepath.Join(realDir, n)) {
 					credential++
 					continue
 				}

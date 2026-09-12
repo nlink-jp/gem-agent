@@ -70,6 +70,30 @@ func credentialSkipNote(n int) string {
 	return fmt.Sprintf("[%d credential-named %s skipped — reading one needs the operator's approval]", n, plural(n, "entry", "entries"))
 }
 
+// realRootOf resolves a walk's root for the credential rule. resolvePath
+// admits a spelling whose target lies inside the roots and returns the
+// spelling, so a link named `mylink` at `.aws` would be walked as
+// `mylink/…` and judged on that name (independent review of ADR-0085,
+// A1). A root that does not resolve is judged as spelled.
+func realRootOf(root string) string {
+	if real, err := resolveExisting(root); err == nil && real != "" {
+		return real
+	}
+	return root
+}
+
+// credentialEntry judges one entry of a walk by its real path: the
+// resolved root plus the entry's position under it. Entries below the
+// root are real directories and files, because the walks never follow
+// a linked entry (ADR-0013 §3), so this is the entry's real path.
+func credentialEntry(realRoot, root, full string) bool {
+	rel, err := filepath.Rel(root, full)
+	if err != nil {
+		return sandbox.CredentialPath(full)
+	}
+	return sandbox.CredentialPath(filepath.Join(realRoot, rel))
+}
+
 // ignoreTally aggregates what a walk skipped, for the honesty footer
 // (ADR-0052: every skip is reported).
 type ignoreTally struct {
@@ -111,7 +135,7 @@ func (r *Registry) listTree() *Tool {
 			"target, …) and .gitignore'd entries are skipped — ignored directories still appear, " +
 			"marked [ignored], and every skip is reported; pass include_ignored=true to include them. " +
 			"VCS internals (.git and friends) are skipped; symlinks are shown but not followed; " +
-			"credential-named entries (.env, keys, credential stores) are withheld and counted. Big " +
+			"credential-named entries (.env, keys, credential stores) are skipped and counted. Big " +
 			"directories are elided at a reported per-directory cap. To orient in a large project, " +
 			"start with dirs_only=true, then descend. Prefer this over repeated list_files calls.",
 		Parameters: map[string]any{
@@ -137,6 +161,11 @@ func (r *Registry) listTree() *Tool {
 				depth = min(int(d), treeDepthMax)
 			}
 			dirsOnly, _ := args["dirs_only"].(bool)
+			// A credential-named root is never entered (ADR-0085 §2).
+			realRoot := realRootOf(abs)
+			if sandbox.CredentialPath(realRoot) {
+				return credentialSkipNote(1), nil
+			}
 			includeIgnored, _ := args["include_ignored"].(bool)
 			rules := ignore.RootWith(r.projectDir, abs, includeIgnored, r.gitignoreReader)
 			tally := &ignoreTally{}
@@ -187,8 +216,10 @@ func (r *Registry) listTree() *Tool {
 						continue
 					}
 					// Withheld, counted (ADR-0085 §2): the name is the
-					// read that asks, offered on every round.
-					if sandbox.CredentialPath(filepath.Join(dir, e.Name())) {
+					// read that asks, offered on every round. Judged on
+					// the real path (the root resolved; nothing below
+					// it is a followed link).
+					if credentialEntry(realRoot, abs, filepath.Join(dir, e.Name())) {
 						credential++
 						continue
 					}
@@ -275,7 +306,10 @@ func (r *Registry) listTree() *Tool {
 					if len(topFiles) > len(shown) {
 						out += fmt.Sprintf("[+%d more files]\n", len(topFiles)-len(shown))
 					}
-				case out == "":
+				case out == "" && credential == 0:
+					// With credential-named entries withheld the
+					// directory is not empty; the skip note says what
+					// it holds (independent review of ADR-0085, A9).
 					out = "(empty directory)"
 				}
 			}
@@ -372,6 +406,12 @@ func (r *Registry) searchFiles() *Tool {
 			if err != nil {
 				return "", err
 			}
+			// A credential-named root is never entered (ADR-0085 §2),
+			// whatever it was called: the rule reads the real path.
+			realRoot := realRootOf(abs)
+			if sandbox.CredentialPath(realRoot) {
+				return credentialSkipNote(1), nil
+			}
 			includeIgnored, _ := args["include_ignored"].(bool)
 			rules := ignore.RootWith(r.projectDir, abs, includeIgnored, r.gitignoreReader)
 			tally := &ignoreTally{}
@@ -420,9 +460,9 @@ func (r *Registry) searchFiles() *Tool {
 					full := filepath.Join(dir, e.Name())
 					// Credential material is never read here, and a
 					// credential-named directory is never entered: one
-					// rule (sandbox.CredentialPath), the count reported
-					// (ADR-0085 §2).
-					if sandbox.CredentialPath(full) {
+					// rule (sandbox.CredentialPath) on the real path,
+					// the count reported (ADR-0085 §2).
+					if credentialEntry(realRoot, abs, full) {
 						credential++
 						continue
 					}

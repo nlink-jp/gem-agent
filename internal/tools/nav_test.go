@@ -475,4 +475,46 @@ func TestWalksWithholdCredentialNamedEntries(t *testing.T) {
 	if strings.Contains(out, "credential-named") {
 		t.Errorf("a clean listing carries the skip note:\n%s", out)
 	}
+	// The rule reads the REAL path (independent review, A1): a link
+	// named `mylink` at `.ssh` is `.ssh`, and a credential-named root —
+	// however spelled — is never entered by any walk.
+	if err := os.Symlink(".ssh", filepath.Join(dir, "mylink")); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		tool string
+		args map[string]any
+	}{
+		{"search_files", map[string]any{"pattern": "maxRetries", "path": "mylink"}},
+		{"search_files", map[string]any{"pattern": "maxRetries", "path": ".ssh"}},
+		{"list_tree", map[string]any{"path": "mylink"}},
+		{"list_tree", map[string]any{"path": ".ssh"}},
+		{"list_files", map[string]any{"path": "mylink"}},
+		{"list_files", map[string]any{"path": ".ssh"}},
+	} {
+		out, err := run(t, r, c.tool, c.args)
+		if err != nil {
+			t.Fatalf("%s %v: %v", c.tool, c.args, err)
+		}
+		if strings.Contains(out, "PRIVATE") || strings.Contains(out, "id_rsa") || !strings.Contains(out, "[1 credential-named entry skipped") {
+			t.Errorf("%s %v entered a credential-named root:\n%s", c.tool, c.args, out)
+		}
+	}
+	// A directory holding only credential-named entries is not "empty":
+	// the skip note alone says what it holds (independent review, A9).
+	if err := os.MkdirAll(filepath.Join(dir, "onlycred"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "onlycred", ".env"), []byte("x=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"list_tree", "list_files"} {
+		out, err := run(t, r, tool, map[string]any{"path": "onlycred"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out, "empty directory") || !strings.Contains(out, "[1 credential-named entry skipped") {
+			t.Errorf("%s on an only-credential directory:\n%s", tool, out)
+		}
+	}
 }

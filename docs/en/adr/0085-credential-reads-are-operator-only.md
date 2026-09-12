@@ -111,8 +111,14 @@ that names `.env` beside `config.yaml` is the read that asks, offered
 on every round; with the count line the model knows that something
 was withheld and why, and the operator who wants it read names it.
 The rule is the same `sandbox.CredentialPath`, on the entry's real
-path — a project `.claude/` (skills) is not `~/.claude` (tokens), as
-the profile already distinguishes.
+path: the walk's root is resolved before anything is judged — a link
+named `mylink` at `.aws` is `.aws`, and a credential-named root is
+never entered, the whole call answering with the count line — and
+nothing below the root is a followed link (ADR-0013 §3), so an entry's
+real path is the resolved root plus its position (independent review,
+A1: the first cut judged the root as spelled, and `search_files
+path="mylink"` read `.aws/credentials`). A project `.claude/` (skills)
+is not `~/.claude` (tokens), as the profile already distinguishes.
 
 ### 3. One list, four enforcers
 
