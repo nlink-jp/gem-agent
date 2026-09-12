@@ -267,6 +267,7 @@ func TestLateReturnAfterRestartStaysWithTheOldSession(t *testing.T) {
 	// record's poll won the race and this read nothing (flaked once at
 	// the v0.78.0 release gate).
 	var late *telemetry.RecordedEvent
+	deadline = time.Now().Add(3 * time.Second) // its own budget, not the record wait's remainder
 	for late == nil {
 		for _, ev := range rec.Events() {
 			if ev.Name == "tool.late_return" {

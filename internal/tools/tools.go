@@ -1168,7 +1168,10 @@ func (r *Registry) listFiles() *Tool {
 			// A credential-named directory is never listed (ADR-0085
 			// §2); the rule reads the real path, so a link to one is
 			// the same directory.
-			realDir := realRootOf(dir)
+			realDir, ok := realRootOf(dir)
+			if !ok {
+				return "", fmt.Errorf("resolve %s: a link in the path is broken or its target is not accessible", p)
+			}
 			if sandbox.CredentialPath(realDir) {
 				return credentialSkipNote(1), nil
 			}

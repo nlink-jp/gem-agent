@@ -74,12 +74,15 @@ func credentialSkipNote(n int) string {
 // admits a spelling whose target lies inside the roots and returns the
 // spelling, so a link named `mylink` at `.aws` would be walked as
 // `mylink/…` and judged on that name (independent review of ADR-0085,
-// A1). A root that does not resolve is judged as spelled.
-func realRootOf(root string) string {
-	if real, err := resolveExisting(root); err == nil && real != "" {
-		return real
+// A1). resolvePath resolved the same root a moment ago, so a root that
+// does not resolve here was retargeted in between; the walk refuses
+// rather than judge the spelling (second review pass, F4).
+func realRootOf(root string) (string, bool) {
+	real, err := resolveExisting(root)
+	if err != nil || real == "" {
+		return "", false
 	}
-	return root
+	return real, true
 }
 
 // credentialEntry judges one entry of a walk by its real path: the
@@ -162,7 +165,10 @@ func (r *Registry) listTree() *Tool {
 			}
 			dirsOnly, _ := args["dirs_only"].(bool)
 			// A credential-named root is never entered (ADR-0085 §2).
-			realRoot := realRootOf(abs)
+			realRoot, ok := realRootOf(abs)
+			if !ok {
+				return "", fmt.Errorf("resolve %s: a link in the path is broken or its target is not accessible", p)
+			}
 			if sandbox.CredentialPath(realRoot) {
 				return credentialSkipNote(1), nil
 			}
@@ -408,7 +414,10 @@ func (r *Registry) searchFiles() *Tool {
 			}
 			// A credential-named root is never entered (ADR-0085 §2),
 			// whatever it was called: the rule reads the real path.
-			realRoot := realRootOf(abs)
+			realRoot, ok := realRootOf(abs)
+			if !ok {
+				return "", fmt.Errorf("resolve %s: a link in the path is broken or its target is not accessible", p)
+			}
 			if sandbox.CredentialPath(realRoot) {
 				return credentialSkipNote(1), nil
 			}

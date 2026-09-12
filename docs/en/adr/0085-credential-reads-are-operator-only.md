@@ -186,7 +186,19 @@ done with each:
 | A9 (Nit) | `list_tree` said "(empty directory)" beside the skip note | Adopted |
 | C | The scrub test could not show the export exemption's effect | Adopted — `keepEnvName` is tested with a secret-looking name listed and unlisted |
 | B | The child row and the `paths` batch were untested | Adopted — tests added |
-| A3 (Low) | A project rooted under `~/.claude` or a `/x.ssh/` path makes every read a prompt | Not adopted: the profile already denies those reads to the unasked lanes, and a project inside a credential store is the operator's placement; the count line names the rule |
+| A3 (Low) | A project rooted under `~/.claude` (or `~/.gemini`, `~/.codex`) makes every read a prompt; so did a `/x.ssh/`-style path component | The `/x.ssh/` half was A2's suffix match and the segment rule fixes it. The `~/.claude` half is not adopted: the profile already denies those reads to the unasked lanes, and a project inside a credential store is the operator's placement; the count line names the rule |
 | A5 (Low) | A spelling that does not resolve prompts for a read that then fails at the open | Not adopted: the write tools show the same attempt as Block; the prompt is the operator seeing it, as §1 says |
 | A6 (Low) | The read-only ceiling (ADR-0080) does not refuse a credential read | Not adopted: the ceiling bounds what a session changes, and a read changes nothing — the prompt is the control; recorded here so the ADR-0080 analogy is not read as a ceiling rule |
 | A7 (Low) | A link retargeted between `withRealPaths` and the open is read as judged | Not adopted now: the same class as the write tools' check-then-open (ADR-0072 §4 refuses an escape at the open, not a retarget inside the roots); a design pass, not a release patch |
+
+A second, focused pass reviewed the fix commits as changes (what a fix
+introduces is a new, unverified surface). No finding above Low:
+
+| # | Finding | Outcome |
+|---|---|---|
+| F1 | The A3 row above was half stale after A2 | Adopted — the row now says which half A2 fixed |
+| F2 | The segment rule loosened released behaviour (`keys.ssh` was Block for the write tools and the shell floor) with no CHANGELOG line | Adopted — CHANGELOG *Changed* |
+| F3 | The `keepEnvName` test pinned the helper, not that `ScrubEnv` passes the real list | Adopted — the test inserts a secret-looking name into the list and calls `ScrubEnv` |
+| F4 | A walk root that failed to resolve fell back to judging the spelling | Adopted — the walk refuses |
+| F5 | The late-return test's event wait shared the record wait's deadline | Adopted — its own deadline |
+| F6 | `homePrefixRe` knows `/var/root/` and not `/private/var/root/` | Not adopted: pre-existing, root's home on macOS, unchanged by this ADR |

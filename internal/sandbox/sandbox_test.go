@@ -699,4 +699,11 @@ func TestScrubEnvKeepsRuntimeExportsByName(t *testing.T) {
 	if keepEnvName("GEMAGENT_WORK_DIR", map[string]bool{}) != true {
 		t.Error("GEMAGENT_WORK_DIR needs no exemption: its name carries no secret word")
 	}
+	// And the wiring: ScrubEnv reads runtimeExports itself, not a copy
+	// or nil (second review pass, F3).
+	runtimeExports[secretLike] = true
+	defer delete(runtimeExports, secretLike)
+	if got := ScrubEnv([]string{secretLike + "=x", "OTHER_TOKEN=y"}); len(got) != 1 || got[0] != secretLike+"=x" {
+		t.Errorf("ScrubEnv does not read runtimeExports: %v", got)
+	}
 }

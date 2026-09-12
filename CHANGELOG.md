@@ -42,6 +42,22 @@
   operator's approval]`. `@` attachments are unchanged. No list was
   added: one list, four enforcers (ADR-0073 §3 amended).
 
+### Changed
+
+- **The credential rule matches whole path segments, and the file
+  tools judge their path whole** (independent review of ADR-0085).
+  `sandbox.CredentialPath` matched a list entry as a suffix, so
+  `keys.ssh`, `deploy.azure`, `my.netrc` and `settings.claude.json`
+  were Block for `write_file` / `edit_file` and for a shell command
+  naming them; they are ordinary files now, for the write tools, the
+  shell floor and the new read-tool rule alike (`.ssh/`, `x/.ssh`,
+  `~/.netrc` still match). The file tools no longer run their path
+  through the shell floor's word splitter — `docs/notes about .ssh
+  keys.md` is one path — while the shell floor keeps it (`cat
+  "~/.ssh/id_rsa"` is still Block). The credential-read reason names
+  the matched path, project-relative: `reads credential material
+  (sub/.env)`.
+
 ### Fixed
 
 - **A pre-tool hook that exits 0 with output that is not a verdict is
