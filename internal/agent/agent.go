@@ -1673,13 +1673,17 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 		runCtx = tools.WithDirectRead(runCtx)
 	}
 	out, state, err := a.runWithFloor(runCtx, tool, tc)
+	credentialDenied := false
 	if errors.Is(err, tools.ErrCredentialRead) {
 		// The kernel refused a path the rule tier did not recognise.
 		// The read has produced no bytes, so nothing has reached the
 		// model; the operator gets the same question they would have
 		// got had the matcher seen it, and on a yes the call runs in
 		// process (ADR-0086 §2).
-		out, state, err = a.credentialRetry(ctx, tool, tc)
+		out, state, err, credentialDenied = a.credentialRetry(ctx, tool, tc)
+	}
+	if credentialDenied {
+		return out, true, false, state, nil
 	}
 	if a.afterTool != nil && a.afterTool(tc, state == floorAbandoned) {
 		a.RefreshTools()
@@ -2005,7 +2009,7 @@ func clip(s string, limit int) string {
 // on a yes. It is must-prompt like every other operator-only verdict:
 // no session allowlist, no `never` policy, no model tier, and in an
 // unattended run the gate denies and the model is told why.
-func (a *Agent) credentialRetry(ctx context.Context, tool *tools.Tool, tc llm.ToolCall) (string, floorState, error) {
+func (a *Agent) credentialRetry(ctx context.Context, tool *tools.Tool, tc llm.ToolCall) (string, floorState, error, bool) {
 	detail, purpose := a.Describe(tc)
 	reason := tools.ErrCredentialRead.Error()
 	ok, _, denyReason := a.askGate(tc, detail, purpose, reason, true, Decision{
@@ -2019,11 +2023,12 @@ func (a *Agent) credentialRetry(ctx context.Context, tool *tools.Tool, tc llm.To
 	})
 	if !ok {
 		if denyReason != "" {
-			return a.deniedWithReason(denyReason), floorRan, nil
+			return a.deniedWithReason(denyReason), floorRan, nil, true
 		}
-		return a.deniedText(), floorRan, nil
+		return a.deniedText(), floorRan, nil, true
 	}
-	return a.runWithFloor(tools.WithDirectRead(tools.WithCallID(ctx, tc.ID)), tool, tc)
+	out, state, err := a.runWithFloor(tools.WithDirectRead(tools.WithCallID(ctx, tc.ID)), tool, tc)
+	return out, state, err, false
 }
 
 // approvalDecision renders a gate answer for the audit records.
