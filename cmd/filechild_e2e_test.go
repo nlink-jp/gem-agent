@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
+	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
 // TestFileChildUnderTheRealProfile drives the shipped child, built from
@@ -114,5 +115,53 @@ func TestFileChildUnderTheRealProfile(t *testing.T) {
 	// The hidden subcommand runs the covered reads and nothing else.
 	if out, code := run("list_files", map[string]any{}); code == 0 {
 		t.Errorf("the child ran a tool outside its set: %q", out)
+	}
+}
+
+// TestInstallFileChildSucceedsOnThisMachine is the test whose absence
+// shipped a release whose headline feature never switched on: the probe
+// asked the child for a tool the child refuses, so it failed on every
+// start, the cage was never installed, and the operator got a warning
+// telling them to restart. Driving the tools directly was not enough —
+// the installer is its own path, and it is the one that decides whether
+// any of this is in force.
+func TestInstallFileChildSucceedsOnThisMachine(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-only")
+	}
+	if testing.Short() {
+		t.Skip("spawns the child")
+	}
+	if err := sandbox.Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
+	}
+	bin := filepath.Join(t.TempDir(), "child-installer-test")
+	if out, err := exec.Command("go", "build", "-o", bin, "..").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	reg, err := tools.New(t.TempDir(), nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reg.KernelReads() {
+		t.Fatal("a fresh registry claims kernel reads before one is installed")
+	}
+	probeDir, done := fileProbeDir("")
+	if probeDir == "" {
+		t.Skip("no probe directory")
+	}
+	defer done()
+	home, _ := os.UserHomeDir()
+	if note := installFileChildWith(reg, bin, home, probeDir); note != "" {
+		t.Fatalf("the probe refused to install the cage: %s", note)
+	}
+	if !reg.KernelReads() {
+		t.Error("installFileChild returned no note but installed nothing")
+	}
+	if _, err := os.Stat(probeDir); err == nil {
+		done()
+		if _, err := os.Stat(probeDir); err == nil {
+			t.Errorf("the probe directory outlives the probe: %s", probeDir)
+		}
 	}
 }

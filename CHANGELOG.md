@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.79.1] - 2026-09-13
+
+### Fixed
+
+- **The file-read cage never switched on in 0.79.0.** Its startup probe
+  asked the sandboxed child for `list_files`, which the child refuses
+  because it is not one of the covered reads — so the probe failed on
+  every start, the cage was never installed, and the operator got
+  `warning: file reads are not sandboxed (… cannot list a directory
+  holding a credential-named file) — restart gem-agent to try again`. Nothing
+  was less safe than before the release: the reads fell back to the
+  in-process credential check, which is what 0.79.0 did. But the release's
+  headline feature did nothing. The probe now uses `search_files`,
+  which is a covered read and is the walk whose listing the design is
+  about, and it sends project-relative paths so the probe directory
+  under `/var` is not refused as being outside the resolved
+  `/private/var` root.
+- **The degradation warning told the operator to do something that
+  cannot help.** A restart re-runs the same probe. It now says what is
+  true — the reads still ask about credential files, checked by
+  gem-agent itself rather than by the kernel — and points at `/settings`,
+  which now carries a `file reads` row saying which of the two is in
+  force. Previously that row did not exist and the message named it
+  anyway.
+- Regression test: `TestInstallFileChildSucceedsOnThisMachine` builds
+  the binary and runs the installer against it, asserting the probe
+  installs the cage and the registry reports it. The earlier end-to-end
+  test drove the tools directly and never ran the installer, which is
+  why a broken installer shipped green.
+
 ## [0.79.0] - 2026-09-13
 
 ### Security

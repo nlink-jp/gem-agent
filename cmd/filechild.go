@@ -42,8 +42,19 @@ const credentialExit = 3
 // childOutputCap bounds what the child may write back.
 const childOutputCap = 1 << 20
 
-// binaryName is what the operator typed to start this runtime; it is
-// the next command a degradation note names.
+// degradedNote is what the operator is told when the cage could not be
+// proven on this machine. It says what is true now — the reads still
+// ask about credential files, by this runtime's own check rather than
+// the kernel's — and it does not invent an action, because there is
+// none: a restart re-runs the same probe. Where the state is visible is
+// the one useful pointer.
+func degradedNote(err error) string {
+	return fmt.Sprintf("file reads run in this process, not in a sandbox (%v). "+
+		"Credential files still need your approval, checked by "+binaryName+" itself rather than the kernel. "+
+		"Nothing to do now; /settings shows the state", err)
+}
+
+// binaryName is this runtime's own name, for the operator-facing note.
 const binaryName = "gem-agent"
 
 // fileChildRequest is what rides stdin. The paths are the parent's
@@ -193,18 +204,41 @@ func init() { rootCmd.AddCommand(newFileChildCmd()) }
 func installFileChild(reg *tools.Registry, home, probeDir string) string {
 	self, err := selfPath()
 	if err != nil {
-		return fmt.Sprintf("file reads are not sandboxed (%v) — restart %s to try again", err, binaryName)
+		return degradedNote(err)
 	}
+	return installFileChildWith(reg, self, home, probeDir)
+}
+
+// installFileChildWith is installFileChild with the binary named
+// explicitly. It exists so a test can drive the probe against a built
+// binary: under `go test`, os.Executable() is the test binary, and a
+// probe that cannot run at all would look exactly like a probe the
+// kernel refused.
+func installFileChildWith(reg *tools.Registry, self, home, probeDir string) string {
 	probe := func(profile, path string) error {
+		// Project-relative, because the registry resolves its root and
+		// an absolute probe path under /var reaches it as
+		// /private/var: the lexical containment check then refuses a
+		// file inside the very directory being probed.
+		rel, relErr := filepath.Rel(probeDir, path)
+		if relErr != nil {
+			rel = path
+		}
 		req, err := json.Marshal(fileChildRequest{
-			ProjectDir: probeDir, Tool: "read_file", Args: map[string]any{"path": path},
+			ProjectDir: probeDir, Tool: "read_file", Args: map[string]any{"path": rel},
 		})
 		if err != nil {
 			return err
 		}
 		if fi, statErr := os.Stat(path); statErr == nil && fi.IsDir() {
+			// search_files, not list_files: the listing that matters is
+			// the one a CAGED walk performs, and list_files is not a
+			// caged tool — asking the child for it is asking for a
+			// refusal. The first cut did exactly that, so the probe
+			// failed on every start and the cage was never installed.
 			req, err = json.Marshal(fileChildRequest{
-				ProjectDir: probeDir, Tool: "list_files", Args: map[string]any{"path": path},
+				ProjectDir: probeDir, Tool: "search_files",
+				Args: map[string]any{"pattern": "probe", "path": rel},
 			})
 			if err != nil {
 				return err
@@ -216,7 +250,7 @@ func installFileChild(reg *tools.Registry, home, probeDir string) string {
 		return c.Run()
 	}
 	if err := sandbox.VerifyFileReadLane(probeDir, home, probe); err != nil {
-		return fmt.Sprintf("file reads are not sandboxed (%v) — restart %s to try again", err, binaryName)
+		return degradedNote(err)
 	}
 	reg.SetFileChild(fileChildRunner(self, home, reg.ProjectDir, reg.WorkDir))
 	return ""

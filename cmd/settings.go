@@ -162,6 +162,15 @@ func (s *settingsStore) data() tui.SettingsData {
 		Source: "measured",
 		Detail: "established by probes at startup — restart with or without --no-sandbox to change it",
 	})
+	// The file tools' own cage is a separate measurement from the
+	// shell lanes': a machine can have one and not the other, and the
+	// degradation note points here.
+	d.Rows = append(d.Rows, tui.SettingRow{
+		Section: "safety", Label: "file reads",
+		Value:  fileReadState(s.registry.KernelReads()),
+		Source: "measured",
+		Detail: "established by a probe at startup; credential files ask you either way",
+	})
 	ro("safety", "sandbox.scratch_caches", scratchCachesLabel(s.cfg.Sandbox.Caches()), "sandbox.scratch_caches",
 		"toolchain caches every shell_exec points into the session scratch (the read lane's directory is separate from the approved lanes'); restart to change")
 	ro("limits", "agent.max_turns", strconv.Itoa(s.cfg.Agent.MaxTurns), "agent.max_turns", "")
@@ -708,4 +717,13 @@ func scratchCachesLabel(caches map[string]string) string {
 		parts[i] = name + "→" + caches[name]
 	}
 	return strings.Join(parts, ", ")
+}
+
+// fileReadState says whether the covered reads are adjudicated by the
+// kernel or by this runtime's own check.
+func fileReadState(kernel bool) string {
+	if kernel {
+		return "sandboxed (the kernel refuses credential files)"
+	}
+	return "in this process (gem-agent checks credential files itself)"
 }
