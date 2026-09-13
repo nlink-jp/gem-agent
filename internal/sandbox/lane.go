@@ -591,8 +591,10 @@ func VerifyReadLane(profile string, spec Spec) error {
 		} else {
 			cmd = exec.Command("/bin/bash", "-c", command)
 		}
+		// A child this runtime spawns, probe or not.
+		cmd.Env = ChildEnv(os.Environ())
 		if spec.ReadScratch != "" {
-			cmd.Env = append(os.Environ(), "TMPDIR="+spec.ReadScratch)
+			cmd.Env = append(cmd.Env, "TMPDIR="+spec.ReadScratch)
 		}
 		return cmd.Run()
 	}
@@ -681,6 +683,8 @@ func VerifyWriteLane(profile string, spec Spec) error {
 		} else {
 			cmd = exec.Command("/bin/bash", "-c", command)
 		}
+		// A child this runtime spawns, probe or not.
+		cmd.Env = ChildEnv(os.Environ())
 		return cmd.Run()
 	}
 	mustFail := []struct{ what, command, created string }{

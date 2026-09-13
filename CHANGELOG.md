@@ -4,6 +4,30 @@
 
 ### Security
 
+- **"One function, applied at every spawn site" was a claim, not a
+  mechanism** (ADR-0087 §2). Four kinds of child did not apply it: the
+  unconfined shell (`--no-sandbox`), the startup lane probes, the
+  sandbox availability probe and the clipboard capture. Only the first
+  carried real exposure — it built its command with no environment at
+  all, so the child inherited the parent's whole environment including
+  gem-agent's own configuration variables. The other three read nothing in the runtime's
+  namespace, so what was exposed there was the sentence rather than a
+  secret. All four apply the rule now, and
+  the read lane's probe extends the filtered environment with its
+  temporary directory instead of rebuilding it from the parent's — an
+  overwrite that would have quietly undone the fix.
+- **The class is closed by a test.**
+  `TestEverySpawnSiteAppliesTheChildEnvRule` fails when a function
+  builds an `exec.Cmd` without naming the helper that applies the
+  environment rule. The partition test next door pins the two NAME
+  lists and cannot see a call site, which is why a false sentence
+  survived a green build. ADR-0087 carries an *Amended* note.
+
+  Found writing the second revision of the architecture review,
+  recorded there as R33.
+
+### Security
+
 - **The search walk was unprotected wherever the file-read cage could
   not be installed.** ADR-0086 §5 said the file tools fall back to
   in-process reads "with `risk.credentialRead` as the boundary", but

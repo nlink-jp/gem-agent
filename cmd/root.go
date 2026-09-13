@@ -2180,8 +2180,15 @@ func runTurnWith(parent context.Context, ladder *interruptLadder, fn func(ctx co
 // as the operator's alone.
 func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, caches map[string]string, persistentParents []string) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
 	if !sandboxOn {
-		return func(ctx context.Context, command string, _ sandbox.Lane) *exec.Cmd {
-			return exec.CommandContext(ctx, shell, "-c", command)
+		return func(ctx context.Context, command string, lane sandbox.Lane) *exec.Cmd {
+			cmd := exec.CommandContext(ctx, shell, "-c", command)
+			// Unconfined is a mode, not an exemption (ADR-0087 §2,
+			// amended): this child is one this runtime spawns, so the
+			// runtime's own configuration variables do not reach it
+			// either. There is no scratch here, so no temporary
+			// directory and no toolchain cache to point into one.
+			cmd.Env = laneEnv(lane, "", nil, os.Environ())
+			return cmd
 		}, sandbox.Enforcement{}, nil, nil
 	}
 	if _, err := os.Stat(sandbox.Executable); err != nil {

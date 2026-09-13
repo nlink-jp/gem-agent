@@ -103,7 +103,9 @@ func Available() error {
 	if _, err := os.Stat(Executable); err != nil {
 		return err
 	}
-	return exec.Command(Executable, "-p", "(version 1)(allow default)", "/usr/bin/true").Run()
+	probe := exec.Command(Executable, "-p", "(version 1)(allow default)", "/usr/bin/true")
+	probe.Env = ChildEnv(os.Environ())
+	return probe.Run()
 }
 
 // ResolveWriteDir resolves a directory to the real path Seatbelt matches

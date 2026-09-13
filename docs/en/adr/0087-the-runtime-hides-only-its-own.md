@@ -121,6 +121,25 @@ minus the runtime's own configuration variables. The three exports
 One function, applied at every spawn site, so that a child cannot be
 added without inheriting the rule.
 
+*Amended 2026-09-13, writing the architecture review's second revision:
+"applied at every spawn site" was a claim, not a mechanism, and four
+kinds of child did not have it: the unconfined shell (`--no-sandbox`),
+the startup lane probes, the sandbox availability probe and the
+clipboard capture. Only the first carried real exposure — it built its
+command with no environment at all, so the child inherited the parent's
+whole environment including the runtime's own configuration, which in
+the sibling runtime is the API key the finding behind this ADR named.
+The other three read nothing in the runtime's namespace, so what was
+exposed there was the sentence rather than a secret. All four now apply
+the rule, and the read lane's probe extends the filtered environment
+with its temporary directory rather than rebuilding it from the
+parent's — an overwrite that would have quietly undone the fix. §3's test pins the two NAME lists and
+cannot see a call site, which is why the false sentence survived a
+green build; `TestEverySpawnSiteAppliesTheChildEnvRule` now fails when
+a function builds an `exec.Cmd` without naming the helper that applies
+the rule. A claim of the form "applied at every X" belongs with a test
+that enumerates X.*
+
 ### 3. The partition is closed by a test, not by care
 
 Every `GEMAGENT_` string literal in non-test code must appear in

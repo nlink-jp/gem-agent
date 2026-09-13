@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/nlink-jp/gem-agent/internal/bounded"
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
 
 	"fmt"
 	"os"
@@ -32,7 +33,11 @@ on error m number n
 	error m number n
 end try
 close access f`, path)
-	if out, _, err := bounded.CombinedOutput(exec.Command("osascript", "-e", script), 64*1024); err != nil {
+	capture := exec.Command("osascript", "-e", script)
+	// A child this runtime spawns, so the rule that governs the others
+	// governs it too (ADR-0087 §2, amended).
+	capture.Env = sandbox.ChildEnv(os.Environ())
+	if out, _, err := bounded.CombinedOutput(capture, 64*1024); err != nil {
 		msg := strings.TrimSpace(string(out))
 		if strings.Contains(msg, "PNGf") || strings.Contains(msg, "-1700") {
 			return nil, fmt.Errorf("no image on the clipboard (take a screenshot with Cmd+Ctrl+Shift+4 first)")

@@ -254,7 +254,11 @@ execution explicitly. Without a session work directory the read lane's
 scratch is a fresh temporary directory removed at exit. **Unconfined is a mode, not a lane**: under `--no-sandbox`
 every `shell_exec` is yours to approve — the model tier never approves
 it, and neither a session `a` nor a `never` policy lifts it — and the
-audit record carries `lane=unconfined:<declared>`.
+audit record carries `lane=unconfined:<declared>`. The environment
+rule still holds there: an unconfined command is still a child
+gem-agent spawns, so gem-agent's own configuration variables do not
+reach it (ADR-0087 §2, amended). What it loses is the kernel, not
+that.
 
 **Writes that later sessions trust ask you, not the model** (ADR-0072
 §1.4, enforced by the kernel since ADR-0073). A write under `.git/`
