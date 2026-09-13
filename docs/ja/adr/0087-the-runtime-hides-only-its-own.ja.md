@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted**（2026-09-13） — 実装済み・未リリース |
+| Status | **Accepted**（2026-09-13） — v0.79.0 で出荷。§2 が全ての spawn 地点に届いたのは下記の修正注記以降 |
 | Date | 2026-09-13 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp メンテナ |

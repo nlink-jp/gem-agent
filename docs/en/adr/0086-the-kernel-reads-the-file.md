@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-09-13) — implemented and unreleased |
+| Status | **Accepted** (2026-09-13) — shipped in v0.79.0; the cage did not actually install until v0.79.1 (§5, amended) |
 | Date | 2026-09-13 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

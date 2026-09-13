@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Text that outlived the credential redesign.** `list_files` told the
+  model "Credential files … are left out and counted" and `list_tree`
+  said credential files "are skipped and counted"; both stopped being
+  true in 0.79.0, when ADR-0086 §3 withdrew the withholding — the walks
+  list every name and the kernel refuses the content. A tool
+  description is what the model plans against, so a stale one is a
+  wrong fact in the prompt, not a stale comment. `search_files` now
+  says a file it may not read is named rather than hidden, which is
+  true of both enforcers. Also corrected: the `pathJudgedTools` comment
+  still described the deleted skip, and the
+  profile's own doc comment claimed `stat .env` is refused — it is not,
+  and that wrong measurement is the `file-read*` cut that broke every
+  walk. The 0.79.0 entry carries an inline correction rather than a
+  rewrite.
+
 ### Security
 
 - **"One function, applied at every spawn site" was a claim, not a
@@ -105,6 +122,9 @@
   child of this binary under a profile built from the same
   `internal/sandbox` list, which denies credential material at the
   kernel — measured: `cat .env` and `stat .env` refused,
+  [corrected 2026-09-13: `stat .env` is NOT refused — the deny is
+  `file-read-data`, as the third bullet of this release says; this
+  measurement is from the withdrawn `file-read*` cut]
   `.env.example` read, `grep -r` skipping that one file, at 27 ms per
   spawn against a call that already costs a model round. A refused open
   is the operator's question, and on approval the read runs in process,

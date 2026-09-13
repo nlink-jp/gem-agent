@@ -802,10 +802,16 @@ func ChildEnv(env []string) []string {
 // is given exactly one job, which is that in this process credential
 // material cannot be opened.
 //
-// Measured: under this shape `cat .env` and `stat .env` are refused,
-// `.env.example` reads, and `ls` still lists the name — the kernel
-// bounds content and metadata, not names, which is why ADR-0086 §3
-// stops withholding names.
+// Measured: under this shape `cat .env` is refused, `stat .env`
+// SUCCEEDS, `.env.example` reads, and `ls` still lists the name.
+// The deny is file-read-data, not file-read*: the wider family
+// covers file-read-metadata, and Go's os.Root stats every entry
+// when it lists a directory, so one credential-named file failed
+// the whole walk and search_files answered "no matches" for the
+// project. So the kernel bounds content here, and bounds neither
+// metadata nor names — which is why ADR-0086 §3 stops withholding
+// names. (This paragraph said `stat` was refused until 2026-09-13;
+// it was left over from the file-read* cut that broke the walks.)
 func FileReadProfile(home string) string {
 	var b strings.Builder
 	b.WriteString("(version 1)\n")

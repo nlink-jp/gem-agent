@@ -307,8 +307,8 @@ func (r *Registry) searchFiles() *Tool {
 			"\"where does this live\" question, start with mode=\"files\" (per-file counts only) " +
 			"and narrow with include (gitignore-style file pattern, e.g. \"*.go\" or \"src/**\") " +
 			"or path. Binary files, VCS internals, symlinks and files over 2MB are skipped; caps and " +
-			"skips are reported, and a file the sandbox would not let this tool read is named rather " +
-			"than hidden. Prefer this over reading files wholesale to locate something.",
+			"skips are reported, and a file this tool may not read is named rather than hidden. " +
+			"Prefer this over reading files wholesale to locate something.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
