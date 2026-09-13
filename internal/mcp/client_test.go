@@ -101,7 +101,7 @@ func stdHandler(f *fakeServer, method string, params json.RawMessage) ([]string,
 }
 
 func newTestClient(f *fakeServer, timeout time.Duration) *Client {
-	return newClient("fake", f.spawn, timeout, "test")
+	return newClient("fake", f.spawn, timeout, "test", "")
 }
 
 func TestListAndCall(t *testing.T) {
@@ -457,5 +457,67 @@ func TestUndecodableResultIsSent(t *testing.T) {
 	var ce *CallError
 	if !errors.As(err, &ce) || !ce.Sent || !strings.HasPrefix(ce.Err.Error(), "result:") {
 		t.Errorf("err = %v — want a sent CallError whose cause is the decode failure", err)
+	}
+}
+
+// TestCallToolAttachesTheSessionWorkDir pins the runtime half of the
+// work-directory contract (organization ADR-021 §9): a file-mediated server
+// must be told where this session can read files back, and the key is
+// schema-blind, so one line at the call site covers every server.
+func TestCallToolAttachesTheSessionWorkDir(t *testing.T) {
+	var mu sync.Mutex
+	var gotMeta map[string]any
+	f := &fakeServer{handler: func(f *fakeServer, method string, params json.RawMessage) ([]string, any, bool) {
+		if method == "tools/call" {
+			var p struct {
+				Meta map[string]any `json:"_meta"`
+			}
+			_ = json.Unmarshal(params, &p)
+			mu.Lock()
+			gotMeta = p.Meta
+			mu.Unlock()
+		}
+		result, ok := stdResult(method)
+		return nil, result, ok
+	}}
+	c := newClient("fake", f.spawn, 2*time.Second, "test", "/session/work")
+	defer c.Close()
+
+	if _, _, err := c.CallTool(context.Background(), "echo", nil); err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if gotMeta["jp.nlink/work_dir"] != "/session/work" {
+		t.Errorf("_meta = %v, want the session work directory", gotMeta)
+	}
+}
+
+// A session with no work directory attaches nothing: an empty hint is worse
+// than none, because a server would take it for an answer.
+func TestCallToolAttachesNothingWithoutAWorkDir(t *testing.T) {
+	var mu sync.Mutex
+	sawMeta := false
+	f := &fakeServer{handler: func(f *fakeServer, method string, params json.RawMessage) ([]string, any, bool) {
+		if method == "tools/call" {
+			var p map[string]json.RawMessage
+			_ = json.Unmarshal(params, &p)
+			mu.Lock()
+			_, sawMeta = p["_meta"]
+			mu.Unlock()
+		}
+		result, ok := stdResult(method)
+		return nil, result, ok
+	}}
+	c := newTestClient(f, 2*time.Second)
+	defer c.Close()
+
+	if _, _, err := c.CallTool(context.Background(), "echo", nil); err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if sawMeta {
+		t.Error("a session without a work directory must attach no _meta")
 	}
 }

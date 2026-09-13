@@ -3,6 +3,7 @@ package mcp
 import (
 	"github.com/nlink-jp/gem-agent/internal/bounded"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
+	"github.com/nlink-jp/gem-agent/internal/workdir"
 
 	"bufio"
 	"context"
@@ -128,6 +129,11 @@ type Client struct {
 	timeout time.Duration
 	version string
 
+	// workDir is this session's work directory, attached to every
+	// tools/call as request _meta (ADR-021 §9). Empty means attach
+	// nothing, which is what a session without a work directory wants.
+	workDir string
+
 	mu    sync.Mutex // lifecycle state
 	wmu   sync.Mutex // stdin writes (reader goroutine also writes replies)
 	stdin io.WriteCloser
@@ -147,7 +153,7 @@ type Client struct {
 // NewStdio creates a client that spawns command with args and extra env.
 // The child's stderr is discarded unless GEMAGENT_MCP_STDERR=1 (MCP
 // servers log there; in a REPL that noise drowns the conversation).
-func NewStdio(name string, cfg ServerConfig, timeout time.Duration, clientVersion string) *Client {
+func NewStdio(name string, cfg ServerConfig, timeout time.Duration, clientVersion, workDir string) *Client {
 	spawn := func() (io.WriteCloser, io.ReadCloser, func(), error) {
 		cmd := exec.Command(cfg.Command, cfg.Args...)
 		// Its own process group, killed as a group (ADR-0072 §4.5): a
@@ -187,15 +193,16 @@ func NewStdio(name string, cfg ServerConfig, timeout time.Duration, clientVersio
 		}
 		return stdin, stdout, kill, nil
 	}
-	return newClient(name, spawn, timeout, clientVersion)
+	return newClient(name, spawn, timeout, clientVersion, workDir)
 }
 
-func newClient(name string, spawn spawnFunc, timeout time.Duration, version string) *Client {
+func newClient(name string, spawn spawnFunc, timeout time.Duration, version, workDir string) *Client {
 	return &Client{
 		name:    name,
 		spawn:   spawn,
 		timeout: timeout,
 		version: version,
+		workDir: workDir,
 		pending: map[int64]chan message{},
 	}
 }
@@ -545,7 +552,15 @@ func (c *Client) CallTool(ctx context.Context, tool string, args map[string]any)
 	if args == nil {
 		args = map[string]any{}
 	}
-	res, err := c.rawCall(ctx, "tools/call", map[string]any{"name": tool, "arguments": args})
+	params := map[string]any{"name": tool, "arguments": args}
+	if c.workDir != "" {
+		// Schema-blind: the key says where this session can read files
+		// back, and a server that does not know it ignores it. A server
+		// that does uses it only when the call left work_dir out, so the
+		// model's own argument always wins.
+		params["_meta"] = map[string]any{workdir.MetaKey: c.workDir}
+	}
+	res, err := c.rawCall(ctx, "tools/call", params)
 	if err != nil {
 		var ns *notSentError
 		if errors.As(err, &ns) {

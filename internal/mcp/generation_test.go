@@ -29,7 +29,7 @@ func (f *fakeStdin) String() string {
 // server-initiated request, racing a kill-and-respawn) is dropped, not
 // injected into the successor's stdin mid-handshake.
 func TestStaleGenerationSendIsDropped(t *testing.T) {
-	c := newClient("x", nil, 0, "test")
+	c := newClient("x", nil, 0, "test", "")
 	gen1 := &fakeStdin{}
 	gen2 := &fakeStdin{}
 
@@ -67,7 +67,7 @@ func TestStaleGenerationSendIsDropped(t *testing.T) {
 
 // A send with no live server errors instead of dereferencing nil stdin.
 func TestSendWithoutServerFailsClosed(t *testing.T) {
-	c := newClient("x", nil, 0, "test")
+	c := newClient("x", nil, 0, "test", "")
 	if err := c.send(context.Background(), map[string]any{"id": 1}, -1); err == nil {
 		t.Error("send with no server must error")
 	}

@@ -1283,7 +1283,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		var warn bytes.Buffer
 		timeout := time.Duration(cfg.MCP.CallTimeoutSec) * time.Second
 		start := func() mcpServer {
-			return mcp.NewStdio(server, mcpInv.configs[server], timeout, cmd.Root().Version)
+			return mcp.NewStdio(server, mcpInv.configs[server], timeout, cmd.Root().Version, registry.WorkDir())
 		}
 		// The interface hides the type; a nil *mcp.Client inside it
 		// would not compare equal to nil, so the running client is

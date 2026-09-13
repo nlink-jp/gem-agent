@@ -412,7 +412,10 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 			excludeMCPServer(name, registry, &inv)
 			continue
 		}
-		client := mcp.NewStdio(name, servers[name], timeout, version)
+		// The session work directory travels with every tools/call as
+		// request _meta, so a file-mediated server writes where this
+		// session's file tools can read it back (ADR-021 §9).
+		client := mcp.NewStdio(name, servers[name], timeout, version, registry.WorkDir())
 		if attachMCPServer(ctx, client, registry, stderr, filter, &inv) {
 			clients = append(clients, client)
 		}

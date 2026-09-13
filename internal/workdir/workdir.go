@@ -44,6 +44,17 @@ import (
 // own directory without gem-agent knowing anything about that server.
 const EnvVar = "GEMAGENT_WORK_DIR"
 
+// MetaKey is the request-level `_meta` key this runtime sets on every
+// tools/call so a file-mediated MCP server writes where this session can read
+// the result back (organization ADR-021 §2 and §9).
+//
+// It is the second of the contract's two channels. The first is the server's
+// own work_dir argument, which the model fills in; this one is schema-blind,
+// so one line at the call site covers every server without knowing any tool's
+// schema — and a model that forgets the argument still gets a usable
+// destination instead of a refusal.
+const MetaKey = "jp.nlink/work_dir"
+
 // ProjectEnvVar names the project directory for children (ADR-0071
 // §3): the third of the three facts a Claude Code child also sees
 // (its CLAUDE_PROJECT_DIR), beside the session id and the work

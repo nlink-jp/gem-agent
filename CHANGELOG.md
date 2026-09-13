@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Every `tools/call` carries the session work directory** as request
+  `_meta["jp.nlink/work_dir"]`. The in-house MCP servers take their output
+  directory as a per-call `work_dir` argument now (organization ADR-021), and
+  this is the contract's second channel: schema-blind, so one line covers every
+  server, and a model that omits the argument still leaves the server with a
+  destination this session can read back. A session with no work directory
+  attaches nothing, and the model's own argument always wins.
+  See [ADR-0088](docs/en/adr/0088-the-caller-names-the-work-dir.md).
+
 ## [0.80.0] - 2026-09-13
 
 ### Security
