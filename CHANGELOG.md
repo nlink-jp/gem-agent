@@ -1,47 +1,6 @@
 # Changelog
 
-## [Unreleased]
-
-### Fixed
-
-- **Text that outlived the credential redesign.** `list_files` told the
-  model "Credential files … are left out and counted" and `list_tree`
-  said credential files "are skipped and counted"; both stopped being
-  true in 0.79.0, when ADR-0086 §3 withdrew the withholding — the walks
-  list every name and the kernel refuses the content. A tool
-  description is what the model plans against, so a stale one is a
-  wrong fact in the prompt, not a stale comment. `search_files` now
-  says a file it may not read is named rather than hidden, which is
-  true of both enforcers. Also corrected: the `pathJudgedTools` comment
-  still described the deleted skip, and the
-  profile's own doc comment claimed `stat .env` is refused — it is not,
-  and that wrong measurement is the `file-read*` cut that broke every
-  walk. The 0.79.0 entry carries an inline correction rather than a
-  rewrite.
-
-### Security
-
-- **"One function, applied at every spawn site" was a claim, not a
-  mechanism** (ADR-0087 §2). Four kinds of child did not apply it: the
-  unconfined shell (`--no-sandbox`), the startup lane probes, the
-  sandbox availability probe and the clipboard capture. Only the first
-  carried real exposure — it built its command with no environment at
-  all, so the child inherited the parent's whole environment including
-  gem-agent's own configuration variables. The other three read nothing in the runtime's
-  namespace, so what was exposed there was the sentence rather than a
-  secret. All four apply the rule now, and
-  the read lane's probe extends the filtered environment with its
-  temporary directory instead of rebuilding it from the parent's — an
-  overwrite that would have quietly undone the fix.
-- **The class is closed by a test.**
-  `TestEverySpawnSiteAppliesTheChildEnvRule` fails when a function
-  builds an `exec.Cmd` without naming the helper that applies the
-  environment rule. The partition test next door pins the two NAME
-  lists and cannot see a call site, which is why a false sentence
-  survived a green build. ADR-0087 carries an *Amended* note.
-
-  Found writing the second revision of the architecture review,
-  recorded there as R33.
+## [0.80.0] - 2026-09-13
 
 ### Security
 
@@ -68,6 +27,28 @@
   with no file child — the degraded path exactly — and fails on the
   leaked line without the guard. ADR-0086 carries an *Amended* note.
 
+- **"One function, applied at every spawn site" was a claim, not a
+  mechanism** (ADR-0087 §2). Four kinds of child did not apply it: the
+  unconfined shell (`--no-sandbox`), the startup lane probes, the
+  sandbox availability probe and the clipboard capture. Only the first
+  carried real exposure — it built its command with no environment at
+  all, so the child inherited the parent's whole environment including
+  gem-agent's own configuration variables. The other three read nothing in the runtime's
+  namespace, so what was exposed there was the sentence rather than a
+  secret. All four apply the rule now, and
+  the read lane's probe extends the filtered environment with its
+  temporary directory instead of rebuilding it from the parent's — an
+  overwrite that would have quietly undone the fix.
+- **The class is closed by a test.**
+  `TestEverySpawnSiteAppliesTheChildEnvRule` fails when a function
+  builds an `exec.Cmd` without naming the helper that applies the
+  environment rule. The partition test next door pins the two NAME
+  lists and cannot see a call site, which is why a false sentence
+  survived a green build. ADR-0087 carries an *Amended* note.
+
+  Found writing the second revision of the architecture review,
+  recorded there as R33.
+
 ### Fixed
 
 - **The degradation note and the `/settings` row claimed something that
@@ -75,6 +56,26 @@
   when the cage is absent; a search skips the file and names it, it
   does not ask. They now say credential files are refused either way,
   and by whom.
+
+- **Text that outlived the credential redesign.** `search_files`'
+  description said a file "the sandbox would not let this tool read" is
+  named rather than hidden; now that the walk carries its own refusal
+  that sentence is true of either enforcer, so it says a file this tool
+  may not read. The profile's own doc comment claimed `stat .env` is
+  refused — it is not, and never was under the shipped deny: that
+  measurement is left over from the `file-read*` cut that broke every
+  directory walk, which 0.79.0 fixed and recorded two bullets later.
+  The 0.79.0 entry now carries an inline correction rather than a
+  rewrite. ADR-0086 and ADR-0087 name the version that shipped them
+  instead of saying "implemented and unreleased".
+
+- **A product rule, in `AGENTS.md`.** A defect or design change in a
+  mechanism both runtimes have is fixed in both, in the same piece of
+  work. This file had not mentioned the sibling runtime at all, and the
+  sibling's `list_files` and `list_tree` were still telling the model
+  that credential files are withheld from listings — a release after
+  ADR-0086 §3 withdrew that here. A shared mechanism fixed in one place
+  is not fixed.
 
 ## [0.79.1] - 2026-09-13
 
