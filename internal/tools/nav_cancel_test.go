@@ -1,5 +1,12 @@
 package tools
 
+// These tests drive the walks IN PROCESS: the registry here installs no
+// file child, so they pin the walk's own cancellation contract. In
+// production the walk runs in a sandboxed child and the parent labels
+// the partial when the turn is cancelled (ADR-0086); the registry here has
+// no file child, and cmd.TestFileChildUnderTheRealProfile is what
+// covers the shipped path.
+
 import (
 	"context"
 	"fmt"

@@ -514,10 +514,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// machine before it is trusted. Where it cannot be proven the reads
 	// stay in process with the matcher as the boundary, and the note
 	// says so rather than letting the banner imply a cage.
-	if probeDir := fileProbeDir(workDir); probeDir != "" {
-		if note := installFileChild(registry, home, probeDir); note != "" {
+	if probeDir, doneProbe := fileProbeDir(workDir); probeDir != "" {
+		note := installFileChild(registry, home, probeDir)
+		doneProbe()
+		if note != "" {
 			fmt.Fprintf(stderr, "warning: %s\n", note)
 		}
+	} else {
+		fmt.Fprintf(stderr, "warning: file reads are not sandboxed (no probe directory)\n")
 	}
 
 	// --- project instruction files (drop-in: AGENTS.md and friends,

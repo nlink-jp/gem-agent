@@ -35,6 +35,25 @@
   withholding are deleted, and with them the contradiction where lagent
   reported names and gem-agent reported a count.
 
+- **Review fixes to the kernel read path** (ADR-0086, independent
+  review). The first cut denied `file-read*`, which covers
+  `file-read-metadata`; Go's `os.Root` listing stats every entry, so one
+  credential-named file failed the whole directory read and
+  `search_files` answered `no matches (0 files scanned)` for the entire
+  project — silently, exit 0. The deny is now `file-read-data`: content
+  refused, stat left, the walk intact, and the `[not read: …]` note the
+  ADR promised actually reached. Also fixed: the child pipe silently
+  halved reads over 85 KB; `file_info` collapsed a refusal into "not
+  found" so the operator was never asked; a cancelled `search_files`
+  lost its partial result; the child did not get `sandbox.ChildEnv`; any
+  `EACCES` became a credential question; the hidden subcommand ran any
+  tool; a missing work directory failed every read and leaked an
+  absolute path; the probe directory leaked; the profile lacked the tty
+  hardening; the degradation note named no next command. The reason all
+  of it shipped green is that no test ran the real child under the real
+  profile — `TestFileChildUnderTheRealProfile` now does, and it is what
+  caught the rest on re-run.
+
 ### Changed
 
 - **The operator's environment is no longer filtered, and the runtime's

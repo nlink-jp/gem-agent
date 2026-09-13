@@ -71,14 +71,19 @@ credential deny and the template re-allow:
 | Operation on `.env` | Result |
 |---|---|
 | `cat .env` | `Operation not permitted` |
-| `stat .env` | `Operation not permitted` |
+| `stat .env` | allowed — the deny is `file-read-data`, see below |
 | `cat .env.example` | allowed — the template re-allow holds |
 | `grep -r` over the directory | refuses that one file, continues |
 | `ls -a` | **the name `.env` is listed** |
 
-So the kernel is a complete boundary for content and for metadata, and
-it is not a boundary for names. Both halves of that measurement decide
-something below.
+So the kernel is a complete boundary for content, and it is not a
+boundary for metadata or for names. The operation matters: `file-read*`
+would refuse the metadata too, and Go's `os.Root` listing stats every
+entry, so one denied name failed the whole directory read and every
+walk in the project answered "no matches (0 files scanned)"
+(independent review, measured — the first cut of this ADR shipped that
+way). `file-read-data` refuses the content and leaves the stat, which
+is what a walk needs and is not the secret.
 
 Spawn cost, same machine, 10 to 20 runs each:
 
@@ -98,7 +103,8 @@ budget worth designing around.
 The registry's read primitives run in a child process wrapped by
 `sandbox-exec` under a purpose-built profile. One spawn per tool call,
 this binary re-executed with an internal subcommand; the request rides
-argv, the bytes ride stdout, already bounded (`internal/bounded`).
+stdin (argv is world-readable through `ps`), the bytes ride stdout,
+bounded on both sides.
 
 The profile is the base body plus `(deny network*)`, plus
 `sandbox.CredentialFilters(home)` as `(deny file-read* …)` with the
@@ -112,9 +118,15 @@ project is, `os.Root` already refuses an escape at the syscall
 spelling bug. The kernel is given exactly one job here: **in this
 process, credential material cannot be opened.**
 
-Covered: `read_file`, `view_image`, `read_document`, `file_info`,
-`summarize_file`, and the whole `search_files` walk, which runs inside
-the child so that every open it performs is adjudicated.
+Covered: `read_file`, `file_info`, `summarize_file` (through
+`read_file`), and the whole `search_files` walk, which runs inside the
+child so that every open it performs is adjudicated. `view_image` and
+`read_document` are covered for the CALL — the tool runs in the child,
+so a credential path is refused there and never reaches the operator as
+a success — while the bytes the model finally receives are re-read in
+process by the attachment path, which runs only when the call itself
+ran (`ran`, ADR-0072 §1.1). The cage decides whether that happens; it
+does not carry the pixels.
 
 ### 2. The refusal is the operator's question, and the matcher stops being the boundary
 
@@ -176,8 +188,7 @@ do not live in a working copy the agent reads.
 At startup the child is verified the way the read lane is (ADR-0073
 §7): a probe file the profile must refuse and an ordinary file it must
 read. On failure the file tools fall back to in-process reads with
-`risk.credentialRead` as the boundary — today's behaviour — the
-`Enforcement` record says so, and the banner says so. A degraded state
+`risk.credentialRead` as the boundary, and a startup warning names it. A degraded state
 that claims the kernel is watching would be worse than the matcher.
 
 ### 6. The criterion this leaves behind
@@ -232,3 +243,29 @@ fourth fix; it is a boundary in the wrong place.
   "one list, N enforcers" rule exists to avoid, and it would leave the
   matcher load-bearing, which is the whole complaint.
 - **Content inspection.** Rejected, unbounded, as in ADR-0085.
+
+## Independent review (2026-09-13, before release)
+
+Two readers who did not write the change reviewed the release diff, one
+per runtime, and agreed on the Critical. The change as first committed
+was broken: **`search_files` answered "no matches (0 files scanned)"
+for any project holding a credential-named file** — a confident false
+negative, worse than the leak it replaced. Findings and outcomes:
+
+| # | Finding | Outcome |
+|---|---|---|
+| Critical | `(deny file-read*)` covers `file-read-metadata`; Go's `os.Root` listing stats every entry, so one denied name failed the whole directory read and the walk dropped the error silently | Adopted — the deny is `file-read-data`; content refused, stat left, measured |
+| High | The parent's pipe cap (85 KB) silently halved a 200 KB read | Adopted — the cap is above anything a covered read emits, and a cut is stated |
+| High | `file_info` collapsed the permission error into "not found": the child never exited 3, the operator was never asked, the model was told the file was absent | Adopted — the cause is carried, and a refusal ends the batch |
+| High | A cancelled `search_files` lost its partial result and its label | Adopted — the parent keeps what the child wrote and labels it |
+| High | The `[not read: …]` note was unreachable for a credential file | Adopted — it fires, measured |
+| Medium | The file child did not get `ChildEnv`, falsifying ADR-0087 §2's "every spawn site" | Adopted for the child and its probe |
+| Medium | The probe ran a shell, not the child, and built a different profile — it passed while every walk was broken | Adopted — the probe drives the real child, the runner's profile, and a listing |
+| Medium | Any `EACCES` became "credential material" | Adopted — the refusal says the sandbox refused the read |
+| Medium | The hidden subcommand ran any registered tool | Adopted — it runs the covered reads only |
+| Medium | A missing work directory failed every read and leaked an absolute path | Adopted — the child keeps the project root |
+| Medium | "the banner says so", "the request rides argv", "Covered: view_image" | Adopted — all three corrected above; the request rides stdin, which is also the better choice |
+| Low | The probe directory leaked | Adopted |
+| Low | `FileReadProfile` omitted the tty hardening | Adopted |
+| Low | The degradation note had no next command | Adopted |
+| — | **No test ran the real child under the real profile** — the reason every defect above shipped green | Adopted, and it is the important one: `TestFileChildUnderTheRealProfile` builds this binary and drives it under the installed profile |

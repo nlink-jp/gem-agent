@@ -695,9 +695,11 @@ func TestChildEnvRemovesOnlyTheRuntimesOwn(t *testing.T) {
 }
 
 // ADR-0086: the cage the file tools' reads run in, measured against the
-// real kernel. Content and metadata are refused, the committed
-// template is not, and the name is still listed — the last of those is
-// why ADR-0086 §3 stops withholding names.
+// real kernel. Content is refused; metadata and the name are not, which
+// is both why ADR-0086 §3 stops withholding names and why the deny is
+// file-read-data — the wider file-read* covers metadata, and Go's
+// os.Root listing stats every entry, so one denied name failed every
+// walk in the project (independent review, measured).
 func TestFileReadProfileRefusesContentAndListsNames(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("sandbox-exec is macOS-only")
@@ -724,7 +726,14 @@ func TestFileReadProfileRefusesContentAndListsNames(t *testing.T) {
 		refused bool
 	}{
 		{"content of .env", "cat " + shellQuote(filepath.Join(dir, ".env")), true},
-		{"metadata of .env", "stat " + shellQuote(filepath.Join(dir, ".env")), true},
+		// Metadata is READABLE by design: the deny is file-read-data,
+		// because an os.Root listing stats every entry and a metadata
+		// deny failed the whole walk. A size and an mtime are not the
+		// secret (independent review).
+		{"metadata of .env", "stat " + shellQuote(filepath.Join(dir, ".env")), false},
+		// And a directory holding one still lists — the walk's first
+		// move, and the defect the wider operation caused.
+		{"listing a directory holding .env", "ls " + shellQuote(dir), false},
 		{"the committed template", "cat " + shellQuote(filepath.Join(dir, ".env.example")), false},
 		{"an ordinary file", "cat " + shellQuote(filepath.Join(dir, "notes.txt")), false},
 		{"writing anything", "echo x > " + shellQuote(filepath.Join(dir, "w.txt")), true},
@@ -741,12 +750,26 @@ func TestFileReadProfileRefusesContentAndListsNames(t *testing.T) {
 			t.Errorf("the file-read cage refused %s: %v", c.what, err)
 		}
 	}
-	// And the probe the runtime gates on agrees with all of that.
+	// And the probe the runtime gates on agrees, driven the way the
+	// runtime drives it: the caller performs the read, this stands in
+	// for the real child with a shell that reads the same paths.
 	probeDir := t.TempDir()
-	if err := VerifyFileReadLane(probeDir, func(profile, command string) error {
-		argv := Wrap(profile, "/bin/bash", command)
+	read := func(profile, path string) error {
+		argv := Wrap(profile, "/bin/bash", "cat "+shellQuote(path))
+		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+			argv = Wrap(profile, "/bin/bash", "ls "+shellQuote(path))
+		}
 		return exec.Command(argv[0], argv[1:]...).Run()
-	}); err != nil {
+	}
+	if err := VerifyFileReadLane(probeDir, filepath.Dir(probeDir), read); err != nil {
 		t.Errorf("VerifyFileReadLane: %v", err)
+	}
+	// The negative control cannot be written here: a shell lists with
+	// getdirentries and succeeds under either operation. Only Go's
+	// os.Root listing fstatats every entry, which is why the profile
+	// must deny file-read-data and not file-read*, and why the test
+	// that proves it drives the real child (cmd, TestFileChildUnderTheRealProfile).
+	if strings.Contains(profile, "(deny file-read*") {
+		t.Error("the file-read profile denies metadata: an os.Root listing fstatats every entry and the whole walk fails")
 	}
 }

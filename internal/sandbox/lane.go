@@ -808,16 +808,29 @@ func FileReadProfile(home string) string {
 	b.WriteString("(allow default)\n")
 	b.WriteString("(deny file-write*)\n")
 	b.WriteString("(deny network*)\n")
+	// file-read-DATA, not file-read*: the wider operation covers
+	// file-read-metadata, and Go's os.Root listing fstatats every entry,
+	// so one denied name failed the whole directory read and a walk
+	// returned "no matches (0 files scanned)" for the entire project
+	// (independent review, measured). The secret is the content; a
+	// size and an mtime are not, and the kernel keeps listing names
+	// either way.
 	deny, allow := CredentialFilters(home)
-	b.WriteString("(deny file-read*\n")
+	b.WriteString("(deny file-read-data\n")
 	for _, f := range deny {
 		fmt.Fprintf(&b, "    %s\n", f)
 	}
-	b.WriteString(")\n(allow file-read*\n")
+	b.WriteString(")\n(allow file-read-data\n")
 	for _, f := range allow {
 		fmt.Fprintf(&b, "    %s\n", f)
 	}
 	b.WriteString(")\n")
+	// The terminal hardening every lane carries (F-01: a child keeping
+	// the controlling tty can type into the operator's prompt with
+	// TIOCSTI). The child is short-lived and reads only, but it is a
+	// child of this process like any other.
+	b.WriteString("(deny file-ioctl\n    (literal \"/dev/tty\")\n    (regex #\"^/dev/ttys[0-9]+$\")\n    (literal \"/dev/ptmx\")\n)\n")
+	b.WriteString("(deny file-read-data\n    (literal \"/dev/tty\")\n    (regex #\"^/dev/ttys[0-9]+$\")\n)\n")
 	return b.String()
 }
 
@@ -829,9 +842,12 @@ func FileReadProfile(home string) string {
 // state that claimed the kernel was watching would be worse than the
 // matcher.
 //
-// run is the caller's spawn: it runs the probe command under the
-// profile and returns its error, if any.
-func VerifyFileReadLane(dir string, run func(profile, command string) error) error {
+// run is the caller's spawn: it performs the read THE RUNTIME WILL
+// PERFORM — the real child, under the given profile, on that path —
+// and returns its error. A probe that ran a shell instead proved the
+// name regex fires for bash and nothing about the Go child, which is
+// where every defect of the first cut lived (independent review).
+func VerifyFileReadLane(dir, home string, run func(profile, path string) error) error {
 	if err := Available(); err != nil {
 		return err
 	}
@@ -843,12 +859,23 @@ func VerifyFileReadLane(dir string, run func(profile, command string) error) err
 		}
 		defer func(p string) { _ = os.Remove(p) }(f.path)
 	}
-	profile := FileReadProfile(filepath.Dir(dir))
-	if err := run(profile, "cat "+shellQuote(plain)); err != nil {
+	// The profile the runner will actually install, not one built from
+	// the probe's own parent: a home-anchored deny that never fires
+	// because home was empty must fail here, not in front of the model
+	// (independent review).
+	profile := FileReadProfile(home)
+	if err := run(profile, plain); err != nil {
 		return fmt.Errorf("the file-read cage cannot read an ordinary file: %w", err)
 	}
-	if err := run(profile, "cat "+shellQuote(secret)); err == nil {
+	if err := run(profile, secret); err == nil {
 		return fmt.Errorf("the file-read cage allowed a credential-named file")
+	}
+	// And the listing, which is what a walk does first. A deny that
+	// covered file-read-metadata failed the whole directory read here
+	// and turned every search into "no matches" (independent review,
+	// the defect this probe exists to catch).
+	if err := run(profile, dir); err != nil {
+		return fmt.Errorf("the file-read cage cannot list a directory holding a credential-named file: %w", err)
 	}
 	return nil
 }

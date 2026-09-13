@@ -25,7 +25,7 @@ import (
 // same caps, the same output — so nothing about a tool changes except
 // which process performs its opens.
 //
-// One spawn per tool call: measured at 27 ms against a call that
+// One spawn per tool call, measured in the ADR against a call that
 // already costs a model round. A long-lived helper would save that and
 // cost a protocol, a lifecycle and a restart path coupled to /clear.
 
@@ -38,6 +38,13 @@ const fileChildCommand = "__file-read"
 // open because the path is credential material. The parent maps it to
 // tools.ErrCredentialRead; everything else is an ordinary tool error.
 const credentialExit = 3
+
+// childOutputCap bounds what the child may write back.
+const childOutputCap = 1 << 20
+
+// binaryName is what the operator typed to start this runtime; it is
+// the next command a degradation note names.
+const binaryName = "gem-agent"
 
 // fileChildRequest is what rides stdin. The paths are the parent's
 // roots, so the child confines exactly as the parent would.
@@ -71,13 +78,21 @@ func newFileChildCmd() *cobra.Command {
 				return fmt.Errorf("file-read child: %w", err)
 			}
 			if req.WorkDir != "" {
-				if err := reg.UseWorkDir(req.WorkDir); err != nil {
-					return fmt.Errorf("file-read child: %w", err)
-				}
+				// The parent keeps the previous work directory when a
+				// rotation fails; a read of a PROJECT path must not die
+				// with it, and the error carries an absolute path the
+				// model must not see (ADR-0021, independent review).
+				_ = reg.UseWorkDir(req.WorkDir)
+			}
+			if !tools.ChildTool(req.Tool) {
+				// The hidden subcommand runs the covered reads and
+				// nothing else: it is not a general tool runner
+				// (independent review).
+				return fmt.Errorf("%s: %q is not a read this runs", fileChildCommand, req.Tool)
 			}
 			tool, ok := reg.Get(req.Tool)
 			if !ok {
-				return fmt.Errorf("file-read child: unknown tool %q", req.Tool)
+				return fmt.Errorf("%s: unknown tool %q", fileChildCommand, req.Tool)
 			}
 			out, runErr := tool.Run(cmd.Context(), req.Args)
 			if runErr != nil {
@@ -108,14 +123,41 @@ func fileChildRunner(self, profileHome string, projectDir func() string, workDir
 		// <command>`), and what runs here is this binary with one
 		// argument, never a command line anything has to quote.
 		cmd := exec.CommandContext(ctx, sandbox.Executable, "-p", profile, self, fileChildCommand)
+		// A child this runtime spawns, so the rule that governs the
+		// others governs it (independent review: the release that wrote
+		// "applied at every spawn site" added a site that was not).
+		cmd.Env = sandbox.ChildEnv(os.Environ())
 		cmd.Stdin = bytes.NewReader(req)
-		stdout, stderr := bounded.NewWriter(tools.OutputCap+(1<<16)), bounded.NewWriter(1<<16)
+		// Above everything a covered read can legitimately emit — the
+		// window cap, the document extractor's own limit and their
+		// truncation notes — so this pipe never cuts a result the child
+		// already sized. It is a ceiling on a runaway child, not a
+		// second cap on the content (independent review: the first cut
+		// sat at 85 KB and silently halved a 200 KB read).
+		stdout, stderr := bounded.NewWriter(childOutputCap), bounded.NewWriter(1<<16)
 		cmd.Stdout, cmd.Stderr = stdout, stderr
 		runErr := cmd.Run()
-		outBytes, _ := stdout.Bytes()
+		outBytes, more := stdout.Bytes()
 		errBytes, _ := stderr.Bytes()
 		if runErr == nil {
-			return string(outBytes), nil
+			out := string(outBytes)
+			if more {
+				// Never a silent cut: the child's own caps produce a
+				// marked result, and anything past this pipe would be
+				// a partial file presented as whole (independent
+				// review).
+				out += fmt.Sprintf("\n[output truncated at the sandbox boundary: %d bytes shown]", len(outBytes))
+			}
+			return out, nil
+		}
+		if ctx.Err() != nil {
+			// The turn was cancelled and the child was killed mid-walk.
+			// What it had written is a result, labelled, the way an
+			// in-process walk labels its own cut.
+			if len(outBytes) > 0 {
+				return string(outBytes) + "\n[interrupted — the result above is partial]", nil
+			}
+			return "", ctx.Err()
 		}
 		var ee *exec.ExitError
 		if errors.As(runErr, &ee) && ee.ExitCode() == credentialExit {
@@ -142,20 +184,39 @@ func selfPath() (string, error) {
 func init() { rootCmd.AddCommand(newFileChildCmd()) }
 
 // installFileChild gives the registry its sandboxed reader, after
-// proving on this machine that the cage refuses a credential-named
-// file and reads an ordinary one (ADR-0086 §5). It returns the note
-// the banner carries when it could not.
+// proving on this machine that the REAL child, under the profile the
+// runner will use, refuses a credential-named file, reads an ordinary
+// one, and can list a directory holding both. The first cut probed a
+// shell instead and passed while every walk was returning "no matches"
+// (independent review). It returns the note the operator gets when it
+// could not.
 func installFileChild(reg *tools.Registry, home, probeDir string) string {
 	self, err := selfPath()
 	if err != nil {
-		return fmt.Sprintf("file reads run in process: %v; the credential list is enforced by the matcher alone", err)
+		return fmt.Sprintf("file reads are not sandboxed (%v) — restart %s to try again", err, binaryName)
 	}
-	probe := func(profile, command string) error {
-		c := exec.Command(sandbox.Executable, "-p", profile, "/bin/bash", "-c", command)
+	probe := func(profile, path string) error {
+		req, err := json.Marshal(fileChildRequest{
+			ProjectDir: probeDir, Tool: "read_file", Args: map[string]any{"path": path},
+		})
+		if err != nil {
+			return err
+		}
+		if fi, statErr := os.Stat(path); statErr == nil && fi.IsDir() {
+			req, err = json.Marshal(fileChildRequest{
+				ProjectDir: probeDir, Tool: "list_files", Args: map[string]any{"path": path},
+			})
+			if err != nil {
+				return err
+			}
+		}
+		c := exec.Command(sandbox.Executable, "-p", profile, self, fileChildCommand)
+		c.Env = sandbox.ChildEnv(os.Environ())
+		c.Stdin = bytes.NewReader(req)
 		return c.Run()
 	}
-	if err := sandbox.VerifyFileReadLane(probeDir, probe); err != nil {
-		return fmt.Sprintf("file reads run in process: %v; the credential list is enforced by the matcher alone", err)
+	if err := sandbox.VerifyFileReadLane(probeDir, home, probe); err != nil {
+		return fmt.Sprintf("file reads are not sandboxed (%v) — restart %s to try again", err, binaryName)
 	}
 	reg.SetFileChild(fileChildRunner(self, home, reg.ProjectDir, reg.WorkDir))
 	return ""
@@ -165,16 +226,16 @@ func installFileChild(reg *tools.Registry, home, probeDir string) string {
 // the session work directory when there is one, a temporary directory
 // otherwise. Empty means there is nowhere to probe, and the caller
 // leaves the reads in process.
-func fileProbeDir(workDir string) string {
+func fileProbeDir(workDir string) (dir string, done func()) {
 	if workDir != "" {
 		d := filepath.Join(workDir, "probe")
 		if err := os.MkdirAll(d, 0o700); err == nil {
-			return d
+			return d, func() { _ = os.Remove(d) }
 		}
 	}
 	d, err := os.MkdirTemp("", "gem-agent-file-probe-")
 	if err != nil {
-		return ""
+		return "", func() {}
 	}
-	return d
+	return d, func() { _ = os.Remove(d) }
 }

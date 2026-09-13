@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -62,6 +63,13 @@ func (r *Registry) fileInfo() *Tool {
 			for _, p := range paths {
 				info, err := r.describeFile(p)
 				if err != nil {
+					// A refusal is the operator's question, so it ends
+					// the call rather than becoming one line of twenty
+					// (independent review: the batch swallowed it and
+					// the model read "not found").
+					if errors.Is(err, fs.ErrPermission) {
+						return "", err
+					}
 					// In a batch, one bad path must not hide the others.
 					info = fmt.Sprintf("%s: error: %v", p, err)
 				}
@@ -132,7 +140,11 @@ func (r *Registry) describeFile(p string) (string, error) {
 	}
 	lst, err := r.lstatIn(abs)
 	if err != nil {
-		return "", fmt.Errorf("not found")
+		// The cause rides along: a refusal from the sandbox must stay
+		// recognisable as one, or the child cannot tell the agent to
+		// ask the operator and the model is told the file is absent
+		// (independent review).
+		return "", fmt.Errorf("not found: %w", err)
 	}
 
 	var b strings.Builder
@@ -186,7 +198,7 @@ func (r *Registry) describeFile(p string) (string, error) {
 
 	f, err := r.openRead(abs)
 	if err != nil {
-		return "", fmt.Errorf("unreadable")
+		return "", fmt.Errorf("unreadable: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
