@@ -130,7 +130,10 @@ Block-tier calls, an opt-in two-tier auto-approve (rules first, model
 review second — edits to instruction and configuration files such as
 `AGENTS.md` and `.mcp.json` always ask you, a read of a credential-named
 file — `.env`, keys, credential stores — asks you in every mode and is
-denied in `-p` while the walks list them and name what they could not read,
+denied in `-p`, performed in a sandboxed child that cannot open
+credential material at all, so the list raises the question and the
+kernel is what refuses, while the walks list them and name what they
+could not read,
 and a trusted project's
 instruction and configuration files are pinned by content so a changed
 one asks again before it is loaded), shell commands judged by
