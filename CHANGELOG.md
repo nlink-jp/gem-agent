@@ -2,6 +2,18 @@
 
 ## [0.81.1] - 2026-09-14
 
+### Added
+
+- **`[mcp] startup_timeout_sec` (default 30)** — a server's handshake (spawn,
+  `initialize`, the first `tools/list`) now has its own budget instead of
+  borrowing `call_timeout_sec`. They are different things: a call's budget is
+  how long the work may take, a handshake's is how long a server may take to
+  say hello. It is a separate number rather than a smaller one on purpose —
+  cutting a slow server off at startup does not save time overall, because the
+  session then has to reconnect it, which costs more than waiting did. Before
+  this, `initialize` was bounded by `call_timeout_sec` (60s) and only the
+  listing had a hard-coded 30s.
+
 ### Changed
 
 - **MCP servers are spawned and listed at once instead of one after another.**

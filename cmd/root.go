@@ -1282,8 +1282,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// (pre-release review).
 		var warn bytes.Buffer
 		timeout := time.Duration(cfg.MCP.CallTimeoutSec) * time.Second
+		startupTimeout := time.Duration(cfg.MCP.StartupTimeoutSec) * time.Second
 		start := func() mcpServer {
-			return mcp.NewStdio(server, mcpInv.configs[server], timeout, cmd.Root().Version, registry.WorkDir())
+			return mcp.NewStdio(server, mcpInv.configs[server], timeout, startupTimeout, cmd.Root().Version, registry.WorkDir())
 		}
 		// The interface hides the type; a nil *mcp.Client inside it
 		// would not compare equal to nil, so the running client is
@@ -1292,7 +1293,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		if running != nil {
 			runningServer = running
 		}
-		kept := reconnectMCPServer(ctx, server, runningServer, start, registry, &warn, mcpFilter, &mcpInv)
+		kept := reconnectMCPServer(ctx, server, runningServer, start, startupTimeout, registry, &warn, mcpFilter, &mcpInv)
 		if kept != nil {
 			others = append(others, kept.(*mcp.Client))
 		}

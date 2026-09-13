@@ -101,7 +101,7 @@ func stdHandler(f *fakeServer, method string, params json.RawMessage) ([]string,
 }
 
 func newTestClient(f *fakeServer, timeout time.Duration) *Client {
-	return newClient("fake", f.spawn, timeout, "test", "")
+	return newClient("fake", f.spawn, timeout, timeout, "test", "")
 }
 
 func TestListAndCall(t *testing.T) {
@@ -480,7 +480,7 @@ func TestCallToolAttachesTheSessionWorkDir(t *testing.T) {
 		result, ok := stdResult(method)
 		return nil, result, ok
 	}}
-	c := newClient("fake", f.spawn, 2*time.Second, "test", "/session/work")
+	c := newClient("fake", f.spawn, 2*time.Second, 2*time.Second, "test", "/session/work")
 	defer c.Close()
 
 	if _, _, err := c.CallTool(context.Background(), "echo", nil); err != nil {
@@ -521,3 +521,38 @@ func TestCallToolAttachesNothingWithoutAWorkDir(t *testing.T) {
 		t.Error("a session without a work directory must attach no _meta")
 	}
 }
+
+// TestHandshakeUsesItsOwnBudget pins that a server which never answers
+// initialize is given up on after the startup budget, not after the (much
+// larger) per-call one. The two are different things: a call's budget is how
+// long the work may take, a handshake's is how long a server may take to say
+// hello. They are separate numbers rather than one small one because cutting a
+// slow server off does not save time overall — the session then has to
+// reconnect it.
+func TestHandshakeUsesItsOwnBudget(t *testing.T) {
+	// A server that reads its stdin and answers nothing.
+	spawn := func() (io.WriteCloser, io.ReadCloser, func(), error) {
+		inR, inW := io.Pipe()
+		_, outW := io.Pipe()
+		go func() { _, _ = io.Copy(io.Discard, inR) }()
+		return inW, io.NopCloser(silentReader{}), func() { outW.Close() }, nil
+	}
+	c := newClient("mute", spawn, time.Minute, 150*time.Millisecond, "test", t.TempDir())
+
+	start := time.Now()
+	_, err := c.ListTools(context.Background())
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("a server that never answers initialize must not attach")
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("gave up after %v — the handshake waited on the call timeout, not its own budget", elapsed)
+	}
+}
+
+// silentReader blocks forever without returning data or EOF, like a server
+// that has started but never speaks.
+type silentReader struct{}
+
+func (silentReader) Read([]byte) (int, error) { select {} }

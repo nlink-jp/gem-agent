@@ -91,7 +91,7 @@ func within(t *testing.T, limit time.Duration, what string, fn func()) {
 
 func TestCallTimesOutWhenServerStopsReadingStdin(t *testing.T) {
 	s := &stallServer{}
-	c := newClient("stalled", s.spawn, 300*time.Millisecond, "test", "")
+	c := newClient("stalled", s.spawn, 300*time.Millisecond, 300*time.Millisecond, "test", "")
 	defer c.Close()
 
 	var err error
@@ -135,7 +135,7 @@ func TestCallTimesOutWhenServerStopsReadingStdin(t *testing.T) {
 // lock rather than on the pipe. Its deadline has to cover that wait too.
 func TestConcurrentCallsAreNotHeldByAStalledWrite(t *testing.T) {
 	s := &stallServer{}
-	c := newClient("stalled", s.spawn, 300*time.Millisecond, "test", "")
+	c := newClient("stalled", s.spawn, 300*time.Millisecond, 300*time.Millisecond, "test", "")
 	defer c.Close()
 
 	// Get past the handshake once, so all four calls race on the write.
@@ -175,7 +175,7 @@ func TestConcurrentCallsAreNotHeldByAStalledWrite(t *testing.T) {
 // its own cancellation back, not a timeout report.
 func TestCancelDuringStalledWriteReturnsCancellation(t *testing.T) {
 	s := &stallServer{}
-	c := newClient("stalled", s.spawn, 30*time.Second, "test", "") // long: cancel must be what ends it
+	c := newClient("stalled", s.spawn, 30*time.Second, 30*time.Second, "test", "") // long: cancel must be what ends it
 	defer c.Close()
 
 	within(t, 5*time.Second, "the handshake call", func() {

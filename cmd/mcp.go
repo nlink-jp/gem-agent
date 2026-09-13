@@ -237,8 +237,11 @@ type mcpListing struct {
 // follows — the registry, the inventory, the warnings — is local and stays
 // serial, so the order the operator configured is the order of everything the
 // session shows.
-func listMCPServer(ctx context.Context, client mcpServer) mcpListing {
-	lctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+func listMCPServer(ctx context.Context, client mcpServer, budget time.Duration) mcpListing {
+	if budget <= 0 {
+		budget = 30 * time.Second
+	}
+	lctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	toolList, err := client.ListTools(lctx)
 	return mcpListing{client: client, tools: toolList, err: err}
@@ -247,8 +250,8 @@ func listMCPServer(ctx context.Context, client mcpServer) mcpListing {
 // attachMCPServer lists and attaches one server. It is the single-server path
 // (a reconnect); startup lists every server first, in parallel, and then calls
 // attachListed in configured order.
-func attachMCPServer(ctx context.Context, client mcpServer, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory) bool {
-	return attachListedMCPServer(listMCPServer(ctx, client), registry, stderr, filter, inv)
+func attachMCPServer(ctx context.Context, client mcpServer, budget time.Duration, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory) bool {
+	return attachListedMCPServer(listMCPServer(ctx, client, budget), registry, stderr, filter, inv)
 }
 
 func attachListedMCPServer(listed mcpListing, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory) bool {
@@ -303,7 +306,7 @@ func attachListedMCPServer(listed mcpListing, registry *tools.Registry, stderr i
 // respawn — and re-registered under the new filter. What comes back is
 // the client to keep, or nil when the server is now excluded, gone, or
 // useless.
-func reconnectMCPServer(ctx context.Context, name string, running mcpServer, start func() mcpServer, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory) mcpServer {
+func reconnectMCPServer(ctx context.Context, name string, running mcpServer, start func() mcpServer, budget time.Duration, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory) mcpServer {
 	// Exactly this server's names, as recorded when it attached; the
 	// prefix note is its own record and is withdrawn by value.
 	registry.Remove(inv.registered[name]...)
@@ -321,7 +324,7 @@ func reconnectMCPServer(ctx context.Context, name string, running mcpServer, sta
 	if client == nil {
 		client = start()
 	}
-	kept := attachMCPServer(ctx, client, registry, stderr, filter, inv)
+	kept := attachMCPServer(ctx, client, budget, registry, stderr, filter, inv)
 	inv.warnUnmatched(filter, stderr)
 	if !kept {
 		return nil
@@ -433,6 +436,7 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 	defer func() { inv.warnUnmatched(filter, stderr) }()
 
 	timeout := time.Duration(cfg.MCP.CallTimeoutSec) * time.Second
+	startupTimeout := time.Duration(cfg.MCP.StartupTimeoutSec) * time.Second
 	var starting []*mcp.Client
 	for _, name := range names {
 		if filter.Server(name) {
@@ -443,7 +447,7 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 		// request _meta, so a file-mediated server writes where this
 		// session's file tools can read it back (ADR-021 §9).
 		// NewStdio does not spawn; listMCPServer does, below.
-		starting = append(starting, mcp.NewStdio(name, servers[name], timeout, version, registry.WorkDir()))
+		starting = append(starting, mcp.NewStdio(name, servers[name], timeout, startupTimeout, version, registry.WorkDir()))
 	}
 
 	// Spawn and list every server at once. Measured on a 25-server
@@ -458,7 +462,7 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 		wg.Add(1)
 		go func(i int, client mcpServer) {
 			defer wg.Done()
-			listed[i] = listMCPServer(ctx, client)
+			listed[i] = listMCPServer(ctx, client, startupTimeout)
 		}(i, client)
 	}
 	wg.Wait()

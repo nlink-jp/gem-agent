@@ -27,7 +27,7 @@ func TestReadLoopEOFReapsTheIncarnation(t *testing.T) {
 			_ = inR.Close()
 		}, nil
 	}
-	c := newClient("t", spawn, time.Second, "test", "")
+	c := newClient("t", spawn, time.Second, time.Second, "test", "")
 	// Drive the incarnation by hand: readLoop is what owns the EOF.
 	c.mu.Lock()
 	c.kill = func() {
@@ -103,7 +103,7 @@ func TestListToolsRefusesARepeatingCursor(t *testing.T) {
 		}()
 		return inW, outR, func() { _ = inR.Close(); _ = outW.Close() }, nil
 	}
-	c := newClient("loop", spawn, 5*time.Second, "test", "")
+	c := newClient("loop", spawn, 5*time.Second, 5*time.Second, "test", "")
 	defer c.Close()
 	_, err := c.ListTools(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "repeated cursor") {
@@ -138,7 +138,7 @@ func TestOverlongLineIsNamedAsTheCause(t *testing.T) {
 		}()
 		return inW, outR, func() { _ = inR.Close(); _ = outW.Close() }, nil
 	}
-	c := newClient("big", spawn, 10*time.Second, "test", "")
+	c := newClient("big", spawn, 10*time.Second, 10*time.Second, "test", "")
 	defer c.Close()
 	_, err := c.ListTools(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "frame cap") {

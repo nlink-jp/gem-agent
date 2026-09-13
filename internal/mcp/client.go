@@ -127,7 +127,16 @@ type Client struct {
 	name    string
 	spawn   spawnFunc
 	timeout time.Duration
-	version string
+	// startupTimeout bounds the handshake — spawn, initialize, the
+	// initialized notification — separately from a tool call's budget.
+	// They are different things: a call's budget is how long the work may
+	// take, a handshake's is how long a server may take to say hello, and
+	// a server that is slow to greet is usually slow because of something
+	// outside this machine (a remote MCP over HTTPS). Cutting it short
+	// does not save time overall, because the session then has to
+	// reconnect it, so this is a separate number rather than a smaller one.
+	startupTimeout time.Duration
+	version        string
 
 	// workDir is this session's work directory, attached to every
 	// tools/call as request _meta (ADR-021 §9). Empty means attach
@@ -153,7 +162,7 @@ type Client struct {
 // NewStdio creates a client that spawns command with args and extra env.
 // The child's stderr is discarded unless GEMAGENT_MCP_STDERR=1 (MCP
 // servers log there; in a REPL that noise drowns the conversation).
-func NewStdio(name string, cfg ServerConfig, timeout time.Duration, clientVersion, workDir string) *Client {
+func NewStdio(name string, cfg ServerConfig, timeout, startupTimeout time.Duration, clientVersion, workDir string) *Client {
 	spawn := func() (io.WriteCloser, io.ReadCloser, func(), error) {
 		cmd := exec.Command(cfg.Command, cfg.Args...)
 		// Its own process group, killed as a group (ADR-0072 §4.5): a
@@ -193,17 +202,21 @@ func NewStdio(name string, cfg ServerConfig, timeout time.Duration, clientVersio
 		}
 		return stdin, stdout, kill, nil
 	}
-	return newClient(name, spawn, timeout, clientVersion, workDir)
+	return newClient(name, spawn, timeout, startupTimeout, clientVersion, workDir)
 }
 
-func newClient(name string, spawn spawnFunc, timeout time.Duration, version, workDir string) *Client {
+func newClient(name string, spawn spawnFunc, timeout, startupTimeout time.Duration, version, workDir string) *Client {
+	if startupTimeout <= 0 {
+		startupTimeout = timeout
+	}
 	return &Client{
-		name:    name,
-		spawn:   spawn,
-		timeout: timeout,
-		version: version,
-		workDir: workDir,
-		pending: map[int64]chan message{},
+		name:           name,
+		spawn:          spawn,
+		timeout:        timeout,
+		startupTimeout: startupTimeout,
+		version:        version,
+		workDir:        workDir,
+		pending:        map[int64]chan message{},
 	}
 }
 
@@ -252,16 +265,21 @@ func (c *Client) ensureStarted(ctx context.Context) error {
 
 	go c.readLoop(stdout, gen)
 
+	// One budget for the whole greeting. rawCall and send each apply
+	// c.timeout on top; the shorter deadline is the one that fires.
+	hctx, hcancel := context.WithTimeout(ctx, c.startupTimeout)
+	defer hcancel()
+
 	initParams := map[string]any{
 		"protocolVersion": protocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "gem-agent", "version": c.version},
 	}
-	if _, err := c.rawCall(ctx, "initialize", initParams); err != nil {
+	if _, err := c.rawCall(hctx, "initialize", initParams); err != nil {
 		c.shutdown()
 		return &startError{Server: c.name, Phase: "initialize", Err: err}
 	}
-	nctx, ncancel := context.WithTimeout(ctx, c.timeout)
+	nctx, ncancel := context.WithTimeout(hctx, c.startupTimeout)
 	defer ncancel()
 	if err := c.send(nctx, map[string]any{
 		"jsonrpc": "2.0", "method": "notifications/initialized", "params": map[string]any{},

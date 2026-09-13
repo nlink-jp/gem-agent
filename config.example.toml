@@ -264,6 +264,14 @@ enabled = true
 # notifications/cancelled is not sent first: the receiver may ignore it,
 # and the kill is what reliably unblocks the call.
 call_timeout_sec = 60
+# How long a server may take to say hello: spawn, initialize, and the first
+# tools/list. Separate from call_timeout_sec on purpose — a call's budget is
+# how long the work may take, a handshake's is how long a greeting may take,
+# and the servers slow to greet are slow because of something off this machine
+# (a remote MCP over HTTPS). Do not shorten it to save startup time: a server
+# cut off here has to be reconnected later, which costs more than waiting.
+# Servers are started in parallel, so this bounds the slowest, not their sum.
+startup_timeout_sec = 30
 
 # What this session does not have (ADR-0077). An entry is a server, or
 # one function of one server; everything not named here is declared, so

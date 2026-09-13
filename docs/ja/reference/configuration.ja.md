@@ -72,6 +72,11 @@ read_only_auto = false     # デフォルト; 打った内容からランタイ�
 [mcp]
 enabled = true             # デフォルト; false で全 MCP サーバーを無効化
 call_timeout_sec = 60      # デフォルト
+startup_timeout_sec = 30   # デフォルト; サーバーが挨拶を返すまでの猶予
+#                          # （spawn + initialize + 最初の tools/list）。呼び出し用とは別枠 —
+#                          # 起動が遅いサーバーはこの機械の外側の事情で遅い。短くしても得はしない:
+#                          # ここで切ったサーバーは後で再接続が要り、待つより高くつく。
+#                          # サーバーは並列に起動するので、これが縛るのは合計ではなく最も遅い 1 本
 # exclude = ["chrome-pilot", "obsidian/patch_vault_file"]   # 下記参照
 # advertise = "all"        # デフォルト; "on-request" は MCP ツールをロードされてから宣言する —
 #                          # モデルが（find_tools で司書に尋ねる / mcp_load でサーバーを名指す）か、

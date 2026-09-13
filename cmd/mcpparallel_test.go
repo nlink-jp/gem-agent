@@ -54,7 +54,7 @@ func TestListingOverlaps(t *testing.T) {
 		wg.Add(1)
 		go func(i int, s mcpServer) {
 			defer wg.Done()
-			listed[i] = listMCPServer(context.Background(), s)
+			listed[i] = listMCPServer(context.Background(), s, 10*time.Second)
 		}(i, s)
 	}
 	wg.Wait()
@@ -100,7 +100,7 @@ func TestAttachOrderSurvivesParallelListing(t *testing.T) {
 			// Reverse delays: the last server finishes listing first.
 			d := time.Duration(len(names)-i) * 20 * time.Millisecond
 			listed[i] = listMCPServer(context.Background(),
-				&slowServer{stubCaller: stubCaller{name: n}, delay: d})
+				&slowServer{stubCaller: stubCaller{name: n}, delay: d}, 10*time.Second)
 		}(i, n)
 	}
 	wg.Wait()
