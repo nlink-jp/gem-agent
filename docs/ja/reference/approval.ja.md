@@ -192,7 +192,16 @@ answered …`・`rejected the call …`・`gem-agent could not complete …`）�
 拒むので名前はそもそも秘密ではなく、資格情報名のエントリも他と同じく列挙され
 ます。`search_files` は読めなかったファイルを名指します —
 `[not read: sub/.env — reading one needs the operator's approval]` —
-`grep -r` が持つ形です。あなたが打つ `@` 添付は
+`grep -r` が持つ形です。
+
+この機体でファイル読取の檻を据え付けられなかった場合 — 起動時の警告がそれを
+告げ、`/settings` の `safety / file reads` 行が状態を持ちます — 対象の読取は
+このプロセス内で走ります。単一ファイルの読取は引き続きあなたに尋ねますが、
+尋ねるのはカーネルではなく gem-agent 自身の検査です。walk は同じ一覧を自分で
+拒み、同じ脚注にファイル名を出します（ADR-0086 §5 修正版）。変わるのは一覧を
+強制する者であって、一覧ではありません。
+
+あなたが打つ `@` 添付は
 あなたの yes であり、変わりません。それ以外に
 置かれた秘密 — たとえば `~/.config/<tool>/config.toml` のトークン（ADR-0076）— は
 read/write レーンと read ツールで読め、write レーンではネットワークで外へ

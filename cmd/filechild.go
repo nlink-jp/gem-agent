@@ -43,14 +43,18 @@ const credentialExit = 3
 const childOutputCap = 1 << 20
 
 // degradedNote is what the operator is told when the cage could not be
-// proven on this machine. It says what is true now — the reads still
-// ask about credential files, by this runtime's own check rather than
-// the kernel's — and it does not invent an action, because there is
-// none: a restart re-runs the same probe. Where the state is visible is
-// the one useful pointer.
+// proven on this machine. It says what is true now — credential files
+// are still refused, by this runtime's own check rather than the
+// kernel's — and it distinguishes the two shapes that refusal takes,
+// because they are not the same: a single-file read asks, and a walk
+// skips the file and names it. Saying "still need your approval" of
+// both was wrong about the walk, which never asks. It does not invent
+// an action, because there is none: a restart re-runs the same probe.
+// Where the state is visible is the one useful pointer.
 func degradedNote(err error) string {
 	return fmt.Sprintf("file reads run in this process, not in a sandbox (%v). "+
-		"Credential files still need your approval, checked by "+binaryName+" itself rather than the kernel. "+
+		"Credential files are still refused by "+binaryName+" itself rather than by the kernel: "+
+		"reading one asks you, a search skips it and names it. "+
 		"Nothing to do now; /settings shows the state", err)
 }
 

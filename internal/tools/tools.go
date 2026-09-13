@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -479,7 +480,20 @@ func (r *Registry) gitignoreReader(path string, cap int64) ([]byte, error) {
 // listing and the read is not searched at all — a match past the cap
 // would be missing from a result presented as complete (review after
 // v0.68.2).
+//
+// Credential material is refused here, before the open (ADR-0086 §5,
+// amended). The walk takes no path argument, so risk.credentialRead —
+// which the degraded path was documented to fall back on — never sees
+// it: without this, a machine where the cage could not be installed
+// searched .env and printed the matching lines. The error is the
+// permission error the caller already reports, so a refused file lands
+// in the same footer whether the kernel refused it or this did. Inside
+// the child the kernel still refuses what this misses, which is why
+// the list stays the fast path and not the boundary (§2).
 func (r *Registry) readForSearch(abs string) ([]byte, bool, error) {
+	if sandbox.CredentialPath(abs) {
+		return nil, false, fs.ErrPermission
+	}
 	data, more, err := r.readFileCapped(abs, searchFileCap)
 	if err != nil || more {
 		return nil, false, err

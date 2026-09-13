@@ -1,5 +1,40 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+
+- **The search walk was unprotected wherever the file-read cage could
+  not be installed.** ADR-0086 §5 said the file tools fall back to
+  in-process reads "with `risk.credentialRead` as the boundary", but
+  that function judges a path ARGUMENT and `search_files` has none: it
+  is not in the credential read set, its verdict is `Safe`, and it
+  never reaches a gate. So on a machine where the startup probe failed,
+  the walk opened `.env` and printed the matching lines to the model
+  with nothing in between — weaker than 0.78.0, which withheld the
+  entry and reported a count — while the degradation note told the
+  operator that credential files still needed their approval.
+  `readForSearch` now refuses a path on the one `internal/sandbox` list
+  before it opens the file, returning the permission error the walk
+  already reports, so a refused file lands in the same
+  `[not read: … ]` footer whether the kernel refused it or this check
+  did. The refusal is unconditional rather than switched on the cage's
+  absence: a mode branch would put the safety on the path that is
+  exercised least, which is how this shipped. Inside the child the
+  kernel still refuses whatever the check misses, so the list stays the
+  fast path and not the boundary. Regression test:
+  `TestSearchFilesRefusesCredentialsWithoutTheCage` drives a registry
+  with no file child — the degraded path exactly — and fails on the
+  leaked line without the guard. ADR-0086 carries an *Amended* note.
+
+### Fixed
+
+- **The degradation note and the `/settings` row claimed something that
+  was not true of the walk.** Both said credential files "ask you"
+  when the cage is absent; a search skips the file and names it, it
+  does not ask. They now say credential files are refused either way,
+  and by whom.
+
 ## [0.79.1] - 2026-09-13
 
 ### Fixed

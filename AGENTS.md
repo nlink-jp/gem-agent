@@ -156,6 +156,16 @@ a new hook) is an architecture change and takes the same rows as a
 
 ## Gotchas
 
+- **A tool with no path argument is invisible to the rule layer.**
+  `risk.credentialRead` judges a `path` (or `file_info`'s `paths`), so
+  `search_files` — which takes a pattern and walks — is `Safe` and never
+  gates. ADR-0086 §5 nevertheless promised the matcher as the boundary
+  when the file-read cage cannot be installed, and for the walk it was
+  not: the degraded walk read `.env` and printed the matching lines. The
+  walk now consults `sandbox.CredentialPath` itself in `readForSearch`.
+  Before writing "layer X covers this when layer Y is absent", check
+  that X can see the call at all.
+
 - **Operator-facing text states the fact and the next command — never a
   design reference or a reason.** `(ADR-0074)` in a banner note, or a
   clause explaining why a rule exists, shipped four times; the reasons

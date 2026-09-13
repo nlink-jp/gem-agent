@@ -452,7 +452,17 @@ func TestWalksListNamesAndNameWhatTheyCannotRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "[not read: unreadable.txt") || !strings.Contains(out, "operator's approval") {
+	// The footer names every file the walk could not open, in walk
+	// order: the credential-named ones this project holds are refused by
+	// the list before the open (ADR-0086 §5, amended), so unreadable.txt
+	// is one entry among several rather than the first.
+	if !strings.Contains(out, "[not read:") || !strings.Contains(out, "unreadable.txt") ||
+		!strings.Contains(out, "operator's approval") {
 		t.Errorf("search_files did not name the file it could not read:\n%s", out)
+	}
+	// And the credential content never reached the result, even though
+	// this registry has no file child (the degraded path).
+	if strings.Contains(out, `"cred"`) {
+		t.Errorf("search_files read credential material:\n%s", out)
 	}
 }

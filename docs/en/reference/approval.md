@@ -206,7 +206,17 @@ and no longer hide anything (ADR-0086 §3): a credential-named entry is
 listed like any other, because the kernel lists names and refuses
 content, and a name was never the secret. `search_files` names a file
 it could not read — `[not read: sub/.env — reading one needs the
-operator's approval]` — the shape `grep -r` has. An `@` attachment you type is your yes and is
+operator's approval]` — the shape `grep -r` has.
+
+Where the file-read cage could not be installed on your machine — the
+startup warning says so, and `/settings` carries the state under
+`safety / file reads` — the covered reads run in this process instead.
+The single-file reads still ask you, by gem-agent's own check rather
+than the kernel's, and the walk refuses the same list itself and names
+the file in the same footer (ADR-0086 §5, as amended). What changes is
+who enforces the list, not the list.
+
+An `@` attachment you type is your yes and is
 unchanged. A secret stored elsewhere — a
 token in `~/.config/<tool>/config.toml`, say (ADR-0076) — is readable in
 the read and write lanes and by the read tools, and in the write lane

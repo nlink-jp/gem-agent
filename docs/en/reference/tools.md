@@ -56,6 +56,10 @@ may not read is skipped by the kernel and **named** in the result —
 `[not read: sub/.env — reading one needs the operator's approval]`,
 the shape `grep -r` has.
 
+Where that cage could not be installed on this machine, the walk
+refuses the same list itself and prints the same line (ADR-0086 §5, as
+amended): the enforcer changes, the behaviour does not.
+
 Both walks stop on Ctrl+C (ADR-0065): they consult the turn's context
 before every directory and file read (and every 1024 lines inside a
 file), so an interrupt on a slow filesystem costs one syscall, not

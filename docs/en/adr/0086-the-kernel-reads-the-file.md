@@ -191,6 +191,27 @@ read. On failure the file tools fall back to in-process reads with
 `risk.credentialRead` as the boundary, and a startup warning names it. A degraded state
 that claims the kernel is watching would be worse than the matcher.
 
+*Amended 2026-09-13, writing the architecture review's second revision:
+§5's "with `risk.credentialRead` as the boundary" was never true of the
+walk. That function judges a path ARGUMENT, and `search_files` has
+none: it is not in the credential read set, its verdict is `Safe`, and
+it never reaches a gate. So on a machine where the cage could not be
+installed, the walk opened credential files and printed matching lines
+to the model with nothing in between — weaker than the release before
+this one, which withheld the entry and reported a count — while the
+degradation note told the operator the opposite. `readForSearch` now
+refuses a path on the one list before it opens the file, returning the
+permission error the walk already knows how to report, so a refused
+file lands in the same `[not read: …]` footer whether the kernel
+refused it or this check did. The refusal is unconditional rather than
+switched on the cage's absence: a mode branch would put the safety on
+the path that is exercised least, which is exactly how this shipped.
+Inside the child the kernel still refuses whatever the check misses, so
+the list is the fast path here and not the boundary — §2's property is
+unchanged. This adds no rule about how paths are spelled; it is the
+same one list, consulted once, at the one place the walk opens a file
+(§6).*
+
 ### 6. The criterion this leaves behind
 
 **An entry is cheap; a rule is the smell.** Adding a path to

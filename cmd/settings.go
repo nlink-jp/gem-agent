@@ -169,7 +169,7 @@ func (s *settingsStore) data() tui.SettingsData {
 		Section: "safety", Label: "file reads",
 		Value:  fileReadState(s.registry.KernelReads()),
 		Source: "measured",
-		Detail: "established by a probe at startup; credential files ask you either way",
+		Detail: "established by a probe at startup; credential files are refused either way",
 	})
 	ro("safety", "sandbox.scratch_caches", scratchCachesLabel(s.cfg.Sandbox.Caches()), "sandbox.scratch_caches",
 		"toolchain caches every shell_exec points into the session scratch (the read lane's directory is separate from the approved lanes'); restart to change")
