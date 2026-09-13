@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.81.1] - 2026-09-14
+
+### Changed
+
+- **MCP servers are spawned and listed at once instead of one after another.**
+  Measured on a 25-server configuration: twenty-three answer `tools/list` in
+  under 20ms and two go over the network — GitHub's remote MCP at ~1.9s and a
+  Slack proxy at ~1.3s — so serially those two were the whole of MCP startup,
+  and a slow day at either landed on it in full. Startup now costs the slowest
+  server rather than the sum. Only the waiting is concurrent: attaching still
+  runs in configured order, so the registry, the catalog and the warnings read
+  exactly as before.
+
 ## [0.81.0] - 2026-09-13
 
 ### Added
