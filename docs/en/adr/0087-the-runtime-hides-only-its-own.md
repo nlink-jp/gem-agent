@@ -84,6 +84,23 @@ The correct reading of the same domain is to *remove* everything
 `GEMAGENT_*` that is not one of the three exports, and to guess about
 nothing.
 
+*Amended 2026-09-13, after the release review: §Context's "Nobody else
+reads `GEMAGENT_*`" is false, and the counter-example is the org's own.
+`gem-usage-lens` reads `GEMAGENT_STATE_DIR` on purpose
+(`core/platform/paths.go`), so that an isolated gem-agent is measured
+where it actually writes. The decision stands: the variable stays in
+the removed half. An operator running an isolated state root and then
+launching `gem-usage-lens` from inside that session's shell lane now
+gets the default sessions root instead of the isolated one, and the
+remedy is the one the sibling tool already ships — `--sessions-root`,
+or `[sources]` in its own configuration. A child that needs a fact
+about the session should be told it, not inherit it: that is the same
+rule that keeps a nested runtime from taking its identity from an
+environment it did not choose. What the premise should have said is
+narrower and still true: nobody else may be assumed to read it, so the
+runtime may act on the whole namespace, and a sibling that does read it
+takes it as a parameter.*
+
 ## Decision
 
 ### 1. The operator's environment is not touched

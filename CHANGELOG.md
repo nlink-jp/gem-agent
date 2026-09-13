@@ -82,7 +82,11 @@
   than by a regex recognising the word `key`. A nested `gem-agent` in a
   shell lane now reads its own config file instead of inheriting the
   parent's; an MCP server wanting a `GEMAGENT_` value takes it from the
-  `env` block of the MCP configuration.
+  `env` block of the MCP configuration. A companion run from a shell
+  lane that reads gem-agent's own state root — `gem-usage-lens` does,
+  to measure an isolated runtime where it writes — no longer inherits
+  `GEMAGENT_STATE_DIR` and takes it from its own `--sessions-root` or
+  `[sources]` instead.
 
 ## [0.78.0] - 2026-09-13
 
