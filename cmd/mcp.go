@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/config"
@@ -223,14 +224,39 @@ func excludeMCPServer(name string, registry *tools.Registry, inv *mcpInventory) 
 // caller drops it. The server's slots in the inventory are overwritten,
 // so the same call serves the first connect and a later reconnect of
 // that one server.
+// mcpListing is one server's spawn and tools/list round trip: the part of
+// attaching that waits on something outside this process, separated so it can
+// run alongside the other servers'. It touches nothing shared.
+type mcpListing struct {
+	client mcpServer
+	tools  []mcp.Tool
+	err    error
+}
+
+// listMCPServer spawns the server and asks what it offers. Everything that
+// follows — the registry, the inventory, the warnings — is local and stays
+// serial, so the order the operator configured is the order of everything the
+// session shows.
+func listMCPServer(ctx context.Context, client mcpServer) mcpListing {
+	lctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	toolList, err := client.ListTools(lctx)
+	return mcpListing{client: client, tools: toolList, err: err}
+}
+
+// attachMCPServer lists and attaches one server. It is the single-server path
+// (a reconnect); startup lists every server first, in parallel, and then calls
+// attachListed in configured order.
 func attachMCPServer(ctx context.Context, client mcpServer, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory) bool {
+	return attachListedMCPServer(listMCPServer(ctx, client), registry, stderr, filter, inv)
+}
+
+func attachListedMCPServer(listed mcpListing, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory) bool {
+	client, toolList, err := listed.client, listed.tools, listed.err
 	name := client.Name()
 	scope := inv.Scopes[name]
 	delete(inv.summary, name)
 	delete(inv.Offered, name)
-	lctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	toolList, err := client.ListTools(lctx)
-	cancel()
 	if err != nil {
 		fmt.Fprintf(stderr, "warning: MCP server %s unavailable: %v\n", name, err)
 		client.Close()
@@ -407,6 +433,7 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 	defer func() { inv.warnUnmatched(filter, stderr) }()
 
 	timeout := time.Duration(cfg.MCP.CallTimeoutSec) * time.Second
+	var starting []*mcp.Client
 	for _, name := range names {
 		if filter.Server(name) {
 			excludeMCPServer(name, registry, &inv)
@@ -415,9 +442,32 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 		// The session work directory travels with every tools/call as
 		// request _meta, so a file-mediated server writes where this
 		// session's file tools can read it back (ADR-021 §9).
-		client := mcp.NewStdio(name, servers[name], timeout, version, registry.WorkDir())
-		if attachMCPServer(ctx, client, registry, stderr, filter, &inv) {
-			clients = append(clients, client)
+		// NewStdio does not spawn; listMCPServer does, below.
+		starting = append(starting, mcp.NewStdio(name, servers[name], timeout, version, registry.WorkDir()))
+	}
+
+	// Spawn and list every server at once. Measured on a 25-server
+	// configuration (2026-09-14): twenty-three answer in under 20ms and two
+	// go over the network — GitHub's remote MCP at ~1.9s and a Slack proxy at
+	// ~1.3s — so serially the two of them were the whole of startup, and a
+	// slow day at either landed on it in full. Overlapped, startup costs the
+	// slowest server rather than the sum.
+	listed := make([]mcpListing, len(starting))
+	var wg sync.WaitGroup
+	for i, client := range starting {
+		wg.Add(1)
+		go func(i int, client mcpServer) {
+			defer wg.Done()
+			listed[i] = listMCPServer(ctx, client)
+		}(i, client)
+	}
+	wg.Wait()
+
+	// Attach in the configured order: the registry, the catalog and the
+	// warnings then read exactly as they did when the listing was serial.
+	for i, l := range listed {
+		if attachListedMCPServer(l, registry, stderr, filter, &inv) {
+			clients = append(clients, starting[i])
 		}
 	}
 	return clients, inv.summaryLines(), inv
