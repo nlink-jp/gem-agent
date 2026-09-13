@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.81.1] - 2026-09-14
+## [0.82.0] - 2026-09-14
 
 ### Added
 
@@ -13,6 +13,8 @@
   session then has to reconnect it, which costs more than waiting did. Before
   this, `initialize` was bounded by `call_timeout_sec` (60s) and only the
   listing had a hard-coded 30s.
+
+## [0.81.1] - 2026-09-14
 
 ### Changed
 
@@ -655,7 +657,6 @@
   the mode without telling the TUI can no longer leave the marker
   wrong.
 
-
 ## [0.73.0] - 2026-09-09
 
 ### Fixed
@@ -797,7 +798,6 @@
   **ADR-0081** (instruction context may only subtract) are accepted.
   The decisions ship in this release; the behaviour does not, and lands
   in the next one. Both carry the live measurements they were decided on
-
 
 ## [0.72.2] - 2026-09-08
 
@@ -1876,7 +1876,6 @@ Operator field report: `curl -s https://ipinfo.io | gem-agent --auto
   wired for one-shot stdin today, reusable for any future
   paste-as-data need.
 
-
 ## [0.52.0] - 2026-08-29
 
 ### Added — one-shot approval controls (ADR-0053)
@@ -1932,7 +1931,6 @@ rulebook's to settle, not this change's.
   armed in runs where it never could be. It now reports what the
   session actually runs with (ADR-0053 §4).
 
-
 ## [0.51.0] - 2026-08-28
 
 ### Added — ignore-aware navigation (ADR-0052)
@@ -1967,7 +1965,6 @@ generated directories.
 
 - A submodule checkout's `.git` (a file, not a directory) was listed
   and searched; VCS plumbing is now skipped by name either way.
-
 
 ## [0.50.0] - 2026-08-27
 
@@ -2018,7 +2015,6 @@ verbatim vanishes, reported as success. Four co-reinforcing floors:
   with its resume command, and the session's round/token totals.
   Silent when nothing happened, and never printed in one-shot mode.
 
-
 ## [0.49.1] - 2026-08-26
 
 ### Changed — status output is not documentation (operator UX report)
@@ -2042,7 +2038,6 @@ trains skimming.
 Unchanged on purpose: empty-state teaching (the one place the operator
 actually asks "so what do I do?"), per-event disclosures (clips, hidden
 lines, handbacks), varying provenance, and banner navigation pointers.
-
 
 ## [0.49.0] - 2026-08-26
 
@@ -2071,7 +2066,6 @@ urging blanket approval is itself treated as a reason to escalate.
 edits live, `/riskbook clear` removes the project layer, and the
 startup banner announces a rulebook while it is in force.
 
-
 ## [0.48.0] - 2026-08-26
 
 ### Removed — /learn is withdrawn (ADR-0049)
@@ -2098,7 +2092,6 @@ What this release does with what /learn left behind:
   aggregation key and the answer's source) are still written, and
   `Approve` still reports whether the session allowlist answered:
   the data outlives the feature.
-
 
 ## [0.47.0] - 2026-08-26
 
@@ -2136,7 +2129,6 @@ An auto-mode session escalated ~25 times, every one approved, and
   where nothing clips it.
 - `/learn` now reports each saved rule as it happens rather than after
   the last question.
-
 
 ## [0.46.0] - 2026-08-26
 
