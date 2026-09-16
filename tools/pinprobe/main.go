@@ -112,11 +112,32 @@ type Reading struct {
 }
 
 // Full reports which side of production's pad branch this screen landed
-// on. The branch is positive-pad = "screen not full", and a positive pad
-// is exactly the gap between the last output and the pinned input, so a
-// gap of at most one row is the full side. Reported, never assumed: a run
-// asks for a regime and the reading says which one it got.
-func (r Reading) Full() bool { return r.GapOK && r.Gap <= 1 }
+// on, and refuses to answer when it cannot tell.
+//
+// The branch is positive-pad = "screen not full". On a CLEAN screen the pad
+// shows up as the gap between the last output and the pinned frame, so a
+// small gap means full. Two limits, both found by a verification pass and
+// both worth stating rather than hiding behind a threshold:
+//
+//   - Gap is measured to the TOPMOST sentinel, which on a damaged screen is
+//     the first STRANDED frame, not the pin. So a negative gap says nothing
+//     about the regime — it says frames were stranded above the last
+//     output. The first version returned true for any Gap <= 1, which made
+//     the check pass vacuously on exactly the screens it existed to police.
+//   - Even clean, Gap is pad plus the frame's own height minus one, so the
+//     threshold encodes pinprobe's two-row frame (input box + footer). Add
+//     a row to the model and a full screen reads as empty.
+//
+// So: a damaged screen is UNKNOWN, and a clean one is compared against the
+// frame height the tool actually renders.
+const frameRows = 2 // input box + footer, the frame tui.New renders here
+
+func (r Reading) Full() (full, known bool) {
+	if !r.GapOK || r.Stranded > 0 || r.Gap < 0 {
+		return false, false
+	}
+	return r.Gap <= frameRows-1, true
+}
 
 // analyze reads one captured screen for one case.
 func analyze(caseName string, capture []string) Reading {
@@ -184,7 +205,9 @@ func runDriver(rows, cols, repeat int) error {
 				continue
 			}
 			got := "empty"
-			if read.Full() {
+			if full, known := read.Full(); !known {
+				got = "?"
+			} else if full {
 				got = "full"
 			}
 			gap := "n/a"

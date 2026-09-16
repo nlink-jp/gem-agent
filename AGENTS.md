@@ -43,9 +43,14 @@ confinement through `os.Root`, the walks, the caged reads),
 `internal/agent` and `internal/approve`, and — added 2026-09-17, after a
 verification pass found ADR-0089/ADR-0020 arguing it while both these lists
 denied it — the **scrollback accounting in `internal/tui`**: `emit`,
-`wrapForScrollback`, `physicalRows` and the bottom-hold pad are identical
-in the two trees, function for function, and `diff` returns nothing on the
-first three.
+`wrapForScrollback`, `physicalRows` and the bottom-hold pad. `diff` returns
+nothing on `wrapForScrollback` and `physicalRows`; `emit` differs only in
+ADR-number prefixes, and the pad expression is byte-identical inside a
+`View()` that is not (gem-agent's carries a settings-panel frame cap).
+A first version of this sentence said "nothing on the first three", which
+the next verification pass refuted with one `diff` — the remedy for a false
+claim being a false claim is why the citation test in `internal/archtest`
+now exists.
 
 **This is not a rule to port features.** A feature this runtime gains
 does not propagate to lagent by default; lagent's ADR-0002 decides

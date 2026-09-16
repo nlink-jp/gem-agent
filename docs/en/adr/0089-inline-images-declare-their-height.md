@@ -23,12 +23,14 @@ sixel `DCS q` alike. `ansi.Hardwrap` leaves all three **byte-identical**, so
 `wrapForScrollback` ([model.go:1016](../../../internal/tui/model.go)) does
 not shear a base64 run. An independent pass re-measured it with a
 real PNG and a real sixel — the repository's own test had covered two of the
-three families, and `tools/imgpayload` now carries all three. What that
-pass ran beyond this (more widths, both `preserveSpace` settings, a
-multi-chunk kitty sequence) lived in a scratch directory and is **not** in
-this repository; an earlier draft cited it as though it were. What is
-checkable here is one width, `preserveSpace` true, and a single-chunk kitty
-payload, which is what a 320×180 PNG produces.
+three families, and `tools/imgpayload` now carries all three. A draft then over-corrected the
+other way, saying the wider re-measurement (more widths, both
+`preserveSpace` settings, a multi-chunk kitty sequence) "is not in this
+repository". The *runs* are not frozen; every input is. A later pass
+reproduced all of it from `tools/imgpayload` alone — seven payloads, nine
+widths, both settings, 126 combinations, every one byte-identical — and
+`TestKittyChunks` already builds the multi-chunk sequence. What is missing
+is a test that asserts it, not the ability to.
 
 The counter is not blind, though, and the first draft said it was.
 `physicalRows` ([model.go:1029](../../../internal/tui/model.go)) starts at
@@ -57,7 +59,7 @@ now, and every run prints what it arranged.
 | terminal | payload | regime | stranded | control at same fill | instrument |
 |---|---|---|---|---|---|
 | iTerm2 3.7.2, 180×80 | OSC 1337 `height=12` ×3 | full (fill 90, rows 80) | **3** | PLAIN ×3, clean | operator's run; transcript frozen in `tools/pinprobe/testdata`, frame count only |
-| tmux 3.7c, 120×30 | sixel ×3, at 36 / 72 / 144px | full | **3** each | PLAIN ×3, clean at gap 1 | `pinprobe -drive`; captures frozen in testdata |
+| tmux 3.7c, 120×30 | sixel ×3, at 36 / 72 / 144px | full | **3** each | PLAIN ×3, clean at gap 1 | hand-driven tmux + `capture-pane` on the pre-`-drive` build; only the 72px capture is frozen in testdata, and `-drive` reproduces the experiment but produced none of these files |
 | tmux 3.7c, 120×30 | OSC 1337 and kitty ×3 | full | 0 | — | same run: this tmux swallows them, so they are controls, not measurements of drawing |
 | both | every case | not full | 0 | identical | same runs |
 
@@ -120,7 +122,7 @@ count now, and a test pins the case.
 ### Not measured, and not asserted
 
 - Whether kitty or Ghostty honour `r=`. Every measurement here is iTerm2 or
-  tmux. Decision 3 binds two protocols; one of them has no measurement.
+  tmux. Decision 4 binds two protocols; one of them has no measurement.
 - Whether Terminal.app implements any of the three. Stated in the first
   draft as fact; it is **unverified here** and load-bearing only for how
   common the no-graphics path is.
@@ -175,58 +177,66 @@ take the row count as a parameter — decision 1's precondition.
 **Sixel is not taken.** It cannot declare a row count, which is decision
 1's precondition, and that reason stands alone without any measurement.
 
-A second reason was withdrawn in the rewrite and is **restored here, because
-withdrawing it was the error.** The organization's supply-chain rule — the
-dependency floor is stdlib, then a vendor's own SDK, then the REST API
-directly — is a standing 是, not a per-case question, and a sixel encoder
-would have to come from a community package. The rewrite dropped it on the
-ground that it "appears nowhere in this repository", which was a negative
-claim made without enumerating: the rule is written in the sibling runtime's
-RFP and in `internal/llm/openai.go` there, and its absence from
-`CONVENTIONS.md` was already recorded as a known property rather than as
-evidence of absence. `mermaid-ascii` is not the counter-example it was taken
-for either: ADR-0042 is dated 2026-08-22, before the rule, so it is a
-pre-policy dependency. Whether it is an exception or a debt is still a
-separate question, and still not settled here.
+A second reason has been mis-handled twice and is now stated with its real
+scope. The organization's supply-chain rule — the dependency floor is
+stdlib, then a vendor's own SDK, then the REST API directly — is a standing
+是, not a per-case question, and the rewrite was wrong to drop it on the
+ground that it "appears nowhere in this repository": that was a negative
+asserted without enumerating, and the rule is written in the sibling
+runtime's RFP and in `internal/llm/openai.go` there.
 
-### 5. One source, because the runtime chose its path
+**But restoring it as a reason to refuse a sixel encoder over-reached.** Its
+clearest primary source, `web-fetch` ADR-0003, states the ladder and then
+says it **was written for API clients** — a sixel encoder is not one — and
+this module's own `go.mod` carries `bubbletea`, `glamour`, `cobra` and
+`chroma`, so "the floor is stdlib" is plainly not how the rule is applied.
+Extending it to an encoder would be an extension, and this record does not
+make one. `mermaid-ascii` is likewise not the counter-example the rewrite
+took it for, though the dating is softer than the restoring draft said:
+ADR-0042 is 2026-08-22 and the rule's earliest written trace in these
+repositories is 2026-09-10, so "pre-policy" holds against the record of the
+rule rather than against a known date it came into force.
 
-**The bytes of an image content block in an MCP tool result — the bytes,
-never a path.** The intake decodes the block and writes it to the session
-work directory, handing the model
-`[image saved at <path> … use view_image on that path]`
-([mcpresult.go:184](../../../cmd/mcpresult.go)) — the bytes do not ride back
-inline ([ADR-0058](0058-session-work-directory.md) names where file-mediated MCP output lands; an earlier draft cited ADR-0027, which
-is about operator audio and video and in fact permits inline bytes).
+**Decision 4 therefore rests on the first reason alone**, which needs no
+measurement and no policy.
 
-The view layer is handed **the decoded bytes the intake already holds**, and
-opens nothing. That is not a convenience: a verification pass found that
-`write` short-circuits on `os.Stat(path) == nil`
-([mcpresult.go:207](../../../cmd/mcpresult.go)), and an MCP server is a
-local child process that knows its own name, its tool name and the bytes it
-is about to return — so it can compute the content-addressed filename in
-advance and plant a symlink there. The runtime then writes nothing and the
-path resolves wherever the server chose. Today that is contained, because
-reaching the file means `view_image` and `Agent.decide` resolves it to the
-real path before the enforcers judge it. A view layer that opened the path
-would have walked straight back into the class this decision rejects a
-model-named path for. Carrying the bytes removes the file open, and with it
-the question.
+### 5. What may be drawn is NOT settled here — one constraint is
 
-**A local image path named by the model is rejected.** It would be a
-view-layer file open, which is not a tool call: it never reaches
-`Agent.decide`, never runs in the sandboxed read child (ADR-0086), and is
-invisible to the one credential list, which is keyed on built-in tool name
-([risk.go:176](../../../internal/risk/risk.go), `credentialReadTools` /
-`JudgesPath`). That is precisely the class ADR-0085/0086 repaired — "the
-write tools' block is not the read tools' protection" — and the first draft
-walked into it while decision 6 discussed only escape passthrough. If a
-model-named path is ever wanted, it arrives as a **tool** whose verdict the
-existing enforcers already take, not as a read the view layer performs.
+This decision has been written three times and refuted three times, each
+time by a verification pass, and each time the refutation was the worst
+finding of its round:
 
-One source also removes the overlap the pass found: an MCP server that
-returns both an image block and its path in text would otherwise have been
-drawn twice.
+| draft | the source it named | why it failed |
+|---|---|---|
+| first | a local image path the model names | a view-layer file open is not a tool call: it never reaches `Agent.decide`, never runs in ADR-0086's sandboxed child, and is invisible to the credential list, which is keyed on built-in tool name ([risk.go:176](../../../internal/risk/risk.go)) — the class ADR-0085/0086 repaired |
+| second | the path the MCP intake wrote | `write` short-circuits on `os.Stat(path) == nil` ([mcpresult.go:207](../../../cmd/mcpresult.go)), and a server knows its own name, its tool name, the bytes it will return **and the work directory, which every call hands it** as `_meta[workdir.MetaKey]` ([client.go:579](../../../internal/mcp/client.go)) — so it can plant a symlink at the content-addressed path and the runtime writes nothing |
+| third | the decoded bytes the intake holds | **there is no such carrier.** `render` returns a `string` ([mcpresult.go:53](../../../cmd/mcpresult.go)), `mcpIntake` retains no bytes, and `Tool.Run` is `func(ctx, args) (string, error)` ([tools.go:65](../../../internal/tools/tools.go)). The bytes are a local; after `Run` returns they are unreachable |
+
+Three drafts in the same place is not three mistakes, it is one: **the source
+cannot be named until the plumbing exists.** Getting an image's bytes from an
+MCP tool result to the view layer means a channel beside the string-only tool
+contract that the transcript, resume and error paths all rest on. That is a
+decision with its own dimensions to enumerate, and writing it as a bullet
+inside a record about row arithmetic is what produced three refutations.
+
+So this record settles the accounting and **defers the source**. A separate
+ADR decides what may be drawn and how its bytes travel, and it inherits one
+constraint this one did earn:
+
+**The view layer opens no file.** Whatever the source turns out to be, the
+bytes must arrive by a channel the enforcers already govern, because a read
+performed by the view layer is not a tool call and no enforcer in either
+runtime can see it. That constraint held against all three drafts; it is the
+part of this question that is settled.
+
+Two things the deferred decision must also answer, found in the same passes
+and recorded so they are not rediscovered: nothing today bounds an image's
+size except the JSON-RPC frame cap (`scannerMax = 10 MiB`,
+[client.go:28](../../../internal/mcp/client.go)) — the response budget bounds
+the *note*, not the data — and a block whose `binaryNote` does not fit the
+response budget is neither saved nor described individually
+([mcpresult.go:105](../../../cmd/mcpresult.go)), so whether it may still be
+drawn is undecided.
 
 ### 6. Only the view layer emits an image escape
 
@@ -258,7 +268,9 @@ reason is raw-mode stdin ownership, not protocol decoding: once Bubble Tea
 owns stdin, a terminal's reply to a query arrives in the input box as
 phantom keystrokes — the recorded instance is `newGlamourRenderer`'s note on
 why `WithAutoStyle` is deliberately absent
-([model.go:449](../../../internal/tui/model.go)). An earlier draft cited
+([model.go:451](../../../internal/tui/model.go); the rule itself is in
+`AGENTS.md`'s "Never query the terminal after Bubble Tea starts", which was
+the right citation all along). An earlier draft cited
 `AGENTS.md:296`, which is off by one and, more to the point, is about
 disambiguating *keyboard* input, not query replies. The probe takes seconds,
 drains before querying, and treats no reply as *no capability* — an
@@ -279,7 +291,10 @@ argued the model "already produces" these sources; that is a firing-rate
 claim and this project has a measured precedent against making one without
 a denominator — `render_diagram` fired once in 76 sessions. Decision 5's
 single source needs no model behaviour at all: the intake writes the file
-whether or not the model mentions it. A test pins the prompt's silence.
+whether or not the model mentions it. No test pins this yet: `cmd/prompt_test.go` pins the *diagram* silence
+ADR-0063 asked for, and the prompt already mentions images elsewhere, so an
+images clause needs its own absence test written with the implementation —
+an obligation, not the present-tense claim an earlier draft made.
 
 ## Consequences
 
@@ -288,28 +303,38 @@ whether or not the model mentions it. A test pins the prompt's silence.
 - No aspect-ratio arithmetic and no cell-pixel-size query enter the runtime.
 - Terminal.app — and any terminal that does not draw — loses nothing: the
   fallback is today's behaviour.
-- The operator sees a tool's screenshot without asking the model to look at
-  it. **lagent ADR-0005** settled ingestion on that side; this settles the
-  screen. (Unprefixed numbers in this record mean gem-agent's own log, and
-  gem-agent ADR-0005 is a different decision entirely — an earlier draft
-  wrote it bare.)
+- The operator does **not** yet see a tool's screenshot: that needs the
+  deferred decision of §5. What this record buys is that when a source is
+  settled, the rows it costs are already known. **lagent ADR-0005** settled
+  ingestion on that side; the screen is still open on both. (Unprefixed
+  numbers here mean gem-agent's own log, and gem-agent ADR-0005 is a
+  different decision entirely — an earlier draft wrote it bare.)
 - **What is unmeasured stays unmeasured**: kitty and Ghostty honouring `r=`,
   Terminal.app's protocol support, and the per-image cost. `auto` should not
   be trusted in a streaming turn until the last of those is measured.
-- Two verification passes produced 17 and 21 findings. The classes were, in
-  order of what they cost: a lane opened without enumerating its dimensions
-  (closed by decisions 2 and 5), claims about adjacent code asserted without
-  reading it (closed by citing file and line, and by this round's repair of
-  four citations that were still wrong), "measured" claims wider than the
-  instrument (closed by making `pinprobe` carry its own numbers and by
-  arranging the regime), and a withdrawal that swept the documents but not
-  the instruments (closed in `tools/`). Two findings are recorded and **not
-  adopted**: the ADR-number collision with the ported `gem-agent ADR-0020`
-  in lagent, because every citation there is already qualified and the
-  architecture test passes; and the request to name the instrument for the
-  iTerm2 row as anything better than a human reading a transcript, because
+- Three verification passes produced findings in four classes. Two are now
+  closed by construction rather than by care: **"measured" claims wider than
+  their instrument**, closed by `pinprobe` computing and printing its own
+  table and by arranging the regime from the terminal's height; and **a lane
+  opened without enumerating its dimensions**, closed for columns by §2 and
+  for the source by §5 refusing to name one until its plumbing exists.
+  Two are **not** closed and are answered with mechanism rather than another
+  read, because each produced a fresh instance *inside the previous round's
+  repair*: **claims about adjacent code asserted without reading it** (a
+  citation repaired in round three landed two lines off, onto an unrelated
+  symbol) and **a withdrawal swept on one surface and not another** (round
+  two swept the instruments and missed the CHANGELOG; round three swept the
+  documents and missed it again). The mechanisms are a test that resolves
+  every `file.go:NNN` in these records against the symbol it names, and an
+  absence test over retired claims — both owed by the same commit as this,
+  because three rounds of human re-reading produced three rounds of the same
+  two classes.
+- Recorded and **not adopted**: the ADR-number collision with the ported
+  `gem-agent ADR-0020` in lagent, because every citation there is qualified
+  and the architecture test keeps it so; and the request to name a better
+  instrument for the iTerm2 row than a human reading a transcript, because
   no screen reader for that terminal exists here — the transcript is frozen
-  instead, and the row claims only what a transcript can carry.
+  instead and the row claims only what a transcript can carry.
 - This ADR binds gem-agent; lagent ADR-0020 is the same decision on the
   other side. Neither runtime may hold it alone.
 
@@ -335,8 +360,9 @@ also made is withdrawn with decision 4's.)
 **A5. An alt-screen region that manages images.** Rejected: inline mode and
 the native scrollback are what let an image survive being scrolled past.
 
-**A6. Let the model name a file to draw.** Decision 5 — it opens a
-view-layer read outside every enforcer.
+**A6. Let the model name a file to draw.** §5 — a view-layer read sits
+outside every enforcer, and that constraint survived all three drafts of the
+source question even though none of the sources did.
 
 **A7. Tell the model the terminal can draw.** ADR-0063 §2, and decision 8:
 the source that matters needs no model behaviour.

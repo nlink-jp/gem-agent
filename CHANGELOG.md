@@ -21,7 +21,11 @@
   side of the branch. Measured on tmux 3.7c, screen full: a payload that
   terminal renders strands one frame per image (3 repeats, 3 frames, gap
   widening with the picture) while four payloads it swallows, plain text among
-  them, stay clean at the same fill.
+  them, stay clean at the same fill. **And on iTerm2 3.7.2, once the regime was
+  arranged from the window's own height rather than a constant: three drawn
+  images strand three frames, with the plain control at the same fill clean.**
+  An earlier reading of those runs said iTerm2 was unharmed — that run sat on
+  the not-full side of the pad branch, where nothing is harmed.
 - **`tools/imgpayload`** — one builder for the iTerm2, kitty and sixel payloads,
   shared by both probes so they cannot answer different questions while
   appearing to answer one. Sixel now has the test the "all three" claim needed.

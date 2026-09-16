@@ -9,7 +9,12 @@ import (
 
 // TestAnalyzeAgainstCapturedScreens replays the screens this probe was
 // actually run against. They are real tmux 3.7c captures, 120x30, taken
-// 2026-09-17 and kept in testdata for one reason: the first version of
+// 2026-09-17 — by hand, with `tmux new-session` and `capture-pane`, on the
+// build BEFORE -drive existed, which is why their filler text is the older
+// wording and their fill count is the old fixed 60 rather than a height
+// computed from the pane. -drive reproduces the experiment; it produced
+// none of these files, and a verification pass caught the record claiming
+// otherwise. They are kept in testdata for one reason: the first version of
 // this tool printed a fixed block of prose and measured nothing, so the
 // figures that reached ADR-0089 lived only in throwaway shell drivers and
 // in a human's reading of screenshots. An independent pass found that the
@@ -50,14 +55,25 @@ func TestAnalyzeAgainstCapturedScreens(t *testing.T) {
 			if got.Stranded != tc.stranded {
 				t.Errorf("stranded = %d, want %d", got.Stranded, tc.stranded)
 			}
-			// The regime must be the one the run arranged. A fixed filler
-			// count chosen for a 30-row pane put an 80-row window on the
-			// other side of the pad branch, and the ADR reported those
-			// runs under the wrong label; this is the guard against
-			// repeating it.
-			wantFull := tc.regime == "full"
-			if got.Full() != wantFull {
-				t.Errorf("regime: arranged %q but the gap of %d says full=%v", tc.regime, got.Gap, got.Full())
+			// The regime must be the one the run arranged — where the
+			// screen can still say. A fixed filler count chosen for a
+			// 30-row pane put an 80-row window on the other side of the
+			// pad branch and the ADR reported those runs under the wrong
+			// label, so this is the guard against repeating it. It only
+			// guards where it can: on a damaged screen the topmost
+			// sentinel is a stranded frame rather than the pin, so Full
+			// reports unknown, and the first version of this assertion
+			// passed vacuously on exactly those screens.
+			full, known := got.Full()
+			switch {
+			case tc.stranded > 0:
+				if known {
+					t.Errorf("a screen with %d stranded frames cannot report a regime, got full=%v", tc.stranded, full)
+				}
+			case !known:
+				t.Errorf("clean screen but the regime is unknown: gap=%d", got.Gap)
+			case full != (tc.regime == "full"):
+				t.Errorf("regime: arranged %q but the gap of %d says full=%v", tc.regime, got.Gap, full)
 			}
 		})
 	}
