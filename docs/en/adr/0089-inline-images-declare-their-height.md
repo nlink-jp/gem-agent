@@ -1,260 +1,285 @@
-# ADR-0089: inline images declare their height — the counter is told, never measures
+# ADR-0089: inline images declare their box — the counter is told, never measures
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-09-16) |
+| Status | **Proposed** (2026-09-16, rewritten 2026-09-17) |
 | Date | 2026-09-16 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator: when the terminal supports graphics, can a reply draw them inline — here and in lagent? |
-| Relates to | [ADR-0002](0002-tui.md) (Bubble Tea inline TUI), [ADR-0003](0003-bottom-pinned-layout.md) (the row accounting the pin rests on), [ADR-0042](0042-terminal-diagrams.md) / [ADR-0063](0063-diagram-fences-render-in-place.md) (the view-layer lane and the rule that the prompt says nothing) |
+| Rewritten because | An independent verification pass returned 17 findings in three classes: claims about adjacent code asserted without reading it, "measured" claims wider than the instrument that produced them, and a lane opened without enumerating the dimensions it opens. Patching seventeen sentences is the response the root-cause rule forbids, so the premises were measured again and the record rebuilt on them |
+| Relates to | [ADR-0002](0002-tui.md) (Bubble Tea inline TUI), [ADR-0003](0003-bottom-pinned-layout.md) / [ADR-0028](0028-self-healing-line-counter.md) (the row accounting and its self-heal), [ADR-0042](0042-terminal-diagrams.md) / [ADR-0063](0063-diagram-fences-render-in-place.md) (the view-layer lane), [ADR-0085](0085-credential-reads-are-operator-only.md) / [ADR-0086](0086-the-kernel-reads-the-file.md) (who may open a file) |
 
 ## Context
 
-`emit` prints one line into scrollback and counts its physical rows, and the
-bottom pinning rests on that count being exact. The drift repairs prove how
-exact: a tab counted as zero cells but advancing to the next stop moved the
-input line one row per wrapped line (ADR-0021), and a double-width rune
-straddling the last column cost one row per CJK line (review round 2 of
-ADR-0028).
+### What the counter can and cannot see
 
-**An inline image defeats the counter outright.** Measured against
-`charmbracelet/x/ansi` v0.11.6, the version this module pins:
-`ansi.StringWidth` returns **0** for an iTerm2 `OSC 1337 File=`, a kitty
-`APC _G` and a sixel `DCS q` alike, and `ansi.Strip` returns the empty
-string. The payload is invisible to every measuring surface the TUI owns,
-while the terminal advances real rows. An image is not a wide line; it is a
-line the counter cannot see at all.
+`emit` ([model.go:857](../../../internal/tui/model.go)) prints one line into
+scrollback and counts its physical rows; the bottom pinning rests on that
+count. Measured against `charmbracelet/x/ansi` v0.11.6, the version
+`go.mod:14` pins: `ansi.StringWidth` returns **0** and `ansi.Strip` returns
+the empty string for an iTerm2 `OSC 1337 File=`, a kitty `APC _G` and a
+sixel `DCS q` alike. `ansi.Hardwrap` leaves all three **byte-identical**, so
+`wrapForScrollback` ([model.go:1016](../../../internal/tui/model.go)) does
+not shear a base64 run. The independent pass re-measured this with a real
+PNG, a chunked kitty sequence and a real sixel, at five widths, both
+`preserveSpace` settings — the repository's own test had covered two of the
+three families, and `tools/imgpayload` now carries all three.
 
-The same measurement settles the most likely way this could have failed
-before it started: `ansi.Hardwrap(payload, 79, true)` leaves all three
-payloads **byte-identical**. `wrapForScrollback` does not shear a base64
-run.
+The counter is not blind, though, and the first draft said it was.
+`physicalRows` ([model.go:1029](../../../internal/tui/model.go)) starts at
+`rows, cells := 1, 0` and so credits an image line with exactly **one** row
+while the terminal advances N. The shortfall is `N-1`, not `N`.
 
-Two existing architectural facts make the question askable at all. Bubble
-Tea runs **inline** (ADR-0002): completed output goes to the terminal's
-native scrollback and is never repainted, so an image, once drawn, is the
-terminal's to keep — an alt-screen TUI would wipe it on the next frame. And
-ADR-0063 already built the lane: `diagram.Split` partitions a reply around
-its fences and hands art segments to the terminal **verbatim**, bypassing
-glamour, because glamour word-wraps code-block lines at spaces.
+### What a shortfall actually costs
 
-### What the terminal actually does
+This was measured twice, wrongly, before it was measured with a control.
+`tools/rowprobe` reserves rows below the cursor so nothing scrolls while it
+compares two cursor positions — necessary for that method, and a deliberate
+exclusion of production's condition. `tools/pinprobe` drives the **real**
+model (`tui.New`) under the **real** inline program and pushes lines through
+the **real** emit path (`tui.Output` → `emitJoined` → `emit`), so
+`wrapForScrollback`, `physicalRows` and the bottom-hold accounting are the
+production functions. The footer's `ModelName` carries a sentinel, so a
+capture locates the pin without a human reading it.
 
-`tools/rowprobe` reserves rows below the cursor (forcing the scroll *before*
-the measurement), asks where the cursor is, writes a payload, and asks
-again. iTerm2 3.7.2, 180×80 cells, 16 of 16 cursor reports answered:
+Every row below was taken with the control — the same run, same `-fill`,
+payload replaced by a plain line:
 
-| case | declared | occupies | cursor Δ | end col |
-|------|----------|----------|----------|---------|
-| no size declared | (none) | 10 rows | 9 | 41 |
-| `height=6` only | 6 | 6 rows | 5 | 25 |
-| 40×6 box, aspect kept (wide image) | 6 | 6 rows | 5 | 41 |
-| 40×6 box, aspect kept (tall image) | 6 | 6 rows | 5 | 41 |
-| 40×6 box, stretched | 6 | 6 rows | 5 | 41 |
-| `height=1` | 1 | 1 row | 0 | 5 |
-| 40×12 box, aspect kept | 12 | 12 rows | 11 | 41 |
-| text + image + text on one line | 6 | 6 rows | 5 | 38 |
+| terminal | payload | screen | gap END→pin | frames stranded | control at same fill |
+|---|---|---|---|---|---|
+| tmux 3.7c | sixel ×3 | full (`-fill 60`) | −16 | **3** | clean (gap 1, 0) |
+| tmux 3.7c | sixel ×3 | not full (`-fill 0`) | 18 | 0 | identical (18, 0) |
+| iTerm2 3.7.2 | OSC 1337 `height=12` ×1 | full | 14 rows | 0 | identical (14, 0) |
+| iTerm2 3.7.2 | OSC 1337 `height=12` ×5 | full | 42 rows | 0 | identical (42, 0) |
 
-Four facts follow, and the decision rests on the first:
+Three facts follow, and two of them contradict the first draft:
 
-1. **The declared box is reserved exactly, in both dimensions, whatever the
-   picture does inside it.** The 40×12 case holds a 16:9 image that draws
-   about ten rows tall and still occupies twelve; the 40×6 cases leave the
-   cursor at column 41 though the drawing is twenty-four columns wide. A
-   layer that derives rows from the image's aspect ratio is **not needed** —
-   the declaration overrides the aspect ratio.
-2. **The cursor is left on the image's last row**, at the column past the
-   declared box, never at column 1 on a fresh row. So the raw delta between
-   the two reports is one *less* than the occupancy. Read as the count, that
-   off-by-one makes a terminal honouring every declaration look like one
-   honouring none — which is exactly how this run was first read.
-   `consumedRows` and its test carry the correction and the data that
-   justifies it.
-3. **An undeclared image takes its native size** — ten rows for 320×180, the
-   arithmetic of 8×18px cells that the `height=6` (24 cols) and `height=1`
-   (4 cols) rows confirm independently. Recovering that number needs the
-   cell pixel size. Declaring is not a nicety: it is the difference between
-   a number we choose and a number we have to go and ask for.
-4. **Text on the same line lands badly**: the prefix on the image's first
-   row, the suffix on its last — `before` at the top left, `after` at the
-   bottom right.
+1. **A terminal that draws what the counter cannot see strands a frame** —
+   one per image, reproducibly (2/2 on the leak, 2/2 on the clean control),
+   and only once the screen is full. That is the damage this ADR exists to
+   prevent, and it is real.
+2. **It did not happen on iTerm2.** Five images, each undercounted by 11
+   rows, moved nothing: the gap and the pin were identical to the no-image
+   control. The first draft asserted the pin drifts by `N-1` per image; the
+   measurement does not support that on this terminal.
+3. **The regime matters and the code says why.** The pin's padding is
+   `height − printed − view − 1` and floors at zero once the screen is full
+   ([model.go:1661](../../../internal/tui/model.go)). Both regimes were
+   measured; only the full one broke, and only on tmux.
 
-Two costs are measured and **not** resolved here. After a 2.4 KB payload,
-iTerm2 answered the next cursor report 0.8–1.5 s later, past a 250 ms
-settle. That bounds when its parser reached the image token; it is *not*
-established as draw latency, and the picture appears on screen well before.
-Separately, a probe that abandoned a reply after 700 ms desynchronized its
-whole run: a cursor report carries no tag, so an abandoned reply is not lost
-but **misfiled** into the next query (11 sent, 5 read, 6 landing on the
-shell prompt after exit). Both are properties of talking to the terminal,
-and both belong to the detection step below.
+### What the terminal does with a declared box
 
-### The terminals in play
+`rowprobe` on iTerm2 3.7.2, 180×80, 16 of 16 cursor reports answered:
 
-macOS only. **Terminal.app implements none of the three protocols**, so the
-no-graphics path is a main road and not an edge case. iTerm2 implements
-`OSC 1337` natively; kitty and Ghostty implement the kitty protocol.
+| case | declared | occupies | end col |
+|------|----------|----------|---------|
+| no size declared | (none) | 10 rows | 41 |
+| `height=6` only | 6 | 6 rows | 25 |
+| 40×6 box, aspect kept (wide / tall / stretched) | 6 | 6 rows | 41 |
+| `height=1` | 1 | 1 row | 5 |
+| 40×12 box, aspect kept | 12 | 12 rows | 41 |
+| text + image + text on one line | 6 | 6 rows | 38 |
+
+- **The declared box is reserved exactly, in both dimensions, whatever the
+  picture does inside it.** The 40×12 case holds a 16:9 image that draws
+  about ten rows and occupies twelve; the 40×6 cases end at column 41 though
+  the drawing is twenty-four columns wide. `pinprobe` then showed the same
+  thing on the production path and on screen rather than through a cursor
+  report: the gap between the picture's bottom edge and the following
+  marker is the reserved slack the picture did not fill. So no
+  aspect-ratio derivation is needed.
+- **The cursor is left on the image's last row**, past the last cell written
+  on that row — not, as the first draft said, past the *declared box*: that
+  reading is contradicted by the table's own `height=6` (25), `height=1` (5)
+  and text rows (38), where no width was declared or a suffix followed. What
+  the correction depends on is only that the column is never 1, and that
+  holds in every row.
+- **An undeclared image takes its native size**, recoverable only from the
+  cell pixel size. Declaring is the difference between a number we choose
+  and one we must go and ask for.
+- **Text on the same line lands badly**: prefix on the image's first row,
+  suffix on its last. Note the limit: that row's "6 rows" is inferred from
+  where the suffix left the cursor, not witnessed from the image, and
+  `rowprobe` excludes such lines from testifying that anything drew at all
+  ([rowprobe/main.go](../../../tools/rowprobe/main.go), `drew`).
+
+### Not measured, and not asserted
+
+- Whether kitty or Ghostty honour `r=`. Every measurement here is iTerm2 or
+  tmux. Decision 3 binds two protocols; one of them has no measurement.
+- Whether Terminal.app implements any of the three. Stated in the first
+  draft as fact; it is **unverified here** and load-bearing only for how
+  common the no-graphics path is.
+- The per-image cost. iTerm2 answered the next cursor report 0.8–1.5 s after
+  a 2.4 KB payload, which bounds when its parser reached the token and is
+  *not* draw latency.
+- A terminal that draws without reserving rows (kitty `C=1`, unicode
+  placeholders). `consumedRows` would credit it one row where the true
+  occupancy is zero — a false positive in the unsafe direction, never
+  triggered by a measured run.
 
 ## Decision
 
-### 1. The emitter declares the height; the counter is told
+### 1. The emitter declares the box; the counter is told
 
-`physicalRows` never measures an image and never learns to. An image segment
-carries the row count its payload declares, and `emit` adds **that** number
-to the accounting. There is no second path to the number, so there is
-nothing for a measurement to disagree with: the count is exact by
-construction, and the bottom pin that rests on it stays exact.
+`physicalRows` never measures an image. An image segment carries the row
+count its payload declares — `height=N` for iTerm2, `r=N` for kitty — and
+`emit` uses **that** number **in place of** the one row `physicalRows` would
+otherwise floor to, not in addition to it. There is no second path to the
+number.
 
-The declaration is also what is written into the payload — `height=N` for
-iTerm2, `r=N` for kitty — so the screen and the accounting read the same
-figure from the same place. The cursor lands on the image's last row
-(Context fact 2), so the newline `emit` already appends opens the next row
-rather than adding one: a segment declaring N rows costs exactly N.
+### 2. The declaration covers columns too, or the lane is half-built
 
-### 2. An image occupies its own line
+`wrapForScrollback` keeps every printed line strictly narrower than the
+terminal, and its doc comment says why: the renderer's math is exact only
+then, and every line gets its `EraseLineRight`. For an image line that wrap
+is **inert** — the payload is zero cells wide, so the one mechanism
+enforcing the invariant cannot see the line it most needs to see. So the
+emitter declares a column count as well, and clamps it below `m.width`. A
+declared box is a cage in two dimensions or it is not a cage.
 
-Measured (Context fact 4): text sharing the line with an image is split
-across the image's first and last rows. An image segment is therefore alone
-on its line, and it goes to the terminal verbatim — the same lane, and the
-same reason, as ADR-0063 §3's art segments.
+### 3. An image occupies its own line, on the lane ADR-0063 built
 
-### 3. Two protocols, and only the ones that can declare
+Measured: text sharing the line with an image is split across its first and
+last rows. An image segment is alone on its line and goes to the terminal
+verbatim — the same lane, and the same reason, as ADR-0063 §3's art.
 
-**iTerm2 `OSC 1337 File=` and the kitty graphics protocol.** Both take the
-row count as a parameter, which is decision 1's precondition.
+### 4. Two protocols, and only the ones that can declare
 
-**Sixel is not taken.** It cannot declare a row count — the count would have
-to be derived from the image's pixel height and the cell pixel size, which
-reintroduces exactly the derivation decision 1 removes, resting on a second
-terminal query that can fail. It also needs an encoder, and the only ones
-available are community packages (the standing rule: the comparison set is
-first-party artefacts, and the dependency floor is stdlib and first-party
-SDKs). PNG and JPEG go to the two protocols above as bytes, with
-`image.DecodeConfig` from the standard library the only decoding this
-runtime does.
+**iTerm2 `OSC 1337 File=` and the kitty graphics protocol**, both of which
+take the row count as a parameter — decision 1's precondition.
 
-### 4. The capability is probed once, before Bubble Tea owns stdin
+**Sixel is not taken**, and the measurement above is now the reason: it
+cannot declare a row count, and the one terminal measured drawing sixel
+stranded a frame for every image. The first draft also cited a "standing
+rule" that the dependency floor is stdlib and first-party SDKs. That
+sentence is withdrawn: it appears nowhere in this repository outside that
+draft, and this module already depends on the community `mermaid-ascii`
+package for the very lane decision 3 joins
+([diagram.go:41](../../../internal/diagram/diagram.go)). Whether that
+dependency is an exception or a debt is a separate question; it is not
+settled here and must not be settled by a sentence in passing.
 
-`$TERM` cannot answer the question and is not asked. The terminal is
-queried — the kitty protocol's `a=q` probe, and `TERM_PROGRAM` plus
-`XTVERSION` for iTerm2 — **once, at startup, before `tea.NewProgram`**, and
-the answer is cached for the session. Never during the session: Bubble Tea
-v1 does not decode the kitty/CSI-u protocols (AGENTS.md), so a reply
-arriving mid-session becomes garbage in the input box.
+### 5. One source, because the runtime chose its path
 
-The probe follows what `tools/rowprobe` had to learn: a generous budget
-(seconds, not milliseconds), the stream drained before the query, and a
-reply that never arrives treated as *no capability* rather than skipped —
-because an abandoned reply is misfiled, not lost.
+**An image content block in an MCP tool result.** The intake already
+decodes it and **writes it to the session work directory**, handing the
+model `[image saved at <path> … use view_image on that path]`
+([mcpresult.go:184](../../../cmd/mcpresult.go)) — the bytes never ride back
+inline (ADR-0027). So the view layer draws a file **this runtime named and
+this runtime wrote**, and needs no new read of any other path.
 
-`[tui] images = "auto"` selects it, alongside `theme` and `language`:
-`auto` probes, `off` never draws, `iterm` / `kitty` force a protocol for the
-case where the probe is wrong. Inside a multiplexer the answer is **off**
-unless a protocol is forced: passthrough is the multiplexer's configuration,
-not this runtime's to assume.
+**A local image path named by the model is rejected.** It would be a
+view-layer file open, which is not a tool call: it never reaches
+`Agent.decide`, never runs in the sandboxed read child (ADR-0086), and is
+invisible to the one credential list, which is keyed on built-in tool name
+([risk.go:176](../../../internal/risk/risk.go), `credentialReadTools` /
+`JudgesPath`). That is precisely the class ADR-0085/0086 repaired — "the
+write tools' block is not the read tools' protection" — and the first draft
+walked into it while decision 6 discussed only escape passthrough. If a
+model-named path is ever wanted, it arrives as a **tool** whose verdict the
+existing enforcers already take, not as a read the view layer performs.
 
-### 5. What may be drawn is a list, not a rule
-
-Two entries:
-
-- an **image content block in an MCP tool result** — already decoded to
-  `Content{Data, MIME}` in `internal/mcp/client.go` and today only forwarded
-  to the model;
-- a **local image file named by the reply**, as a Markdown image link, whose
-  bytes decode as PNG or JPEG via `image.DecodeConfig`.
-
-A third source is a new entry in this list, argued on its own, not a rule
-that generalizes these two. An entry is cheap; a rule is the smell
-(ADR-0086).
+One source also removes the overlap the pass found: an MCP server that
+returns both an image block and its path in text would otherwise have been
+drawn twice.
 
 ### 6. Only the view layer emits an image escape
 
-Bytes that arrive from a tool are data. The view layer decides that a
-segment is an image and writes the escape; nothing a tool returns is ever
-passed through as an escape sequence because it looks like one.
+Bytes arriving from a tool are data. The view layer decides a segment is an
+image and writes the escape; nothing a tool returns is passed through as an
+escape because it looks like one.
 
-This does **not** claim to close the existing surface: tool output is
-printed without ANSI stripping today — `ansi.Strip` is called only to
-*measure* width (`physicalRows`) — so raw escapes from shell output already
-reach the terminal. That is pre-existing, it is not widened here, and it is
-not repaired here either. It is written down so the next review finds it
-named rather than missed.
+The implementation commit carries an architecture test enumerating the
+sites that may emit one, in the same commit — the machinery exists
+(`internal/archtest`). Without that test this sentence is "as of today",
+and it should be written that way instead.
 
-### 7. The runtime says nothing about images
+This does **not** close the existing surface: tool output is printed without
+ANSI stripping — `ansi.Strip` is called at exactly one site in non-test code
+([model.go:1034](../../../internal/tui/model.go)), inside `physicalRows`, to
+*measure* — so raw escapes from shell output already reach the terminal.
+Pre-existing, not widened here, not repaired here.
 
-No tool, no prompt paragraph, no "this terminal can draw." ADR-0063 §2's
-rule and its reason are unchanged: the runtime renders what arrives instead
-of steering what is written. The two sources in decision 5 are things the
-model already produces for its own reasons — a tool returns a screenshot, a
-reply links a file it just wrote — so there is no capability waiting on a
-trigger that must be taught.
+### 7. Drawing is a TUI-only capability, and the other entrances say so
 
-A test pins the absence, as ADR-0063's does.
+`tea.NewProgram` is constructed at exactly one site
+([root.go:1707](../../../cmd/root.go)). One-shot `-p` and the plain REPL
+never build it, so they never draw — the same boundary the diagram lane
+already has. The capability is probed **once, before `tea.NewProgram`**, and
+cached: Bubble Tea v1 does not decode the kitty/CSI-u protocols
+(`AGENTS.md:296`), so a reply arriving mid-session becomes input. The probe
+takes seconds, drains before querying, and treats no reply as *no
+capability* — an abandoned cursor report is misfiled into the next query,
+not lost (measured building `rowprobe`: 11 sent, 5 read, 6 landing on the
+shell prompt after exit).
+
+`[tui] images = "auto"` selects it, beside `theme` and `language`
+([config.go:179](../../../internal/config/config.go)). Inside a multiplexer
+the answer is **off** — not because passthrough is someone else's
+configuration, which is what the first draft said, but because the one
+multiplexer measured rendering a payload stranded a frame for every image.
+
+### 8. The runtime says nothing about images
+
+No tool, no prompt paragraph. ADR-0063 §2's rule stands. The first draft
+argued the model "already produces" these sources; that is a firing-rate
+claim and this project has a measured precedent against making one without
+a denominator — `render_diagram` fired once in 76 sessions. Decision 5's
+single source needs no model behaviour at all: the intake writes the file
+whether or not the model mentions it. A test pins the prompt's silence.
 
 ## Consequences
 
-- The bottom pin survives images by construction rather than by care. The
-  number `physicalRows` needs is chosen by the emitter, not recovered from
-  the screen.
+- The bottom pin survives images by construction rather than by care, in
+  both dimensions.
 - No aspect-ratio arithmetic and no cell-pixel-size query enter the runtime.
-  `image.DecodeConfig` is used to know an image *is* one, not to size it.
-- Terminal.app loses nothing: the fallback is today's behaviour — box art
-  for diagrams, a path for an image.
-- **The per-image cost is unmeasured.** The 0.8–1.5 s figure above is a
-  bound on the terminal's parser, not on drawing, and streaming a reply
-  through it has not been tried. Measuring that comes before `auto` is
-  trusted in a streaming turn.
-- An image a tool produced is shown to the operator whether or not the model
-  is given it. Display and ingestion are separate surfaces, and the
-  ingestion side is already settled in the sibling runtime: lagent ADR-0005
-  attaches a dropped image path and restored `view_image`, so its model does
-  receive images. What neither runtime has is the screen.
-- This ADR binds gem-agent. lagent has the same inline TUI and the same
-  accounting and does not have `internal/diagram`; taking this decision in
-  one runtime and not the other creates the asymmetry class both runtimes
-  have been repaired for before. The lane has to be built there too, or the
-  decision is not finished.
+- Terminal.app — and any terminal that does not draw — loses nothing: the
+  fallback is today's behaviour.
+- The operator sees a tool's screenshot without asking the model to look at
+  it. ADR-0005's counterpart in lagent settled ingestion; this settles the
+  screen.
+- **What is unmeasured stays unmeasured**: kitty and Ghostty honouring `r=`,
+  Terminal.app's protocol support, and the per-image cost. `auto` should not
+  be trusted in a streaming turn until the last of those is measured.
+- This ADR binds gem-agent; lagent ADR-0020 is the same decision on the
+  other side. Neither runtime may hold it alone.
 
 ## Alternatives considered
 
-**A1. Measure the image instead of declaring it.** There is no measurement
-path: the payload is zero cells wide to every surface the TUI has
-(Context), and asking the terminal per line means a cursor-position
-round-trip inside the loop — impossible once Bubble Tea owns stdin, and
-measured at 0.8–1.5 s per image when it is possible at all.
+**A1. Measure the image instead of declaring it.** No measurement path
+exists: the payload is zero cells wide to every surface the TUI has, and a
+cursor round-trip per line is impossible once Bubble Tea owns stdin.
 
 **A2. Derive the row count from the image's pixels and the cell size.**
-Measured unnecessary: the declared box overrides the aspect ratio
-(Context fact 1), so the derivation would compute a number the terminal
-ignores in favour of the one we already chose — and it would add an
+Measured unnecessary: the declared box overrides the aspect ratio, so the
+derivation would compute a number the terminal ignores, and it would add an
 `ESC[16t` query that can go unanswered.
 
-**A3. Render mermaid to PNG instead of box art.** Rejected twice over. It
-needs node and a headless browser, against the dependency floor; and
-ADR-0042's faithfulness guards — every source label present, edge count
-equal to arrowheads drawn — exist only for the ASCII renderer. A PNG would
-delete the verification along with the art. The box art stays; images are a
-separate lane.
+**A3. Render mermaid to PNG instead of box art.** Rejected: ADR-0042's
+faithfulness guards — every source label present, edge count equal to
+arrowheads — exist only for the ASCII renderer, and a PNG would delete the
+verification along with the art. (The dependency argument the first draft
+also made is withdrawn with decision 4's.)
 
-**A4. Sixel, for breadth.** See decision 3: no declarable row count, and an
-encoder that would have to come from a community package.
+**A4. Sixel, for breadth.** Decision 4, now with a measurement.
 
-**A5. An alt-screen region that manages images.** Rejected: inline mode
-(ADR-0002) and the native scrollback are precisely what let an image survive
-being scrolled past. A managed region would have to redraw images the
-terminal is already keeping, and lose them on exit.
+**A5. An alt-screen region that manages images.** Rejected: inline mode and
+the native scrollback are what let an image survive being scrolled past.
 
-**A6. Tell the model the terminal can draw.** ADR-0063 §2 measured what a
-prompt paragraph about drawing does: a specific prohibition beside a vague
-recommendation taught the model a third path nobody had anticipated. Nothing
-here needs the model to behave differently.
+**A6. Let the model name a file to draw.** Decision 5 — it opens a
+view-layer read outside every enforcer.
+
+**A7. Tell the model the terminal can draw.** ADR-0063 §2, and decision 8:
+the source that matters needs no model behaviour.
 
 ## References
 
-- `tools/rowprobe` — the measurement, its test table, and the misreading it
-  corrects
-- ADR-0003 (bottom pinning), ADR-0021 (tabs), ADR-0028 (straddling CJK) —
-  what an inexact row count costs
-- ADR-0063 §2 and §3 — the prompt says nothing; art bypasses glamour
-- ADR-0086 — an entry is cheap, a rule is the smell
+- `tools/rowprobe` — what one image costs, measured by cursor report with
+  scrolling deliberately prevented
+- `tools/pinprobe` — what the accounting costs on the production path, with
+  the control at the same fill in every run
+- `tools/imgpayload` — one payload builder, so the two probes cannot drift
+- ADR-0003 / ADR-0028 (the pin and its self-heal), ADR-0063 §2–3 (the lane
+  and the prompt's silence), ADR-0085 / ADR-0086 (who may open a file)
