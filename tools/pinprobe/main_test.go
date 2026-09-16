@@ -96,3 +96,55 @@ func TestCaseNamesMatchTheFlagHelp(t *testing.T) {
 		t.Error("an unknown case name must select nothing, so the run can refuse")
 	}
 }
+
+// TestAnalyzeCountsAFrameTheImageCovered is the iTerm2 run, and the
+// instrument defect it exposed. The footer is
+// "<model> · ctx … · <dir>"; a stranded frame with an image drawn over
+// its left half keeps only the dir sentinel, so counting by the model
+// sentinel alone reported a CLEAN pin for a screen carrying three
+// stranded frames. An instrument that the thing it measures can blind
+// reports success, which is the worst failure available to it.
+//
+// This fixture is the operator's copied transcript of
+//
+//	go run ./tools/pinprobe -only ITERM-H12 -regime full -repeat 3
+//
+// on iTerm2 3.7.2, 180x80, 2026-09-17 — the run whose META line
+// (regime=full fill=90 rows=80) is the evidence that the full regime was
+// arranged rather than assumed.
+//
+// ONLY THE FRAME COUNT IS ASSERTED. A copied transcript is not a screen
+// capture: the rows an image occupies carry no text, so they are absent
+// from the copy, and Gap / Full() computed from it would be geometry the
+// source cannot supply. The tmux fixtures above come from capture-pane
+// and do carry geometry; this one does not, and saying which is which is
+// the whole point of keeping them side by side.
+func TestAnalyzeCountsAFrameTheImageCovered(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("testdata", "iterm2-full-itermh12-transcript.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+
+	got := analyze("ITERM-H12", capture)
+	if got.Stranded != 3 {
+		t.Errorf("stranded = %d, want 3 (one per image, repeat=3)", got.Stranded)
+	}
+	if got.Frames != 4 {
+		t.Errorf("frames = %d, want 4 (three stranded plus the live one)", got.Frames)
+	}
+
+	// The defect, pinned: the model sentinel survives exactly once.
+	model := 0
+	for _, l := range capture {
+		if strings.Contains(l, sentinelModel) {
+			model++
+		}
+	}
+	if model != 1 {
+		t.Fatalf("fixture no longer exhibits the covering: %d model sentinels", model)
+	}
+	if got.Frames == model {
+		t.Error("frames must not be counted by the model sentinel alone: an image covers it")
+	}
+}

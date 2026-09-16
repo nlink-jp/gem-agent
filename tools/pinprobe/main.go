@@ -125,7 +125,15 @@ func analyze(caseName string, capture []string) Reading {
 		if strings.Contains(line, endMark) {
 			r.LastEnd = i + 1
 		}
-		if strings.Contains(line, sentinelModel) {
+		// Count a frame by EITHER sentinel. The footer is
+		// "<model> · ctx … · <dir>", and an image drawn at the left of a
+		// stranded frame covers the model sentinel while leaving the dir
+		// one at the right intact — measured on iTerm2 2026-09-17, where
+		// counting by the model sentinel alone reported a clean pin for a
+		// screen carrying three stranded frames. The wider net is the
+		// point: an instrument that can be blinded by the very thing it
+		// measures reports success.
+		if strings.Contains(line, sentinelModel) || strings.Contains(line, sentinelDir) {
 			r.Frames++
 			if r.PinRow == 0 {
 				r.PinRow = i + 1
@@ -267,10 +275,20 @@ func runUI(only string, repeat int, regime string, fill int, hold time.Duration)
 	if _, err := prog.Run(); err != nil {
 		return err
 	}
-	// Machine-readable, so a driver or a reader can audit what was
-	// arranged rather than trusting a label.
-	fmt.Fprintf(os.Stderr, "PINPROBE-META regime=%s fill=%d repeat=%d cases=%d\n",
-		regime, fill, repeat, len(notes))
+	// Machine-readable, so a driver OR A HUMAN READING THE SCREEN can
+	// audit what was arranged rather than trusting a label. On a terminal
+	// with no screen reader the eye is the instrument, and then this line
+	// is the only evidence that the regime asked for is the regime the run
+	// got: rows is the window the filler was computed against.
+	cols, rows, err := termSize()
+	if err != nil {
+		cols, rows = 0, 0
+	}
+	fmt.Fprintf(os.Stderr, "PINPROBE-META regime=%s fill=%d rows=%d cols=%d repeat=%d cases=%d\n",
+		regime, fill, rows, cols, repeat, len(notes))
+	if rows > 0 && regime == "full" && fill < rows {
+		fmt.Fprintf(os.Stderr, "PINPROBE-WARN asked for the full regime but printed %d filler lines into a %d-row window: this run is NOT full\n", fill, rows)
+	}
 	return nil
 }
 
