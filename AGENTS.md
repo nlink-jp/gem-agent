@@ -39,8 +39,13 @@ the scratch / persistent-file / credential lists, the file-read
 profile and its child), `internal/risk`, `internal/tools` (path
 confinement through `os.Root`, the walks, the caged reads),
 `internal/bounded`, `internal/hooks`, `internal/mcp`,
-`internal/trustpin`, `internal/archtest`, and the approval ladder in
-`internal/agent` and `internal/approve`.
+`internal/trustpin`, `internal/archtest`, the approval ladder in
+`internal/agent` and `internal/approve`, and — added 2026-09-17, after a
+verification pass found ADR-0089/ADR-0020 arguing it while both these lists
+denied it — the **scrollback accounting in `internal/tui`**: `emit`,
+`wrapForScrollback`, `physicalRows` and the bottom-hold pad are identical
+in the two trees, function for function, and `diff` returns nothing on the
+first three.
 
 **This is not a rule to port features.** A feature this runtime gains
 does not propagate to lagent by default; lagent's ADR-0002 decides
