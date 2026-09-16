@@ -205,9 +205,11 @@ A test pins the absence, as ADR-0063's does.
   bound on the terminal's parser, not on drawing, and streaming a reply
   through it has not been tried. Measuring that comes before `auto` is
   trusted in a streaming turn.
-- An image drawn by a tool the model cannot see is still shown to the
-  operator. Display and model ingestion are separate questions, which
-  matters most in lagent, where the local model is text-only.
+- An image a tool produced is shown to the operator whether or not the model
+  is given it. Display and ingestion are separate surfaces, and the
+  ingestion side is already settled in the sibling runtime: lagent ADR-0005
+  attaches a dropped image path and restored `view_image`, so its model does
+  receive images. What neither runtime has is the screen.
 - This ADR binds gem-agent. lagent has the same inline TUI and the same
   accounting and does not have `internal/diagram`; taking this decision in
   one runtime and not the other creates the asymmetry class both runtimes
