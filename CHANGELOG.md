@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`make rowprobe`** — a measurement, not a feature: it draws inline-image
+  payloads that declare a height and reports how many rows each one really
+  costs, because the TUI's row counter cannot measure an image
+  (`ansi.StringWidth` is 0 for every image escape) and would have to be told.
+  Measured on iTerm2 3.7.2: the declared box is reserved exactly, whatever the
+  picture does inside it. See [ADR-0089](docs/en/adr/0089-inline-images-declare-their-height.md).
+
 ## [0.82.0] - 2026-09-14
 
 ### Added

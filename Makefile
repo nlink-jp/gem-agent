@@ -11,7 +11,7 @@ DIST_DIR := dist
 CODESIGN_IDENTITY ?= Developer ID Application
 NOTARY_PROFILE    ?= nlink-jp-notary
 
-.PHONY: build build-all package verify-release test vet lint docs-check gate-check check clean
+.PHONY: build build-all package verify-release test vet lint docs-check gate-check check rowprobe clean
 
 build:
 	@mkdir -p $(DIST_DIR)
@@ -124,6 +124,15 @@ labels: build
 		$(DIST_DIR)/$(BINARY) $$c --help >> $(DIST_DIR)/labels.md 2>&1; \
 		echo '```' >> $(DIST_DIR)/labels.md; done
 	@echo "labels: $(DIST_DIR)/labels.md ($$(grep -c '^- ' $(DIST_DIR)/labels.md) strings) — read it through before a release"
+
+## rowprobe: does this terminal honour an inline image's DECLARED height
+## (ADR-0089)? Draws sized payloads into /dev/tty and reports the rows
+## each one really costs. Needs a terminal that draws — one that does not
+## reports INCONCLUSIVE rather than a verdict, and Terminal.app is one.
+## The table goes to stdout and the pictures to the terminal, so
+## `make rowprobe > dist/rowprobe.txt` keeps one while showing the other.
+rowprobe:
+	@go run ./tools/rowprobe
 
 clean:
 	rm -rf $(DIST_DIR)

@@ -76,6 +76,7 @@ reads as an oversight to the next person, and gets "fixed" wrongly.
 | Release archive | `make package` → `dist/gem-agent-vX.Y.Z-darwin-arm64.zip` |
 | Release gate | `make verify-release` — refuses a zip with no notarisation marker, one rebuilt after its marker, one that does not unpack, or one whose binary does not run or reports another tag's version. Run it from the repo, then `gh` from here |
 | Operator text, collected | `make labels` → `dist/labels.md` (UI catalog ja/en, cmd notes/errors/help, `--help` pages) |
+| Inline-image row accounting | `make rowprobe` — draws payloads with declared heights and reports the rows each costs (ADR-0089). Needs a terminal that draws; one that does not reports INCONCLUSIVE, not a verdict |
 
 Version is injected via `-X main.version` from `git describe` — never edit the
 `version` var default.
