@@ -58,13 +58,8 @@
 package main
 
 import (
-	"bytes"
-	"encoding/base64"
 	"flag"
 	"fmt"
-	"image"
-	"image/color"
-	"image/png"
 	"os"
 	"os/signal"
 	"strings"
@@ -73,6 +68,8 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/term"
+
+	"github.com/nlink-jp/gem-agent/tools/imgpayload"
 )
 
 // probeCase is one payload to draw and measure. declared is the row
@@ -220,13 +217,13 @@ func (t *tt) writeStr(s string) { _, _ = t.f.WriteString(s) }
 // second return means the reply stream can no longer be trusted and
 // the run must stop.
 func (t *tt) measure(c probeCase, proto string) (result, error) {
-	png := testPNG(c.w, c.h)
+	png := imgpayload.TestPNG(c.w, c.h)
 	var payload string
 	switch proto {
 	case "kitty":
-		payload = kittyPayload(png, c.kitty)
+		payload = imgpayload.Kitty(png, c.kitty)
 	default:
-		payload = itermPayload(png, c.iterm)
+		payload = imgpayload.Iterm(png, c.iterm)
 	}
 	r := result{c: c, width: ansi.StringWidth(payload), bytes: len(payload)}
 
@@ -360,97 +357,16 @@ func startReader(f *os.File) <-chan byte {
 	return ch
 }
 
-// itermPayload builds an iTerm2 inline image (OSC 1337 File=).
-// args are the semicolon-separated size arguments, empty for none.
-func itermPayload(data []byte, args string) string {
-	head := fmt.Sprintf("inline=1;size=%d", len(data))
-	if args != "" {
-		head += ";" + args
-	}
-	return "\x1b]1337;File=" + head + ":" + base64.StdEncoding.EncodeToString(data) + "\a"
-}
-
-// kittyChunk is the payload limit of one kitty graphics escape.
-const kittyChunk = 4096
-
-// kittyPayload builds a kitty graphics command (APC _G), chunked at
-// 4096 base64 bytes as the protocol requires. q=2 suppresses the
-// terminal's OK/error replies, which would otherwise arrive in the
-// middle of a cursor report and corrupt the measurement.
-func kittyPayload(data []byte, args string) string {
-	b64 := base64.StdEncoding.EncodeToString(data)
-	ctl := "a=T,q=2"
-	if args != "" {
-		ctl += "," + args
-	}
-	if len(b64) <= kittyChunk {
-		return "\x1b_G" + ctl + ";" + b64 + "\x1b\\"
-	}
-	var out strings.Builder
-	first := true
-	for len(b64) > 0 {
-		n := min(kittyChunk, len(b64))
-		chunk := b64[:n]
-		b64 = b64[n:]
-		more := "0"
-		if len(b64) > 0 {
-			more = "1"
-		}
-		switch {
-		case first:
-			out.WriteString("\x1b_G" + ctl + ",m=" + more + ";" + chunk + "\x1b\\")
-			first = false
-		default:
-			out.WriteString("\x1b_Gm=" + more + ";" + chunk + "\x1b\\")
-		}
-	}
-	return out.String()
-}
-
-// testPNG draws a bordered block with a diagonal, so a scaled or
-// stretched image is obvious on screen rather than a guess.
-func testPNG(w, h int) []byte {
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	fill := color.RGBA{R: 0x2a, G: 0x6f, B: 0xdb, A: 0xff}
-	edge := color.RGBA{R: 0xff, G: 0xd2, B: 0x3f, A: 0xff}
-	const border = 6
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			c := fill
-			switch {
-			case x < border || y < border || x >= w-border || y >= h-border:
-				c = edge
-			case abs(x*h-y*w) < border*max(w, h):
-				c = edge
-			}
-			img.Set(x, y, c)
-		}
-	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		panic(err) // an in-memory RGBA encode cannot fail
-	}
-	return buf.Bytes()
-}
-
 // consumedRows turns the measured cursor delta into the rows the image
 // occupies. An image leaves the cursor on its own last row (measured on
-// iTerm2 3.7.2: the end column is always the declared box width plus
-// one, never 1), so that row counts too. A cursor left at column 1
-// advanced to a fresh row instead, which is what happens when nothing
-// was drawn at all.
+// iTerm2 3.7.2: the end column is never 1), so that row counts too. A
+// cursor left at column 1 advanced to a fresh row instead, which is
+// what happens when nothing was drawn at all.
 func consumedRows(delta, endCol int) int {
 	if endCol > 1 {
 		return delta + 1
 	}
 	return delta
-}
-
-func abs(n int) int {
-	if n < 0 {
-		return -n
-	}
-	return n
 }
 
 func declaredStr(n int) string {

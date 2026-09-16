@@ -77,6 +77,7 @@ reads as an oversight to the next person, and gets "fixed" wrongly.
 | Release gate | `make verify-release` — refuses a zip with no notarisation marker, one rebuilt after its marker, one that does not unpack, or one whose binary does not run or reports another tag's version. Run it from the repo, then `gh` from here |
 | Operator text, collected | `make labels` → `dist/labels.md` (UI catalog ja/en, cmd notes/errors/help, `--help` pages) |
 | Inline-image row accounting | `make rowprobe` — draws payloads with declared heights and reports the rows each costs (ADR-0089). Needs a terminal that draws; one that does not reports INCONCLUSIVE, not a verdict |
+| Bottom pin under image lines | `make pinprobe` — drives the real model through the real emit path and holds the UI for a capture (ADR-0089). `-only`/`-repeat`/`-fill` select the case; always take the control at the same `-fill` |
 
 Version is injected via `-X main.version` from `git describe` — never edit the
 `version` var default.

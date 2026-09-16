@@ -11,7 +11,7 @@ DIST_DIR := dist
 CODESIGN_IDENTITY ?= Developer ID Application
 NOTARY_PROFILE    ?= nlink-jp-notary
 
-.PHONY: build build-all package verify-release test vet lint docs-check gate-check check rowprobe clean
+.PHONY: build build-all package verify-release test vet lint docs-check gate-check check rowprobe pinprobe clean
 
 build:
 	@mkdir -p $(DIST_DIR)
@@ -133,6 +133,16 @@ labels: build
 ## `make rowprobe > dist/rowprobe.txt` keeps one while showing the other.
 rowprobe:
 	@go run ./tools/rowprobe
+
+## pinprobe: does the bottom pin survive an image line, on the path that
+## actually prints one (ADR-0089)? Drives the real model through the real
+## emit path and holds the UI up so a capture can be taken. rowprobe
+## answers what ONE image costs with scrolling prevented; this answers
+## what the accounting costs with scrolling happening. Always run the
+## control at the same -fill: three readings of these runs were wrong
+## until one was taken.
+pinprobe:
+	@go run ./tools/pinprobe
 
 clean:
 	rm -rf $(DIST_DIR)
