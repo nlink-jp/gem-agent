@@ -11,12 +11,17 @@
   Measured on iTerm2 3.7.2: the declared box is reserved exactly, whatever the
   picture does inside it. See [ADR-0089](docs/en/adr/0089-inline-images-declare-their-height.md).
 - **`make pinprobe`** — the second half of that measurement, and the half that
-  corrected it: it drives the real model through the real emit path and holds
-  the UI so a capture can be taken, because rowprobe prevents scrolling on
-  purpose and production prints where everything scrolls. On tmux 3.7c a
-  rendered payload strands one frame per image once the screen is full, while
-  the plain control at the same fill is clean; on iTerm2 nothing moved at all.
-  Three readings of these runs were wrong until the control was taken.
+  corrected it: it drives the real model through the real emit path, because
+  rowprobe prevents scrolling on purpose and production prints where
+  everything scrolls. It runs the experiment under tmux, reads the screen back
+  and prints the table it measured — an earlier version printed prose and
+  measured nothing, so its figures survived only outside the repository. The
+  regime is arranged from the terminal's own height and reported per row, after
+  a filler count chosen for a 30-row pane put an 80-row window on the other
+  side of the branch. Measured on tmux 3.7c, screen full: a payload that
+  terminal renders strands one frame per image (3 repeats, 3 frames, gap
+  widening with the picture) while four payloads it swallows, plain text among
+  them, stay clean at the same fill.
 - **`tools/imgpayload`** — one builder for the iTerm2, kitty and sixel payloads,
   shared by both probes so they cannot answer different questions while
   appearing to answer one. Sixel now has the test the "all three" claim needed.

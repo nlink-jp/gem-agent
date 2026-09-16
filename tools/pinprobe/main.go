@@ -1,43 +1,59 @@
 // Command pinprobe measures what rowprobe deliberately excluded: the
 // bottom pin, under the condition production actually runs in.
 //
-// rowprobe reserves rows below the cursor so nothing scrolls while it
-// measures — necessary for comparing two cursor positions, and a
-// deliberate exclusion of production's condition, because emit prints
-// at the BOTTOM of the screen where every line scrolls. An independent
-// verification pass (2026-09-16) found ADR-0089 reading rowprobe's
-// number as though it covered that case. It does not. This probe
-// exists to stop the two being confused again.
+// rowprobe reserves rows so nothing scrolls while it compares two cursor
+// positions. That is necessary for its method and a deliberate exclusion
+// of production's condition, because emit prints at the BOTTOM of the
+// screen where every line scrolls.
 //
 // Nothing here is simulated. It constructs the REAL model (tui.New),
 // runs it under the REAL inline Bubble Tea program, and pushes lines
-// through the REAL emit path by sending tui.Output — so
-// wrapForScrollback, physicalRows and the bottom-hold accounting are
-// the production functions, not copies of them. The footer carries a
-// sentinel (ModelName/ProjectDir), so a screen capture can find the pin
-// without a human reading it.
+// through the REAL emit path by sending tui.Output, so
+// wrapForScrollback, physicalRows and the bottom-hold accounting are the
+// production functions. The footer carries a sentinel, so a captured
+// screen locates the pin without a human reading it.
 //
-// OBSERVABILITY, STATED RATHER THAN WORKED AROUND. The recorded rule is
-// that a row-arithmetic fix is counted on a real terminal, with tmux
-// capture-pane or script, because "lines the model returned" is not
-// evidence of what was painted. tmux is the only screen reader here,
-// and tmux does not draw inline images: under it the payload is
-// swallowed. So this probe measures the ACCOUNTING — what production
-// counts an image line as, and whether the pin survives it — and it
-// cannot measure a DRAWN image at the bottom of a scrolling screen.
-// That case needs a terminal that both draws and can be read back; say
-// so rather than reporting the case that happened to be measurable.
+// TWO THINGS THIS TOOL LEARNED THE HARD WAY, both from independent
+// verification passes, and both the reason it is shaped as it is:
 //
-// Usage (the driver does this):
+//  1. THE INSTRUMENT MUST CARRY ITS OWN NUMBERS. The first version
+//     printed a fixed block of prose and measured nothing: the figures
+//     that reached ADR-0089 came from throwaway shell drivers and from a
+//     human reading screenshots, and were preserved nowhere. So -drive
+//     runs the whole experiment, reads the screen back with tmux
+//     capture-pane, and prints a table it computed; analyze is a pure
+//     function, and its test replays real captures kept in testdata.
+//     A reader who re-runs this gets numbers, not assurances.
+//  2. THE REGIME MUST BE ARRANGED, NOT ASSUMED. The pin's padding is
+//     `height - printed - view - 1` and the branch where it is positive
+//     is labelled, in production, "screen not full" (internal/tui,
+//     bottomHold). A fixed -fill chosen for a 30-row tmux pane put an
+//     80-row iTerm2 window in the OTHER regime, and the ADR reported
+//     those runs as "full". So the filler is computed from the terminal's
+//     own height, -regime names which side is wanted, and every reading
+//     prints the gap that shows which side it actually landed on.
 //
-//	tmux new-session -d -x 120 -y 30 'go run ./tools/pinprobe -hold 6s'
-//	sleep 3 && tmux capture-pane -p
+// What this cannot do: tmux is the only screen reader here, and it does
+// not draw the iTerm2 or kitty payloads — under it those are swallowed,
+// so their line really does occupy one row and there is nothing to
+// measure. (Sixel is different: this tmux renders it, which is why the
+// sixel cases move at all.) A drawn OSC 1337 image at the bottom of a
+// scrolling screen needs a terminal that both draws and can be read back;
+// this tool cannot supply one, and says so rather than reporting the case
+// that happened to be measurable.
+//
+// Usage:
+//
+//	go run ./tools/pinprobe -drive            # run the experiment, print the table
+//	go run ./tools/pinprobe -only SIXEL-12    # one UI run, for a human to watch
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -46,30 +62,167 @@ import (
 	"github.com/nlink-jp/gem-agent/tools/imgpayload"
 )
 
-// The footer prints ModelName and ProjectDir every frame, so they are
-// the pin's address on a captured screen. Values no ordinary output
-// could contain.
+// The footer prints ModelName and ProjectDir every frame, so they are the
+// pin's address on a captured screen. Values no ordinary output contains.
 const (
 	sentinelModel = "PINPROBE~MODEL~SENTINEL"
 	sentinelDir   = "/PINPROBE~DIR~SENTINEL"
 )
 
 func main() {
-	hold := flag.Duration("hold", 6*time.Second, "keep the UI up this long after the last line, so a capture can be taken")
-	fill := flag.Int("fill", 60, "plain lines printed first, to push the view to the bottom so every later print scrolls")
-	report := flag.String("report", "", "write the machine-readable summary here (default: stderr after the UI exits)")
-	only := flag.String("only", "", "run one case by name (PLAIN, ITERM-H6, ITERM-H12, KITTY-R6, SIXEL-6); empty runs all")
+	drive := flag.Bool("drive", false, "run the whole experiment under tmux and print the measured table")
+	only := flag.String("only", "", "run one case by name; empty runs all. Names: "+strings.Join(caseNames(), ", "))
 	repeat := flag.Int("repeat", 1, "print the selected case this many times, so an undercount has somewhere to accumulate")
+	regime := flag.String("regime", "full", "which side of the pad branch to arrange: full (filler exceeds the screen) or empty (no filler)")
+	fill := flag.Int("fill", -1, "override the filler line count; -1 computes it from the terminal height and -regime")
+	hold := flag.Duration("hold", 6*time.Second, "keep the UI up this long after the last line, so a capture can be taken")
+	rows := flag.Int("rows", 30, "-drive only: tmux pane height")
+	cols := flag.Int("cols", 120, "-drive only: tmux pane width")
 	flag.Parse()
 
-	lines, notes := cases(*only)
-	if *repeat > 1 {
+	if *drive {
+		if err := runDriver(*rows, *cols, *repeat); err != nil {
+			fmt.Fprintln(os.Stderr, "pinprobe:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if err := runUI(*only, *repeat, *regime, *fill, *hold); err != nil {
+		fmt.Fprintln(os.Stderr, "pinprobe:", err)
+		os.Exit(1)
+	}
+}
+
+// ---------------------------------------------------------------------
+// The reading: a pure function over a captured screen.
+// ---------------------------------------------------------------------
+
+// Reading is what one captured screen says. Everything here is counted
+// from the capture; nothing is inferred from what the run intended.
+type Reading struct {
+	Case     string
+	Rows     int  // rows in the capture
+	LastEnd  int  // 1-based row of the last MARK-<case>-END, 0 when absent
+	PinRow   int  // 1-based row of the first footer sentinel, 0 when absent
+	Frames   int  // sentinel occurrences: 1 is one painted frame
+	Stranded int  // frames left behind: Frames-1, never negative
+	Gap      int  // rows between the last END and the pin
+	GapOK    bool // both anchors were on screen, so Gap means something
+}
+
+// Full reports which side of production's pad branch this screen landed
+// on. The branch is positive-pad = "screen not full", and a positive pad
+// is exactly the gap between the last output and the pinned input, so a
+// gap of at most one row is the full side. Reported, never assumed: a run
+// asks for a regime and the reading says which one it got.
+func (r Reading) Full() bool { return r.GapOK && r.Gap <= 1 }
+
+// analyze reads one captured screen for one case.
+func analyze(caseName string, capture []string) Reading {
+	r := Reading{Case: caseName, Rows: len(capture)}
+	endMark := "MARK-" + caseName + "-END"
+	for i, line := range capture {
+		if strings.Contains(line, endMark) {
+			r.LastEnd = i + 1
+		}
+		if strings.Contains(line, sentinelModel) {
+			r.Frames++
+			if r.PinRow == 0 {
+				r.PinRow = i + 1
+			}
+		}
+	}
+	if r.Frames > 1 {
+		r.Stranded = r.Frames - 1
+	}
+	if r.LastEnd > 0 && r.PinRow > 0 {
+		r.Gap, r.GapOK = r.PinRow-r.LastEnd-1, true
+	}
+	return r
+}
+
+// ---------------------------------------------------------------------
+// The driver: arrange the regime, run the UI, read the screen back.
+// ---------------------------------------------------------------------
+
+func runDriver(rows, cols, repeat int) error {
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate self: %w", err)
+	}
+	if _, err := exec.LookPath("tmux"); err != nil {
+		return fmt.Errorf("tmux is the screen reader and is not installed: %w", err)
+	}
+	fmt.Printf("pinprobe -drive — tmux pane %dx%d, %d repeat(s) per case\n", cols, rows, repeat)
+	fmt.Printf("%-10s %-7s %-6s %-5s %-9s %s\n", "case", "regime", "asked", "got", "stranded", "gap END→pin")
+	fmt.Println(strings.Repeat("-", 62))
+	for _, regime := range []string{"full", "empty"} {
+		for _, c := range caseNames() {
+			read, err := oneRun(self, c, regime, rows, cols, repeat)
+			if err != nil {
+				fmt.Printf("%-10s %-7s FAILED: %v\n", c, regime, err)
+				continue
+			}
+			got := "empty"
+			if read.Full() {
+				got = "full"
+			}
+			gap := "n/a"
+			if read.GapOK {
+				gap = fmt.Sprintf("%d", read.Gap)
+			}
+			fmt.Printf("%-10s %-7s %-6s %-5s %-9d %s\n", c, regime, regime, got, read.Stranded, gap)
+		}
+	}
+	fmt.Println()
+	fmt.Println("stranded counts frames left behind in scrollback: 0 is a clean pin.")
+	fmt.Println("'asked' is the regime arranged, 'got' is the one the gap shows it")
+	fmt.Println("landed in; they must agree or the row says nothing about the regime.")
+	fmt.Println("Under tmux the iTerm2 and kitty payloads are swallowed, so their")
+	fmt.Println("rows are a control for the sixel ones, not a measurement of drawing.")
+	return nil
+}
+
+// oneRun arranges one tmux pane, runs the UI in it, and reads it back.
+func oneRun(self, caseName, regime string, rows, cols, repeat int) (Reading, error) {
+	const session = "pinprobe-drive"
+	_ = exec.Command("tmux", "kill-session", "-t", session).Run()
+	cmd := fmt.Sprintf("%s -only %s -regime %s -repeat %d -hold 8s",
+		self, caseName, regime, repeat)
+	if err := exec.Command("tmux", "new-session", "-d", "-s", session,
+		"-x", fmt.Sprint(cols), "-y", fmt.Sprint(rows), cmd).Run(); err != nil {
+		return Reading{}, fmt.Errorf("tmux new-session: %w", err)
+	}
+	defer func() { _ = exec.Command("tmux", "kill-session", "-t", session).Run() }()
+	time.Sleep(7 * time.Second)
+	out, err := exec.Command("tmux", "capture-pane", "-t", session, "-p").Output()
+	if err != nil {
+		return Reading{}, fmt.Errorf("tmux capture-pane: %w", err)
+	}
+	var capture []string
+	sc := bufio.NewScanner(strings.NewReader(string(out)))
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		capture = append(capture, sc.Text())
+	}
+	return analyze(caseName, capture), nil
+}
+
+// ---------------------------------------------------------------------
+// The UI run.
+// ---------------------------------------------------------------------
+
+func runUI(only string, repeat int, regime string, fill int, hold time.Duration) error {
+	lines, notes := cases(only)
+	if len(lines) == 0 {
+		return fmt.Errorf("no case named %q (have: %s)", only, strings.Join(caseNames(), ", "))
+	}
+	if repeat > 1 {
 		one := lines
 		lines = nil
-		for i := 0; i < *repeat; i++ {
+		for i := 0; i < repeat; i++ {
 			lines = append(lines, one...)
 		}
-		notes = append(notes, fmt.Sprintf("%-10s repeated %d times", "", *repeat))
 	}
 
 	model := tui.New(tui.Options{
@@ -79,91 +232,105 @@ func main() {
 	})
 	prog := tea.NewProgram(model)
 
-	go func() {
-		// Let the first frame paint before anything is pushed.
-		time.Sleep(700 * time.Millisecond)
-		filler := make([]string, 0, *fill)
-		for i := 1; i <= *fill; i++ {
-			filler = append(filler, fmt.Sprintf("FILL %03d — pushing the view to the bottom so every later print scrolls", i))
+	// The filler is computed from the terminal, not from a constant: a
+	// count that fills a 30-row pane leaves an 80-row window in the other
+	// regime, and that mistake reached an ADR.
+	if fill < 0 {
+		fill = 0
+		if regime == "full" {
+			h := 24
+			if _, r, err := termSize(); err == nil && r > 0 {
+				h = r
+			}
+			fill = h + 10
 		}
-		prog.Send(tui.Output{Lines: filler})
-		time.Sleep(400 * time.Millisecond)
+	}
+
+	go func() {
+		time.Sleep(700 * time.Millisecond)
+		if fill > 0 {
+			filler := make([]string, 0, fill)
+			for i := 1; i <= fill; i++ {
+				filler = append(filler, fmt.Sprintf("FILL %03d — arranging the %s regime", i, regime))
+			}
+			prog.Send(tui.Output{Lines: filler})
+			time.Sleep(400 * time.Millisecond)
+		}
 		for _, l := range lines {
 			prog.Send(tui.Output{Lines: []string{l}})
 			time.Sleep(250 * time.Millisecond)
 		}
-		time.Sleep(*hold)
+		time.Sleep(hold)
 		prog.Quit()
 	}()
 
 	if _, err := prog.Run(); err != nil {
-		fmt.Fprintln(os.Stderr, "pinprobe:", err)
-		os.Exit(1)
+		return err
 	}
-
-	out := summary(notes)
-	if *report != "" {
-		if err := os.WriteFile(*report, []byte(out), 0o644); err != nil {
-			fmt.Fprintln(os.Stderr, "pinprobe:", err)
-			os.Exit(1)
-		}
-		return
-	}
-	fmt.Fprint(os.Stderr, out)
+	// Machine-readable, so a driver or a reader can audit what was
+	// arranged rather than trusting a label.
+	fmt.Fprintf(os.Stderr, "PINPROBE-META regime=%s fill=%d repeat=%d cases=%d\n",
+		regime, fill, repeat, len(notes))
+	return nil
 }
 
-// cases returns the lines to push and a note per line. Each payload is
-// bracketed by its own marker lines, so a capture can count the rows
-// the payload actually took without trusting anything this tool says.
+func termSize() (cols, rows int, err error) {
+	out, err := exec.Command("stty", "-f", "/dev/tty", "size").Output()
+	if err != nil {
+		return 0, 0, err
+	}
+	_, err = fmt.Sscanf(strings.TrimSpace(string(out)), "%d %d", &rows, &cols)
+	return cols, rows, err
+}
+
+// ---------------------------------------------------------------------
+// The cases.
+// ---------------------------------------------------------------------
+
+type probeCase struct {
+	name    string
+	payload func() string
+	note    string
+}
+
+func allCases() []probeCase {
+	png := func() []byte { return imgpayload.TestPNG(320, 180) }
+	return []probeCase{
+		{"PLAIN", func() string { return "a plain line of text, the control" },
+			"control: one row of text, no escape"},
+		{"ITERM-H6", func() string { return imgpayload.Iterm(png(), "width=40;height=6;preserveAspectRatio=1") },
+			"iTerm2 OSC 1337, declares 6 rows — swallowed by tmux, so a control here"},
+		{"ITERM-H12", func() string { return imgpayload.Iterm(png(), "width=40;height=12;preserveAspectRatio=1") },
+			"iTerm2 OSC 1337, declares 12 rows — swallowed by tmux, so a control here"},
+		{"KITTY-R6", func() string { return imgpayload.Kitty(png(), "f=100,r=6,c=40") },
+			"kitty APC _G, declares 6 rows, single chunk at this size"},
+		{"SIXEL-6", func() string { return imgpayload.Sixel(6) },
+			"sixel DCS q, 36px tall, declares nothing — this tmux renders it"},
+		{"SIXEL-12", func() string { return imgpayload.Sixel(12) },
+			"sixel DCS q, 72px tall, declares nothing — this tmux renders it"},
+		{"SIXEL-24", func() string { return imgpayload.Sixel(24) },
+			"sixel DCS q, 144px tall, declares nothing — this tmux renders it"},
+	}
+}
+
+func caseNames() []string {
+	var out []string
+	for _, c := range allCases() {
+		out = append(out, c.name)
+	}
+	return out
+}
+
+// cases returns the lines to push and a note per case. Each payload is
+// bracketed by its own markers, so a capture can count the rows it took
+// without trusting anything this tool says.
 func cases(only string) (lines []string, notes []string) {
-	png := imgpayload.TestPNG(320, 180)
-	add := func(name, payload, note string) {
-		if only != "" && only != name {
-			return
+	for _, c := range allCases() {
+		if only != "" && only != c.name {
+			continue
 		}
-		lines = append(lines, "MARK-"+name+"-BEGIN")
-		lines = append(lines, payload)
-		lines = append(lines, "MARK-"+name+"-END")
-		notes = append(notes, fmt.Sprintf("%-10s %s", name, note))
+		lines = append(lines, "MARK-"+c.name+"-BEGIN", c.payload(), "MARK-"+c.name+"-END")
+		notes = append(notes, c.note)
 	}
-	add("PLAIN", "a plain line of text, the control",
-		"control: one row of text, no escape")
-	add("ITERM-H6", imgpayload.Iterm(png, "width=40;height=6;preserveAspectRatio=1"),
-		"iTerm2 OSC 1337, declares 6 rows")
-	add("ITERM-H12", imgpayload.Iterm(png, "width=40;height=12;preserveAspectRatio=1"),
-		"iTerm2 OSC 1337, declares 12 rows")
-	add("KITTY-R6", imgpayload.Kitty(png, "f=100,r=6,c=40"),
-		"kitty APC _G, declares 6 rows, chunked")
-	add("SIXEL-6", imgpayload.Sixel(6),
-		"sixel DCS q, 6 bands (36px tall), declares nothing")
-	add("SIXEL-12", imgpayload.Sixel(12),
-		"sixel DCS q, 12 bands (72px tall), declares nothing")
-	add("SIXEL-24", imgpayload.Sixel(24),
-		"sixel DCS q, 24 bands (144px tall), declares nothing")
 	return lines, notes
-}
-
-func summary(notes []string) string {
-	var b strings.Builder
-	b.WriteString("pinprobe — lines pushed through the real emit path (tui.Output)\n\n")
-	for _, n := range notes {
-		b.WriteString("  " + n + "\n")
-	}
-	b.WriteString("\nEach payload is bracketed by MARK-<name>-BEGIN / MARK-<name>-END.\n")
-	b.WriteString("On a captured screen the rows BETWEEN a pair are what that payload\n")
-	b.WriteString("occupied. Production counts an image line as physicalRows makes it,\n")
-	b.WriteString("which floors at 1, so a drawn image of N rows leaves the accounting\n")
-	b.WriteString("short by N-1. What that COSTS is not the same everywhere, and the\n")
-	b.WriteString("first draft of this text asserted a drift the runs then contradicted:\n")
-	b.WriteString("  tmux 3.7c, sixel, screen already full: one frame stranded per\n")
-	b.WriteString("    image (3 repeats -> 3), pin above the last output; the PLAIN\n")
-	b.WriteString("    control at the same fill is clean.\n")
-	b.WriteString("  tmux, same payload, screen NOT yet full: no damage at all.\n")
-	b.WriteString("  iTerm2 3.7.2, OSC 1337, screen full, 1 image and 5: nothing\n")
-	b.WriteString("    moves — same gap as the no-image control, no frame stranded.\n")
-	b.WriteString("So measure the regime you mean. Run the control at the same -fill.\n")
-	b.WriteString("\nThe footer carries " + sentinelModel + ". Exactly one occurrence on the\n")
-	b.WriteString("captured screen means the frame was painted once; more than one means\n")
-	b.WriteString("a frame leaked, which is what a wrong row count looks like.\n")
-	return b.String()
 }

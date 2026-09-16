@@ -1,0 +1,30 @@
+FILL 052 — pushing the view to the bottom so every later print scrolls
+FILL 053 — pushing the view to the bottom so every later print scrolls
+FILL 054 — pushing the view to the bottom so every later print scrolls
+FILL 055 — pushing the view to the bottom so every later print scrolls
+FILL 056 — pushing the view to the bottom so every later print scrolls
+FILL 057 — pushing the view to the bottom so every later print scrolls
+FILL 058 — pushing the view to the bottom so every later print scrolls
+FILL 059 — pushing the view to the bottom so every later print scrolls
+FILL 060 — pushing the view to the bottom so every later print scrolls
+MARK-SIXEL-12-BEGIN
+┃ message…  Enter send · Ctrl+J newline · /help · !shell
+PINPROBE~MODEL~SENTINEL · ctx –/– · total 0 · /PINPROBE~DIR~SENTINEL
+
+
+MARK-SIXEL-12-END
+MARK-SIXEL-12-BEGIN
+┃ message…  Enter send · Ctrl+J newline · /help · !shell
+PINPROBE~MODEL~SENTINEL · ctx –/– · total 0 · /PINPROBE~DIR~SENTINEL
+
+
+MARK-SIXEL-12-END
+MARK-SIXEL-12-BEGIN
+┃ message…  Enter send · Ctrl+J newline · /help · !shell
+PINPROBE~MODEL~SENTINEL · ctx –/– · total 0 · /PINPROBE~DIR~SENTINEL
+
+
+MARK-SIXEL-12-END
+┃ message…  Enter send · Ctrl+J newline · /help · !shell
+PINPROBE~MODEL~SENTINEL · ctx –/– · total 0 · /PINPROBE~DIR~SENTINEL
+

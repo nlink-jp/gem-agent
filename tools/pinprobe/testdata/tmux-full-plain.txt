@@ -1,0 +1,30 @@
+FILL 043 — pushing the view to the bottom so every later print scrolls
+FILL 044 — pushing the view to the bottom so every later print scrolls
+FILL 045 — pushing the view to the bottom so every later print scrolls
+FILL 046 — pushing the view to the bottom so every later print scrolls
+FILL 047 — pushing the view to the bottom so every later print scrolls
+FILL 048 — pushing the view to the bottom so every later print scrolls
+FILL 049 — pushing the view to the bottom so every later print scrolls
+FILL 050 — pushing the view to the bottom so every later print scrolls
+FILL 051 — pushing the view to the bottom so every later print scrolls
+FILL 052 — pushing the view to the bottom so every later print scrolls
+FILL 053 — pushing the view to the bottom so every later print scrolls
+FILL 054 — pushing the view to the bottom so every later print scrolls
+FILL 055 — pushing the view to the bottom so every later print scrolls
+FILL 056 — pushing the view to the bottom so every later print scrolls
+FILL 057 — pushing the view to the bottom so every later print scrolls
+FILL 058 — pushing the view to the bottom so every later print scrolls
+FILL 059 — pushing the view to the bottom so every later print scrolls
+FILL 060 — pushing the view to the bottom so every later print scrolls
+MARK-PLAIN-BEGIN
+a plain line of text, the control
+MARK-PLAIN-END
+MARK-PLAIN-BEGIN
+a plain line of text, the control
+MARK-PLAIN-END
+MARK-PLAIN-BEGIN
+a plain line of text, the control
+MARK-PLAIN-END
+┃ message…  Enter send · Ctrl+J newline · /help · !shell
+PINPROBE~MODEL~SENTINEL · ctx –/– · total 0 · /PINPROBE~DIR~SENTINEL
+

@@ -128,21 +128,24 @@ labels: build
 ## rowprobe: does this terminal honour an inline image's DECLARED height
 ## (ADR-0089)? Draws sized payloads into /dev/tty and reports the rows
 ## each one really costs. Needs a terminal that draws — one that does not
-## reports INCONCLUSIVE rather than a verdict, and Terminal.app is one.
+## reports INCONCLUSIVE rather than a verdict.
 ## The table goes to stdout and the pictures to the terminal, so
 ## `make rowprobe > dist/rowprobe.txt` keeps one while showing the other.
 rowprobe:
 	@go run ./tools/rowprobe
 
 ## pinprobe: does the bottom pin survive an image line, on the path that
-## actually prints one (ADR-0089)? Drives the real model through the real
-## emit path and holds the UI up so a capture can be taken. rowprobe
-## answers what ONE image costs with scrolling prevented; this answers
-## what the accounting costs with scrolling happening. Always run the
-## control at the same -fill: three readings of these runs were wrong
-## until one was taken.
+## actually prints one (ADR-0089)? Runs the experiment under tmux and
+## prints the table it measured: the real model on the real emit path,
+## every case against its control, and the regime arranged from the
+## terminal's own height rather than a constant — a filler count chosen
+## for a 30-row pane put an 80-row window on the other side of the branch
+## and the wrong label reached the ADR. rowprobe answers what ONE image
+## costs with scrolling prevented; this answers what the accounting costs
+## with scrolling happening. `go run ./tools/pinprobe -only X` runs one
+## case in the foreground for a human to watch.
 pinprobe:
-	@go run ./tools/pinprobe
+	@go run ./tools/pinprobe -drive
 
 clean:
 	rm -rf $(DIST_DIR)

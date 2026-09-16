@@ -21,8 +21,11 @@
 // the same run.
 //
 // THE CURSOR DELTA IS NOT THE ROW COUNT. Measured (iTerm2 3.7.2): an
-// image leaves the cursor on its LAST row, at the column just past the
-// declared box — never on a fresh row below. So the delta between the
+// image leaves the cursor on its LAST row, past the last cell written on
+// that row — never on a fresh row below. Not "past the declared box":
+// this probe's own table contradicts that reading in three rows, where no
+// width was declared or a suffix followed. What the correction needs is
+// only that the column is never 1. So the delta between the
 // two reports is one less than the rows the image occupies, and reading
 // the delta as the count makes a terminal that honours every
 // declaration exactly look like one that honours none. consumedRows
@@ -52,9 +55,11 @@
 //
 //	[-timeout 5s] [-settle 250ms]
 //
-// Requires a real terminal: it opens /dev/tty and needs a reply to
-// CPR. Terminal.app answers CPR but draws no image (every case will
-// read 0 rows, reported as INCONCLUSIVE rather than as a verdict).
+// Requires a real terminal: it opens /dev/tty and needs a reply to CPR.
+// A terminal that answers CPR but draws nothing reads 0 rows everywhere
+// and is reported as INCONCLUSIVE rather than as a verdict. (Which
+// terminals those are is not measured here — the tool reports what it
+// finds, it does not carry a list.)
 package main
 
 import (
@@ -425,7 +430,8 @@ func report(proto string, cols, rows int, rs []result, aborted string, sent, got
 	fmt.Println()
 	fmt.Println("occupies is the row count; cursor d is the raw delta, one less, because the cursor")
 	fmt.Println("  stays on the image's last row. '+' means the screen scrolled: the count is a floor.")
-	fmt.Println("ansi width is what x/ansi v0.11.6 reports for the payload — the number physicalRows would count.")
+	fmt.Println("ansi width is what x/ansi v0.11.6 reports for the payload. physicalRows does NOT")
+	fmt.Println("  return that: it floors at 1, so an image line is counted as one row, not zero.")
 	fmt.Println("cpr wait is how long the terminal took to answer AFTER the settle pause.")
 	fmt.Println()
 	switch {
@@ -447,9 +453,10 @@ func report(proto string, cols, rows int, rs []result, aborted string, sent, got
 		fmt.Println("  -proto iterm, kitty or Ghostty for -proto kitty).")
 	case mismatched == 0 && ok > 0:
 		fmt.Printf("VERDICT: every declared height was honoured exactly (%d/%d).\n", ok, ok+mismatched)
-		fmt.Println("  Row accounting can be closed by DECLARATION: the emitter states the height,")
-		fmt.Println("  emit adds it to the count, and the bottom pin stays exact — with no")
-		fmt.Println("  dependence on the image's aspect ratio, which the declared box overrides.")
+		fmt.Println("  Row accounting can be closed by DECLARATION: the emitter states the height")
+		fmt.Println("  and emit uses that number IN PLACE OF the one row physicalRows floors to —")
+		fmt.Println("  never in addition to it, which would over-count by one per image. There is")
+		fmt.Println("  no dependence on the image's aspect ratio, which the declared box overrides.")
 		fmt.Println("  The cursor is left on the image's last row, so a following newline opens")
 		fmt.Println("  the next row rather than adding one.")
 	default:

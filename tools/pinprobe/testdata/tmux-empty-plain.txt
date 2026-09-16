@@ -1,0 +1,30 @@
+MARK-PLAIN-BEGIN
+a plain line of text, the control
+MARK-PLAIN-END
+MARK-PLAIN-BEGIN
+a plain line of text, the control
+MARK-PLAIN-END
+MARK-PLAIN-BEGIN
+a plain line of text, the control
+MARK-PLAIN-END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+┃ message…  Enter send · Ctrl+J newline · /help · !shell
+PINPROBE~MODEL~SENTINEL · ctx –/– · total 0 · /PINPROBE~DIR~SENTINEL
+
+
