@@ -58,6 +58,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/tui"
 	"github.com/nlink-jp/gem-agent/tools/imgpayload"
 )
@@ -153,6 +154,17 @@ func analyze(caseName string, capture []string) Reading {
 // The driver: arrange the regime, run the UI, read the screen back.
 // ---------------------------------------------------------------------
 
+// run builds a child with the runtime's own environment stripped
+// (ADR-0087 §2). Every spawn goes through here rather than calling
+// exec.Command directly: the architecture test enumerates spawn sites and
+// names probes explicitly, and the first version of -drive had five sites
+// that each forgot the rule.
+func run(name string, args ...string) *exec.Cmd {
+	cmd := exec.Command(name, args...)
+	cmd.Env = sandbox.ChildEnv(os.Environ())
+	return cmd
+}
+
 func runDriver(rows, cols, repeat int) error {
 	self, err := os.Executable()
 	if err != nil {
@@ -194,16 +206,16 @@ func runDriver(rows, cols, repeat int) error {
 // oneRun arranges one tmux pane, runs the UI in it, and reads it back.
 func oneRun(self, caseName, regime string, rows, cols, repeat int) (Reading, error) {
 	const session = "pinprobe-drive"
-	_ = exec.Command("tmux", "kill-session", "-t", session).Run()
+	_ = run("tmux", "kill-session", "-t", session).Run()
 	cmd := fmt.Sprintf("%s -only %s -regime %s -repeat %d -hold 8s",
 		self, caseName, regime, repeat)
-	if err := exec.Command("tmux", "new-session", "-d", "-s", session,
+	if err := run("tmux", "new-session", "-d", "-s", session,
 		"-x", fmt.Sprint(cols), "-y", fmt.Sprint(rows), cmd).Run(); err != nil {
 		return Reading{}, fmt.Errorf("tmux new-session: %w", err)
 	}
-	defer func() { _ = exec.Command("tmux", "kill-session", "-t", session).Run() }()
+	defer func() { _ = run("tmux", "kill-session", "-t", session).Run() }()
 	time.Sleep(7 * time.Second)
-	out, err := exec.Command("tmux", "capture-pane", "-t", session, "-p").Output()
+	out, err := run("tmux", "capture-pane", "-t", session, "-p").Output()
 	if err != nil {
 		return Reading{}, fmt.Errorf("tmux capture-pane: %w", err)
 	}
@@ -293,7 +305,7 @@ func runUI(only string, repeat int, regime string, fill int, hold time.Duration)
 }
 
 func termSize() (cols, rows int, err error) {
-	out, err := exec.Command("stty", "-f", "/dev/tty", "size").Output()
+	out, err := run("stty", "-f", "/dev/tty", "size").Output()
 	if err != nil {
 		return 0, 0, err
 	}
