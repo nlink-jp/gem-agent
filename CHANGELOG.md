@@ -2,23 +2,38 @@
 
 ## [Unreleased]
 
-### Documentation
+### Changed
 
-- **ADR-0091: showing an image is an act of output, not a side effect of a
-  tool result** (design only; no code). An MCP image block is how a tool
-  result carries an image into the MODEL's context, and MCP says who content
-  is for with an `audience` annotation this runtime drops at the parser —
-  measured across the 24 registered servers, four can emit an image block and
-  none sets an audience. So the released behaviour, which draws every image
-  block the intake saved and described, rests on this runtime inferring that
-  an image that arrived is an image the operator wants. It is withdrawn: the
-  intake will draw nothing, showing becomes an act of the model's output
-  through a tool whose read happens in the tool layer (where a model-named
-  path is judged like any other), and the operator keeps a direct route. The
-  lane, the declared box, the erase, the ceiling and the probe are unchanged.
-  **This changes behaviour already released** — the current version draws
-  from the intake and the next will not; lagent ADR-0022 is the same decision on the
-  other side.
+- **The MCP intake no longer draws. The model shows, and so can you**
+  ([ADR-0091](docs/en/adr/0091-showing-is-an-act-of-output.md)). An MCP
+  image block is how a tool result carries an image into the MODEL's
+  context, and MCP says who content is for with an `audience` annotation
+  this runtime drops at the parser — measured across 24 registered servers,
+  four can emit an image block and none sets an audience. So v0.83.0's rule,
+  "draw every image block the intake saved and described", was this runtime
+  inferring that an image which arrived is an image you want; two of those
+  four servers return a screenshot so the MODEL can look at it, and every
+  such inspection put a full-size picture in your scrollback.
+
+  **This changes behaviour released in v0.83.0.** What reaches your screen is
+  now authored:
+
+  - `show_image` — the model calls it to show you a picture. It is
+    `view_image`'s counterpart and the pair differs in one thing, the
+    audience: `view_image` attaches pixels to the conversation so the model
+    can look, `show_image` draws them in your terminal. The read happens in
+    the tool layer, so a model-named path is confined and judged exactly
+    like every other file tool's — which is what lets it reach the screen at
+    all, since a read the view layer performed would be invisible to every
+    enforcer.
+  - `/show <path>` — you name the file. Same grammar as an `@<image>`
+    attachment: a project path, or an absolute or `~` path for an image.
+
+  The lane itself is unchanged: the declared box, the erase, the columns
+  clamped below the terminal's width, the 2 MiB ceiling, the silent refusal
+  on screen and the capability probe are all as they were. A refusal now
+  reaches the caller in words — the tool result for the model, one line for
+  you — because the screen stays silent and nobody else can explain it.
 
 ## [0.83.0] - 2026-09-17
 

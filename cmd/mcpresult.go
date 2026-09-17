@@ -36,24 +36,14 @@ type mcpIntake struct {
 	// this must never produce.
 	// It is read per call: /clear rotates the directory (ADR-0071 §2).
 	workDir func() string
-	// draw, when set, is handed the decoded bytes of an image block the
-	// intake both saved AND described, for the operator's screen
-	// (ADR-0090 §1). Bytes, never the path: a read the view layer
-	// performs is not a tool call and no enforcer can see it, and the
-	// path this intake writes is one a server can pre-empt with a
-	// symlink. It is NOT nil outside an interactive TUI — the servers
-	// connect before the runtime knows whether it has a UI — but it is
-	// inert there, so those entrances drop what they are given rather
-	// than deciding not to draw.
-	draw func(data []byte, mime string)
 	// cap is the byte size above which a text block is spilled.
 	cap int
 	// previewRunes bounds the head of a spilled block shown inline.
 	previewRunes int
 }
 
-func newMCPIntake(workDir func() string, draw func(data []byte, mime string)) mcpIntake {
-	return mcpIntake{workDir: workDir, draw: draw, cap: tools.OutputCap, previewRunes: 800}
+func newMCPIntake(workDir func() string) mcpIntake {
+	return mcpIntake{workDir: workDir, cap: tools.OutputCap, previewRunes: 800}
 }
 
 // render assembles the text the model receives for one call. A result
@@ -130,14 +120,11 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content) string {
 			}
 			continue
 		}
-		// Saved AND described: the one condition (ADR-0090 §2). A block
-		// the budget refused is neither, a block whose write failed is
-		// not saved however its note reads, and drawing either would put
-		// a picture on the operator's screen that appears nowhere in the
-		// session's record.
-		if in.draw != nil && saved && isImageBlock(b) {
-			in.draw(b.Data, b.MIME)
-		}
+		// Nothing is drawn here (ADR-0091 §1). An image block is how a
+		// tool result carries an image into the MODEL's context; what
+		// the operator sees is the model's to decide, through
+		// show_image, or the operator's own through /show.
+		_ = saved
 	}
 	if len(rest) > 0 {
 		parts = append(parts, in.spillRest(server, tool, rest))

@@ -86,25 +86,18 @@ func TestOnlyTheViewLayerEmitsAnImageEscape(t *testing.T) {
 	}
 }
 
-// TestTheImageSinkIsWiredInProduction pins the one thing the port's whole
-// risk is about: the argument getting threaded. An independent pass
-// replaced all three production `screen.Image` arguments with nil and the
-// entire suite stayed green — MCP images would silently stop drawing, and
-// the only detector left was a human at a terminal that draws.
+// TestTheImageSinkIsWiredInProduction pins the one thing this feature's
+// risk is about: the screen getting connected at all. An independent pass
+// once replaced the sink's arguments with nil and the entire suite stayed
+// green — images silently stopped reaching the operator, and the only
+// detector left was a human at a terminal that draws.
 //
-// The rule: every production call to a function that takes the image sink
-// passes the real sink. A test may pass nil; cmd/*.go may not.
+// The sink moved when ADR-0091 withdrew the MCP intake as the source, and
+// this test moved with it: what carries it now is Registry.SetShowImage,
+// called once by cmd for an interactive session. Without that call
+// show_image still reads, still judges and still answers — "no screen to
+// draw on" — for the rest of the runtime's life.
 func TestTheImageSinkIsWiredInProduction(t *testing.T) {
-	// The functions that carry the sink to the intake, and the argument
-	// position it occupies in each (last, in all of them).
-	takesSink := map[string]bool{
-		"connectMCPServers":     true,
-		"reconnectMCPServer":    true,
-		"attachMCPServer":       true,
-		"attachListedMCPServer": true,
-		"registerMCPTools":      true,
-		"newMCPIntake":          true,
-	}
 	wired := 0
 	walkGo(t, func(path string, fset *token.FileSet, f *ast.File) {
 		ast.Inspect(f, func(n ast.Node) bool {
@@ -112,15 +105,14 @@ func TestTheImageSinkIsWiredInProduction(t *testing.T) {
 			if !ok {
 				return true
 			}
-			id, ok := call.Fun.(*ast.Ident)
-			if !ok || !takesSink[id.Name] || len(call.Args) == 0 {
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "SetShowImage" || len(call.Args) != 1 {
 				return true
 			}
-			last := call.Args[len(call.Args)-1]
-			if lit, ok := last.(*ast.Ident); ok && lit.Name == "nil" {
-				t.Errorf("%s: %s is called with a nil image sink in production code — "+
-					"the operator's screen goes quiet and nothing else notices "+
-					"(ADR-0090 §1)", fset.Position(call.Pos()), id.Name)
+			if lit, ok := call.Args[0].(*ast.Ident); ok && lit.Name == "nil" {
+				t.Errorf("%s: the screen is wired with nil in production code — "+
+					"show_image would answer 'no screen' for ever and nothing "+
+					"else would notice (ADR-0091 §2)", fset.Position(call.Pos()))
 				return true
 			}
 			wired++
@@ -128,6 +120,7 @@ func TestTheImageSinkIsWiredInProduction(t *testing.T) {
 		})
 	})
 	if wired == 0 {
-		t.Fatal("no call carrying the image sink was found — the scan is broken, not the tree")
+		t.Fatal("no production call to SetShowImage — the model's route to the " +
+			"operator's screen is not connected (ADR-0091 §2)")
 	}
 }

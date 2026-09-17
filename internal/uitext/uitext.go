@@ -490,6 +490,7 @@ var en = Messages{
   /compact   summarise the older half of the conversation
   /settings  view and edit settings, with provenance
   /riskbook  view the risk rules; /riskbook learn drafts them from your answers
+  /show <path>   draw an image in this terminal (the model uses show_image for the same thing)
   /usage     token statement for this session
   /memory    list persisted memories
   /skills    list installed skills (/skills reload re-discovers)
@@ -682,6 +683,7 @@ var ja = Messages{
   /compact   会話の古い半分を要約
   /settings  設定の表示と編集（出所つき）
   /riskbook  リスクルールの表示。/riskbook learn は回答記録から起草
+  /show <path>   画像をこの端末に描く（モデルは同じことを show_image で行う）
   /usage     このセッションのトークン明細
   /memory    永続メモリの一覧
   /skills    インストール済みスキル一覧（/skills reload で再探索）

@@ -107,7 +107,8 @@ stderr に 1 行出して対処を示します — 何も添付しない起動�
 （`edit_file`/`write_file` — 全文書き換えが文書を黙って要約消滅させ
 ないための縮小ガード付き）、ハッシュ付きファイル同定
 （`file_info`）、モデルのための画像と文書
-（`view_image`/`read_document`）、read・write・operator のレーンをカーネルが
+（`view_image`/`read_document`）、**あなたの**画面に絵を描く（`show_image`）、
+read・write・operator のレーンをカーネルが
 強制するサンドボックス化シェル（`shell_exec`）、決定的な時計とカレンダー（`datetime`）、モデル自身の
 ランタイム像（`agent_info`）、ターン途中の構造化選択（`ask_user`）、出典付き Web アクセス
 （`web_search`/`web_fetch`）。
@@ -116,12 +117,13 @@ stderr に 1 行出して対処を示します — 何も添付しない起動�
 スクリーンショット（`@~/Desktop/…`・`@clipboard`）・PDF と Office
 文書・音声/動画 — バケット設定時は GCS 経由、未設定ならインライン。
 
-**インライン画像** — MCP ツールが返した画像は逆向きに流れる。スクリーン
-ショットや描画したチャートを、端末が描けるならその呼び出しの戻りと同時に
-端末へ描く（`[tui].images`、既定は `auto`。iTerm2 と kitty、tmux・screen の
-中では off）。モデルへの注記は変わらない — パスを受け取り、`view_image` で
-見る（[ADR-0089](docs/ja/adr/0089-inline-images-declare-their-height.ja.md) /
-[ADR-0090](docs/ja/adr/0090-an-images-bytes-never-become-a-path.ja.md)）。
+**インライン画像** — モデルは `show_image` であなたに絵を見せ、あなたは
+`/show <path>` で見たい画像を出す。端末が描けるときに描く（`[tui].images`、
+既定は `auto`。iTerm2 と kitty、tmux・screen の中では off）。`view_image` は
+逆向きで、**モデルが**画像を見るためのものである
+（[ADR-0089](docs/ja/adr/0089-inline-images-declare-their-height.ja.md) /
+[ADR-0090](docs/ja/adr/0090-an-images-bytes-never-become-a-path.ja.md) /
+[ADR-0091](docs/ja/adr/0091-showing-is-an-act-of-output.ja.md)）。
 
 **[承認と安全](docs/ja/reference/approval.ja.md)** — モデル自身が申告した
 コールの目的を引数と並べて表示する都度 MITL ゲート（Block 段には

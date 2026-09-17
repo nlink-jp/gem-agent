@@ -293,15 +293,22 @@ func (s *Screen) SetProgram(p sender) {
 	s.mu.Unlock()
 }
 
-// Image sends a tool's picture to the operator's screen. The caller has
-// already decided this block may be drawn (ADR-0090 §2); what may be drawn
-// at all, and in what box, is the model's decision on receipt.
-func (s *Screen) Image(data []byte, mime string) {
+// Image sends a picture to the operator's screen and reports whether there
+// was a screen to send it to. The decision that it MAY be drawn is the
+// caller's — show_image, which the model calls, or /show, which the
+// operator types (ADR-0091) — and what box it lands in is the model's on
+// receipt.
+//
+// The bool is why this is not a bare send: an entrance with no UI drops
+// what it is given, and a caller that is told nothing would report a
+// picture that is not there.
+func (s *Screen) Image(data []byte, mime string) bool {
 	s.mu.Lock()
 	p := s.prog
 	s.mu.Unlock()
 	if p == nil {
-		return
+		return false
 	}
 	p.Send(Image{Data: data, MIME: mime})
+	return true
 }

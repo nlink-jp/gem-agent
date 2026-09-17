@@ -174,7 +174,7 @@ func Classify(toolName string, mutating bool, args map[string]any, projectDir, w
 // since ADR-0086 §3 — the kernel lists names and refuses content — and
 // search_files names what it could not read.
 var credentialReadTools = map[string]bool{
-	"read_file": true, "view_image": true, "read_document": true,
+	"read_file": true, "view_image": true, "show_image": true, "read_document": true,
 	"file_info": true, "summarize_file": true,
 }
 

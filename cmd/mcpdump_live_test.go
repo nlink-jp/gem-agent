@@ -42,7 +42,7 @@ func TestDumpMCPDeclarations(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	clients, summary, _ := connectMCPServers(ctx, cfg, t.TempDir(), "live-test", reg, io.Discard, projectGrant{}, filter, nil)
+	clients, summary, _ := connectMCPServers(ctx, cfg, t.TempDir(), "live-test", reg, io.Discard, projectGrant{}, filter)
 	defer func() {
 		for _, c := range clients {
 			c.Close()

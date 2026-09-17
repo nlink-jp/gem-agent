@@ -181,8 +181,9 @@ internal/termimg/  inline images in a DECLARED box (ADR-0089): capability
                    payloads carrying the box, Fit clamping the width. The
                    row counter is told the box, never asked to measure —
                    an image payload is zero cells wide to every surface
-                   the TUI has. The source is the MCP intake, and only a
-                   block it both saved and described (ADR-0090)
+                   the TUI has. What reaches the screen is authored: the
+                   model's show_image, or the operator's /show (ADR-0091,
+                   which withdrew the MCP intake as the source)
 scripts/           codesign-darwin.sh / notarize-darwin.sh (org templates, verbatim),
                    docs-mirror-check.sh, verify-release-selftest.sh (make check)
 docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)

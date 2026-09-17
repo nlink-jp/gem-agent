@@ -63,12 +63,10 @@ func sanitizeToolName(s string) string {
 // registerMCPTools adapts one server's tools into the registry. All MCP
 // tools require approval (RFP: external-server tools are gated) — this
 // tool cannot know which remote operations mutate what.
-func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Tool, draw func(data []byte, mime string)) (added []string, errs []string) {
+func registerMCPTools(registry *tools.Registry, client mcpCaller, list []mcp.Tool) (added []string, errs []string) {
 	// The intake spills to the registry's work directory, so a result
-	// it saves is one the file tools can read back (ADR-0058), and hands
-	// an image it both saved and described to draw, for the operator's
-	// screen (ADR-0090).
-	intake := newMCPIntake(registry.WorkDir, draw)
+	// it saves is one the file tools can read back (ADR-0058).
+	intake := newMCPIntake(registry.WorkDir)
 	for _, t := range list {
 		remoteName := t.Name
 		desc := "[MCP:" + client.Name() + "] " + t.Description
@@ -252,11 +250,11 @@ func listMCPServer(ctx context.Context, client mcpServer, budget time.Duration) 
 // attachMCPServer lists and attaches one server. It is the single-server path
 // (a reconnect); startup lists every server first, in parallel, and then calls
 // attachListed in configured order.
-func attachMCPServer(ctx context.Context, client mcpServer, budget time.Duration, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory, draw func(data []byte, mime string)) bool {
-	return attachListedMCPServer(listMCPServer(ctx, client, budget), registry, stderr, filter, inv, draw)
+func attachMCPServer(ctx context.Context, client mcpServer, budget time.Duration, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory) bool {
+	return attachListedMCPServer(listMCPServer(ctx, client, budget), registry, stderr, filter, inv)
 }
 
-func attachListedMCPServer(listed mcpListing, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory, draw func(data []byte, mime string)) bool {
+func attachListedMCPServer(listed mcpListing, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory) bool {
 	client, toolList, err := listed.client, listed.tools, listed.err
 	name := client.Name()
 	scope := inv.Scopes[name]
@@ -276,7 +274,7 @@ func attachListedMCPServer(listed mcpListing, registry *tools.Registry, stderr i
 	removed := len(excluded)
 	inv.Offered[name] = offered
 
-	added, errs := registerMCPTools(registry, client, kept, draw)
+	added, errs := registerMCPTools(registry, client, kept)
 	inv.registered[name] = append(append([]string{}, added...), excluded...)
 	for _, e := range errs {
 		fmt.Fprintf(stderr, "warning: MCP server %s: %s\n", name, e)
@@ -308,7 +306,7 @@ func attachListedMCPServer(listed mcpListing, registry *tools.Registry, stderr i
 // respawn — and re-registered under the new filter. What comes back is
 // the client to keep, or nil when the server is now excluded, gone, or
 // useless.
-func reconnectMCPServer(ctx context.Context, name string, running mcpServer, start func() mcpServer, budget time.Duration, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory, draw func(data []byte, mime string)) mcpServer {
+func reconnectMCPServer(ctx context.Context, name string, running mcpServer, start func() mcpServer, budget time.Duration, registry *tools.Registry, stderr io.Writer, filter mcpfilter.Filter, inv *mcpInventory) mcpServer {
 	// Exactly this server's names, as recorded when it attached; the
 	// prefix note is its own record and is withdrawn by value.
 	registry.Remove(inv.registered[name]...)
@@ -326,7 +324,7 @@ func reconnectMCPServer(ctx context.Context, name string, running mcpServer, sta
 	if client == nil {
 		client = start()
 	}
-	kept := attachMCPServer(ctx, client, budget, registry, stderr, filter, inv, draw)
+	kept := attachMCPServer(ctx, client, budget, registry, stderr, filter, inv)
 	inv.warnUnmatched(filter, stderr)
 	if !kept {
 		return nil
@@ -364,7 +362,7 @@ func splitByFilter(server string, list []mcp.Tool, filter mcpfilter.Filter) (off
 // scopes maps each connected server to "global" or "project" — kept
 // for consumers that must not treat a project-supplied server like an
 // operator-installed one (none today; /learn was, before ADR-0049).
-func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, version string, registry *tools.Registry, stderr io.Writer, grant projectGrant, filter mcpfilter.Filter, draw func(data []byte, mime string)) (clients []*mcp.Client, summary []string, inv mcpInventory) {
+func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, version string, registry *tools.Registry, stderr io.Writer, grant projectGrant, filter mcpfilter.Filter) (clients []*mcp.Client, summary []string, inv mcpInventory) {
 	if !cfg.MCP.Enabled {
 		return nil, nil, mcpInventory{Offered: map[string][]string{}, summary: map[string]string{}}
 	}
@@ -472,7 +470,7 @@ func connectMCPServers(ctx context.Context, cfg *config.Config, projectDir, vers
 	// Attach in the configured order: the registry, the catalog and the
 	// warnings then read exactly as they did when the listing was serial.
 	for i, l := range listed {
-		if attachListedMCPServer(l, registry, stderr, filter, &inv, draw) {
+		if attachListedMCPServer(l, registry, stderr, filter, &inv) {
 			clients = append(clients, starting[i])
 		}
 	}

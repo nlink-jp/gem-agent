@@ -106,7 +106,7 @@ func TestAttachOrderSurvivesParallelListing(t *testing.T) {
 	wg.Wait()
 
 	for _, l := range listed {
-		if !attachListedMCPServer(l, reg, &warn, filterOf(t), inv, nil) {
+		if !attachListedMCPServer(l, reg, &warn, filterOf(t), inv) {
 			t.Fatalf("%s did not attach", l.client.Name())
 		}
 	}

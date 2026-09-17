@@ -55,7 +55,7 @@ func TestRegisterMCPTools(t *testing.T) {
 	added, errs := registerMCPTools(reg, stub, []mcp.Tool{
 		{Name: "check_ip", Description: "Check an IP.", InputSchema: map[string]any{"type": "object"}},
 		{Name: "no_schema", Description: "Schema-less tool."},
-	}, nil)
+	})
 	if len(errs) != 0 || len(added) != 2 {
 		t.Fatalf("added=%v errs=%v", added, errs)
 	}
@@ -121,7 +121,7 @@ func TestAdapterTypesRemoteFailuresByProvenance(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, errs := registerMCPTools(reg, c.stub, []mcp.Tool{{Name: "q", Description: "q"}}, nil); len(errs) != 0 {
+		if _, errs := registerMCPTools(reg, c.stub, []mcp.Tool{{Name: "q", Description: "q"}}); len(errs) != 0 {
 			t.Fatalf("%s: %v", c.name, errs)
 		}
 		tool, _ := reg.Get("mcp__srv__q")

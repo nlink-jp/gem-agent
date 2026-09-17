@@ -110,7 +110,8 @@ an isolated child context (`agentic_file_search`), atomic batched edits with
 diagnosed misses (`edit_file`/`write_file`, with a shrink guard so a
 whole-file rewrite cannot silently summarize a document away), file identification with
 hashes (`file_info`), images and documents for the model
-(`view_image`/`read_document`), a sandboxed shell whose read, write and
+(`view_image`/`read_document`), an image drawn on YOUR screen
+(`show_image`), a sandboxed shell whose read, write and
 operator lanes the kernel enforces (`shell_exec`), a
 deterministic clock/calendar (`datetime`), the model's own runtime
 picture (`agent_info`), structured mid-turn choices (`ask_user`), and grounded web access
@@ -121,13 +122,14 @@ picture (`agent_info`), structured mid-turn choices (`ask_user`), and grounded w
 documents, and audio/video — routed through your GCS bucket when
 configured, inline otherwise.
 
-**Inline images** — an image an MCP tool returns travels the other way: a
-screenshot or a rendered chart is drawn in the terminal as the call
-returns, when the terminal can draw one (`[tui].images`, `auto` by default;
-iTerm2 and kitty, off inside tmux and screen). The model's note is
-unchanged — it gets the path and calls `view_image` to look
+**Inline images** — the model shows you a picture with `show_image`, and
+you ask for one with `/show <path>`; it is drawn in the terminal when the
+terminal can draw (`[tui].images`, `auto` by default; iTerm2 and kitty, off
+inside tmux and screen). `view_image` is the other direction — that is the
+model looking at an image, not you
 ([ADR-0089](docs/en/adr/0089-inline-images-declare-their-height.md) /
-[ADR-0090](docs/en/adr/0090-an-images-bytes-never-become-a-path.md)).
+[ADR-0090](docs/en/adr/0090-an-images-bytes-never-become-a-path.md) /
+[ADR-0091](docs/en/adr/0091-showing-is-an-act-of-output.md)).
 
 **[Approval and safety](docs/en/reference/approval.md)** — per-call
 MITL gates that show the model's own declared purpose for the call

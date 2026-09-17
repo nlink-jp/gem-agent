@@ -176,8 +176,8 @@ art が必要としなかったものが 1 つ増える。
 | 稿 | 名指した供給源 | なぜ失敗したか |
 |---|---|---|
 | 初稿 | モデルが名指すローカル画像パス | view 層のファイル open はツールコールではない。`Agent.decide` に届かず、ADR-0086 の sandbox 子で走らず、組み込みツール名で引かれる資格情報一覧に不可視である（[risk.go:176](../../../internal/risk/risk.go)）— ADR-0085/0086 が修理したクラス |
-| 第 2 稿 | MCP intake が書いたパス | `write` は `os.Stat(path) == nil` で短絡し（[mcpresult.go:247](../../../cmd/mcpresult.go)）、サーバは自分の名前・ツール名・返すバイト列に加え、**毎回の呼び出しが渡す work dir も知っている**（`_meta[workdir.MetaKey]`、[client.go:579](../../../internal/mcp/client.go)）。だから content-addressed のパスに symlink を置け、ランタイムは何も書かない |
-| 第 3 稿 | intake が保持するデコード済みバイト列 | **そんな運搬体は無い。** `render` は `string` を返し（[mcpresult.go:63](../../../cmd/mcpresult.go)）、`mcpIntake` はバイト列を保持せず、`Tool.Run` は `func(ctx, args) (string, error)` である（[tools.go:65](../../../internal/tools/tools.go)）。`blocks` はローカルで、`Run` が返れば到達不能になる |
+| 第 2 稿 | MCP intake が書いたパス | `write` は `os.Stat(path) == nil` で短絡し（[mcpresult.go:234](../../../cmd/mcpresult.go)）、サーバは自分の名前・ツール名・返すバイト列に加え、**毎回の呼び出しが渡す work dir も知っている**（`_meta[workdir.MetaKey]`、[client.go:579](../../../internal/mcp/client.go)）。だから content-addressed のパスに symlink を置け、ランタイムは何も書かない |
+| 第 3 稿 | intake が保持するデコード済みバイト列 | **そんな運搬体は無い。** `render` は `string` を返し（[mcpresult.go:53](../../../cmd/mcpresult.go)）、`mcpIntake` はバイト列を保持せず、`Tool.Run` は `func(ctx, args) (string, error)` である（[tools.go:65](../../../internal/tools/tools.go)）。`blocks` はローカルで、`Run` が返れば到達不能になる |
 
 同じ場所の 3 稿は 3 つの誤りではなく 1 つである。**配管が存在するまで、供給源は名指せない。**
 MCP ツール結果の画像バイトを view 層へ運ぶとは、transcript・resume・エラー経路が乗っている
@@ -197,7 +197,7 @@ MCP ツール結果の画像バイトを view 層へ運ぶとは、transcript・
 記録する。今日、画像の大きさを縛るものは JSON-RPC のフレーム上限（`scannerMax = 10 MiB`、
 [client.go:28](../../../internal/mcp/client.go)）以外に無い — response budget が縛るのは
 **注記**であってデータではない。そして `binaryNote` が budget に収まらないブロックは保存も
-個別記述もされないので（[mcpresult.go:115](../../../cmd/mcpresult.go)）、それを描いてよいかは
+個別記述もされないので（[mcpresult.go:105](../../../cmd/mcpresult.go)）、それを描いてよいかは
 未決である。
 
 ### 6. 画像エスケープを発行するのは view 層だけ
@@ -221,7 +221,7 @@ view 層であり、ツールが返したものが「エスケープに見える
 ### 7. 描画は TUI 限定の能力であり、他の入口はそう言う
 
 `tea.NewProgram` が構築されるのは製品側では 1 箇所
-（[root.go:1726](../../../cmd/root.go)）で、セッションが対話的なときにだけ到達する。
+（[root.go:1766](../../../cmd/root.go)）で、セッションが対話的なときにだけ到達する。
 one-shot `-p` と素の REPL はその手前で戻るので描かない — diagram レーンが既に持つ境界と
 同じである。（以前の稿はモジュール内で「ちょうど 1 箇所」と書いたが、`tools/pinprobe` が
 それを偽にした。あちらも 1 つ構築する。本番の Model を駆動できるのはそのためである。）能力の検出は **`tea.NewProgram` の前に 1 度だけ**行い、キャッシュする。理由はプロトコルの

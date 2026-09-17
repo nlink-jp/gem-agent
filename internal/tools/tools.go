@@ -115,6 +115,12 @@ type Registry struct {
 	// out handle closes when its last holder releases it (review after
 	// v0.68.2 — leaving it open leaked a descriptor per /clear).
 	rootsMu sync.RWMutex
+	// show is the operator's screen, injected by cmd for an interactive
+	// session (ADR-0091 §2). Its own mutex: it is set once at startup
+	// while a tool call may already be running, and the tools package
+	// must not know what a terminal is beyond "bytes went somewhere".
+	showMu sync.RWMutex
+	show   ShowImageFunc
 	// parent is set on a Subset: the child reads the parent's roots,
 	// so a work directory rotated after the child was built is the
 	// child's too.
@@ -171,7 +177,7 @@ func New(projectDir string, execFn ExecFunc, shellTimeout time.Duration) (*Regis
 		tools:        map[string]*Tool{},
 		abandoned:    new(atomic.Int64),
 	}
-	for _, t := range []*Tool{r.listFiles(), r.listTree(), r.searchFiles(), r.readFile(), r.fileInfo(), r.viewImage(), r.readDocument(), r.dateTime(), r.writeFile(), r.editFile(), r.shellExec()} {
+	for _, t := range []*Tool{r.listFiles(), r.listTree(), r.searchFiles(), r.readFile(), r.fileInfo(), r.viewImage(), r.showImage(), r.readDocument(), r.dateTime(), r.writeFile(), r.editFile(), r.shellExec()} {
 		r.tools[t.Name] = t
 		r.order = append(r.order, t.Name)
 	}
@@ -739,6 +745,16 @@ func (r *Registry) List() []*Tool {
 // carrying the actual image (loaded via ReadImage).
 const ViewImageName = "view_image"
 
+// ShowImageName is the tool that puts an image on the OPERATOR's screen
+// (ADR-0091). It is view_image's counterpart and the pair differs in one
+// thing, the audience: view_image attaches pixels to the conversation so
+// the MODEL can look, this one draws them in the terminal so the operator
+// can. Both read the same way, through the same cage and the same path
+// judging — which is what lets a model-named path reach the screen at all
+// (ADR-0090 §2's withdrawal: a read the VIEW layer performs is invisible
+// to every enforcer; a read a TOOL performs is judged like any other).
+const ShowImageName = "show_image"
+
 // ShellExecName is the one tool whose effect is a whole command line
 // rather than a named argument, which is why several layers treat it
 // specially — the approval detail, and the per-command policy and
@@ -871,6 +887,69 @@ func (r *Registry) viewImage() *Tool {
 
 // intArg reads an integer tool argument (JSON numbers arrive as
 // float64). 0 means absent — line numbers here are 1-based.
+// ShowImageFunc draws an image on the operator's screen. It returns the
+// reason it could not, so the tool result can say so: the operator sees
+// nothing on a refusal by design (ADR-0089), and a model that is told
+// nothing either would report a picture that is not there.
+type ShowImageFunc func(data []byte, mime string) error
+
+// SetShowImage injects the screen. Unset — every entrance that is not an
+// interactive TUI, and every test — the tool reads and judges exactly as
+// it would, then says it had nowhere to draw.
+func (r *Registry) SetShowImage(fn ShowImageFunc) {
+	r.showMu.Lock()
+	r.show = fn
+	r.showMu.Unlock()
+}
+
+func (r *Registry) showImageFn() ShowImageFunc {
+	r.showMu.RLock()
+	defer r.showMu.RUnlock()
+	return r.show
+}
+
+func (r *Registry) showImage() *Tool {
+	return &Tool{
+		Name: ShowImageName,
+		Description: "Show an image file to the OPERATOR, drawn in their terminal " +
+			"(a chart you generated, a screenshot you were asked about). The operator " +
+			"sees it; you do not — use view_image to look at an image yourself. " +
+			"Read-only. PNG, JPEG, WebP, GIF, HEIC.",
+		Parameters: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{"type": "string", "description": "image path relative to the project root"},
+			},
+			"required": []string{"path"},
+		},
+		Mutating: false,
+		Run: func(ctx context.Context, args map[string]any) (string, error) {
+			// The kernel adjudicates the read in the child, exactly as
+			// for view_image (ADR-0086 §1): credential material cannot
+			// be opened there at all. The child has no screen, so it
+			// proves the open is allowed and the parent then reads the
+			// bytes it will draw — the same two-step view_image's
+			// attachment already uses.
+			if out, err, ok := r.viaChild(ctx, ShowImageName, args); ok && err != nil {
+				return out, err
+			}
+			p, _ := args["path"].(string)
+			data, mime, err := r.ReadImage(p)
+			if err != nil {
+				return "", err
+			}
+			show := r.showImageFn()
+			if show == nil {
+				return fmt.Sprintf("not shown: this session has no screen to draw on (%s, %s, %d bytes) — tell the operator the path", p, mime, len(data)), nil
+			}
+			if err := show(data, mime); err != nil {
+				return fmt.Sprintf("not shown: %v (%s, %s, %d bytes) — tell the operator the path", err, p, mime, len(data)), nil
+			}
+			return fmt.Sprintf("shown to the operator: %s (%s, %d bytes)", p, mime, len(data)), nil
+		},
+	}
+}
+
 func intArg(args map[string]any, key string) int {
 	if f, ok := args[key].(float64); ok && f > 0 {
 		return int(f)

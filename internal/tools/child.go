@@ -25,7 +25,7 @@ type FileChildFunc func(ctx context.Context, tool string, args map[string]any) (
 // content, and the kernel lists names rather than hiding them, so
 // ADR-0086 §3 stops judging names at all.
 var childTools = map[string]bool{
-	"read_file": true, "view_image": true, "read_document": true,
+	"read_file": true, "view_image": true, "show_image": true, "read_document": true,
 	"file_info": true, "search_files": true,
 }
 

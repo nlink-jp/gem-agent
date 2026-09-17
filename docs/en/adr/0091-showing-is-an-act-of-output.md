@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-09-17) |
+| Status | **Accepted** (2026-09-17) — implemented |
 | Date | 2026-09-17 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -83,7 +83,7 @@ carry it after this.
 
 ### 2. A tool the model calls to show the operator an image
 
-A built-in tool — working name `show_image` — takes a path, and its effect is
+A built-in tool — `show_image` — takes a path, and its effect is
 that the operator sees the picture. It is the counterpart of `view_image`, and
 the pair differs in exactly one thing, which is the audience:
 

@@ -209,8 +209,8 @@ finding of its round:
 | draft | the source it named | why it failed |
 |---|---|---|
 | first | a local image path the model names | a view-layer file open is not a tool call: it never reaches `Agent.decide`, never runs in ADR-0086's sandboxed child, and is invisible to the credential list, which is keyed on built-in tool name ([risk.go:176](../../../internal/risk/risk.go)) — the class ADR-0085/0086 repaired |
-| second | the path the MCP intake wrote | `write` short-circuits on `os.Stat(path) == nil` ([mcpresult.go:247](../../../cmd/mcpresult.go)), and a server knows its own name, its tool name, the bytes it will return **and the work directory, which every call hands it** as `_meta[workdir.MetaKey]` ([client.go:579](../../../internal/mcp/client.go)) — so it can plant a symlink at the content-addressed path and the runtime writes nothing |
-| third | the decoded bytes the intake holds | **there is no such carrier.** `render` returns a `string` ([mcpresult.go:63](../../../cmd/mcpresult.go)), `mcpIntake` retains no bytes, and `Tool.Run` is `func(ctx, args) (string, error)` ([tools.go:65](../../../internal/tools/tools.go)). The bytes are a local; after `Run` returns they are unreachable |
+| second | the path the MCP intake wrote | `write` short-circuits on `os.Stat(path) == nil` ([mcpresult.go:234](../../../cmd/mcpresult.go)), and a server knows its own name, its tool name, the bytes it will return **and the work directory, which every call hands it** as `_meta[workdir.MetaKey]` ([client.go:579](../../../internal/mcp/client.go)) — so it can plant a symlink at the content-addressed path and the runtime writes nothing |
+| third | the decoded bytes the intake holds | **there is no such carrier.** `render` returns a `string` ([mcpresult.go:53](../../../cmd/mcpresult.go)), `mcpIntake` retains no bytes, and `Tool.Run` is `func(ctx, args) (string, error)` ([tools.go:65](../../../internal/tools/tools.go)). The bytes are a local; after `Run` returns they are unreachable |
 
 Three drafts in the same place is not three mistakes, it is one: **the source
 cannot be named until the plumbing exists.** Getting an image's bytes from an
@@ -235,7 +235,7 @@ size except the JSON-RPC frame cap (`scannerMax = 10 MiB`,
 [client.go:28](../../../internal/mcp/client.go)) — the response budget bounds
 the *note*, not the data — and a block whose `binaryNote` does not fit the
 response budget is neither saved nor described individually
-([mcpresult.go:115](../../../cmd/mcpresult.go)), so whether it may still be
+([mcpresult.go:105](../../../cmd/mcpresult.go)), so whether it may still be
 drawn is undecided.
 
 ### 6. Only the view layer emits an image escape
@@ -261,7 +261,7 @@ Pre-existing, not widened here, not repaired here.
 ### 7. Drawing is a TUI-only capability, and the other entrances say so
 
 `tea.NewProgram` is constructed at one site in the product
-([root.go:1726](../../../cmd/root.go)), reached only when the session is
+([root.go:1766](../../../cmd/root.go)), reached only when the session is
 interactive; one-shot `-p` and the plain REPL return before it, so they
 never draw — the same boundary the diagram lane already has. (An earlier
 draft said "exactly one site" in the module, which `tools/pinprobe` has
