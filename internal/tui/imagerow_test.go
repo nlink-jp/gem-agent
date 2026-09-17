@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/nlink-jp/gem-agent/internal/termimg"
@@ -80,8 +82,14 @@ func TestDeclaredSegmentIsVerbatim(t *testing.T) {
 	if len(c.printed) != 1 {
 		t.Fatalf("printed %d times, want exactly one write", len(c.printed))
 	}
-	if c.printed[0] != payload {
-		t.Error("the payload was altered on its way to the terminal")
+	// Erase-below, then the payload byte for byte. The erase is required:
+	// Bubble Tea flushes from the top of its own frame with only
+	// EraseLineRight, so without it every cell of the old frame to the
+	// right of a narrower picture survives on every row the picture
+	// covers — measured on iTerm2 as three stranded footers for three
+	// images, with the row count already correct.
+	if want := ansi.EraseScreenBelow + payload; c.printed[0] != want {
+		t.Error("an image line must be exactly erase-below plus the payload, unaltered")
 	}
 	if strings.Contains(c.printed[0], "\n") {
 		t.Error("the payload gained a line break; an image occupies its own line whole")

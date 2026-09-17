@@ -16,6 +16,11 @@
   described it, only if its bytes actually decode as an image whatever the
   MIME says, and only up to 2 MiB decoded; every refusal is silent, because
   a line per undrawable image is a report rather than a control.
+  Verified on the real terminal, which is where the last defect was found:
+  an image draws down N rows at its declared width, so the old frame's
+  cells to the right of a narrower picture survived on every row it
+  covered — three images, three stranded footers, with the row count
+  already correct. The image line now erases below itself first.
 
 - **`[tui] images`** (`auto` | `off` | `iterm` | `kitty`, default `auto`) — the
   wiring for inline images, and nothing draws yet: what may be drawn is

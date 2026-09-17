@@ -912,7 +912,18 @@ func (m *Model) emitSegments(segs []Segment) tea.Cmd {
 			// against a zero-width run (measured), and shearing a base64
 			// run would not be an image. The count comes from the
 			// declaration, never from the bytes.
-			out = append(out, seg.Text)
+			//
+			// EraseScreenBelow first, and it is not decoration. Bubble
+			// Tea flushes a queued line from the TOP of its own frame,
+			// appending EraseLineRight — which clears ONE row. An image
+			// then draws down N rows at its declared width, so every
+			// cell of the old frame to the RIGHT of the picture survives
+			// on every row the picture covers. Measured on iTerm2: three
+			// images, three stranded footers, with the declared count
+			// already correct. Erasing to the end of the screen removes
+			// the frame the renderer is about to repaint below us
+			// anyway, and nothing above the cursor is touched.
+			out = append(out, ansi.EraseScreenBelow+seg.Text)
 			total += seg.Rows
 			continue
 		}
