@@ -106,8 +106,7 @@ iTerm2 3.7.2、180×80、カーソル報告 16 件中 16 件が応答:
 
 ### 測っていないこと、だから断定しないこと
 
-- kitty と Ghostty が `r=` を守るか。ここでの測定はすべて iTerm2 か tmux である。決定 4 は
-  決定 4 は 2 方式を拘束するが、片方に測定が無い。
+- kitty と Ghostty が `r=` を守るか。ここでの測定はすべて iTerm2 か tmux である。決定 4 は 2 方式を拘束するが、片方に測定が無い。
 - Terminal.app が 3 方式のいずれかを実装するか。初稿は事実として書いた。**ここでは未検証**で
   あり、荷重を担うのは「グラフィック無しの経路がどれほど一般的か」の部分だけである。
 - 画像 1 枚あたりのコスト。2.4 KB の payload の後、iTerm2 が次のカーソル報告に答えるまで
@@ -178,7 +177,7 @@ art が必要としなかったものが 1 つ増える。
 |---|---|---|
 | 初稿 | モデルが名指すローカル画像パス | view 層のファイル open はツールコールではない。`Agent.decide` に届かず、ADR-0086 の sandbox 子で走らず、組み込みツール名で引かれる資格情報一覧に不可視である（[risk.go:176](../../../internal/risk/risk.go)）— ADR-0085/0086 が修理したクラス |
 | 第 2 稿 | MCP intake が書いたパス | `write` は `os.Stat(path) == nil` で短絡し（[mcpresult.go:247](../../../cmd/mcpresult.go)）、サーバは自分の名前・ツール名・返すバイト列に加え、**毎回の呼び出しが渡す work dir も知っている**（`_meta[workdir.MetaKey]`、[client.go:579](../../../internal/mcp/client.go)）。だから content-addressed のパスに symlink を置け、ランタイムは何も書かない |
-| 第 3 稿 | intake が保持するデコード済みバイト列 | **そんな運搬体は無い。** `render` は `string` を返し（[mcpresult.go:54](../../../cmd/mcpresult.go)）、`mcpIntake` はバイト列を保持せず、`Tool.Run` は `func(ctx, args) (string, error)` である（[tools.go:65](../../../internal/tools/tools.go)）。`blocks` はローカルで、`Run` が返れば到達不能になる |
+| 第 3 稿 | intake が保持するデコード済みバイト列 | **そんな運搬体は無い。** `render` は `string` を返し（[mcpresult.go:63](../../../cmd/mcpresult.go)）、`mcpIntake` はバイト列を保持せず、`Tool.Run` は `func(ctx, args) (string, error)` である（[tools.go:65](../../../internal/tools/tools.go)）。`blocks` はローカルで、`Run` が返れば到達不能になる |
 
 同じ場所の 3 稿は 3 つの誤りではなく 1 つである。**配管が存在するまで、供給源は名指せない。**
 MCP ツール結果の画像バイトを view 層へ運ぶとは、transcript・resume・エラー経路が乗っている
@@ -198,7 +197,7 @@ MCP ツール結果の画像バイトを view 層へ運ぶとは、transcript・
 記録する。今日、画像の大きさを縛るものは JSON-RPC のフレーム上限（`scannerMax = 10 MiB`、
 [client.go:28](../../../internal/mcp/client.go)）以外に無い — response budget が縛るのは
 **注記**であってデータではない。そして `binaryNote` が budget に収まらないブロックは保存も
-個別記述もされないので（[mcpresult.go:113](../../../cmd/mcpresult.go)）、それを描いてよいかは
+個別記述もされないので（[mcpresult.go:115](../../../cmd/mcpresult.go)）、それを描いてよいかは
 未決である。
 
 ### 6. 画像エスケープを発行するのは view 層だけ
@@ -207,9 +206,11 @@ MCP ツール結果の画像バイトを view 層へ運ぶとは、transcript・
 view 層であり、ツールが返したものが「エスケープに見える」という理由で素通しされることは
 無い。
 
-実装コミットは、エスケープを出してよい場所を列挙するアーキテクチャテストを**同じコミットで**
-持つ。機構は既にある（`internal/archtest`）。そのテストが無ければこの一文は「現時点では」で
-あり、そう書くべきである。
+`internal/archtest` がエスケープを出してよい場所を列挙する — `termimg.Payload` を呼べるのは
+`internal/tui` だけである。**本記録は「実装コミットがそのテストを同じコミットで持つ」と書いた
+が、実際には持たなかった。** 独立検証パスがこの一文だけが立っているのを見つけた。この一文自身に
+書かれた規則により、それは「現時点では」にすぎない。テストは後から書かれ、いまこの一文は意図
+ではなく実在を述べている。
 
 これは**既存の面を塞いだと主張するものではない**。ツール出力は ANSI 除去なしで印字される。
 非テストコードで `ansi.Strip` が呼ばれるのはちょうど 1 箇所
@@ -235,8 +236,8 @@ one-shot `-p` と素の REPL はその手前で戻るので描かない — diag
 無いことを**能力なし**として扱う。諦めたカーソル報告は失われるのではなく次の問い合わせへ
 誤配される（`rowprobe` を作る過程で実測: 11 送信・5 受信・6 件が終了後のシェルプロンプトへ）。
 
-選択は `theme`・`language` と並ぶ `[tui] images = "auto"`
-（[config.go:179](../../../internal/config/config.go)）。多重化端末の中では **off** である。
+選択は `[tui] images = "auto"`
+（[config.go:194](../../../internal/config/config.go)）。`theme`・`language`（`:179`・`:183`）と並ぶ。多重化端末の中では **off** である。
 初稿が書いた「passthrough は他人の設定だから」ではなく、**payload を描くと測定された唯一の
 多重化端末が、画像 1 枚ごとにフレームを取り残したから**である。
 
@@ -274,10 +275,18 @@ one-shot `-p` と素の REPL はその手前で戻るので描かない — diag
   行ずれの大半を捕まえる — 今回の修正が持ち込んだ 2 行ずれもこれが捕まえた — が、±N 摂動の
   実測 15〜18% はなお通る。markdown の表が 1 段落として token を共有するためであり、さらに
   本記録内の行参照のおよそ 1/3 はその正規表現が拾わない形をしている。
-  `internal/archtest/withdrawn_test.go` は 9 つの英語句の逐語的再出現を 215 の読まれる面に
+  `internal/archtest/withdrawn_test.go` は 9 つの英語句の逐語的再出現を読まれる面すべて（執筆時点で 217）に
   対して捕まえるが、言い換え・各文書の日本語側・行またぎ・`cmd/` と `internal/` には盲目で
   ある。どちらも残す価値がある。どちらも「クラスが閉じた」と言う資格を与えない。本項の
   以前の稿はまさにそう言っていた。
+- **記録するが採らない**もの: lagent に移植された `gem-agent ADR-0020` との ADR 番号衝突
+  （あちらの引用はすべて修飾されており、アーキテクチャテストがそれを保つ。ただしその
+  テストの射程は `cmd/` と `internal/` で、散文には及ばない — 独立検証パスが AGENTS.md の
+  裸の番号を見つけ、射程を散文へ広げた）。および「iTerm2 の行について、人間が transcript を
+  読むより良い計器を挙げよ」という要求（その端末を読み返せる計器はここに無い。transcript を
+  凍結し、行が主張する内容を transcript が運べる範囲に限った）。
+- 本 ADR が拘束するのは gem-agent である。lagent ADR-0020 が反対側の同じ決定であり、
+  どちらのランタイムも単独でそれを持てない。
 
 ## Alternatives Considered（検討した代替案）
 

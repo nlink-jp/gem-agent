@@ -210,7 +210,7 @@ finding of its round:
 |---|---|---|
 | first | a local image path the model names | a view-layer file open is not a tool call: it never reaches `Agent.decide`, never runs in ADR-0086's sandboxed child, and is invisible to the credential list, which is keyed on built-in tool name ([risk.go:176](../../../internal/risk/risk.go)) — the class ADR-0085/0086 repaired |
 | second | the path the MCP intake wrote | `write` short-circuits on `os.Stat(path) == nil` ([mcpresult.go:247](../../../cmd/mcpresult.go)), and a server knows its own name, its tool name, the bytes it will return **and the work directory, which every call hands it** as `_meta[workdir.MetaKey]` ([client.go:579](../../../internal/mcp/client.go)) — so it can plant a symlink at the content-addressed path and the runtime writes nothing |
-| third | the decoded bytes the intake holds | **there is no such carrier.** `render` returns a `string` ([mcpresult.go:54](../../../cmd/mcpresult.go)), `mcpIntake` retains no bytes, and `Tool.Run` is `func(ctx, args) (string, error)` ([tools.go:65](../../../internal/tools/tools.go)). The bytes are a local; after `Run` returns they are unreachable |
+| third | the decoded bytes the intake holds | **there is no such carrier.** `render` returns a `string` ([mcpresult.go:63](../../../cmd/mcpresult.go)), `mcpIntake` retains no bytes, and `Tool.Run` is `func(ctx, args) (string, error)` ([tools.go:65](../../../internal/tools/tools.go)). The bytes are a local; after `Run` returns they are unreachable |
 
 Three drafts in the same place is not three mistakes, it is one: **the source
 cannot be named until the plumbing exists.** Getting an image's bytes from an
@@ -235,7 +235,7 @@ size except the JSON-RPC frame cap (`scannerMax = 10 MiB`,
 [client.go:28](../../../internal/mcp/client.go)) — the response budget bounds
 the *note*, not the data — and a block whose `binaryNote` does not fit the
 response budget is neither saved nor described individually
-([mcpresult.go:113](../../../cmd/mcpresult.go)), so whether it may still be
+([mcpresult.go:115](../../../cmd/mcpresult.go)), so whether it may still be
 drawn is undecided.
 
 ### 6. Only the view layer emits an image escape
@@ -244,10 +244,13 @@ Bytes arriving from a tool are data. The view layer decides a segment is an
 image and writes the escape; nothing a tool returns is passed through as an
 escape because it looks like one.
 
-The implementation commit carries an architecture test enumerating the
-sites that may emit one, in the same commit — the machinery exists
-(`internal/archtest`). Without that test this sentence is "as of today",
-and it should be written that way instead.
+`internal/archtest` enumerates the sites that may emit one:
+`termimg.Payload` is callable from `internal/tui` and nowhere else.
+**This record said the implementation commit would carry that test, and it
+did not** — an independent pass found the sentence standing alone, which by
+the rule written into it makes the claim "as of today". The test was
+written afterwards, so the sentence now describes what exists rather than
+what was intended.
 
 This does **not** close the existing surface: tool output is printed without
 ANSI stripping — `ansi.Strip` is called at exactly one site in non-test code
@@ -278,8 +281,9 @@ abandoned cursor report is misfiled into the next query, not lost (measured
 building `rowprobe`: 11 sent, 5 read, 6 landing on the shell prompt after
 exit).
 
-`[tui] images = "auto"` selects it, beside `theme` and `language`
-([config.go:179](../../../internal/config/config.go)). Inside a multiplexer
+`[tui] images = "auto"` selects it
+([config.go:194](../../../internal/config/config.go)), beside `theme` and
+`language` (`:179` and `:183`). Inside a multiplexer
 the answer is **off** — not because passthrough is someone else's
 configuration, which is what the first draft said, but because the one
 multiplexer measured rendering a payload stranded a frame for every image.
@@ -326,7 +330,7 @@ an obligation, not the present-tense claim an earlier draft made.
   paragraph and pools its token set, and roughly a third of the line
   references in these records are in forms its regex does not match.
   `internal/archtest/withdrawn_test.go` catches verbatim repetition of nine
-  English phrases across 215 read surfaces, and is blind to paraphrase, to
+  English phrases across every read surface (217 at the time of writing), and is blind to paraphrase, to
   the Japanese half of every document, to a phrase that wraps at a line
   break, and to `cmd/` and `internal/`. Both are worth keeping. Neither
   entitles anyone to say the class is closed, and an earlier draft of this

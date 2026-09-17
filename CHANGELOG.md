@@ -23,9 +23,10 @@
   already correct. The image line now erases below itself first.
 
 - **`[tui] images`** (`auto` | `off` | `iterm` | `kitty`, default `auto`) — the
-  wiring for inline images, and nothing draws yet: what may be drawn is
-  deferred to its own record ([ADR-0089](docs/en/adr/0089-inline-images-declare-their-height.md) §5).
-  What is settled is the accounting. An image payload is zero cells wide to
+  capability behind the entry above; what may be drawn is settled in its own
+  record ([ADR-0090](docs/en/adr/0090-an-images-bytes-never-become-a-path.md),
+  deferred out of [ADR-0089](docs/en/adr/0089-inline-images-declare-their-height.md) §5).
+  What this one settles is the accounting. An image payload is zero cells wide to
   every surface the TUI has, so the row counter is TOLD the box the emitter
   declared instead of measuring bytes it cannot see — measured on two
   terminals with a plain control at the same fill, a terminal that draws

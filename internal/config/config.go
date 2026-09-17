@@ -187,9 +187,10 @@ type TUIConfig struct {
 	// Images: "auto" (ask the terminal once, before the UI starts),
 	// "off", or a protocol forced by name — "iterm" or "kitty" — for the
 	// case where the probe is wrong (ADR-0089 §7). Inside a multiplexer
-	// "auto" resolves to off: passthrough is the multiplexer's
-	// configuration, and the one measured rendering a payload stranded a
-	// frame for every image.
+	// "auto" resolves to off — because the one measured rendering a
+	// payload stranded a frame for every image, not because passthrough
+	// is someone else's configuration, which is the reason that ADR
+	// refuses.
 	Images string `toml:"images"`
 }
 

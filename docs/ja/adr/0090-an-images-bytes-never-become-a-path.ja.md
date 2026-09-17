@@ -31,9 +31,9 @@ work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:579](../..
 ### 配管は実際にどうなっているか
 
 反証された第 3 稿は、view 層に「intake が既に保持しているバイト列」を渡すと書いた。渡せない。
-`render` は `string` を返し（[mcpresult.go:54](../../../cmd/mcpresult.go)）、`mcpIntake` が
-持つのは work dir の getter とバイト上限とプレビュー長だけで
-（[mcpresult.go:61](../../../cmd/mcpresult.go)）、ツール契約は
+`render` は `string` を返し（[mcpresult.go:63](../../../cmd/mcpresult.go)）、`mcpIntake` が
+持つのは work dir の getter とバイト上限とプレビュー長、そして本決定以降は sink であって
+（[mcpresult.go:56](../../../cmd/mcpresult.go)）、一度も持ったことが無いのがバイト列であり、ツール契約は
 `Run func(ctx, args) (string, error)` である（[tools.go:65](../../../internal/tools/tools.go)）。
 `Run` が返れば blocks は消えている。
 
@@ -79,7 +79,7 @@ sink は対話的 TUI でない入口すべてで**不活性**である。そこ
 
 条件は 1 つであって 2 つではない。注記が response budget に収まらないブロックは、既に保存も
 個別記述もされない — ガードは何かを書く前に `binaryNote` の大きさを測る
-（[mcpresult.go:113](../../../cmd/mcpresult.go)）— そして leftovers 行に数えられる。そうした
+（[mcpresult.go:115](../../../cmd/mcpresult.go)）— そして leftovers 行に数えられる。そうした
 ブロックは**描かない**。
 
 代案（モデルが知らされていない絵を、結果が切り詰められた呼び出しから描く）は、セッションの

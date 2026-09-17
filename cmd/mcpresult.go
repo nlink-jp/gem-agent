@@ -41,8 +41,10 @@ type mcpIntake struct {
 	// (ADR-0090 §1). Bytes, never the path: a read the view layer
 	// performs is not a tool call and no enforcer can see it, and the
 	// path this intake writes is one a server can pre-empt with a
-	// symlink. nil in every entrance that is not an interactive TUI, so
-	// those pass no bytes anywhere rather than deciding not to draw.
+	// symlink. It is NOT nil outside an interactive TUI — the servers
+	// connect before the runtime knows whether it has a UI — but it is
+	// inert there, so those entrances drop what they are given rather
+	// than deciding not to draw.
 	draw func(data []byte, mime string)
 	// cap is the byte size above which a text block is spilled.
 	cap int

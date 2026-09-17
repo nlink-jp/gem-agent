@@ -37,9 +37,10 @@ the real path. A view layer that opened it would not be.
 
 The third refuted draft said the view layer would be handed "the bytes the
 intake already holds". It cannot: `render` returns a `string`
-([mcpresult.go:54](../../../cmd/mcpresult.go)), `mcpIntake` keeps only a
-work-directory getter, a byte cap and a preview length
-([mcpresult.go:61](../../../cmd/mcpresult.go)), and the tool contract is
+([mcpresult.go:63](../../../cmd/mcpresult.go)), `mcpIntake` keeps a
+work-directory getter, a byte cap and a preview length — and, since this
+decision, the sink; what it has never kept is the bytes
+([mcpresult.go:56](../../../cmd/mcpresult.go)), and the tool contract is
 `Run func(ctx, args) (string, error)`
 ([tools.go:65](../../../internal/tools/tools.go)). After `Run` returns, the
 blocks are gone.
@@ -92,7 +93,7 @@ does not allow.
 One condition, not two. A block whose note does not fit the response
 budget is already neither saved nor described individually — the guard
 sizes `binaryNote` before anything is written
-([mcpresult.go:113](../../../cmd/mcpresult.go)) — and is counted into a
+([mcpresult.go:115](../../../cmd/mcpresult.go)) — and is counted into a
 leftovers line. Such a block is **not drawn** either.
 
 The alternative — drawing a picture the model was never told about, from a
