@@ -855,22 +855,65 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // on (ADR-0003). Every print of the model must go through here, never
 // through m.println directly.
 func (m *Model) emit(s string) tea.Cmd {
-	// Tabs are expanded before counting AND printing: the width counter
-	// sees "\t" as zero cells while the terminal advances to the next
-	// 8-column stop, and every mismatch shifts the pinned input line —
-	// `!git diff` output drifted it one row per wrapped tab line
-	// (ADR-0021). Printing the expansion keeps count and drawing equal.
-	s = expandTabs(s)
-	// Then every line is hard-wrapped under the terminal width: an
-	// over-wide scrollback line is NOT harmless (see wrapForScrollback).
-	s = wrapForScrollback(s, m.width)
+	return m.emitSegments([]Segment{{Text: s}})
+}
+
+// Segment is one run of a reply on its way to scrollback.
+//
+// Rows == 0 is ordinary text: it is tab-expanded, hard-wrapped and COUNTED,
+// which is what every line has always been.
+//
+// Rows > 0 is a DECLARED height (ADR-0089 §1). The text is an inline-image
+// payload whose box the emitter chose, and the counter is told that number
+// instead of measuring bytes it cannot see: `ansi.StringWidth` returns 0
+// for every image escape, so physicalRows would credit the line with the
+// one row it floors to while the terminal advances N. Measured on two
+// terminals with a plain control at the same fill: once the screen is full,
+// a terminal that draws what the counter cannot see strands one frame per
+// image in the scrollback. The declaration REPLACES the floor of 1; adding
+// to it would over-count by one per image.
+type Segment struct {
+	Text string
+	Rows int
+}
+
+// emitSegments prints a reply into scrollback AND counts its physical rows
+// — the accounting the bottom pinning rests on (ADR-0003). Every print of
+// the model goes through here, never through m.println directly, and the
+// whole run is ONE write: every tea.Println is a separate clear-insert-
+// repaint on the inline renderer, and the intermediate frames are visible
+// over a slow link.
+func (m *Model) emitSegments(segs []Segment) tea.Cmd {
 	w := m.width
 	if w <= 0 {
 		w = 80
 	}
+	out := make([]string, 0, len(segs))
 	total := 0
-	for _, line := range strings.Split(s, "\n") {
-		total += physicalRows(line, w)
+	for _, seg := range segs {
+		if seg.Rows > 0 {
+			// Verbatim, and on its own line. No tab expansion and no
+			// wrap: the payload holds no tabs, wrapForScrollback is inert
+			// against a zero-width run (measured), and shearing a base64
+			// run would not be an image. The count comes from the
+			// declaration, never from the bytes.
+			out = append(out, seg.Text)
+			total += seg.Rows
+			continue
+		}
+		// Tabs are expanded before counting AND printing: the width
+		// counter sees "\t" as zero cells while the terminal advances to
+		// the next 8-column stop, and every mismatch shifts the pinned
+		// input line — `!git diff` output drifted it one row per wrapped
+		// tab line (ADR-0021). Printing the expansion keeps count and
+		// drawing equal. Then every line is hard-wrapped under the
+		// terminal width: an over-wide scrollback line is NOT harmless
+		// (see wrapForScrollback).
+		s := wrapForScrollback(expandTabs(seg.Text), m.width)
+		out = append(out, s)
+		for _, line := range strings.Split(s, "\n") {
+			total += physicalRows(line, w)
+		}
 	}
 	if m.hold != nil {
 		m.hold.printed += total
@@ -884,7 +927,7 @@ func (m *Model) emit(s string) tea.Cmd {
 			}
 		}
 	}
-	return m.println(s)
+	return m.println(strings.Join(out, "\n"))
 }
 
 // beginTurnStats arms the ADR-0033 heartbeat for a fresh turn.

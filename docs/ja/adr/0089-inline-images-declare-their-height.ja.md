@@ -19,7 +19,7 @@
 している版 `charmbracelet/x/ansi` v0.11.6 で実測すると、`ansi.StringWidth` は iTerm2 の
 `OSC 1337 File=`、kitty の `APC _G`、sixel の `DCS q` のいずれにも **0** を返し、
 `ansi.Strip` は空文字を返す。`ansi.Hardwrap` は 3 方式ともバイト同一で通すので、
-`wrapForScrollback`（[model.go:1016](../../../internal/tui/model.go)）は base64 の
+`wrapForScrollback`（[model.go:1059](../../../internal/tui/model.go)）は base64 の
 連なりを切り刻まない。独立検証パスはこれを実 PNG と現実的な sixel で取り直した。
 リポジトリ自身のテストは 3 方式のうち 2 つしか覆っていなかった。いまは
 `tools/imgpayload` が 3 つとも持つ。ある稿はそこで逆方向に行き過ぎ、より広い再測定
@@ -30,7 +30,7 @@
 それを主張するテストであって、照合する能力ではない。
 
 ただしカウンタは盲目ではない。初稿はそう書いていた。`physicalRows`
-（[model.go:1029](../../../internal/tui/model.go)）は `rows, cells := 1, 0` から始まる
+（[model.go:1072](../../../internal/tui/model.go)）は `rows, cells := 1, 0` から始まる
 ので、画像の行をちょうど **1 行**と計上する。端末が N 行進める間に、である。不足は
 `N` ではなく `N-1` である。
 
@@ -45,7 +45,7 @@
 
 領域は仮定ではなく構成する。pin の padding は `height − printed − view − 1` で、
 production はその正の分岐を「screen not full」とラベルしている
-（[model.go:1726](../../../internal/tui/model.go)）。30 行の tmux ペイン用に選んだ
+（[model.go:1769](../../../internal/tui/model.go)）。30 行の tmux ペイン用に選んだ
 filler の行数が、80 行の iTerm2 窓を分岐の反対側に置き、本記録の以前の稿はその実行を
 「full」と報告した。いま filler は端末自身の高さから計算され、各実行が何を構成したかを
 印字する。
@@ -204,7 +204,7 @@ view 層であり、ツールが返したものが「エスケープに見える
 
 これは**既存の面を塞いだと主張するものではない**。ツール出力は ANSI 除去なしで印字される。
 非テストコードで `ansi.Strip` が呼ばれるのはちょうど 1 箇所
-（[model.go:1034](../../../internal/tui/model.go)）、`physicalRows` の中で幅を**測る**ためだけで
+（[model.go:1077](../../../internal/tui/model.go)）、`physicalRows` の中で幅を**測る**ためだけで
 ある。よってシェル出力の生エスケープは既に端末へ届いている。既存であり、ここで広がらず、
 ここで直しもしない。
 

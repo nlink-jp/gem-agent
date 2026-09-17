@@ -20,7 +20,7 @@ count. Measured against `charmbracelet/x/ansi` v0.11.6, the version
 `go.mod:14` pins: `ansi.StringWidth` returns **0** and `ansi.Strip` returns
 the empty string for an iTerm2 `OSC 1337 File=`, a kitty `APC _G` and a
 sixel `DCS q` alike. `ansi.Hardwrap` leaves all three **byte-identical**, so
-`wrapForScrollback` ([model.go:1016](../../../internal/tui/model.go)) does
+`wrapForScrollback` ([model.go:1059](../../../internal/tui/model.go)) does
 not shear a base64 run. An independent pass re-measured it with a
 real PNG and a real sixel — the repository's own test had covered two of the
 three families, and `tools/imgpayload` now carries all three. A draft then over-corrected the
@@ -33,7 +33,7 @@ widths, both settings, 126 combinations, every one byte-identical — and
 is a test that asserts it, not the ability to.
 
 The counter is not blind, though, and the first draft said it was.
-`physicalRows` ([model.go:1029](../../../internal/tui/model.go)) starts at
+`physicalRows` ([model.go:1072](../../../internal/tui/model.go)) starts at
 `rows, cells := 1, 0` and so credits an image line with exactly **one** row
 while the terminal advances N. The shortfall is `N-1`, not `N`.
 
@@ -50,7 +50,7 @@ prints the table it computed.
 
 The regime is arranged, not assumed. The pin's padding is
 `height − printed − view − 1`, and production labels the positive branch
-"screen not full" ([model.go:1726](../../../internal/tui/model.go)). A
+"screen not full" ([model.go:1769](../../../internal/tui/model.go)). A
 filler count chosen for a 30-row tmux pane left an 80-row iTerm2 window on
 the other side of that branch, and an earlier draft of this record reported
 those runs as "full". The filler is computed from the terminal's own height
@@ -238,7 +238,7 @@ and it should be written that way instead.
 
 This does **not** close the existing surface: tool output is printed without
 ANSI stripping — `ansi.Strip` is called at exactly one site in non-test code
-([model.go:1034](../../../internal/tui/model.go)), inside `physicalRows`, to
+([model.go:1077](../../../internal/tui/model.go)), inside `physicalRows`, to
 *measure* — so raw escapes from shell output already reach the terminal.
 Pre-existing, not widened here, not repaired here.
 
