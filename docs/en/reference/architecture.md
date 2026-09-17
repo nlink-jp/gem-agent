@@ -15,7 +15,8 @@ cmd/            flags, config load, project resolution, wiring, REPL/TUI
   |-- internal/llm         Backend interface + Vertex AI Gemini (stream observer)
   |-- internal/tools       the eleven file/shell/calendar built-ins + Register
   |-- internal/agent       the turn loop, approval dispatch, compaction
-  `-- internal/tui         Bubble Tea inline UI (or internal/repl, non-TTY)
+  |-- internal/tui         Bubble Tea inline UI (or internal/repl, non-TTY)
+  `-- internal/termimg     inline images in a declared box (ADR-0089)
 ```
 
 The tools package holds the eleven built-ins that need only the project

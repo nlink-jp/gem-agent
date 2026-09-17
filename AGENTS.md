@@ -176,6 +176,13 @@ internal/repl/     paste-safe input reader (plain REPL, non-TTY fallback)
 internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate
 internal/diagram/  mermaid → terminal box art (ADR-0042/0063): fence scanner,
                    shape normalization, wrongness guards — no size gates
+internal/termimg/  inline images in a DECLARED box (ADR-0089): capability
+                   detection before Bubble Tea owns stdin, iTerm2/kitty
+                   payloads carrying the box, Fit clamping the width. The
+                   row counter is told the box, never asked to measure —
+                   an image payload is zero cells wide to every surface
+                   the TUI has. Not wired to any source yet: ADR-0089 §5
+                   defers what may be drawn
 scripts/           codesign-darwin.sh / notarize-darwin.sh (org templates, verbatim),
                    docs-mirror-check.sh, verify-release-selftest.sh (make check)
 docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)

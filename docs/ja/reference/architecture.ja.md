@@ -15,7 +15,8 @@ cmd/            フラグ・設定読込・プロジェクト解決・配線・R
   |-- internal/llm         Backend interface + Vertex AI Gemini（stream observer）
   |-- internal/tools       ファイル/シェル/暦の組み込み 11 ツール + Register
   |-- internal/agent       ターンループ・承認ディスパッチ・圧縮
-  `-- internal/tui         Bubble Tea inline UI（非 TTY は internal/repl）
+  |-- internal/tui         Bubble Tea inline UI（非 TTY は internal/repl）
+  `-- internal/termimg     宣言したボックス内のインライン画像（ADR-0089）
 ```
 
 tools パッケージが持つのはプロジェクトディレクトリだけで動く組み込み
