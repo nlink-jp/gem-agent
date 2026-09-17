@@ -14,6 +14,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/mcpfilter"
 	"github.com/nlink-jp/gem-agent/internal/policy"
+	"github.com/nlink-jp/gem-agent/internal/termimg"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/tui"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
@@ -46,6 +47,12 @@ type settingsStore struct {
 	// value the panel just replaced — the display claimed config.toml
 	// authored values it never held (review round 2).
 	sessionEdits map[string]bool
+	// images is the inline-image protocol this session resolved at
+	// startup (ADR-0089 §7). The panel holds it because the probe runs
+	// once, before the UI exists, and its answer is the one thing about
+	// this setting the operator cannot derive from the file: "auto" can
+	// mean iTerm2, kitty, or nothing at all.
+	images termimg.Protocol
 	// startValues is what the live session settings read the first time
 	// the panel was built — startup, since root.go builds it there.
 	// sessionEdits only knows about the panel's own edits, so a ceiling
@@ -238,6 +245,17 @@ func (s *settingsStore) data() tui.SettingsData {
 	ro("session", "tui.theme", s.cfg.TUI.Theme, "tui.theme", "applies at next start")
 	ro("session", "tui.show_thoughts", strconv.FormatBool(s.cfg.TUI.ShowThoughts), "tui.show_thoughts",
 		"live thought summaries in the TUI; applies at next start")
+	// Like tui.language, "auto" shows what it resolved TO. The probe
+	// runs once before the UI starts and cannot be re-run mid-session
+	// (the reply would land in the input box), and every refusal to draw
+	// is silent by design (ADR-0090) — so this row is the one place that
+	// answers "did it find anything?" when the operator asks.
+	imagesValue := s.cfg.TUI.Images
+	if imagesValue == "auto" {
+		imagesValue = fmt.Sprintf("auto (→ %s)", s.images)
+	}
+	ro("session", "tui.images", imagesValue, "tui.images",
+		"inline images from MCP tools: auto, off, iterm, or kitty; asked once before the UI starts, so it applies at next start")
 
 	s.mcpRows(&d)
 	s.approvalRows(&d)

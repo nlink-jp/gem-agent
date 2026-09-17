@@ -46,7 +46,7 @@ blocks are gone.
 
 But the runtime is not short of a channel. The agent loop already talks to
 the UI **during** a tool call — `prog.Send(tui.ToolCall{…})` at
-[root.go:934](../../../cmd/root.go) — so an out-of-band route from a tool
+[root.go:944](../../../cmd/root.go) — so an out-of-band route from a tool
 result to the screen is an existing, working pattern rather than a new
 mechanism. Nothing about the string contract has to move.
 

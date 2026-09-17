@@ -742,6 +742,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// so both components drain the same buffer and no typed-ahead input
 	// is stranded in a second one. (The TUI reads the terminal itself.)
 	stdin := bufio.NewReader(cmd.InOrStdin())
+	// The inline-image capability is resolved ONCE, here: before
+	// tea.NewProgram (ADR-0089 §7), and only for a session that will have
+	// a UI — the probe writes escapes to the terminal and a one-shot or a
+	// piped run has none to write to. The settings panel answers with it
+	// too, so it cannot be resolved twice or answered differently in the
+	// two places.
+	images := termimg.None
+	if useTUI {
+		images = resolveImages(cfg.TUI.Images)
+	}
 	var gate agent.Approver
 	var tuiGate *tui.Gate
 	switch {
@@ -1180,7 +1190,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		cfg: cfg, projectCfg: projectCfg, policyFile: policyFile,
 		policyPath: policyPath, projectDir: projectDir,
 		registry: registry, ag: ag, current: approvalPolicy,
-		filter: mcpFilter, inv: mcpInv,
+		filter: mcpFilter, inv: mcpInv, images: images,
 	}
 	settingsData := settings.data()
 
@@ -1644,7 +1654,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// whole chrome fell back to English (review round 2).
 			Msgs:          msgs,
 			Theme:         resolveTheme(cfg.TUI.Theme),
-			Images:        resolveImages(cfg.TUI.Images),
+			Images:        images,
 			ModelName:     cfg.Model.Name,
 			ProjectDir:    abbreviateHome(projectDir),
 			Banner:        bannerLines,
@@ -2477,10 +2487,6 @@ func abbreviateHome(path string) string {
 	return path
 }
 
-// resolveTheme maps [tui].theme to the TUI's theme value. "auto" runs
-// background detection, which sends an OSC query and reads the reply —
-// it must happen HERE, before Bubble Tea puts the terminal in raw mode,
-// or the reply leaks into the input box as phantom keys.
 // resolveImages asks the terminal what inline-image protocol it can draw
 // with, ONCE, here — before tea.NewProgram (ADR-0089 §7). The reason is
 // raw-mode stdin ownership: once Bubble Tea owns stdin, a terminal's reply
@@ -2501,6 +2507,10 @@ func resolveImages(configured string) termimg.Protocol {
 	return termimg.Resolve(configured, tty, os.Getenv, 2*time.Second)
 }
 
+// resolveTheme maps [tui].theme to the TUI's theme value. "auto" runs
+// background detection, which sends an OSC query and reads the reply —
+// it must happen HERE, before Bubble Tea puts the terminal in raw mode,
+// or the reply leaks into the input box as phantom keys.
 func resolveTheme(configured string) string {
 	switch configured {
 	case "dark", "light":

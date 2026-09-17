@@ -38,7 +38,7 @@ work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:579](../..
 `Run` が返れば blocks は消えている。
 
 しかしランタイムに経路が無いわけではない。エージェントループはツールコールの**最中に**既に
-UI へ話しかけている — `prog.Send(tui.ToolCall{…})`（[root.go:934](../../../cmd/root.go)）—
+UI へ話しかけている — `prog.Send(tui.ToolCall{…})`（[root.go:944](../../../cmd/root.go)）—
 ので、ツール結果から画面への帯域外経路は新しい機構ではなく既存の働いている型である。文字列
 契約は 1 ミリも動かさなくてよい。
 

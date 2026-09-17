@@ -11,6 +11,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/policy"
+	"github.com/nlink-jp/gem-agent/internal/termimg"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/tui"
 )
@@ -323,5 +324,38 @@ func TestSettingsProvenanceAgreesAcrossSurfaces(t *testing.T) {
 	}
 	if panelRow.Source != config.FromFile {
 		t.Errorf("a value back at its startup value is still credited to the session: %+v", panelRow)
+	}
+}
+
+// TestSettingsAnswersWhatTheImageProbeFound: every refusal to draw is
+// silent by design (ADR-0090), and the probe runs once before the UI exists
+// and cannot be re-run mid-session — so "auto" is the one setting whose
+// effect the operator cannot derive from the file or from the screen. The
+// panel is where that question is asked, and it answers with the protocol
+// the probe actually resolved, the way tui.language answers with the
+// language it resolved.
+func TestSettingsAnswersWhatTheImageProbeFound(t *testing.T) {
+	for _, tc := range []struct {
+		configured string
+		resolved   termimg.Protocol
+		want       string
+	}{
+		{"auto", termimg.ITerm2, "auto (→ iterm2)"},
+		{"auto", termimg.Kitty, "auto (→ kitty)"},
+		{"auto", termimg.None, "auto (→ none)"},
+		{"off", termimg.None, "off"},
+		{"iterm", termimg.ITerm2, "iterm"},
+	} {
+		s := newStore(t)
+		s.cfg.TUI.Images = tc.configured
+		s.images = tc.resolved
+		row, ok := rowFor(s.data(), "tui.images")
+		if !ok {
+			t.Fatal("the panel does not list tui.images at all")
+		}
+		if row.Value != tc.want {
+			t.Errorf("configured %q resolving to %v: row shows %q, want %q",
+				tc.configured, tc.resolved, row.Value, tc.want)
+		}
 	}
 }
