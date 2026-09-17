@@ -4,6 +4,15 @@
 
 ### Added
 
+- **The image capability probe no longer costs a terminal that cannot draw.**
+  Asking only the graphics question left silence as the single verdict, so
+  every unclassified terminal paid the whole timeout: measured at 2.001 s on
+  Apple Terminal at every start, with the query's own body printed on the
+  screen because that terminal does not parse APC. A device-attributes
+  request now rides in the same write, and a DA1 reply with no graphics
+  reply before it is the definitive no. Re-measured: under 1 ms, clean
+  screen.
+
 - **Images from MCP tools appear on screen** ([ADR-0090](docs/en/adr/0090-an-images-bytes-never-become-a-path.md)).
   A server that returns an image block — a screenshot, a rendered chart —
   now puts it in front of the operator as the call returns, drawn in a box

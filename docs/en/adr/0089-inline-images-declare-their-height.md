@@ -275,11 +275,23 @@ why `WithAutoStyle` is deliberately absent
 `AGENTS.md`'s "Never query the terminal after Bubble Tea starts", which was
 the right citation all along). An earlier draft cited
 `AGENTS.md:296`, which is off by one and, more to the point, is about
-disambiguating *keyboard* input, not query replies. The probe takes seconds,
-drains before querying, and treats no reply as *no capability* — an
-abandoned cursor report is misfiled into the next query, not lost (measured
-building `rowprobe`: 11 sent, 5 read, 6 landing on the shell prompt after
-exit).
+disambiguating *keyboard* input, not query replies. The probe drains before
+querying and treats no reply as *no capability* — an abandoned cursor report
+is misfiled into the next query, not lost (measured building `rowprobe`: 11
+sent, 5 read, 6 landing on the shell prompt after exit).
+
+**The probe asks a second question, and this record first said it merely
+"takes seconds".** That was the whole defect: the graphics query has no
+negative answer, so silence could not be told from slowness and every
+terminal that cannot draw paid the entire budget. Measured on Apple
+Terminal: **2.001 s at every start**, with `TERM_PROGRAM` set, plus the
+query's own body — `Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA` — printed on the
+operator's screen, since that terminal does not parse APC. A
+device-attributes request now rides in the same write; every VT-compatible
+terminal answers it, so a DA1 reply with no graphics reply before it IS the
+no. Re-measured with the same instrument: **under 1 ms, and a clean
+screen.** The budget stays as the backstop for a terminal that answers
+neither.
 
 `[tui] images = "auto"` selects it
 ([config.go:194](../../../internal/config/config.go)), beside `theme` and
