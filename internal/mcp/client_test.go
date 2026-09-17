@@ -535,7 +535,7 @@ func TestHandshakeUsesItsOwnBudget(t *testing.T) {
 		inR, inW := io.Pipe()
 		_, outW := io.Pipe()
 		go func() { _, _ = io.Copy(io.Discard, inR) }()
-		return inW, io.NopCloser(silentReader{}), func() { outW.Close() }, nil
+		return inW, io.NopCloser(silentReader{}), func() { _ = outW.Close() }, nil
 	}
 	c := newClient("mute", spawn, time.Minute, 150*time.Millisecond, "test", t.TempDir())
 
