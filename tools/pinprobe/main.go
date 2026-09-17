@@ -59,12 +59,17 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
+	"github.com/nlink-jp/gem-agent/internal/termimg"
 	"github.com/nlink-jp/gem-agent/internal/tui"
 	"github.com/nlink-jp/gem-agent/tools/imgpayload"
 )
 
 // The footer prints ModelName and ProjectDir every frame, so they are the
 // pin's address on a captured screen. Values no ordinary output contains.
+// imageMarker tags a case whose text is raw PNG bytes for tui.Image
+// rather than a payload to print. A tag beats a second case list.
+const imageMarker = "\x00PINPROBE-IMAGE\x00"
+
 const (
 	sentinelModel = "PINPROBE~MODEL~SENTINEL"
 	sentinelDir   = "/PINPROBE~DIR~SENTINEL"
@@ -268,10 +273,20 @@ func runUI(only string, repeat int, regime string, fill int, hold time.Duration)
 		}
 	}
 
+	// The capability is resolved here, before tea.NewProgram, exactly as
+	// the product does it — so an IMAGE case exercises the real drawing
+	// path rather than a payload this tool built itself.
+	var tty *os.File
+	if f, err := os.OpenFile("/dev/tty", os.O_RDWR, 0); err == nil {
+		tty = f
+		defer func() { _ = f.Close() }()
+	}
+	proto := termimg.Resolve("auto", tty, os.Getenv, 2*time.Second)
 	model := tui.New(tui.Options{
 		Theme:      "notty", // no colors: a capture is compared as text
 		ModelName:  sentinelModel,
 		ProjectDir: sentinelDir,
+		Images:     proto,
 	})
 	prog := tea.NewProgram(model)
 
@@ -300,6 +315,14 @@ func runUI(only string, repeat int, regime string, fill int, hold time.Duration)
 			time.Sleep(400 * time.Millisecond)
 		}
 		for _, l := range lines {
+			if png, ok := strings.CutPrefix(l, imageMarker); ok {
+				// The production path end to end: the model decodes,
+				// chooses the box, declares it and counts it. Nothing
+				// here builds a payload.
+				prog.Send(tui.Image{Data: []byte(png), MIME: "image/png"})
+				time.Sleep(250 * time.Millisecond)
+				continue
+			}
 			prog.Send(tui.Output{Lines: []string{l}})
 			time.Sleep(250 * time.Millisecond)
 		}
@@ -363,6 +386,8 @@ func allCases() []probeCase {
 			"sixel DCS q, 72px tall, declares nothing — this tmux renders it"},
 		{"SIXEL-24", func() string { return imgpayload.Sixel(24) },
 			"sixel DCS q, 144px tall, declares nothing — this tmux renders it"},
+		{"IMAGE", func() string { return imageMarker + string(imgpayload.TestPNG(320, 180)) },
+			"a real PNG through the PRODUCTION path: tui.Image -> drawImage -> declared box"},
 	}
 }
 
