@@ -21,6 +21,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/diagram"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
+	"github.com/nlink-jp/gem-agent/internal/termimg"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
@@ -164,6 +165,13 @@ type Options struct {
 	// Msgs is the resolved language catalog (ADR-0029); nil means
 	// English.
 	Msgs *uitext.Messages
+	// Images is the inline-image protocol this session may draw with
+	// (ADR-0089 §7), resolved by the caller BEFORE tea.NewProgram: the
+	// probe queries the terminal, and once Bubble Tea owns stdin a reply
+	// arrives in the input box as phantom keystrokes. termimg.None — the
+	// zero value — draws nothing, which is what every entrance that is
+	// not an interactive TUI gets.
+	Images termimg.Protocol
 	// Theme is "dark", "light", or "notty" (plain: no colors anywhere).
 	// It MUST be decided by the caller BEFORE the Bubble Tea program
 	// starts: background detection sends an OSC query, and once raw
@@ -306,8 +314,11 @@ type Model struct {
 	readOnlyState   func() sandbox.Ceiling
 	completePath    func(prefix string) []string
 	completeSlashFn func(prefix string) []string
-	baseCtx         context.Context
-	cancelTurn      context.CancelFunc
+	// images is the protocol this session may draw inline images with
+	// (ADR-0089 §7); termimg.None draws nothing.
+	images     termimg.Protocol
+	baseCtx    context.Context
+	cancelTurn context.CancelFunc
 	// ask is the pending ask_user dialog (ADR-0036).
 	ask       *AskRequest
 	askChoice int
@@ -396,6 +407,7 @@ func New(opts Options) Model {
 		refreshSettings: opts.RefreshSettings,
 		applySetting:    opts.ApplySetting,
 		expandInput:     opts.ExpandInput,
+		images:          opts.Images,
 		baseCtx:         opts.BaseCtx,
 		println:         opts.Printer,
 		mkRender:        opts.RenderFactory,

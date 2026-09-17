@@ -90,6 +90,7 @@ startup_timeout_sec = 30   # default; how long a server may take to say hello
 theme = "auto"             # auto | dark | light | plain
 language = "auto"          # auto | ja | en (ADR-0029 — see interface.md)
 show_thoughts = true       # live thought summaries in the TUI (ADR-0033)
+images = "auto"            # inline images: auto | off | iterm | kitty (ADR-0089)
 
 [telemetry]
 enabled = false            # audit logging (ADR-0035) — see below

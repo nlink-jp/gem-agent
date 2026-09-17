@@ -39,6 +39,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/skills"
 	"github.com/nlink-jp/gem-agent/internal/telemetry"
+	"github.com/nlink-jp/gem-agent/internal/termimg"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/tui"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
@@ -1636,6 +1637,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// whole chrome fell back to English (review round 2).
 			Msgs:          msgs,
 			Theme:         resolveTheme(cfg.TUI.Theme),
+			Images:        resolveImages(cfg.TUI.Images),
 			ModelName:     cfg.Model.Name,
 			ProjectDir:    abbreviateHome(projectDir),
 			Banner:        bannerLines,
@@ -2471,6 +2473,26 @@ func abbreviateHome(path string) string {
 // background detection, which sends an OSC query and reads the reply —
 // it must happen HERE, before Bubble Tea puts the terminal in raw mode,
 // or the reply leaks into the input box as phantom keys.
+// resolveImages asks the terminal what inline-image protocol it can draw
+// with, ONCE, here — before tea.NewProgram (ADR-0089 §7). The reason is
+// raw-mode stdin ownership: once Bubble Tea owns stdin, a terminal's reply
+// to a query arrives in the input box as phantom keystrokes, which is the
+// same hazard that keeps WithAutoStyle out of the Markdown renderer. The
+// probe needs a terminal it can read back, so it opens /dev/tty rather
+// than trusting stdin to be one; no /dev/tty means no capability, and the
+// fallback is what this runtime does today, which is not to draw.
+func resolveImages(configured string) termimg.Protocol {
+	if configured == "off" {
+		return termimg.None // never open anything for a session that will not draw
+	}
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return termimg.Resolve(configured, nil, os.Getenv, 0)
+	}
+	defer func() { _ = tty.Close() }()
+	return termimg.Resolve(configured, tty, os.Getenv, 2*time.Second)
+}
+
 func resolveTheme(configured string) string {
 	switch configured {
 	case "dark", "light":

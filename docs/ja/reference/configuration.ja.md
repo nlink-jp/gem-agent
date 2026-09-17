@@ -88,6 +88,7 @@ startup_timeout_sec = 30   # デフォルト; サーバーが挨拶を返すま�
 theme = "auto"             # auto | dark | light | plain
 language = "auto"          # auto | ja | en（ADR-0029 — interface.ja.md 参照）
 show_thoughts = true       # TUI に思考サマリをライブ表示（ADR-0033）
+images = "auto"            # インライン画像: auto | off | iterm | kitty（ADR-0089）
 
 [telemetry]
 enabled = false            # 監査ロギング（ADR-0035）— 後述

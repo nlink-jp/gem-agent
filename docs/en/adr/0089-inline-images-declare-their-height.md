@@ -14,13 +14,13 @@
 
 ### What the counter can and cannot see
 
-`emit` ([model.go:857](../../../internal/tui/model.go)) prints one line into
+`emit` ([model.go:869](../../../internal/tui/model.go)) prints one line into
 scrollback and counts its physical rows; the bottom pinning rests on that
 count. Measured against `charmbracelet/x/ansi` v0.11.6, the version
 `go.mod:14` pins: `ansi.StringWidth` returns **0** and `ansi.Strip` returns
 the empty string for an iTerm2 `OSC 1337 File=`, a kitty `APC _G` and a
 sixel `DCS q` alike. `ansi.Hardwrap` leaves all three **byte-identical**, so
-`wrapForScrollback` ([model.go:1059](../../../internal/tui/model.go)) does
+`wrapForScrollback` ([model.go:1071](../../../internal/tui/model.go)) does
 not shear a base64 run. An independent pass re-measured it with a
 real PNG and a real sixel — the repository's own test had covered two of the
 three families, and `tools/imgpayload` now carries all three. A draft then over-corrected the
@@ -33,7 +33,7 @@ widths, both settings, 126 combinations, every one byte-identical — and
 is a test that asserts it, not the ability to.
 
 The counter is not blind, though, and the first draft said it was.
-`physicalRows` ([model.go:1072](../../../internal/tui/model.go)) starts at
+`physicalRows` ([model.go:1084](../../../internal/tui/model.go)) starts at
 `rows, cells := 1, 0` and so credits an image line with exactly **one** row
 while the terminal advances N. The shortfall is `N-1`, not `N`.
 
@@ -50,7 +50,7 @@ prints the table it computed.
 
 The regime is arranged, not assumed. The pin's padding is
 `height − printed − view − 1`, and production labels the positive branch
-"screen not full" ([model.go:1769](../../../internal/tui/model.go)). A
+"screen not full" ([model.go:1781](../../../internal/tui/model.go)). A
 filler count chosen for a 30-row tmux pane left an 80-row iTerm2 window on
 the other side of that branch, and an earlier draft of this record reported
 those runs as "full". The filler is computed from the terminal's own height
@@ -238,14 +238,14 @@ and it should be written that way instead.
 
 This does **not** close the existing surface: tool output is printed without
 ANSI stripping — `ansi.Strip` is called at exactly one site in non-test code
-([model.go:1077](../../../internal/tui/model.go)), inside `physicalRows`, to
+([model.go:1089](../../../internal/tui/model.go)), inside `physicalRows`, to
 *measure* — so raw escapes from shell output already reach the terminal.
 Pre-existing, not widened here, not repaired here.
 
 ### 7. Drawing is a TUI-only capability, and the other entrances say so
 
 `tea.NewProgram` is constructed at one site in the product
-([root.go:1707](../../../cmd/root.go)), reached only when the session is
+([root.go:1709](../../../cmd/root.go)), reached only when the session is
 interactive; one-shot `-p` and the plain REPL return before it, so they
 never draw — the same boundary the diagram lane already has. (An earlier
 draft said "exactly one site" in the module, which `tools/pinprobe` has
@@ -255,7 +255,7 @@ reason is raw-mode stdin ownership, not protocol decoding: once Bubble Tea
 owns stdin, a terminal's reply to a query arrives in the input box as
 phantom keystrokes — the recorded instance is `newGlamourRenderer`'s note on
 why `WithAutoStyle` is deliberately absent
-([model.go:451](../../../internal/tui/model.go); the rule itself is in
+([model.go:463](../../../internal/tui/model.go); the rule itself is in
 `AGENTS.md`'s "Never query the terminal after Bubble Tea starts", which was
 the right citation all along). An earlier draft cited
 `AGENTS.md:296`, which is off by one and, more to the point, is about

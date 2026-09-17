@@ -4,6 +4,18 @@
 
 ### Added
 
+- **`[tui] images`** (`auto` | `off` | `iterm` | `kitty`, default `auto`) — the
+  wiring for inline images, and nothing draws yet: what may be drawn is
+  deferred to its own record ([ADR-0089](docs/en/adr/0089-inline-images-declare-their-height.md) §5).
+  What is settled is the accounting. An image payload is zero cells wide to
+  every surface the TUI has, so the row counter is TOLD the box the emitter
+  declared instead of measuring bytes it cannot see — measured on two
+  terminals with a plain control at the same fill, a terminal that draws
+  what the counter cannot see strands one frame per image once the screen is
+  full. `auto` asks the terminal once, before the UI starts, because once
+  Bubble Tea owns stdin a reply arrives in the input box as phantom
+  keystrokes; inside tmux or screen it resolves to off.
+
 - **`make rowprobe`** — a measurement, not a feature: it draws inline-image
   payloads that declare a height and reports how many rows each one really
   costs, because the TUI's row counter cannot measure an image

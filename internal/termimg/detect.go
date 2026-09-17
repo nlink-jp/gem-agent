@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // Detect asks the terminal what it can draw, ONCE, and the caller must do
@@ -31,6 +33,26 @@ func Detect(tty *os.File, env func(string) string, timeout time.Duration) Protoc
 		return None
 	}
 	return Kitty
+}
+
+// Resolve turns the operator's `[tui] images` setting into the protocol
+// this session will use. "auto" asks (Detect); "off" never draws; a named
+// protocol is taken as given, which is the escape hatch for a probe that
+// is wrong about a terminal it has never met. An unknown value draws
+// nothing rather than guessing — config validation rejects it first, and a
+// setting that reached here unvalidated is not a reason to start emitting
+// escapes.
+func Resolve(setting string, tty *os.File, env func(string) string, timeout time.Duration) Protocol {
+	switch setting {
+	case "auto":
+		return Detect(tty, env, timeout)
+	case "iterm":
+		return ITerm2
+	case "kitty":
+		return Kitty
+	default: // "off", and anything unrecognised
+		return None
+	}
 }
 
 // fromEnv answers from the environment alone where that is conclusive, so
@@ -67,6 +89,17 @@ func askKitty(tty *os.File, timeout time.Duration) bool {
 	if timeout <= 0 {
 		timeout = 2 * time.Second
 	}
+	// Raw mode, briefly. The reply carries no newline, so in cooked mode
+	// it would sit in the line buffer until the operator pressed Enter and
+	// every probe would time out into "no capability". This runs before
+	// tea.NewProgram, so nothing else owns the terminal yet; the state is
+	// restored before returning, whatever happens.
+	fd := int(tty.Fd())
+	restore, err := term.MakeRaw(fd)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = term.Restore(fd, restore) }()
 	in := make(chan byte, 4096)
 	go func() {
 		defer close(in)

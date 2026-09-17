@@ -330,6 +330,15 @@ language = "auto"
 # and retry visibility stay either way.
 show_thoughts = true
 
+# Inline images, when the terminal can draw them (ADR-0089). "auto" asks
+# the terminal once, before the UI starts — it cannot be asked later,
+# because once the UI owns the keyboard a terminal's reply arrives as if
+# it had been typed. "off" never draws. "iterm" and "kitty" force a
+# protocol when the question is answered wrongly for your terminal.
+# Inside tmux or screen, "auto" resolves to off.
+# Nothing draws yet: what may be drawn is still being decided.
+images = "auto"
+
 [telemetry]
 # Audit logging (ADR-0035). Default OFF. When enabled, audit events
 # (sessions, tool calls with outcomes, approval decisions, token

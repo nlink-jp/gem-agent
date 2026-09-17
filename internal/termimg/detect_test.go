@@ -69,3 +69,30 @@ func TestParseKittyReply(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveHonoursTheSetting: "auto" is the only value that asks the
+// terminal, a named protocol is the escape hatch for a probe that is wrong,
+// and anything else draws nothing — including a value that should have been
+// rejected by config validation, because reaching here unvalidated is not a
+// reason to start emitting escapes.
+func TestResolveHonoursTheSetting(t *testing.T) {
+	kitty := func(k string) string { return map[string]string{"KITTY_WINDOW_ID": "1"}[k] }
+	terminalApp := func(k string) string { return map[string]string{"TERM_PROGRAM": "Apple_Terminal"}[k] }
+	for _, tc := range []struct {
+		setting string
+		env     func(string) string
+		want    Protocol
+	}{
+		{"auto", kitty, Kitty},
+		{"auto", terminalApp, None}, // no tty to ask, so nothing draws
+		{"off", kitty, None},        // off beats a capable terminal
+		{"iterm", terminalApp, ITerm2},
+		{"kitty", terminalApp, Kitty},
+		{"", kitty, None},
+		{"sixel", kitty, None}, // never a protocol here, whatever a file says
+	} {
+		if got := Resolve(tc.setting, nil, tc.env, 0); got != tc.want {
+			t.Errorf("Resolve(%q) = %v, want %v", tc.setting, got, tc.want)
+		}
+	}
+}
