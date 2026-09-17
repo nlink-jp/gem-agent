@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Documentation
+
+- **ADR-0091: showing an image is an act of output, not a side effect of a
+  tool result** (design only; no code). An MCP image block is how a tool
+  result carries an image into the MODEL's context, and MCP says who content
+  is for with an `audience` annotation this runtime drops at the parser —
+  measured across the 24 registered servers, four can emit an image block and
+  none sets an audience. So the released behaviour, which draws every image
+  block the intake saved and described, rests on this runtime inferring that
+  an image that arrived is an image the operator wants. It is withdrawn: the
+  intake will draw nothing, showing becomes an act of the model's output
+  through a tool whose read happens in the tool layer (where a model-named
+  path is judged like any other), and the operator keeps a direct route. The
+  lane, the declared box, the erase, the ceiling and the probe are unchanged.
+  **This changes behaviour already released** — the current version draws
+  from the intake and the next will not; lagent ADR-0022 is the same decision on the
+  other side.
+
 ## [0.83.0] - 2026-09-17
 
 ### Fixed
