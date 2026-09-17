@@ -19,8 +19,8 @@ view 層が行う読み取りはツールコールではないので、`Agent.de
 
 その制約が、いちばん素直な設計を排除する。MCP intake は既に画像をセッションの work dir へ
 書き出し、モデルには `[image saved at <path> … use view_image on that path]` を渡している
-（[mcpresult.go:200](../../../cmd/mcpresult.go)）。つまりパスはそこにある。しかし `write` は
-`os.Stat` で短絡し（[mcpresult.go:223](../../../cmd/mcpresult.go)）、毎回の呼び出しがサーバに
+（[mcpresult.go:224](../../../cmd/mcpresult.go)）。つまりパスはそこにある。しかし `write` は
+`os.Stat` で短絡し（[mcpresult.go:247](../../../cmd/mcpresult.go)）、毎回の呼び出しがサーバに
 work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:579](../../../internal/mcp/client.go)）。
 ローカルのサーバ子プロセスは自分の名前・ツール名・返すバイト列・ディレクトリを知るので、
 応答の前に content-addressed の名前へ symlink を置ける。するとランタイムは何も書かず、パスは

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -82,5 +83,55 @@ func TestIntakeWithoutASinkIsUnchanged(t *testing.T) {
 	out := in.render("srv", "shot", []mcp.Content{{Type: "image", Data: []byte("bytes"), MIME: "image/png"}})
 	if !strings.Contains(out, "image saved at") {
 		t.Errorf("note changed without a sink: %q", out)
+	}
+}
+
+// TestIntakeDoesNotDrawWhatItCouldNotSave is the other half of ADR-0090 §2:
+// saved AND described. A write that fails still produces a note — and that
+// note can be SHORTER than the success note, which carries a full path — so
+// a caller inferring the outcome from the budget verdict concluded "saved"
+// and drew a picture with no file behind it. The operator would be looking
+// at something the session's record does not contain, and `view_image` on
+// the path the model was given would find nothing.
+func TestIntakeDoesNotDrawWhatItCouldNotSave(t *testing.T) {
+	var calls int
+	// A work directory that cannot be written to: the write fails, the
+	// note says so, and nothing is drawn.
+	in := newMCPIntake(fixedDir(filepath.Join(t.TempDir(), "no-such-dir")), func([]byte, string) { calls++ })
+
+	out := in.render("srv", "shot", []mcp.Content{{Type: "image", Data: []byte("bytes"), MIME: "image/png"}})
+	if calls != 0 {
+		t.Errorf("drew %d block(s) whose bytes never reached disk", calls)
+	}
+	if !strings.Contains(out, "could not be saved") {
+		t.Errorf("the failure is not in the record either: %q", out)
+	}
+}
+
+// TestDrawnAndDescribedUseOnePredicate: the note calls a block an image and
+// the screen draws one on the same test. Two predicates could disagree —
+// the draw gate keyed on the MIME prefix while the note keyed on Type — and
+// then a picture on screen is recorded as "[resource content saved at …]",
+// or a block the record calls an image is silently never drawn.
+func TestDrawnAndDescribedUseOnePredicate(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		block     mcp.Content
+		wantDrawn bool
+		wantNote  string
+	}{
+		{"image type, image mime", mcp.Content{Type: "image", Data: []byte("bytes"), MIME: "image/png"}, true, "image saved at"},
+		{"image type, no mime at all", mcp.Content{Type: "image", Data: []byte("bytes")}, true, "image saved at"},
+		{"resource type wearing an image mime", mcp.Content{Type: "resource", Data: []byte("bytes"), MIME: "image/png"}, false, "resource content saved at"},
+	} {
+		var calls int
+		in := newMCPIntake(fixedDir(t.TempDir()), func([]byte, string) { calls++ })
+		out := in.render("srv", "shot", []mcp.Content{tc.block})
+		if drawn := calls > 0; drawn != tc.wantDrawn {
+			t.Errorf("%s: drawn=%v, want %v", tc.name, drawn, tc.wantDrawn)
+		}
+		if !strings.Contains(out, tc.wantNote) {
+			t.Errorf("%s: note %q does not contain %q", tc.name, out, tc.wantNote)
+		}
 	}
 }

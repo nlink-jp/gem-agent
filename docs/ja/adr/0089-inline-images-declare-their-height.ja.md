@@ -177,7 +177,7 @@ art が必要としなかったものが 1 つ増える。
 | 稿 | 名指した供給源 | なぜ失敗したか |
 |---|---|---|
 | 初稿 | モデルが名指すローカル画像パス | view 層のファイル open はツールコールではない。`Agent.decide` に届かず、ADR-0086 の sandbox 子で走らず、組み込みツール名で引かれる資格情報一覧に不可視である（[risk.go:176](../../../internal/risk/risk.go)）— ADR-0085/0086 が修理したクラス |
-| 第 2 稿 | MCP intake が書いたパス | `write` は `os.Stat(path) == nil` で短絡し（[mcpresult.go:223](../../../cmd/mcpresult.go)）、サーバは自分の名前・ツール名・返すバイト列に加え、**毎回の呼び出しが渡す work dir も知っている**（`_meta[workdir.MetaKey]`、[client.go:579](../../../internal/mcp/client.go)）。だから content-addressed のパスに symlink を置け、ランタイムは何も書かない |
+| 第 2 稿 | MCP intake が書いたパス | `write` は `os.Stat(path) == nil` で短絡し（[mcpresult.go:247](../../../cmd/mcpresult.go)）、サーバは自分の名前・ツール名・返すバイト列に加え、**毎回の呼び出しが渡す work dir も知っている**（`_meta[workdir.MetaKey]`、[client.go:579](../../../internal/mcp/client.go)）。だから content-addressed のパスに symlink を置け、ランタイムは何も書かない |
 | 第 3 稿 | intake が保持するデコード済みバイト列 | **そんな運搬体は無い。** `render` は `string` を返し（[mcpresult.go:54](../../../cmd/mcpresult.go)）、`mcpIntake` はバイト列を保持せず、`Tool.Run` は `func(ctx, args) (string, error)` である（[tools.go:65](../../../internal/tools/tools.go)）。`blocks` はローカルで、`Run` が返れば到達不能になる |
 
 同じ場所の 3 稿は 3 つの誤りではなく 1 つである。**配管が存在するまで、供給源は名指せない。**

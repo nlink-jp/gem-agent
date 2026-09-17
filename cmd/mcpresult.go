@@ -114,17 +114,26 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content) string {
 			leftBinary++
 			continue
 		}
-		piece := in.binary(server, tool, b)
+		piece, saved := in.binary(server, tool, b)
 		if !spend(piece) {
 			leftBinary++
-			savedUnlisted++
+			// Only a block that really reached disk is counted as
+			// saved-but-unlisted. The guard above sizes the exact
+			// success note, so today this cannot happen at all; before
+			// the count was conditioned on `saved` it fired on the one
+			// case that IS possible here — a failed write whose note
+			// happens to be longer — and reported the block as saved.
+			if saved {
+				savedUnlisted++
+			}
 			continue
 		}
 		// Saved AND described: the one condition (ADR-0090 §2). A block
-		// the budget refused is neither, and drawing it would put a
-		// picture on the operator's screen that appears nowhere in the
+		// the budget refused is neither, a block whose write failed is
+		// not saved however its note reads, and drawing either would put
+		// a picture on the operator's screen that appears nowhere in the
 		// session's record.
-		if in.draw != nil && strings.HasPrefix(b.MIME, "image/") {
+		if in.draw != nil && saved && isImageBlock(b) {
 			in.draw(b.Data, b.MIME)
 		}
 	}
@@ -181,22 +190,37 @@ func (in mcpIntake) spillText(server, tool, s string) string {
 // The bytes never ride back inline: an attachment is replayed with the
 // conversation every round (ADR-0027), so it belongs in history only
 // when the model deliberately asks for it.
-func (in mcpIntake) binary(server, tool string, b mcp.Content) string {
+// saved reports whether the bytes actually reached the work directory. It
+// is returned rather than inferred, because the only other evidence is the
+// note's length and the two notes are not ordered: a failure note can be
+// SHORTER than a success note (which carries a full path), so a caller
+// reading the budget verdict concluded "saved" for a write that failed —
+// and drew a picture with no file behind it, which is the one thing
+// ADR-0090 §2 forbids.
+func (in mcpIntake) binary(server, tool string, b mcp.Content) (note string, saved bool) {
 	if len(b.Data) == 0 {
-		return fmt.Sprintf("[%s content with no data]", b.Type)
+		return fmt.Sprintf("[%s content with no data]", b.Type), false
 	}
 	path, err := in.write(server, tool, extForMIME(b.MIME, b.Type), b.Data)
 	if err != nil {
-		return fmt.Sprintf("[%s content (%d bytes, %s) could not be saved: %v]", b.Type, len(b.Data), b.MIME, err)
+		return fmt.Sprintf("[%s content (%d bytes, %s) could not be saved: %v]", b.Type, len(b.Data), b.MIME, err), false
 	}
-	return in.binaryNote(server, tool, b, path)
+	return in.binaryNote(server, tool, b, path), true
 }
+
+// isImageBlock is the ONE predicate. The note calls a block an image, and
+// the screen draws one, only where this says so. Two predicates — the
+// note's Type and a draw gate on the MIME prefix — could disagree, and a
+// picture on screen that the session's record calls a "resource" is exactly
+// the mismatch ADR-0090 §2 exists to prevent. What the bytes really are is
+// decided later, by termimg.Measure.
+func isImageBlock(b mcp.Content) bool { return b.Type == "image" }
 
 // binaryNote is what the model reads for a saved non-text block; the
 // same text is sized before the write so the response budget can
 // refuse the block without saving it.
 func (in mcpIntake) binaryNote(_, _ string, b mcp.Content, path string) string {
-	if b.Type == "image" {
+	if isImageBlock(b) {
 		return fmt.Sprintf("[image saved at %s (%d bytes, %s) — use view_image on that path to look at it]", path, len(b.Data), b.MIME)
 	}
 	return fmt.Sprintf("[%s content saved at %s (%d bytes, %s)]", b.Type, path, len(b.Data), b.MIME)
