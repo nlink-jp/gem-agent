@@ -14,12 +14,12 @@
 
 ### カウンタに見えるもの、見えないもの
 
-`emit`（[model.go:869](../../../internal/tui/model.go)）は 1 行を scrollback へ
+`emit`（[model.go:872](../../../internal/tui/model.go)）は 1 行を scrollback へ
 印字し、その物理行数を数える。bottom pin はその数に乗っている。`go.mod:14` が固定
 している版 `charmbracelet/x/ansi` v0.11.6 で実測すると、`ansi.StringWidth` は iTerm2 の
 `OSC 1337 File=`、kitty の `APC _G`、sixel の `DCS q` のいずれにも **0** を返し、
 `ansi.Strip` は空文字を返す。`ansi.Hardwrap` は 3 方式ともバイト同一で通すので、
-`wrapForScrollback`（[model.go:1071](../../../internal/tui/model.go)）は base64 の
+`wrapForScrollback`（[model.go:1119](../../../internal/tui/model.go)）は base64 の
 連なりを切り刻まない。独立検証パスはこれを実 PNG と現実的な sixel で取り直した。
 リポジトリ自身のテストは 3 方式のうち 2 つしか覆っていなかった。いまは
 `tools/imgpayload` が 3 つとも持つ。ある稿はそこで逆方向に行き過ぎ、より広い再測定
@@ -30,7 +30,7 @@
 それを主張するテストであって、照合する能力ではない。
 
 ただしカウンタは盲目ではない。初稿はそう書いていた。`physicalRows`
-（[model.go:1084](../../../internal/tui/model.go)）は `rows, cells := 1, 0` から始まる
+（[model.go:1132](../../../internal/tui/model.go)）は `rows, cells := 1, 0` から始まる
 ので、画像の行をちょうど **1 行**と計上する。端末が N 行進める間に、である。不足は
 `N` ではなく `N-1` である。
 
@@ -45,7 +45,7 @@
 
 領域は仮定ではなく構成する。pin の padding は `height − printed − view − 1` で、
 production はその正の分岐を「screen not full」とラベルしている
-（[model.go:1781](../../../internal/tui/model.go)）。30 行の tmux ペイン用に選んだ
+（[model.go:1829](../../../internal/tui/model.go)）。30 行の tmux ペイン用に選んだ
 filler の行数が、80 行の iTerm2 窓を分岐の反対側に置き、本記録の以前の稿はその実行を
 「full」と報告した。いま filler は端末自身の高さから計算され、各実行が何を構成したかを
 印字する。
@@ -168,8 +168,8 @@ iTerm2 3.7.2、180×80、カーソル報告 16 件中 16 件が応答:
 | 稿 | 名指した供給源 | なぜ失敗したか |
 |---|---|---|
 | 初稿 | モデルが名指すローカル画像パス | view 層のファイル open はツールコールではない。`Agent.decide` に届かず、ADR-0086 の sandbox 子で走らず、組み込みツール名で引かれる資格情報一覧に不可視である（[risk.go:176](../../../internal/risk/risk.go)）— ADR-0085/0086 が修理したクラス |
-| 第 2 稿 | MCP intake が書いたパス | `write` は `os.Stat(path) == nil` で短絡し（[mcpresult.go:207](../../../cmd/mcpresult.go)）、サーバは自分の名前・ツール名・返すバイト列に加え、**毎回の呼び出しが渡す work dir も知っている**（`_meta[workdir.MetaKey]`、[client.go:579](../../../internal/mcp/client.go)）。だから content-addressed のパスに symlink を置け、ランタイムは何も書かない |
-| 第 3 稿 | intake が保持するデコード済みバイト列 | **そんな運搬体は無い。** `render` は `string` を返し（[mcpresult.go:53](../../../cmd/mcpresult.go)）、`mcpIntake` はバイト列を保持せず、`Tool.Run` は `func(ctx, args) (string, error)` である（[tools.go:65](../../../internal/tools/tools.go)）。`blocks` はローカルで、`Run` が返れば到達不能になる |
+| 第 2 稿 | MCP intake が書いたパス | `write` は `os.Stat(path) == nil` で短絡し（[mcpresult.go:223](../../../cmd/mcpresult.go)）、サーバは自分の名前・ツール名・返すバイト列に加え、**毎回の呼び出しが渡す work dir も知っている**（`_meta[workdir.MetaKey]`、[client.go:579](../../../internal/mcp/client.go)）。だから content-addressed のパスに symlink を置け、ランタイムは何も書かない |
+| 第 3 稿 | intake が保持するデコード済みバイト列 | **そんな運搬体は無い。** `render` は `string` を返し（[mcpresult.go:54](../../../cmd/mcpresult.go)）、`mcpIntake` はバイト列を保持せず、`Tool.Run` は `func(ctx, args) (string, error)` である（[tools.go:65](../../../internal/tools/tools.go)）。`blocks` はローカルで、`Run` が返れば到達不能になる |
 
 同じ場所の 3 稿は 3 つの誤りではなく 1 つである。**配管が存在するまで、供給源は名指せない。**
 MCP ツール結果の画像バイトを view 層へ運ぶとは、transcript・resume・エラー経路が乗っている
@@ -189,7 +189,7 @@ MCP ツール結果の画像バイトを view 層へ運ぶとは、transcript・
 記録する。今日、画像の大きさを縛るものは JSON-RPC のフレーム上限（`scannerMax = 10 MiB`、
 [client.go:28](../../../internal/mcp/client.go)）以外に無い — response budget が縛るのは
 **注記**であってデータではない。そして `binaryNote` が budget に収まらないブロックは保存も
-個別記述もされないので（[mcpresult.go:105](../../../cmd/mcpresult.go)）、それを描いてよいかは
+個別記述もされないので（[mcpresult.go:113](../../../cmd/mcpresult.go)）、それを描いてよいかは
 未決である。
 
 ### 6. 画像エスケープを発行するのは view 層だけ
@@ -204,14 +204,14 @@ view 層であり、ツールが返したものが「エスケープに見える
 
 これは**既存の面を塞いだと主張するものではない**。ツール出力は ANSI 除去なしで印字される。
 非テストコードで `ansi.Strip` が呼ばれるのはちょうど 1 箇所
-（[model.go:1089](../../../internal/tui/model.go)）、`physicalRows` の中で幅を**測る**ためだけで
+（[model.go:1137](../../../internal/tui/model.go)）、`physicalRows` の中で幅を**測る**ためだけで
 ある。よってシェル出力の生エスケープは既に端末へ届いている。既存であり、ここで広がらず、
 ここで直しもしない。
 
 ### 7. 描画は TUI 限定の能力であり、他の入口はそう言う
 
 `tea.NewProgram` が構築されるのは製品側では 1 箇所
-（[root.go:1709](../../../cmd/root.go)）で、セッションが対話的なときにだけ到達する。
+（[root.go:1716](../../../cmd/root.go)）で、セッションが対話的なときにだけ到達する。
 one-shot `-p` と素の REPL はその手前で戻るので描かない — diagram レーンが既に持つ境界と
 同じである。（以前の稿はモジュール内で「ちょうど 1 箇所」と書いたが、`tools/pinprobe` が
 それを偽にした。あちらも 1 つ構築する。本番の Model を駆動できるのはそのためである。）能力の検出は **`tea.NewProgram` の前に 1 度だけ**行い、キャッシュする。理由はプロトコルの

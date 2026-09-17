@@ -36,14 +36,22 @@ type mcpIntake struct {
 	// this must never produce.
 	// It is read per call: /clear rotates the directory (ADR-0071 §2).
 	workDir func() string
+	// draw, when set, is handed the decoded bytes of an image block the
+	// intake both saved AND described, for the operator's screen
+	// (ADR-0090 §1). Bytes, never the path: a read the view layer
+	// performs is not a tool call and no enforcer can see it, and the
+	// path this intake writes is one a server can pre-empt with a
+	// symlink. nil in every entrance that is not an interactive TUI, so
+	// those pass no bytes anywhere rather than deciding not to draw.
+	draw func(data []byte, mime string)
 	// cap is the byte size above which a text block is spilled.
 	cap int
 	// previewRunes bounds the head of a spilled block shown inline.
 	previewRunes int
 }
 
-func newMCPIntake(workDir func() string) mcpIntake {
-	return mcpIntake{workDir: workDir, cap: tools.OutputCap, previewRunes: 800}
+func newMCPIntake(workDir func() string, draw func(data []byte, mime string)) mcpIntake {
+	return mcpIntake{workDir: workDir, draw: draw, cap: tools.OutputCap, previewRunes: 800}
 }
 
 // render assembles the text the model receives for one call. A result
@@ -110,6 +118,14 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content) string {
 		if !spend(piece) {
 			leftBinary++
 			savedUnlisted++
+			continue
+		}
+		// Saved AND described: the one condition (ADR-0090 §2). A block
+		// the budget refused is neither, and drawing it would put a
+		// picture on the operator's screen that appears nowhere in the
+		// session's record.
+		if in.draw != nil && strings.HasPrefix(b.MIME, "image/") {
+			in.draw(b.Data, b.MIME)
 		}
 	}
 	if len(rest) > 0 {

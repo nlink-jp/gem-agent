@@ -555,7 +555,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// everything under [mcp].advertise = "all", loaded tools only under
 	// "on-request". It records committed loads to the transcript in use.
 	adv := newMCPAdvertiser(cfg.MCP.OnRequest(), cfg.MCP.Preload, flagAllow, liveLog{get: func() agent.SessionLog { return sessionLog }})
-	mcpClients, mcpSummary, mcpInv := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, grant, mcpFilter)
+	// screen is the route from the MCP intake to the operator's screen
+	// (ADR-0090 §1). The servers connect here, long before the program
+	// exists, so the intake is handed this rather than prog.Send and the
+	// binding happens later — the same late-bind Gate already does for
+	// approvals. Unbound it is inert, which is what every entrance that
+	// is not an interactive TUI gets.
+	screen := tui.NewScreen()
+	mcpClients, mcpSummary, mcpInv := connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, stderr, grant, mcpFilter, screen.Image)
 	adv.setInventory(mcpInv, registeredIn(registry))
 	if resumedID != "" && cfg.MCP.OnRequest() {
 		// A resumed session sees what it saw (ADR-0083 §8): the loads
@@ -1205,7 +1212,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(&warn, "%s\n", n)
 			}
 		}
-		mcpClients, mcpSummary, mcpInv = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, grant, mcpFilter)
+		mcpClients, mcpSummary, mcpInv = connectMCPServers(ctx, cfg, projectDir, cmd.Root().Version, registry, &warn, grant, mcpFilter, screen.Image)
 		// Loads survive a reconnect by name; the librarian's flags do
 		// not (ADR-0083 §8). The server list in the system prompt
 		// follows the inventory, as the skills section follows a
@@ -1294,7 +1301,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		if running != nil {
 			runningServer = running
 		}
-		kept := reconnectMCPServer(ctx, server, runningServer, start, startupTimeout, registry, &warn, mcpFilter, &mcpInv)
+		kept := reconnectMCPServer(ctx, server, runningServer, start, startupTimeout, registry, &warn, mcpFilter, &mcpInv, screen.Image)
 		if kept != nil {
 			others = append(others, kept.(*mcp.Client))
 		}
@@ -1708,6 +1715,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		})
 		prog = tea.NewProgram(model)
 		tuiGate.SetProgram(prog)
+		screen.SetProgram(prog)
 		go resolveWindow()
 		_, err := prog.Run()
 		return err

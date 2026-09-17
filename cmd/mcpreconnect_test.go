@@ -84,14 +84,14 @@ func TestReconnectTouchesOnlyTheNamedServer(t *testing.T) {
 	ctx := context.Background()
 	var warn bytes.Buffer
 	for _, s := range []*stubServer{a, b} {
-		if !attachMCPServer(ctx, s, time.Second, reg, &warn, filterOf(t), inv) {
+		if !attachMCPServer(ctx, s, time.Second, reg, &warn, filterOf(t), inv, nil) {
 			t.Fatalf("%s did not attach: %s", s.name, warn.String())
 		}
 	}
 	bLists, bClosed := b.lists, b.closed
 
 	kept := reconnectMCPServer(ctx, "a", a, func() mcpServer { t.Fatal("a is running; nothing to start"); return nil }, time.Second,
-		reg, &warn, filterOf(t, "a/x"), inv)
+		reg, &warn, filterOf(t, "a/x"), inv, nil)
 
 	if kept != a {
 		t.Fatalf("a running server toggled at the function level is reused, got %v", kept)
@@ -122,11 +122,11 @@ func TestReconnectServerOffClosesItAndOnStartsIt(t *testing.T) {
 	b := &stubServer{stubCaller: stubCaller{name: "b"}, tools: []string{"z"}}
 	ctx := context.Background()
 	var warn bytes.Buffer
-	attachMCPServer(ctx, a, time.Second, reg, &warn, filterOf(t), inv)
-	attachMCPServer(ctx, b, time.Second, reg, &warn, filterOf(t), inv)
+	attachMCPServer(ctx, a, time.Second, reg, &warn, filterOf(t), inv, nil)
+	attachMCPServer(ctx, b, time.Second, reg, &warn, filterOf(t), inv, nil)
 
 	kept := reconnectMCPServer(ctx, "a", a, nil, time.Second,
-		reg, &warn, filterOf(t, "a"), inv)
+		reg, &warn, filterOf(t, "a"), inv, nil)
 	if kept != nil {
 		t.Fatalf("an excluded server is not kept, got %v", kept)
 	}
@@ -149,7 +149,7 @@ func TestReconnectServerOffClosesItAndOnStartsIt(t *testing.T) {
 	started := 0
 	fresh := &stubServer{stubCaller: stubCaller{name: "a"}, tools: []string{"x"}}
 	kept = reconnectMCPServer(ctx, "a", nil, func() mcpServer { started++; return fresh }, time.Second,
-		reg, &warn, filterOf(t), inv)
+		reg, &warn, filterOf(t), inv, nil)
 	if kept != fresh || started != 1 {
 		t.Fatalf("turning a server on starts exactly one process: kept=%v started=%d", kept, started)
 	}
@@ -175,12 +175,12 @@ func TestReconnectReportsAStaleEntry(t *testing.T) {
 	a := &stubServer{stubCaller: stubCaller{name: "a"}, tools: []string{"x"}}
 	ctx := context.Background()
 	var warn bytes.Buffer
-	attachMCPServer(ctx, a, time.Second, reg, &warn, filterOf(t), inv)
+	attachMCPServer(ctx, a, time.Second, reg, &warn, filterOf(t), inv, nil)
 
 	// Named against the server that listed: a function of one that
 	// never listed proves nothing (ADR-0077 §2).
 	reconnectMCPServer(ctx, "a", a, nil, time.Second,
-		reg, &warn, filterOf(t, "a/nope"), inv)
+		reg, &warn, filterOf(t, "a/nope"), inv, nil)
 	if got := reloadWarnings(warn.String()); !strings.Contains(got, "nope") {
 		t.Errorf("the stale entry is not reported: %q", warn.String())
 	}
@@ -201,11 +201,11 @@ func TestReconnectRemovesTheServersOwnNamesNotAPrefix(t *testing.T) {
 		foo := &stubServer{stubCaller: stubCaller{name: "foo"}, tools: []string{"x", "w"}}
 		bar := &stubServer{stubCaller: stubCaller{name: "foo__bar"}, tools: []string{"y"}}
 		var warn bytes.Buffer
-		attachMCPServer(ctx, foo, time.Second, reg, &warn, filterOf(t), inv)
-		attachMCPServer(ctx, bar, time.Second, reg, &warn, filterOf(t), inv)
+		attachMCPServer(ctx, foo, time.Second, reg, &warn, filterOf(t), inv, nil)
+		attachMCPServer(ctx, bar, time.Second, reg, &warn, filterOf(t), inv, nil)
 
 		reconnectMCPServer(ctx, "foo", foo, nil, time.Second,
-			reg, &warn, filterOf(t, "foo/x"), inv)
+			reg, &warn, filterOf(t, "foo/x"), inv, nil)
 		if _, ok := reg.Get("mcp__foo__bar__y"); !ok {
 			t.Error("toggling foo took foo__bar's tool with it")
 		}
@@ -224,7 +224,7 @@ func TestReconnectRemovesTheServersOwnNamesNotAPrefix(t *testing.T) {
 		inv.Scopes[long], inv.configured[long] = "global", true
 		srv := &stubServer{stubCaller: stubCaller{name: long}, tools: []string{"function_one", "function_two"}}
 		var warn bytes.Buffer
-		if !attachMCPServer(ctx, srv, time.Second, reg, &warn, filterOf(t), inv) {
+		if !attachMCPServer(ctx, srv, time.Second, reg, &warn, filterOf(t), inv, nil) {
 			t.Fatalf("did not attach: %s", warn.String())
 		}
 		if n := mcpToolName(long, "function_one"); strings.HasPrefix(n, mcpToolPrefix(long)) {
@@ -232,7 +232,7 @@ func TestReconnectRemovesTheServersOwnNamesNotAPrefix(t *testing.T) {
 		}
 
 		kept := reconnectMCPServer(ctx, long, srv, nil, time.Second,
-			reg, &warn, filterOf(t, long+"/function_one"), inv)
+			reg, &warn, filterOf(t, long+"/function_one"), inv, nil)
 		if kept != srv {
 			t.Fatalf("re-registration failed and the server was dropped: %s", warn.String())
 		}

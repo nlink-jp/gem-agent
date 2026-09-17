@@ -21,9 +21,9 @@ name ([risk.go:176](../../../internal/risk/risk.go)) — cannot see it.
 That constraint rules out the obvious design. The MCP intake already writes
 an image into the session work directory and hands the model
 `[image saved at <path> … use view_image on that path]`
-([mcpresult.go:184](../../../cmd/mcpresult.go)), so a path is sitting right
+([mcpresult.go:200](../../../cmd/mcpresult.go)), so a path is sitting right
 there — and `write` short-circuits on `os.Stat`
-([mcpresult.go:207](../../../cmd/mcpresult.go)) while every call hands the
+([mcpresult.go:223](../../../cmd/mcpresult.go)) while every call hands the
 server the work directory as `_meta[workdir.MetaKey]`
 ([client.go:579](../../../internal/mcp/client.go)). A local server child
 therefore knows its own name, its tool name, the bytes it will return and
@@ -37,16 +37,16 @@ the real path. A view layer that opened it would not be.
 
 The third refuted draft said the view layer would be handed "the bytes the
 intake already holds". It cannot: `render` returns a `string`
-([mcpresult.go:53](../../../cmd/mcpresult.go)), `mcpIntake` keeps only a
+([mcpresult.go:54](../../../cmd/mcpresult.go)), `mcpIntake` keeps only a
 work-directory getter, a byte cap and a preview length
-([mcpresult.go:46](../../../cmd/mcpresult.go)), and the tool contract is
+([mcpresult.go:61](../../../cmd/mcpresult.go)), and the tool contract is
 `Run func(ctx, args) (string, error)`
 ([tools.go:65](../../../internal/tools/tools.go)). After `Run` returns, the
 blocks are gone.
 
 But the runtime is not short of a channel. The agent loop already talks to
 the UI **during** a tool call — `prog.Send(tui.ToolCall{…})` at
-[root.go:927](../../../cmd/root.go) — so an out-of-band route from a tool
+[root.go:934](../../../cmd/root.go) — so an out-of-band route from a tool
 result to the screen is an existing, working pattern rather than a new
 mechanism. Nothing about the string contract has to move.
 
@@ -79,16 +79,20 @@ moment the block is taken in. `cmd` wires it to `prog.Send`, the same way
 `ToolCall` and `ToolDone` already reach the UI mid-call. The tool result
 stays a `string` and the transcript, resume and error paths are untouched.
 
-The sink is nil in every entrance that is not an interactive TUI, so
-one-shot `-p` and the plain REPL pass no bytes anywhere rather than
-deciding not to draw them.
+The sink is **inert** in every entrance that is not an interactive TUI.
+It cannot simply be nil there: the MCP servers connect before the runtime
+knows whether it has a UI, so the intake is handed a late-bound route
+(`tui.Screen`, the shape `tui.Gate` already uses for approvals) which is
+bound to the program only if one is built. Unbound, it drops what it is
+given. An earlier draft of this record promised nil, which the ordering
+does not allow.
 
 ### 2. An image is drawn if and only if the intake saved and described it
 
 One condition, not two. A block whose note does not fit the response
 budget is already neither saved nor described individually — the guard
 sizes `binaryNote` before anything is written
-([mcpresult.go:105](../../../cmd/mcpresult.go)) — and is counted into a
+([mcpresult.go:113](../../../cmd/mcpresult.go)) — and is counted into a
 leftovers line. Such a block is **not drawn** either.
 
 The alternative — drawing a picture the model was never told about, from a

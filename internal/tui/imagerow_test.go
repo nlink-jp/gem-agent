@@ -1,6 +1,11 @@
 package tui
 
 import (
+	"bytes"
+	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"strings"
 	"testing"
 
@@ -122,5 +127,106 @@ func TestTextAccountingIsUnchanged(t *testing.T) {
 	// spaces, not eight.
 	if got := c.printed[len(c.printed)-1]; got != "a"+strings.Repeat(" ", 7)+"b" {
 		t.Errorf("tab expansion = %q; count and drawing must be equal", got)
+	}
+}
+
+func realPNG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.Set(x, y, color.RGBA{R: uint8(x), G: uint8(y), B: 0x80, A: 0xff})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// TestDrawImageAccountsForWhatItDraws is the end of the lane: a tool's
+// picture arrives, a box is declared, and the counter is told that box.
+// The payload on screen and the number in the accounting must be the same
+// box, because a mismatch is what strands a frame.
+func TestDrawImageAccountsForWhatItDraws(t *testing.T) {
+	c := &capture{}
+	m := sized(t, c, 80, 30)
+	m.images = termimg.ITerm2
+
+	before := m.hold.printed
+	m.drawImage(Image{Data: realPNG(t, 320, 180), MIME: "image/png"})
+	if len(c.printed) != 1 {
+		t.Fatalf("printed %d times, want one write", len(c.printed))
+	}
+	drew := c.printed[0]
+	accounted := m.hold.printed - before
+
+	// The box in the bytes and the box in the accounting are one box.
+	want := termimg.BoxFor(320, 180, 80, maxImageRows(30))
+	if !strings.Contains(drew, fmt.Sprintf("height=%d", want.Rows)) ||
+		!strings.Contains(drew, fmt.Sprintf("width=%d", want.Cols)) {
+		t.Errorf("payload does not declare the box %+v", want)
+	}
+	if accounted != want.Rows {
+		t.Errorf("accounted %d rows, drew a box of %d", accounted, want.Rows)
+	}
+	if want.Cols >= 80 {
+		t.Errorf("box reaches the terminal width (%d); the terminal would wrap the picture", want.Cols)
+	}
+}
+
+// TestDrawImageRefusesSilently: every refusal costs nothing on screen. A
+// line per undrawable image is a report rather than a control, and the
+// model's own note — path and view_image — is unchanged either way.
+func TestDrawImageRefusesSilently(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		proto termimg.Protocol
+		data  []byte
+	}{
+		{"no protocol this session", termimg.None, realPNG(t, 64, 64)},
+		{"bytes that are not an image", termimg.ITerm2, []byte("MIME said image; bytes disagree")},
+		{"nothing at all", termimg.ITerm2, nil},
+		{"past the ceiling", termimg.ITerm2, make([]byte, termimg.MaxBytes+1)},
+	} {
+		c := &capture{}
+		m := sized(t, c, 80, 30)
+		m.images = tc.proto
+		before := m.hold.printed
+		if cmd := m.drawImage(Image{Data: tc.data, MIME: "image/png"}); cmd != nil {
+			t.Errorf("%s: returned a command", tc.name)
+		}
+		if len(c.printed) != 0 {
+			t.Errorf("%s: printed %q", tc.name, c.printed)
+		}
+		if m.hold.printed != before {
+			t.Errorf("%s: accounted %d rows for something it did not draw", tc.name, m.hold.printed-before)
+		}
+	}
+}
+
+// TestMaxImageRowsLeavesTheConversation: printing N rows scrolls N rows of
+// history away, so a picture that fills the screen costs the operator the
+// reply it belongs to.
+func TestMaxImageRowsLeavesTheConversation(t *testing.T) {
+	for _, tc := range []struct{ height, want int }{
+		{0, 10}, {1, 1}, {3, 1}, {12, 4}, {30, 10}, {60, 20},
+	} {
+		if got := maxImageRows(tc.height); got != tc.want {
+			t.Errorf("maxImageRows(%d) = %d, want %d", tc.height, got, tc.want)
+		}
+		// Never more than the screen minus a row — except on a screen of
+		// one row, where one row is all there is and the question is
+		// moot.
+		if tc.height > 0 {
+			ceiling := tc.height - 1
+			if ceiling < 1 {
+				ceiling = 1
+			}
+			if got := maxImageRows(tc.height); got > ceiling {
+				t.Errorf("height %d: %d rows leaves no screen", tc.height, got)
+			}
+		}
 	}
 }

@@ -759,6 +759,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case Output:
 		return m, m.emitJoined(msg.Lines...)
 
+	case Image:
+		return m, m.drawImage(msg)
+
 	case Attached:
 		var parts []string
 		for _, line := range msg.Lines {
@@ -940,6 +943,51 @@ func (m *Model) emitSegments(segs []Segment) tea.Cmd {
 		}
 	}
 	return m.println(strings.Join(out, "\n"))
+}
+
+// drawImage puts a tool's picture on the operator's screen (ADR-0090),
+// in a box this runtime declares so the row counter can be told what it
+// cannot measure (ADR-0089 §1). Every refusal is silent: a line per
+// undrawable image is a report rather than a control, and the model's own
+// note — with the path and view_image — is unchanged either way.
+func (m *Model) drawImage(msg Image) tea.Cmd {
+	if m.images == termimg.None {
+		return nil // no protocol: this session draws nothing
+	}
+	w, h, ok := termimg.Measure(msg.Data)
+	if !ok {
+		return nil // not an image, or past the ceiling — MIME claimed, bytes decided
+	}
+	box := termimg.BoxFor(w, h, m.width, maxImageRows(m.height))
+	payload, err := termimg.Payload(m.images, msg.Data, box)
+	if err != nil {
+		return nil
+	}
+	return m.emitSegments([]Segment{{Text: payload, Rows: box.Rows}})
+}
+
+// maxImageRows is how much of the screen one picture may take. Printing N
+// rows scrolls N rows of history away, so a picture that fills the screen
+// costs the operator the conversation around it; a third leaves the reply
+// it belongs to still visible. An unknown height falls back to a size that
+// is modest on any terminal.
+//
+// No floor beyond one row. A first version floored at four, which on a
+// three-row terminal was taller than the screen — the test that enumerates
+// heights caught it, and a minimum that exceeds the maximum is not a
+// minimum.
+func maxImageRows(height int) int {
+	if height <= 0 {
+		return 10
+	}
+	r := height / 3
+	if r > height-1 {
+		r = height - 1
+	}
+	if r < 1 {
+		r = 1
+	}
+	return r
 }
 
 // beginTurnStats arms the ADR-0033 heartbeat for a fresh turn.

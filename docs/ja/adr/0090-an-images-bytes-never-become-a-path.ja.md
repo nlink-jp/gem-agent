@@ -19,8 +19,8 @@ view 層が行う読み取りはツールコールではないので、`Agent.de
 
 その制約が、いちばん素直な設計を排除する。MCP intake は既に画像をセッションの work dir へ
 書き出し、モデルには `[image saved at <path> … use view_image on that path]` を渡している
-（[mcpresult.go:184](../../../cmd/mcpresult.go)）。つまりパスはそこにある。しかし `write` は
-`os.Stat` で短絡し（[mcpresult.go:207](../../../cmd/mcpresult.go)）、毎回の呼び出しがサーバに
+（[mcpresult.go:200](../../../cmd/mcpresult.go)）。つまりパスはそこにある。しかし `write` は
+`os.Stat` で短絡し（[mcpresult.go:223](../../../cmd/mcpresult.go)）、毎回の呼び出しがサーバに
 work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:579](../../../internal/mcp/client.go)）。
 ローカルのサーバ子プロセスは自分の名前・ツール名・返すバイト列・ディレクトリを知るので、
 応答の前に content-addressed の名前へ symlink を置ける。するとランタイムは何も書かず、パスは
@@ -31,14 +31,14 @@ work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:579](../..
 ### 配管は実際にどうなっているか
 
 反証された第 3 稿は、view 層に「intake が既に保持しているバイト列」を渡すと書いた。渡せない。
-`render` は `string` を返し（[mcpresult.go:53](../../../cmd/mcpresult.go)）、`mcpIntake` が
+`render` は `string` を返し（[mcpresult.go:54](../../../cmd/mcpresult.go)）、`mcpIntake` が
 持つのは work dir の getter とバイト上限とプレビュー長だけで
-（[mcpresult.go:46](../../../cmd/mcpresult.go)）、ツール契約は
+（[mcpresult.go:61](../../../cmd/mcpresult.go)）、ツール契約は
 `Run func(ctx, args) (string, error)` である（[tools.go:65](../../../internal/tools/tools.go)）。
 `Run` が返れば blocks は消えている。
 
 しかしランタイムに経路が無いわけではない。エージェントループはツールコールの**最中に**既に
-UI へ話しかけている — `prog.Send(tui.ToolCall{…})`（[root.go:927](../../../cmd/root.go)）—
+UI へ話しかけている — `prog.Send(tui.ToolCall{…})`（[root.go:934](../../../cmd/root.go)）—
 ので、ツール結果から画面への帯域外経路は新しい機構ではなく既存の働いている型である。文字列
 契約は 1 ミリも動かさなくてよい。
 
@@ -69,14 +69,17 @@ UI へ話しかけている — `prog.Send(tui.ToolCall{…})`（[root.go:927](.
 `ToolCall` と `ToolDone` が既に呼び出し中に UI へ届くのと同じ形である。ツール結果は `string` の
 ままで、transcript・resume・エラー経路には触れない。
 
-sink は対話的 TUI でない入口すべてで nil である。one-shot `-p` と素の REPL は「描かないと判断
-する」のではなく、**バイト列をどこへも渡さない**。
+sink は対話的 TUI でない入口すべてで**不活性**である。そこで単に nil にはできない。MCP サーバは
+ランタイムが UI を持つか決まる前に接続するので、intake が受け取るのは遅延束縛の経路
+（`tui.Screen`。承認で `tui.Gate` が既に使っている形）であり、プログラムが作られたときにだけ
+束ねられる。未束縛なら渡されたものを捨てる。本記録の以前の稿は nil と約束したが、順序が
+それを許さない。
 
 ### 2. 画像を描くのは、intake が保存し記述したときに限る
 
 条件は 1 つであって 2 つではない。注記が response budget に収まらないブロックは、既に保存も
 個別記述もされない — ガードは何かを書く前に `binaryNote` の大きさを測る
-（[mcpresult.go:105](../../../cmd/mcpresult.go)）— そして leftovers 行に数えられる。そうした
+（[mcpresult.go:113](../../../cmd/mcpresult.go)）— そして leftovers 行に数えられる。そうした
 ブロックは**描かない**。
 
 代案（モデルが知らされていない絵を、結果が切り詰められた呼び出しから描く）は、セッションの

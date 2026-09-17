@@ -4,6 +4,19 @@
 
 ### Added
 
+- **Images from MCP tools appear on screen** ([ADR-0090](docs/en/adr/0090-an-images-bytes-never-become-a-path.md)).
+  A server that returns an image block — a screenshot, a rendered chart —
+  now puts it in front of the operator as the call returns, drawn in a box
+  this runtime declares so the scrollback row counter is told a number
+  rather than measuring bytes it cannot see. The model's own note is
+  unchanged: it still gets the path and still has to call `view_image` to
+  look. The bytes travel in memory and the view layer opens no file, which
+  matters because the path the intake writes is one a server can pre-empt
+  with a symlink. An image is drawn only if the intake both saved and
+  described it, only if its bytes actually decode as an image whatever the
+  MIME says, and only up to 2 MiB decoded; every refusal is silent, because
+  a line per undrawable image is a report rather than a control.
+
 - **`[tui] images`** (`auto` | `off` | `iterm` | `kitty`, default `auto`) — the
   wiring for inline images, and nothing draws yet: what may be drawn is
   deferred to its own record ([ADR-0089](docs/en/adr/0089-inline-images-declare-their-height.md) §5).

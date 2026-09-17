@@ -14,13 +14,13 @@
 
 ### What the counter can and cannot see
 
-`emit` ([model.go:869](../../../internal/tui/model.go)) prints one line into
+`emit` ([model.go:872](../../../internal/tui/model.go)) prints one line into
 scrollback and counts its physical rows; the bottom pinning rests on that
 count. Measured against `charmbracelet/x/ansi` v0.11.6, the version
 `go.mod:14` pins: `ansi.StringWidth` returns **0** and `ansi.Strip` returns
 the empty string for an iTerm2 `OSC 1337 File=`, a kitty `APC _G` and a
 sixel `DCS q` alike. `ansi.Hardwrap` leaves all three **byte-identical**, so
-`wrapForScrollback` ([model.go:1071](../../../internal/tui/model.go)) does
+`wrapForScrollback` ([model.go:1119](../../../internal/tui/model.go)) does
 not shear a base64 run. An independent pass re-measured it with a
 real PNG and a real sixel — the repository's own test had covered two of the
 three families, and `tools/imgpayload` now carries all three. A draft then over-corrected the
@@ -33,7 +33,7 @@ widths, both settings, 126 combinations, every one byte-identical — and
 is a test that asserts it, not the ability to.
 
 The counter is not blind, though, and the first draft said it was.
-`physicalRows` ([model.go:1084](../../../internal/tui/model.go)) starts at
+`physicalRows` ([model.go:1132](../../../internal/tui/model.go)) starts at
 `rows, cells := 1, 0` and so credits an image line with exactly **one** row
 while the terminal advances N. The shortfall is `N-1`, not `N`.
 
@@ -50,7 +50,7 @@ prints the table it computed.
 
 The regime is arranged, not assumed. The pin's padding is
 `height − printed − view − 1`, and production labels the positive branch
-"screen not full" ([model.go:1781](../../../internal/tui/model.go)). A
+"screen not full" ([model.go:1829](../../../internal/tui/model.go)). A
 filler count chosen for a 30-row tmux pane left an 80-row iTerm2 window on
 the other side of that branch, and an earlier draft of this record reported
 those runs as "full". The filler is computed from the terminal's own height
@@ -196,8 +196,8 @@ finding of its round:
 | draft | the source it named | why it failed |
 |---|---|---|
 | first | a local image path the model names | a view-layer file open is not a tool call: it never reaches `Agent.decide`, never runs in ADR-0086's sandboxed child, and is invisible to the credential list, which is keyed on built-in tool name ([risk.go:176](../../../internal/risk/risk.go)) — the class ADR-0085/0086 repaired |
-| second | the path the MCP intake wrote | `write` short-circuits on `os.Stat(path) == nil` ([mcpresult.go:207](../../../cmd/mcpresult.go)), and a server knows its own name, its tool name, the bytes it will return **and the work directory, which every call hands it** as `_meta[workdir.MetaKey]` ([client.go:579](../../../internal/mcp/client.go)) — so it can plant a symlink at the content-addressed path and the runtime writes nothing |
-| third | the decoded bytes the intake holds | **there is no such carrier.** `render` returns a `string` ([mcpresult.go:53](../../../cmd/mcpresult.go)), `mcpIntake` retains no bytes, and `Tool.Run` is `func(ctx, args) (string, error)` ([tools.go:65](../../../internal/tools/tools.go)). The bytes are a local; after `Run` returns they are unreachable |
+| second | the path the MCP intake wrote | `write` short-circuits on `os.Stat(path) == nil` ([mcpresult.go:223](../../../cmd/mcpresult.go)), and a server knows its own name, its tool name, the bytes it will return **and the work directory, which every call hands it** as `_meta[workdir.MetaKey]` ([client.go:579](../../../internal/mcp/client.go)) — so it can plant a symlink at the content-addressed path and the runtime writes nothing |
+| third | the decoded bytes the intake holds | **there is no such carrier.** `render` returns a `string` ([mcpresult.go:54](../../../cmd/mcpresult.go)), `mcpIntake` retains no bytes, and `Tool.Run` is `func(ctx, args) (string, error)` ([tools.go:65](../../../internal/tools/tools.go)). The bytes are a local; after `Run` returns they are unreachable |
 
 Three drafts in the same place is not three mistakes, it is one: **the source
 cannot be named until the plumbing exists.** Getting an image's bytes from an
@@ -222,7 +222,7 @@ size except the JSON-RPC frame cap (`scannerMax = 10 MiB`,
 [client.go:28](../../../internal/mcp/client.go)) — the response budget bounds
 the *note*, not the data — and a block whose `binaryNote` does not fit the
 response budget is neither saved nor described individually
-([mcpresult.go:105](../../../cmd/mcpresult.go)), so whether it may still be
+([mcpresult.go:113](../../../cmd/mcpresult.go)), so whether it may still be
 drawn is undecided.
 
 ### 6. Only the view layer emits an image escape
@@ -238,14 +238,14 @@ and it should be written that way instead.
 
 This does **not** close the existing surface: tool output is printed without
 ANSI stripping — `ansi.Strip` is called at exactly one site in non-test code
-([model.go:1089](../../../internal/tui/model.go)), inside `physicalRows`, to
+([model.go:1137](../../../internal/tui/model.go)), inside `physicalRows`, to
 *measure* — so raw escapes from shell output already reach the terminal.
 Pre-existing, not widened here, not repaired here.
 
 ### 7. Drawing is a TUI-only capability, and the other entrances say so
 
 `tea.NewProgram` is constructed at one site in the product
-([root.go:1709](../../../cmd/root.go)), reached only when the session is
+([root.go:1716](../../../cmd/root.go)), reached only when the session is
 interactive; one-shot `-p` and the plain REPL return before it, so they
 never draw — the same boundary the diagram lane already has. (An earlier
 draft said "exactly one site" in the module, which `tools/pinprobe` has
