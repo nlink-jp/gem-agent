@@ -121,6 +121,14 @@ picture (`agent_info`), structured mid-turn choices (`ask_user`), and grounded w
 documents, and audio/video — routed through your GCS bucket when
 configured, inline otherwise.
 
+**Inline images** — an image an MCP tool returns travels the other way: a
+screenshot or a rendered chart is drawn in the terminal as the call
+returns, when the terminal can draw one (`[tui].images`, `auto` by default;
+iTerm2 and kitty, off inside tmux and screen). The model's note is
+unchanged — it gets the path and calls `view_image` to look
+([ADR-0089](docs/en/adr/0089-inline-images-declare-their-height.md) /
+[ADR-0090](docs/en/adr/0090-an-images-bytes-never-become-a-path.md)).
+
 **[Approval and safety](docs/en/reference/approval.md)** — per-call
 MITL gates that show the model's own declared purpose for the call
 alongside its arguments, a deny-with-reason answer (`N`) that carries

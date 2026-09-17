@@ -335,8 +335,9 @@ show_thoughts = true
 # because once the UI owns the keyboard a terminal's reply arrives as if
 # it had been typed. "off" never draws. "iterm" and "kitty" force a
 # protocol when the question is answered wrongly for your terminal.
-# Inside tmux or screen, "auto" resolves to off.
-# Nothing draws yet: what may be drawn is still being decided.
+# Inside tmux or screen, "auto" resolves to off. What is drawn is an image
+# an MCP tool returned, for a block the intake both saved and described
+# (ADR-0090); the model's note is unchanged either way.
 images = "auto"
 
 [telemetry]

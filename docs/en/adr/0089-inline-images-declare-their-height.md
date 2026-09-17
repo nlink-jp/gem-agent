@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-09-16, rewritten 2026-09-17) |
+| Status | **Accepted** (2026-09-17) — implemented; decision 3 gained the erase after the first run on a real terminal |
 | Date | 2026-09-16 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -304,12 +304,13 @@ an obligation, not the present-tense claim an earlier draft made.
 - No aspect-ratio arithmetic and no cell-pixel-size query enter the runtime.
 - Terminal.app — and any terminal that does not draw — loses nothing: the
   fallback is today's behaviour.
-- The operator does **not** yet see a tool's screenshot: that needs the
-  deferred decision of §5. What this record buys is that when a source is
-  settled, the rows it costs are already known. **lagent ADR-0005** settled
-  ingestion on that side; the screen is still open on both. (Unprefixed
-  numbers here mean gem-agent's own log, and gem-agent ADR-0005 is a
-  different decision entirely — an earlier draft wrote it bare.)
+- The operator **does** see a tool's screenshot: [ADR-0090](0090-an-images-bytes-never-become-a-path.md)
+  settled the source §5 deferred — the MCP intake, for a block it both saved
+  and described — and the rows it costs were already known when it did.
+  **lagent ADR-0005** settled ingestion on that side, and lagent ADR-0020 /
+  ADR-0021 now mirror this decision and its source. (Unprefixed numbers here
+  mean gem-agent's own log, and gem-agent ADR-0005 is a different decision
+  entirely — an earlier draft wrote it bare.)
 - **What is unmeasured stays unmeasured**: kitty and Ghostty honouring `r=`,
   Terminal.app's protocol support, and the per-image cost. `auto` should not
   be trusted in a streaming turn until the last of those is measured.

@@ -116,6 +116,13 @@ stderr に 1 行出して対処を示します — 何も添付しない起動�
 スクリーンショット（`@~/Desktop/…`・`@clipboard`）・PDF と Office
 文書・音声/動画 — バケット設定時は GCS 経由、未設定ならインライン。
 
+**インライン画像** — MCP ツールが返した画像は逆向きに流れる。スクリーン
+ショットや描画したチャートを、端末が描けるならその呼び出しの戻りと同時に
+端末へ描く（`[tui].images`、既定は `auto`。iTerm2 と kitty、tmux・screen の
+中では off）。モデルへの注記は変わらない — パスを受け取り、`view_image` で
+見る（[ADR-0089](docs/ja/adr/0089-inline-images-declare-their-height.ja.md) /
+[ADR-0090](docs/ja/adr/0090-an-images-bytes-never-become-a-path.ja.md)）。
+
 **[承認と安全](docs/ja/reference/approval.ja.md)** — モデル自身が申告した
 コールの目的を引数と並べて表示する都度 MITL ゲート（Block 段には
 決して届かないセッション allowlist 付き）、1 行の「代わりにこうして」を

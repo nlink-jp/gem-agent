@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-09-17) |
+| Status | **Accepted** (2026-09-17) — implemented |
 | Date | 2026-09-17 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -152,8 +152,9 @@ audience — the operator — and gives it a channel that opens no file.
   "report is not a control" shape — and the note the model gets is
   unchanged, so the picture is still reachable through `view_image`.
 - lagent has the same intake, the same tool contract and the same UI
-  channel. Its mirror is owed; this side is implemented first because the
-  lane is.
+  channel. This side was implemented first because the lane is; the mirror
+  landed as lagent ADR-0020 / ADR-0021, carrying the erase this side's first
+  real-terminal run made necessary.
 
 ## Alternatives considered
 
