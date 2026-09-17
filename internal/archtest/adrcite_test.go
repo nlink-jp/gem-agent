@@ -26,15 +26,15 @@ import (
 // stale exemption is visible rather than silent.
 const citeWindow = 0
 
-// citeExempt lists citations whose paragraph legitimately names no
-// identifier that appears near the line — a formula, a count, a constant
-// read for its value. Key is "<adr file>::<citation>"; value is why.
-var citeExempt = map[string]string{
-	// The paragraph names the pad formula in prose arithmetic, not as an
-	// identifier; the line is the branch that computes it.
-	"0089-inline-images-declare-their-height::model.go:1726": "cited for the pad expression, which the paragraph writes as arithmetic rather than as an identifier",
-}
-
+// No exemptions. The first version carried one, for a citation whose
+// paragraph writes the pad as arithmetic rather than as an identifier — and
+// a verification pass measured that the entry was a no-op (the paragraph
+// backticks `height − printed − view − 1`, whose tokens the cited line
+// contains) and that a stale entry could never announce itself, which is
+// what the recorded rule requires of an allowlist. An empty list is a
+// better control than a dead one: when a citation genuinely needs an
+// exemption, add it with its reason AND a check that fails when it stops
+// being needed.
 var citeRe = regexp.MustCompile(`\[([A-Za-z0-9_.-]+\.(?:go|mod|md)):(\d+)\]\(([^)]+)\)`)
 var tickRe = regexp.MustCompile("`([^`]+)`")
 
@@ -66,7 +66,6 @@ func checkOneADR(t *testing.T, dir, name string) int {
 	if err != nil {
 		t.Fatalf("read %s: %v", name, err)
 	}
-	slug := strings.TrimSuffix(strings.TrimSuffix(name, ".md"), ".ja")
 	var n int
 	for _, para := range strings.Split(string(b), "\n\n") {
 		ticks := map[string]bool{}
@@ -82,7 +81,6 @@ func checkOneADR(t *testing.T, dir, name string) int {
 		for _, c := range citeRe.FindAllStringSubmatch(para, -1) {
 			n++
 			base, lineStr, rel := c[1], c[2], c[3]
-			key := slug + "::" + base + ":" + lineStr
 			target := filepath.Clean(filepath.Join(dir, rel))
 			src, err := os.ReadFile(target)
 			if err != nil {
@@ -97,12 +95,6 @@ func checkOneADR(t *testing.T, dir, name string) int {
 			ln, _ := strconv.Atoi(lineStr)
 			if ln < 1 || ln > len(lines) {
 				t.Errorf("%s: cites %s:%d but the file has %d lines", name, base, ln, len(lines))
-				continue
-			}
-			if why, ok := citeExempt[key]; ok {
-				if why == "" {
-					t.Errorf("%s: exemption for %s carries no reason", name, key)
-				}
 				continue
 			}
 			lo, hi := max(1, ln-citeWindow), min(len(lines), ln+citeWindow)

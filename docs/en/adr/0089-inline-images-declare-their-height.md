@@ -175,30 +175,17 @@ verbatim — the same lane, and the same reason, as ADR-0063 §3's art.
 take the row count as a parameter — decision 1's precondition.
 
 **Sixel is not taken.** It cannot declare a row count, which is decision
-1's precondition, and that reason stands alone without any measurement.
+1's precondition, and that reason stands alone.
 
-A second reason has been mis-handled twice and is now stated with its real
-scope. The organization's supply-chain rule — the dependency floor is
-stdlib, then a vendor's own SDK, then the REST API directly — is a standing
-是, not a per-case question, and the rewrite was wrong to drop it on the
-ground that it "appears nowhere in this repository": that was a negative
-asserted without enumerating, and the rule is written in the sibling
-runtime's RFP and in `internal/llm/openai.go` there.
-
-**But restoring it as a reason to refuse a sixel encoder over-reached.** Its
-clearest primary source, `web-fetch` ADR-0003, states the ladder and then
-says it **was written for API clients** — a sixel encoder is not one — and
-this module's own `go.mod` carries `bubbletea`, `glamour`, `cobra` and
-`chroma`, so "the floor is stdlib" is plainly not how the rule is applied.
-Extending it to an encoder would be an extension, and this record does not
-make one. `mermaid-ascii` is likewise not the counter-example the rewrite
-took it for, though the dating is softer than the restoring draft said:
-ADR-0042 is 2026-08-22 and the rule's earliest written trace in these
-repositories is 2026-09-10, so "pre-policy" holds against the record of the
-rule rather than against a known date it came into force.
-
-**Decision 4 therefore rests on the first reason alone**, which needs no
-measurement and no policy.
+A second reason was tried twice and is **removed rather than adjudicated a
+third time**. The organization's supply-chain rule was first withdrawn here
+as unsupported (wrong: it is written in the sibling runtime's RFP and its
+`internal/llm`), then restored as a reason to refuse a sixel encoder, then
+narrowed to "API clients" on a downstream project's wording — three
+readings in three rounds, on a standing organization 是 that this record has
+no business scoping. **Its reach is not settled here and decision 4 does not
+rest on it.** If it is ever written into `CONVENTIONS.md`, that is where the
+question belongs.
 
 ### 5. What may be drawn is NOT settled here — one constraint is
 
@@ -289,9 +276,10 @@ multiplexer measured rendering a payload stranded a frame for every image.
 No tool, no prompt paragraph. ADR-0063 §2's rule stands. The first draft
 argued the model "already produces" these sources; that is a firing-rate
 claim and this project has a measured precedent against making one without
-a denominator — `render_diagram` fired once in 76 sessions. Decision 5's
-single source needs no model behaviour at all: the intake writes the file
-whether or not the model mentions it. No test pins this yet: `cmd/prompt_test.go` pins the *diagram* silence
+a denominator — `render_diagram` fired once in 76 sessions. And §5 defers the
+source, so there is no source for a prompt to steer toward — an earlier
+draft argued from "decision 5's single source", which was the second of the
+three refuted drafts, resurrected inside the record that refutes it. No test pins this yet: `cmd/prompt_test.go` pins the *diagram* silence
 ADR-0063 asked for, and the prompt already mentions images elsewhere, so an
 images clause needs its own absence test written with the implementation —
 an obligation, not the present-tense claim an earlier draft made.
@@ -312,23 +300,23 @@ an obligation, not the present-tense claim an earlier draft made.
 - **What is unmeasured stays unmeasured**: kitty and Ghostty honouring `r=`,
   Terminal.app's protocol support, and the per-image cost. `auto` should not
   be trusted in a streaming turn until the last of those is measured.
-- Three verification passes produced findings in four classes. Two are now
-  closed by construction rather than by care: **"measured" claims wider than
-  their instrument**, closed by `pinprobe` computing and printing its own
-  table and by arranging the regime from the terminal's height; and **a lane
-  opened without enumerating its dimensions**, closed for columns by §2 and
-  for the source by §5 refusing to name one until its plumbing exists.
-  Two are **not** closed and are answered with mechanism rather than another
-  read, because each produced a fresh instance *inside the previous round's
-  repair*: **claims about adjacent code asserted without reading it** (a
-  citation repaired in round three landed two lines off, onto an unrelated
-  symbol) and **a withdrawal swept on one surface and not another** (round
-  two swept the instruments and missed the CHANGELOG; round three swept the
-  documents and missed it again). The mechanisms are a test that resolves
-  every `file.go:NNN` in these records against the symbol it names, and an
-  absence test over retired claims — both owed by the same commit as this,
-  because three rounds of human re-reading produced three rounds of the same
-  two classes.
+- Four verification passes. Two classes are closed by construction — the
+  lane's dimensions (§2 for columns, §5 for the source, by refusing to name
+  one) and "measured" claims wider than their instrument, inside `tools/`,
+  where `pinprobe` now computes its own table and arranges its own regime.
+- Two classes are **narrowed, not closed**, and the tests that narrow them
+  are lints rather than proofs. `internal/archtest/adrcite_test.go` resolves
+  every `file.go:NNN` link in these records and catches most line drift — it
+  caught the off-by-two this round's own repair introduced — but a measured
+  15–18% of ±N perturbations still pass, because a markdown table is one
+  paragraph and pools its token set, and roughly a third of the line
+  references in these records are in forms its regex does not match.
+  `internal/archtest/withdrawn_test.go` catches verbatim repetition of nine
+  English phrases across 215 read surfaces, and is blind to paraphrase, to
+  the Japanese half of every document, to a phrase that wraps at a line
+  break, and to `cmd/` and `internal/`. Both are worth keeping. Neither
+  entitles anyone to say the class is closed, and an earlier draft of this
+  bullet said exactly that.
 - Recorded and **not adopted**: the ADR-number collision with the ported
   `gem-agent ADR-0020` in lagent, because every citation there is qualified
   and the architecture test keeps it so; and the request to name a better
