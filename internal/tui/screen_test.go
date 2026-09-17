@@ -3,6 +3,7 @@ package tui
 import (
 	"sync"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -27,6 +28,20 @@ func (c *imageCatcher) count() int {
 	return len(c.imgs)
 }
 
+// waitFor polls until n images have arrived. The send is asynchronous —
+// it has to be, or a caller inside Update deadlocks the UI — so delivery
+// is not observable on the calling goroutine's next line.
+func (c *imageCatcher) waitFor(n int, d time.Duration) bool {
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if c.count() >= n {
+			return true
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return false
+}
+
 // TestScreenIsInertUntilItHasAProgram is the hop between the intake and the
 // model, and it had no test at all — an independent pass found the whole
 // route unpinned while Gate, the shape it was copied from, has seven.
@@ -46,7 +61,7 @@ func TestScreenIsInertUntilItHasAProgram(t *testing.T) {
 	}
 
 	s.Image([]byte("after"), "image/png")
-	if c.count() != 1 {
+	if !c.waitFor(1, 2*time.Second) {
 		t.Fatalf("a bound screen sent %d images, want 1", c.count())
 	}
 	if got := string(c.imgs[0].Data); got != "after" {
@@ -77,9 +92,55 @@ func TestScreenBindsUnderConcurrentSends(t *testing.T) {
 		s.SetProgram(c)
 	}()
 	wg.Wait()
-	// How many arrived depends on when the bind landed; that it did not
-	// race is the assertion, and -race is the instrument.
+	// How many arrived depends on when the bind landed and on when the
+	// sends drain; that it did not race is the assertion, and -race is
+	// the instrument.
+	time.Sleep(50 * time.Millisecond)
 	if c.count() > 50 {
 		t.Errorf("more images arrived (%d) than were sent", c.count())
+	}
+}
+
+// blockingSender never returns from Send, the way Bubble Tea's Program
+// does not while Update is still running: Send blocks on the channel the
+// event loop drains, and the event loop cannot drain it until Update
+// returns.
+type blockingSender struct{ entered chan struct{} }
+
+func (b *blockingSender) Send(tea.Msg) {
+	close(b.entered)
+	select {} // never returns, like the deadlock this pins
+}
+
+// TestScreenDoesNotBlockItsCaller is the freeze, pinned. The slash handler
+// runs INSIDE Update (submit -> m.slash), so /show reached Program.Send
+// from the one goroutine that must return first, and the whole UI locked
+// up — keystrokes included, so neither Ctrl+C nor Ctrl+D could end it. It
+// had to be killed from outside.
+//
+// The fix is that Image never blocks its caller. This test fails by
+// timing out against the version that sends inline.
+func TestScreenDoesNotBlockItsCaller(t *testing.T) {
+	s := NewScreen()
+	b := &blockingSender{entered: make(chan struct{})}
+	s.SetProgram(b)
+
+	returned := make(chan bool, 1)
+	go func() { returned <- s.Image([]byte("bytes"), "image/png") }()
+
+	select {
+	case ok := <-returned:
+		if !ok {
+			t.Error("a bound screen reported no program")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Image blocked its caller — from Update this deadlocks the whole UI, " +
+			"and the session can only be killed from outside")
+	}
+	// And it really did try to send: the bool is not a lie about delivery.
+	select {
+	case <-b.entered:
+	case <-time.After(2 * time.Second):
+		t.Error("the send never started")
 	}
 }

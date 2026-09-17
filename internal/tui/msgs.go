@@ -309,6 +309,16 @@ func (s *Screen) Image(data []byte, mime string) bool {
 	if p == nil {
 		return false
 	}
-	p.Send(Image{Data: data, MIME: mime})
+	// On its own goroutine, and this is not optional. One caller is the
+	// slash handler, which runs INSIDE Update: Program.Send blocks on
+	// the channel the event loop drains, and the event loop cannot
+	// drain it until Update returns. Sending from there froze the whole
+	// UI the first time /show was typed on a real terminal.
+	//
+	// The bool still means what it says — there is a program to send to
+	// — which is the question a caller can act on. Whether the picture
+	// has landed yet is not, and never was, something the caller could
+	// use.
+	go p.Send(Image{Data: data, MIME: mime})
 	return true
 }
