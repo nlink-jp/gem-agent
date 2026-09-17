@@ -206,8 +206,8 @@ contract that the transcript, resume and error paths all rest on. That is a
 decision with its own dimensions to enumerate, and writing it as a bullet
 inside a record about row arithmetic is what produced three refutations.
 
-So this record settles the accounting and **defers the source**. A separate
-ADR decides what may be drawn and how its bytes travel, and it inherits one
+So this record settles the accounting and **defers the source**. [ADR-0090](0090-an-images-bytes-never-become-a-path.md)
+decides what may be drawn and how its bytes travel, and it inherits one
 constraint this one did earn:
 
 **The view layer opens no file.** Whatever the source turns out to be, the
