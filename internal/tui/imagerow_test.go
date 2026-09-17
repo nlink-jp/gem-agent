@@ -96,6 +96,36 @@ func TestDeclaredSegmentIsVerbatim(t *testing.T) {
 	}
 }
 
+// TestDeclaredSegmentIsNotWrappedOrTabExpanded is the half the payload
+// cannot test. Both transforms are inert against a zero-printable-width
+// run, so a version of emitSegments that DID wrap and expand an image
+// segment produced byte-identical output and the test above stayed green —
+// an independent pass proved it by mutation. The behaviour the comment
+// claims is pinned here with text the transforms would visibly change: a
+// declared segment goes to the terminal exactly as given, because "inert
+// today" is not a contract.
+func TestDeclaredSegmentIsNotWrappedOrTabExpanded(t *testing.T) {
+	c := &capture{}
+	m := sized(t, c, 20, 30) // narrow enough that wrapping would fire
+	text := "a\tb" + strings.Repeat("x", 100)
+
+	m.emitSegments([]Segment{{Text: text, Rows: 4}})
+	if len(c.printed) != 1 {
+		t.Fatalf("printed %d times, want exactly one write", len(c.printed))
+	}
+	if want := ansi.EraseScreenBelow + text; c.printed[0] != want {
+		t.Errorf("a declared segment was transformed on its way out:\n got %q\nwant %q", c.printed[0], want)
+	}
+	// The same text WITHOUT a declaration proves the transforms are live:
+	// if this stops changing, the test above has stopped meaning anything.
+	c2 := &capture{}
+	m2 := sized(t, c2, 20, 30)
+	m2.emitSegments([]Segment{{Text: text}})
+	if len(c2.printed) != 1 || c2.printed[0] == text {
+		t.Error("ordinary text is no longer tab-expanded and wrapped; the control has gone stale")
+	}
+}
+
 // TestUndeclaredImageIsWhatGoesWrong pins the failure the declaration
 // prevents, so the two paths cannot be confused: the same bytes sent as
 // ordinary text are counted as one row. Measured on two terminals, that

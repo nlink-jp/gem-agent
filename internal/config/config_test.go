@@ -59,6 +59,39 @@ name = "example-model"
 	}
 }
 
+// TestImagesSettingIsValidated: the enumeration decides whether escapes are
+// written to the operator's terminal at all, and it was the only enumerated
+// [tui] value with no test — a typo in the accepted set, or a later default
+// branch that let anything through, would have failed nothing.
+func TestImagesSettingIsValidated(t *testing.T) {
+	for _, v := range []string{"auto", "off", "iterm", "kitty"} {
+		clearEnv(t)
+		path := writeConfig(t, "\n[gcp]\nproject = \"p\"\n\n[model]\nname = \"m\"\n\n[tui]\nimages = \""+v+"\"\n")
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("%q should be accepted: %v", v, err)
+		}
+		if cfg.TUI.Images != v {
+			t.Errorf("%q loaded as %q", v, cfg.TUI.Images)
+		}
+	}
+	clearEnv(t)
+	path := writeConfig(t, "\n[gcp]\nproject = \"p\"\n\n[model]\nname = \"m\"\n\n[tui]\nimages = \"sixel\"\n")
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "[tui].images") {
+		t.Fatalf("an unsupported protocol should be rejected by name, got %v", err)
+	}
+	// The default is what a file that says nothing gets.
+	clearEnv(t)
+	path = writeConfig(t, "\n[gcp]\nproject = \"p\"\n\n[model]\nname = \"m\"\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TUI.Images != "auto" {
+		t.Errorf("default images = %q, want auto", cfg.TUI.Images)
+	}
+}
+
 func TestInvalidThemeRejected(t *testing.T) {
 	clearEnv(t)
 	path := writeConfig(t, `
