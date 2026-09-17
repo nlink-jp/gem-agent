@@ -78,13 +78,24 @@ func fromEnv(env func(string) string) (p Protocol, decided bool) {
 	return None, false
 }
 
-// kittyQuery asks the terminal to accept a 1x1 image and report. i=31 is an
-// arbitrary id echoed back; a=q means query only, so nothing is drawn.
-const kittyQuery = "\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\"
+// kittyQuery asks the terminal to accept a 1x1 image and report, and then
+// asks it for its primary device attributes. i=31 is an arbitrary id echoed
+// back; a=q means query only, so nothing is drawn.
+//
+// The SECOND question is what makes the first one answerable. A terminal
+// that does not know the graphics protocol says nothing to it, and silence
+// is indistinguishable from slowness, so the only verdict available was the
+// timeout — measured at a full 2.001 s on Apple Terminal, on every start,
+// with TERM_PROGRAM set and the environment unable to classify it. Every
+// VT-compatible terminal answers DA1, so a DA1 reply arriving with no
+// graphics reply before it is a definitive no, in milliseconds. The budget
+// below is now a backstop for a terminal that answers neither, not the
+// mechanism.
+const kittyQuery = "\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[c"
 
 // askKitty writes the query and reads for a reply, with the discipline the
-// probes had to learn: a budget in seconds rather than milliseconds, the
-// stream drained before asking, and silence read as "no".
+// probes had to learn: the stream drained before asking, a generous budget
+// as the backstop, and silence read as "no" rather than as "ask again".
 func askKitty(tty *os.File, timeout time.Duration) bool {
 	if timeout <= 0 {
 		timeout = 2 * time.Second
@@ -126,6 +137,14 @@ func askKitty(tty *os.File, timeout time.Duration) bool {
 	if _, err := tty.WriteString(kittyQuery); err != nil {
 		return false
 	}
+	// A terminal that does not understand APC prints the query's body
+	// instead of answering it: Apple Terminal left
+	// "Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA" on the operator's screen at every
+	// start (measured 2026-09-17). The line this dirtied is erased before
+	// the terminal is handed to the UI. Nothing above the cursor is
+	// touched, and on a terminal that echoed nothing this clears a line
+	// that is already blank.
+	defer func() { _, _ = tty.WriteString("\r\x1b[2K") }()
 	var got []byte
 	deadline := time.After(timeout)
 	for {

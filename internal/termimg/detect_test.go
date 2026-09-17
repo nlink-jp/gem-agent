@@ -1,6 +1,9 @@
 package termimg
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestFromEnvDecidesWhatItCan: the environment settles the common cases
 // without a query, and a multiplexer settles to None — passthrough is the
@@ -62,6 +65,12 @@ func TestParseKittyReply(t *testing.T) {
 		{"OK still arriving", "\x1b_Gi=31;OK", false, false},
 		{"a foreign escape is not our reply", "\x1b[0m", true, false},
 		{"plain text is not our reply", "abc", true, false},
+		// The DA1 answer to the second half of the query. A terminal
+		// that ignores the graphics question still answers this one,
+		// so its arrival is the definitive no that the timeout used
+		// to have to stand in for.
+		{"a DA1 reply is a definitive no", "\x1b[?62;4c", true, false},
+		{"a DA1 reply still arriving", "\x1b[", false, false},
 	} {
 		done, ok := parseKittyReply([]byte(tc.in))
 		if done != tc.wantDone || ok != tc.wantOK {
@@ -94,5 +103,27 @@ func TestResolveHonoursTheSetting(t *testing.T) {
 		if got := Resolve(tc.setting, nil, tc.env, 0); got != tc.want {
 			t.Errorf("Resolve(%q) = %v, want %v", tc.setting, got, tc.want)
 		}
+	}
+}
+
+// TestTheQueryIsAnswerableByEveryTerminal is the property the timeout used
+// to stand in for. The graphics question alone has no negative answer — a
+// terminal that does not know the protocol says nothing, and silence cannot
+// be told from slowness, so every such terminal paid the whole budget:
+// measured at 2.001 s on Apple Terminal, at every start, with TERM_PROGRAM
+// set and fromEnv unable to classify it. Appending a device-attributes
+// request gives the negative answer a carrier, because every VT-compatible
+// terminal replies to DA1.
+func TestTheQueryIsAnswerableByEveryTerminal(t *testing.T) {
+	if !strings.HasSuffix(kittyQuery, "\x1b[c") {
+		t.Fatalf("the query must end with a DA1 request; got %q", kittyQuery)
+	}
+	if !strings.HasPrefix(kittyQuery, "\x1b_G") {
+		t.Errorf("the graphics question must come first, so a kitty reply arrives before DA1: %q", kittyQuery)
+	}
+	// And the parser must read that carrier as a no rather than waiting.
+	done, ok := parseKittyReply([]byte("\x1b[?62;4c"))
+	if !done || ok {
+		t.Errorf("a DA1 reply must end the wait with a no; got (done=%v, ok=%v)", done, ok)
 	}
 }
