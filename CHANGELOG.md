@@ -1,6 +1,28 @@
 # Changelog
 
-## [Unreleased]
+## [0.83.0] - 2026-09-17
+
+### Fixed
+
+- **An image is drawn only when its bytes reached disk, and one predicate
+  decides what an image is.** Whether the write succeeded was inferred from
+  the note's length, and the two notes are not ordered — a failure note can
+  be shorter than a success note, which carries a full path — so a failed
+  write was read as success and the picture was drawn with no file behind it
+  and `view_image` on the path finding nothing. The same inference
+  mislabelled the leftovers line as "saved but not listed" when nothing had
+  been saved. Separately, the draw gate keyed on the MIME prefix while the
+  model's note keyed on the block type, so a "resource" wearing an image
+  MIME was drawn and recorded as a resource, and an image block with no MIME
+  was recorded as an image and never drawn.
+
+- **`/settings` lists `tui.images`**, resolving `auto` to what the probe
+  actually found (`auto (→ iterm2)`), the way `tui.language` has shown its
+  resolved value. Every refusal to draw is silent by design and the probe
+  cannot be re-run mid-session, so this row is the only place that answers
+  "did it find anything?" — and the panel answers when asked rather than
+  reporting at startup. The capability is now resolved once and shared by
+  the model and the panel.
 
 ### Added
 
