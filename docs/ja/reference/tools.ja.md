@@ -73,7 +73,7 @@ above are partial]`・`[interrupted — the tree above is partial]` —
 資格情報名のファイルはオペレーターの yes があるときだけ読めます
 （ADR-0085）: sandbox の資格情報一覧に一致するパス — 実パスで判定する
 ので `.env` へのリンクは `.env` の読取 — への `read_file`・
-`summarize_file`・`view_image`・`read_document`・`file_info` は全モードで
+`summarize_file`・`view_image`・`show_image`・`read_document`・`file_info` は全モードで
 確認し、セッションの `a`・`"never"` ポリシー・`--allow` は決して答えず、
 モデル層には決して行かず、`-p` では拒否されます。これらの読取は、資格情報一覧を
 カーネルで拒むサンドボックスプロファイルの子プロセスで走ります（ADR-0086）。

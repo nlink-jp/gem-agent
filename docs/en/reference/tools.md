@@ -77,8 +77,8 @@ exact-match contract. Everything the model reads is replayed on every
 later round, so windows are the default working style.
 
 A credential-named file is read only with the operator's yes
-(ADR-0085): `read_file`, `summarize_file`, `view_image`, `read_document`
-and `file_info` on a path matching the sandbox's credential list —
+(ADR-0085): `read_file`, `summarize_file`, `view_image`, `show_image`,
+`read_document` and `file_info` on a path matching the sandbox's credential list —
 judged on the real path, so a link to `.env` is a `.env` read — prompt
 in every mode, are never answered by a session `a`, a `"never"` policy
 or `--allow`, never go to the model tier, and are denied in `-p`. Those

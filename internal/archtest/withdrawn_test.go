@@ -38,6 +38,10 @@ var withdrawn = []struct {
 	{"drawn if and only if the intake", "the intake draws nothing: an MCP image block is addressed to the model, and no server that emits one declares an audience (ADR-0091)"},
 	{"intake が保存し記述したとき", "same"},
 	{"a server can now put a picture on the operator", "withdrawn with the intake source; what a server returns reaches the model, and the model decides what the operator sees"},
+	{"images from MCP tools", "the intake draws nothing (ADR-0091/lagent ADR-0022): what is drawn is show_image or /show"},
+	{"MCP ツールの画像をインライン描画", "same"},
+	{"The sender is the MCP intake", "same"},
+	{"an image an MCP tool returned, for a block", "same"},
 	{"nothing draws yet", "the source was settled and wired: the MCP intake draws, for a block it both saved and described"},
 	{"No implementation here yet", "implemented here after gem-agent, in the same work that wrote this"},
 	{"こちらにはまだ実装が無い", "same"},
@@ -105,15 +109,22 @@ func TestWithdrawnClaimsStayWithdrawn(t *testing.T) {
 func readSurfaces(t *testing.T, root string) []string {
 	t.Helper()
 	var out []string
-	for _, f := range []string{"AGENTS.md", "CLAUDE.md", "CHANGELOG.md", "README.md", "README.ja.md", "Makefile"} {
+	for _, f := range []string{"AGENTS.md", "CLAUDE.md", "CHANGELOG.md", "README.md", "README.ja.md", "Makefile", "config.example.toml"} {
 		if _, err := os.Stat(filepath.Join(root, f)); err == nil {
 			out = append(out, f)
 		}
 	}
-	for _, dir := range []string{"docs", "tools"} {
+	// cmd and internal are read surfaces too: the settings panel's help text
+	// and a type's doc comment both went on describing the intake as the
+	// source after ADR-0091 withdrew it, and the sweep that followed scanned
+	// neither. This file holds every retired phrase by design and is skipped.
+	for _, dir := range []string{"docs", "tools", "cmd", "internal"} {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(p string, d os.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
 				return err
+			}
+			if filepath.Base(p) == "withdrawn_test.go" {
+				return nil
 			}
 			switch filepath.Ext(p) {
 			case ".md", ".go":

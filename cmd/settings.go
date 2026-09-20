@@ -256,7 +256,7 @@ func (s *settingsStore) data() tui.SettingsData {
 		imagesValue = fmt.Sprintf("auto (→ %s)", s.images)
 	}
 	ro("session", "tui.images", imagesValue, "tui.images",
-		"inline images from MCP tools: auto, off, iterm, or kitty; asked once before the UI starts, so it applies at next start")
+		"inline images (show_image, /show): auto, off, iterm, or kitty; asked once before the UI starts, so it applies at next start")
 
 	s.mcpRows(&d)
 	s.approvalRows(&d)

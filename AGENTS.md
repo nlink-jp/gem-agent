@@ -837,6 +837,28 @@ a new hook) is an architecture change and takes the same rows as a
   rebuilds go through a factory that never touches the terminal
   (TestResizeNeverQueriesTerminal). Note: expect-based pty E2E cannot
   catch this class — expect answers no OSC queries; only real terminals do.
+- **`/show` takes a path, not a reference** — `mention.Image`, never
+  `mention.Expand("@"+path)`. The `@` grammar finds references in running
+  text and ends one at the first space; `/show Screenshot 2026-09-21 at
+  10.00.00.png` looked for "Screenshot". `UnquotePath` accepts what a
+  terminal delivers (quotes, backslash-escaped spaces from a dragged file).
+  `showslash_test.go` hands the slash handler a fake `show`, so it could
+  only ever prove the layer above the defect; `showpath_test.go` runs the
+  real `newShowPath`.
+- **What `show_image` promises is what `termimg` decodes** — `termimg.Formats`
+  sits beside the decoder imports, `tools.ShowImageFormats` repeats it
+  (tools cannot import the drawing package) and
+  `TestShowImagePromisesWhatTheScreenDraws` holds them equal. The description
+  once carried `view_image`'s list — what the MODEL can read — so WebP, GIF
+  and HEIC were accepted, read and then always refused at the draw.
+- **UNMEASURED: JPEG on a kitty-protocol terminal.** `kitty()` sends every
+  image as `f=100`, which the protocol defines as PNG, and `Measure` admits
+  JPEG. By the specification a kitty or Ghostty terminal rejects that
+  payload, `q=2` hides the rejection, the tool still answers "shown", and
+  `emitSegments` credits rows the terminal never used — ADR-0089's failure.
+  Not changed, because no kitty-protocol terminal was available to measure
+  on (2026-09-21) and this lane is only ever judged on a real terminal.
+  Measure before touching: a JPEG through `make pinprobe` on kitty.
 - **An MCP time budget is stated once, by the work that owns it** —
   `withBudget` in `internal/mcp/client.go`. The handshake runs under
   `mcp.startup_timeout_sec`, an ordinary call under `mcp.call_timeout_sec`;

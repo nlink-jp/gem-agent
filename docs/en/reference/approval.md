@@ -191,7 +191,7 @@ The credential list is a bounded set (`sandbox.CredentialFilters`):
 and anywhere `.env` (not its `.example`/`.sample`/`.template`/`.dist`
 twins), `id_rsa` and kin, `credentials.json`, `*service-account*.json`,
 `application_default_credentials.json`. **The read tools honour the
-same list** (ADR-0085): `read_file`, `view_image`, `read_document`,
+same list** (ADR-0085): `read_file`, `view_image`, `show_image`, `read_document`,
 `file_info` (every path of a batch) and `summarize_file` on a matching
 path — judged on the real path, so a link to `.env` is a `.env` read —
 are *uncertain* and skip tier 2 like a write to `AGENTS.md`: you answer,

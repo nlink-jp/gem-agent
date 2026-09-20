@@ -107,9 +107,9 @@ type ContextWindow struct {
 // path the intake writes is one a server can pre-empt with a symlink.
 // MIME is what the server claimed; the bytes decide (termimg.Measure).
 //
-// The sender is the MCP intake, and only for a block it both saved AND
-// described: a picture on screen that the session's record does not
-// contain is worse than no picture.
+// The sender is showImage, the one door to the operator's screen (ADR-0091):
+// the model's show_image, or the operator's /show. An image an MCP tool
+// returns is for the model and is not sent here.
 type Image struct {
 	Data []byte
 	MIME string

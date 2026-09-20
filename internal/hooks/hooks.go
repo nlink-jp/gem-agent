@@ -121,7 +121,8 @@ func matches(matcher, name string) bool {
 // preToolPayload is the Claude Code PreToolUse stdin shape (measured
 // contract, ADR-0044), plus the session identity every Claude Code
 // event carries (ADR-0069 addendum): a hook that keeps per-session
-// state — agent-board's claims — needs to tie a call to its session.
+// state needs to tie a call to its session. (agent-board's claims were
+// the first consumer; that project is archived, the contract is not.)
 type preToolPayload struct {
 	HookEventName  string         `json:"hook_event_name"`
 	SessionID      string         `json:"session_id"`

@@ -180,7 +180,7 @@ answered …`・`rejected the call …`・`gem-agent could not complete …`）�
 （`.example`/`.sample`/`.template`/`.dist` は除く）・`id_rsa` 類・`credentials.json`・
 `*service-account*.json`・`application_default_credentials.json`。**read ツールも
 同じ一覧に従います**（ADR-0085）: 一致するパス — 実パスで判定するので `.env` への
-リンクは `.env` の読取 — への `read_file`・`view_image`・`read_document`・
+リンクは `.env` の読取 — への `read_file`・`view_image`・`show_image`・`read_document`・
 `file_info`（バッチの全パス）・`summarize_file` は `AGENTS.md` への書込と同じく
 *不確実*で第 2 層を飛ばします: 全モードであなたが答えます。**境界はその一覧では
 なくカーネルです**（ADR-0086）: これらの読取は資格情報一覧を拒むプロファイルの

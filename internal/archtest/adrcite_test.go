@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// TestADRFileCitationsResolve closes the class three verification passes
-// kept reopening: a record asserts something about code and cites
+// TestADRFileCitationsResolve closes the class that three rounds of
+// verification kept reopening: a record asserts something about code and cites
 // `file.go:NNN` for it, and the number is off — which is worse than no
 // citation, because it looks checked. Round three's repair of an off-by-one
 // citation landed two lines off, onto an unrelated symbol; that is the third
