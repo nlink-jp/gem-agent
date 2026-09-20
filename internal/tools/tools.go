@@ -908,13 +908,19 @@ func (r *Registry) showImageFn() ShowImageFunc {
 	return r.show
 }
 
+// ShowImageFormats is what show_image tells the model it can draw. This
+// package cannot import the drawing package (the screen is injected), so the
+// words are repeated here and cmd's TestShowImagePromisesWhatTheScreenDraws
+// holds them equal to termimg.Formats.
+const ShowImageFormats = "PNG or JPEG"
+
 func (r *Registry) showImage() *Tool {
 	return &Tool{
 		Name: ShowImageName,
 		Description: "Show an image file to the OPERATOR, drawn in their terminal " +
 			"(a chart you generated, a screenshot you were asked about). The operator " +
 			"sees it; you do not — use view_image to look at an image yourself. " +
-			"Read-only. PNG, JPEG, WebP, GIF, HEIC.",
+			"Read-only. " + ShowImageFormats + ", up to 2 MiB; anything else is refused with the reason.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

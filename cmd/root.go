@@ -1209,22 +1209,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// through the same grammar as an `@<image>` attachment — a project
 	// path, or an absolute or ~ path for an image (ADR-0012) — rather
 	// than through the tools' project confinement.
-	showPath := func(ref string) (string, bool) {
-		atts, probs := mention.Expand(ctx, "@"+strings.TrimPrefix(ref, "@"), projectDir, registry.WorkDir(), mention.DefaultLimits())
-		for _, a := range atts {
-			if a.Kind != "image" {
-				continue
-			}
-			if err := showImage(a.Data, a.MIME); err != nil {
-				return fmt.Sprintf("not shown: %v", err), true
-			}
-			return "", false // the picture is the output
-		}
-		if len(probs) > 0 {
-			return fmt.Sprintf("not shown: %s", probs[0].Reason), true
-		}
-		return fmt.Sprintf("not shown: %s is not an image this runtime can read", ref), true
-	}
+	showPath := newShowPath(projectDir, showImage)
 
 	settings := &settingsStore{
 		cfg: cfg, projectCfg: projectCfg, policyFile: policyFile,
@@ -2525,6 +2510,22 @@ func abbreviateHome(path string) string {
 		return "~" + path[len(home):]
 	}
 	return path
+}
+
+// newShowPath is /show: the path the operator typed, to the screen. It takes
+// the path as a PATH (mention.Image) — the first version wrapped it in "@" and
+// handed it to the text grammar, which cut it at the first space.
+func newShowPath(projectDir string, show func(data []byte, mime string) error) func(string) (string, bool) {
+	return func(path string) (string, bool) {
+		att, err := mention.Image(strings.TrimPrefix(strings.TrimSpace(path), "@"), projectDir, mention.DefaultLimits())
+		if err != nil {
+			return fmt.Sprintf("not shown: %v", err), true
+		}
+		if err := show(att.Data, att.MIME); err != nil {
+			return fmt.Sprintf("not shown: %v", err), true
+		}
+		return "", false // the picture is the output
+	}
 }
 
 // resolveImages asks the terminal what inline-image protocol it can draw

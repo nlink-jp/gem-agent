@@ -12,6 +12,14 @@ import (
 	_ "image/png"
 )
 
+// Formats names what the import list above can decode, in the words a tool
+// description uses. It is here, beside the imports, because it is the same
+// fact: show_image once promised "PNG, JPEG, WebP, GIF, HEIC" — view_image's
+// list, which is about what the MODEL can read — while this package decodes
+// two of them, so three kinds of file were accepted, read, and then always
+// refused at the draw. TestFormatsAreWhatDecodes holds the two together.
+const Formats = "PNG or JPEG"
+
 // MaxBytes is the ceiling on a decoded image (ADR-0090 §4). Measured on
 // the counter the emit path uses: physicalRows costs about 3.6 ms per MiB
 // and the payload string is held in three places at once — the emit path,

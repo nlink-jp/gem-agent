@@ -285,6 +285,47 @@ func Expand(ctx context.Context, text, projectDir, workDir string, lim Limits) (
 	return atts, problems
 }
 
+// Image loads the ONE image an operator named by path — under the same rules
+// as an `@<image>` reference (ADR-0012), but without finding the reference in
+// text first. /show has a path in hand; putting an "@" in front of it and
+// running it back through Refs re-tokenised it at the first space, so
+// "Screenshot 2026-09-21 at 10.00.00.png" — what macOS calls every screenshot
+// — was looked up as "Screenshot". The path arrives the way a terminal
+// delivers one: possibly quoted, or with its spaces backslash-escaped, which
+// is what dragging a file into the window types.
+func Image(path, projectDir string, lim Limits) (Attachment, error) {
+	ref := UnquotePath(path)
+	if ref != ClipboardRef && !IsImagePath(ref) {
+		return Attachment{}, fmt.Errorf("%s is not an image this runtime can read", ref)
+	}
+	images := 0
+	return attachImage(ref, projectDir, lim, &images)
+}
+
+// UnquotePath undoes what a shell-minded operator, or a drag into the
+// terminal, does to a path: one pair of matching quotes around it, or a
+// backslash before a character. It is not a shell: nothing is expanded.
+func UnquotePath(path string) string {
+	path = strings.TrimSpace(path)
+	if n := len(path); n >= 2 && (path[0] == '\'' || path[0] == '"') && path[n-1] == path[0] {
+		return path[1 : n-1]
+	}
+	if !strings.ContainsRune(path, '\\') {
+		return path
+	}
+	var b strings.Builder
+	escaped := false
+	for _, r := range path {
+		if !escaped && r == '\\' {
+			escaped = true
+			continue
+		}
+		escaped = false
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 // minUsefulBytes is the floor below which a remaining budget buys
 // nothing worth attaching.
 const minUsefulBytes = 512

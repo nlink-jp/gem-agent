@@ -118,7 +118,8 @@ read・write・operator のレーンをカーネルが
 文書・音声/動画 — バケット設定時は GCS 経由、未設定ならインライン。
 
 **インライン画像** — モデルは `show_image` であなたに絵を見せ、あなたは
-`/show <path>` で見たい画像を出す。端末が描けるときに描く（`[tui].images`、
+`/show <path>` で見たい画像を出す（PNG か JPEG、2 MiB まで。パスは空白を含んでも、
+引用符付きでも、ウィンドウへドラッグしたファイルでもよい）。端末が描けるときに描く（`[tui].images`、
 既定は `auto`。iTerm2 と kitty、tmux・screen の中では off）。`view_image` は
 逆向きで、**モデルが**画像を見るためのものである
 （[ADR-0089](docs/ja/adr/0089-inline-images-declare-their-height.ja.md) /

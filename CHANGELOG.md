@@ -25,6 +25,29 @@
   at the call's value, although the two are documented as separate. A slow
   server given a long startup budget now gets it. `/settings` lists
   `mcp.startup_timeout_sec` beside `mcp.call_timeout_sec`.
+- **`/show` could not open a path with a space in it** — which is every macOS
+  screenshot. The path was handed to the `@`-reference grammar, which ends a
+  reference at the first space, so `/show Screenshot 2026-09-21 at
+  10.00.00.png` answered "not found". `/show` now takes its argument as a
+  path, and accepts one that is quoted or has its spaces backslash-escaped,
+  which is what dragging a file into the terminal types.
+- `show_image` told the model it could show "PNG, JPEG, WebP, GIF, HEIC". The
+  screen draws PNG and JPEG (up to 2 MiB); the other formats were accepted,
+  read, and then always refused. The description now says what is drawn.
+
+### Documentation
+
+- The ADR index listed ADR-0083 and ADR-0091 as "Proposed" after both were
+  accepted and shipped; `config.example.toml`, the `/settings` help line and a
+  type's doc comment still described the MCP intake as the source of inline
+  images, which ADR-0091 withdrew; the reference's list of tools that ask
+  before a credential read omitted `show_image`. Each now has a test that
+  reads the document against its source: INDEX status against the ADR header,
+  retired phrases across `cmd/`, `internal/` and the example config as well as
+  `docs/`, and the credential-read list against `internal/risk`.
+- Not changed, and said so: on a kitty-protocol terminal a JPEG is sent marked
+  as PNG. No such terminal was available to measure, and this lane is only
+  judged on a real one. `AGENTS.md` carries it as unmeasured.
 
 ## [0.84.0] - 2026-09-17
 

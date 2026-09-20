@@ -123,7 +123,8 @@ documents, and audio/video — routed through your GCS bucket when
 configured, inline otherwise.
 
 **Inline images** — the model shows you a picture with `show_image`, and
-you ask for one with `/show <path>`; it is drawn in the terminal when the
+you ask for one with `/show <path>` — PNG or JPEG, up to 2 MiB; the path may
+hold spaces, be quoted, or be a file dragged into the window; it is drawn in the terminal when the
 terminal can draw (`[tui].images`, `auto` by default; iTerm2 and kitty, off
 inside tmux and screen). `view_image` is the other direction — that is the
 model looking at an image, not you

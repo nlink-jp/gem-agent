@@ -261,7 +261,7 @@ Pre-existing, not widened here, not repaired here.
 ### 7. Drawing is a TUI-only capability, and the other entrances say so
 
 `tea.NewProgram` is constructed at one site in the product
-([root.go:1766](../../../cmd/root.go)), reached only when the session is
+([root.go:1751](../../../cmd/root.go)), reached only when the session is
 interactive; one-shot `-p` and the plain REPL return before it, so they
 never draw — the same boundary the diagram lane already has. (An earlier
 draft said "exactly one site" in the module, which `tools/pinprobe` has

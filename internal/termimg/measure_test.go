@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"strings"
 	"testing"
 )
 
@@ -117,6 +118,37 @@ func TestBoxForRefusesNothing(t *testing.T) {
 		got := BoxFor(tc[0], tc[1], tc[2], tc[3])
 		if got.Rows < 1 || got.Cols < 1 {
 			t.Errorf("BoxFor%v = %+v, want at least 1x1", tc, got)
+		}
+	}
+}
+
+// TestFormatsAreWhatDecodes: the format list a tool description repeats is
+// the decoder list, no more and no less.
+func TestFormatsAreWhatDecodes(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	// The GIF is spelled out in bytes: importing image/gif to encode one
+	// would register its decoder in this test binary, and the test would then
+	// measure itself instead of the package.
+	oneByOneGIF := []byte("GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff" +
+		",\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02L\x01\x00;")
+	encoders := map[string]func(*bytes.Buffer) error{
+		"PNG":  func(b *bytes.Buffer) error { return png.Encode(b, img) },
+		"JPEG": func(b *bytes.Buffer) error { return jpeg.Encode(b, img, nil) },
+		"GIF":  func(b *bytes.Buffer) error { _, err := b.Write(oneByOneGIF); return err },
+	}
+	for name, encode := range encoders {
+		var b bytes.Buffer
+		if err := encode(&b); err != nil {
+			t.Fatal(err)
+		}
+		_, _, drawable := Measure(b.Bytes())
+		if promised := strings.Contains(Formats, name); promised != drawable {
+			t.Errorf("%s: Formats promises it = %v, Measure decodes it = %v", name, promised, drawable)
+		}
+	}
+	for _, never := range []string{"WebP", "HEIC", "HEIF", "BMP", "TIFF"} {
+		if strings.Contains(Formats, never) {
+			t.Errorf("Formats promises %s, and nothing here decodes it", never)
 		}
 	}
 }
