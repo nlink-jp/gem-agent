@@ -80,6 +80,13 @@ func TestParseKittyReply(t *testing.T) {
 		{"a key pressed during start-up is not a verdict", "abc", false, false},
 		{"a key pressed, then DA1", "abc\x1b[?1;2c", true, false},
 		{"another private report, then DA1", "\x1b[?2026;2$y\x1b[?62;4c", true, false},
+		// A report from someone else's query, anywhere around ours, must not
+		// cost the verdict: the first version recursed past it and forgot an
+		// OK it had already read.
+		{"a private report, then OK, then DA1", "\x1b[?2026;2$y\x1b_Gi=31;OK\x1b\\\x1b[?62;4c", true, true},
+		{"OK, then a private report, then DA1", "\x1b_Gi=31;OK\x1b\\\x1b[?2026;2$y\x1b[?62;4c", true, true},
+		{"a kitty-keyboard report, then OK, then DA1", "\x1b[?0u\x1b_Gi=31;OK\x1b\\\x1b[?62;4c", true, true},
+		{"a private report still arriving", "\x1b_Gi=31;OK\x1b\\\x1b[?2026;2", false, false},
 		{"an OK after DA1 is not this query's", "\x1b[?62;4c\x1b_Gi=31;OK\x1b\\", true, false},
 	} {
 		done, ok := parseKittyReply([]byte(tc.in))

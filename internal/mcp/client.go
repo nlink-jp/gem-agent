@@ -266,10 +266,10 @@ func (c *Client) ensureStarted(ctx context.Context) error {
 	go c.readLoop(stdout, gen)
 
 	// One budget for the whole greeting, and the only one. rawCall and send
-	// run under the budget their context already states (withBudget), so the
+	// run under the budget their context already states (WithBudget), so the
 	// per-call timeout neither shortens a handshake that was given longer nor
 	// puts its own number on the handshake's error.
-	hctx, hcancel := withBudget(ctx, c.startupTimeout)
+	hctx, hcancel := WithBudget(ctx, c.startupTimeout)
 	defer hcancel()
 
 	initParams := map[string]any{
@@ -435,7 +435,7 @@ func (c *Client) send(ctx context.Context, v any, gen int) error {
 // budgetKey marks a context whose time budget a caller has already stated.
 type budgetKey struct{}
 
-// withBudget bounds ctx by d, unless the work is already running under a
+// WithBudget bounds ctx by d, unless the work is already running under a
 // stated budget — then that one stands. A budget is a property of the piece
 // of work, said once by whoever owns it: the handshake's is startupTimeout,
 // an ordinary call's is timeout. Layering the second on the first did two
@@ -443,7 +443,12 @@ type budgetKey struct{}
 // call's number, silently; and every timeout was reported under c.timeout,
 // so a handshake that gave up at its own 30 s said "timed out after 1m0s"
 // and sent the operator to the wrong setting.
-func withBudget(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+//
+// Exported because the start-up listing in cmd states the budget for the whole
+// greeting — spawn, initialize and the first tools/list — from outside this
+// package. Stated with a plain context.WithTimeout it fired first, and the
+// tools/list that ran out of it still reported the per-call number.
+func WithBudget(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
 	if _, stated := ctx.Value(budgetKey{}).(time.Duration); stated {
 		return context.WithCancel(ctx)
 	}
@@ -475,7 +480,7 @@ func (c *Client) rawCall(ctx context.Context, method string, params any) (json.R
 	// One deadline covers writing the request and waiting for its
 	// answer. It used to start after the write returned, so a write that
 	// never returned was supervised by nothing at all.
-	tctx, cancel := withBudget(ctx, c.timeout)
+	tctx, cancel := WithBudget(ctx, c.timeout)
 	defer cancel()
 
 	if err := c.send(tctx, map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}, -1); err != nil {

@@ -241,7 +241,9 @@ func listMCPServer(ctx context.Context, client mcpServer, budget time.Duration) 
 	if budget <= 0 {
 		budget = 30 * time.Second
 	}
-	lctx, cancel := context.WithTimeout(ctx, budget)
+	// Stated as a budget, not a bare deadline, so that whatever runs out of it
+	// — the handshake or the first tools/list — says so under its own name.
+	lctx, cancel := mcp.WithBudget(ctx, budget)
 	defer cancel()
 	toolList, err := client.ListTools(lctx)
 	return mcpListing{client: client, tools: toolList, err: err}

@@ -27,7 +27,7 @@ model's context**. MCP has a separate way to say who a piece of content is for
 — the `audience` annotation on a content block, which names `user`,
 `assistant`, or both. This runtime never reads it: `Content` carries
 `Type`, `Text`, `Data` and `MIME` and nothing else
-([client.go:572](../../../internal/mcp/client.go)), so an annotation is dropped
+([client.go:577](../../../internal/mcp/client.go)), so an annotation is dropped
 at the parser.
 
 Measured across the 24 servers this operator has registered, **four can emit an

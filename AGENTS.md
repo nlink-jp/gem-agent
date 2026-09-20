@@ -837,6 +837,14 @@ a new hook) is an architecture change and takes the same rows as a
   rebuilds go through a factory that never touches the terminal
   (TestResizeNeverQueriesTerminal). Note: expect-based pty E2E cannot
   catch this class — expect answers no OSC queries; only real terminals do.
+- **An edit that shifts a cited line: `scripts/remap-adr-citations.py`**, not a
+  hand repair. The ADRs cite code as `file.go:NNN` and
+  `TestADRFileCitationsResolve` fails when a cited line moves — but only when it
+  lands on a line without one of its paragraph's identifiers, so fixing the one
+  it names can leave others pointing at the wrong line and passing. The script
+  maps every citation into every file changed since a base ref (default `HEAD`)
+  by diffing the two texts; run it before committing a change that adds or
+  removes lines in a cited file.
 - **`/show` takes a path, not a reference** — `mention.Image`, never
   `mention.Expand("@"+path)`. The `@` grammar finds references in running
   text and ends one at the first space; `/show Screenshot 2026-09-21 at

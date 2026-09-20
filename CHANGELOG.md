@@ -17,10 +17,13 @@
 - On a terminal that does draw, the probe stopped reading at the graphics
   reply and never read the device-attributes reply behind it. Nothing showed
   it, because the stale reader above swallowed that reply. The probe now reads
-  the whole answer.
+  the whole answer, and a report from some other query that arrives around it
+  (a DECRPM, a kitty-keyboard answer) no longer costs the verdict.
 - **An MCP handshake that timed out blamed the wrong setting.** It gave up
   after `mcp.startup_timeout_sec` and said "initialize timed out after 1m0s" —
-  the per-call number. The message now names the budget that ran out.
+  the per-call number. The message now names the budget that ran out — for the
+  first `tools/list` of the start-up listing as well, which runs under the same
+  startup budget.
 - `mcp.startup_timeout_sec` larger than `mcp.call_timeout_sec` was silently cut
   at the call's value, although the two are documented as separate. A slow
   server given a long startup budget now gets it. `/settings` lists

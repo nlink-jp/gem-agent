@@ -584,6 +584,26 @@ func TestATimeoutNamesTheBudgetThatRanOut(t *testing.T) {
 	}
 }
 
+// The start-up listing states one budget for the whole greeting from outside
+// this package. When tools/list is what runs out of it, that is the number the
+// error has to carry — the first fix named it for initialize only.
+func TestAListingThatRunsOutNamesTheListingBudget(t *testing.T) {
+	f := &fakeServer{}
+	f.handler = func(f *fakeServer, method string, params json.RawMessage) ([]string, any, bool) {
+		if method == "tools/list" {
+			return nil, nil, false // never answers
+		}
+		return stdHandler(f, method, params)
+	}
+	c := newClient("nolist", f.spawn, time.Minute, time.Minute, "test", "")
+	ctx, cancel := WithBudget(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_, err := c.ListTools(ctx)
+	if err == nil || !strings.Contains(err.Error(), "200ms") || strings.Contains(err.Error(), "1m0s") {
+		t.Errorf("tools/list ran out of the 200ms it was given, and the error says: %v", err)
+	}
+}
+
 // TestTheCallTimeoutDoesNotCapTheHandshake: the two budgets are documented as
 // separate numbers, and a startup budget larger than the call budget used to
 // be cut at the call's — silently, since the config accepted it.

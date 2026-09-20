@@ -12,6 +12,12 @@ import (
 // waitReadable reports whether fd has input to read within d (d <= 0 polls).
 // select(2), not poll(2): macOS's poll does not support /dev/tty.
 func waitReadable(fd int, d time.Duration) (bool, error) {
+	// An fd_set holds FD_SETSIZE descriptors and FdSet.Set indexes it
+	// unchecked: a larger one would panic, and "every failure is no
+	// capability" has to include this one.
+	if fd < 0 || fd >= unix.FD_SETSIZE {
+		return false, errFdOutOfRange
+	}
 	if d < 0 {
 		d = 0
 	}
@@ -38,6 +44,8 @@ func waitReadable(fd int, d time.Duration) (bool, error) {
 // errNotReady is a read that found nothing after all: not end of input, and
 // not a failure. The caller goes back to waiting.
 var errNotReady = errors.New("termimg: nothing to read yet")
+
+var errFdOutOfRange = errors.New("termimg: descriptor does not fit select(2)'s set")
 
 // readReady reads what select said is there. It is a plain read(2) on the
 // descriptor, bypassing os.File: a read that cannot outlive its caller is the

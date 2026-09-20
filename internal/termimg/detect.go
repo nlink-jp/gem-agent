@@ -189,33 +189,42 @@ func askKitty(tty *os.File, timeout time.Duration) bool {
 // Bytes that are neither reply (a key pressed during start-up, a late answer
 // to someone else's query) are skipped rather than taken as a verdict.
 func parseKittyReply(got []byte) (done, ok bool) {
-	da1 := bytes.Index(got, []byte("\x1b[?"))
-	if da1 < 0 {
-		return false, false
-	}
-	end := da1 + 3
-	for end < len(got) && (got[end] == ';' || (got[end] >= '0' && got[end] <= '9')) {
-		end++
-	}
-	if end >= len(got) {
-		return false, false // DA1 still arriving
-	}
-	if got[end] != 'c' {
-		// Some other private-mode report; keep waiting for DA1 behind it.
-		if next := bytes.Index(got[end:], []byte("\x1b[?")); next >= 0 {
-			return parseKittyReply(got[end+next:])
+	// DA1 is the first "ESC [ ?" whose parameters end in 'c'. Another private
+	// report may stand in front of it — a DECRPM or a kitty-keyboard answer
+	// still in flight from someone else's query — and is stepped over. The
+	// offsets stay absolute: the first version recursed on the rest of the
+	// buffer, and so forgot a graphics reply it had already passed.
+	for from := 0; ; {
+		i := bytes.Index(got[from:], []byte("\x1b[?"))
+		if i < 0 {
+			return false, false
 		}
-		return false, false
+		start := from + i
+		end := start + 3
+		for end < len(got) && (got[end] == ';' || (got[end] >= '0' && got[end] <= '9')) {
+			end++
+		}
+		if end >= len(got) {
+			return false, false // still arriving
+		}
+		if got[end] == 'c' {
+			return true, acceptedBefore(got[:start])
+		}
+		from = end
 	}
-	// The graphics reply, if there is one, precedes DA1.
-	before := got[:da1]
+}
+
+// acceptedBefore reports whether the bytes ahead of DA1 hold a complete
+// graphics reply that says OK. The protocol answers in the order asked, so a
+// reply after DA1 is not this query's.
+func acceptedBefore(before []byte) bool {
 	g := bytes.Index(before, []byte("\x1b_G"))
 	if g < 0 {
-		return true, false
+		return false
 	}
 	st := bytes.Index(before[g:], []byte("\x1b\\"))
 	if st < 0 {
-		return true, false
+		return false
 	}
-	return true, bytes.Contains(before[g:g+st], []byte(";OK"))
+	return bytes.Contains(before[g:g+st], []byte(";OK"))
 }

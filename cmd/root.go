@@ -1205,10 +1205,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 	registry.SetShowImage(showImage)
 
-	// showPath is /show: the OPERATOR names the file, so it resolves
-	// through the same grammar as an `@<image>` attachment — a project
-	// path, or an absolute or ~ path for an image (ADR-0012) — rather
-	// than through the tools' project confinement.
+	// showPath is /show: the OPERATOR names the file, so it is admitted
+	// under the rules of an `@<image>` attachment — a project path, or an
+	// absolute or ~ path for an image (ADR-0012) — rather than under the
+	// tools' project confinement. The rules, not the grammar: see newShowPath.
 	showPath := newShowPath(projectDir, showImage)
 
 	settings := &settingsStore{

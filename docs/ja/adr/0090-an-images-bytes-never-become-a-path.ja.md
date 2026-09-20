@@ -21,7 +21,7 @@ view 層が行う読み取りはツールコールではないので、`Agent.de
 書き出し、モデルには `[image saved at <path> … use view_image on that path]` を渡している
 （[mcpresult.go:211](../../../cmd/mcpresult.go)）。つまりパスはそこにある。しかし `write` は
 `os.Stat` で短絡し（[mcpresult.go:234](../../../cmd/mcpresult.go)）、毎回の呼び出しがサーバに
-work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:605](../../../internal/mcp/client.go)）。
+work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:610](../../../internal/mcp/client.go)）。
 ローカルのサーバ子プロセスは自分の名前・ツール名・返すバイト列・ディレクトリを知るので、
 応答の前に content-addressed の名前へ symlink を置ける。するとランタイムは何も書かず、パスは
 サーバが選んだ先を指す。`view_image` 経由でそのファイルに到達する道は封じ込められている。

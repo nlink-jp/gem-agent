@@ -194,3 +194,11 @@ func TestAskKittyErasesTheLineADumbTerminalDirtied(t *testing.T) {
 		t.Errorf("the last thing sent must erase the line; terminal saw %q", term.seen)
 	}
 }
+
+func TestWaitReadableRefusesADescriptorSelectCannotHold(t *testing.T) {
+	for _, fd := range []int{-1, unix.FD_SETSIZE, unix.FD_SETSIZE + 76} {
+		if ready, err := waitReadable(fd, 0); ready || err == nil {
+			t.Errorf("waitReadable(%d) = %v, %v; want a refusal, not a panic", fd, ready, err)
+		}
+	}
+}
