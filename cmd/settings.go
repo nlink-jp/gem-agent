@@ -184,6 +184,7 @@ func (s *settingsStore) data() tui.SettingsData {
 	ro("limits", "agent.shell_timeout_sec", strconv.Itoa(s.cfg.Agent.ShellTimeoutSec), "agent.shell_timeout_sec", "")
 	ro("limits", "agent.compact_at_pct", strconv.Itoa(s.cfg.Agent.CompactAtPct)+"%", "agent.compact_at_pct", "")
 	ro("limits", "mcp.call_timeout_sec", strconv.Itoa(s.cfg.MCP.CallTimeoutSec), "mcp.call_timeout_sec", "")
+	ro("limits", "mcp.startup_timeout_sec", strconv.Itoa(s.cfg.MCP.StartupTimeoutSec), "mcp.startup_timeout_sec", "")
 	// mcp.enabled was tracked but never shown: an operator whose file
 	// disabled MCP was sent to debug mcp.json by /mcp's "no servers"
 	// message instead of seeing the real cause here (review round 2).

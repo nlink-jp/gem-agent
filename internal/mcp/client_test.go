@@ -551,6 +551,56 @@ func TestHandshakeUsesItsOwnBudget(t *testing.T) {
 	}
 }
 
+// TestATimeoutNamesTheBudgetThatRanOut: the number in the message is the
+// setting the operator will go and change. The handshake used to give up at
+// its own budget and report the per-call one.
+func TestATimeoutNamesTheBudgetThatRanOut(t *testing.T) {
+	spawn := func() (io.WriteCloser, io.ReadCloser, func(), error) {
+		inR, inW := io.Pipe()
+		go func() { _, _ = io.Copy(io.Discard, inR) }()
+		return inW, io.NopCloser(silentReader{}), func() {}, nil
+	}
+	c := newClient("mute", spawn, time.Minute, 150*time.Millisecond, "test", t.TempDir())
+	_, err := c.ListTools(context.Background())
+	if err == nil {
+		t.Fatal("a server that never answers initialize must not attach")
+	}
+	if !strings.Contains(err.Error(), "150ms") || strings.Contains(err.Error(), "1m0s") {
+		t.Errorf("the handshake ran out of its 150ms, and the error says: %v", err)
+	}
+
+	// And an ordinary call still names the call budget.
+	f := &fakeServer{}
+	f.handler = func(f *fakeServer, method string, params json.RawMessage) ([]string, any, bool) {
+		if method == "tools/call" {
+			return nil, nil, false // never answers
+		}
+		return stdHandler(f, method, params)
+	}
+	c2 := newClient("slow", f.spawn, 120*time.Millisecond, time.Minute, "test", "")
+	_, _, err = c2.CallTool(context.Background(), "check_ip", nil)
+	if err == nil || !strings.Contains(err.Error(), "120ms") {
+		t.Errorf("a call that ran out of its 120ms must say so, got: %v", err)
+	}
+}
+
+// TestTheCallTimeoutDoesNotCapTheHandshake: the two budgets are documented as
+// separate numbers, and a startup budget larger than the call budget used to
+// be cut at the call's — silently, since the config accepted it.
+func TestTheCallTimeoutDoesNotCapTheHandshake(t *testing.T) {
+	f := &fakeServer{}
+	f.handler = func(f *fakeServer, method string, params json.RawMessage) ([]string, any, bool) {
+		if method == "initialize" {
+			time.Sleep(400 * time.Millisecond) // a slow hello, inside its own budget
+		}
+		return stdHandler(f, method, params)
+	}
+	c := newClient("slowhello", f.spawn, 150*time.Millisecond, 3*time.Second, "test", "")
+	if _, err := c.ListTools(context.Background()); err != nil {
+		t.Fatalf("a server that answers initialize in 400ms, given 3s to do it, must attach: %v", err)
+	}
+}
+
 // silentReader blocks forever without returning data or EOF, like a server
 // that has started but never speaks.
 type silentReader struct{}

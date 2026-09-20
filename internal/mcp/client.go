@@ -265,9 +265,11 @@ func (c *Client) ensureStarted(ctx context.Context) error {
 
 	go c.readLoop(stdout, gen)
 
-	// One budget for the whole greeting. rawCall and send each apply
-	// c.timeout on top; the shorter deadline is the one that fires.
-	hctx, hcancel := context.WithTimeout(ctx, c.startupTimeout)
+	// One budget for the whole greeting, and the only one. rawCall and send
+	// run under the budget their context already states (withBudget), so the
+	// per-call timeout neither shortens a handshake that was given longer nor
+	// puts its own number on the handshake's error.
+	hctx, hcancel := withBudget(ctx, c.startupTimeout)
 	defer hcancel()
 
 	initParams := map[string]any{
@@ -279,9 +281,7 @@ func (c *Client) ensureStarted(ctx context.Context) error {
 		c.shutdown()
 		return &startError{Server: c.name, Phase: "initialize", Err: err}
 	}
-	nctx, ncancel := context.WithTimeout(hctx, c.startupTimeout)
-	defer ncancel()
-	if err := c.send(nctx, map[string]any{
+	if err := c.send(hctx, map[string]any{
 		"jsonrpc": "2.0", "method": "notifications/initialized", "params": map[string]any{},
 	}, -1); err != nil {
 		c.shutdown()
@@ -428,8 +428,34 @@ func (c *Client) send(ctx context.Context, v any, gen int) error {
 		}
 		return fmt.Errorf("writing to mcp %s timed out after %s "+
 			"(the server stopped reading its stdin; it was killed and restarts on the next call)",
-			c.name, c.timeout)
+			c.name, budgetOf(ctx, c.timeout))
 	}
+}
+
+// budgetKey marks a context whose time budget a caller has already stated.
+type budgetKey struct{}
+
+// withBudget bounds ctx by d, unless the work is already running under a
+// stated budget — then that one stands. A budget is a property of the piece
+// of work, said once by whoever owns it: the handshake's is startupTimeout,
+// an ordinary call's is timeout. Layering the second on the first did two
+// wrong things at once. A handshake given longer than a call was cut at the
+// call's number, silently; and every timeout was reported under c.timeout,
+// so a handshake that gave up at its own 30 s said "timed out after 1m0s"
+// and sent the operator to the wrong setting.
+func withBudget(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	if _, stated := ctx.Value(budgetKey{}).(time.Duration); stated {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(context.WithValue(ctx, budgetKey{}, d), d)
+}
+
+// budgetOf is the budget ctx runs under, for saying which one ran out.
+func budgetOf(ctx context.Context, fallback time.Duration) time.Duration {
+	if d, ok := ctx.Value(budgetKey{}).(time.Duration); ok {
+		return d
+	}
+	return fallback
 }
 
 // rawCall issues one request and waits for its response, bounded by the
@@ -449,7 +475,7 @@ func (c *Client) rawCall(ctx context.Context, method string, params any) (json.R
 	// One deadline covers writing the request and waiting for its
 	// answer. It used to start after the write returned, so a write that
 	// never returned was supervised by nothing at all.
-	tctx, cancel := context.WithTimeout(ctx, c.timeout)
+	tctx, cancel := withBudget(ctx, c.timeout)
 	defer cancel()
 
 	if err := c.send(tctx, map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}, -1); err != nil {
@@ -484,7 +510,7 @@ func (c *Client) rawCall(ctx context.Context, method string, params any) (json.R
 		// first — the receiver may ignore it and acknowledges nothing, so
 		// the kill would follow regardless (see the Client comment).
 		c.shutdown()
-		return nil, fmt.Errorf("%s timed out after %s (server killed; it restarts on the next call)", method, c.timeout)
+		return nil, fmt.Errorf("%s timed out after %s (server killed; it restarts on the next call)", method, budgetOf(tctx, c.timeout))
 	}
 }
 

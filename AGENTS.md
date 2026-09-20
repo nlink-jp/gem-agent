@@ -837,6 +837,16 @@ a new hook) is an architecture change and takes the same rows as a
   rebuilds go through a factory that never touches the terminal
   (TestResizeNeverQueriesTerminal). Note: expect-based pty E2E cannot
   catch this class — expect answers no OSC queries; only real terminals do.
+- **An MCP time budget is stated once, by the work that owns it** —
+  `withBudget` in `internal/mcp/client.go`. The handshake runs under
+  `mcp.startup_timeout_sec`, an ordinary call under `mcp.call_timeout_sec`;
+  `rawCall` and `send` take the budget their context already states instead
+  of layering `c.timeout` on top. Layered, a startup budget longer than the
+  call budget was silently cut at the call's, and every timeout — the
+  handshake's included — was reported as `c.timeout`, sending the operator to
+  the wrong setting. Error text names `budgetOf(ctx)`. Listing servers at
+  start-up runs in parallel into an index-addressed slice; attaching stays
+  serial, in configured order, so the tool list is deterministic.
 - **A terminal query leaves no reader behind** — read the reply on the
   calling goroutine, every wait bounded by `select(2)` (`waitReadable` /
   `readReady` in `internal/termimg`; `poll` does not work on macOS's
