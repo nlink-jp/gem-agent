@@ -60,17 +60,27 @@ func TestParseKittyReply(t *testing.T) {
 	}{
 		{"empty", "", false, false},
 		{"partial prefix", "\x1b_", false, false},
-		{"complete OK", "\x1b_Gi=31;OK\x1b\\", true, true},
-		{"complete failure", "\x1b_Gi=31;ENOTSUPPORTED:not supported\x1b\\", true, false},
+		// The answer is whole only when DA1 has arrived: it is the last thing
+		// the query asks, and a reply left unread is the next reader's
+		// phantom input.
+		{"OK, DA1 not here yet", "\x1b_Gi=31;OK\x1b\\", false, false},
 		{"OK still arriving", "\x1b_Gi=31;OK", false, false},
-		{"a foreign escape is not our reply", "\x1b[0m", true, false},
-		{"plain text is not our reply", "abc", true, false},
+		{"OK, then DA1", "\x1b_Gi=31;OK\x1b\\\x1b[?62;4c", true, true},
+		{"failure, then DA1", "\x1b_Gi=31;ENOTSUPPORTED:not supported\x1b\\\x1b[?62;4c", true, false},
+		{"OK, DA1 still arriving", "\x1b_Gi=31;OK\x1b\\\x1b[?62;", false, false},
 		// The DA1 answer to the second half of the query. A terminal
 		// that ignores the graphics question still answers this one,
 		// so its arrival is the definitive no that the timeout used
 		// to have to stand in for.
 		{"a DA1 reply is a definitive no", "\x1b[?62;4c", true, false},
 		{"a DA1 reply still arriving", "\x1b[", false, false},
+		// Neither reply: not a verdict. The deadline decides, and DA1 may
+		// still be behind it.
+		{"a foreign escape is not a verdict", "\x1b[0m", false, false},
+		{"a key pressed during start-up is not a verdict", "abc", false, false},
+		{"a key pressed, then DA1", "abc\x1b[?1;2c", true, false},
+		{"another private report, then DA1", "\x1b[?2026;2$y\x1b[?62;4c", true, false},
+		{"an OK after DA1 is not this query's", "\x1b[?62;4c\x1b_Gi=31;OK\x1b\\", true, false},
 	} {
 		done, ok := parseKittyReply([]byte(tc.in))
 		if done != tc.wantDone || ok != tc.wantOK {

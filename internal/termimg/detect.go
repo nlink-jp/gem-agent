@@ -96,6 +96,18 @@ const kittyQuery = "\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[c"
 // askKitty writes the query and reads for a reply, with the discipline the
 // probes had to learn: the stream drained before asking, a generous budget
 // as the backstop, and silence read as "no" rather than as "ask again".
+//
+// It reads on the calling goroutine, with select(2) bounding every wait, and
+// that is a correctness property rather than a style: when askKitty returns,
+// nothing of it is still reading the terminal. The first version read from a
+// goroutine, which stayed blocked in tty.Read after the verdict — on macOS
+// /dev/tty cannot join kqueue, so it is a blocking descriptor and Close does
+// not wake a read that is already in it. The terminal's next input went to
+// that reader instead of its owner: measured on Apple Terminal, 3 runs of 3,
+// it took the OSC 11 colour reply lipgloss.HasDarkBackground was waiting for
+// 300 ms after Close had returned, so "auto" fell back to dark whatever the
+// background was; with a fixed theme the same read takes the operator's first
+// keystroke instead.
 func askKitty(tty *os.File, timeout time.Duration) bool {
 	if timeout <= 0 {
 		timeout = 2 * time.Second
@@ -111,27 +123,17 @@ func askKitty(tty *os.File, timeout time.Duration) bool {
 		return false
 	}
 	defer func() { _ = term.Restore(fd, restore) }()
-	in := make(chan byte, 4096)
-	go func() {
-		defer close(in)
-		buf := make([]byte, 64)
-		for {
-			n, err := tty.Read(buf)
-			for i := 0; i < n; i++ {
-				in <- buf[i]
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
+
 	// Drain whatever was already buffered: an older reply would otherwise
 	// be read as the answer to this question.
-	for drained := false; !drained; {
-		select {
-		case <-in:
-		default:
-			drained = true
+	buf := make([]byte, 256)
+	for {
+		ready, err := waitReadable(fd, 0)
+		if err != nil || !ready {
+			break
+		}
+		if n, err := readReady(fd, buf); err != nil || n == 0 {
+			break
 		}
 	}
 	if _, err := tty.WriteString(kittyQuery); err != nil {
@@ -145,41 +147,75 @@ func askKitty(tty *os.File, timeout time.Duration) bool {
 	// touched, and on a terminal that echoed nothing this clears a line
 	// that is already blank.
 	defer func() { _, _ = tty.WriteString("\r\x1b[2K") }()
+
 	var got []byte
-	deadline := time.After(timeout)
+	deadline := time.Now().Add(timeout)
 	for {
-		select {
-		case b, ok := <-in:
-			if !ok {
-				return false
-			}
-			got = append(got, b)
-			if done, ok := parseKittyReply(got); done {
-				return ok
-			}
-			if len(got) > 256 {
-				return false
-			}
-		case <-deadline:
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return false
+		}
+		ready, err := waitReadable(fd, remaining)
+		if err != nil || !ready {
+			return false
+		}
+		n, err := readReady(fd, buf)
+		if err == errNotReady {
+			continue
+		}
+		if err != nil || n == 0 {
+			return false // hang-up, or the descriptor went away
+		}
+		got = append(got, buf[:n]...)
+		if done, ok := parseKittyReply(got); done {
+			return ok
+		}
+		if len(got) > 4096 {
 			return false
 		}
 	}
 }
 
 // parseKittyReply reads the terminal's answer to kittyQuery. done says the
-// reply is complete; ok says it was an acceptance. A terminal that does not
-// know the protocol answers nothing at all, which the caller times out.
+// whole answer has arrived; ok says it included an acceptance.
+//
+// The whole answer ends with the DA1 reply, because DA1 is the last thing the
+// query asks and every terminal answers it. Stopping at the graphics reply —
+// as the first version did — left the DA1 reply in the input queue for
+// whatever read the terminal next; it went unnoticed only because the stale
+// reader described above swallowed it. A terminal that answers neither is
+// what the caller's deadline is for.
+//
+// Bytes that are neither reply (a key pressed during start-up, a late answer
+// to someone else's query) are skipped rather than taken as a verdict.
 func parseKittyReply(got []byte) (done, ok bool) {
-	if !bytes.HasPrefix(got, []byte("\x1b_G")) {
-		// Some other escape arrived first; this is not our reply.
-		if len(got) >= 3 {
-			return true, false
+	da1 := bytes.Index(got, []byte("\x1b[?"))
+	if da1 < 0 {
+		return false, false
+	}
+	end := da1 + 3
+	for end < len(got) && (got[end] == ';' || (got[end] >= '0' && got[end] <= '9')) {
+		end++
+	}
+	if end >= len(got) {
+		return false, false // DA1 still arriving
+	}
+	if got[end] != 'c' {
+		// Some other private-mode report; keep waiting for DA1 behind it.
+		if next := bytes.Index(got[end:], []byte("\x1b[?")); next >= 0 {
+			return parseKittyReply(got[end+next:])
 		}
 		return false, false
 	}
-	i := bytes.Index(got, []byte("\x1b\\"))
-	if i < 0 {
-		return false, false
+	// The graphics reply, if there is one, precedes DA1.
+	before := got[:da1]
+	g := bytes.Index(before, []byte("\x1b_G"))
+	if g < 0 {
+		return true, false
 	}
-	return true, bytes.Contains(got[:i], []byte(";OK"))
+	st := bytes.Index(before[g:], []byte("\x1b\\"))
+	if st < 0 {
+		return true, false
+	}
+	return true, bytes.Contains(before[g:g+st], []byte(";OK"))
 }

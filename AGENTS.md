@@ -837,6 +837,18 @@ a new hook) is an architecture change and takes the same rows as a
   rebuilds go through a factory that never touches the terminal
   (TestResizeNeverQueriesTerminal). Note: expect-based pty E2E cannot
   catch this class — expect answers no OSC queries; only real terminals do.
+- **A terminal query leaves no reader behind** — read the reply on the
+  calling goroutine, every wait bounded by `select(2)` (`waitReadable` /
+  `readReady` in `internal/termimg`; `poll` does not work on macOS's
+  `/dev/tty`), and read until the LAST thing the query asked for has
+  answered. The image probe first read from a goroutine and returned on the
+  verdict: `/dev/tty` is a blocking descriptor on macOS, `Close` does not
+  wake a read already in it, and the stale reader took the terminal's next
+  input — the OSC 11 reply `theme = "auto"` was waiting for, or the
+  operator's first key (measured on Apple Terminal, ADR-0089 §7). It also
+  hid that the parser never read the DA1 reply. Only a real terminal or a
+  pseudo-terminal test sees this; `askkitty_darwin_test.go` holds the
+  property, and fails on the first implementation.
 - **The transcript is the resume format** (ADR-0005) — `llm.Message`'s JSON
   tags are a persisted schema, not decoration, and every history append
   goes through `appendMessage` so the conversation and the transcript

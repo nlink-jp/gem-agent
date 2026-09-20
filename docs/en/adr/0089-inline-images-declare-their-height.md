@@ -293,6 +293,32 @@ no. Re-measured with the same instrument: **under 1 ms, and a clean
 screen.** The budget stays as the backstop for a terminal that answers
 neither.
 
+**The probe left a reader behind, and that reader took the terminal's next
+input (corrected 2026-09-21).** The first implementation read the reply from
+a goroutine and returned on the verdict, leaving the goroutine blocked in
+`tty.Read`. On macOS `/dev/tty` cannot join kqueue, so the descriptor is a
+blocking one and `Close` does not wake a read already in it. Measured on
+Apple Terminal (macOS 27, three runs of three): 300 ms after `Close` had
+returned, the stale reader received `ESC ] 11 ; rgb:1616/1818/2121 BEL` — the
+answer to the background query `[tui] theme = "auto"` had just sent — and
+termenv read the fallback `#000000` instead of `#161821`. On this dark
+profile the fallback happened to be right, which is why nobody saw it; on a
+light one the theme is wrong, and with a fixed theme the same read takes the
+operator's first keystroke. It affected every terminal the environment cannot
+classify, which is where `auto` asks: Apple Terminal, the VS Code terminal,
+SSH. The same defect hid a second one. The parser stopped at the graphics
+reply, so on a terminal that draws, the DA1 reply was never read by the
+probe — the stale reader was what swallowed it.
+
+The probe now reads on the calling goroutine, each wait bounded by
+`select(2)` (not `poll`, which macOS does not support on `/dev/tty`), and
+reads until DA1 has arrived: when it returns, nothing of it is reading the
+terminal and nothing of the answer is left. Re-measured on the same terminal,
+three of three: `#161821`, equal to the control with no probe; the verdict
+still takes under a millisecond. `askKitty` had no test that touched a
+terminal; it now has pseudo-terminal tests, and the one that states this
+property fails on the first implementation for all three verdicts.
+
 `[tui] images = "auto"` selects it
 ([config.go:194](../../../internal/config/config.go)), beside `theme` and
 `language` (`:179` and `:183`). Inside a multiplexer

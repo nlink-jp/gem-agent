@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **The image probe took the terminal's next input.** With
+  `[tui] images = "auto"` (the default) on a terminal the environment cannot
+  classify — Apple Terminal, the VS Code terminal, SSH — the start-up probe
+  left a reader blocked on `/dev/tty`, and that reader received whatever the
+  terminal sent next. With `theme = "auto"` it was the reply to the
+  background-colour query, so the theme fell back to dark whatever the
+  background was; with a fixed theme it was your first keystroke. Measured on
+  Apple Terminal: the colour read was `#000000` with the probe and `#161821`
+  without it, three runs of three; fixed, both read `#161821`. iTerm2, kitty,
+  Ghostty and tmux were never asked and were not affected.
+- On a terminal that does draw, the probe stopped reading at the graphics
+  reply and never read the device-attributes reply behind it. Nothing showed
+  it, because the stale reader above swallowed that reply. The probe now reads
+  the whole answer.
+
 ## [0.84.0] - 2026-09-17
 
 ### Changed
