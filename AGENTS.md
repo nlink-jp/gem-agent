@@ -441,7 +441,10 @@ a new hook) is an architecture change and takes the same rows as a
   cannot block. The stdin field for the typed text is `prompt` — the
   Claude Code docs say `user_input`, the measured payload does not. The
   `PreToolUse` payload also carries `session_id` / `transcript_path`
-  (v0.65.1) — keep them: agent-board's claim enforcement keys on them.
+  (v0.65.1) — keep them: they are part of the hook payload contract
+  (ADR-0069 addendum), and a hook that holds per-session state needs them
+  to tie a call to its session. Their first consumer, agent-board, is
+  archived.
 - **Session ids are UUID v4 and `/clear` is a new session** (ADR-0071).
   `session.ValidID` accepts the legacy timestamp form too; never drop it
   (old transcripts must resume). `/clear` goes through `onClear` in
