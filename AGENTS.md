@@ -861,7 +861,8 @@ a new hook) is an architecture change and takes the same rows as a
   and HEIC were accepted, read and then always refused at the draw.
 - **kitty gets PNG, whatever arrived.** `f=100` is the protocol's PNG and it
   has no JPEG format, while `Measure` admits JPEG. A JPEG sent as `f=100`
-  drew nothing on kitty (the operator, 2026-09-22), `q=2` hid the rejection,
+  drew nothing on kitty (the operator, 2026-09-22; after the fix lagent, whose
+  termimg is this file, drew one there — gem-agent itself was not run on kitty), `q=2` hid the rejection,
   and `emitSegments` credited rows the terminal never used — ADR-0089's
   failure. `kittyPNG` passes a PNG through and decodes anything else,
   scales it down to what the box can show (`kittyPxPerCol` /
