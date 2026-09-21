@@ -859,14 +859,17 @@ a new hook) is an architecture change and takes the same rows as a
   `TestShowImagePromisesWhatTheScreenDraws` holds them equal. The description
   once carried `view_image`'s list — what the MODEL can read — so WebP, GIF
   and HEIC were accepted, read and then always refused at the draw.
-- **UNMEASURED: JPEG on a kitty-protocol terminal.** `kitty()` sends every
-  image as `f=100`, which the protocol defines as PNG, and `Measure` admits
-  JPEG. By the specification a kitty or Ghostty terminal rejects that
-  payload, `q=2` hides the rejection, the tool still answers "shown", and
-  `emitSegments` credits rows the terminal never used — ADR-0089's failure.
-  Not changed, because no kitty-protocol terminal was available to measure
-  on (2026-09-21) and this lane is only ever judged on a real terminal.
-  Measure before touching: a JPEG through `make pinprobe` on kitty.
+- **kitty gets PNG, whatever arrived.** `f=100` is the protocol's PNG and it
+  has no JPEG format, while `Measure` admits JPEG. A JPEG sent as `f=100`
+  drew nothing on kitty (the operator, 2026-09-22), `q=2` hid the rejection,
+  and `emitSegments` credited rows the terminal never used — ADR-0089's
+  failure. `kittyPNG` passes a PNG through and decodes anything else,
+  scales it down to what the box can show (`kittyPxPerCol` /
+  `kittyPxPerRow`, generous so the terminal still scales down) and
+  re-encodes it as PNG; a picture it cannot decode gets no payload. iTerm2's
+  `File=` names no format and draws JPEG itself, so that path sends the
+  bytes as they are. Adding a decoder to `measure.go` means a new format
+  reaches `kittyPNG` — it converts anything `image.Decode` can read.
 - **An MCP time budget is stated once, by the work that owns it** —
   `withBudget` in `internal/mcp/client.go`. The handshake runs under
   `mcp.startup_timeout_sec`, an ordinary call under `mcp.call_timeout_sec`;

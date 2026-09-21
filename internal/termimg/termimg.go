@@ -22,9 +22,14 @@
 package termimg
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
+	"math"
 	"strings"
 )
 
@@ -94,7 +99,11 @@ func Payload(p Protocol, data []byte, b Box) (string, error) {
 	case ITerm2:
 		return iterm(data, b), nil
 	case Kitty:
-		return kitty(data, b), nil
+		pngData, err := kittyPNG(data, b)
+		if err != nil {
+			return "", err
+		}
+		return kitty(pngData, b), nil
 	default:
 		return "", ErrNoProtocol
 	}
@@ -107,6 +116,76 @@ func iterm(data []byte, b Box) string {
 	return fmt.Sprintf(
 		"\x1b]1337;File=inline=1;size=%d;width=%d;height=%d;preserveAspectRatio=1:%s\a",
 		len(data), b.Cols, b.Rows, base64.StdEncoding.EncodeToString(data))
+}
+
+// pngSignature opens every PNG file.
+var pngSignature = []byte("\x89PNG\r\n\x1a\n")
+
+// The pixels a cell is assumed to hold when a picture is scaled down for
+// kitty. Generous on purpose — a cell on a Retina screen is about 16x36
+// device pixels — so the terminal still scales the picture down into the
+// box and never up.
+const (
+	kittyPxPerCol = 20
+	kittyPxPerRow = 40
+)
+
+// kittyPNG returns the picture as PNG, the only thing kitty's f=100 means:
+// the protocol has no JPEG format, a JPEG sent as f=100 is rejected, and q=2
+// hides the rejection. The operator saw it on kitty (2026-09-22): a JPEG drew
+// nothing. A PNG passes through unchanged. Anything else is decoded and
+// re-encoded, scaled down first to what the box can show — a photo
+// re-encoded as PNG at full size can be many times the MaxBytes its JPEG
+// fitted in, and every pixel past the box is one the terminal discards.
+func kittyPNG(data []byte, b Box) ([]byte, error) {
+	if bytes.HasPrefix(data, pngSignature) {
+		return data, nil
+	}
+	src, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("termimg: kitty takes PNG only, and this does not decode: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, shrink(src, b.Cols*kittyPxPerCol, b.Rows*kittyPxPerRow)); err != nil {
+		return nil, fmt.Errorf("termimg: re-encoding as PNG: %w", err)
+	}
+	if buf.Len() > MaxBytes {
+		return nil, fmt.Errorf("termimg: %d B as PNG is past MaxBytes", buf.Len())
+	}
+	return buf.Bytes(), nil
+}
+
+// shrink scales src down to fit maxW x maxH, keeping its shape, averaging a
+// 2x2 grid of samples for each output pixel. A picture that already fits is
+// returned as it is. The standard library has no scaler, and a
+// sample per output pixel reads a fraction of a large photo's pixels, which
+// matters because this runs on the TUI's update path.
+func shrink(src image.Image, maxW, maxH int) image.Image {
+	r := src.Bounds()
+	w, h := r.Dx(), r.Dy()
+	if maxW < 1 || maxH < 1 || (w <= maxW && h <= maxH) {
+		return src
+	}
+	scale := math.Min(float64(maxW)/float64(w), float64(maxH)/float64(h))
+	dw := max(1, int(float64(w)*scale))
+	dh := max(1, int(float64(h)*scale))
+	dst := image.NewRGBA(image.Rect(0, 0, dw, dh))
+	offsets := [2]float64{0.25, 0.75}
+	for y := range dh {
+		for x := range dw {
+			var rs, gs, bs, as uint32
+			for _, fy := range offsets {
+				for _, fx := range offsets {
+					sx := r.Min.X + int((float64(x)+fx)*float64(w)/float64(dw))
+					sy := r.Min.Y + int((float64(y)+fy)*float64(h)/float64(dh))
+					cr, cg, cb, ca := src.At(sx, sy).RGBA()
+					rs, gs, bs, as = rs+cr, gs+cg, bs+cb, as+ca
+				}
+			}
+			dst.Set(x, y, color.RGBA64{R: uint16(rs / 4), G: uint16(gs / 4), B: uint16(bs / 4), A: uint16(as / 4)})
+		}
+	}
+	return dst
 }
 
 // kitty builds an APC _G payload, chunked at 4096 base64 bytes as the

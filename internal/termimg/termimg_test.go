@@ -1,7 +1,12 @@
 package termimg
 
 import (
+	"bytes"
 	"encoding/base64"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
 	"strings"
 	"testing"
 
@@ -154,12 +159,112 @@ func TestPayloadRefusesWhatCannotBeCounted(t *testing.T) {
 	}
 }
 
-// fakePNG is bytes, not a picture: this package never decodes an image, it
-// only frames one. Using a real encoder here would test the encoder.
+// fakePNG is the PNG signature followed by bytes, not a picture: the framing
+// tests are about how a payload is cut and declared, and the kitty path
+// passes anything that opens like a PNG through untouched. Using a real
+// encoder here would test the encoder.
 func fakePNG(n int) []byte {
 	b := make([]byte, n)
 	for i := range b {
 		b[i] = byte(i%251 + 1)
 	}
+	copy(b, pngSignature)
 	return b
+}
+
+// kittyImage reassembles the picture a kitty payload carries, and its
+// control keys from the first escape.
+func kittyImage(t *testing.T, payload string) (ctl string, data []byte) {
+	t.Helper()
+	var b64 strings.Builder
+	for i, esc := range strings.Split(strings.TrimSuffix(payload, "\x1b\\"), "\x1b\\") {
+		c, chunk, ok := strings.Cut(strings.TrimPrefix(esc, "\x1b_G"), ";")
+		if !ok {
+			t.Fatalf("escape %d has no payload separator", i)
+		}
+		if i == 0 {
+			ctl = c
+		}
+		b64.WriteString(chunk)
+	}
+	data, err := base64.StdEncoding.DecodeString(b64.String())
+	if err != nil {
+		t.Fatalf("payload does not reassemble: %v", err)
+	}
+	return ctl, data
+}
+
+func testJPEG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := range h {
+		for x := range w {
+			img.Set(x, y, color.RGBA{R: uint8(x), G: uint8(y), B: 200, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, nil); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// TestKittyGetsPNGEvenFromAJPEG is the regression for a JPEG that drew
+// nothing on kitty (operator, 2026-09-22): f=100 means PNG and only PNG, the
+// terminal rejected the JPEG bytes, and q=2 hid the rejection. The payload
+// now always carries a PNG, and a picture larger than the box can show is
+// scaled down into it rather than re-encoded at full size.
+func TestKittyGetsPNGEvenFromAJPEG(t *testing.T) {
+	box := Box{Rows: 3, Cols: 10}
+	got, err := Payload(Kitty, testJPEG(t, 2000, 1000), box)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctl, data := kittyImage(t, got)
+	if !strings.Contains(ctl, "f=100") {
+		t.Errorf("controls %q do not say PNG", ctl)
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("the kitty payload is not a PNG: %v", err)
+	}
+	if cfg.Width > box.Cols*kittyPxPerCol || cfg.Height > box.Rows*kittyPxPerRow {
+		t.Errorf("PNG is %dx%d, larger than the %dx%d px the box can show",
+			cfg.Width, cfg.Height, box.Cols*kittyPxPerCol, box.Rows*kittyPxPerRow)
+	}
+	if ratio := float64(cfg.Width) / float64(cfg.Height); ratio < 1.95 || ratio > 2.05 {
+		t.Errorf("PNG is %dx%d: the 2:1 picture lost its shape", cfg.Width, cfg.Height)
+	}
+
+	// A picture already within the box keeps its size.
+	got, err = Payload(Kitty, testJPEG(t, 64, 32), box)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, data = kittyImage(t, got)
+	if cfg, err := png.DecodeConfig(bytes.NewReader(data)); err != nil || cfg.Width != 64 || cfg.Height != 32 {
+		t.Errorf("small JPEG: %v, %dx%d, want a 64x32 PNG", err, cfg.Width, cfg.Height)
+	}
+}
+
+// TestKittyRefusesWhatItCannotMakeAPNGOf: bytes that are neither PNG nor a
+// decodable picture get no payload, so drawImage draws nothing rather than
+// sending a picture the terminal would silently drop.
+func TestKittyRefusesWhatItCannotMakeAPNGOf(t *testing.T) {
+	if _, err := Payload(Kitty, []byte("not a picture at all"), Box{Rows: 3, Cols: 10}); err == nil {
+		t.Error("undecodable bytes produced a kitty payload")
+	}
+}
+
+// TestITerm2GetsTheBytesAsTheyAre: iTerm2's File= names no format and draws
+// JPEG itself, so nothing is converted on that path.
+func TestITerm2GetsTheBytesAsTheyAre(t *testing.T) {
+	jpg := testJPEG(t, 64, 32)
+	got, err := Payload(ITerm2, jpg, Box{Rows: 3, Cols: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, base64.StdEncoding.EncodeToString(jpg)) {
+		t.Error("the iTerm2 payload does not carry the JPEG unchanged")
+	}
 }
