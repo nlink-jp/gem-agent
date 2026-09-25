@@ -24,7 +24,7 @@ on-demand [health check](docs/en/reference/drill.md).
 
 ## The sibling runtime
 
-lagent (`nlink-jp/lagent`, lab-series) is a separate product line
+lagent (`nlink-jp/lagent`, cli-series) is a separate product line
 built from this runtime's design. Its ADR-0001 records gem-agent as the
 porting source — not an upstream it tracks — and its ADR-0002 lists the
 features here that it deliberately does not reproduce.
