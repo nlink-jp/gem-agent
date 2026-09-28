@@ -88,6 +88,7 @@ reads as an oversight to the next person, and gets "fixed" wrongly.
 | Operator text, collected | `make labels` → `dist/labels.md` (UI catalog ja/en, cmd notes/errors/help, `--help` pages) |
 | Inline-image row accounting | `make rowprobe` — draws payloads with declared heights and reports the rows each costs (ADR-0089). Needs a terminal that draws; one that does not reports INCONCLUSIVE, not a verdict |
 | Bottom pin under image lines | `make pinprobe` — runs the experiment under tmux and prints the table it measured (ADR-0089): real model, real emit path, every case against its control, regime arranged from the terminal's height and reported per row |
+| Escapes in outside text | `make escprobe` — delivers hostile sequences on every channel text reaches the TUI by (reply live and flushed, thought, tool event, approval dialog) under a private tmux server and reports what the terminal did: title, clipboard buffer, cursor, screen (ADR-0093). tmux parses the image protocols without drawing them |
 
 Version is injected via `-X main.version` from `git describe` — never edit the
 `version` var default.

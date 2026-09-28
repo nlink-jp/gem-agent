@@ -11,7 +11,7 @@ DIST_DIR := dist
 CODESIGN_IDENTITY ?= Developer ID Application
 NOTARY_PROFILE    ?= nlink-jp-notary
 
-.PHONY: build build-all package verify-release test vet lint docs-check gate-check check rowprobe pinprobe clean
+.PHONY: build build-all package verify-release test vet lint docs-check gate-check check rowprobe pinprobe escprobe clean
 
 build:
 	@mkdir -p $(DIST_DIR)
@@ -146,6 +146,16 @@ rowprobe:
 ## case in the foreground for a human to watch.
 pinprobe:
 	@go run ./tools/pinprobe -drive
+
+## escprobe: what does an escape sequence in text from outside the runtime
+## do to a real terminal once the TUI shows it (ADR-0093)? Runs every case
+## on every channel — a streamed reply live and flushed, a thought, a tool
+## event, an approval dialog — in a private tmux server with set-clipboard
+## on, and reads back the pane title, the paste buffers and the screen.
+## Nothing reaches the operator's own tmux or clipboard. `go run
+## ./tools/escprobe -ui -case OSC0 -channel reply` runs one to watch.
+escprobe:
+	@go run ./tools/escprobe -drive
 
 clean:
 	rm -rf $(DIST_DIR)
