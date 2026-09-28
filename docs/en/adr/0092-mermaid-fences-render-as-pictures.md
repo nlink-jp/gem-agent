@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-09-28) |
+| Status | **Accepted** (2026-09-29; not yet implemented) |
 | Date | 2026-09-28 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -121,11 +121,15 @@ the runtime" is amended: an ioctl read of the cell size enters, a query does not
 - **Wider than the terminal less one column:** the box shrinks, keeping the
   aspect; the text gets smaller. That is ugly, not wrong, and the picture is
   still drawn.
-- **Taller than the room above the input box and footer:** how such a picture
-  interacts with the bottom pin is to be measured on iTerm2 and kitty during
-  implementation. Until measured, the box is capped by the same shrink at the
-  rows above the input box and footer less one, so its top never scrolls away
-  before it is seen. The measurement and its outcome are recorded here.
+- **Taller than the room above the input box and footer:** not shrunk. Its
+  top scrolls out into the scrollback, where the operator scrolls up to read
+  it, as with a long reply (the operator's decision, 2026-09-29: shrinking a
+  tall diagram makes its text unreadable, and scrolling is the ordinary way to
+  read something tall). The declared rows are the full height. How such a
+  picture interacts with the bottom pin is measured on iTerm2 and kitty during
+  implementation and recorded here; if it damages the screen rather than
+  scrolling (ADR-0089's stranded frames), that is wrong, not ugly, and this
+  bullet is reopened.
 - **A resize after a picture is emitted** does not redraw it: pictures already
   in scrollback keep the box they were emitted with, as text does.
 
@@ -173,7 +177,7 @@ bold_font_name = "Font-Bold"
 next start.
 
 A font that fails to load (missing file, unknown face name, a configuration
-error) does **not** stop the runtime: the start banner carries one line naming
+error) does **not** stop the runtime (the operator's decision, 2026-09-29): the start banner carries one line naming
 the setting and the error, and diagrams use the default font. A display font is
 not worth a session. If Hiragino itself cannot be loaded, the banner says
 diagrams are drawn as text, and every fence takes the ADR-0063 lane.
