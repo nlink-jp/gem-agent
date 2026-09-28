@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nlink-jp/gem-agent/internal/termimg"
+
 	"github.com/nlink-jp/mermaid-render/raster"
 )
 
@@ -81,5 +83,25 @@ func TestNewPicture(t *testing.T) {
 	}
 	if _, why, _ := NewPicture(font)("flowchart TD\n    A --> 😀"); why == "" {
 		t.Error("a character no font has was drawn")
+	}
+}
+
+// The engine's scale and the box's pixels per em are one fact: a Scale-2
+// render is 28 px per em (termimg.DiagramPxPerEm).
+func TestPictureScaleMatchesTheBox(t *testing.T) {
+	if pxPerEmScale*14 != termimg.DiagramPxPerEm {
+		t.Errorf("Scale %d on a 14 px base is %d px per em; the box assumes %d", pxPerEmScale, pxPerEmScale*14, termimg.DiagramPxPerEm)
+	}
+	if NewPicture(nil) != nil {
+		t.Error("a nil font made a Picture that would read fonts in the view layer")
+	}
+}
+
+// A Picture that returns nothing and no reason still names one.
+func TestEmptyPictureStillHasANote(t *testing.T) {
+	pic := func(string) (image.Image, string, bool) { return nil, "", true }
+	segs := Split("```mermaid\nflowchart TD\n  A\n```", pic)
+	if len(segs) != 1 || !strings.Contains(segs[0].Text, "diagram shown as source: the renderer returned no picture") {
+		t.Errorf("segments: %+v", segs)
 	}
 }

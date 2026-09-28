@@ -344,6 +344,9 @@ an obligation, not the present-tense claim an earlier draft made.
 - The bottom pin survives images by construction rather than by care, in
   both dimensions.
 - No aspect-ratio arithmetic and no cell-pixel-size query enter the runtime.
+  *Amended by [ADR-0092](0092-mermaid-fences-render-as-pictures.md) §4:* a
+  diagram's box reads the cell size with an ioctl (`TIOCGWINSZ`); still no
+  query is written to the terminal.
 - Terminal.app — and any terminal that does not draw — loses nothing: the
   fallback is today's behaviour.
 - The operator **does** see a tool's screenshot: [ADR-0090](0090-an-images-bytes-never-become-a-path.md)
@@ -393,7 +396,9 @@ Measured unnecessary: the declared box overrides the aspect ratio, so the
 derivation would compute a number the terminal ignores, and it would add an
 `ESC[16t` query that can go unanswered.
 
-**A3. Render mermaid to PNG instead of box art.** Rejected: ADR-0042's
+**A3. Render mermaid to PNG instead of box art.** *Superseded by
+[ADR-0092](0092-mermaid-fences-render-as-pictures.md), whose renderer checks its
+own layout on every render.* Rejected: ADR-0042's
 faithfulness guards — every source label present, edge count equal to
 arrowheads — exist only for the ASCII renderer, and a PNG would delete the
 verification along with the art. (The dependency argument the first draft

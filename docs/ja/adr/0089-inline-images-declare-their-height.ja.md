@@ -285,6 +285,8 @@ device attributes 要求を載せる。VT 互換の端末は必ずこれに答�
 
 - bottom pin は注意深さではなく構成によって、**2 次元とも**画像を生き延びる。
 - アスペクト比の算術も、セルのピクセルサイズ問い合わせも、ランタイムに入らない。
+  *[ADR-0092](0092-mermaid-fences-render-as-pictures.ja.md) §4 で改める:* 図のボックスはセルの寸法を
+  ioctl（`TIOCGWINSZ`）で読む。端末への問い合わせは引き続き書かない。
 - Terminal.app も、描かない端末も、何も失わない。フォールバックは現在の挙動である。
 - 操作者はツールのスクリーンショットを**見られる**。§5 が先送りした供給源は
   [ADR-0090](0090-an-images-bytes-never-become-a-path.ja.md) が決めた — MCP intake が、
@@ -325,7 +327,8 @@ device attributes 要求を載せる。VT 互換の端末は必ずこれに答�
 アスペクト比を上書きするので、導出は端末が無視する数を計算することになり、応答が返らない
 ことのある `ESC[16t` 問い合わせを足すことになる。
 
-**A3. mermaid を box art ではなく PNG に描画する。** 却下。ADR-0042 の faithfulness ガード —
+**A3. mermaid を box art ではなく PNG に描画する。** *[ADR-0092](0092-mermaid-fences-render-as-pictures.ja.md)
+が置き換える（その描画器は描くたびに自身の配置を確かめる）。* 却下。ADR-0042 の faithfulness ガード —
 原文のラベルが全て絵に現れること、エッジ数が矢尻の数と一致すること — は ASCII レンダラの
 ためだけに存在し、PNG にすれば art と一緒に検証も消える。（初稿が併記した依存の論拠は、
 決定 4 のそれと共に撤回する。）

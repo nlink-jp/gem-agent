@@ -87,13 +87,13 @@ would lose the shapes and change the labels.
 
 Today the reply renderer is `func(string) string` and its result is counted as
 text. A picture must reach `emitSegments` as a `tui.Segment` that declares its
-rows (ADR-0089 §1), the lane tool images already use. The renderer becomes
-`func(string) []tui.Segment`: Markdown segments rendered by glamour, art
-segments verbatim (ADR-0063 §3), image segments carrying their payload and their
-row count. `takeLive` and its callers pass segments through instead of joining a
-string. The renderer factory (`mkRender`, today a function of the width) also
-receives the protocol, the screen height, the cell aspect and the font. Nothing
-else about the accounting changes.
+rows (ADR-0089 §1), the lane tool images already use. The reply goes through
+`Model.renderReply`, which returns `[]tui.Segment`: Markdown segments rendered
+by the Markdown renderer (still `func(string) string`, from `mkRender(width)`),
+art segments verbatim (ADR-0063 §3), image segments carrying their payload and
+their row count. The protocol, screen height, cell aspect and Picture live on
+the Model. `takeLive` and its callers pass segments through instead of joining
+a string. Nothing else about the accounting changes.
 
 ### 4. The box: diagram text at the terminal's own size
 
@@ -141,7 +141,8 @@ the runtime" is amended: an ioctl read of the cell size enters, a query does not
   in scrollback keep the box they were emitted with, as text does.
   **Measured (2026-09-29, operator):** narrowing the window loses the
   pictures that were on the screen at that moment — kitty deletes them,
-  iTerm2 leaves black space — while text survives in the scrollback, and
+  iTerm2 leaves black space — while text survives in the scrollback (on
+  kitty, so do pictures higher up in it), and
   both terminals pile black space into the scrollback, with text alone as
   well. The cause is not this lane: the TUI clears the whole screen on a
   shrink to sweep the input frame's re-wrapped leftovers (ADR-0021), and an

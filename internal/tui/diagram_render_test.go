@@ -3,6 +3,8 @@ package tui
 import (
 	"image"
 	"math/rand"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -154,11 +156,19 @@ func TestTallPictureIsDrawnInBands(t *testing.T) {
 	m := replyModel(Options{Images: termimg.Kitty, Picture: fakePicture})
 	m.height = 40
 	segs := m.renderReply("```mermaid\nflowchart TD\n  tall --> B\n```")
-	rows := 0
+	rows, cols := 0, ""
+	rc := regexp.MustCompile(`r=(\d+),c=(\d+)`)
 	for _, s := range segs {
 		if s.Rows == 0 || s.Rows > 20 || !strings.HasPrefix(s.Text, "\x1b_G") {
 			t.Fatalf("segment %+.60v: want kitty bands of at most 20 rows, back to back", s)
 		}
+		// What the terminal is told is what the counter is told, and every
+		// band has the picture's columns.
+		m := rc.FindStringSubmatch(s.Text)
+		if m == nil || m[1] != strconv.Itoa(s.Rows) || (cols != "" && m[2] != cols) {
+			t.Fatalf("band declares %q to the terminal, %d rows to the counter, columns before %q", m, s.Rows, cols)
+		}
+		cols = m[2]
 		rows += s.Rows
 	}
 	if len(segs) != 5 || rows != 100 {
@@ -216,5 +226,22 @@ func TestTallPictureIsWholeOnITerm2(t *testing.T) {
 	segs := m.renderReply("```mermaid\nflowchart TD\n  tall --> B\n```")
 	if len(segs) != 1 || segs[0].Rows != 100 {
 		t.Errorf("%d segments (first %d rows), want one of 100", len(segs), segs[0].Rows)
+	}
+}
+
+// The byte limit is on the bands together: each band of this noisy tall
+// picture is under 2 MiB, the whole is not.
+func TestBandsShareTheByteLimit(t *testing.T) {
+	noisy := func(string) (image.Image, string, bool) {
+		img := image.NewRGBA(image.Rect(0, 0, 600, 3000))
+		r := rand.New(rand.NewSource(1))
+		r.Read(img.Pix)
+		return img, "", true
+	}
+	m := replyModel(Options{Images: termimg.Kitty, Picture: noisy})
+	m.width, m.height = 200, 20
+	out := replyText(m.renderReply("```mermaid\nflowchart TD\n  A --> B\n```"))
+	if !strings.Contains(out, "diagram shown as source: the picture is over") {
+		t.Errorf("want the source and the note, got\n%.200s", out)
 	}
 }

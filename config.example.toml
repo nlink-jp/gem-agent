@@ -341,6 +341,17 @@ show_thoughts = true
 # the model, and is not drawn.
 images = "auto"
 
+# [tui.diagram]
+# The font mermaid diagrams are drawn in where images draw (ADR-0092): a
+# fence in a reply becomes a picture on iTerm2 and kitty. Read once at start,
+# and only when images draw. A setting that does not load is one banner
+# warning and the default font (Hiragino Sans W3 / W6), never a refusal to
+# start. bold_font is for entity names and frame titles; unset, the body face.
+# font = "/path/Font.ttc"
+# font_name = "Font-Regular"      # face in the file, by full or PostScript name
+# bold_font = "/path/Font.ttc"
+# bold_font_name = "Font-Bold"
+
 [telemetry]
 # Audit logging (ADR-0035). Default OFF. When enabled, audit events
 # (sessions, tool calls with outcomes, approval decisions, token

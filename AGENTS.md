@@ -718,7 +718,7 @@ a new hook) is an architecture change and takes the same rows as a
   `diagram.Split(text, pic)` offers every fence to the Picture as written
   (before the art table); a refusal is source + note — no fallback to art
   (B4). The TUI's `renderReply` returns `[]Segment`; a picture segment
-  carries its source, so `pictureSegment` shows source + note when the
+  carries its source, so `pictureSegments` shows source + note when the
   payload cannot be built (a silent `drawImage`-style refusal would lose
   both). The box is `termimg.DiagramBox` (1 em = 1 line, width from the
   cell aspect read by `termimg.CellAspect`, an ioctl — never a query);

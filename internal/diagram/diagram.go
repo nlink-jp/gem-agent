@@ -208,6 +208,9 @@ func Split(markdown string, pic Picture) []Segment {
 				flush()
 				segs = append(segs, Segment{Img: img, Source: block})
 			case attempted:
+				if why == "" {
+					why = "the renderer returned no picture"
+				}
 				md = append(md, WithNote(block, why))
 			default:
 				md = append(md, block)
