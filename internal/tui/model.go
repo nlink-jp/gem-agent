@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"os"
 	"strings"
 	"time"
@@ -172,7 +175,7 @@ type Options struct {
 	// zero value — draws nothing, which is what every entrance that is
 	// not an interactive TUI gets.
 	Images termimg.Protocol
-	// Picture draws a mermaid fence as a PNG where Images draws (ADR-0092).
+	// Picture draws a mermaid fence as an image where Images draws (ADR-0092).
 	// nil keeps every fence on the box-art lane (ADR-0063); so does a
 	// session that draws no images, whatever this holds.
 	Picture diagram.Picture
@@ -516,16 +519,16 @@ func (m *Model) renderReply(text string) []Segment {
 		pic = m.picture
 	}
 	var out []Segment
-	add := func(seg Segment) {
+	add := func(segs ...Segment) {
 		if len(out) > 0 {
 			out = append(out, Segment{})
 		}
-		out = append(out, seg)
+		out = append(out, segs...)
 	}
 	for _, seg := range diagram.Split(text, pic) {
 		switch {
-		case seg.PNG != nil:
-			add(m.pictureSegment(seg))
+		case seg.Img != nil:
+			add(m.pictureSegments(seg)...)
 		case seg.Art:
 			add(Segment{Text: seg.Text})
 		case strings.TrimSpace(seg.Text) != "":
@@ -536,17 +539,56 @@ func (m *Model) renderReply(text string) []Segment {
 	return out
 }
 
-// pictureSegment declares a diagram's box and builds its payload. A
-// payload that cannot be built shows the fence as source with the note:
-// the source is already out of the text, so a silent refusal would lose
-// both (ADR-0092 §5).
-func (m *Model) pictureSegment(seg diagram.Segment) Segment {
-	box := termimg.DiagramBox(seg.W, seg.H, m.width, m.aspect)
-	payload, err := termimg.Payload(m.images, seg.PNG, box)
-	if err != nil {
-		return Segment{Text: m.render(diagram.WithNote(seg.Source, err.Error()))}
+// pictureSegments declares a diagram's box and builds its payloads: one
+// per band of at most half the screen (termimg.Bands), since kitty clips a
+// picture taller than the screen and draws the frame over it (measured,
+// ADR-0092 §4); the bands abut into the whole picture and each scrolls like
+// any other. The encoded bands together may not pass termimg.MaxBytes. A
+// picture that cannot become payloads shows the fence as source with the
+// note: the source is already out of the text, so a silent refusal would
+// lose both (§5).
+func (m *Model) pictureSegments(seg diagram.Segment) []Segment {
+	fail := func(why string) []Segment {
+		return []Segment{{Text: strings.Trim(m.render(diagram.WithNote(seg.Source, why)), "\n")}}
 	}
-	return Segment{Text: payload, Rows: box.Rows}
+	b := seg.Img.Bounds()
+	sub, ok := seg.Img.(interface {
+		SubImage(image.Rectangle) image.Image
+	})
+	if !ok {
+		return fail("the picture cannot be cut into bands")
+	}
+	box := termimg.DiagramBox(b.Dx(), b.Dy(), m.width, m.aspect)
+	var out []Segment
+	total := 0
+	for _, band := range termimg.Bands(b.Dy(), box, bandRows(m.height)) {
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, sub.SubImage(image.Rect(b.Min.X, b.Min.Y+band.Y0, b.Max.X, b.Min.Y+band.Y1))); err != nil {
+			return fail("encoding the picture: " + err.Error())
+		}
+		if total += buf.Len(); total > termimg.MaxBytes {
+			return fail(fmt.Sprintf("the picture is over the %d KiB an inline image may be", termimg.MaxBytes>>10))
+		}
+		payload, err := termimg.Payload(m.images, buf.Bytes(), termimg.Box{Rows: band.Rows, Cols: box.Cols})
+		if err != nil {
+			return fail(err.Error())
+		}
+		out = append(out, Segment{Text: payload, Rows: band.Rows})
+	}
+	if len(out) == 0 {
+		return fail("the picture is empty")
+	}
+	return out
+}
+
+// bandRows is the tallest band a diagram is drawn in: half the screen, so
+// a band always fits whatever the frame below it takes. An unknown height
+// falls back to a modest band.
+func bandRows(height int) int {
+	if height <= 0 {
+		return 10
+	}
+	return max(1, height/2)
 }
 
 // Init implements tea.Model.

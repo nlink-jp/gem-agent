@@ -44,3 +44,29 @@ func aspectOf(rows, cols, ypx, xpx uint16) (float64, bool) {
 	}
 	return (float64(ypx) / float64(rows)) / (float64(xpx) / float64(cols)), true
 }
+
+// Band is one horizontal strip of a picture: pixel rows [Y0, Y1), drawn
+// in Rows terminal rows at the picture's full width.
+type Band struct{ Y0, Y1, Rows int }
+
+// Bands cuts a picture pxH pixels tall, declared in box, into strips of at
+// most maxRows rows, top to bottom. A picture taller than the screen is
+// not something every terminal scrolls: kitty clipped one and the frame
+// was drawn over it (measured, ADR-0092 §4), while each band — a picture
+// no taller than the screen — scrolls like any other. The strips share
+// the box's columns and one scale, so they abut into the whole picture.
+func Bands(pxH int, box Box, maxRows int) []Band {
+	if pxH <= 0 || box.Rows < 1 {
+		return nil
+	}
+	maxRows = max(1, maxRows)
+	y := func(row int) int { return int(math.Round(float64(row) * float64(pxH) / float64(box.Rows))) }
+	var out []Band
+	for r := 0; r < box.Rows; r += maxRows {
+		n := min(maxRows, box.Rows-r)
+		if y0, y1 := y(r), y(r+n); y1 > y0 {
+			out = append(out, Band{Y0: y0, Y1: y1, Rows: n})
+		}
+	}
+	return out
+}

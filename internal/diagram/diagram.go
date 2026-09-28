@@ -35,6 +35,7 @@ package diagram
 
 import (
 	"fmt"
+	"image"
 	"regexp"
 	"strings"
 
@@ -116,19 +117,19 @@ var (
 type Segment struct {
 	Text string
 	Art  bool
-	// PNG is set for a fence drawn as a picture (ADR-0092): the encoded
-	// image and its pixel size. Source is the fence as the model wrote
-	// it, so a failure after this point still shows the source
-	// (WithNote) — the picture never disappears together with it.
-	PNG    []byte
-	W, H   int
+	// Img is set for a fence drawn as a picture (ADR-0092). The TUI cuts
+	// it into bands a screen can hold and encodes those. Source is the
+	// fence as the model wrote it, so a failure after this point still
+	// shows the source (WithNote) — the picture never disappears together
+	// with it.
+	Img    image.Image
 	Source string
 }
 
-// Picture draws one mermaid source as a PNG (ADR-0092). attempted is
+// Picture draws one mermaid source as an image (ADR-0092). attempted is
 // false for a diagram type it does not draw; otherwise why is empty on
 // success and names the refusal.
-type Picture func(src string) (png []byte, w, h int, why string, attempted bool)
+type Picture func(src string) (img image.Image, why string, attempted bool)
 
 // WithNote is a fence shown as source with the one-line note that says
 // why it is not drawn (ADR-0063 §4): blank lines on both sides, so the
@@ -201,11 +202,11 @@ func Split(markdown string, pic Picture) []Segment {
 		src := strings.Join(lines[i+1:end], "\n")
 		block := strings.Join(lines[i:end+1], "\n")
 		if pic != nil {
-			data, w, h, why, attempted := drawPicture(pic, src)
+			img, why, attempted := drawPicture(pic, src)
 			switch {
-			case attempted && why == "":
+			case attempted && why == "" && img != nil:
 				flush()
-				segs = append(segs, Segment{PNG: data, W: w, H: h, Source: block})
+				segs = append(segs, Segment{Img: img, Source: block})
 			case attempted:
 				md = append(md, WithNote(block, why))
 			default:
@@ -233,10 +234,10 @@ func Split(markdown string, pic Picture) []Segment {
 // drawPicture calls pic, turning a panic into a refusal: the engine runs
 // on the UI's update path, and a defect in it must cost a picture, not the
 // session (ADR-0092 §5).
-func drawPicture(pic Picture, src string) (data []byte, w, h int, why string, attempted bool) {
+func drawPicture(pic Picture, src string) (img image.Image, why string, attempted bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			data, w, h, why, attempted = nil, 0, 0, fmt.Sprintf("the diagram renderer failed: %v", r), true
+			img, why, attempted = nil, fmt.Sprintf("the diagram renderer failed: %v", r), true
 		}
 	}()
 	return pic(src)

@@ -1,7 +1,7 @@
 package diagram
 
 import (
-	"bytes"
+	"image"
 	"strings"
 	"testing"
 
@@ -15,21 +15,21 @@ const flowFence = "```mermaid\nflowchart TD\n    A([開始]) --> B{判定}\n    
 // unsupported type is the source, silently; a panic is a refusal.
 func TestSplitWithPicture(t *testing.T) {
 	var got []string
-	pic := func(src string) ([]byte, int, int, string, bool) {
+	pic := func(src string) (image.Image, string, bool) {
 		got = append(got, src)
 		switch {
 		case strings.HasPrefix(src, "gantt"):
-			return nil, 0, 0, "", false
+			return nil, "", false
 		case strings.Contains(src, "refuse"):
-			return nil, 0, 0, "syntax error: no", true
+			return nil, "syntax error: no", true
 		case strings.Contains(src, "panic"):
 			panic("boom")
 		}
-		return []byte("PNG"), 300, 200, "", true
+		return image.NewRGBA(image.Rect(0, 0, 300, 200)), "", true
 	}
 	md := "before\n\n" + flowFence + "\n\nafter"
 	segs := Split(md, pic)
-	if len(segs) != 3 || segs[1].PNG == nil || segs[1].W != 300 || segs[1].H != 200 || segs[1].Source != flowFence {
+	if len(segs) != 3 || segs[1].Img == nil || segs[1].Img.Bounds().Dx() != 300 || segs[1].Source != flowFence {
 		t.Fatalf("segments = %+v", segs)
 	}
 	if segs[0].Text != "before\n" || segs[2].Text != "\nafter" {
@@ -55,7 +55,7 @@ func TestSplitWithPicture(t *testing.T) {
 			}()
 			segs = Split(fence, pic)
 		}()
-		if len(segs) != 1 || segs[0].PNG != nil || segs[0].Art || !strings.HasPrefix(segs[0].Text, fence) {
+		if len(segs) != 1 || segs[0].Img != nil || segs[0].Art || !strings.HasPrefix(segs[0].Text, fence) {
 			t.Errorf("%q: %+v", src, segs)
 			continue
 		}
@@ -66,24 +66,20 @@ func TestSplitWithPicture(t *testing.T) {
 }
 
 // NewPicture draws with the engine; an unsupported type is not attempted;
-// a picture over the byte limit is refused on its encoded size.
+// a character no font has is refused.
 func TestNewPicture(t *testing.T) {
 	font, err := raster.DefaultFont()
 	if err != nil {
 		t.Skipf("no system font: %v", err)
 	}
-	src := "flowchart TD\n    A([開始]) --> B{判定}"
-	data, w, h, why, attempted := NewPicture(font, 2<<20)(src)
-	if !attempted || why != "" || w <= 0 || h <= 0 || !bytes.HasPrefix(data, []byte("\x89PNG")) {
-		t.Fatalf("drawn: %d bytes %dx%d, why %q, attempted %v", len(data), w, h, why, attempted)
+	img, why, attempted := NewPicture(font)("flowchart TD\n    A([開始]) --> B{判定}")
+	if !attempted || why != "" || img == nil || img.Bounds().Dx() <= 0 {
+		t.Fatalf("drawn: %v, why %q, attempted %v", img != nil, why, attempted)
 	}
-	if _, _, _, _, attempted := NewPicture(font, 2<<20)("stateDiagram-v2\n    [*] --> A"); attempted {
+	if _, _, attempted := NewPicture(font)("stateDiagram-v2\n    [*] --> A"); attempted {
 		t.Error("an unsupported type was attempted")
 	}
-	if _, _, _, why, _ := NewPicture(font, 100)(src); !strings.Contains(why, "over the 0 KiB") {
-		t.Errorf("over the byte limit: why %q", why)
-	}
-	if _, _, _, why, _ := NewPicture(font, 2<<20)("flowchart TD\n    A --> 😀"); why == "" {
+	if _, why, _ := NewPicture(font)("flowchart TD\n    A --> 😀"); why == "" {
 		t.Error("a character no font has was drawn")
 	}
 }

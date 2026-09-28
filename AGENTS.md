@@ -722,7 +722,9 @@ a new hook) is an architecture change and takes the same rows as a
   payload cannot be built (a silent `drawImage`-style refusal would lose
   both). The box is `termimg.DiagramBox` (1 em = 1 line, width from the
   cell aspect read by `termimg.CellAspect`, an ioctl — never a query);
-  tall pictures are not shrunk (operator's decision). The font is read in
+  tall pictures are not shrunk (operator's decision) but drawn in bands of
+  at most half the screen (`termimg.Bands`): kitty clips a picture taller
+  than the screen and draws the frame over it (measured). The font is read in
   cmd (`diagramPicture`), only when images draw; a bad `[tui.diagram]`
   is a banner warning, never a refusal to start. Rendering runs in
   `takeLive` on the update path, under `recover` in `drawPicture`.

@@ -125,11 +125,16 @@ the runtime" is amended: an ioctl read of the cell size enters, a query does not
   top scrolls out into the scrollback, where the operator scrolls up to read
   it, as with a long reply (the operator's decision, 2026-09-29: shrinking a
   tall diagram makes its text unreadable, and scrolling is the ordinary way to
-  read something tall). The declared rows are the full height. How such a
-  picture interacts with the bottom pin is measured on iTerm2 and kitty during
-  implementation and recorded here; if it damages the screen rather than
-  scrolling (ADR-0089's stranded frames), that is wrong, not ugly, and this
-  bullet is reopened.
+  read something tall). The declared rows are the full height.
+  **Measured (2026-09-29, operator):** iTerm2 scrolls a picture taller than
+  the screen correctly; kitty does not — it clipped the picture's lower part
+  and the frame was drawn over it, while every picture shorter than the
+  screen scrolled correctly on both. That is wrong, not ugly, so a tall
+  picture is **drawn in bands** of at most half the screen
+  (`termimg.Bands`), back to back at one scale and the box's columns: each
+  band is a picture a screen holds, the text keeps its size, and the whole
+  still scrolls out. The encoded bands together may not pass
+  `termimg.MaxBytes`.
 - **A resize after a picture is emitted** does not redraw it: pictures already
   in scrollback keep the box they were emitted with, as text does.
 
@@ -198,7 +203,8 @@ the operator asks for diagrams in their instructions when they want them.
 
 - `internal/diagram` gains the picture path beside the art path: `Split` takes
   an optional renderer, and a fence it can draw becomes an image segment
-  holding the PNG, its pixel size and its source.
+  holding the picture and its source; the TUI cuts it into bands and
+  encodes them.
 - `internal/tui` turns image segments into payloads with the §4 box, as
   `drawImage` does for tool images. `termimg.Payload` stays callable from
   `internal/tui` only (ADR-0089 §6's archtest).

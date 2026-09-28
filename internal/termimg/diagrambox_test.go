@@ -42,3 +42,26 @@ func TestAspectOf(t *testing.T) {
 		t.Error("a terminal that reports no pixels gave an aspect")
 	}
 }
+
+// Bands cover the picture exactly, top to bottom, none taller than the
+// limit, and their rows add up to the box's.
+func TestBands(t *testing.T) {
+	for _, c := range []struct{ pxH, rows, max int }{
+		{3360, 100, 20}, {3360, 100, 30}, {1000, 7, 7}, {1000, 7, 50}, {999, 13, 4}, {50, 1, 1},
+	} {
+		bs := Bands(c.pxH, Box{Rows: c.rows, Cols: 40}, c.max)
+		y, rows := 0, 0
+		for _, b := range bs {
+			if b.Y0 != y || b.Y1 <= b.Y0 || b.Rows < 1 || b.Rows > c.max {
+				t.Fatalf("%+v: band %+v after y %d", c, b, y)
+			}
+			y, rows = b.Y1, rows+b.Rows
+		}
+		if y != c.pxH || rows != c.rows {
+			t.Errorf("%+v: bands end at y %d with %d rows, want %d and %d", c, y, rows, c.pxH, c.rows)
+		}
+	}
+	if len(Bands(0, Box{Rows: 1, Cols: 1}, 5)) != 0 {
+		t.Error("an empty picture has bands")
+	}
+}

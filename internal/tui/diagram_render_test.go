@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"image"
+	"math/rand"
 	"strings"
 	"testing"
 
@@ -76,13 +78,21 @@ func TestReplyKeepsSourceWithNote(t *testing.T) {
 	}
 }
 
-// fakePicture draws every fence as a 20 x 10 em "PNG" the payload builder
-// accepts, and refuses one that says so.
-func fakePicture(src string) ([]byte, int, int, string, bool) {
-	if strings.Contains(src, "refuse") {
-		return nil, 0, 0, "syntax error: refused", true
+// emPicture is a blank picture w x h terminal lines at the diagram scale.
+func emPicture(w, h int) image.Image {
+	return image.NewRGBA(image.Rect(0, 0, w*termimg.DiagramPxPerEm*12/10, h*termimg.DiagramPxPerEm*12/10))
+}
+
+// fakePicture draws every fence as a 20 x 10 line picture, one that says
+// "tall" as 20 x 100, and refuses one that says so.
+func fakePicture(src string) (image.Image, string, bool) {
+	switch {
+	case strings.Contains(src, "refuse"):
+		return nil, "syntax error: refused", true
+	case strings.Contains(src, "tall"):
+		return emPicture(20, 100), "", true
 	}
-	return []byte("\x89PNG fake"), 20 * termimg.DiagramPxPerEm * 12 / 10, 10 * termimg.DiagramPxPerEm * 12 / 10, "", true
+	return emPicture(20, 10), "", true
 }
 
 // Where the session draws images, a fence becomes a picture in a
@@ -120,14 +130,39 @@ func TestReplyPictureOnlyWhereImagesDraw(t *testing.T) {
 	}
 }
 
-// A payload that cannot be built after the fence was replaced shows the
-// source with the note: the picture never vanishes with its source.
+// A picture that cannot become payloads after the fence was replaced —
+// here, over the byte limit once encoded — shows the source with the
+// note: the picture never vanishes with its source.
 func TestReplyPictureFailureShowsSource(t *testing.T) {
-	empty := func(string) ([]byte, int, int, string, bool) { return []byte{}, 10, 10, "", true }
-	m := replyModel(Options{Images: termimg.ITerm2, Picture: empty})
+	noisy := func(string) (image.Image, string, bool) {
+		img := image.NewRGBA(image.Rect(0, 0, 1200, 1200))
+		r := rand.New(rand.NewSource(1))
+		r.Read(img.Pix)
+		return img, "", true
+	}
+	m := replyModel(Options{Images: termimg.ITerm2, Picture: noisy})
 	out := replyText(m.renderReply("```mermaid\nflowchart TD\n  A --> B\n```"))
-	if !strings.Contains(out, "A --> B") || !strings.Contains(out, "diagram shown as source") {
-		t.Errorf("want the source and the note, got\n%s", out)
+	if !strings.Contains(out, "A --> B") || !strings.Contains(out, "diagram shown as source: the picture is over") {
+		t.Errorf("want the source and the note, got\n%.300s", out)
+	}
+}
+
+// A picture taller than half the screen is drawn as bands of at most half
+// the screen, back to back, their rows adding up to the whole: kitty clips
+// a picture taller than the screen (measured, ADR-0092 §4).
+func TestTallPictureIsDrawnInBands(t *testing.T) {
+	m := replyModel(Options{Images: termimg.Kitty, Picture: fakePicture})
+	m.height = 40
+	segs := m.renderReply("```mermaid\nflowchart TD\n  tall --> B\n```")
+	rows := 0
+	for _, s := range segs {
+		if s.Rows == 0 || s.Rows > 20 || !strings.HasPrefix(s.Text, "\x1b_G") {
+			t.Fatalf("segment %+.60v: want kitty bands of at most 20 rows, back to back", s)
+		}
+		rows += s.Rows
+	}
+	if len(segs) != 5 || rows != 100 {
+		t.Errorf("%d bands, %d rows; want 5 and 100", len(segs), rows)
 	}
 }
 

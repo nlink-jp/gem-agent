@@ -38,7 +38,7 @@ func diagramPicture(images termimg.Protocol, c config.DiagramConfig, load fontLo
 	case font != "":
 		f, err := load.spec(raster.FontSpec{Path: font, Name: c.FontName, BoldPath: bold, BoldName: c.BoldFontName})
 		if err == nil {
-			return diagram.NewPicture(f, termimg.MaxBytes), nil
+			return diagram.NewPicture(f), nil
 		}
 		notes = append(notes, fmt.Sprintf("[tui.diagram] %v; diagrams use the default font", err))
 	}
@@ -46,5 +46,5 @@ func diagramPicture(images termimg.Protocol, c config.DiagramConfig, load fontLo
 	if err != nil {
 		return nil, append(notes, fmt.Sprintf("diagrams: the default font did not load (%v); they are drawn as text", err))
 	}
-	return diagram.NewPicture(f, termimg.MaxBytes), notes
+	return diagram.NewPicture(f), notes
 }
