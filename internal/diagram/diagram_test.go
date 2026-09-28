@@ -15,7 +15,7 @@ func fence(src string) string { return "before\n\n```mermaid\n" + src + "```\n\n
 // matter.
 func rejoin(md string) string {
 	var parts []string
-	for _, s := range Split(md) {
+	for _, s := range Split(md, nil) {
 		parts = append(parts, s.Text)
 	}
 	return strings.Join(parts, "\n")
@@ -24,7 +24,7 @@ func rejoin(md string) string {
 // artSegments returns just the drawn segments.
 func artSegments(md string) []string {
 	var arts []string
-	for _, s := range Split(md) {
+	for _, s := range Split(md, nil) {
 		if s.Art {
 			arts = append(arts, s.Text)
 		}
@@ -72,7 +72,7 @@ func TestUnsupportedStaysSourceSilently(t *testing.T) {
 		"classDiagram\n  class A\n",
 	} {
 		md := fence(src)
-		segs := Split(md)
+		segs := Split(md, nil)
 		if len(segs) != 1 || segs[0].Art || segs[0].Text != md {
 			t.Errorf("unsupported block was not passed through untouched:\n%v", segs)
 		}
@@ -157,12 +157,12 @@ func TestNoHeightCap(t *testing.T) {
 // ADR-0063 caught the scanner treating them as openers).
 func TestMermaidInsideEnclosingFenceUntouched(t *testing.T) {
 	quoted := "````markdown\nHow to write a diagram:\n\n```mermaid\ngraph LR\n  A[a] --> B[b]\n```\n````\ntail\n"
-	segs := Split(quoted)
+	segs := Split(quoted, nil)
 	if len(segs) != 1 || segs[0].Art || segs[0].Text != quoted {
 		t.Fatalf("mermaid example inside a ````markdown block was rewritten:\n%v", segs)
 	}
 	inner := "```text\nliteral lines\n```mermaid\ngraph LR\n  A[a] --> B[b]\n```\n"
-	segs = Split(inner)
+	segs = Split(inner, nil)
 	for _, s := range segs {
 		if s.Art {
 			t.Fatalf("mermaid-labeled content line inside a ```text block was drawn:\n%v", segs)
@@ -205,10 +205,10 @@ func TestFencesUntouchedAndMultiple(t *testing.T) {
 		t.Error("unsupported second block not preserved")
 	}
 	unclosed := "```mermaid\ngraph LR\n  A --> B\n"
-	if segs := Split(unclosed); len(segs) != 1 || segs[0].Art || segs[0].Text != unclosed {
+	if segs := Split(unclosed, nil); len(segs) != 1 || segs[0].Art || segs[0].Text != unclosed {
 		t.Error("unclosed fence rewritten")
 	}
-	if segs := Split("plain text"); len(segs) != 1 || segs[0].Text != "plain text" {
+	if segs := Split("plain text", nil); len(segs) != 1 || segs[0].Text != "plain text" {
 		t.Error("text without mermaid altered")
 	}
 	// The fast path is case-insensitive like the fence matcher: a

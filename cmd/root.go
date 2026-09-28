@@ -1644,6 +1644,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	for _, n := range policyNotes {
 		warnLines = append(warnLines, string(n))
 	}
+	// The diagram font is read here, once, and only where pictures can be
+	// drawn (ADR-0092 §6); a setting that does not load is a warning.
+	picture, fontNotes := diagramPicture(images, cfg.TUI.Diagram, systemFonts)
+	warnLines = append(warnLines, fontNotes...)
 	bannerLines := banner.Lines(banner.Facts{
 		Version: cmd.Root().Version, Model: cfg.Model.Name,
 		Instructions: contextLabels,
@@ -1677,9 +1681,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// Msgs is the wiring ADR-0029 shipped without: the catalog
 			// was resolved here but never handed to the TUI, so the
 			// whole chrome fell back to English (review round 2).
-			Msgs:          msgs,
-			Theme:         resolveTheme(cfg.TUI.Theme),
-			Images:        images,
+			Msgs:    msgs,
+			Theme:   resolveTheme(cfg.TUI.Theme),
+			Images:  images,
+			Picture: picture,
+			// Bubble Tea draws on stdout; its cell size comes from an
+			// ioctl there, never from a query (ADR-0092 §4).
+			CellAspect:    func() (float64, bool) { return termimg.CellAspect(int(os.Stdout.Fd())) },
 			ModelName:     cfg.Model.Name,
 			ProjectDir:    abbreviateHome(projectDir),
 			Banner:        bannerLines,

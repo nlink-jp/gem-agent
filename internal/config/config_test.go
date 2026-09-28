@@ -517,3 +517,26 @@ func TestScratchCachesTable(t *testing.T) {
 		}
 	}
 }
+
+// [tui.diagram] is read from the user config, with its source recorded,
+// and never validated: a display font that does not load is a banner
+// line, not a refusal to start (ADR-0092 §6). A leading ~ is the home.
+func TestDiagramFontSetting(t *testing.T) {
+	clearEnv(t)
+	path := writeConfig(t, "\n[gcp]\nproject = \"p\"\n\n[model]\nname = \"m\"\n\n[tui.diagram]\nfont = \"~/fonts/Body.ttc\"\nfont_name = \"Body-W3\"\nbold_font_name = \"no bold_font\"\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("a [tui.diagram] table, even an inconsistent one, must load: %v", err)
+	}
+	d := cfg.TUI.Diagram
+	if d.Font != "~/fonts/Body.ttc" || d.FontName != "Body-W3" || d.BoldFontName != "no bold_font" || d.BoldFont != "" {
+		t.Errorf("loaded %+v", d)
+	}
+	home, _ := os.UserHomeDir()
+	if font, bold := d.Files(); font != home+"/fonts/Body.ttc" || bold != "" {
+		t.Errorf("Files() = %q, %q", font, bold)
+	}
+	if cfg.Source("tui.diagram.font") != FromFile || cfg.Source("tui.diagram.bold_font") != FromDefault {
+		t.Errorf("sources: font %s, bold_font %s", cfg.Source("tui.diagram.font"), cfg.Source("tui.diagram.bold_font"))
+	}
+}

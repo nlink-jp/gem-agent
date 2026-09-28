@@ -43,6 +43,20 @@ why. Diagram types the renderer does not know (gantt, classDiagram, …)
 pass through as source, note-free. Files the model writes are
 untouched.
 
+**Where the terminal draws images, a fence is a picture** (ADR-0092):
+on iTerm2 and kitty (`[tui].images`), mermaid-render draws the fence as
+the model wrote it — flowchart / graph, sequenceDiagram and erDiagram,
+any labels a font has — and the picture is shown with one em of its text
+as one line of the terminal's, its width from the cell's own shape. A
+picture wider than the terminal shrinks; a taller one is not shrunk, and
+its top scrolls into the scrollback like a long reply's. Anything the
+engine refuses — a syntax error, a construct it does not draw (nested
+subgraphs, for now), a character no font has, a limit, a PNG over 2 MiB,
+a layout that breaks its own checks — is shown as source with the note;
+it never falls back to box art. The font is `[tui.diagram]`
+(configuration.md). Elsewhere — no image protocol, `-p`, the plain REPL —
+nothing changes.
+
 A positional argument is the first interactive turn (ADR-0064):
 `gem-agent "run the tests"` submits it once the banner has printed —
 through the exact typed path, so `!` shell escape, slash commands,

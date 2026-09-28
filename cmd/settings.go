@@ -257,6 +257,20 @@ func (s *settingsStore) data() tui.SettingsData {
 	}
 	ro("session", "tui.images", imagesValue, "tui.images",
 		"inline images (show_image, /show): auto, off, iterm, or kitty; asked once before the UI starts, so it applies at next start")
+	// The diagram font is read once at start, where images draw
+	// (ADR-0092 §6); a setting that did not load said so in the banner.
+	dg := s.cfg.TUI.Diagram
+	orDefault := func(v, def string) string {
+		if v == "" {
+			return def
+		}
+		return v
+	}
+	const diagramFont = "the font mermaid diagrams are drawn in where images draw; read at start, so it applies at next start"
+	ro("session", "tui.diagram.font", orDefault(dg.Font, "(Hiragino Sans W3)"), "tui.diagram.font", diagramFont)
+	ro("session", "tui.diagram.font_name", orDefault(dg.FontName, "(the file's first face)"), "tui.diagram.font_name", diagramFont)
+	ro("session", "tui.diagram.bold_font", orDefault(dg.BoldFont, "(the body face; Hiragino Sans W6 by default)"), "tui.diagram.bold_font", diagramFont)
+	ro("session", "tui.diagram.bold_font_name", orDefault(dg.BoldFontName, "(the file's first face)"), "tui.diagram.bold_font_name", diagramFont)
 
 	s.mcpRows(&d)
 	s.approvalRows(&d)

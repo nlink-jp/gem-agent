@@ -72,8 +72,9 @@ is abandoned after a bounded grace — ADR-0065), IME-friendly
 approval dialogs,
 Tab completion for `@`-paths, `/`-commands, and skill
 names, `!command` shell escape, mermaid fences drawn in place in the
-reply (flowchart / ASCII-label sequence / ER; anything the terminal
-cannot draw faithfully stays source), fifteen slash commands (`/help`
+reply — as pictures where the terminal draws images (flowchart / sequence /
+ER, CJK labels included), as box art elsewhere; anything that cannot be
+drawn right stays source — fifteen slash commands (`/help`
 `/tools` `/mcp` `/auto` `/readonly` `/compact` `/settings` `/riskbook` `/usage`
 `/memory` `/skills` `/skill` `/version` `/clear` `/quit`), a provenance-first `/settings`
 panel, theme control, and a fully bilingual chrome

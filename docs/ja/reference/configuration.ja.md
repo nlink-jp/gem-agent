@@ -90,6 +90,14 @@ language = "auto"          # auto | ja | en（ADR-0029 — interface.ja.md 参�
 show_thoughts = true       # TUI に思考サマリをライブ表示（ADR-0033）
 images = "auto"            # インライン画像: auto | off | iterm | kitty（ADR-0089）
 
+[tui.diagram]              # mermaid の絵を描くフォント（ADR-0092）。画像を描ける端末でだけ起動時に
+                           # 読む。読めない設定はバナーの警告 1 行と既定のフォントになり、
+                           # 起動は止まらない
+# font = "/path/Font.ttc"      # 本文。既定はヒラギノ角ゴシック W3
+# font_name = "Font-Regular"   # ファイルの中の書体（フル名か PostScript 名）
+# bold_font = "/path/Font.ttc" # 実体名・枠の見出し。既定は本文の書体
+# bold_font_name = "Font-Bold"
+
 [telemetry]
 enabled = false            # 監査ロギング（ADR-0035）— 後述
 backend = "gcp"            # gcp（Cloud Logging・既定）| otlp-grpc | otlp-http

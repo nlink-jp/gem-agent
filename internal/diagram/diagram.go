@@ -111,11 +111,30 @@ var (
 )
 
 // Segment is one run of a reply: markdown for the Markdown renderer,
-// or finished box art the TUI must emit verbatim (see the package
-// comment for why art may never pass through glamour).
+// finished box art the TUI must emit verbatim (see the package comment
+// for why art may never pass through glamour), or a picture.
 type Segment struct {
 	Text string
 	Art  bool
+	// PNG is set for a fence drawn as a picture (ADR-0092): the encoded
+	// image and its pixel size. Source is the fence as the model wrote
+	// it, so a failure after this point still shows the source
+	// (WithNote) — the picture never disappears together with it.
+	PNG    []byte
+	W, H   int
+	Source string
+}
+
+// Picture draws one mermaid source as a PNG (ADR-0092). attempted is
+// false for a diagram type it does not draw; otherwise why is empty on
+// success and names the refusal.
+type Picture func(src string) (png []byte, w, h int, why string, attempted bool)
+
+// WithNote is a fence shown as source with the one-line note that says
+// why it is not drawn (ADR-0063 §4): blank lines on both sides, so the
+// note is its own paragraph, never a prefix of what follows.
+func WithNote(source, why string) string {
+	return source + "\n\n*diagram shown as source: " + noteSafe(why) + "*\n"
 }
 
 // Split partitions markdown around its renderable ```mermaid blocks
@@ -128,7 +147,13 @@ type Segment struct {
 // inside a ````markdown block, a quoted fence in a ```text block) is
 // data, not a diagram — a closing fence carries no info string, so a
 // labeled opener inside an open fence can never be its close.
-func Split(markdown string) []Segment {
+//
+// With a Picture (the session draws images, ADR-0092 §1) every fence is
+// offered to it instead of the box-art renderer, as written — before the
+// translation table, which exists for the art renderer's grammar (§2).
+// A refusal shows the source with the note; nothing falls back to art
+// (ADR-0092 B4).
+func Split(markdown string, pic Picture) []Segment {
 	if !strings.Contains(strings.ToLower(markdown), "mermaid") {
 		return []Segment{{Text: markdown}}
 	}
@@ -174,23 +199,47 @@ func Split(markdown string) []Segment {
 			continue
 		}
 		src := strings.Join(lines[i+1:end], "\n")
+		block := strings.Join(lines[i:end+1], "\n")
+		if pic != nil {
+			data, w, h, why, attempted := drawPicture(pic, src)
+			switch {
+			case attempted && why == "":
+				flush()
+				segs = append(segs, Segment{PNG: data, W: w, H: h, Source: block})
+			case attempted:
+				md = append(md, WithNote(block, why))
+			default:
+				md = append(md, block)
+			}
+			i = end
+			continue
+		}
 		art, why, attempted := render(src)
 		switch {
 		case attempted && why == "":
 			flush()
 			segs = append(segs, Segment{Text: art, Art: true})
 		case attempted:
-			md = append(md, lines[i:end+1]...)
-			// Blank lines on both sides: the note is its own
-			// paragraph, never a prefix of what follows.
-			md = append(md, "", "*diagram shown as source: "+noteSafe(why)+"*", "")
+			md = append(md, WithNote(block, why))
 		default:
-			md = append(md, lines[i:end+1]...)
+			md = append(md, block)
 		}
 		i = end
 	}
 	flush()
 	return segs
+}
+
+// drawPicture calls pic, turning a panic into a refusal: the engine runs
+// on the UI's update path, and a defect in it must cost a picture, not the
+// session (ADR-0092 §5).
+func drawPicture(pic Picture, src string) (data []byte, w, h int, why string, attempted bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			data, w, h, why, attempted = nil, 0, 0, fmt.Sprintf("the diagram renderer failed: %v", r), true
+		}
+	}()
+	return pic(src)
 }
 
 // closesFence reports whether line closes a fence opened by opener:

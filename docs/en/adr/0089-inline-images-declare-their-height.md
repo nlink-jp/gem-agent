@@ -14,7 +14,7 @@
 
 ### What the counter can and cannot see
 
-`emit` ([model.go:872](../../../internal/tui/model.go)) prints one line into
+`emit` ([model.go:921](../../../internal/tui/model.go)) prints one line into
 scrollback and counts its physical rows; the bottom pinning rests on that
 count. Measured against `charmbracelet/x/ansi` v0.11.6, the version
 `go.mod:14` pins: `ansi.StringWidth` returns **0** and `ansi.Strip` returns
@@ -33,7 +33,7 @@ widths, both settings, 126 combinations, every one byte-identical — and
 is a test that asserts it, not the ability to.
 
 The counter is not blind, though, and the first draft said it was.
-`physicalRows` ([model.go:1143](../../../internal/tui/model.go)) starts at
+`physicalRows` ([model.go:1192](../../../internal/tui/model.go)) starts at
 `rows, cells := 1, 0` and so credits an image line with exactly **one** row
 while the terminal advances N. The shortfall is `N-1`, not `N`.
 
@@ -50,7 +50,7 @@ prints the table it computed.
 
 The regime is arranged, not assumed. The pin's padding is
 `height − printed − view − 1`, and production labels the positive branch
-"screen not full" ([model.go:1840](../../../internal/tui/model.go)). A
+"screen not full" ([model.go:1906](../../../internal/tui/model.go)). A
 filler count chosen for a 30-row tmux pane left an 80-row iTerm2 window on
 the other side of that branch, and an earlier draft of this record reported
 those runs as "full". The filler is computed from the terminal's own height
@@ -254,14 +254,14 @@ what was intended.
 
 This does **not** close the existing surface: tool output is printed without
 ANSI stripping — `ansi.Strip` is called at exactly one site in non-test code
-([model.go:1148](../../../internal/tui/model.go)), inside `physicalRows`, to
+([model.go:1197](../../../internal/tui/model.go)), inside `physicalRows`, to
 *measure* — so raw escapes from shell output already reach the terminal.
 Pre-existing, not widened here, not repaired here.
 
 ### 7. Drawing is a TUI-only capability, and the other entrances say so
 
 `tea.NewProgram` is constructed at one site in the product
-([root.go:1751](../../../cmd/root.go)), reached only when the session is
+([root.go:1759](../../../cmd/root.go)), reached only when the session is
 interactive; one-shot `-p` and the plain REPL return before it, so they
 never draw — the same boundary the diagram lane already has. (An earlier
 draft said "exactly one site" in the module, which `tools/pinprobe` has
@@ -271,7 +271,7 @@ reason is raw-mode stdin ownership, not protocol decoding: once Bubble Tea
 owns stdin, a terminal's reply to a query arrives in the input box as
 phantom keystrokes — the recorded instance is `newGlamourRenderer`'s note on
 why `WithAutoStyle` is deliberately absent
-([model.go:463](../../../internal/tui/model.go); the rule itself is in
+([model.go:476](../../../internal/tui/model.go); the rule itself is in
 `AGENTS.md`'s "Never query the terminal after Bubble Tea starts", which was
 the right citation all along). An earlier draft cited
 `AGENTS.md:296`, which is off by one and, more to the point, is about

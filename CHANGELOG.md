@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Mermaid fences are pictures where the terminal draws images**
+  (ADR-0092). On iTerm2 and kitty a fence in a reply is drawn by
+  mermaid-render (an organization library): flowchart / graph,
+  sequenceDiagram and erDiagram, from the source as written, CJK labels
+  and non-ASCII sequence labels included. One em of diagram text is one
+  terminal line; the width follows the cell's shape, read with an ioctl
+  (`TIOCGWINSZ`), never a terminal query. A picture wider than the
+  terminal shrinks; a taller one scrolls. Anything the engine refuses is
+  shown as source with the one-line note, never as box art; a picture
+  never disappears with its source. `[tui.diagram]` picks the font
+  (default Hiragino Sans W3 / W6); a setting that does not load is a
+  banner warning and the default font. Without an image protocol, and in
+  `-p` and the plain REPL, nothing changes. The reply renderer now
+  returns segments with declared rows, so a picture is counted like a
+  tool image (ADR-0089).
+
 ## [0.84.2] - 2026-09-22
 
 ### Fixed

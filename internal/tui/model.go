@@ -172,6 +172,14 @@ type Options struct {
 	// zero value — draws nothing, which is what every entrance that is
 	// not an interactive TUI gets.
 	Images termimg.Protocol
+	// Picture draws a mermaid fence as a PNG where Images draws (ADR-0092).
+	// nil keeps every fence on the box-art lane (ADR-0063); so does a
+	// session that draws no images, whatever this holds.
+	Picture diagram.Picture
+	// CellAspect reads a cell's height over its width, at start and on
+	// every resize (ADR-0092 §4); false when the terminal reports no
+	// pixels. It must never write to the terminal.
+	CellAspect func() (float64, bool)
 	// Theme is "dark", "light", or "notty" (plain: no colors anywhere).
 	// It MUST be decided by the caller BEFORE the Bubble Tea program
 	// starts: background detection sends an OSC query, and once raw
@@ -317,6 +325,9 @@ type Model struct {
 	// images is the protocol this session may draw inline images with
 	// (ADR-0089 §7); termimg.None draws nothing.
 	images     termimg.Protocol
+	picture    diagram.Picture
+	cellAspect func() (float64, bool)
+	aspect     float64 // cell height over width; 0 until read
 	baseCtx    context.Context
 	cancelTurn context.CancelFunc
 	// ask is the pending ask_user dialog (ADR-0036).
@@ -408,6 +419,8 @@ func New(opts Options) Model {
 		applySetting:    opts.ApplySetting,
 		expandInput:     opts.ExpandInput,
 		images:          opts.Images,
+		picture:         opts.Picture,
+		cellAspect:      opts.CellAspect,
 		baseCtx:         opts.BaseCtx,
 		println:         opts.Printer,
 		mkRender:        opts.RenderFactory,
@@ -478,32 +491,62 @@ func newGlamourRenderer(width int, style string) func(string) string {
 		return func(s string) string { return s }
 	}
 	return func(s string) string {
-		// Mermaid fences the terminal can draw faithfully become box
-		// art in place (ADR-0042/0063) — a view-layer transform; the
-		// transcript keeps the model's source verbatim, and a fence
-		// that cannot be drawn is shown as source. The art segments
-		// must NOT pass through glamour: it word-wraps code-block
-		// lines at spaces, shearing wide art into interleaved
-		// fragments (measured for ADR-0063). They go out verbatim —
-		// the lane shell output uses — so overlong art wraps at the
-		// terminal, row by row, losing nothing.
-		var parts []string
-		for _, seg := range diagram.Split(s) {
-			if seg.Art {
-				parts = append(parts, seg.Text)
-				continue
-			}
-			if strings.TrimSpace(seg.Text) == "" {
-				continue
-			}
-			out, err := r.Render(seg.Text)
-			if err != nil {
-				out = seg.Text
-			}
-			parts = append(parts, strings.Trim(out, "\n"))
+		out, err := r.Render(s)
+		if err != nil {
+			out = s
 		}
-		return strings.Join(parts, "\n\n")
+		return strings.Trim(out, "\n")
 	}
+}
+
+// renderReply turns a reply into the segments that reach scrollback.
+// Mermaid fences are a view-layer transform; the transcript keeps the
+// model's source verbatim either way. Where this session draws images a
+// fence becomes a picture in a declared box (ADR-0092); elsewhere it is
+// box art where faithful (ADR-0042/0063), and a fence that cannot be
+// drawn is shown as source with a note. Art must NOT pass through
+// glamour: it word-wraps code-block lines at spaces, shearing wide art
+// into interleaved fragments (measured for ADR-0063). It goes out
+// verbatim — the lane shell output uses — so overlong art wraps at the
+// terminal, row by row, losing nothing. Parts are separated by one blank
+// line, as the Markdown renderer separates paragraphs.
+func (m *Model) renderReply(text string) []Segment {
+	var pic diagram.Picture
+	if m.images != termimg.None {
+		pic = m.picture
+	}
+	var out []Segment
+	add := func(seg Segment) {
+		if len(out) > 0 {
+			out = append(out, Segment{})
+		}
+		out = append(out, seg)
+	}
+	for _, seg := range diagram.Split(text, pic) {
+		switch {
+		case seg.PNG != nil:
+			add(m.pictureSegment(seg))
+		case seg.Art:
+			add(Segment{Text: seg.Text})
+		case strings.TrimSpace(seg.Text) != "":
+			// Trimmed here too: the blank line between parts is add's.
+			add(Segment{Text: strings.Trim(m.render(seg.Text), "\n")})
+		}
+	}
+	return out
+}
+
+// pictureSegment declares a diagram's box and builds its payload. A
+// payload that cannot be built shows the fence as source with the note:
+// the source is already out of the text, so a silent refusal would lose
+// both (ADR-0092 §5).
+func (m *Model) pictureSegment(seg diagram.Segment) Segment {
+	box := termimg.DiagramBox(seg.W, seg.H, m.width, m.aspect)
+	payload, err := termimg.Payload(m.images, seg.PNG, box)
+	if err != nil {
+		return Segment{Text: m.render(diagram.WithNote(seg.Source, err.Error()))}
+	}
+	return Segment{Text: payload, Rows: box.Rows}
 }
 
 // Init implements tea.Model.
@@ -573,6 +616,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = height
 		m.ta.SetWidth(width - 2)
 		m.render = m.mkRender(width)
+		if m.cellAspect != nil {
+			// An ioctl, not a query: safe while Bubble Tea owns stdin.
+			if a, ok := m.cellAspect(); ok {
+				m.aspect = a
+			}
+		}
 		switch {
 		case first:
 			// ADR-0003: clear to a known cursor row, then print the
@@ -668,7 +717,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Purpose != "" {
 			line += "\n" + m.st.hint.Render("  "+m.msgs.PurposePrefix+m.purposeText(msg.Purpose))
 		}
-		return m, m.emitJoined(m.takeLive(), line)
+		return m, m.emitAfterLive(m.takeLive(), line)
 
 	case ToolDone:
 		// The tool returned: stall detection re-arms, and the status
@@ -802,7 +851,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		var cmds []tea.Cmd
-		if c := m.emitJoined(m.takeLive(), tail); c != nil {
+		if c := m.emitAfterLive(m.takeLive(), tail); c != nil {
 			cmds = append(cmds, c)
 		}
 		m.phase = phaseInput
@@ -1189,17 +1238,34 @@ func expandTabs(s string) string {
 	return out.String()
 }
 
-// takeLive renders the accumulated streamed text as Markdown and
-// returns it for scrollback (empty when nothing streamed). Rendering
-// happens exactly once per segment — the live region shows raw text,
-// the flush shows the pretty version.
-func (m *Model) takeLive() string {
+// takeLive renders the accumulated streamed text as Markdown, pictures
+// and art, and returns it for scrollback (nil when nothing streamed).
+// Rendering happens exactly once per segment — the live region shows raw
+// text, the flush shows the pretty version. A diagram is rendered here,
+// on the update path (ADR-0092 §8).
+func (m *Model) takeLive() []Segment {
 	text := strings.TrimSpace(m.live.String())
 	m.live.Reset()
 	if text == "" {
-		return ""
+		return nil
 	}
-	return m.render(text)
+	return m.renderReply(text)
+}
+
+// emitAfterLive is emitJoined behind the flushed reply: ONE write, the
+// reply's segments first — a picture keeps its declared rows — then the
+// lines that follow it.
+func (m *Model) emitAfterLive(live []Segment, parts ...string) tea.Cmd {
+	segs := live
+	for _, p := range parts {
+		if p != "" {
+			segs = append(segs, Segment{Text: p})
+		}
+	}
+	if len(segs) == 0 {
+		return nil
+	}
+	return m.emitSegments(segs)
 }
 
 // emitJoined prints consecutive scrollback lines as ONE write. Every
@@ -2231,7 +2297,7 @@ func (m Model) setAutoMode(input, echo string) (tea.Model, tea.Cmd) {
 		if want {
 			state = strings.TrimSpace(m.msgs.AutoOn)
 		}
-		return m, m.emitJoined(m.takeLive(), echo, m.st.tool.Render(state))
+		return m, m.emitAfterLive(m.takeLive(), echo, m.st.tool.Render(state))
 	}
 	return m.toggleAutoMode(echo)
 }
@@ -2251,7 +2317,7 @@ func (m Model) toggleAutoMode(echo string) (tea.Model, tea.Cmd) {
 	// One write: the notice lands after the output it followed, with a
 	// single repaint. The echo goes between them — after whatever was
 	// still streaming, before the answer to it.
-	return m, m.emitJoined(m.takeLive(), echo, m.st.tool.Render(state))
+	return m, m.emitAfterLive(m.takeLive(), echo, m.st.tool.Render(state))
 }
 
 // updateAsk handles the ask_user dialog (ADR-0036): the approval

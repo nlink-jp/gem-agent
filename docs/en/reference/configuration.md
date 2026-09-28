@@ -92,6 +92,14 @@ language = "auto"          # auto | ja | en (ADR-0029 — see interface.md)
 show_thoughts = true       # live thought summaries in the TUI (ADR-0033)
 images = "auto"            # inline images: auto | off | iterm | kitty (ADR-0089)
 
+[tui.diagram]              # the font mermaid pictures are drawn in (ADR-0092); read at start,
+                           # only where images draw. A setting that does not load is one
+                           # banner warning and the default font, never a refusal to start
+# font = "/path/Font.ttc"      # body text; default: Hiragino Sans W3
+# font_name = "Font-Regular"   # face in the file, by full or PostScript name
+# bold_font = "/path/Font.ttc" # entity names, frame titles; default: the body face
+# bold_font_name = "Font-Bold"
+
 [telemetry]
 enabled = false            # audit logging (ADR-0035) — see below
 backend = "gcp"            # gcp (Cloud Logging, default) | otlp-grpc | otlp-http

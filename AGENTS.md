@@ -174,8 +174,9 @@ internal/session/  JSONL transcript: logger + resume loader (ADR-0005); GEMAGENT
                    is exported at startup beside GEMAGENT_WORK_DIR (ADR-0069 addendum 2)
 internal/repl/     paste-safe input reader (plain REPL, non-TTY fallback)
 internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate
-internal/diagram/  mermaid → terminal box art (ADR-0042/0063): fence scanner,
-                   shape normalization, wrongness guards — no size gates
+internal/diagram/  mermaid fences in a reply (ADR-0042/0063/0092): fence scanner;
+                   pictures via mermaid-render where images draw (picture.go),
+                   box art with shape normalization and wrongness guards elsewhere
 internal/termimg/  inline images in a DECLARED box (ADR-0089): capability
                    detection before Bubble Tea owns stdin, iTerm2/kitty
                    payloads carrying the box, Fit clamping the width. The
@@ -703,7 +704,7 @@ a new hook) is an architecture change and takes the same rows as a
   concrete and as long as the prohibitions — a test enforces it.
 - **internal/diagram is a view-layer rewrite, and the model is told
   nothing about it** (ADR-0063, superseding ADR-0043's tool). The TUI's
-  Markdown renderer calls `diagram.Rewrite` on completed segments: a
+  `renderReply` calls `diagram.Split` on completed segments: a
   mermaid fence that draws faithfully becomes box art in place, one that
   does not stays source with a one-line reader-facing note, unsupported
   types pass silently. There is no width or height gate — overflow wraps
@@ -713,6 +714,18 @@ a new hook) is an architecture change and takes the same rows as a
   the fence prohibition and a format instruction were measured steering
   the model into hand-drawn box art (ADR-0063 context). The transcript
   keeps the model's source verbatim.
+- **Where images draw, a fence is a picture, never art** (ADR-0092).
+  `diagram.Split(text, pic)` offers every fence to the Picture as written
+  (before the art table); a refusal is source + note — no fallback to art
+  (B4). The TUI's `renderReply` returns `[]Segment`; a picture segment
+  carries its source, so `pictureSegment` shows source + note when the
+  payload cannot be built (a silent `drawImage`-style refusal would lose
+  both). The box is `termimg.DiagramBox` (1 em = 1 line, width from the
+  cell aspect read by `termimg.CellAspect`, an ioctl — never a query);
+  tall pictures are not shrunk (operator's decision). The font is read in
+  cmd (`diagramPicture`), only when images draw; a bad `[tui.diagram]`
+  is a banner warning, never a refusal to start. Rendering runs in
+  `takeLive` on the update path, under `recover` in `drawPicture`.
 - **internal/diagram is three rules, and nothing else** (ADR-0042 §5) —
   translate (deterministic mapping of constructs the renderer's grammar
   rejects; each entry a syntax fact), fit (one layout: fits or source),
