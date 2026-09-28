@@ -129,12 +129,14 @@ the runtime" is amended: an ioctl read of the cell size enters, a query does not
   **Measured (2026-09-29, operator):** iTerm2 scrolls a picture taller than
   the screen correctly; kitty does not — it clipped the picture's lower part
   and the frame was drawn over it, while every picture shorter than the
-  screen scrolled correctly on both. That is wrong, not ugly, so a tall
-  picture is **drawn in bands** of at most half the screen
+  screen scrolled correctly on both. That is wrong, not ugly, so on kitty a
+  tall picture is **drawn in bands** of at most half the screen
   (`termimg.Bands`), back to back at one scale and the box's columns: each
   band is a picture a screen holds, the text keeps its size, and the whole
-  still scrolls out. The encoded bands together may not pass
-  `termimg.MaxBytes`.
+  still scrolls out. Measured again: bands fixed kitty, and on iTerm2 they
+  showed seams and a missing lower-right corner — so iTerm2, which scrolls
+  a tall picture correctly, gets it whole. The encoded payloads together
+  may not pass `termimg.MaxBytes`.
 - **A resize after a picture is emitted** does not redraw it: pictures already
   in scrollback keep the box they were emitted with, as text does.
 

@@ -207,3 +207,14 @@ func TestSizeReportReadsCellAspect(t *testing.T) {
 		t.Errorf("a report without pixels changed the aspect to %v", got)
 	}
 }
+
+// iTerm2 gets a tall picture whole: it scrolls one correctly, and bands
+// there showed seams and a missing corner (measured, ADR-0092 §4).
+func TestTallPictureIsWholeOnITerm2(t *testing.T) {
+	m := replyModel(Options{Images: termimg.ITerm2, Picture: fakePicture})
+	m.height = 40
+	segs := m.renderReply("```mermaid\nflowchart TD\n  tall --> B\n```")
+	if len(segs) != 1 || segs[0].Rows != 100 {
+		t.Errorf("%d segments (first %d rows), want one of 100", len(segs), segs[0].Rows)
+	}
+}

@@ -48,9 +48,9 @@ on iTerm2 and kitty (`[tui].images`), mermaid-render draws the fence as
 the model wrote it — flowchart / graph, sequenceDiagram and erDiagram,
 any labels a font has — and the picture is shown with one em of its text
 as one line of the terminal's, its width from the cell's own shape. A
-picture wider than the terminal shrinks; a taller one is not shrunk: it
-is drawn in bands of at most half the screen, and its top scrolls into the
-scrollback like a long reply's. Anything the
+picture wider than the terminal shrinks; a taller one is not shrunk (on
+kitty it is drawn in bands of at most half the screen), and its top scrolls
+into the scrollback like a long reply's. Anything the
 engine refuses — a syntax error, a construct it does not draw (nested
 subgraphs, for now), a character no font has, a limit, a PNG over 2 MiB,
 a layout that breaks its own checks — is shown as source with the note;

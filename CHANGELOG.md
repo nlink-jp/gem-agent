@@ -11,8 +11,8 @@
   and non-ASCII sequence labels included. One em of diagram text is one
   terminal line; the width follows the cell's shape, read with an ioctl
   (`TIOCGWINSZ`), never a terminal query. A picture wider than the
-  terminal shrinks; a taller one scrolls, drawn in bands of at most half the
-  screen (kitty clips a picture taller than the screen). Anything the engine refuses is
+  terminal shrinks; a taller one scrolls — on kitty drawn in bands of at most
+  half the screen, since kitty clips a picture taller than the screen. Anything the engine refuses is
   shown as source with the one-line note, never as box art; a picture
   never disappears with its source. `[tui.diagram]` picks the font
   (default Hiragino Sans W3 / W6); a setting that does not load is a

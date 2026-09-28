@@ -539,11 +539,13 @@ func (m *Model) renderReply(text string) []Segment {
 	return out
 }
 
-// pictureSegments declares a diagram's box and builds its payloads: one
-// per band of at most half the screen (termimg.Bands), since kitty clips a
-// picture taller than the screen and draws the frame over it (measured,
-// ADR-0092 §4); the bands abut into the whole picture and each scrolls like
-// any other. The encoded bands together may not pass termimg.MaxBytes. A
+// pictureSegments declares a diagram's box and builds its payloads. On
+// kitty a tall picture goes out as bands of at most half the screen
+// (termimg.Bands): kitty clips a picture taller than the screen and draws
+// the frame over it, and the bands abut into the whole picture. On iTerm2
+// it goes out whole: iTerm2 scrolls a tall picture correctly, and bands
+// there showed seams and a missing corner (both measured, ADR-0092 §4).
+// The encoded payloads together may not pass termimg.MaxBytes. A
 // picture that cannot become payloads shows the fence as source with the
 // note: the source is already out of the text, so a silent refusal would
 // lose both (§5).
@@ -561,7 +563,11 @@ func (m *Model) pictureSegments(seg diagram.Segment) []Segment {
 	box := termimg.DiagramBox(b.Dx(), b.Dy(), m.width, m.aspect)
 	var out []Segment
 	total := 0
-	for _, band := range termimg.Bands(b.Dy(), box, bandRows(m.height)) {
+	maxRows := box.Rows
+	if m.images == termimg.Kitty {
+		maxRows = bandRows(m.height)
+	}
+	for _, band := range termimg.Bands(b.Dy(), box, maxRows) {
 		var buf bytes.Buffer
 		if err := png.Encode(&buf, sub.SubImage(image.Rect(b.Min.X, b.Min.Y+band.Y0, b.Max.X, b.Min.Y+band.Y1))); err != nil {
 			return fail("encoding the picture: " + err.Error())
