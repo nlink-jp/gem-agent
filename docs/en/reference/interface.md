@@ -56,7 +56,9 @@ subgraphs, for now), a character no font has, a limit, a PNG over 2 MiB,
 a layout that breaks its own checks — is shown as source with the note;
 it never falls back to box art. The font is `[tui.diagram]`
 (configuration.md). Elsewhere — no image protocol, `-p`, the plain REPL —
-nothing changes.
+nothing changes. Known limitation: narrowing the window loses the pictures
+on the screen at that moment (text survives in the scrollback; so do older
+pictures on kitty), because the TUI clears the screen on a shrink.
 
 A positional argument is the first interactive turn (ADR-0064):
 `gem-agent "run the tests"` submits it once the banner has printed —

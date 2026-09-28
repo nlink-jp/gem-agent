@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-09-29; not yet implemented) |
+| Status | **Accepted** (2026-09-29; implemented) |
 | Date | 2026-09-28 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -139,6 +139,17 @@ the runtime" is amended: an ioctl read of the cell size enters, a query does not
   may not pass `termimg.MaxBytes`.
 - **A resize after a picture is emitted** does not redraw it: pictures already
   in scrollback keep the box they were emitted with, as text does.
+  **Measured (2026-09-29, operator):** narrowing the window loses the
+  pictures that were on the screen at that moment — kitty deletes them,
+  iTerm2 leaves black space — while text survives in the scrollback, and
+  both terminals pile black space into the scrollback, with text alone as
+  well. The cause is not this lane: the TUI clears the whole screen on a
+  shrink to sweep the input frame's re-wrapped leftovers (ADR-0021), and an
+  image does not survive a clear the way text does. `/show` pictures take
+  the same path. The operator chose to ship this as a **known limitation**
+  and to revisit the shrink clear in its own ADR, measured on both
+  terminals — clearing only the frame's rows rather than the screen is the
+  candidate.
 
 ### 5. Failure shows the source, never nothing
 
@@ -236,6 +247,10 @@ the operator asks for diagrams in their instructions when they want them.
   moves `golang.org/x/sys` and `golang.org/x/text` up one minor version.
   mermaid-render is released first, with the §5 check and the §6 bounded reads,
   and gem-agent adopts a tagged version.
+- Known limitation (measured, §4): narrowing the window loses the pictures on
+  the screen at that moment, and leaves black space in the scrollback — the
+  TUI's shrink clear, which text survives and images do not. It is revisited
+  in its own ADR.
 - The reply renderer's type changes; every caller of `takeLive` handles segments.
   The withdrawn-claim test's reason for "stops rendering the reply as one piece"
   (which says the renderer was never changed) is rewritten in the same commit.

@@ -21,6 +21,14 @@
   returns segments with declared rows, so a picture is counted like a
   tool image (ADR-0089).
 
+### Known limitations
+
+- Narrowing the window loses the pictures on the screen at that moment and
+  leaves black space in the scrollback (text survives; on kitty, older
+  pictures do too). The TUI clears the screen on a shrink (ADR-0021), and
+  an image does not survive a clear; `/show` pictures are affected the
+  same way. Measured on iTerm2 and kitty; to be revisited in its own ADR.
+
 ## [0.84.2] - 2026-09-22
 
 ### Fixed
