@@ -187,6 +187,55 @@ holds, ADR-0024 — and the capture shows no empty row in the history after
 it, so the lines printed next took it back rather than pushing it up. None of
 this is a reading of iTerm2 or kitty.
 
+**iTerm2 and kitty, by hand** (the operator, 2026-09-29, one run per arm on
+each, narrowing by a drag; iTerm2 219×117 → about 140, kitty 269×77 → about
+176; stale copies counted per copy, so several glued on one row count
+separately):
+
+| Terminal | Arm | Pictures (by eye) | Stale frame copies | Black space | Lost text |
+|---|---|---|---|---|---|
+| iTerm2 | A clear | both kept | 7 (one per shrinking report) | 565 rows | none |
+| iTerm2 | B none | both kept | 4 drafts and fragments, glued into one row | 0 | none |
+| iTerm2 | C erase | both kept | 2 drafts glued into one row (in each of two runs) | 0 | none |
+| kitty | A clear | the on-screen one erased with its markers; the one above drawn a picture's height below its markers | 0 | 0 | 49 lines — everything on the screen |
+| kitty | B none | both kept, in place | 1 draft | 0 | none |
+| kitty | C erase | both kept, in place | 1 draft | 0 | none |
+
+**Driven** (`resizeprobe -auto`, a new window at 160×45, nobody at the
+keyboard, 2026-09-29): one step to 106 — kitty A lost 23 lines, PIC-2 and its
+markers exactly as by hand, B left 1 draft, C left nothing; iTerm2 C left
+nothing at the width equal to the drawn input line (158) and one column wider;
+eight steps 160 → 106 at 200 ms (iTerm2's own report interval) left nothing
+on either; at 30 ms kitty coalesced them into one report and left nothing,
+iTerm2 reported all eight and left one empty row in the history but no stale
+copy; fifty-four one-column steps at 10 ms left nothing on either.
+
+What the readings answer:
+
+1. **The black space is the clear.** iTerm2 moves the screen into the
+   scrollback on `ESC[2J`, so every shrinking report in a drag (iTerm2 sends
+   one about every 200 ms) pushes one nearly empty screen with a frame copy
+   into it. kitty erases in place, so it piles nothing — and loses whatever
+   text and pictures were on the screen instead. Neither B nor C put black
+   space anywhere.
+2. **A reflow alone keeps the pictures**, on both terminals, in place. Every
+   picture lost or moved was lost or moved by the clear.
+3. **The stale rows lie directly above where the renderer resumes**, as
+   assumed: B's leftovers sit there on both terminals, and C removed them in
+   every driven run.
+4. **iTerm2 reports a drag about every 200 ms; kitty sends one report per
+   drag.** At 200 ms a flush runs between reports, so a sweep describes one
+   reflow.
+
+Not yet explained: by hand, C still left one or two stale drafts on both
+terminals, where no driven run did — including runs that hit the width the
+first by-hand iTerm2 readings pointed at, and a column-by-column drag. A
+first reading, that iTerm2 gives a line exactly as wide as the screen two
+rows, was refuted by the driven runs. What a mouse drag does that a driven
+resize does not is open; the likeliest difference is that a live drag keeps
+changing the width while the program paints for a report already stale. The
+one empty row in iTerm2's 30 ms run is also open.
+
 ## Decision
 
 **Pending the operator's readings.** The criteria are set now, so the
