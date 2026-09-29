@@ -386,6 +386,12 @@ The criteria, as set before measuring:
   not read, which drops a highlight, cosmetically.
 - The writer's record (trace and arms) is kept only when a probe calls
   `EnableTrace`; a session's writer keeps nothing.
+- Checked by hand by the operator (2026-09-29) with the built binaries, not
+  the probe — gem-agent `v0.85.1-30-g096ebef` and lagent
+  `v0.11.0-5-g14b81c0` — on iTerm2 and kitty, a `/show` picture on the
+  screen: the picture kept, no stale input box, no empty rows in the
+  scrollback, widening back fine. A mermaid picture was not part of that
+  check.
 - lagent has the same shrink clear (its `internal/tui/model.go`). The TUI's
   scrollback accounting is a shared mechanism (AGENTS.md, "The sibling
   runtime"), so the decision is ported there in the same piece of work, as
