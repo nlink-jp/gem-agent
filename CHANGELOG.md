@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Mind maps are drawn as pictures** where the terminal draws images
+  (mermaid-render v0.5.0): the tree on two sides of the root, a colour per
+  branch, every node shape, labels wrapped as mermaid wraps them. A label
+  with emphasis, an icon written in its text or math shows the source with
+  a note. The box-art lane has no mind map and shows its source, as before.
+
+### Fixed
+
+- An ER or state label with emphasis the previous rule missed
+  (`_snake_case_`) shows the source with a note instead of a picture with
+  the underscores (mermaid-render v0.5.0).
+
 ## [0.88.0] - 2026-09-29
 
 ### Added
