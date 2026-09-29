@@ -2,6 +2,7 @@ package tui
 
 import (
 	"reflect"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nlink-jp/gem-agent/internal/inert"
@@ -103,14 +104,31 @@ var walkKinds = map[reflect.Kind]bool{
 	reflect.Float64: true, reflect.Chan: true,
 }
 
-// inertRenderer holds every renderer the factory builds to the escapes a
-// renderer writes: SGR, and nothing else. It is applied once, to the
-// factory, so the renders at resize and the note on a refused picture are
-// covered without a call at any of them.
-func inertRenderer(mk func(int) func(string) string) func(int) func(string) string {
+// inertRenderer holds every renderer the factory builds to the escapes that
+// renderer writes: SGR for the dark and light styles, nothing at all for the
+// plain one (measured, ADR-0093 §2). It is applied once, to the factory, so
+// the renders at resize and the note on a refused picture are covered
+// without a call at any of them.
+//
+// An SGR in the output is closed at its end. glamour's plain style prints an
+// HTML block as its decoded text with no reset after it, and nothing below
+// resets either, so a decoded SGR 8 (conceal) stayed open over the event
+// line and the approval dialog that followed — the command included
+// (independent review, reproduced). The reset bounds any style to the reply
+// it came in.
+func inertRenderer(mk func(int) func(string) string, plain bool) func(int) func(string) string {
 	return func(width int) func(string) string {
 		render := mk(width)
-		return func(s string) string { return inert.Styled(render(s)) }
+		if plain {
+			return func(s string) string { return inert.String(render(s)) }
+		}
+		return func(s string) string {
+			out := inert.Styled(render(s))
+			if strings.Contains(out, "\x1b[") {
+				out += "\x1b[0m"
+			}
+			return out
+		}
 	}
 }
 
@@ -127,14 +145,18 @@ func inertStrings(f func(string) []string) func(string) []string {
 	return func(prefix string) []string { return inertLines(f(prefix)) }
 }
 
-// inertSettings makes the panel's content inert. Every field is shown. A
-// field that also keys an edit (a tool, an exclusion) changes only if it
-// holds a control character: a tool name the MCP layer has held to Gemini's
-// alphabet never does, and a server's raw function name that did would be
-// written as the operator saw it.
+// inertSettings makes the panel's content inert. Tool, Exclude and Group
+// are not shown — they key the edit the row sends back — and keep their
+// bytes: rewritten, an exclusion of a function whose raw name held a control
+// character named a function that does not exist and silently took no hold
+// (independent review, reproduced). Label is what the panel shows for them.
 func inertSettings(d SettingsData) SettingsData {
+	raw := d.Rows
 	v := reflect.ValueOf(&d).Elem()
 	inertValue(v)
+	for i := range d.Rows {
+		d.Rows[i].Tool, d.Rows[i].Exclude, d.Rows[i].Group = raw[i].Tool, raw[i].Exclude, raw[i].Group
+	}
 	return d
 }
 
@@ -188,6 +210,11 @@ func inertExpand(f func(string) (string, bool, string)) func(string) (string, bo
 		return turn, handled, inert.String(errMsg)
 	}
 }
+
+// inertLine makes one Options string inert: the footer prints the project
+// directory's name on every repaint, and a directory is named by whoever
+// created it — an archive, or the model.
+func inertLine(s string) string { return inert.String(s) }
 
 // inertLines makes each banner line inert: startup notes quote MCP server
 // output and paths.

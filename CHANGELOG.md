@@ -18,8 +18,9 @@
   once, where text enters the TUI; the text of a sequence stays visible
   (`]0;…`), so nothing the operator could have read is hidden. The
   Markdown renderer's output is held to the colour codes it writes
-  itself, because it decodes character references such as `&#27;` into
-  real controls. The plain REPL and `-p` do the same when their stream
+  itself — none in the plain theme — and closed at the reply's end,
+  because it decodes character references such as `&#27;` into real
+  controls. The plain REPL and `-p` do the same when their stream
   is a terminal and stay byte-for-byte to a pipe or a file (ADR-0042 §4
   amended). The transcript is unchanged. `make escprobe` re-runs the
   measurement: 0 of 95 after the change.

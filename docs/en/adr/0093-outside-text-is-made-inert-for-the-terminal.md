@@ -7,7 +7,7 @@
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Independent pre-release review, 2026-09-29: model text reaches the terminal with escape sequences intact — `\x1b]0;T\a` passes the glamour renderer untouched in both the `notty` and `dark` styles, in plain paragraphs, code blocks and mermaid fences, and nothing sanitizes `TextDelta` before the live region or scrollback. Not introduced by the ADR-0092 work |
-| Revised because | The independent review of the implementation found the premise of §1 false one step downstream: goldmark decodes the character reference `&#27;` into a real ESC after the ingress has seen only `&#27;`, and a real terminal obeyed it (title, clipboard, CR). §2 now holds the output of every transform over outside text to the escapes the transform itself writes. The same pass found a data race in the writer, callbacks and residuals §4 had misjudged, a walker narrower than its claim, and an architecture test an import alias passed; each is answered below |
+| Revised because | The independent review of the implementation found the premise of §1 false one step downstream: goldmark decodes the character reference `&#27;` into a real ESC after the ingress has seen only `&#27;`, and a real terminal obeyed it (title, clipboard, CR). §2 now holds the output of every transform over outside text to the escapes the transform itself writes. The same pass found a data race in the writer, callbacks and residuals §4 had misjudged, a walker narrower than its claim, and an architecture test an import alias passed; each is answered below. A second pass found no non-SGR control reachable from model or tool text, and three smaller gaps — a decoded conceal left open by the plain theme over the approval dialog, the footer's project name, and settings keys rewritten — also answered below |
 | Relates to | [ADR-0002](0002-tui.md) (the inline TUI), [ADR-0042](0042-terminal-diagrams.md) (**§4 is amended here**), [ADR-0089](0089-inline-images-declare-their-height.md) (§6 named this surface as pre-existing and not repaired; it is repaired here for the TUI), [ADR-0033](0033-turn-observability.md) (thoughts), [ADR-0047](0047-declared-purpose.md) (purpose), [ADR-0036](0036-ask-user-tool.md) (the ask dialog) |
 
 ## Context
@@ -129,7 +129,12 @@ the slash handler (`/memory` lists what `save_memory` saved), the skill
 expander's error, the completion candidates (files and skills the model or a
 project can have created), the settings panel's content and the line an edit
 prints (which can quote an MCP server's reconnect error), and the banner lines
-(startup notes quote MCP server output and paths). A test enumerates the
+(startup notes quote MCP server output and paths). So are the text fields of
+`Options` the footer prints on every repaint — the model name and the project
+directory, whose name is whoever created the directory's. The settings rows'
+`Tool`, `Exclude` and `Group` are not shown and key the edit a row sends back,
+so they keep their bytes: rewritten, an exclusion named a function that does
+not exist and silently took no hold. A test enumerates the
 function fields of `Options` and fails while one is neither wrapped nor exempt
 for a stated reason.
 
@@ -146,7 +151,12 @@ the TUI runs over outside text is held to the escapes that transform writes
 itself — measured: glamour's `dark` and `light` styles write SGR (`CSI … m`)
 and nothing else, `notty` writes nothing, and the box-art renderer writes
 nothing. `inert.Styled` keeps SGR sequences and removes every other control as
-§1 does; box art gets §1 as is. The hold is applied once, where the renderer is
+§1 does, and an output that holds an SGR is closed with a reset, so a style
+cannot outlive the reply it came in; the plain theme and box art get §1 as is.
+The reset is not decoration: glamour's plain style prints an HTML block's
+decoded text with no reset after it, and a decoded SGR 8 (conceal) left open
+that way hid the event line and the approval dialog that followed, the command
+included (second review pass, reproduced). The hold is applied once, where the renderer is
 built (the factory `New` stores), so the render on resize and the note on a
 refused picture are covered without a call at any print site. The diagram note
 is rendered through the held renderer, so `noteSafe` stays what it is — a
@@ -186,14 +196,17 @@ safe for that.
 - **`gem-agent -p … | cat`, `| less -R`.** The operator hands raw bytes to a
   terminal by choosing the pipe, as with `ls | cat`.
 - **A colour in a rendered reply.** An SGR decoded from `&#27;[…m` survives
-  the hold on the renderer (§2): it can colour or conceal text in the model's
-  own reply. It cannot move the cursor, erase, retitle, write the clipboard or
+  the hold on the dark and light renderers (§2): it can colour or conceal text
+  in the model's own reply, and the reset at the reply's end stops it there. It cannot move the cursor, erase, retitle, write the clipboard or
   draw, and the dialogs that show a command are not Markdown-rendered.
 - **`GEMAGENT_MCP_STDERR=1`.** The opt-in debug switch hands an MCP server's
   stderr to the terminal as the process's own; it is for debugging a server.
 - **The telemetry exporter's errors**, written straight to stderr — possibly
   carrying a collector's response text (not confirmed).
 - **What the operator types**: the input box and the argv first message.
+- **An MCP server writing to the terminal itself.** Servers are programs the
+  operator runs, started without a new session, so one could open `/dev/tty`;
+  that is code execution, not text this runtime shows, and outside this record.
 - **The transcript.** Verbatim by design: it is the record, and the evidence.
 - **Other subcommands** (`sessions`, `workdirs`, `trust`) print the operator's
   own state.
@@ -215,7 +228,11 @@ safe for that.
   field fails the build instead of passing unexamined.
 - A test renders character references for every removed class through the
   real renderer in all three themes and asserts no control reaches the screen.
-- A test enumerates the function fields of `Options` (§2).
+- A test enumerates the function and text fields of `Options` (§2).
+- A test renders an HTML block holding a decoded conceal in all three themes
+  and asserts the plain theme prints no escape and no style is open when the
+  event line prints; another hands the factory a renderer that leaves a style
+  open, so the reset is tested apart from glamour's own habit of resetting.
 - An architecture test pins the importers of `internal/inert` — by import
   path, so an alias does not pass — to the two ingress files, so a print site
   that starts sanitizing on its own fails the build rather than hiding a gap.

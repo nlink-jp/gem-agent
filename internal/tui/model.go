@@ -430,8 +430,8 @@ func New(opts Options) Model {
 		width:           80,
 		banner:          inertLines(opts.Banner),
 		initialInput:    opts.InitialInput,
-		modelName:       opts.ModelName,
-		projectDir:      opts.ProjectDir,
+		modelName:       inertLine(opts.ModelName),
+		projectDir:      inertLine(opts.ProjectDir),
 	}
 	if m.baseCtx == nil {
 		m.baseCtx = context.Background()
@@ -453,7 +453,7 @@ func New(opts Options) Model {
 			return newGlamourRenderer(width, theme)
 		}
 	}
-	m.mkRender = inertRenderer(m.mkRender)
+	m.mkRender = inertRenderer(m.mkRender, theme == "notty")
 	m.render = m.mkRender(m.width)
 	return m
 }
