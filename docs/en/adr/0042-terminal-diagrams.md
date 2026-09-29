@@ -8,6 +8,11 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator: a mermaid block in the chat is unreadable without pasting it into a renderer, yet "don't draw diagrams" is the wrong fix; opening a browser for chat content feels wrong too — tell the model what the terminal can render, draw those inline, show the rest as source, leave files unrestricted |
 
+*Amended by ADR-0093: §4's verbatim output is verbatim to a pipe or a
+file; when the plain REPL's or `-p`'s stream is a terminal, control
+characters in the model's text are removed first — the `ls -q` / `ls -w`
+convention — because a terminal executes some of the bytes it is sent.*
+
 ## Context
 
 glamour renders a ```` ```mermaid ```` fence as an ordinary code block, so

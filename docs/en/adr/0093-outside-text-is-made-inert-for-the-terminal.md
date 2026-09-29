@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-09-29) |
+| Status | **Proposed** (2026-09-29) — implemented on main, unreleased; awaiting the operator's decision |
 | Date | 2026-09-29 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

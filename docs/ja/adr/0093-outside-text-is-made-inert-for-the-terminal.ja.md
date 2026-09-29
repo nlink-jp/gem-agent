@@ -2,7 +2,7 @@
 
 | 項目 | 値 |
 |-------|-----|
-| Status | **Proposed**（2026-09-29） |
+| Status | **Proposed**（2026-09-29）— main に実装済み・未リリース。操作者の判断待ち |
 | Date | 2026-09-29 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

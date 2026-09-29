@@ -143,6 +143,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// Text from outside the runtime reaches a terminal inert and a pipe
+	// verbatim (ADR-0093 §3) — before the first print, so every one after
+	// it is covered.
+	inertStreams(cmd, terminalWriter)
 	// Startup warnings are teed: they hit stderr immediately (plain
 	// REPL, one-shot, early failures), but the TUI's first ClearScreen
 	// wipes that copy — a broken skill or unreadable memory flashed for

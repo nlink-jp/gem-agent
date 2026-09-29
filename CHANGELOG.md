@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+
+- **Text from outside the runtime reaches the terminal inert**
+  (ADR-0093). The model's reply, its thoughts, a tool call's detail and
+  purpose, the approval and ask dialogs, `!` output and every other
+  string a TUI message carries reached the terminal with its escape
+  sequences intact: measured on tmux, 58 of 80 hostile deliveries
+  retitled the window, wrote the clipboard buffer (OSC 52), erased the
+  screen, moved the cursor, or — in the approval dialog — hid the start
+  of a command behind a CR or the rest of it behind an unterminated OSC.
+  C0 controls other than tab and newline, DEL, C1 and the bidi
+  embeddings, overrides and isolates are now removed once, at the TUI's
+  ingress; the text of a sequence stays visible (`]0;…`), so nothing the
+  operator could have read is hidden. The plain REPL and `-p` do the
+  same when their stream is a terminal and stay byte-for-byte to a pipe
+  or a file (ADR-0042 §4 amended). The transcript is unchanged.
+  `make escprobe` re-runs the measurement: 0 of 80 after the change.
+
 ## [0.85.0] - 2026-09-29
 
 ### Added

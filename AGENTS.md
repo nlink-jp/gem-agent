@@ -118,9 +118,10 @@ internal/agent/    tool-calling loop, approval dispatch, nonce wrapping, history
                    compaction (compact.go, ADR-0006)
 internal/tools/    built-in tools, path confinement, lane-aware exec injection, Register
 internal/inert/    the one predicate that makes outside text inert for a terminal
-                   (ADR-0093): control characters out, nothing else. Called at
-                   the TUI's ingress — internal/tui/inert.go: every message
-                   string, by reflection, at the top of Update
+                   (ADR-0093): control characters out, nothing else. Callers are
+                   pinned to the ingresses — internal/tui/inert.go (every message
+                   string, by reflection, at the top of Update) and
+                   cmd/inertstreams.go (plain REPL / -p streams, terminal only)
 internal/bounded/  the one place a read, listing or process output is capped —
                    every primitive returns the `more` fact (ADR-0073 §4)
 internal/archtest/ AST tests pinning confined opens, bounded reads and the
