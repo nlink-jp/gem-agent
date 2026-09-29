@@ -62,6 +62,9 @@ func TestAnalyzeAgainstCapturedRuns(t *testing.T) {
 func TestAnalyzeCountsEachReading(t *testing.T) {
 	lines := []string{
 		"whatever the tab held before",
+		"PROBE-START arm=clear — an earlier run the scrollback clear did not remove",
+		"┃ DRAFT~SENTINEL of that run",
+		"PROBE-END",
 		"",
 		"\x1b[1mPROBE-START arm=erase proto=kitty size=100x30\x1b[0m",
 		"H001 history",

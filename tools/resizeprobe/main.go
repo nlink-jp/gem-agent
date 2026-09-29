@@ -143,9 +143,17 @@ var (
 
 // analyze reads a copy of the tab's text. Only rows between PROBE-START
 // and PROBE-END count: below the end is the live frame and the probe's own
-// report, above the start whatever the tab held before.
+// report, above the start whatever the tab held before. The LAST start
+// counts: a terminal that ignored the probe's scrollback clear still holds
+// the runs before it.
 func analyze(lines []string) Report {
 	r := Report{Missing: map[string][]int{}}
+	for i := len(lines) - 1; i >= 0; i-- {
+		if armMark.MatchString(strings.TrimRight(ansi.Strip(lines[i]), " \t\r")) {
+			lines = lines[i:]
+			break
+		}
+	}
 	seen := map[string]map[int]bool{}
 	max := map[string]int{}
 	var z *Zone
