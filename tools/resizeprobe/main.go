@@ -132,6 +132,11 @@ type Report struct {
 
 var (
 	numbered = regexp.MustCompile(`^([HPAB])(\d{3}) `)
+	// The tail of a long numbered line, where a copy keeps the terminal's
+	// soft wrap as a line break (tmux capture-pane -J joins it; a
+	// terminal's own copy may not). Counting it as stray would report
+	// history as a stale frame.
+	tail = regexp.MustCompile(`^[~ ]+$`)
 	picMark  = regexp.MustCompile(`^PIC-(\d+) (BEGIN|END)`)
 	armMark  = regexp.MustCompile(`^PROBE-START arm=(\S+)`)
 )
@@ -198,6 +203,8 @@ func analyze(lines []string) Report {
 				max[m[1]] = n
 			}
 			z.Numbered++
+		case tail.MatchString(line):
+			// the rest of a long numbered line
 		case strings.HasPrefix(line, "AFTER-") || strings.HasPrefix(line, "PROBE-"):
 			// markers
 		default:

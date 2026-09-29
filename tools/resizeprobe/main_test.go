@@ -77,6 +77,7 @@ func TestAnalyzeCountsEachReading(t *testing.T) {
 		"─── a border fragment",                 // stray, not a sentinel
 		"AFTER-SHRINK size=66x30",
 		"A001 ~~~~ ~~~~",
+		"~~~~ ~~~~", // its soft-wrapped tail, copied as a line of its own
 		"RESIZE-2: WIDEN the window again now",
 		"AFTER-GROW size=100x30",
 		"B001 history",

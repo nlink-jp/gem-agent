@@ -165,6 +165,28 @@ or kitty pictures, so it answers the text questions for tmux only — a
 control that the arms and the analyzer work, not a reading of either
 terminal.
 
+### Readings so far
+
+tmux 3.7c, `resizeprobe -drive`, a 120×30 pane narrowed to 80 and widened
+back, 2026-09-29 (the captures are `tools/resizeprobe/testdata`, replayed by
+its test):
+
+| Arm | Stale frame rows after the narrowing | Black space | Missing lines |
+|---|---|---|---|
+| A clear | 2 — the draft and the footer, in the history | 0 | 0 |
+| B none | 1 — the draft's first wrapped row | 0 | 0 |
+| C erase | 0 | 0 | 0 |
+
+tmux keeps a cleared screen in its history, so today's clear leaves a whole
+copy of the frame there; B confirms, for tmux, question 3's assumption —
+the stale row lies directly above where the renderer resumed — and C removed
+it without touching a line. Watched on the screen, A also drew the frame one
+row above its pinned place, with two empty rows below it; C left one empty
+row more than usual between history and the frame — the gap the counter
+holds, ADR-0024 — and the capture shows no empty row in the history after
+it, so the lines printed next took it back rather than pushing it up. None of
+this is a reading of iTerm2 or kitty.
+
 ## Decision
 
 **Pending the operator's readings.** The criteria are set now, so the
