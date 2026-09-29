@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.89.0] - 2026-09-30
+
 ### Added
 
 - **Mind maps are drawn as pictures** where the terminal draws images
