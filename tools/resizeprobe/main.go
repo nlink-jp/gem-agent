@@ -64,6 +64,12 @@ const (
 	sentinelDraft = "DRAFT~SENTINEL"
 )
 
+// Set from flags; the run and the driver both read them.
+var (
+	theme    = "notty"
+	draftLen = "long"
+)
+
 func main() {
 	arm := flag.String("arm", "clear", "the shrink arm to run: clear (today), none, erase (ADR-0094)")
 	analyzeIn := flag.Bool("analyze", false, "read a copy of the tab's text on stdin and print the readings")
@@ -84,6 +90,8 @@ func main() {
 	pace := flag.Duration("pace", time.Second, "-auto: the pause between narrowing steps; tens of milliseconds is a drag")
 	out := flag.String("out", "dist/resizeprobe", "-auto: where screenshots, the text and the report go")
 	coalesce := flag.Duration("coalesce", 0, "hold size reports back until none has come for this long, then deliver the last (kitty's own behaviour)")
+	flag.StringVar(&theme, "theme", "notty", "the TUI theme: notty (no colours, the default), dark or light — a colour theme shows the input line's highlight")
+	flag.StringVar(&draftLen, "draft", "long", "the draft typed into the input box: long (most of the width, so it re-wraps) or short (a few words, as an idle session has)")
 	trace := flag.String("trace", "", "write the sweep writer's trace (views, flushes, arms, sweeps) to this file")
 	linger := flag.Duration("linger", 0, "after the report, keep the program (and so its window) alive this long")
 	save := flag.String("save", "", "-drive only: also write each arm's capture to this directory as tmux-<arm>.txt")
@@ -507,7 +515,7 @@ func runUI(mode tui.ShrinkMode, yes bool, hold, wait, settle, coalesce time.Dura
 
 	sweep := tui.NewSweepWriter(os.Stdout)
 	model := tui.New(tui.Options{
-		Theme:      "notty", // no colours: a copy is compared as text
+		Theme:      theme, // notty by default: a copy is compared as text
 		ModelName:  sentinelModel,
 		ProjectDir: sentinelDir,
 		Images:     proto,
@@ -613,7 +621,11 @@ func script(prog *tea.Program, sweep *tui.SweepWriter, sizes *sizeLog, proto ter
 		notes = append(notes, "no size report before the start; assumed 80x24")
 	}
 	say(fmt.Sprintf("PROBE-START arm=%s proto=%s size=%dx%d", mode, protoName(proto), w, h))
-	prog.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(draftText(w))})
+	draft := draftText(w)
+	if draftLen == "short" {
+		draft = sentinelDraft + " a short draft"
+	}
+	prog.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(draft)})
 	series("H", h+10, w)
 
 	if proto != termimg.None {

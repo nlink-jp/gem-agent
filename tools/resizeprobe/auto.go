@@ -225,7 +225,7 @@ func runAuto(name string, arm string, shrink string, pace, drag, coalesce time.D
 	// window, and the report printed after the program exits, readable.
 	command := []string{self, "-arm", arm, "-yes", "-wait", "60s", "-settle", "4s",
 		"-hold", "1s", "-linger", "120s", "-trace", filepath.Join(absOr(dir), "trace.txt"),
-		"-coalesce", coalesce.String()}
+		"-coalesce", coalesce.String(), "-theme", theme, "-draft", draftLen}
 	if err := term.open(command, cols, rows); err != nil {
 		return err
 	}
