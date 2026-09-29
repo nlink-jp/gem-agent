@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // ShrinkMode is what the model does when the terminal narrows (ADR-0094).
@@ -79,6 +80,15 @@ type SweepWriter struct {
 	pending int      // rows to add to the next flush's cursor-up; 0 = none
 	flushes int
 	sweeps  int
+	arms    []Arm
+}
+
+// Arm is one shrink as the writer computed it — kept so a probe can set
+// what the terminal left against what K predicted (ADR-0094).
+type Arm struct {
+	Width int   // the width the terminal re-wrapped to
+	K     int   // the rows the drawn frame was computed to gain
+	Cells []int // each drawn line's width in cells, top to bottom
 }
 
 // NewSweepWriter wraps the terminal Bubble Tea would otherwise write to.
@@ -123,6 +133,16 @@ func (w *SweepWriter) Stats() (flushes, sweeps int) {
 	return w.flushes, w.sweeps
 }
 
+// Arms returns every shrink the writer was armed for, in order.
+func (w *SweepWriter) Arms() []Arm {
+	if w == nil {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]Arm(nil), w.arms...)
+}
+
 // note records the view the model just produced. Nil-safe: a model
 // without a writer calls it too.
 func (w *SweepWriter) note(view string) {
@@ -145,6 +165,11 @@ func (w *SweepWriter) arm(width int) (lines, k int) {
 	defer w.mu.Unlock()
 	k = grownRows(w.drawn, width)
 	w.pending = k
+	cells := make([]int, len(w.drawn))
+	for i, l := range w.drawn {
+		cells[i] = ansi.StringWidth(l)
+	}
+	w.arms = append(w.arms, Arm{Width: width, K: k, Cells: cells})
 	return len(w.drawn), k
 }
 

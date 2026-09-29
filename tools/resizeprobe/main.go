@@ -400,6 +400,12 @@ func runUI(mode tui.ShrinkMode, yes bool, hold, wait time.Duration) error {
 	for _, n := range notes {
 		fmt.Println("RESIZEPROBE-NOTE", n)
 	}
+	if arms := sweep.Arms(); len(arms) > 0 {
+		fmt.Println("sweeps armed (width re-wrapped to, K computed, the drawn frame's line widths):")
+		for i, a := range arms {
+			fmt.Printf("  %3d  width %d  K %d  cells %v\n", i+1, a.Width, a.K, a.Cells)
+		}
+	}
 	fmt.Println("size reports (the model receives these):")
 	events := sizes.all()
 	for i, e := range events {

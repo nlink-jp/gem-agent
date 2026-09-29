@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -127,6 +128,11 @@ func TestSweepWriterRewritesTheNextFlushOnce(t *testing.T) {
 	}
 	if f, s := w.Stats(); f != 3 || s != 1 {
 		t.Errorf("stats = %d flushes, %d sweeps; want 3, 1", f, s)
+	}
+	arms := w.Arms()
+	if len(arms) != 1 || arms[0].Width != 80 || arms[0].K != 1 ||
+		fmt.Sprint(arms[0].Cells) != "[0 100 6 0]" {
+		t.Errorf("arms = %+v, want one at width 80, K 1, cells [0 100 6 0]", arms)
 	}
 }
 
