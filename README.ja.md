@@ -71,7 +71,7 @@ syscall 1 回分で止まり、それ以外は有界の猶予後に放棄 — AD
 日本語 IME に優しい承認ダイアログ、`@` パス・`/` コマンド・スキル名の Tab 補完、
 `!コマンド` シェルエスケープ、回答中の mermaid フェンスのその場描画
 （画像を描ける端末では絵として、それ以外では罫線で。flowchart / sequence /
-ER / 円グラフ、日本語のラベルも。円グラフは罫線では描かずソースのまま。正しく描けないものはソースのまま）、15 のスラッシュコマンド（`/help`
+ER / 円グラフ / 状態遷移図、日本語のラベルも。円グラフと状態遷移図は罫線では描かずソースのまま。正しく描けないものはソースのまま）、15 のスラッシュコマンド（`/help`
 `/tools` `/mcp` `/auto` `/readonly` `/compact` `/settings` `/riskbook` `/usage`
 `/memory` `/skills` `/skill` `/version` `/clear` `/quit`）、出所ファーストの `/settings`
 パネル、テーマ、完全二言語のクローム（`[tui].language = auto|ja|en`）。

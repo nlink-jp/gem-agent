@@ -67,7 +67,8 @@ func TestSplitWithPicture(t *testing.T) {
 	}
 }
 
-// NewPicture draws with the engine — a pie chart too; an unsupported type
+// NewPicture draws with the engine — a pie chart and a state diagram too;
+// an unsupported type
 // is not attempted;
 // a character no font has is refused.
 func TestNewPicture(t *testing.T) {
@@ -83,7 +84,11 @@ func TestNewPicture(t *testing.T) {
 	if !attempted || why != "" || img == nil {
 		t.Errorf("a pie chart (mermaid-render v0.2.1): drawn %v, why %q, attempted %v", img != nil, why, attempted)
 	}
-	if _, _, attempted := NewPicture(font)("stateDiagram-v2\n    [*] --> A"); attempted {
+	img, why, attempted = NewPicture(font)("stateDiagram-v2\n    [*] --> 待機\n    待機 --> 完了 : 受信\n    完了 --> [*]")
+	if !attempted || why != "" || img == nil {
+		t.Errorf("a state diagram (mermaid-render v0.3.0): drawn %v, why %q, attempted %v", img != nil, why, attempted)
+	}
+	if _, _, attempted := NewPicture(font)("gantt\n    title x"); attempted {
 		t.Error("an unsupported type was attempted")
 	}
 	if _, why, _ := NewPicture(font)("flowchart TD\n    A --> 😀"); why == "" {
