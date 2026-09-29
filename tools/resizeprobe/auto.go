@@ -241,7 +241,13 @@ func asText(text string) string {
 }
 
 func (t *itermTerm) close() {
-	_, _ = osascript(fmt.Sprintf(`tell application "iTerm2" to close window id %d`, t.id))
+	// Bounded: an AppleEvent that iTerm2 cannot answer — a confirmation it
+	// is showing — must not hold the driver.
+	_, _ = osascript(fmt.Sprintf(`with timeout of 5 seconds
+	tell application "iTerm2"
+		if exists window id %d then close window id %d
+	end tell
+end timeout`, t.id, t.id))
 }
 
 // --- the run ------------------------------------------------------------

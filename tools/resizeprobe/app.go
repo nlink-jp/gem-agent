@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
@@ -89,6 +90,31 @@ func seriesCommand(prefix string, count, cols int) string {
 	return fmt.Sprintf("!sh series.sh %s %d %d", prefix, count, tildes)
 }
 
+// stopApp ends the binary the launcher recorded: SIGTERM, a moment to
+// exit, then SIGKILL. Only that pid, which this run started, is touched.
+func stopApp(pidFile string) {
+	raw, err := os.ReadFile(pidFile)
+	if err != nil {
+		return
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil || pid <= 1 {
+		return
+	}
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return
+	}
+	_ = p.Signal(syscall.SIGTERM)
+	for i := 0; i < 30; i++ {
+		if p.Signal(syscall.Signal(0)) != nil {
+			return // gone
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	_ = p.Signal(syscall.SIGKILL)
+}
+
 // hasLine reports whether any line of the terminal's text starts with p —
 // the binary's output, not its echo of the command that printed it.
 func hasLine(text, p string) bool {
@@ -142,12 +168,27 @@ func runApp(name, flavor, bin, shrink string, pace, drag time.Duration, dragTo f
 	if err != nil {
 		return err
 	}
-	command := []string{"/bin/sh", "-c", fmt.Sprintf("cd %s && exec %s --config %s --mcp off",
-		shQuote(proj), shQuote(bin), shQuote(cfg))}
+	// A launcher file rather than sh -c '…': iTerm2 splits the command it is
+	// given itself, and quoting nested inside it did not survive (measured:
+	// the binary never came up there, while kitty ran the same line).
+	launch := filepath.Join(dir, "launch.sh")
+	pidFile := filepath.Join(dir, "app.pid")
+	// The pid is the binary's: exec keeps the shell's process.
+	script := fmt.Sprintf("echo $$ > %s\ncd %s && exec %s --config %s --mcp off\n",
+		shQuote(pidFile), shQuote(proj), shQuote(bin), shQuote(cfg))
+	if err := os.WriteFile(launch, []byte(script), 0o644); err != nil {
+		return err
+	}
+	command := []string{"/bin/sh", launch}
 	if err := term.open(command, cols, rows); err != nil {
 		return err
 	}
 	defer term.close()
+	// Deferred after close, so it runs first: the binary is stopped before
+	// its window is closed. Closing a window whose process still runs made
+	// iTerm2 ask for confirmation, and the question held every later
+	// AppleScript call and screenshot (2026-09-29).
+	defer stopApp(pidFile)
 	fmt.Printf("resizeprobe -auto %s -app %s — %s, %dx%d, results in %s\n", name, flavor,
 		strings.TrimSpace(string(ver)), cols, rows, dir)
 
