@@ -84,6 +84,8 @@ func main() {
 		"a terminal that ignores it (tmux does) is reported, and the run asks for a drag instead")
 	rows := flag.Int("rows", 30, "-drive and -auto: the window's height")
 	cols := flag.Int("cols", 120, "-drive and -auto: the window's width")
+	app := flag.String("app", "", "-auto: run the BUILT BINARY instead of this probe's model — gem-agent or lagent (with -bin)")
+	bin := flag.String("bin", "", "-auto -app: the binary to run, e.g. dist/gem-agent or ../lagent/dist/lagent")
 	auto := flag.String("auto", "", "run one arm in a NEW window of this terminal (kitty, iterm2), resized, captured and read with nobody at the keyboard")
 	shrink := flag.String("shrink", "", "-auto: the widths to narrow through, as -steps spells them (fit = the widest frame line); default two-thirds")
 	drag := flag.Duration("drag", 0, "-auto: narrow by dragging the window's right edge with the mouse over this long (drag.swift; needs Accessibility) instead of -shrink")
@@ -102,6 +104,8 @@ func main() {
 	switch {
 	case *analyzeIn:
 		err = printReport(os.Stdout, analyze(readLines(os.Stdin)))
+	case *auto != "" && *app != "":
+		err = runApp(*auto, *app, *bin, *shrink, *pace, *drag, *dragTo, *cols, *rows, *out)
 	case *auto != "":
 		err = runAuto(*auto, *arm, *shrink, *pace, *drag, *coalesce, *dragTo, *cols, *rows, *out)
 	case *drive:
@@ -200,6 +204,7 @@ func analyze(lines []string) Report {
 			break
 		}
 	}
+	lines = dropEchoSeparators(lines)
 	seen := map[string]map[int]bool{}
 	max := map[string]int{}
 	var z *Zone
@@ -216,6 +221,11 @@ func analyze(lines []string) Report {
 				r.Zones = append(r.Zones, Zone{Name: "before"})
 				z = &r.Zones[len(r.Zones)-1]
 			}
+			continue
+		}
+		// The binary's echo of what was typed (-app): "! command" for a
+		// shell line, "> input" for anything else. Not history.
+		if isEcho(line) {
 			continue
 		}
 		for _, m := range markers.FindAllStringSubmatch(line, -1) {
@@ -313,6 +323,26 @@ func analyze(lines []string) Report {
 		}
 	}
 	return r
+}
+
+// isEcho reports a line the binary wrote back of what was typed (-app):
+// "! command" for a shell line, "> input" for anything else.
+func isEcho(line string) bool {
+	return strings.HasPrefix(line, "! ") || strings.HasPrefix(line, "> ")
+}
+
+// dropEchoSeparators removes the one blank row the binary puts before each
+// echo: its own layout, not black space.
+func dropEchoSeparators(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	for i, l := range lines {
+		clean := strings.TrimRight(ansi.Strip(l), " \t\r")
+		if clean == "" && i+1 < len(lines) && isEcho(strings.TrimRight(ansi.Strip(lines[i+1]), " \t\r")) {
+			continue
+		}
+		out = append(out, l)
+	}
+	return out
 }
 
 // ranges prints a sorted list of numbers as runs: P032-P077, H003.

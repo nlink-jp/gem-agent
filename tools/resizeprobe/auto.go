@@ -43,6 +43,9 @@ type terminal interface {
 	open(command []string, cols, rows int) error
 	resize(cols int) error
 	text() (string, error)
+	// send types text into the window as keystrokes; control characters
+	// (Enter "\r", Ctrl+U "\x15", Ctrl+C "\x03") go through as keys.
+	send(text string) error
 	windowID() (int, error)
 	close()
 }
@@ -105,6 +108,30 @@ func (k *kittyTerm) resize(cols int) error {
 func (k *kittyTerm) text() (string, error) {
 	out, err := k.remote("get-text", "--extent", "all")
 	return string(out), err
+}
+
+func (k *kittyTerm) send(text string) error {
+	_, err := k.remote("send-text", "--", kittyEscape(text))
+	return err
+}
+
+// kittyEscape writes text the way `kitten @ send-text` reads it: it decodes
+// backslash escapes, so a literal backslash — a printf's "\n" — has to be
+// doubled or it arrives as a newline, and a control character is sent as
+// its escape.
+func kittyEscape(text string) string {
+	var b strings.Builder
+	for _, r := range text {
+		switch {
+		case r == '\\':
+			b.WriteString(`\\`)
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&b, `\x%02x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func (k *kittyTerm) windowID() (int, error) {
@@ -181,6 +208,37 @@ func (t *itermTerm) resize(cols int) error {
 func (t *itermTerm) text() (string, error) { return osascript(t.session() + "get contents") }
 
 func (t *itermTerm) windowID() (int, error) { return t.id, nil }
+
+func (t *itermTerm) send(text string) error {
+	_, err := osascript(t.session() + "write text " + asText(text) + " newline no")
+	return err
+}
+
+// asText makes text an AppleScript expression: printable runs as quoted
+// strings, control characters as (ASCII character n), joined with &.
+func asText(text string) string {
+	var parts []string
+	var run strings.Builder
+	flush := func() {
+		if run.Len() > 0 {
+			parts = append(parts, asQuote(run.String()))
+			run.Reset()
+		}
+	}
+	for _, r := range text {
+		if r < 0x20 || r == 0x7f {
+			flush()
+			parts = append(parts, fmt.Sprintf("(ASCII character %d)", r))
+			continue
+		}
+		run.WriteRune(r)
+	}
+	flush()
+	if len(parts) == 0 {
+		return `""`
+	}
+	return strings.Join(parts, " & ")
+}
 
 func (t *itermTerm) close() {
 	_, _ = osascript(fmt.Sprintf(`tell application "iTerm2" to close window id %d`, t.id))
