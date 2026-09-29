@@ -38,7 +38,9 @@ The mechanisms that are shared today: `internal/sandbox` (the lanes,
 the scratch / persistent-file / credential lists, the file-read
 profile and its child), `internal/risk`, `internal/tools` (path
 confinement through `os.Root`, the walks, the caged reads),
-`internal/bounded`, `internal/hooks`, `internal/mcp`,
+`internal/bounded`, `internal/inert` and the TUI ingress that calls it
+(`internal/tui/inert.go`, `cmd/inertstreams.go` — ADR-0093, lagent
+ADR-0024), `internal/hooks`, `internal/mcp`,
 `internal/trustpin`, `internal/archtest`, the approval ladder in
 `internal/agent` and `internal/approve`, and — added 2026-09-17, after a
 verification pass found ADR-0089/ADR-0020 arguing it while both these lists
