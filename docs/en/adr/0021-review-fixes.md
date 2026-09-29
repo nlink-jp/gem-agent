@@ -98,7 +98,9 @@ plausible mechanism.
    (growth reflow does drift the pin in some terminals, but clearing on
    every grow erases visible content repeatedly during a drag resize —
    the existing shrink-only reset with graceful drift is the better
-   trade, and its test says so deliberately).
+   trade, and its test says so deliberately). The shrink clear itself was
+   withdrawn by [ADR-0094](0094-a-narrowing-sweeps-the-frame-not-the-screen.md),
+   which erases only the frame's re-wrapped rows.
 
 The remaining fixes ride along without decision weight: approval-dialog
 type-ahead grace, draft preservation across queued sends, shell

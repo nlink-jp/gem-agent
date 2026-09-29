@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-09-29) — measured on iTerm2 and kitty, by hand and driven; C (erase the frame's rows), D (frame rows as short as their text) and E (narrow while resizing) proposed, awaiting the operator's acceptance |
+| Status | **Accepted** (2026-09-29) — C (erase the frame's rows), D (frame rows as short as their text) and E (narrow while resizing), measured on iTerm2 and kitty by hand, driven and by mouse drag; implemented |
 | Date | 2026-09-29 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -318,7 +318,7 @@ clean on both, narrowing and widening. "Clean" is as above.
 
 ## Decision
 
-**Proposed: C, D and E together; awaiting the operator's acceptance.** D keeps
+**Accepted (2026-09-29, the operator): C, D and E together.** D keeps
 frame rows as short as their text, so an ordinary draft never wraps; E keeps
 every row short while the terminal is ahead of what it has reported; C
 erases what a long row still gained. Against the criteria, set before
@@ -351,15 +351,18 @@ The criteria, as set before measuring:
 
 ## Consequences
 
-- D and E are in the product already, as the prototypes this ADR measured:
-  the view is clipped, then shortened, and clipped narrow while a resize is
-  underway. The clear is still the product's shrink until this ADR is
-  accepted.
-- If C is adopted: `cmd` passes the writer with `tea.WithOutput` and the
-  model arms it; the clear, arm B and the seam are removed; the CHANGELOG's
-  known limitation and ADR-0092 §4 are updated to point here; AGENTS.md's
-  resize gotcha ("a genuine shrink additionally returns tea.ClearScreen
-  once") is rewritten.
+- A shrink no longer clears the screen. `cmd` builds the program with
+  `tea.WithOutput(sweep)` and hands the model the same `tui.SweepWriter`,
+  which it arms on a shrink; without a writer nothing is erased. The view
+  is clipped, then shortened (D), and clipped narrow while a resize is
+  underway (E).
+- The measurement seam was withdrawn with the choice: `ShrinkMode`, the
+  clear and arm B are gone from the product. The probe keeps two arms —
+  `erase`, the product, and `none`, a model given no writer — and the
+  clear's readings stay in this record and in `testdata/tmux-clear.txt`.
+- ADR-0092 §4, ADR-0003, ADR-0021 §9, the interface reference and AGENTS.md
+  now point here; the CHANGELOG's known limitation of v0.85.0 is resolved
+  in the next release.
 - ADR-0089's accounting is unchanged in every arm: `emitSegments`, the
   declared rows and `physicalRows` are not modified, and C only sets the
   counter to the rows it erased. D shortens the managed view only; nothing
@@ -368,7 +371,8 @@ The criteria, as set before measuring:
   drawn cut to 19 cells, for 400 ms after the last size report.
 - lagent has the same shrink clear (its `internal/tui/model.go`). The TUI's
   scrollback accounting is a shared mechanism (AGENTS.md, "The sibling
-  runtime"), so the decision is ported there in the same piece of work.
+  runtime"), so the decision is ported there in the same piece of work, as
+  its own ADR citing this one.
 
 ## Alternatives considered
 

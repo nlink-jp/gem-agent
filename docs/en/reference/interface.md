@@ -56,9 +56,10 @@ subgraphs, for now), a character no font has, a limit, a PNG over 2 MiB,
 a layout that breaks its own checks — is shown as source with the note;
 it never falls back to box art. The font is `[tui.diagram]`
 (configuration.md). Elsewhere — no image protocol, `-p`, the plain REPL —
-nothing changes. Known limitation: narrowing the window loses the pictures
-on the screen at that moment (text survives in the scrollback; so do older
-pictures on kitty), because the TUI clears the screen on a shrink.
+nothing changes. Narrowing the window keeps the pictures on the screen: only
+the rows the input box gained by re-wrapping are erased, and while the window
+is being resized the input line and the footer are drawn short, then in full
+once it stops (ADR-0094).
 
 A positional argument is the first interactive turn (ADR-0064):
 `gem-agent "run the tests"` submits it once the banner has printed —

@@ -150,7 +150,11 @@ the runtime" is amended: an ioctl read of the cell size enters, a query does not
   the same path. The operator chose to ship this as a **known limitation**
   and to revisit the shrink clear in its own ADR, measured on both
   terminals — clearing only the frame's rows rather than the screen is the
-  candidate.
+  candidate. **Resolved by [ADR-0094](0094-a-narrowing-sweeps-the-frame-not-the-screen.md)
+  (2026-09-29):** a shrink no longer clears the screen; only the rows the
+  input frame gained by re-wrapping are erased, and frame rows are kept
+  short, so pictures on the screen survive a narrowing and no black space
+  enters the scrollback — measured on both terminals.
 
 ### 5. Failure shows the source, never nothing
 
@@ -251,7 +255,7 @@ the operator asks for diagrams in their instructions when they want them.
 - Known limitation (measured, §4): narrowing the window loses the pictures on
   the screen at that moment, and leaves black space in the scrollback — the
   TUI's shrink clear, which text survives and images do not. It is revisited
-  in its own ADR.
+  in its own ADR. Resolved by [ADR-0094](0094-a-narrowing-sweeps-the-frame-not-the-screen.md).
 - The reply renderer's type changes; every caller of `takeLive` handles segments.
   The withdrawn-claim test's reason for "stops rendering the reply as one piece"
   (which says the renderer was never changed) is rewritten in the same commit.

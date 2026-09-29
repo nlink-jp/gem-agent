@@ -2,30 +2,39 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Narrowing the window no longer clears the screen** (ADR-0094). Pictures
+  on the screen — mermaid diagrams and `/show` — stay, and no empty screens
+  pile into the scrollback: v0.85.0's known limitation. A shrink now erases
+  only the rows the input box gained by re-wrapping. Measured on iTerm2 and
+  kitty, by hand, driven and by mouse drag: no stale copy of the box, no
+  empty rows, no lost line, the picture kept. Before, the same drag left
+  565 empty rows and seven copies of the box in iTerm2's scrollback, and
+  kitty lost every line and picture that was on the screen.
+
 ### Changed
 
-- **The input box's rows end where their text ends** (ADR-0094, proposed).
+- **The input box's rows end where their text ends** (ADR-0094).
   They were drawn padded with spaces to the full width, so a repaint during
   a window resize — the cursor blink is one — wrote a row as wide as the old
   width into a narrower terminal and left a stale copy of the box behind.
   The input line's highlight still spans the window, drawn as an erase to
   the edge in its colour, and now follows the window's width.
 - **While the window is being resized, the input line and the footer are
-  drawn short** (ADR-0094, proposed) — cut to 19 cells until no size report
+  drawn short** (ADR-0094) — cut to 19 cells until no size report
   has come for 400 ms, then drawn in full. iTerm2 tells the program its new
   width only about every 200 ms while it moves its screen continuously, so
   a full-width row drawn in between could land wider than the screen.
 
 ### Development
 
-- **`make resizeprobe`** (ADR-0094, proposed). Narrowing the window clears
-  the screen, which loses the pictures on it and leaves black space in the
-  scrollback (a known limitation of v0.85.0). Before the fix is
-  chosen, this probe runs the real TUI in the operator's own terminal with
-  one of three shrink behaviours — today's clear, nothing, or erasing only
-  the input frame's rows — asks for a narrowing and a widening, and counts
-  stale frames, black space and lost history from a copy of the tab's
-  text; pictures are read by eye. The product's behaviour is unchanged.
+- **`make resizeprobe`** (ADR-0094) — the instrument the fix above was
+  chosen with. It runs the real TUI in a terminal, narrows and widens the
+  window, and counts stale frames, empty rows and lost history from the
+  terminal's own text. `-auto kitty|iterm2` does it in a new window with
+  nobody at the keyboard — exact widths, a mouse drag (`-drag`), screenshots
+  and a trace of every flush — and `-drive` does the text part under tmux.
 
 ## [0.85.1] - 2026-09-29
 

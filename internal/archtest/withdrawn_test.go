@@ -54,6 +54,9 @@ var withdrawn = []struct {
 	{"検証パス 3 本", "same"},
 	{"Closed by mechanism", "narrowed by mechanism; the records say narrowed, not closed, and an INDEX line said otherwise"},
 	{"the implementation commit carries an architecture test", "it did not; the escape-site test was written after an independent pass found the promise standing alone"},
+	{"because the TUI clears the screen on a shrink", "ADR-0094: a shrink erases only the frame's re-wrapped rows; the screen is never cleared after the first frame"},
+	{"TUI が縮小時に画面を消去するためです", "same"},
+	{"additionally returns tea.ClearScreen", "same"},
 }
 
 var withdrawalMarkers = []string{

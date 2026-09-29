@@ -33,7 +33,9 @@ Keep inline rendering; add bottom-pinning on top of it:
 - **Resets**: the shrink-triggered ClearScreen zeroes the counter (the
   viewport is empty again). On growth the counter is kept — re-wrapped
   history may make the pin sit slightly above the bottom until the next
-  clear; cosmetic and self-correcting.
+  clear; cosmetic and self-correcting. (The shrink clear was withdrawn by
+  [ADR-0094](0094-a-narrowing-sweeps-the-frame-not-the-screen.md): a shrink
+  erases only the frame's re-wrapped rows and sets the counter to them.)
 
 ## Consequences
 
