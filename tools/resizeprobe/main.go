@@ -75,8 +75,13 @@ func main() {
 	steps := flag.String("steps", "", "narrow the window ITSELF (CSI 8 t) through these widths instead of asking: "+
 		"comma-separated columns, or fit / fit+N / fit-N for the widest line of the frame drawn at the time. "+
 		"a terminal that ignores it (tmux does) is reported, and the run asks for a drag instead")
-	rows := flag.Int("rows", 30, "-drive only: tmux pane height")
-	cols := flag.Int("cols", 120, "-drive only: tmux pane width")
+	rows := flag.Int("rows", 30, "-drive and -auto: the window's height")
+	cols := flag.Int("cols", 120, "-drive and -auto: the window's width")
+	auto := flag.String("auto", "", "run one arm in a NEW window of this terminal (kitty, iterm2), resized, captured and read with nobody at the keyboard")
+	shrink := flag.String("shrink", "", "-auto: the widths to narrow through, as -steps spells them (fit = the widest frame line); default two-thirds")
+	pace := flag.Duration("pace", time.Second, "-auto: the pause between narrowing steps; tens of milliseconds is a drag")
+	out := flag.String("out", "dist/resizeprobe", "-auto: where screenshots, the text and the report go")
+	linger := flag.Duration("linger", 0, "after the report, keep the program (and so its window) alive this long")
 	save := flag.String("save", "", "-drive only: also write each arm's capture to this directory as tmux-<arm>.txt")
 	flag.Parse()
 
@@ -84,12 +89,15 @@ func main() {
 	switch {
 	case *analyzeIn:
 		err = printReport(os.Stdout, analyze(readLines(os.Stdin)))
+	case *auto != "":
+		err = runAuto(*auto, *arm, *shrink, *pace, *cols, *rows, *out)
 	case *drive:
 		err = runDriver(*rows, *cols, *save)
 	default:
 		var mode tui.ShrinkMode
 		if mode, err = parseArm(*arm); err == nil {
 			err = runUI(mode, *yes, *hold, *wait, *settle, *steps)
+			time.Sleep(*linger)
 		}
 	}
 	if err != nil {
@@ -561,10 +569,16 @@ func script(prog *tea.Program, sweep *tui.SweepWriter, sizes *sizeLog, proto ter
 		say("PIC-2 END")
 	}
 
+	widest := 0
+	for _, c := range sweep.DrawnCells() {
+		if c > widest {
+			widest = c
+		}
+	}
 	var got sizeEvent
 	ok, driven := false, false
 	if len(plan) > 0 {
-		say("RESIZE-1: the probe narrows the window itself — do not touch it")
+		say(fmt.Sprintf("RESIZE-1: the probe narrows the window itself — do not touch it (widest frame line %d)", widest))
 		driven = true
 		for _, st := range plan {
 			target := st.resolve(sweep.DrawnCells())
@@ -582,7 +596,7 @@ func script(prog *tea.Program, sweep *tui.SweepWriter, sizes *sizeLog, proto ter
 			// RESIZE-1 was already printed; a second would open a second zone.
 			say("DRAG INSTEAD: the terminal did not resize itself — NARROW the window now, to about two-thirds, and wait")
 		} else {
-			say("RESIZE-1: NARROW the window now, to about two-thirds of its width, and wait")
+			say(fmt.Sprintf("RESIZE-1: NARROW the window now, to about two-thirds of its width, and wait (widest frame line %d)", widest))
 		}
 		got, ok = sizes.waitFor(func(x int) bool { return x > 0 && x < w }, settle, wait)
 		if !ok {
