@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.89.1] - 2026-09-30
+
+### Changed
+
+- A mind map's eleventh branch colour is an indigo instead of a teal the
+  fifth branch nearly shared (mermaid-render v0.5.1).
+
 ## [0.89.0] - 2026-09-30
 
 ### Added
