@@ -115,6 +115,21 @@ func TestAnalyzeCountsEachReading(t *testing.T) {
 	}
 }
 
+// iTerm2 copies a staircase as one logical line with the copies glued
+// together; every copy on it is a piece of a stale frame.
+func TestFramePiecesCountsGluedCopies(t *testing.T) {
+	glued := "┃ DRAFT~SENTINEL type t ype ┃ DRAFT~SENTINEL type ┃ DRAFT~SENTINEL type AFTER-SHRINK size=143x117"
+	if got := framePieces(glued); got != 3 {
+		t.Errorf("glued drafts = %d pieces, want 3", got)
+	}
+	if got := framePieces("RESIZEPROBE~MODEL · ctx · /RESIZEPROBE~DIR"); got != 1 {
+		t.Errorf("one footer = %d pieces, want 1", got)
+	}
+	if got := framePieces("… · /RESIZEPROBE~DIR"); got != 1 {
+		t.Errorf("a footer whose model name was covered = %d pieces, want 1", got)
+	}
+}
+
 func TestReportRefusesATextThatIsNotARun(t *testing.T) {
 	if err := printReport(&bytes.Buffer{}, analyze([]string{"hello", "world"})); err == nil {
 		t.Error("a copy with no PROBE-START must be refused, not reported as clean")

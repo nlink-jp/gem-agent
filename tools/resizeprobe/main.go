@@ -117,7 +117,7 @@ type Zone struct {
 	Blank    int      // blank rows outside pictures: black space
 	PicRows  []int    // blank rows inside each picture's markers
 	Stray    int      // rows that are neither numbered nor a marker
-	Frames   int      // stray rows carrying a frame sentinel
+	Frames   int      // stale frame pieces: each draft or footer copy, however many share a row
 	Samples  []string // the first few stray rows, as found
 	Numbered int
 }
@@ -217,10 +217,7 @@ func analyze(lines []string) Report {
 			// markers
 		default:
 			z.Stray++
-			if strings.Contains(line, sentinelModel) || strings.Contains(line, sentinelDir) ||
-				strings.Contains(line, sentinelDraft) {
-				z.Frames++
-			}
+			z.Frames += framePieces(line)
 			if len(z.Samples) < 3 {
 				z.Samples = append(z.Samples, line)
 			}
@@ -234,6 +231,19 @@ func analyze(lines []string) Report {
 		}
 	}
 	return r
+}
+
+// framePieces counts the stale frame copies on one row of a copy. iTerm2
+// re-joins a staircase into ONE logical line — four drafts and the next
+// marker glued together (measured, 2026-09-29) — so counting rows reported
+// one copy where there were four. A footer carries both of its sentinels;
+// it counts once.
+func framePieces(line string) int {
+	footers := strings.Count(line, sentinelModel)
+	if d := strings.Count(line, sentinelDir); d > footers {
+		footers = d
+	}
+	return strings.Count(line, sentinelDraft) + footers
 }
 
 func printReport(w io.Writer, r Report) error {
@@ -260,7 +270,7 @@ func printReport(w io.Writer, r Report) error {
 		}
 	}
 	fmt.Fprintln(w, "black: blank rows outside pictures. stray: rows neither numbered nor a marker;")
-	fmt.Fprintln(w, "frames: those carrying the footer or draft sentinel. A missing number is history")
+	fmt.Fprintln(w, "frames: stale draft or footer copies, counted even when several share a row. A missing number is history")
 	fmt.Fprintln(w, "the sweep erased. Picture rows are blank in a text copy; compare them across arms.")
 	return nil
 }
