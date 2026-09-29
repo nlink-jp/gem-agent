@@ -1926,7 +1926,9 @@ func (m Model) View() string {
 }
 
 func (m Model) view() string {
-	content := clipLines(m.viewContent(), m.width)
+	// Clipped, then as short as its text (ADR-0094): a row as wide as the
+	// terminal wraps when a repaint lands during a live resize.
+	content := shortRows(clipLines(m.viewContent(), m.width))
 	if m.height > 0 {
 		// The managed view must never exceed the terminal's height: a
 		// taller frame is cut by the renderer itself and the printed-line

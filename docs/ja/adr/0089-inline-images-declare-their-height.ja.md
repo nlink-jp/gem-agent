@@ -50,7 +50,7 @@
 
 領域は仮定ではなく構成する。pin の padding は `height − printed − view − 1` で、
 production はその正の分岐を「screen not full」とラベルしている
-（[model.go:1973](../../../internal/tui/model.go)）。30 行の tmux ペイン用に選んだ
+（[model.go:1975](../../../internal/tui/model.go)）。30 行の tmux ペイン用に選んだ
 filler の行数が、80 行の iTerm2 窓を分岐の反対側に置き、本記録の以前の稿はその実行を
 「full」と報告した。いま filler は端末自身の高さから計算され、各実行が何を構成したかを
 印字する。
