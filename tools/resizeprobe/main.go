@@ -53,6 +53,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/termimg"
 	"github.com/nlink-jp/gem-agent/internal/tui"
 	"github.com/nlink-jp/gem-agent/tools/imgpayload"
+	"golang.org/x/sys/unix"
 )
 
 // Sentinels no ordinary output contains: the footer prints ModelName and
@@ -539,6 +540,15 @@ func runUI(mode tui.ShrinkMode, yes bool, hold, wait, settle, coalesce time.Dura
 			return msg
 		}))
 
+	// The kernel's idea of the window size, polled far faster than the
+	// terminal reports it: whether it moves between reports decides whether
+	// a sweep can read the width the terminal is at NOW (ADR-0094).
+	stopPoll := make(chan struct{})
+	if tty != nil {
+		go pollWinsize(int(tty.Fd()), sweep, stopPoll)
+	}
+	defer close(stopPoll)
+
 	var notes []string
 	go func() {
 		notes = script(prog, sweep, sizes, proto, mode, plan, wait, settle, hold)
@@ -591,6 +601,29 @@ func runUI(mode tui.ShrinkMode, yes bool, hold, wait, settle, coalesce time.Dura
 	fmt.Println("     iTerm2: Edit > Select All, Copy, then: pbpaste | go run ./tools/resizeprobe -analyze")
 	fmt.Println("  3. What you saw while narrowing and widening, in your own words.")
 	return nil
+}
+
+// pollWinsize notes every change of TIOCGWINSZ in the writer's trace — an
+// ioctl, not a terminal query, so it is safe while Bubble Tea owns stdin.
+func pollWinsize(fd int, sweep *tui.SweepWriter, stop <-chan struct{}) {
+	var lastW, lastH uint16
+	t := time.NewTicker(2 * time.Millisecond)
+	defer t.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+		}
+		ws, err := unix.IoctlGetWinsize(fd, unix.TIOCGWINSZ)
+		if err != nil {
+			return
+		}
+		if ws.Col != lastW || ws.Row != lastH {
+			lastW, lastH = ws.Col, ws.Row
+			sweep.Note("winsize %dx%d", ws.Col, ws.Row)
+		}
+	}
 }
 
 // script is the run, sent to the program from outside its event loop.
