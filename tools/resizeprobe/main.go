@@ -127,7 +127,15 @@ type Report struct {
 	Arm     string
 	Found   bool // PROBE-START and PROBE-END were both present
 	Zones   []Zone
-	Missing map[string][]int // numbered series → numbers absent below its maximum
+	Missing map[string][]int // numbered series → numbers absent
+	// Printed is what PROBE-END says each series printed. Without it a
+	// series that lost its TAIL looked complete: kitty's clear erased the
+	// last fifty lines of one in place (2026-09-29) and the report said
+	// "none".
+	Printed map[string]int
+	// Lost names the markers the run printed and the copy does not hold;
+	// a lost RESIZE-1 silently merged two zones.
+	Lost []string
 }
 
 var (
@@ -139,6 +147,11 @@ var (
 	tail = regexp.MustCompile(`^[~ ]+$`)
 	picMark  = regexp.MustCompile(`^PIC-(\d+) (BEGIN|END)`)
 	armMark  = regexp.MustCompile(`^PROBE-START arm=(\S+)`)
+	protoArg = regexp.MustCompile(` proto=(\S+)`)
+	counts   = regexp.MustCompile(`\b([HPAB])=(\d+)`)
+	// Anywhere on the row: a terminal can glue the next line onto a stale
+	// frame's row (the none arm's AFTER-SHRINK, measured under tmux).
+	markers = regexp.MustCompile(`(PIC-\d+ (?:BEGIN|END)|RESIZE-\d|AFTER-SHRINK|AFTER-GROW)`)
 )
 
 // analyze reads a copy of the tab's text. Only rows between PROBE-START
@@ -147,7 +160,9 @@ var (
 // counts: a terminal that ignored the probe's scrollback clear still holds
 // the runs before it.
 func analyze(lines []string) Report {
-	r := Report{Missing: map[string][]int{}}
+	r := Report{Missing: map[string][]int{}, Printed: map[string]int{}}
+	marks := map[string]bool{}
+	pictures := false
 	for i := len(lines) - 1; i >= 0; i-- {
 		if armMark.MatchString(strings.TrimRight(ansi.Strip(lines[i]), " \t\r")) {
 			lines = lines[i:]
@@ -164,14 +179,35 @@ func analyze(lines []string) Report {
 			if m := armMark.FindStringSubmatch(line); m != nil {
 				started = true
 				r.Arm = m[1]
+				if p := protoArg.FindStringSubmatch(line); p != nil && p[1] != "none" {
+					pictures = true
+				}
 				r.Zones = append(r.Zones, Zone{Name: "before"})
 				z = &r.Zones[len(r.Zones)-1]
 			}
 			continue
 		}
+		for _, m := range markers.FindAllStringSubmatch(line, -1) {
+			marks[m[1]] = true
+		}
+		// A zone marker glued behind a stale frame: the frame belongs to
+		// the zone before it.
+		for _, zm := range []string{"RESIZE-1", "RESIZE-2"} {
+			if i := strings.Index(line, zm); i > 0 {
+				z.Stray++
+				z.Frames += framePieces(line[:i])
+				if len(z.Samples) < 3 {
+					z.Samples = append(z.Samples, line)
+				}
+				line = line[i:]
+			}
+		}
 		switch {
 		case strings.HasPrefix(line, "PROBE-END"):
 			r.Found = true
+			for _, c := range counts.FindAllStringSubmatch(line, -1) {
+				r.Printed[c[1]], _ = strconv.Atoi(c[2])
+			}
 		case strings.HasPrefix(line, "RESIZE-1"):
 			r.Zones = append(r.Zones, Zone{Name: "shrink"})
 			z = &r.Zones[len(r.Zones)-1]
@@ -223,14 +259,47 @@ func analyze(lines []string) Report {
 			}
 		}
 	}
-	for series, top := range max {
-		for n := 1; n < top; n++ {
+	for _, series := range []string{"H", "P", "A", "B"} {
+		// What the run says it printed, where it said; below the highest
+		// number found otherwise, which cannot see a lost tail.
+		top, whole := r.Printed[series]
+		if !whole {
+			top = max[series] - 1
+		}
+		for n := 1; n <= top; n++ {
 			if !seen[series][n] {
 				r.Missing[series] = append(r.Missing[series], n)
 			}
 		}
 	}
+	expected := []string{"RESIZE-1", "AFTER-SHRINK", "RESIZE-2", "AFTER-GROW"}
+	if pictures {
+		expected = append([]string{"PIC-1 BEGIN", "PIC-1 END", "PIC-2 BEGIN", "PIC-2 END"}, expected...)
+	}
+	for _, m := range expected {
+		if !marks[m] {
+			r.Lost = append(r.Lost, m)
+		}
+	}
 	return r
+}
+
+// ranges prints a sorted list of numbers as runs: P032-P077, H003.
+func ranges(series string, ns []int) string {
+	var out []string
+	for i := 0; i < len(ns); {
+		j := i
+		for j+1 < len(ns) && ns[j+1] == ns[j]+1 {
+			j++
+		}
+		if i == j {
+			out = append(out, fmt.Sprintf("%s%03d", series, ns[i]))
+		} else {
+			out = append(out, fmt.Sprintf("%s%03d-%s%03d", series, ns[i], series, ns[j]))
+		}
+		i = j + 1
+	}
+	return strings.Join(out, " ")
 }
 
 // framePieces counts the stale frame copies on one row of a copy. iTerm2
@@ -259,11 +328,22 @@ func printReport(w io.Writer, r Report) error {
 	for _, z := range r.Zones {
 		fmt.Fprintf(w, "%-7s %-6d %-6d %-6d %-9d %v\n", z.Name, z.Blank, z.Stray, z.Frames, z.Numbered, z.PicRows)
 	}
-	missing := "none"
-	if len(r.Missing) > 0 {
-		missing = fmt.Sprint(r.Missing)
+	var missing []string
+	for _, series := range []string{"H", "P", "A", "B"} {
+		if ns := r.Missing[series]; len(ns) > 0 {
+			missing = append(missing, fmt.Sprintf("%s (%d)", ranges(series, ns), len(ns)))
+		}
 	}
-	fmt.Fprintf(w, "missing numbered lines: %s\n", missing)
+	if len(missing) == 0 {
+		missing = []string{"none"}
+	}
+	fmt.Fprintf(w, "missing numbered lines: %s\n", strings.Join(missing, ", "))
+	if len(r.Printed) == 0 {
+		fmt.Fprintln(w, "  (PROBE-END carries no counts: a lost tail of a series cannot be seen)")
+	}
+	if len(r.Lost) > 0 {
+		fmt.Fprintf(w, "markers lost: %s\n", strings.Join(r.Lost, ", "))
+	}
 	for _, z := range r.Zones {
 		for _, s := range z.Samples {
 			fmt.Fprintf(w, "  stray in %s: %q\n", z.Name, s)
@@ -435,7 +515,9 @@ func script(prog *tea.Program, sizes *sizeLog, proto termimg.Protocol, mode tui.
 		prog.Send(tui.Output{Lines: lines})
 		time.Sleep(120 * time.Millisecond)
 	}
+	printed := map[string]int{}
 	series := func(prefix string, count, width int) {
+		printed[prefix] = count
 		batch := make([]string, 0, 10)
 		for i := 1; i <= count; i++ {
 			batch = append(batch, numberedLine(prefix, i, width))
@@ -487,7 +569,7 @@ func script(prog *tea.Program, sizes *sizeLog, proto termimg.Protocol, mode tui.
 	say(fmt.Sprintf("AFTER-GROW size=%dx%d", got.w, got.h))
 	series("B", 2*got.h, got.w)
 
-	say("PROBE-END")
+	say(fmt.Sprintf("PROBE-END printed H=%d P=%d A=%d B=%d", printed["H"], printed["P"], printed["A"], printed["B"]))
 	time.Sleep(hold)
 	return notes
 }

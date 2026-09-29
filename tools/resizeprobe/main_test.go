@@ -105,12 +105,15 @@ func TestAnalyzeCountsEachReading(t *testing.T) {
 	if got := r.Missing["H"]; len(got) != 1 || got[0] != 3 {
 		t.Errorf("missing = %v, want H003", r.Missing)
 	}
+	if strings.Join(r.Lost, "|") != "PIC-2 BEGIN|PIC-2 END" {
+		t.Errorf("lost markers = %q, want PIC-2's two (the run drew pictures)", r.Lost)
+	}
 
 	var out bytes.Buffer
 	if err := printReport(&out, r); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "map[H:[3]]") {
+	if !strings.Contains(out.String(), "H003 (1)") {
 		t.Errorf("the report does not name the missing line:\n%s", out.String())
 	}
 }
@@ -127,6 +130,57 @@ func TestFramePiecesCountsGluedCopies(t *testing.T) {
 	}
 	if got := framePieces("… · /RESIZEPROBE~DIR"); got != 1 {
 		t.Errorf("a footer whose model name was covered = %d pieces, want 1", got)
+	}
+}
+
+// kitty's clear erased the screen in place (2026-09-29): the TAIL of a
+// series and the RESIZE-1 marker went with it, and a report that looked for
+// gaps below the highest number said "none". PROBE-END now states what was
+// printed, and a lost marker is named.
+func TestAnalyzeSeesALostTailAndALostMarker(t *testing.T) {
+	r := analyze([]string{
+		"PROBE-START arm=clear proto=none size=80x24",
+		"H001 history",
+		"H002 history", // H003-H005 were on the screen when it was erased
+		"AFTER-SHRINK size=60x24",
+		"A001 history",
+		"RESIZE-2: WIDEN",
+		"AFTER-GROW size=80x24",
+		"B001 history",
+		"PROBE-END printed H=5 P=0 A=1 B=1",
+	})
+	// A zone marker glued behind a stale draft still opens its zone, and
+	// the draft is counted in the zone it was left in.
+	g := analyze([]string{
+		"PROBE-START arm=none proto=none",
+		"H001 history",
+		"┃ DRAFT~SENTINEL typeRESIZE-1: NARROW",
+		"AFTER-SHRINK size=60x24",
+		"PROBE-END printed H=1",
+	})
+	if len(g.Zones) != 2 || g.Zones[0].Frames != 1 || len(g.Lost) != 2 {
+		t.Errorf("glued marker: zones %+v lost %q (want 2 zones, 1 frame before, RESIZE-2 and AFTER-GROW lost)", g.Zones, g.Lost)
+	}
+	if got := ranges("H", r.Missing["H"]); got != "H003-H005" {
+		t.Errorf("missing H = %q, want H003-H005", got)
+	}
+	if strings.Join(r.Lost, "|") != "RESIZE-1" {
+		t.Errorf("lost = %q, want RESIZE-1", r.Lost)
+	}
+	var out bytes.Buffer
+	if err := printReport(&out, r); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"H003-H005 (3)", "markers lost: RESIZE-1"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("report lacks %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestRanges(t *testing.T) {
+	if got := ranges("P", []int{3, 32, 33, 34, 77}); got != "P003 P032-P034 P077" {
+		t.Errorf("ranges = %q", got)
 	}
 }
 
