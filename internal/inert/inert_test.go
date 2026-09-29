@@ -114,8 +114,8 @@ func TestIncompleteTail(t *testing.T) {
 	}{
 		{"", 0}, {"abc", 0}, {"あ", 0},
 		{"a\xe3", 1}, {"a\xe3\x81", 2}, {"a\xf0\x9f\x91", 3},
-		{"a\x81", 0},     // a stray continuation byte can never complete
-		{"a\xff", 0},     // nor can a byte that is never a leader
+		{"a\x81", 0}, // a stray continuation byte can never complete
+		{"a\xff", 0}, // nor can a byte that is never a leader
 		{"\x81\x81\x81", 0},
 	} {
 		if got := incompleteTail([]byte(tc.in)); got != tc.want {
