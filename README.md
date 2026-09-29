@@ -73,7 +73,8 @@ approval dialogs,
 Tab completion for `@`-paths, `/`-commands, and skill
 names, `!command` shell escape, mermaid fences drawn in place in the
 reply — as pictures where the terminal draws images (flowchart / sequence /
-ER, CJK labels included), as box art elsewhere; anything that cannot be
+ER / pie, CJK labels included), as box art elsewhere (pie stays source
+there); anything that cannot be
 drawn right stays source — fifteen slash commands (`/help`
 `/tools` `/mcp` `/auto` `/readonly` `/compact` `/settings` `/riskbook` `/usage`
 `/memory` `/skills` `/skill` `/version` `/clear` `/quit`), a provenance-first `/settings`

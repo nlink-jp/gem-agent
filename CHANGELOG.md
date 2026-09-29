@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Pie charts are drawn as pictures** where the terminal draws images
+  (mermaid-render v0.2.1): slices as mermaid draws them, every item's
+  percentage in a column beside the legend. The box-art lane has no pie and
+  shows its source, as before.
+
 ### Fixed
 
 - **A reply that renders to nothing printed a blank line** once replies

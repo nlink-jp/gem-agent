@@ -67,7 +67,8 @@ func TestSplitWithPicture(t *testing.T) {
 	}
 }
 
-// NewPicture draws with the engine; an unsupported type is not attempted;
+// NewPicture draws with the engine — a pie chart too; an unsupported type
+// is not attempted;
 // a character no font has is refused.
 func TestNewPicture(t *testing.T) {
 	font, err := raster.DefaultFont()
@@ -77,6 +78,10 @@ func TestNewPicture(t *testing.T) {
 	img, why, attempted := NewPicture(font)("flowchart TD\n    A([開始]) --> B{判定}")
 	if !attempted || why != "" || img == nil || img.Bounds().Dx() <= 0 {
 		t.Fatalf("drawn: %v, why %q, attempted %v", img != nil, why, attempted)
+	}
+	img, why, attempted = NewPicture(font)("pie title 内訳\n    \"犬\" : 3\n    \"猫\" : 1")
+	if !attempted || why != "" || img == nil {
+		t.Errorf("a pie chart (mermaid-render v0.2.1): drawn %v, why %q, attempted %v", img != nil, why, attempted)
 	}
 	if _, _, attempted := NewPicture(font)("stateDiagram-v2\n    [*] --> A"); attempted {
 		t.Error("an unsupported type was attempted")
