@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -175,6 +176,29 @@ func TestAnalyzeSeesALostTailAndALostMarker(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("report lacks %q:\n%s", want, out.String())
 		}
+	}
+}
+
+func TestParseSteps(t *testing.T) {
+	plan, err := parseSteps("fit, fit+1,fit-3, 150")
+	if err != nil {
+		t.Fatal(err)
+	}
+	drawn := []int{0, 216, 56, 0}
+	var got []int
+	for _, s := range plan {
+		got = append(got, s.resolve(drawn))
+	}
+	if fmt.Sprint(got) != "[216 217 213 150]" {
+		t.Errorf("resolved = %v", got)
+	}
+	for _, bad := range []string{"fit*2", "wide", "5"} {
+		if _, err := parseSteps(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	if plan, err := parseSteps(""); plan != nil || err != nil {
+		t.Error("no -steps must mean a drag")
 	}
 }
 

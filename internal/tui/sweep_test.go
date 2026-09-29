@@ -136,6 +136,25 @@ func TestSweepWriterRewritesTheNextFlushOnce(t *testing.T) {
 	}
 }
 
+func TestInjectAndDrawnCells(t *testing.T) {
+	term := &fakeTerm{}
+	w := NewSweepWriter(term)
+	w.note("\nabc\nfooter\n")
+	mustWrite(t, w, "\x1b[3Aframe")
+	if err := w.Inject("\x1b[8;30;80t"); err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(w.DrawnCells()); got != "[0 3 6 0]" {
+		t.Errorf("drawn cells = %s", got)
+	}
+	if f, _ := w.Stats(); f != 1 {
+		t.Errorf("an injected sequence was counted as a flush: %d", f)
+	}
+	if got := term.all(); len(got) != 2 || got[1] != "\x1b[8;30;80t" {
+		t.Errorf("terminal received %q", got)
+	}
+}
+
 // Two size reports with no flush between them: the screen still holds the
 // frame drawn before both, re-wrapped to the latest width. The second arm
 // replaces the first; adding them would sweep over real history.

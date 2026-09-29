@@ -99,6 +99,7 @@ func NewSweepWriter(out File) *SweepWriter { return &SweepWriter{out: out} }
 func (w *SweepWriter) Write(p []byte) (int, error) {
 	written := len(p)
 	w.mu.Lock()
+	defer w.mu.Unlock() // held across the write, so Inject lands between writes
 	n, isFlush := flushCursorUp(p)
 	if isFlush {
 		w.flushes++
@@ -109,7 +110,6 @@ func (w *SweepWriter) Write(p []byte) (int, error) {
 			w.sweeps++
 		}
 	}
-	w.mu.Unlock()
 	if _, err := w.out.Write(p); err != nil {
 		return 0, err
 	}
@@ -131,6 +131,27 @@ func (w *SweepWriter) Stats() (flushes, sweeps int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.flushes, w.sweeps
+}
+
+// Inject writes a sequence of the caller's own between two renderer writes
+// — never inside a flush. For probes: resizeprobe asks the terminal to
+// resize itself (CSI 8 t) this way, to reach a width a drag cannot aim at.
+func (w *SweepWriter) Inject(seq string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	_, err := io.WriteString(w.out, seq)
+	return err
+}
+
+// DrawnCells is the width in cells of each line of the frame last flushed.
+func (w *SweepWriter) DrawnCells() []int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	cells := make([]int, len(w.drawn))
+	for i, l := range w.drawn {
+		cells[i] = ansi.StringWidth(l)
+	}
+	return cells
 }
 
 // Arms returns every shrink the writer was armed for, in order.

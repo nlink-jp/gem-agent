@@ -71,6 +71,9 @@ func main() {
 	yes := flag.Bool("yes", false, "start without asking (the tab's screen and scrollback are cleared)")
 	hold := flag.Duration("hold", 2*time.Second, "keep the UI up this long after PROBE-END")
 	wait := flag.Duration("wait", 90*time.Second, "how long to wait for each resize before going on without it")
+	steps := flag.String("steps", "", "narrow the window ITSELF (CSI 8 t) through these widths instead of asking: "+
+		"comma-separated columns, or fit / fit+N / fit-N for the widest line of the frame drawn at the time. "+
+		"iTerm2 honours it; a terminal that does not is reported, and the run asks for a drag instead")
 	rows := flag.Int("rows", 30, "-drive only: tmux pane height")
 	cols := flag.Int("cols", 120, "-drive only: tmux pane width")
 	save := flag.String("save", "", "-drive only: also write each arm's capture to this directory as tmux-<arm>.txt")
@@ -85,7 +88,7 @@ func main() {
 	default:
 		var mode tui.ShrinkMode
 		if mode, err = parseArm(*arm); err == nil {
-			err = runUI(mode, *yes, *hold, *wait)
+			err = runUI(mode, *yes, *hold, *wait, *steps)
 		}
 	}
 	if err != nil {
@@ -249,7 +252,7 @@ func analyze(lines []string) Report {
 			z.Numbered++
 		case tail.MatchString(line):
 			// the rest of a long numbered line
-		case strings.HasPrefix(line, "AFTER-") || strings.HasPrefix(line, "PROBE-"):
+		case strings.HasPrefix(line, "AFTER-") || strings.HasPrefix(line, "PROBE-") || strings.HasPrefix(line, "DRAG INSTEAD"):
 			// markers
 		default:
 			z.Stray++
@@ -423,7 +426,11 @@ func (s *sizeLog) waitFor(ok func(w int) bool, settle, limit time.Duration) (siz
 	return e, false
 }
 
-func runUI(mode tui.ShrinkMode, yes bool, hold, wait time.Duration) error {
+func runUI(mode tui.ShrinkMode, yes bool, hold, wait time.Duration, steps string) error {
+	plan, err := parseSteps(steps)
+	if err != nil {
+		return err
+	}
 	if !yes {
 		fmt.Printf("resizeprobe, arm %q (ADR-0094).\n", mode)
 		fmt.Println("It CLEARS this tab's screen and scrollback, so run it in a tab you do not need.")
@@ -467,7 +474,7 @@ func runUI(mode tui.ShrinkMode, yes bool, hold, wait time.Duration) error {
 
 	var notes []string
 	go func() {
-		notes = script(prog, sizes, proto, mode, wait, hold)
+		notes = script(prog, sweep, sizes, proto, mode, plan, wait, hold)
 		prog.Quit()
 	}()
 	if _, err := prog.Run(); err != nil {
@@ -510,7 +517,8 @@ func runUI(mode tui.ShrinkMode, yes bool, hold, wait time.Duration) error {
 }
 
 // script is the run, sent to the program from outside its event loop.
-func script(prog *tea.Program, sizes *sizeLog, proto termimg.Protocol, mode tui.ShrinkMode, wait, hold time.Duration) (notes []string) {
+func script(prog *tea.Program, sweep *tui.SweepWriter, sizes *sizeLog, proto termimg.Protocol, mode tui.ShrinkMode,
+	plan []step, wait, hold time.Duration) (notes []string) {
 	say := func(lines ...string) {
 		prog.Send(tui.Output{Lines: lines})
 		time.Sleep(120 * time.Millisecond)
@@ -552,16 +560,44 @@ func script(prog *tea.Program, sizes *sizeLog, proto termimg.Protocol, mode tui.
 		say("PIC-2 END")
 	}
 
-	say("RESIZE-1: NARROW the window now, to about two-thirds of its width, and wait")
-	got, ok := sizes.waitFor(func(x int) bool { return x > 0 && x < w }, 1500*time.Millisecond, wait)
-	if !ok {
-		notes = append(notes, "no narrowing within the wait: the shrink zone measures nothing")
+	var got sizeEvent
+	ok, driven := false, false
+	if len(plan) > 0 {
+		say("RESIZE-1: the probe narrows the window itself — do not touch it")
+		driven = true
+		for _, st := range plan {
+			target := st.resolve(sweep.DrawnCells())
+			cur, _ := sizes.last()
+			_ = sweep.Inject(fmt.Sprintf("\x1b[8;%d;%dt", cur.h, target))
+			if got, ok = sizes.waitFor(func(x int) bool { return x == target }, 800*time.Millisecond, 3*time.Second); !ok {
+				notes = append(notes, fmt.Sprintf("asked for width %d and the terminal did not resize (it ignores CSI 8 t, or refused): falling back to a drag", target))
+				driven = false
+				break
+			}
+		}
+	}
+	if !driven {
+		if len(plan) > 0 {
+			// RESIZE-1 was already printed; a second would open a second zone.
+			say("DRAG INSTEAD: the terminal did not resize itself — NARROW the window now, to about two-thirds, and wait")
+		} else {
+			say("RESIZE-1: NARROW the window now, to about two-thirds of its width, and wait")
+		}
+		got, ok = sizes.waitFor(func(x int) bool { return x > 0 && x < w }, 1500*time.Millisecond, wait)
+		if !ok {
+			notes = append(notes, "no narrowing within the wait: the shrink zone measures nothing")
+		}
 	}
 	say(fmt.Sprintf("AFTER-SHRINK size=%dx%d", got.w, got.h))
 	series("A", 2*got.h, got.w)
 
 	narrow := got.w
-	say("RESIZE-2: WIDEN the window again now, and wait")
+	if driven {
+		say("RESIZE-2: the probe widens the window back itself")
+		_ = sweep.Inject(fmt.Sprintf("\x1b[8;%d;%dt", got.h, w))
+	} else {
+		say("RESIZE-2: WIDEN the window again now, and wait")
+	}
 	got, ok = sizes.waitFor(func(x int) bool { return x > narrow }, 1500*time.Millisecond, wait)
 	if !ok {
 		notes = append(notes, "no widening within the wait: the grow zone measures nothing")
@@ -572,6 +608,54 @@ func script(prog *tea.Program, sizes *sizeLog, proto termimg.Protocol, mode tui.
 	say(fmt.Sprintf("PROBE-END printed H=%d P=%d A=%d B=%d", printed["H"], printed["P"], printed["A"], printed["B"]))
 	time.Sleep(hold)
 	return notes
+}
+
+// step is one width -steps asks for: a column count, or the widest drawn
+// frame line plus an offset ("fit" — the width at which that line exactly
+// fills a row, the case iTerm2 was seen to leave a stale draft at).
+type step struct {
+	fit    bool
+	offset int // added to the fit width; the width itself when !fit
+}
+
+func (s step) resolve(drawn []int) int {
+	if !s.fit {
+		return s.offset
+	}
+	widest := 0
+	for _, c := range drawn {
+		if c > widest {
+			widest = c
+		}
+	}
+	return widest + s.offset
+}
+
+func parseSteps(spec string) ([]step, error) {
+	if spec == "" {
+		return nil, nil
+	}
+	var out []step
+	for _, tok := range strings.Split(spec, ",") {
+		tok = strings.TrimSpace(tok)
+		switch {
+		case tok == "fit":
+			out = append(out, step{fit: true})
+		case strings.HasPrefix(tok, "fit+") || strings.HasPrefix(tok, "fit-"):
+			n, err := strconv.Atoi(tok[3:])
+			if err != nil {
+				return nil, fmt.Errorf("-steps: %q is not fit+N or fit-N", tok)
+			}
+			out = append(out, step{fit: true, offset: n})
+		default:
+			n, err := strconv.Atoi(tok)
+			if err != nil || n < 20 {
+				return nil, fmt.Errorf("-steps: %q is not a width of 20 columns or more, nor fit", tok)
+			}
+			out = append(out, step{offset: n})
+		}
+	}
+	return out, nil
 }
 
 // numberedLine is short, except every fifth, which is as long as the
