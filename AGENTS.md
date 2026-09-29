@@ -186,7 +186,9 @@ internal/session/  JSONL transcript: logger + resume loader (ADR-0005); GEMAGENT
 internal/repl/     paste-safe input reader (plain REPL, non-TTY fallback)
 internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate;
                    sweep.go holds the shrink arms and SweepWriter (ADR-0094,
-                   proposed — the product still clears the screen)
+                   proposed — the product still clears the screen);
+                   shortrows.go ends every frame row at its last visible
+                   cell (a padded row wraps when a repaint lands mid-resize)
 internal/diagram/  mermaid fences in a reply (ADR-0042/0063/0092): fence scanner;
                    pictures via mermaid-render where images draw (picture.go),
                    box art with shape normalization and wrongness guards elsewhere

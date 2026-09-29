@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-09-29) — measurement arms and `make resizeprobe` built; the choice waits on the operator's readings from iTerm2 and kitty |
+| Status | **Proposed** (2026-09-29) — measured on iTerm2 and kitty, by hand and driven; C (erase the frame's rows) with D (frame rows as short as their text) proposed, awaiting the operator's acceptance |
 | Date | 2026-09-29 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -227,19 +227,92 @@ What the readings answer:
    drag.** At 200 ms a flush runs between reports, so a sweep describes one
    reflow.
 
-Not yet explained: by hand, C still left one or two stale drafts on both
-terminals, where no driven run did — including runs that hit the width the
-first by-hand iTerm2 readings pointed at, and a column-by-column drag. A
-first reading, that iTerm2 gives a line exactly as wide as the screen two
-rows, was refuted by the driven runs. What a mouse drag does that a driven
-resize does not is open; the likeliest difference is that a live drag keeps
-changing the width while the program paints for a report already stale. The
-one empty row in iTerm2's 30 ms run is also open.
+Not explained by these readings: by hand, C still left one or two stale
+drafts on both terminals, where no atomic driven resize did. The first guess,
+that iTerm2 gives a line exactly as wide as the screen two rows, was refuted
+by driven runs at exactly that width. The next section finds the cause.
+
+### The cause: a repaint at a width already gone
+
+The probe was extended to drag the window's edge with the mouse
+(`-auto -drag`, synthesized events, refused unless the window is topmost at
+the drag point) and to trace the writer: every view, every flush with the
+cursor-up it began with, every arm and sweep, and the counter the model set.
+
+- The accounting was consistent at every step: each sweep's flush began
+  with the cursor-up of the frame last drawn, and K matched the frame.
+- A mouse drag on kitty left nothing; on iTerm2 it left no stale copy but
+  two empty rows in the history, twice. iTerm2 reports a drag about every
+  200 ms while it reflows continuously; kitty reports once, at the end.
+- Holding reports back and delivering only the last, as kitty does, made
+  iTerm2 **worse**: three stale drafts glued into one row — the by-hand
+  picture. The trace shows why: while the reports were held, the renderer
+  still flushed every ~530 ms — the input box's cursor blink — at the width
+  last reported, into a terminal already narrower. The row was as wide as
+  that old width, the terminal wrapped it, and the renderer counts rows it
+  wrote, not rows the terminal made.
+
+So the stale rows come from any repaint that lands while the terminal is
+narrower than the renderer was last told, and the reason one lands wide is
+that **every row of the input box is drawn padded with spaces to the full
+width**, whatever was typed. A hand's drag lasts long enough for several
+blinks.
+
+**D. Keep frame rows as short as their text.** Every frame row ends at its
+last visible cell (`shortRows`, after the width clip). Padding drawn on a
+background — the input line's highlight — becomes an erase to the end of the
+line under that background (terminals fill erased cells with it) followed by
+a move to the last column, so the renderer's own erase, which comes after
+the row's reset, takes only that cell: the highlight still spans the window
+and now follows its width. The input box's cursor, a reversed blank cell, is
+kept (the first prototype dropped it; kitty showed the bar in reverse and no
+cursor, and the fix was measured again). Screenshots of both terminals, with
+and without D, show the same frame.
+
+Readings with D (driven, a new window at 160×45; "short" is a few words, as
+an idle session has; "long" fills most of the width):
+
+| Case | iTerm2 | kitty |
+|---|---|---|
+| short, C, eight steps at 30 ms (iTerm2 left an empty row without D) | clean | — |
+| short, C, reports held back (three drafts without D) | clean | — |
+| short, **B** — nothing swept — eight steps at 30 ms | clean | — |
+| long, C, eight steps at 30 ms | clean | clean |
+| short, C, one step | — | clean |
+| short, C, **mouse drag** | clean | clean |
+| short, **B**, mouse drag | clean | clean |
+| long, C, mouse drag | **one stale draft** | clean |
+
+"Clean" is no stale copy, no empty row in the history and no lost line. The
+one left: the long draft was, at each report, exactly as wide as the width
+reported (152 at 152, 146 at 146), so K was 0 — and by the time the report
+arrived the terminal was already a column or two narrower and had wrapped
+it. K describes the width reported; a row near that width is where a lag
+shows.
 
 ## Decision
 
-**Pending the operator's readings.** The criteria are set now, so the
-readings decide rather than justify:
+**Proposed: C and D together; awaiting the operator's acceptance.** D removes
+the cause for every row shorter than the window — an idle session, an
+ordinary draft — so that nothing needs sweeping at all (B alone was clean
+with D); C sweeps what D cannot shorten, a row whose text is as wide as the
+window. Against the criteria below, set before measuring:
+
+- no stale frame: met on kitty in every case; on iTerm2 in every case but
+  one — a draft nearly as wide as the window, dragged with the mouse, left
+  one stale input row, because the report lags the width it describes;
+- no black space outside pictures, no missing line, the on-screen picture
+  kept: met on both, in every case.
+
+The residue is not closed by a margin on K, for the reason the third
+criterion gives: K larger than the frame grew erases real history. It is
+one row of the operator's own draft text, in a case that needs a draft as
+wide as the window and a drag, against today's cost on the same terminals —
+565 empty rows and seven frame copies on iTerm2, every line and picture on
+the screen on kitty. It is recorded as a known limitation, and accepting it
+relaxes the first criterion, which is the operator's decision.
+
+The criteria, as set before measuring:
 
 - C is adopted if, on both terminals, it leaves no stale frame, no black
   space outside picture boxes, no missing number, and the picture that was
@@ -256,8 +329,9 @@ readings decide rather than justify:
 
 ## Consequences
 
-- Until decided, the product behaves as before: `Options.Shrink` defaults to
-  the clear, and the writer is used only by the probe.
+- D is in the product already, as the prototype this ADR measured: the view
+  is clipped, then shortened. The clear is still the product's shrink until
+  this ADR is accepted.
 - If C is adopted: `cmd` passes the writer with `tea.WithOutput` and the
   model arms it; the clear, arm B and the seam are removed; the CHANGELOG's
   known limitation and ADR-0092 §4 are updated to point here; AGENTS.md's
@@ -265,7 +339,10 @@ readings decide rather than justify:
   once") is rewritten.
 - ADR-0089's accounting is unchanged in every arm: `emitSegments`, the
   declared rows and `physicalRows` are not modified, and C only sets the
-  counter to the rows it erased.
+  counter to the rows it erased. D shortens the managed view only; nothing
+  printed into the scrollback passes through it.
+- Known limitation, if accepted: on iTerm2, a draft nearly as wide as the
+  window, narrowed by a mouse drag, can leave one stale input row.
 - lagent has the same shrink clear (its `internal/tui/model.go`). The TUI's
   scrollback accounting is a shared mechanism (AGENTS.md, "The sibling
   runtime"), so the decision is ported there in the same piece of work.

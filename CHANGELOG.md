@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **The input box's rows end where their text ends** (ADR-0094, proposed).
+  They were drawn padded with spaces to the full width, so a repaint during
+  a window resize — the cursor blink is one — wrote a row as wide as the old
+  width into a narrower terminal and left a stale copy of the box behind.
+  The input line's highlight still spans the window, drawn as an erase to
+  the edge in its colour, and now follows the window's width.
+
 ### Development
 
 - **`make resizeprobe`** (ADR-0094, proposed). Narrowing the window clears
