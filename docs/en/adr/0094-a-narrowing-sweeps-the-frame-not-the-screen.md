@@ -386,12 +386,18 @@ The criteria, as set before measuring:
   not read, which drops a highlight, cosmetically.
 - The writer's record (trace and arms) is kept only when a probe calls
   `EnableTrace`; a session's writer keeps nothing.
-- Checked by hand by the operator (2026-09-29) with the built binaries, not
-  the probe — gem-agent `v0.85.1-30-g096ebef` and lagent
-  `v0.11.0-5-g14b81c0` — on iTerm2 and kitty, a `/show` picture on the
-  screen: the picture kept, no stale input box, no empty rows in the
-  scrollback, widening back fine. A mermaid picture was not part of that
-  check.
+- The built binaries were measured the same way, with nobody at the keyboard
+  (`resizeprobe -auto T -app gem-agent|lagent -bin …`, 2026-09-29): gem-agent
+  `v0.85.1-33-gfae809b` and lagent `v0.11.0-7-g55cc046`, each in a new
+  iTerm2 and kitty window with an isolated config, a draft as wide as the
+  window and two `/show` pictures, narrowed by the terminal's interface and
+  by a mouse drag and widened back. In all eight runs: no stale copy, no
+  empty row, no lost line, and the picture on the screen kept in every
+  screenshot. That covers the one part the probe's own runs did not — `cmd`
+  building the program with the writer. The pictures were `/show`'s; a
+  mermaid picture reaches the screen as the same declared-image segment
+  (ADR-0092 §3). The operator's hand check of the same binaries on both
+  terminals found nothing wrong either.
 - lagent has the same shrink clear (its `internal/tui/model.go`). The TUI's
   scrollback accounting is a shared mechanism (AGENTS.md, "The sibling
   runtime"), so the decision is ported there in the same piece of work, as
