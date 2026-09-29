@@ -429,7 +429,9 @@ a new hook) is an architecture change and takes the same rows as a
   `tui.SweepWriter` (ADR-0094) — never the screen, which lost every picture
   on it. View() also ends every row at its text (`shortRows`: a padded row
   wraps when a repaint lands mid-resize) and draws the frame narrow until
-  size reports stop (the terminal runs ahead of what it reports). Keep all
+  width-changing reports stop (the terminal runs ahead of what it reports).
+  A probe that reads the writer's `Trace()`/`Arms()` must call
+  `EnableTrace()` first — a session's writer keeps nothing. Keep all
   of it when touching View(), keep `View()` calling `sweep.note` — K is
   measured on the frame the renderer actually drew — and keep the program
   built with `tea.WithOutput(sweep)`.

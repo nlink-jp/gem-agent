@@ -336,9 +336,9 @@ type Model struct {
 	cellAspect func() (float64, bool)
 	aspect     float64 // cell height over width; 0 until read
 	sweep      *SweepWriter
-	// resizing is true from a size report until none has come for
-	// resizeSettle; resizeSeq tells the settling tick of the last report
-	// from the earlier ones (ADR-0094).
+	// resizing is true from a report that changes the width until none
+	// has come for resizeSettle; resizeSeq tells the settling tick of the
+	// last such report from the earlier ones (ADR-0094).
 	resizing   bool
 	resizeSeq  int
 	baseCtx    context.Context

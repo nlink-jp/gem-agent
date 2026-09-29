@@ -442,6 +442,21 @@ func TestHeightOnlyReportDrawsTheFrameInFull(t *testing.T) {
 	}
 }
 
+// A widening starts E too: the terminal runs ahead of a report whichever
+// way the edge moves (second review pass, 2026-09-29).
+func TestWideningDrawsTheFrameNarrow(t *testing.T) {
+	m := sized(t, &capture{}, 120, 30)
+	m.ta.SetValue(strings.Repeat("w", 90))
+	next, cmd := m.Update(tea.WindowSizeMsg{Width: 140, Height: 30})
+	m = next.(Model)
+	if !m.resizing || cmd == nil {
+		t.Fatalf("a widening: resizing %v, cmd %v", m.resizing, cmd != nil)
+	}
+	if w := widest(m.View()); w > minWidth-1 {
+		t.Errorf("a row is %d cells while widening; no row may pass %d", w, minWidth-1)
+	}
+}
+
 func widest(view string) int {
 	w := 0
 	for _, l := range strings.Split(view, "\n") {

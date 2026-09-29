@@ -370,7 +370,7 @@ The criteria, as set before measuring:
   counter to the rows it erased. D shortens the managed view only; nothing
   printed into the scrollback passes through it.
 - While the window's width is changing, every row of the frame is drawn cut
-  to 19 cells, for 400 ms after the last size report.
+  to 19 cells, for 400 ms after the last report that changed the width.
 - Residue and scope, recorded rather than closed (independent review,
   2026-09-29): measured on iTerm2, kitty and tmux only. A terminal whose
   reflow counts erased cells with a background as content could re-wrap the

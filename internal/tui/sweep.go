@@ -308,7 +308,7 @@ func (m *Model) shrinkSweep(termWidth int) {
 	m.sweep.Note("hold printed=%d lastTotal=%d height=%d", m.hold.printed, rows, m.height)
 }
 
-// resizeSettle is how long without a size report ends a resize. iTerm2
+// resizeSettle is how long without a width-changing report ends a resize. iTerm2
 // reports a drag about every 200 ms (measured); twice that is settled.
 const resizeSettle = 400 * time.Millisecond
 

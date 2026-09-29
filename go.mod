@@ -13,6 +13,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/mattn/go-runewidth v0.0.19
+	github.com/muesli/termenv v0.16.0
 	github.com/nlink-jp/mermaid-render v0.1.0
 	github.com/nlink-jp/nlk v0.5.2
 	github.com/rivo/uniseg v0.4.7
@@ -102,7 +103,6 @@ require (
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
-	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
