@@ -10,6 +10,11 @@
   width into a narrower terminal and left a stale copy of the box behind.
   The input line's highlight still spans the window, drawn as an erase to
   the edge in its colour, and now follows the window's width.
+- **While the window is being resized, the input line and the footer are
+  drawn short** (ADR-0094, proposed) — cut to 19 cells until no size report
+  has come for 400 ms, then drawn in full. iTerm2 tells the program its new
+  width only about every 200 ms while it moves its screen continuously, so
+  a full-width row drawn in between could land wider than the screen.
 
 ### Development
 

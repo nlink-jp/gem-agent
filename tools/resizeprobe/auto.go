@@ -288,6 +288,15 @@ func runAuto(name string, arm string, shrink string, pace, drag, coalesce time.D
 		if err != nil {
 			return err
 		}
+		// Mid-drag: drag.swift activates the window for 0.8 s first, so
+		// half the drag later the edge is moving.
+		midShot := make(chan struct{})
+		go func() {
+			defer close(midShot)
+			time.Sleep(800*time.Millisecond + drag/2)
+			shot("1b-mid-drag")
+		}()
+		defer func() { <-midShot }()
 		res, err := run("swift", "tools/resizeprobe/drag.swift", strconv.Itoa(id),
 			strconv.FormatFloat(dragTo, 'f', 3, 64), strconv.Itoa(int(drag.Milliseconds()))).CombinedOutput()
 		if err != nil {
