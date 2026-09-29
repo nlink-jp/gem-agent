@@ -73,7 +73,7 @@ func main() {
 	wait := flag.Duration("wait", 90*time.Second, "how long to wait for each resize before going on without it")
 	steps := flag.String("steps", "", "narrow the window ITSELF (CSI 8 t) through these widths instead of asking: "+
 		"comma-separated columns, or fit / fit+N / fit-N for the widest line of the frame drawn at the time. "+
-		"iTerm2 honours it; a terminal that does not is reported, and the run asks for a drag instead")
+		"a terminal that ignores it (tmux does) is reported, and the run asks for a drag instead")
 	rows := flag.Int("rows", 30, "-drive only: tmux pane height")
 	cols := flag.Int("cols", 120, "-drive only: tmux pane width")
 	save := flag.String("save", "", "-drive only: also write each arm's capture to this directory as tmux-<arm>.txt")

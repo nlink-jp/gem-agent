@@ -154,8 +154,8 @@ pinprobe:
 ## resize. It clears the tab's scrollback first, so use a spare tab.
 ## `pbpaste | go run ./tools/resizeprobe -analyze` counts a copy of the
 ## tab's text; `go run ./tools/resizeprobe -drive` runs every arm under tmux.
-## `-steps fit,150` makes the probe resize the window itself (CSI 8 t —
-## iTerm2 honours it), to reach a width a drag cannot aim at.
+## `-steps fit,150` makes the probe resize the window itself (CSI 8 t),
+## to reach a width a drag cannot aim at; tmux ignores it.
 resizeprobe:
 	@go run ./tools/resizeprobe -arm $(or $(ARM),clear)
 
