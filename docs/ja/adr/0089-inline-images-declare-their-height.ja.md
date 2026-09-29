@@ -10,16 +10,21 @@
 | Rewritten because | 独立検証パスが 17 件・3 クラスの指摘を返した。隣接するコードを読まずに断定したもの、生み出した計測器より広い範囲を「実測」と称したもの、そしてレーンを開きながらそれが開く次元を数え上げていないもの。17 箇所の文を直すのは根本原因の規律が禁じる対応なので、前提を測り直し、記録をその上に再構成した |
 | Relates to | [ADR-0002](0002-tui.ja.md)（Bubble Tea inline TUI）、[ADR-0003](0003-bottom-pinned-layout.ja.md) / [ADR-0028](0028-self-healing-line-counter.ja.md)（行数会計と自己修復）、[ADR-0042](0042-terminal-diagrams.ja.md) / [ADR-0063](0063-diagram-fences-render-in-place.ja.md)（view 層のレーン）、[ADR-0085](0085-credential-reads-are-operator-only.ja.md) / [ADR-0086](0086-the-kernel-reads-the-file.ja.md)（誰がファイルを開いてよいか） |
 
+*ADR-0093 による修正: §6 の既存の面 — エスケープを保ったまま端末に届く
+文字列 — を TUI について修復した。メッセージが運ぶ文字列はすべて TUI の入口で
+無害化されるので、モデルの文字列も `!` の出力も、宣言の無い画像やその他の制御を
+画面に置けない。画像エスケープを書くのは引き続き payload の組み立てだけである。*
+
 ## Context（背景）
 
 ### カウンタに見えるもの、見えないもの
 
-`emit`（[model.go:969](../../../internal/tui/model.go)）は 1 行を scrollback へ
+`emit`（[model.go:971](../../../internal/tui/model.go)）は 1 行を scrollback へ
 印字し、その物理行数を数える。bottom pin はその数に乗っている。`go.mod:14` が固定
 している版 `charmbracelet/x/ansi` v0.11.6 で実測すると、`ansi.StringWidth` は iTerm2 の
 `OSC 1337 File=`、kitty の `APC _G`、sixel の `DCS q` のいずれにも **0** を返し、
 `ansi.Strip` は空文字を返す。`ansi.Hardwrap` は 3 方式ともバイト同一で通すので、
-`wrapForScrollback`（[model.go:1178](../../../internal/tui/model.go)）は base64 の
+`wrapForScrollback`（[model.go:1180](../../../internal/tui/model.go)）は base64 の
 連なりを切り刻まない。独立検証パスはこれを実 PNG と現実的な sixel で取り直した。
 リポジトリ自身のテストは 3 方式のうち 2 つしか覆っていなかった。いまは
 `tools/imgpayload` が 3 つとも持つ。ある稿はそこで逆方向に行き過ぎ、より広い再測定
@@ -30,7 +35,7 @@
 それを主張するテストであって、照合する能力ではない。
 
 ただしカウンタは盲目ではない。初稿はそう書いていた。`physicalRows`
-（[model.go:1240](../../../internal/tui/model.go)）は `rows, cells := 1, 0` から始まる
+（[model.go:1242](../../../internal/tui/model.go)）は `rows, cells := 1, 0` から始まる
 ので、画像の行をちょうど **1 行**と計上する。端末が N 行進める間に、である。不足は
 `N` ではなく `N-1` である。
 
@@ -45,7 +50,7 @@
 
 領域は仮定ではなく構成する。pin の padding は `height − printed − view − 1` で、
 production はその正の分岐を「screen not full」とラベルしている
-（[model.go:1954](../../../internal/tui/model.go)）。30 行の tmux ペイン用に選んだ
+（[model.go:1956](../../../internal/tui/model.go)）。30 行の tmux ペイン用に選んだ
 filler の行数が、80 行の iTerm2 窓を分岐の反対側に置き、本記録の以前の稿はその実行を
 「full」と報告した。いま filler は端末自身の高さから計算され、各実行が何を構成したかを
 印字する。
@@ -214,7 +219,7 @@ view 層であり、ツールが返したものが「エスケープに見える
 
 これは**既存の面を塞いだと主張するものではない**。ツール出力は ANSI 除去なしで印字される。
 非テストコードで `ansi.Strip` が呼ばれるのはちょうど 1 箇所
-（[model.go:1245](../../../internal/tui/model.go)）、`physicalRows` の中で幅を**測る**ためだけで
+（[model.go:1247](../../../internal/tui/model.go)）、`physicalRows` の中で幅を**測る**ためだけで
 ある。よってシェル出力の生エスケープは既に端末へ届いている。既存であり、ここで広がらず、
 ここで直しもしない。
 

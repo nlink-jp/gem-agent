@@ -410,7 +410,7 @@ func New(opts Options) Model {
 		shell:           opts.Shell,
 		compact:         opts.Compact,
 		riskbook:        opts.Riskbook,
-		slash:           opts.Slash,
+		slash:           inertSlash(opts.Slash),
 		toggleAuto:      opts.ToggleAuto,
 		autoMode:        opts.AutoMode,
 		autoState:       opts.AutoState,
@@ -420,7 +420,7 @@ func New(opts Options) Model {
 		settingsData:    opts.Settings,
 		refreshSettings: opts.RefreshSettings,
 		applySetting:    opts.ApplySetting,
-		expandInput:     opts.ExpandInput,
+		expandInput:     inertExpand(opts.ExpandInput),
 		images:          opts.Images,
 		picture:         opts.Picture,
 		cellAspect:      opts.CellAspect,
@@ -428,7 +428,7 @@ func New(opts Options) Model {
 		println:         opts.Printer,
 		mkRender:        opts.RenderFactory,
 		width:           80,
-		banner:          opts.Banner,
+		banner:          inertLines(opts.Banner),
 		initialInput:    opts.InitialInput,
 		modelName:       opts.ModelName,
 		projectDir:      opts.ProjectDir,
@@ -631,7 +631,9 @@ func (m Model) firstFrameCmds() []tea.Cmd {
 
 // Update implements tea.Model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
+	// Text from outside the TUI is made inert here, once, before any
+	// branch reads it (ADR-0093).
+	switch msg := inertMsg(msg).(type) {
 	case tea.WindowSizeMsg:
 		// Inline-renderer resize is the fragile spot: when the terminal
 		// narrows, the previous frame's lines re-wrap and the renderer's

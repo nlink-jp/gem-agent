@@ -10,17 +10,23 @@
 | Rewritten because | An independent verification pass returned 17 findings in three classes: claims about adjacent code asserted without reading it, "measured" claims wider than the instrument that produced them, and a lane opened without enumerating the dimensions it opens. Patching seventeen sentences is the response the root-cause rule forbids, so the premises were measured again and the record rebuilt on them |
 | Relates to | [ADR-0002](0002-tui.md) (Bubble Tea inline TUI), [ADR-0003](0003-bottom-pinned-layout.md) / [ADR-0028](0028-self-healing-line-counter.md) (the row accounting and its self-heal), [ADR-0042](0042-terminal-diagrams.md) / [ADR-0063](0063-diagram-fences-render-in-place.md) (the view-layer lane), [ADR-0085](0085-credential-reads-are-operator-only.md) / [ADR-0086](0086-the-kernel-reads-the-file.md) (who may open a file) |
 
+*Amended by ADR-0093: §6's pre-existing surface — text reaching the
+terminal with its escapes — is repaired for the TUI. Every string a
+message carries is made inert at the TUI's ingress, so neither model text
+nor `!` output can put an undeclared image, or any other control, on the
+screen; the payload builder remains the only author of an image escape.*
+
 ## Context
 
 ### What the counter can and cannot see
 
-`emit` ([model.go:969](../../../internal/tui/model.go)) prints one line into
+`emit` ([model.go:971](../../../internal/tui/model.go)) prints one line into
 scrollback and counts its physical rows; the bottom pinning rests on that
 count. Measured against `charmbracelet/x/ansi` v0.11.6, the version
 `go.mod:14` pins: `ansi.StringWidth` returns **0** and `ansi.Strip` returns
 the empty string for an iTerm2 `OSC 1337 File=`, a kitty `APC _G` and a
 sixel `DCS q` alike. `ansi.Hardwrap` leaves all three **byte-identical**, so
-`wrapForScrollback` ([model.go:1178](../../../internal/tui/model.go)) does
+`wrapForScrollback` ([model.go:1180](../../../internal/tui/model.go)) does
 not shear a base64 run. An independent pass re-measured it with a
 real PNG and a real sixel — the repository's own test had covered two of the
 three families, and `tools/imgpayload` now carries all three. A draft then over-corrected the
@@ -33,7 +39,7 @@ widths, both settings, 126 combinations, every one byte-identical — and
 is a test that asserts it, not the ability to.
 
 The counter is not blind, though, and the first draft said it was.
-`physicalRows` ([model.go:1240](../../../internal/tui/model.go)) starts at
+`physicalRows` ([model.go:1242](../../../internal/tui/model.go)) starts at
 `rows, cells := 1, 0` and so credits an image line with exactly **one** row
 while the terminal advances N. The shortfall is `N-1`, not `N`.
 
@@ -50,7 +56,7 @@ prints the table it computed.
 
 The regime is arranged, not assumed. The pin's padding is
 `height − printed − view − 1`, and production labels the positive branch
-"screen not full" ([model.go:1954](../../../internal/tui/model.go)). A
+"screen not full" ([model.go:1956](../../../internal/tui/model.go)). A
 filler count chosen for a 30-row tmux pane left an 80-row iTerm2 window on
 the other side of that branch, and an earlier draft of this record reported
 those runs as "full". The filler is computed from the terminal's own height
@@ -254,7 +260,7 @@ what was intended.
 
 This does **not** close the existing surface: tool output is printed without
 ANSI stripping — `ansi.Strip` is called at exactly one site in non-test code
-([model.go:1245](../../../internal/tui/model.go)), inside `physicalRows`, to
+([model.go:1247](../../../internal/tui/model.go)), inside `physicalRows`, to
 *measure* — so raw escapes from shell output already reach the terminal.
 Pre-existing, not widened here, not repaired here.
 
