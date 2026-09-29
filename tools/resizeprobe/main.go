@@ -79,6 +79,8 @@ func main() {
 	cols := flag.Int("cols", 120, "-drive and -auto: the window's width")
 	auto := flag.String("auto", "", "run one arm in a NEW window of this terminal (kitty, iterm2), resized, captured and read with nobody at the keyboard")
 	shrink := flag.String("shrink", "", "-auto: the widths to narrow through, as -steps spells them (fit = the widest frame line); default two-thirds")
+	drag := flag.Duration("drag", 0, "-auto: narrow by dragging the window's right edge with the mouse over this long (drag.swift; needs Accessibility) instead of -shrink")
+	dragTo := flag.Float64("dragto", 0.66, "-auto -drag: the fraction of the width to drag the edge to")
 	pace := flag.Duration("pace", time.Second, "-auto: the pause between narrowing steps; tens of milliseconds is a drag")
 	out := flag.String("out", "dist/resizeprobe", "-auto: where screenshots, the text and the report go")
 	linger := flag.Duration("linger", 0, "after the report, keep the program (and so its window) alive this long")
@@ -90,7 +92,7 @@ func main() {
 	case *analyzeIn:
 		err = printReport(os.Stdout, analyze(readLines(os.Stdin)))
 	case *auto != "":
-		err = runAuto(*auto, *arm, *shrink, *pace, *cols, *rows, *out)
+		err = runAuto(*auto, *arm, *shrink, *pace, *drag, *dragTo, *cols, *rows, *out)
 	case *drive:
 		err = runDriver(*rows, *cols, *save)
 	default:

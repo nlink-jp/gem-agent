@@ -196,7 +196,11 @@ var widestMark = regexp.MustCompile(`widest frame line (\d+)`)
 // the probe sees each step settle; tens of milliseconds apart is a drag,
 // where the terminal is already at the next width while the program is
 // still painting for the last.
-func runAuto(name string, arm string, shrink string, pace time.Duration, cols, rows int, out string) error {
+//
+// drag > 0 narrows with the MOUSE instead (drag.swift): the window's right
+// edge pulled in to dragTo of its width over that long, so the terminal
+// reflows continuously as it does under a hand.
+func runAuto(name string, arm string, shrink string, pace, drag time.Duration, dragTo float64, cols, rows int, out string) error {
 	plan, err := parseSteps(shrink)
 	if err != nil {
 		return err
@@ -259,6 +263,19 @@ func runAuto(name string, arm string, shrink string, pace time.Duration, cols, r
 		widest, _ = strconv.Atoi(m[1])
 	}
 	shot("1-before")
+	if drag > 0 {
+		id, err := term.windowID()
+		if err != nil {
+			return err
+		}
+		res, err := run("swift", "tools/resizeprobe/drag.swift", strconv.Itoa(id),
+			strconv.FormatFloat(dragTo, 'f', 3, 64), strconv.Itoa(int(drag.Milliseconds()))).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("mouse drag (run from the repository root): %v: %s", err, strings.TrimSpace(string(res)))
+		}
+		fmt.Printf("  dragged the right edge to %.2f of the width over %s: %s\n", dragTo, drag, strings.TrimSpace(string(res)))
+		plan = nil
+	}
 	var targets []int
 	for _, st := range plan {
 		w := st.resolve([]int{widest})
