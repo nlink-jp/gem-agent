@@ -28,7 +28,7 @@
 //
 // Usage:
 //
-//	go run ./tools/resizeprobe -arm clear     # one arm, in this terminal
+//	go run ./tools/resizeprobe -arm erase     # the product's shrink, in this terminal
 //	pbpaste | go run ./tools/resizeprobe -analyze
 //	go run ./tools/resizeprobe -drive         # every arm under tmux
 package main
@@ -72,7 +72,7 @@ var (
 )
 
 func main() {
-	arm := flag.String("arm", "clear", "the shrink arm to run: clear (today), none, erase (ADR-0094)")
+	arm := flag.String("arm", "erase", "erase (the product's shrink) or none (a model given no sweep writer) (ADR-0094)")
 	analyzeIn := flag.Bool("analyze", false, "read a copy of the tab's text on stdin and print the readings")
 	drive := flag.Bool("drive", false, "run every arm under tmux, resizing the pane, and print the readings")
 	yes := flag.Bool("yes", false, "start without asking (the tab's screen and scrollback are cleared)")
@@ -107,7 +107,7 @@ func main() {
 	case *drive:
 		err = runDriver(*rows, *cols, *save)
 	default:
-		var mode tui.ShrinkMode
+		var mode armName
 		if mode, err = parseArm(*arm); err == nil {
 			err = runUI(mode, *yes, *hold, *wait, *settle, *coalesce, *steps, *trace)
 			time.Sleep(*linger)
@@ -119,18 +119,24 @@ func main() {
 	}
 }
 
-func parseArm(s string) (tui.ShrinkMode, error) {
+// armName is how the run is built. "erase" is the product: the model
+// arms the sweep writer (ADR-0094 C). "none" hands the model no writer,
+// so nothing is erased — the control for the reflow, which with frame
+// rows as short as their text is clean for ordinary input. The screen
+// clear ADR-0094 replaced is gone from the product; its readings are kept
+// in the ADR and in testdata/tmux-clear.txt.
+type armName string
+
+func parseArm(s string) (armName, error) {
 	for _, m := range arms() {
-		if m.String() == s {
+		if string(m) == s {
 			return m, nil
 		}
 	}
-	return 0, fmt.Errorf("no arm named %q (have: clear, none, erase)", s)
+	return "", fmt.Errorf("no arm named %q (have: erase, none)", s)
 }
 
-func arms() []tui.ShrinkMode {
-	return []tui.ShrinkMode{tui.ShrinkClearScreen, tui.ShrinkLeaveAlone, tui.ShrinkEraseFrame}
-}
+func arms() []armName { return []armName{"erase", "none"} }
 
 // ---------------------------------------------------------------------
 // The reading: a pure function over a copy of the tab's text.
@@ -486,7 +492,16 @@ func (c *coalescer) pass(s tea.WindowSizeMsg) bool {
 	return false
 }
 
-func runUI(mode tui.ShrinkMode, yes bool, hold, wait, settle, coalesce time.Duration, steps, trace string) error {
+// armed is the writer the model arms, or none for the "none" arm. The
+// program writes through the writer either way, so its trace is kept.
+func armed(mode armName, w *tui.SweepWriter) *tui.SweepWriter {
+	if mode == "none" {
+		return nil
+	}
+	return w
+}
+
+func runUI(mode armName, yes bool, hold, wait, settle, coalesce time.Duration, steps, trace string) error {
 	plan, err := parseSteps(steps)
 	if err != nil {
 		return err
@@ -520,8 +535,7 @@ func runUI(mode tui.ShrinkMode, yes bool, hold, wait, settle, coalesce time.Dura
 		ModelName:  sentinelModel,
 		ProjectDir: sentinelDir,
 		Images:     proto,
-		Shrink:     mode,
-		Sweep:      sweep,
+		Sweep:      armed(mode, sweep),
 	})
 	sizes := &sizeLog{}
 	var prog *tea.Program
@@ -627,7 +641,7 @@ func pollWinsize(fd int, sweep *tui.SweepWriter, stop <-chan struct{}) {
 }
 
 // script is the run, sent to the program from outside its event loop.
-func script(prog *tea.Program, sweep *tui.SweepWriter, sizes *sizeLog, proto termimg.Protocol, mode tui.ShrinkMode,
+func script(prog *tea.Program, sweep *tui.SweepWriter, sizes *sizeLog, proto termimg.Protocol, mode armName,
 	plan []step, wait, settle, hold time.Duration) (notes []string) {
 	say := func(lines ...string) {
 		prog.Send(tui.Output{Lines: lines})
@@ -844,7 +858,7 @@ func runDriver(rows, cols int, save string) error {
 			continue
 		}
 		if save != "" {
-			path := filepath.Join(save, "tmux-"+arm.String()+".txt")
+			path := filepath.Join(save, "tmux-"+string(arm)+".txt")
 			if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
 				return fmt.Errorf("save capture: %w", err)
 			}
@@ -856,7 +870,7 @@ func runDriver(rows, cols int, save string) error {
 	return nil
 }
 
-func driveOne(self string, arm tui.ShrinkMode, rows, cols, narrow int) ([]string, error) {
+func driveOne(self string, arm armName, rows, cols, narrow int) ([]string, error) {
 	const session = "resizeprobe-drive"
 	_ = run("tmux", "kill-session", "-t", session).Run()
 	cmd := fmt.Sprintf("%s -arm %s -yes -hold 8s -wait 20s", self, arm)

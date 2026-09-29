@@ -782,11 +782,12 @@ func TestViewLinesClippedToWidth(t *testing.T) {
 	}
 }
 
-// TestShrinkClearsScreenOnce: the first size report performs the ADR-0003
-// startup clear (banner follows it inside the same sequence, so nothing
-// is lost); growth must not clear; a genuine width shrink clears to sweep
-// re-wrapped stale frames and resets the line counter.
-func TestShrinkClearsScreenOnce(t *testing.T) {
+// TestOnlyTheFirstSizeReportClears: the first size report performs the
+// ADR-0003 startup clear (the banner follows it inside the same sequence, so
+// nothing is lost). Nothing after it clears — not a growth, and not a
+// shrink: ADR-0094 replaced the shrink clear, which lost every picture on
+// the screen, with an erase of the frame's own rows.
+func TestOnlyTheFirstSizeReportClears(t *testing.T) {
 	c := &capture{}
 	m := newTestModel(c)
 
@@ -803,11 +804,11 @@ func TestShrinkClearsScreenOnce(t *testing.T) {
 	m.hold.printed = 7
 	next, cmd = m.Update(tea.WindowSizeMsg{Width: 50, Height: 40})
 	m = next.(Model)
-	if !clearsScreen(cmd) {
-		t.Error("shrink must trigger a screen clear")
+	if clearsScreen(cmd) {
+		t.Error("a shrink must not clear the screen (ADR-0094)")
 	}
-	if m.hold.printed != 0 {
-		t.Errorf("shrink clear must reset the line counter, got %d", m.hold.printed)
+	if m.hold.printed != 7 {
+		t.Errorf("with nothing erased the counter must stand, got %d", m.hold.printed)
 	}
 }
 
@@ -850,11 +851,8 @@ func TestBottomPinning(t *testing.T) {
 	}
 
 	// A wide line counts its wrapped physical lines.
-	next, _ = m.Update(tea.WindowSizeMsg{Width: 20, Height: 24}) // no shrink reset on first... width shrinks: clear resets
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 20, Height: 24})
 	m = next.(Model)
-	if m.hold.printed != 0 {
-		t.Fatalf("shrink clear should reset the counter: %d", m.hold.printed)
-	}
 	before := m.hold.printed
 	cmd := m.emit(strings.Repeat("x", 45)) // 45 cells / 20 wide = 3 physical lines
 	_ = cmd

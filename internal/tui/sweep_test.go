@@ -186,12 +186,14 @@ func mustWrite(t *testing.T, w *SweepWriter, s string) {
 	}
 }
 
-// The three arms, at the model: what a genuine shrink returns and what it
-// leaves in the counter.
-func TestShrinkArms(t *testing.T) {
-	sized := func(mode ShrinkMode, sweep *SweepWriter) Model {
+// A genuine shrink, at the model: it never clears the screen (a clear lost
+// every picture on it, ADR-0094); with a writer it erases the rows the drawn
+// frame gained and sets the counter to them; without one it erases nothing
+// and leaves the counter as it was.
+func TestShrink(t *testing.T) {
+	sized := func(sweep *SweepWriter) Model {
 		c := &capture{}
-		m := New(Options{Printer: c.printer, Slash: slashStub, Shrink: mode, Sweep: sweep,
+		m := New(Options{Printer: c.printer, Slash: slashStub, Sweep: sweep,
 			RenderFactory: func(int) func(string) string { return func(s string) string { return s } }})
 		next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 		m = next.(Model)
@@ -199,32 +201,18 @@ func TestShrinkArms(t *testing.T) {
 		return m
 	}
 
-	t.Run("clear is the default and the product's", func(t *testing.T) {
-		m := sized(ShrinkClearScreen, nil)
-		next, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
-		m = next.(Model)
-		if !clearsScreen(cmd) || m.hold.printed != 0 || m.hold.lastTotal != 0 {
-			t.Errorf("clear: clears %v, printed %d, lastTotal %d", clearsScreen(cmd), m.hold.printed, m.hold.lastTotal)
-		}
-	})
-	t.Run("none sweeps nothing and keeps the counter", func(t *testing.T) {
-		m := sized(ShrinkLeaveAlone, nil)
+	t.Run("without a writer nothing is erased and the counter is kept", func(t *testing.T) {
+		m := sized(nil)
 		next, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
 		m = next.(Model)
 		if clearsScreen(cmd) || m.hold.printed != 26 || m.hold.lastTotal != 3 {
-			t.Errorf("none: clears %v, printed %d, lastTotal %d", clearsScreen(cmd), m.hold.printed, m.hold.lastTotal)
+			t.Errorf("clears %v, printed %d, lastTotal %d", clearsScreen(cmd), m.hold.printed, m.hold.lastTotal)
 		}
 	})
-	t.Run("erase without a writer falls back to the clear", func(t *testing.T) {
-		m := sized(ShrinkEraseFrame, nil)
-		if _, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30}); !clearsScreen(cmd) {
-			t.Error("an erase arm with nothing to erase through must not silently become 'none'")
-		}
-	})
-	t.Run("erase sets the counter to the rows it erased", func(t *testing.T) {
+	t.Run("with a writer the counter is set to the rows erased", func(t *testing.T) {
 		term := &fakeTerm{}
 		w := NewSweepWriter(term)
-		m := sized(ShrinkEraseFrame, w)
+		m := sized(w)
 		m.ta.SetValue(strings.Repeat("y", 90)) // the input line re-wraps at 60
 		view := m.View()
 		mustWrite(t, w, "\x1b[3Aframe")
@@ -237,22 +225,29 @@ func TestShrinkArms(t *testing.T) {
 		next, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
 		m = next.(Model)
 		if clearsScreen(cmd) {
-			t.Error("erase must not clear the screen")
+			t.Error("a shrink must not clear the screen")
 		}
 		rows := len(lines) + k
 		if m.hold.lastTotal != rows || m.hold.printed != 30-1-rows {
 			t.Errorf("counter: printed %d lastTotal %d; want %d and %d", m.hold.printed, m.hold.lastTotal, 30-1-rows, rows)
 		}
-		// The next view fills exactly the erased rows, ending where the
-		// drawn frame ended.
-		if got := len(strings.Split(m.View(), "\n")); got != rows {
+		// Once the resize settles the view fills exactly the erased rows,
+		// ending where the drawn frame ended.
+		if got := len(strings.Split(settled(m).View(), "\n")); got != rows {
 			t.Errorf("next view is %d lines, want the %d erased rows", got, rows)
 		}
+		if _, s := w.Stats(); s != 0 {
+			t.Error("the sweep is the next flush's, not the arm's")
+		}
+		mustWrite(t, w, "\x1b[2Anext")
+		if _, s := w.Stats(); s != 1 {
+			t.Error("the next flush carried no sweep")
+		}
 	})
-	t.Run("erase with nothing re-wrapped leaves everything", func(t *testing.T) {
+	t.Run("nothing re-wrapped leaves everything", func(t *testing.T) {
 		term := &fakeTerm{}
 		w := NewSweepWriter(term)
-		m := sized(ShrinkEraseFrame, w)
+		m := sized(w)
 		m.View()
 		mustWrite(t, w, "\x1b[3Aframe")
 		next, cmd := m.Update(tea.WindowSizeMsg{Width: 99, Height: 30})
@@ -260,8 +255,9 @@ func TestShrinkArms(t *testing.T) {
 		if clearsScreen(cmd) || m.hold.printed != 26 || m.hold.lastTotal != 3 {
 			t.Errorf("K=0: clears %v, printed %d, lastTotal %d", clearsScreen(cmd), m.hold.printed, m.hold.lastTotal)
 		}
+		mustWrite(t, w, "\x1b[3Anext")
 		if _, s := w.Stats(); s != 0 {
-			t.Error("nothing to sweep, yet a sweep was armed")
+			t.Error("nothing to sweep, yet a sweep was delivered")
 		}
 	})
 }
@@ -275,7 +271,7 @@ func TestRealRendererFlushesBeginWithCursorUp(t *testing.T) {
 	term := &fakeTerm{}
 	w := NewSweepWriter(term)
 	c := &capture{}
-	m := New(Options{Printer: c.printer, Slash: slashStub, Shrink: ShrinkEraseFrame, Sweep: w,
+	m := New(Options{Printer: c.printer, Slash: slashStub, Sweep: w,
 		RenderFactory: func(int) func(string) string { return func(s string) string { return s } }})
 	prog := tea.NewProgram(m, tea.WithOutput(w), tea.WithInput(nil), tea.WithoutSignalHandler())
 	done := make(chan error, 1)
@@ -292,7 +288,7 @@ func TestRealRendererFlushesBeginWithCursorUp(t *testing.T) {
 		}
 		f, _ := w.Stats()
 		t.Fatalf("the renderer made %d recognisable flushes, want %d: its flushes no longer begin with a cursor-up, "+
-			"and ShrinkEraseFrame depends on that (ADR-0094). writes: %q", f, atLeast, term.all())
+			"and the shrink sweep depends on that (ADR-0094). writes: %q", f, atLeast, term.all())
 	}
 
 	prog.Send(tea.WindowSizeMsg{Width: 100, Height: 30})

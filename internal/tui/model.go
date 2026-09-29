@@ -248,11 +248,9 @@ type Options struct {
 	// The factory is re-invoked on resize; it must never query the
 	// terminal (see DarkBackground).
 	RenderFactory func(width int) func(string) string
-	// Shrink is what a width shrink does (ADR-0094). The zero value is the
-	// product's: clear the screen. The other arms exist for measurement.
-	Shrink ShrinkMode
-	// Sweep is the output writer ShrinkEraseFrame sweeps through; the
-	// program must be built with tea.WithOutput(Sweep).
+	// Sweep is the output writer a width shrink erases the frame's
+	// re-wrapped rows through (ADR-0094); the program must be built with
+	// tea.WithOutput(Sweep). nil erases nothing.
 	Sweep *SweepWriter
 }
 
@@ -337,13 +335,12 @@ type Model struct {
 	picture    diagram.Picture
 	cellAspect func() (float64, bool)
 	aspect     float64 // cell height over width; 0 until read
-	shrink     ShrinkMode
 	sweep      *SweepWriter
 	// resizing is true from a size report until none has come for
 	// resizeSettle; resizeSeq tells the settling tick of the last report
 	// from the earlier ones (ADR-0094).
-	resizing  bool
-	resizeSeq int
+	resizing   bool
+	resizeSeq  int
 	baseCtx    context.Context
 	cancelTurn context.CancelFunc
 	// ask is the pending ask_user dialog (ADR-0036).
@@ -437,7 +434,6 @@ func New(opts Options) Model {
 		images:          opts.Images,
 		picture:         opts.Picture,
 		cellAspect:      opts.CellAspect,
-		shrink:          opts.Shrink,
 		sweep:           opts.Sweep,
 		baseCtx:         opts.BaseCtx,
 		println:         opts.Printer,
@@ -654,12 +650,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Inline-renderer resize is the fragile spot: when the terminal
 		// narrows, the previous frame's lines re-wrap and the renderer's
 		// recorded height no longer matches, leaving stale copies of the
-		// input box on screen. Two defenses: View() clips every line to
-		// the width (no line of ours ever soft-wraps), and a genuine
-		// shrink sweeps the re-wrapped leftovers once (shrinkSweep: a
-		// screen clear today; ADR-0094 measures erasing only the frame's
-		// rows). The first size report must not clear — it would wipe
-		// the banner.
+		// input box on screen. The defenses (ADR-0094): View() clips every
+		// line to the width and ends it at its text, so few rows re-wrap;
+		// while reports keep coming the frame is drawn narrow, because
+		// the terminal runs ahead of what it reports; and a genuine
+		// shrink erases the rows the drawn frame gained, never the screen
+		// — a clear lost the pictures on it. Only the first size report
+		// clears, to lay out the first frame under the banner.
 		// A terminal that reports no size (some pty harnesses, and any
 		// environment where the ioctl fails) would otherwise give the
 		// textarea a negative width and render an input box that shows
@@ -671,11 +668,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if height < minHeight {
 			height = minHeight
 		}
-		// Deliberately shrink-only (ADR-0021 §9): growth also reflows in
-		// some terminals (the counter then over-states and the input
-		// block floats until the next shrink), but clearing on every
-		// grow would erase visible content repeatedly during a drag
-		// resize — a worse trade than the graceful drift.
+		// Shrink-only (ADR-0021 §9, ADR-0094): a growth re-wraps nothing
+		// of the frame into more rows, so there is nothing to erase.
 		resized := m.sized && width < m.width
 		first := !m.sized
 		m.sized = true
@@ -707,11 +701,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Sequence(cmds...)
 		case resized:
-			cmd := m.shrinkSweep(msg.Width)
+			m.shrinkSweep(msg.Width)
 			if m.phase == phaseSettings {
 				m.settingsTotal = m.settingsPlan()
 			}
-			return m, tea.Batch(cmd, m.resizeUnderway())
+			return m, m.resizeUnderway()
 		}
 		if m.phase == phaseSettings {
 			// A grow: the same rows are free plus the new ones.

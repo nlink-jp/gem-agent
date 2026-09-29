@@ -148,8 +148,9 @@ pinprobe:
 	@go run ./tools/pinprobe -drive
 
 ## resizeprobe: what does narrowing and widening the window do to the
-## screen and the scrollback (ADR-0094)? Runs ONE shrink arm — ARM=clear
-## (today), none or erase — in this terminal: the real model on the real
+## screen and the scrollback (ADR-0094)? Runs the product's shrink —
+## ARM=erase, the default — or ARM=none, a model with no sweep writer, in
+## this terminal: the real model on the real
 ## emit path, pictures where the terminal draws, and the operator asked to
 ## resize. It clears the tab's scrollback first, so use a spare tab.
 ## `pbpaste | go run ./tools/resizeprobe -analyze` counts a copy of the
@@ -157,7 +158,7 @@ pinprobe:
 ## `-steps fit,150` makes the probe resize the window itself (CSI 8 t),
 ## to reach a width a drag cannot aim at; tmux ignores it.
 resizeprobe:
-	@go run ./tools/resizeprobe -arm $(or $(ARM),clear)
+	@go run ./tools/resizeprobe -arm $(or $(ARM),erase)
 
 ## escprobe: what does an escape sequence in text from outside the runtime
 ## do to a real terminal once the TUI shows it (ADR-0093)? Runs every case

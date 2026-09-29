@@ -12,43 +12,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// ShrinkMode is what the model does when the terminal narrows (ADR-0094).
-//
-// The terminal re-wraps the frame's lines before the model hears of the
-// resize, and Bubble Tea repaints relative to the cursor, so the rows the
-// frame gained stay on screen as stale copies of the input box. The zero
-// value is ADR-0021 §9's answer: clear the screen. The other two are
-// measurement arms, built so `make resizeprobe` can compare them in a real
-// terminal before ADR-0094 chooses; the product uses the zero value.
-type ShrinkMode int
-
-const (
-	// ShrinkClearScreen clears the whole screen and resets the row
-	// counter (ADR-0021 §9). The control, and the product's behaviour.
-	ShrinkClearScreen ShrinkMode = iota
-	// ShrinkLeaveAlone sweeps nothing and leaves the counter as it is:
-	// the control for the reflow itself, the only arm that does not act
-	// on the rows it is measuring.
-	ShrinkLeaveAlone
-	// ShrinkEraseFrame erases only the rows the drawn frame occupies
-	// after re-wrapping, through a SweepWriter. Without one it falls back
-	// to ShrinkClearScreen: an arm that silently did nothing would be
-	// measured as the other control.
-	ShrinkEraseFrame
-)
-
-// String names the arm as the probe and its report spell it.
-func (s ShrinkMode) String() string {
-	switch s {
-	case ShrinkLeaveAlone:
-		return "none"
-	case ShrinkEraseFrame:
-		return "erase"
-	default:
-		return "clear"
-	}
-}
-
 // File is what Bubble Tea needs of its output to treat it as a terminal
 // (its term.File): the size is read through Fd, so a writer that hid the
 // descriptor would silence every resize.
@@ -58,7 +21,12 @@ type File interface {
 }
 
 // SweepWriter sits between Bubble Tea's renderer and the terminal and
-// delivers ShrinkEraseFrame's sweep (ADR-0094 C).
+// erases, on a width shrink, the rows the drawn frame gained by re-wrapping
+// (ADR-0094 C). The terminal re-wraps the frame before the model hears of
+// the resize, and Bubble Tea repaints relative to the cursor, so those rows
+// would stay on screen as stale copies of the input box; the screen clear
+// that used to sweep them lost every picture on the screen and piled empty
+// screens into iTerm2's scrollback (measured, ADR-0094).
 //
 // Neither of the model's own channels can: a line queued with tea.Println
 // is always followed by "\r\n" and so costs a row of history per resize,
@@ -293,35 +261,31 @@ func sweepFlush(p []byte, n, k int) []byte {
 	return append(out, p[head:]...)
 }
 
-// shrinkSweep answers a genuine width shrink (ADR-0094). termWidth is the
-// terminal's own width — what it re-wrapped to — not the model's clamped
-// one.
-func (m *Model) shrinkSweep(termWidth int) tea.Cmd {
-	switch {
-	case m.shrink == ShrinkLeaveAlone:
-		return nil
-	case m.shrink == ShrinkEraseFrame && m.sweep != nil:
-		lines, k := m.sweep.arm(termWidth)
-		if k == 0 {
-			return nil // nothing re-wrapped: the frame is where it was drawn
-		}
-		// The new frame occupies exactly the rows the sweep erased: the
-		// drawn frame's lines plus the K it gained, ending where it ended.
-		rows := lines + k
-		if max := m.height - 1; rows > max {
-			rows = max
-		}
-		m.hold.printed = m.height - 1 - rows
-		if m.hold.printed < 0 {
-			m.hold.printed = 0
-		}
-		m.hold.lastTotal = rows
-		m.sweep.Note("hold printed=%d lastTotal=%d height=%d", m.hold.printed, rows, m.height)
-		return nil
+// shrinkSweep answers a genuine width shrink (ADR-0094 C). termWidth is
+// the terminal's own width — what it re-wrapped to — not the model's
+// clamped one. Without a writer nothing is erased: frame rows as short as
+// their text (shortRows) and narrow while resizing do not re-wrap for
+// ordinary input, and a stale row is better than erased history.
+func (m *Model) shrinkSweep(termWidth int) {
+	if m.sweep == nil {
+		return
 	}
-	m.hold.printed = 0 // the clear empties the viewport
-	m.hold.lastTotal = 0
-	return tea.ClearScreen
+	lines, k := m.sweep.arm(termWidth)
+	if k == 0 {
+		return // nothing re-wrapped: the frame is where it was drawn
+	}
+	// The new frame occupies exactly the rows the sweep erased: the drawn
+	// frame's lines plus the K it gained, ending where it ended.
+	rows := lines + k
+	if max := m.height - 1; rows > max {
+		rows = max
+	}
+	m.hold.printed = m.height - 1 - rows
+	if m.hold.printed < 0 {
+		m.hold.printed = 0
+	}
+	m.hold.lastTotal = rows
+	m.sweep.Note("hold printed=%d lastTotal=%d height=%d", m.hold.printed, rows, m.height)
 }
 
 // resizeSettle is how long without a size report ends a resize. iTerm2

@@ -106,8 +106,10 @@ func TestBottomHoldDisarmedWhileScreenNotFull(t *testing.T) {
 	}
 }
 
-// A resize resets the accounting along with the clear.
-func TestBottomHoldResetsOnResize(t *testing.T) {
+// A shrink no longer clears the screen (ADR-0094), so the frame stays
+// where it was drawn and the held height still describes it: without a
+// writer nothing is erased and the hold stands.
+func TestBottomHoldSurvivesAShrink(t *testing.T) {
 	c := &capture{}
 	m := newTestModel(c)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
@@ -118,12 +120,13 @@ func TestBottomHoldResetsOnResize(t *testing.T) {
 	next, _ = m.Update(TextDelta(strings.Repeat("x\n", 10)))
 	m = next.(Model)
 	_ = m.View()
-	if m.hold.lastTotal == 0 {
+	held := m.hold.lastTotal
+	if held == 0 {
 		t.Fatal("hold did not arm in the full regime")
 	}
-	next, _ = m.Update(tea.WindowSizeMsg{Width: 60, Height: 30}) // shrink → clear
+	next, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
 	m = next.(Model)
-	if m.hold.lastTotal != 0 {
-		t.Errorf("hold survived the resize clear: %d", m.hold.lastTotal)
+	if clearsScreen(cmd) || m.hold.lastTotal != held {
+		t.Errorf("shrink: clears %v, hold %d, want %d kept", clearsScreen(cmd), m.hold.lastTotal, held)
 	}
 }
