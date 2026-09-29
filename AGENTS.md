@@ -54,6 +54,13 @@ the next verification pass refuted with one `diff` — the remedy for a false
 claim being a false claim is why the citation test in `internal/archtest`
 now exists.
 
+The resize sweep is shared too (ADR-0094, lagent ADR-0026): `sweep.go`,
+`shortrows.go` and the narrow-while-resizing tick. lagent deliberately does
+not carry the writer's measurement surface — the trace, the arm record,
+`Inject`, `DrawnCells` — because only `tools/resizeprobe` reads it and lagent
+has no probes; the rest differs only in comments, ADR numbers and the
+provenance header (`diff`, 2026-09-29).
+
 **This is not a rule to port features.** A feature this runtime gains
 does not propagate to lagent by default; lagent's ADR-0002 decides
 that, and lagent does not track this repository's later changes. What
