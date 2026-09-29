@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.88.0] - 2026-09-29
+
 ### Added
 
 - **Gantt charts are drawn as pictures** where the terminal draws images
