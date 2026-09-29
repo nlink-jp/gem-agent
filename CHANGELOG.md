@@ -7,7 +7,7 @@
 - **Narrowing the window no longer clears the screen** (ADR-0094). Pictures
   on the screen — mermaid diagrams and `/show` — stay, and no empty screens
   pile into the scrollback: v0.85.0's known limitation. A shrink now erases
-  only the rows the input box gained by re-wrapping. Measured on iTerm2 and
+  only the rows the input frame gained by re-wrapping. Measured on iTerm2 and
   kitty, by hand, driven and by mouse drag: no stale copy of the box, no
   empty rows, no lost line, the picture kept. Before, the same drag left
   565 empty rows and seven copies of the box in iTerm2's scrollback, and
@@ -21,9 +21,9 @@
   width into a narrower terminal and left a stale copy of the box behind.
   The input line's highlight still spans the window, drawn as an erase to
   the edge in its colour, and now follows the window's width.
-- **While the window is being resized, the input line and the footer are
-  drawn short** (ADR-0094) — cut to 19 cells until no size report
-  has come for 400 ms, then drawn in full. iTerm2 tells the program its new
+- **While the window's width is changing, the frame below the conversation
+  is drawn short** (ADR-0094) — every row cut to 19 cells until no size
+  report has come for 400 ms, then drawn in full. iTerm2 tells the program its new
   width only about every 200 ms while it moves its screen continuously, so
   a full-width row drawn in between could land wider than the screen.
 

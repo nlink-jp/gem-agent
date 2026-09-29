@@ -159,7 +159,8 @@ tab's text (iTerm2: Select All and Copy, then `pbpaste | …`; on kitty, where
 the operator can export the scrollback as text), so they come from the
 terminal, not from what the probe meant to draw. Pictures are text-less and are read by eye, per picture.
 
-`resizeprobe -drive` runs all three arms under tmux, resizing the pane
+`resizeprobe -drive` ran all three arms under tmux (two since the choice:
+`erase`, the product, and `none`), resizing the pane
 itself, and prints the text readings. tmux reflows but does not draw iTerm2
 or kitty pictures, so it answers the text questions for tmux only — a
 control that the arms and the analyzer work, not a reading of either
@@ -301,14 +302,15 @@ No width the program can read describes the screen while a drag is under
 way, so no K computed from one can be exact then.
 
 **E. Draw the frame narrow while a resize is underway.** From a size report
-until none has come for 400 ms (twice iTerm2's interval), every frame row is
+that changes the width until none has come for 400 ms (twice iTerm2's interval), every frame row is
 clipped to the narrowest width the model lays out (`minWidth − 1`, 19
 cells); the settling tick of the last report draws the full frame, at a
 width that has stopped moving. A row that short cannot wrap on any screen
 the model lays out for, however far ahead of its report the terminal is. It
-is visible: while the edge moves, the input line and the footer are cut to
-19 cells (a screenshot taken mid-drag shows it), and they come back when the
-hand stops.
+is visible: while the edge moves, every row of the frame — the input box,
+the footer, a dialog, the live tail — is cut to 19 cells (a screenshot taken
+mid-drag shows it), and it comes back when the hand stops. A report that
+changes only the height starts none of this: the lag is a width's.
 
 With C, D and E, by mouse drag (a new window at 160×45, dragged to two
 thirds over 1.5 s): iTerm2 with a draft as wide as the window, three runs —
@@ -367,8 +369,23 @@ The criteria, as set before measuring:
   declared rows and `physicalRows` are not modified, and C only sets the
   counter to the rows it erased. D shortens the managed view only; nothing
   printed into the scrollback passes through it.
-- While the window is being resized, the input line and the footer are
-  drawn cut to 19 cells, for 400 ms after the last size report.
+- While the window's width is changing, every row of the frame is drawn cut
+  to 19 cells, for 400 ms after the last size report.
+- Residue and scope, recorded rather than closed (independent review,
+  2026-09-29): measured on iTerm2, kitty and tmux only. A terminal whose
+  reflow counts erased cells with a background as content could re-wrap the
+  highlighted input row that K counts by its text, and leave one stale row.
+  A terminal that truncates instead of re-wrapping (xterm, st, screen) would
+  make K over-state the growth and blank that many rows of history on the
+  screen — the clear blanked all of them there. A flush that lands between
+  a model's `View()` and the renderer taking that view, or between the
+  renderer's repaint on a size report and the model's arm, can give one
+  shrink a wrong K; the windows are microseconds. `shortRows` turns ANY
+  trailing padding drawn on a background into a bar to the edge; only the
+  input box's cursor line draws one today. An SGR written in colon form is
+  not read, which drops a highlight, cosmetically.
+- The writer's record (trace and arms) is kept only when a probe calls
+  `EnableTrace`; a session's writer keeps nothing.
 - lagent has the same shrink clear (its `internal/tui/model.go`). The TUI's
   scrollback accounting is a shared mechanism (AGENTS.md, "The sibling
   runtime"), so the decision is ported there in the same piece of work, as

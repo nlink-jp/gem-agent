@@ -57,9 +57,9 @@ a layout that breaks its own checks — is shown as source with the note;
 it never falls back to box art. The font is `[tui.diagram]`
 (configuration.md). Elsewhere — no image protocol, `-p`, the plain REPL —
 nothing changes. Narrowing the window keeps the pictures on the screen: only
-the rows the input box gained by re-wrapping are erased, and while the window
-is being resized the input line and the footer are drawn short, then in full
-once it stops (ADR-0094).
+the rows the input frame gained by re-wrapping are erased, and while the
+window's width is changing the frame is drawn short, then in full once it
+stops (ADR-0094).
 
 A positional argument is the first interactive turn (ADR-0064):
 `gem-agent "run the tests"` submits it once the banner has printed —
