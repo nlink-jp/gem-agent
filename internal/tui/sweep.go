@@ -50,13 +50,28 @@ type SweepWriter struct {
 	pending int      // rows to add to the next flush's cursor-up; 0 = none
 	flushes int
 	sweeps  int
+	// The measurement surface, off unless a probe turns it on: in a
+	// session it would grow by every flush for as long as the session
+	// lives (independent review, 2026-09-29).
+	tracing bool
 	arms    []Arm
 	trace   []string // timestamped events, for a probe to read back
 	start   time.Time
 }
 
-// logf records one event. The caller holds w.mu.
+// EnableTrace turns on the record Trace and Arms return. Only probes call
+// it; a session's writer keeps nothing.
+func (w *SweepWriter) EnableTrace() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.tracing = true
+}
+
+// logf records one event when tracing. The caller holds w.mu.
 func (w *SweepWriter) logf(format string, args ...any) {
+	if !w.tracing {
+		return
+	}
 	if w.start.IsZero() {
 		w.start = time.Now()
 	}
@@ -106,7 +121,10 @@ func (w *SweepWriter) Write(p []byte) (int, error) {
 	if isFlush {
 		w.flushes++
 		w.drawn = w.latest
-		rows := strings.Count(string(p), "\r\n") + 1
+		rows := 0
+		if w.tracing {
+			rows = strings.Count(string(p), "\r\n") + 1
+		}
 		if w.pending > 0 {
 			w.logf("flush up=%d rows=%d SWEPT +%d (drawn now %d lines)", n, rows, w.pending, len(w.drawn))
 			p = sweepFlush(p, n, w.pending)
@@ -195,12 +213,14 @@ func (w *SweepWriter) arm(width int) (lines, k int) {
 	defer w.mu.Unlock()
 	k = grownRows(w.drawn, width)
 	w.pending = k
-	cells := make([]int, len(w.drawn))
-	for i, l := range w.drawn {
-		cells[i] = ansi.StringWidth(l)
+	if w.tracing {
+		cells := make([]int, len(w.drawn))
+		for i, l := range w.drawn {
+			cells[i] = ansi.StringWidth(l)
+		}
+		w.arms = append(w.arms, Arm{Width: width, K: k, Cells: cells})
+		w.logf("arm width=%d K=%d drawn=%d lines %v", width, k, len(w.drawn), cells)
 	}
-	w.arms = append(w.arms, Arm{Width: width, K: k, Cells: cells})
-	w.logf("arm width=%d K=%d drawn=%d lines %v", width, k, len(w.drawn), cells)
 	return len(w.drawn), k
 }
 

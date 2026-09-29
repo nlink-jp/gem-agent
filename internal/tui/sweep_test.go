@@ -109,6 +109,7 @@ func TestGrownRows(t *testing.T) {
 func TestSweepWriterRewritesTheNextFlushOnce(t *testing.T) {
 	term := &fakeTerm{}
 	w := NewSweepWriter(term)
+	w.EnableTrace()
 	long := strings.Repeat("x", 100)
 
 	w.note("\n" + long + "\nfooter\n")
@@ -325,6 +326,22 @@ func TestRealRendererFlushesBeginWithCursorUp(t *testing.T) {
 	}
 }
 
+// A session's writer keeps no record: every flush of a long session would
+// otherwise stay in memory (independent review, 2026-09-29). Only a probe
+// that asks gets one.
+func TestSweepWriterKeepsNothingUnlessAsked(t *testing.T) {
+	w := NewSweepWriter(&fakeTerm{})
+	w.note("\n" + strings.Repeat("x", 100) + "\nfooter\n")
+	for i := 0; i < 50; i++ {
+		mustWrite(t, w, "\x1b[3Aframe")
+	}
+	w.arm(80)
+	w.Note("a decision")
+	if len(w.Trace()) != 0 || len(w.Arms()) != 0 {
+		t.Errorf("an untraced writer kept %d trace lines and %d arms", len(w.Trace()), len(w.Arms()))
+	}
+}
+
 // clearsScreen reports whether cmd is, or batches, tea.ClearScreen. It
 // never runs a command it cannot identify beyond a moment: the resize's
 // settling tick sleeps, and waiting on it would only prove it is not a
@@ -340,9 +357,13 @@ func clearsScreen(cmd tea.Cmd) bool {
 	go func() { got <- cmd() }()
 	select {
 	case msg := <-got:
-		if batch, ok := msg.(tea.BatchMsg); ok {
-			for _, c := range batch {
-				if clearsScreen(c) {
+		// tea.Batch returns BatchMsg; tea.Sequence an unexported slice of
+		// commands — the first-frame path uses it — so a clear inside a
+		// sequence is found by the slice's element type, not its name.
+		if v := reflect.ValueOf(msg); v.IsValid() && v.Kind() == reflect.Slice &&
+			v.Type().Elem() == reflect.TypeOf(tea.Cmd(nil)) {
+			for i := 0; i < v.Len(); i++ {
+				if c, _ := v.Index(i).Interface().(tea.Cmd); clearsScreen(c) {
 					return true
 				}
 			}
@@ -388,6 +409,36 @@ func TestFrameIsNarrowWhileAResizeIsUnderway(t *testing.T) {
 	m = settled(m)
 	if m.resizing || widest(m.View()) < 90 {
 		t.Errorf("settled: resizing %v, widest row %d", m.resizing, widest(m.View()))
+	}
+}
+
+// A clear hidden in a sequence is still a clear: the helper the shrink
+// tests rest on must see it, or a regression to tea.Sequence(ClearScreen,
+// …) would pass them all (independent review, 2026-09-29).
+func TestClearsScreenSeesInsideASequence(t *testing.T) {
+	if !clearsScreen(tea.Sequence(tea.ClearScreen, func() tea.Msg { return nil })) {
+		t.Error("a clear inside tea.Sequence was not seen")
+	}
+	if !clearsScreen(tea.Batch(func() tea.Msg { return nil }, tea.ClearScreen)) {
+		t.Error("a clear inside tea.Batch was not seen")
+	}
+	if clearsScreen(tea.Sequence(func() tea.Msg { return nil }, func() tea.Msg { return nil })) {
+		t.Error("a sequence with no clear was taken for one")
+	}
+}
+
+// A report that changes only the height starts no narrow frame: E's reason
+// — the terminal runs ahead of the width it reported — is about widths.
+func TestHeightOnlyReportDrawsTheFrameInFull(t *testing.T) {
+	m := sized(t, &capture{}, 120, 30)
+	m.ta.SetValue(strings.Repeat("w", 90))
+	next, cmd := m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	m = next.(Model)
+	if m.resizing || cmd != nil {
+		t.Errorf("a height-only report: resizing %v, cmd %v", m.resizing, cmd != nil)
+	}
+	if widest(m.View()) < 90 {
+		t.Errorf("the frame was cut to %d cells on a height-only report", widest(m.View()))
 	}
 }
 

@@ -6,8 +6,8 @@
 // REAL model (tui.New), runs it under the REAL inline Bubble Tea program,
 // and prints through the REAL emit path (tui.Output, tui.Image), so
 // wrapForScrollback, physicalRows, the bottom hold and the declared image
-// box are the production functions. The arm under test is the model's own
-// (tui.Options.Shrink), not a copy of it.
+// box are the production functions. The arm under test is the product's
+// own shrink (the model given tui.Options.Sweep), not a copy of it.
 //
 // A run clears the tab's screen and scrollback, fills the screen past its
 // height with numbered lines, types a long draft into the input box, prints
@@ -530,6 +530,7 @@ func runUI(mode armName, yes bool, hold, wait, settle, coalesce time.Duration, s
 	proto := termimg.Resolve("auto", tty, os.Getenv, 2*time.Second)
 
 	sweep := tui.NewSweepWriter(os.Stdout)
+	sweep.EnableTrace()
 	model := tui.New(tui.Options{
 		Theme:      theme, // notty by default: a copy is compared as text
 		ModelName:  sentinelModel,

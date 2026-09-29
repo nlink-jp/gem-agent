@@ -4,7 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func TestShortRow(t *testing.T) {
@@ -35,6 +37,39 @@ func TestShortRow(t *testing.T) {
 		if got := shortRow(tc.in); got != tc.want {
 			t.Errorf("%s: shortRow(%q) = %q, want %q", tc.name, tc.in, got, tc.want)
 		}
+	}
+}
+
+// On the real input box, drawn in colour: the cursor cell survives, the
+// highlight becomes an erase to the edge under its background, and no
+// padding is left — the textarea's output as it reaches a terminal, not a
+// hand-written string (independent review, 2026-09-29).
+func TestShortRowOnTheColouredInputBox(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(old)
+
+	m := sized(t, &capture{}, 80, 30)
+	m.ta.SetValue("hello")
+	var row string
+	for _, l := range strings.Split(m.View(), "\n") {
+		if strings.Contains(ansi.Strip(l), "hello") {
+			row = l
+		}
+	}
+	if row == "" {
+		t.Fatal("no input row in the view")
+	}
+	// The cursor is a blank drawn in reverse video; the escape outlives a
+	// dropped blank, so the blank itself is what is looked for.
+	if !strings.Contains(row, "\x1b[7m ") {
+		t.Errorf("the cursor cell (a reversed blank) is gone: %q", row)
+	}
+	if !strings.Contains(row, "\x1b[K\x1b[999C") {
+		t.Errorf("the highlight is not drawn to the edge: %q", row)
+	}
+	if w := ansi.StringWidth(row); w > 12 {
+		t.Errorf("the row is %d cells for 5 of text: padding survived: %q", w, row)
 	}
 }
 
