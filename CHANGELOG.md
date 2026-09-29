@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.87.0] - 2026-09-29
+
 ### Added
 
 - **State diagrams are drawn as pictures** where the terminal draws images
