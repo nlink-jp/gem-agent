@@ -83,6 +83,8 @@ func main() {
 	dragTo := flag.Float64("dragto", 0.66, "-auto -drag: the fraction of the width to drag the edge to")
 	pace := flag.Duration("pace", time.Second, "-auto: the pause between narrowing steps; tens of milliseconds is a drag")
 	out := flag.String("out", "dist/resizeprobe", "-auto: where screenshots, the text and the report go")
+	coalesce := flag.Duration("coalesce", 0, "hold size reports back until none has come for this long, then deliver the last (kitty's own behaviour)")
+	trace := flag.String("trace", "", "write the sweep writer's trace (views, flushes, arms, sweeps) to this file")
 	linger := flag.Duration("linger", 0, "after the report, keep the program (and so its window) alive this long")
 	save := flag.String("save", "", "-drive only: also write each arm's capture to this directory as tmux-<arm>.txt")
 	flag.Parse()
@@ -92,13 +94,13 @@ func main() {
 	case *analyzeIn:
 		err = printReport(os.Stdout, analyze(readLines(os.Stdin)))
 	case *auto != "":
-		err = runAuto(*auto, *arm, *shrink, *pace, *drag, *dragTo, *cols, *rows, *out)
+		err = runAuto(*auto, *arm, *shrink, *pace, *drag, *coalesce, *dragTo, *cols, *rows, *out)
 	case *drive:
 		err = runDriver(*rows, *cols, *save)
 	default:
 		var mode tui.ShrinkMode
 		if mode, err = parseArm(*arm); err == nil {
-			err = runUI(mode, *yes, *hold, *wait, *settle, *steps)
+			err = runUI(mode, *yes, *hold, *wait, *settle, *coalesce, *steps, *trace)
 			time.Sleep(*linger)
 		}
 	}
@@ -437,7 +439,45 @@ func (s *sizeLog) waitFor(ok func(w int) bool, settle, limit time.Duration) (siz
 	return e, false
 }
 
-func runUI(mode tui.ShrinkMode, yes bool, hold, wait, settle time.Duration, steps string) error {
+// coalescer holds size reports back until none has arrived for wait, then
+// delivers the last one — to the renderer and the model both, since the
+// filter runs before either sees a message. It is what kitty does on its
+// own (one report per drag, measured), and kitty was clean in every run.
+type coalescer struct {
+	wait    time.Duration
+	send    func(tea.Msg)
+	mu      sync.Mutex
+	started bool
+	release *tea.WindowSizeMsg
+	timer   *time.Timer
+}
+
+// pass reports whether a size report goes through now.
+func (c *coalescer) pass(s tea.WindowSizeMsg) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.started { // the first report lays out the first frame
+		c.started = true
+		return true
+	}
+	if c.release != nil && *c.release == s {
+		c.release = nil
+		return true
+	}
+	if c.timer != nil {
+		c.timer.Stop()
+	}
+	last := s
+	c.timer = time.AfterFunc(c.wait, func() {
+		c.mu.Lock()
+		c.release = &last
+		c.mu.Unlock()
+		c.send(last)
+	})
+	return false
+}
+
+func runUI(mode tui.ShrinkMode, yes bool, hold, wait, settle, coalesce time.Duration, steps, trace string) error {
 	plan, err := parseSteps(steps)
 	if err != nil {
 		return err
@@ -475,9 +515,17 @@ func runUI(mode tui.ShrinkMode, yes bool, hold, wait, settle time.Duration, step
 		Sweep:      sweep,
 	})
 	sizes := &sizeLog{}
-	prog := tea.NewProgram(model, tea.WithOutput(sweep),
+	var prog *tea.Program
+	co := &coalescer{wait: coalesce, send: func(m tea.Msg) { prog.Send(m) }}
+	prog = tea.NewProgram(model, tea.WithOutput(sweep),
 		tea.WithFilter(func(_ tea.Model, msg tea.Msg) tea.Msg {
 			if s, ok := msg.(tea.WindowSizeMsg); ok {
+				if coalesce > 0 {
+					if !co.pass(s) {
+						return nil
+					}
+					sweep.Note("size delivered %dx%d", s.Width, s.Height)
+				}
 				sizes.add(s.Width, s.Height)
 			}
 			return msg
@@ -492,6 +540,16 @@ func runUI(mode tui.ShrinkMode, yes bool, hold, wait, settle time.Duration, step
 		return err
 	}
 
+	if trace != "" {
+		var b strings.Builder
+		for _, e := range sizes.all() {
+			fmt.Fprintf(&b, "size %s %dx%d\n", e.at.Format("15:04:05.000"), e.w, e.h)
+		}
+		b.WriteString(strings.Join(sweep.Trace(), "\n") + "\n")
+		if err := os.WriteFile(trace, []byte(b.String()), 0o644); err != nil {
+			fmt.Println("RESIZEPROBE-NOTE trace not written:", err)
+		}
+	}
 	flushes, sweeps := sweep.Stats()
 	fmt.Println()
 	fmt.Printf("RESIZEPROBE-META arm=%s proto=%s flushes=%d sweeps=%d\n", mode, protoName(proto), flushes, sweeps)

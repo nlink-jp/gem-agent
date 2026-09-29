@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -81,6 +83,38 @@ type SweepWriter struct {
 	flushes int
 	sweeps  int
 	arms    []Arm
+	trace   []string // timestamped events, for a probe to read back
+	start   time.Time
+}
+
+// logf records one event. The caller holds w.mu.
+func (w *SweepWriter) logf(format string, args ...any) {
+	if w.start.IsZero() {
+		w.start = time.Now()
+	}
+	w.trace = append(w.trace, fmt.Sprintf("%7.1fms ", float64(time.Since(w.start).Microseconds())/1000)+fmt.Sprintf(format, args...))
+}
+
+// Trace returns what the writer saw, in order: the frames the model
+// produced (when their height changed), every flush with the cursor-up it
+// began with and the rows it wrote, every arm and every sweep.
+func (w *SweepWriter) Trace() []string {
+	if w == nil {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]string(nil), w.trace...)
+}
+
+// Note records a decision the model took on the writer's evidence.
+func (w *SweepWriter) Note(format string, args ...any) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.logf(format, args...)
 }
 
 // Arm is one shrink as the writer computed it — kept so a probe can set
@@ -104,10 +138,14 @@ func (w *SweepWriter) Write(p []byte) (int, error) {
 	if isFlush {
 		w.flushes++
 		w.drawn = w.latest
+		rows := strings.Count(string(p), "\r\n") + 1
 		if w.pending > 0 {
+			w.logf("flush up=%d rows=%d SWEPT +%d (drawn now %d lines)", n, rows, w.pending, len(w.drawn))
 			p = sweepFlush(p, n, w.pending)
 			w.pending = 0
 			w.sweeps++
+		} else {
+			w.logf("flush up=%d rows=%d (drawn now %d lines)", n, rows, len(w.drawn))
 		}
 	}
 	if _, err := w.out.Write(p); err != nil {
@@ -172,6 +210,9 @@ func (w *SweepWriter) note(view string) {
 	}
 	lines := strings.Split(view, "\n")
 	w.mu.Lock()
+	if len(lines) != len(w.latest) {
+		w.logf("view %d lines", len(lines))
+	}
 	w.latest = lines
 	w.mu.Unlock()
 }
@@ -191,6 +232,7 @@ func (w *SweepWriter) arm(width int) (lines, k int) {
 		cells[i] = ansi.StringWidth(l)
 	}
 	w.arms = append(w.arms, Arm{Width: width, K: k, Cells: cells})
+	w.logf("arm width=%d K=%d drawn=%d lines %v", width, k, len(w.drawn), cells)
 	return len(w.drawn), k
 }
 
@@ -274,6 +316,7 @@ func (m *Model) shrinkSweep(termWidth int) tea.Cmd {
 			m.hold.printed = 0
 		}
 		m.hold.lastTotal = rows
+		m.sweep.Note("hold printed=%d lastTotal=%d height=%d", m.hold.printed, rows, m.height)
 		return nil
 	}
 	m.hold.printed = 0 // the clear empties the viewport

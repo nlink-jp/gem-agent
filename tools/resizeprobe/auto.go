@@ -200,7 +200,7 @@ var widestMark = regexp.MustCompile(`widest frame line (\d+)`)
 // drag > 0 narrows with the MOUSE instead (drag.swift): the window's right
 // edge pulled in to dragTo of its width over that long, so the terminal
 // reflows continuously as it does under a hand.
-func runAuto(name string, arm string, shrink string, pace, drag time.Duration, dragTo float64, cols, rows int, out string) error {
+func runAuto(name string, arm string, shrink string, pace, drag, coalesce time.Duration, dragTo float64, cols, rows int, out string) error {
 	plan, err := parseSteps(shrink)
 	if err != nil {
 		return err
@@ -224,7 +224,8 @@ func runAuto(name string, arm string, shrink string, pace, drag time.Duration, d
 	// sees one narrowing however many steps it takes; -linger keeps the
 	// window, and the report printed after the program exits, readable.
 	command := []string{self, "-arm", arm, "-yes", "-wait", "60s", "-settle", "4s",
-		"-hold", "1s", "-linger", "120s"}
+		"-hold", "1s", "-linger", "120s", "-trace", filepath.Join(absOr(dir), "trace.txt"),
+		"-coalesce", coalesce.String()}
 	if err := term.open(command, cols, rows); err != nil {
 		return err
 	}
@@ -313,4 +314,13 @@ func runAuto(name string, arm string, shrink string, pace, drag time.Duration, d
 		}
 	}
 	return printReport(os.Stdout, analyze(lines))
+}
+
+// absOr makes a path absolute for a child whose working directory is the
+// terminal's, not ours; on failure it returns the path as given.
+func absOr(p string) string {
+	if a, err := filepath.Abs(p); err == nil {
+		return a
+	}
+	return p
 }
