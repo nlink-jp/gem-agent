@@ -156,7 +156,7 @@ var (
 	// soft wrap as a line break (tmux capture-pane -J joins it; a
 	// terminal's own copy may not). Counting it as stray would report
 	// history as a stale frame.
-	tail = regexp.MustCompile(`^[~ ]+$`)
+	tail     = regexp.MustCompile(`^[~ ]+$`)
 	picMark  = regexp.MustCompile(`^PIC-(\d+) (BEGIN|END)`)
 	armMark  = regexp.MustCompile(`^PROBE-START arm=(\S+)`)
 	protoArg = regexp.MustCompile(` proto=(\S+)`)

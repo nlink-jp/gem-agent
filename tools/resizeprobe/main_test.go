@@ -75,8 +75,8 @@ func TestAnalyzeCountsEachReading(t *testing.T) {
 		"PIC-1 END",
 		"H004 history", // H003 missing: history the sweep erased
 		"RESIZE-1: NARROW the window now",
-		"",                                      // black space
-		"┃ DRAFT~SENTINEL type type",            // a stale frame
+		"",                           // black space
+		"┃ DRAFT~SENTINEL type type", // a stale frame
 		"RESIZEPROBE~MODEL · ctx –/– · total 0", // and its footer
 		"─── a border fragment",                 // stray, not a sentinel
 		"AFTER-SHRINK size=66x30",
