@@ -201,6 +201,19 @@ var widestMark = regexp.MustCompile(`widest frame line (\d+)`)
 // edge pulled in to dragTo of its width over that long, so the terminal
 // reflows continuously as it does under a hand.
 func runAuto(name string, arm string, shrink string, pace, drag, coalesce time.Duration, dragTo float64, cols, rows int, out string) error {
+	// Everything the window's probe would refuse is refused here, before a
+	// window opens: a probe that stops on a bad argument inside the window
+	// left the driver waiting two minutes for a marker (2026-09-29, an arm
+	// passed as "erase short").
+	if _, err := parseArm(arm); err != nil {
+		return err
+	}
+	if theme != "notty" && theme != "dark" && theme != "light" {
+		return fmt.Errorf("-theme %q: notty, dark or light", theme)
+	}
+	if draftLen != "long" && draftLen != "short" {
+		return fmt.Errorf("-draft %q: long or short", draftLen)
+	}
 	plan, err := parseSteps(shrink)
 	if err != nil {
 		return err
@@ -246,8 +259,14 @@ func runAuto(name string, arm string, shrink string, pace, drag, coalesce time.D
 	waitText := func(marker string, limit time.Duration) (string, error) {
 		deadline := time.Now().Add(limit)
 		for time.Now().Before(deadline) {
-			if s, err := term.text(); err == nil && strings.Contains(s, marker) {
+			s, err := term.text()
+			if err == nil && strings.Contains(s, marker) {
 				return s, nil
+			}
+			// The probe in the window stopped: say why, now.
+			if i := strings.Index(s, "resizeprobe: "); err == nil && i >= 0 {
+				line, _, _ := strings.Cut(s[i:], "\n")
+				return "", fmt.Errorf("the probe in the window stopped: %s", strings.TrimSpace(line))
 			}
 			time.Sleep(300 * time.Millisecond)
 		}
