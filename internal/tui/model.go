@@ -248,6 +248,12 @@ type Options struct {
 	// The factory is re-invoked on resize; it must never query the
 	// terminal (see DarkBackground).
 	RenderFactory func(width int) func(string) string
+	// Shrink is what a width shrink does (ADR-0094). The zero value is the
+	// product's: clear the screen. The other arms exist for measurement.
+	Shrink ShrinkMode
+	// Sweep is the output writer ShrinkEraseFrame sweeps through; the
+	// program must be built with tea.WithOutput(Sweep).
+	Sweep *SweepWriter
 }
 
 // Model is the Bubble Tea model for the interactive session.
@@ -331,6 +337,8 @@ type Model struct {
 	picture    diagram.Picture
 	cellAspect func() (float64, bool)
 	aspect     float64 // cell height over width; 0 until read
+	shrink     ShrinkMode
+	sweep      *SweepWriter
 	baseCtx    context.Context
 	cancelTurn context.CancelFunc
 	// ask is the pending ask_user dialog (ADR-0036).
@@ -424,6 +432,8 @@ func New(opts Options) Model {
 		images:          opts.Images,
 		picture:         opts.Picture,
 		cellAspect:      opts.CellAspect,
+		shrink:          opts.Shrink,
+		sweep:           opts.Sweep,
 		baseCtx:         opts.BaseCtx,
 		println:         opts.Printer,
 		mkRender:        opts.RenderFactory,
@@ -641,9 +651,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// recorded height no longer matches, leaving stale copies of the
 		// input box on screen. Two defenses: View() clips every line to
 		// the width (no line of ours ever soft-wraps), and a genuine
-		// shrink clears the viewport once to sweep the re-wrapped
-		// leftovers. The first size report must not clear — it would
-		// wipe the banner.
+		// shrink sweeps the re-wrapped leftovers once (shrinkSweep: a
+		// screen clear today; ADR-0094 measures erasing only the frame's
+		// rows). The first size report must not clear — it would wipe
+		// the banner.
 		// A terminal that reports no size (some pty harnesses, and any
 		// environment where the ioctl fails) would otherwise give the
 		// textarea a negative width and render an input box that shows
@@ -691,12 +702,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Sequence(cmds...)
 		case resized:
-			m.hold.printed = 0 // the clear empties the viewport
-			m.hold.lastTotal = 0
+			cmd := m.shrinkSweep(msg.Width)
 			if m.phase == phaseSettings {
 				m.settingsTotal = m.settingsPlan()
 			}
-			return m, tea.ClearScreen
+			return m, cmd
 		}
 		if m.phase == phaseSettings {
 			// A grow: the same rows are free plus the new ones.
@@ -1910,6 +1920,12 @@ type bottomHold struct {
 }
 
 func (m Model) View() string {
+	v := m.view()
+	m.sweep.note(v) // what the renderer may draw next (ADR-0094)
+	return v
+}
+
+func (m Model) view() string {
 	content := clipLines(m.viewContent(), m.width)
 	if m.height > 0 {
 		// The managed view must never exceed the terminal's height: a
