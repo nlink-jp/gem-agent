@@ -166,8 +166,8 @@ on the same contract whose output reaches the model as labelled data,
 startup gates for
 broad roots and first-seen projects, and nonce-tag isolation of all
 tool output — which also keeps the request prefix byte-stable for
-81–95% measured context-cache hits. Text the model writes, and every
-other string from outside the runtime, reaches the terminal with its
+81–95% measured context-cache hits. Text the model writes, and the other
+text from outside the runtime the TUI shows, reaches the terminal with its
 control characters removed, so a prompt-injected reply cannot retitle the
 window, write the clipboard, move the cursor or disguise a command in an
 approval dialog; `-p` output stays byte-for-byte when it goes to a pipe or

@@ -149,6 +149,19 @@ func cases() []probeCase {
 			}
 			return true, "the text after it is not on screen"
 		}},
+		// Character references: text with no control in it, which the
+		// Markdown renderer decodes into one after the ingress has seen it.
+		// Only the flushed reply renders Markdown.
+		{"ENT-OSC0", "&#27;]0;" + pwn + "&#7;", "", titled},
+		{"ENT-OSC52", "&#x1b;]52;c;" + pwnB64 + "&#x07;", "", func(r reading) (bool, string) {
+			return strings.Contains(r.buffers, pwn), "paste buffers " + fmt.Sprintf("%q", clip(r.buffers))
+		}},
+		{"ENT-CR", "abcdef&#13;XY", "", func(r reading) (bool, string) {
+			if _, _, ok := has(r.screen, "before abcdef"); ok {
+				return false, "no overwrite"
+			}
+			return true, "text before the CR hidden"
+		}},
 		{"OSC8", "\x1b]8;;https://example.invalid/\x1b\\LINKTEXT\x1b]8;;\x1b\\", "]8;;", consumed("]8;;")},
 		{"OSC1337", "\x1b]1337;File=inline=1:QUFBQQ==\a", "1337;File", consumed("1337;File")},
 		{"APC-kitty", "\x1b_Gf=100,a=T;QUFBQQ==\x1b\\", "_Gf=100", consumed("Gf=100")},

@@ -10,8 +10,9 @@ import (
 
 // TestOnlyTheIngressesMakeTextInert pins ADR-0093 §2: text from outside the
 // runtime is made inert once, where it enters — the TUI's messages and
-// callbacks, and the plain entrances' terminal streams — and nowhere
-// downstream. A renderer that also sanitized would be a second mechanism,
+// callbacks, and the plain entrances' terminal streams — and a transform
+// over it is held where the transform is built (the same file), never at a
+// print site. A print site that also sanitized would be a second mechanism,
 // and the knowledge base records what that costs: in the CLI where a
 // mutation check first found it, the one hid the absence of the other.
 //
@@ -19,7 +20,7 @@ import (
 // does not already cover it, then add the file here.
 func TestOnlyTheIngressesMakeTextInert(t *testing.T) {
 	allowed := map[string]bool{
-		"internal/tui/inert.go": true, // the TUI's messages and callbacks
+		"internal/tui/inert.go": true, // the TUI's messages, callbacks and renderers
 		"cmd/inertstreams.go":   true, // the plain REPL's and -p's streams
 	}
 	seen := map[string]bool{}
@@ -28,28 +29,28 @@ func TestOnlyTheIngressesMakeTextInert(t *testing.T) {
 		if strings.Contains(rel, "/internal/inert/") {
 			return // the package itself
 		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			sel, ok := n.(*ast.SelectorExpr)
-			if !ok {
-				return true
+		// By import path, not by the name at the call: an aliased import
+		// is the same package under another name, and a check on the
+		// identifier passed one (independent review).
+		for _, imp := range f.Imports {
+			if strings.Trim(imp.Path.Value, `"`) != "github.com/nlink-jp/gem-agent/internal/inert" {
+				continue
 			}
-			if pkg, ok := sel.X.(*ast.Ident); !ok || pkg.Name != "inert" {
-				return true
-			}
+			ok := false
 			for file := range allowed {
 				if strings.HasSuffix(rel, "/"+file) {
-					seen[file] = true
-					return true
+					seen[file], ok = true, true
 				}
 			}
-			t.Errorf("%s: inert.%s is used outside the ingresses — sanitize where "+
-				"text enters, not where it is shown (ADR-0093 §2)", fset.Position(sel.Pos()), sel.Sel.Name)
-			return true
-		})
+			if !ok {
+				t.Errorf("%s: imports internal/inert outside the ingresses — make text "+
+					"inert where it enters, not where it is shown (ADR-0093 §2)", fset.Position(imp.Pos()))
+			}
+		}
 	})
 	for file := range allowed {
 		if !seen[file] {
-			t.Errorf("%s no longer uses internal/inert: an ingress was removed, "+
+			t.Errorf("%s no longer imports internal/inert: an ingress was removed, "+
 				"or the scan is broken", file)
 		}
 	}

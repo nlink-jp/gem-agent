@@ -149,7 +149,7 @@ pinprobe:
 
 ## escprobe: what does an escape sequence in text from outside the runtime
 ## do to a real terminal once the TUI shows it (ADR-0093)? Runs every case
-## on every channel — a streamed reply live and flushed, a thought, a tool
+## on five channels — a streamed reply live and flushed, a thought, a tool
 ## event, an approval dialog — in a private tmux server with set-clipboard
 ## on, and reads back the pane title, the paste buffers and the screen.
 ## Nothing reaches the operator's own tmux or clipboard. `go run

@@ -40,7 +40,9 @@ func TestReadingsSeparateActedFromShown(t *testing.T) {
 }
 
 // A case name is a flag value and a table row: two with one name would
-// make one of them unreachable from -ui.
+// make one of them unreachable from -ui. Every case carries a control —
+// except the ENT- cases, which carry a character reference that a renderer
+// turns into one.
 func TestCaseNamesAreUnique(t *testing.T) {
 	seen := map[string]bool{}
 	for _, c := range cases() {
@@ -51,7 +53,8 @@ func TestCaseNamesAreUnique(t *testing.T) {
 		// The raw 8-bit cases are not valid UTF-8, so they are found by
 		// byte rather than by rune.
 		if !strings.ContainsAny(c.payload, "\x07\x08\x0d\x1b\u009b\u009c\u009d") &&
-			!strings.ContainsFunc(c.payload, func(r rune) bool { return r == utf8.RuneError }) {
+			!strings.ContainsFunc(c.payload, func(r rune) bool { return r == utf8.RuneError }) &&
+			!strings.HasPrefix(c.name, "ENT-") {
 			t.Errorf("case %s carries no control character: it measures nothing", c.name)
 		}
 	}

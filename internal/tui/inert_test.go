@@ -278,3 +278,125 @@ func TestDiagramNoteIsInert(t *testing.T) {
 		}
 	}
 }
+
+// The Markdown renderer decodes character references: "&#27;" in the text
+// the ingress saw becomes a real ESC in what glamour prints, and so do BEL,
+// CR, C1 and RLO. The renderer's output is held to the SGR it writes itself
+// (ADR-0093 §2), in both the styled and the plain theme.
+func TestRendererCannotMakeAControlFromAnEntity(t *testing.T) {
+	const encoded = "hello &#27;]0;PWN&#7; and &#x1b;]52;c;RVNDUFdO&#x07; then &#13;MARKER " +
+		"&#8;&#27;[2J&#27;[3;60H &#x9b;&#x202e; [link &#27;]8;;x&#7;](https://e.invalid/&#27;]0;L&#7;)\n\n" +
+		"| a&#27;]0;T&#7; |\n|---|\n| &#13;c |\n\n# head &#27;]0;H&#7;\n"
+	for _, theme := range []string{"dark", "light", "notty"} {
+		c := &capture{}
+		m := New(Options{Printer: c.printer, Theme: theme})
+		next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+		m = next.(Model)
+		m.phase = phaseRunning
+		next, _ = m.Update(TextDelta(encoded))
+		m = next.(Model)
+		_, _ = m.Update(TurnDone{})
+		out := c.all()
+		if bad := leaked(out); len(bad) > 0 {
+			t.Errorf("%s: the rendered reply put %s on the screen:\n%q", theme, strings.Join(bad, " "), out)
+		}
+		if !strings.Contains(out, "PWN") || !strings.Contains(out, "MARKER") {
+			t.Errorf("%s: the reply never reached the screen:\n%q", theme, out)
+		}
+	}
+}
+
+// The operator's argv first message is the keyboard's trust and the text of
+// a turn: it is not outside text, and rewriting it would change what the
+// model is sent (ADR-0093 §2).
+func TestInitialSubmitIsNotRewritten(t *testing.T) {
+	in := initialSubmit("line one\r\nline two \x1b[1m")
+	if got := inertMsg(in); got != in {
+		t.Fatalf("argv was rewritten to %q", got)
+	}
+}
+
+// inertValue rewrites some kinds and passes others; a message field of a
+// kind it does not know (a pointer, a map, an interface other than error)
+// would be skipped without a word. Every message type is held to the list,
+// field by field, so adding such a field fails here instead.
+func TestMessageFieldsAreKindsTheWalkerKnows(t *testing.T) {
+	var check func(path string, typ reflect.Type)
+	check = func(path string, typ reflect.Type) {
+		if typ == errorType {
+			return
+		}
+		if !walkKinds[typ.Kind()] {
+			t.Errorf("%s is a %s: inertValue would skip it — teach the walker, then add the kind", path, typ.Kind())
+			return
+		}
+		switch typ.Kind() {
+		case reflect.Struct:
+			for i := range typ.NumField() {
+				f := typ.Field(i)
+				if !f.IsExported() {
+					t.Errorf("%s.%s is unexported: reflection cannot rewrite it", path, f.Name)
+					continue
+				}
+				check(path+"."+f.Name, f.Type)
+			}
+		case reflect.Slice:
+			check(path+"[]", typ.Elem())
+		}
+	}
+	for name, tc := range messageCases() {
+		check(name, reflect.TypeOf(tc.msg))
+	}
+}
+
+// Every function-typed field of Options is either wrapped at New or exempt
+// for a stated reason. A callback added later that hands text back fails
+// here until someone says which.
+func TestEveryOptionsCallbackIsAccountedFor(t *testing.T) {
+	wrapped := map[string]bool{
+		"Slash": true, "ExpandInput": true, "CompletePath": true, "CompleteSlash": true,
+		"RefreshSettings": true, "ApplySetting": true,
+		"RenderFactory": true, // held to SGR by inertRenderer
+	}
+	exempt := map[string]string{
+		"StartTurn": "returns nothing", "Shell": "returns nothing", "Compact": "returns nothing",
+		"Riskbook": "returns nothing", "ToggleAuto": "returns a bool", "AutoState": "returns a bool",
+		"ReadOnlyState": "returns a ceiling value", "CellAspect": "returns a number",
+		"Printer": "the terminal's side, not a source", "Picture": "returns pixels and a refusal reason that becomes a note, rendered through the held renderer",
+	}
+	typ := reflect.TypeOf(Options{})
+	for i := range typ.NumField() {
+		f := typ.Field(i)
+		if f.Type.Kind() != reflect.Func && f.Type.Kind() != reflect.Pointer {
+			continue
+		}
+		if f.Type.Kind() == reflect.Pointer && f.Name != "Settings" {
+			continue
+		}
+		if f.Name == "Settings" || wrapped[f.Name] {
+			continue
+		}
+		if _, ok := exempt[f.Name]; !ok {
+			t.Errorf("Options.%s is a callback with no entry: wrap it in New or say here why its result is not shown", f.Name)
+		}
+	}
+	// The wrapped ones really are: each hands back a hostile string and the
+	// model's stored callback returns it inert.
+	row := SettingRow{Label: hostile, Value: hostile, Values: []string{hostile}, Detail: hostile}
+	data := SettingsData{Rows: []SettingRow{row}, ProjectDir: hostile}
+	m := New(Options{
+		CompletePath:    func(string) []string { return []string{hostile} },
+		CompleteSlash:   func(string) []string { return []string{hostile} },
+		Settings:        &data,
+		RefreshSettings: func() SettingsData { return data },
+		ApplySetting:    func(SettingChange) (SettingsData, string) { return data, hostile },
+	})
+	applied, line := m.applySetting(SettingChange{})
+	got := fmt.Sprint(m.completePath(""), m.completeSlashFn(""), *m.settingsData, m.refreshSettings(), applied, line)
+	if bad := leaked(got); len(bad) > 0 {
+		t.Errorf("a wrapped callback handed back %s:\n%q", strings.Join(bad, " "), got)
+	}
+	if data.Rows[0].Label != hostile {
+		t.Error("the caller's settings data was rewritten in place")
+	}
+}

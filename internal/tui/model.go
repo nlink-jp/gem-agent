@@ -415,11 +415,11 @@ func New(opts Options) Model {
 		autoMode:        opts.AutoMode,
 		autoState:       opts.AutoState,
 		readOnlyState:   opts.ReadOnlyState,
-		completePath:    opts.CompletePath,
-		completeSlashFn: opts.CompleteSlash,
-		settingsData:    opts.Settings,
-		refreshSettings: opts.RefreshSettings,
-		applySetting:    opts.ApplySetting,
+		completePath:    inertStrings(opts.CompletePath),
+		completeSlashFn: inertStrings(opts.CompleteSlash),
+		settingsData:    inertSettingsPtr(opts.Settings),
+		refreshSettings: inertRefresh(opts.RefreshSettings),
+		applySetting:    inertApply(opts.ApplySetting),
 		expandInput:     inertExpand(opts.ExpandInput),
 		images:          opts.Images,
 		picture:         opts.Picture,
@@ -453,6 +453,7 @@ func New(opts Options) Model {
 			return newGlamourRenderer(width, theme)
 		}
 	}
+	m.mkRender = inertRenderer(m.mkRender)
 	m.render = m.mkRender(m.width)
 	return m
 }
@@ -530,7 +531,7 @@ func (m *Model) renderReply(text string) []Segment {
 		case seg.Img != nil:
 			add(m.pictureSegments(seg)...)
 		case seg.Art:
-			add(Segment{Text: seg.Text})
+			add(Segment{Text: inertArt(seg.Text)})
 		case strings.TrimSpace(seg.Text) != "":
 			// Trimmed here too: the blank line between parts is add's.
 			add(Segment{Text: strings.Trim(m.render(seg.Text), "\n")})

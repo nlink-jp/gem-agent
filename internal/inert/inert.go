@@ -10,14 +10,15 @@
 // command — the spoof the terminal itself performs (measured, ADR-0093).
 //
 // The callers are the ingresses — the TUI's messages and callbacks, and the
-// plain entrances' terminal streams — and nothing downstream of them. A
-// renderer that also called this would be a second mechanism, and one hides
-// the absence of the other; internal/archtest pins the callers.
+// plain entrances' terminal streams — plus the one thing downstream that can
+// make a control out of text with none: the output of a transform over it
+// (Styled). internal/archtest pins the callers.
 package inert
 
 import (
 	"io"
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -60,6 +61,55 @@ func String(s string) string {
 	return b.String()
 }
 
+// Styled is String for the output of a renderer this runtime runs over
+// outside text: SGR sequences (ESC [ digits ; : m) — the only escapes the
+// renderer writes, measured for glamour's dark, light and notty styles — are
+// kept, and every other control goes as String removes it.
+//
+// It exists because a renderer is a transform, and a transform can make a
+// control out of text that had none: goldmark decodes the character reference
+// &#27; into a real ESC, after the ingress has already seen only "&#27;"
+// (ADR-0093 §2). What the renderer is held to is what the runtime writes, not
+// what the text contained. An SGR decoded that way can only style text.
+func Styled(s string) string {
+	if !strings.ContainsFunc(s, func(r rune) bool { return r == utf8.RuneError || Removed(r) }) {
+		return s
+	}
+	s = strings.ToValidUTF8(s, string(utf8.RuneError))
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		if n := sgrLen(s[i:]); n > 0 {
+			b.WriteString(s[i : i+n])
+			i += n
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if !Removed(r) {
+			b.WriteRune(r)
+		}
+		i += size
+	}
+	return b.String()
+}
+
+// sgrLen is the length of the SGR sequence s begins with, or 0.
+func sgrLen(s string) int {
+	if !strings.HasPrefix(s, "\x1b[") {
+		return 0
+	}
+	for i := 2; i < len(s); i++ {
+		switch c := s[i]; {
+		case c >= '0' && c <= '9', c == ';', c == ':':
+		case c == 'm':
+			return i + 1
+		default:
+			return 0
+		}
+	}
+	return 0
+}
+
 // Writer returns a writer that writes String of what it is given to w.
 //
 // A rune split between two writes is held until the next write rather than
@@ -67,14 +117,20 @@ func String(s string) string {
 // sequence (at most three bytes) waits for the bytes that complete it. A
 // tail that is never completed is never written — it could not have been a
 // character anyway.
+//
+// It is safe for concurrent use, as the *os.File it usually wraps is: the
+// plain REPL's interrupt handler and its turn both write to stderr.
 func Writer(w io.Writer) io.Writer { return &writer{w: w} }
 
 type writer struct {
+	mu      sync.Mutex
 	w       io.Writer
 	pending []byte
 }
 
 func (x *writer) Write(p []byte) (int, error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
 	buf := append(x.pending, p...)
 	cut := len(buf) - incompleteTail(buf)
 	x.pending = append([]byte(nil), buf[cut:]...)

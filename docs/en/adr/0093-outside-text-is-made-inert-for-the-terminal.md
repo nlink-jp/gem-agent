@@ -7,6 +7,7 @@
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Independent pre-release review, 2026-09-29: model text reaches the terminal with escape sequences intact — `\x1b]0;T\a` passes the glamour renderer untouched in both the `notty` and `dark` styles, in plain paragraphs, code blocks and mermaid fences, and nothing sanitizes `TextDelta` before the live region or scrollback. Not introduced by the ADR-0092 work |
+| Revised because | The independent review of the implementation found the premise of §1 false one step downstream: goldmark decodes the character reference `&#27;` into a real ESC after the ingress has seen only `&#27;`, and a real terminal obeyed it (title, clipboard, CR). §2 now holds the output of every transform over outside text to the escapes the transform itself writes. The same pass found a data race in the writer, callbacks and residuals §4 had misjudged, a walker narrower than its claim, and an architecture test an import alias passed; each is answered below |
 | Relates to | [ADR-0002](0002-tui.md) (the inline TUI), [ADR-0042](0042-terminal-diagrams.md) (**§4 is amended here**), [ADR-0089](0089-inline-images-declare-their-height.md) (§6 named this surface as pre-existing and not repaired; it is repaired here for the TUI), [ADR-0033](0033-turn-observability.md) (thoughts), [ADR-0047](0047-declared-purpose.md) (purpose), [ADR-0036](0036-ask-user-tool.md) (the ask dialog) |
 
 ## Context
@@ -39,8 +40,8 @@ Neither is a defence: the live region shows the raw bytes before either runs.
 
 `make escprobe` (tools/escprobe) runs the real model under the real inline
 program in a private tmux 3.7c server with `set-clipboard on`, delivers each
-string on each channel text reaches the TUI by, and reads the terminal back.
-Against v0.85.0, **58 of 80 deliveries acted**:
+string on five of the channels text reaches the TUI by, and reads the
+terminal back. Against v0.85.0, **58 of 80 deliveries acted**:
 
 | Case | reply, live | reply, flushed | thought | tool event | approval dialog |
 |---|---|---|---|---|---|
@@ -54,10 +55,17 @@ Against v0.85.0, **58 of 80 deliveries acted**:
 | OSC 8, OSC 1337, DCS | parsed | parsed | parsed | parsed | parsed |
 | APC `_G` | parsed | — ¹ | parsed | parsed | parsed |
 | C1 CSI / OSC, UTF-8 or 8-bit | — ² | — ² | — ² | — ² | — ² |
+| `&#27;]0;…&#7;`, `&#x1b;]52;…`, `abcdef&#13;XY` ³ | — | set / written / hid | — | — | — |
 
 ¹ glamour's `dark` styling split the sequence — the accident above, not a guard.
 ² tmux does not act on C1 in UTF-8 mode; that is tmux's parser, not this
 runtime, and a terminal that honours 8-bit controls would.
+³ Character references, no control character in them: only the flushed reply
+renders Markdown, and goldmark decodes them there. Found by the review of the
+first implementation and measured on it — the ingress alone (§2's first half)
+left exactly these three acting, 3 of 95. v0.85.0 has the same path — nothing
+between the model and glamour touched them there either — and was not re-run
+with them.
 
 Two rows matter beyond decoration. **The approval dialog is spoofable today**:
 a CR in a `shell_exec` command hides everything before it, and an OSC that is
@@ -93,8 +101,8 @@ Invalid UTF-8 becomes U+FFFD, so a raw 8-bit C1 byte cannot survive as a byte.
 The set is finite and is one predicate in one package (`internal/inert`).
 
 **The characters are removed; the sequence bodies are not.** Every terminal
-control begins with ESC or a C1 introducer, so once those are gone nothing that
-remains can start a sequence, and what was a sequence's body is ordinary text:
+control begins with ESC or a C1 introducer, so once those are gone nothing in
+the text can start a sequence, and what was a sequence's body is ordinary text:
 `\x1b]0;T\a` shows as `]0;T`. Removing the whole sequence was the obvious
 reading of the finding and is rejected (A1): an OSC, DCS or APC runs until its
 terminator, and one that is never terminated runs to the end of the string —
@@ -116,17 +124,41 @@ so `errors.Is` still sees the original). It is done by reflection, so a field
 added later is covered the day it is added. A byte slice is not text — the
 bytes of a `tui.Image` are a picture the view layer encodes — and is left alone.
 
-The string-returning callbacks that can carry text the model wrote are wrapped
-once, in `New`: the slash handler (`/memory` lists what `save_memory` saved),
-the skill expander's error, and the banner lines (startup notes quote MCP
-server output and paths).
+Every callback in `Options` that hands text back is wrapped once, in `New`:
+the slash handler (`/memory` lists what `save_memory` saved), the skill
+expander's error, the completion candidates (files and skills the model or a
+project can have created), the settings panel's content and the line an edit
+prints (which can quote an MCP server's reconnect error), and the banner lines
+(startup notes quote MCP server output and paths). A test enumerates the
+function fields of `Options` and fails while one is neither wrapped nor exempt
+for a stated reason.
 
-Nothing downstream calls the function. glamour's styling, lipgloss's colours,
-Bubble Tea's cursor control and `termimg` payloads are written *after* the
-ingress, by the runtime, and pass untouched. The diagram note is built from a
-source that is already inert, so `noteSafe` stays what it is — a Markdown
-guard. A renderer that also sanitized would be a second mechanism, and the
-knowledge base records what that costs: the one hides the absence of the other.
+One message is not rewritten: the operator's argv first message
+(`initialSubmit`, ADR-0064). It is the keyboard's trust and the text of a
+turn, and rewriting it would change what the model is sent (A6).
+
+**A transform can make a control out of text that has none.** goldmark, under
+glamour, decodes character references: `&#27;]0;T&#7;` reaches the ingress as
+harmless ASCII and leaves the renderer as a real OSC. Measured through the real
+model on a real terminal (the `ENT-` rows below), it set the title, wrote the
+clipboard buffer and hid text behind a CR. So the output of every transform
+the TUI runs over outside text is held to the escapes that transform writes
+itself — measured: glamour's `dark` and `light` styles write SGR (`CSI … m`)
+and nothing else, `notty` writes nothing, and the box-art renderer writes
+nothing. `inert.Styled` keeps SGR sequences and removes every other control as
+§1 does; box art gets §1 as is. The hold is applied once, where the renderer is
+built (the factory `New` stores), so the render on resize and the note on a
+refused picture are covered without a call at any print site. The diagram note
+is rendered through the held renderer, so `noteSafe` stays what it is — a
+Markdown guard. What the renderer is held to is what the runtime writes, not
+what the text contained: a decoded SGR can style a rendered reply and nothing
+more (§4).
+
+No print site calls the function. lipgloss's colours, Bubble Tea's cursor
+control and `termimg` payloads are written after the ingress by the runtime
+and pass untouched. A print site that also sanitized would be a second
+mechanism, and the knowledge base records what that costs: the one hides the
+absence of the other.
 
 ### 3. The plain REPL and `-p`: inert on a terminal, verbatim elsewhere
 
@@ -144,16 +176,24 @@ break the contract for no one it protects; never-inert would leave the
 approval prompt on stderr spoofable exactly as the TUI's was.
 
 The writer keeps an incomplete UTF-8 sequence at the end of one write for the
-next, so a rune split between writes is not turned into two U+FFFD.
+next, so a rune split between writes is not turned into two U+FFFD. That is
+state, so it holds a lock: the plain REPL's interrupt handler and its turn
+write to stderr at the same moment, and the `*os.File` they wrote to before was
+safe for that.
 
 ### 4. What stays outside, and why that is accepted
 
 - **`gem-agent -p … | cat`, `| less -R`.** The operator hands raw bytes to a
   terminal by choosing the pipe, as with `ls | cat`.
-- **The completion candidates and the settings panel.** File names and
-  configured values; their authors are the operator's filesystem, the
-  operator's configuration and the MCP servers the operator runs. The model's
-  route to a file name is a write, and its approval now shows the name inert.
+- **A colour in a rendered reply.** An SGR decoded from `&#27;[…m` survives
+  the hold on the renderer (§2): it can colour or conceal text in the model's
+  own reply. It cannot move the cursor, erase, retitle, write the clipboard or
+  draw, and the dialogs that show a command are not Markdown-rendered.
+- **`GEMAGENT_MCP_STDERR=1`.** The opt-in debug switch hands an MCP server's
+  stderr to the terminal as the process's own; it is for debugging a server.
+- **The telemetry exporter's errors**, written straight to stderr — possibly
+  carrying a collector's response text (not confirmed).
+- **What the operator types**: the input box and the argv first message.
 - **The transcript.** Verbatim by design: it is the record, and the evidence.
 - **Other subcommands** (`sessions`, `workdirs`, `trust`) print the operator's
   own state.
@@ -169,9 +209,18 @@ next, so a rune split between writes is not turned into two U+FFFD.
   asserts two things: no control character of the hostile string is in the
   output, and its text *is* — without the second, a message that shows nothing
   would pass vacuously.
-- An architecture test pins the callers of `internal/inert` to the two
-  ingresses (the TUI's and `runREPL`'s streams), so a renderer that starts
-  sanitizing on its own fails the build rather than hiding a gap.
+- The walker rewrites strings, structs and slices and passes numbers, bytes
+  and channels; a pointer, map, array or interface field would be skipped. A
+  test holds every message type to those kinds, field by field, so such a
+  field fails the build instead of passing unexamined.
+- A test renders character references for every removed class through the
+  real renderer in all three themes and asserts no control reaches the screen.
+- A test enumerates the function fields of `Options` (§2).
+- An architecture test pins the importers of `internal/inert` — by import
+  path, so an alias does not pass — to the two ingress files, so a print site
+  that starts sanitizing on its own fails the build rather than hiding a gap.
+- The writer's lock is tested by concurrent writes, which fail under `-race`
+  only; `make check` does not run the race detector.
 - `make escprobe` re-runs the terminal table.
 
 ### 6. lagent
@@ -184,11 +233,13 @@ divergence until it lands.
 
 ## Consequences
 
-- The measured table goes to zero deliveries acting on every channel.
+- The measured table goes to zero: 0 of 95 deliveries act, on every channel
+  probed and for every case, the character references included.
 - The row account ADR-0089 rests on is exact for text again: a line of model
   text can no longer carry a zero-width escape that moves the cursor.
-- A model can no longer emit a hyperlink, a colour or a picture through its
-  text. None of these was ever offered to it.
+- A model can no longer emit a hyperlink or a picture through its text, and a
+  colour only through a character reference in a rendered reply (§4). None of
+  these was ever offered to it.
 - Legitimate text with a CR (a CRLF line ending) loses the CR. Tabs and
   newlines are kept.
 - **ADR-0042 §4 is amended**: plain REPL and one-shot output is verbatim to a
@@ -219,6 +270,12 @@ divergence until it lands.
   changes the record and the data the model receives. Making text inert for a
   display is the display's job.
 - **A7. Plain and `-p`: always verbatim, or always inert.** Rejected in §3.
+- **A8. Neutralize character references at the ingress.** Rejected: it is a
+  text rule over an unbounded domain — decimal and hex forms, leading zeros,
+  whatever else a decoder accepts — written against one decoder, and the
+  ingress cannot tell whether the text will land in a code block, where
+  references are not decoded and an escape would show. The renderer's output
+  is a finite vocabulary, measured.
 
 ## References
 

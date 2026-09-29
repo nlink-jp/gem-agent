@@ -88,7 +88,7 @@ reads as an oversight to the next person, and gets "fixed" wrongly.
 | Operator text, collected | `make labels` → `dist/labels.md` (UI catalog ja/en, cmd notes/errors/help, `--help` pages) |
 | Inline-image row accounting | `make rowprobe` — draws payloads with declared heights and reports the rows each costs (ADR-0089). Needs a terminal that draws; one that does not reports INCONCLUSIVE, not a verdict |
 | Bottom pin under image lines | `make pinprobe` — runs the experiment under tmux and prints the table it measured (ADR-0089): real model, real emit path, every case against its control, regime arranged from the terminal's height and reported per row |
-| Escapes in outside text | `make escprobe` — delivers hostile sequences on every channel text reaches the TUI by (reply live and flushed, thought, tool event, approval dialog) under a private tmux server and reports what the terminal did: title, clipboard buffer, cursor, screen (ADR-0093). tmux parses the image protocols without drawing them |
+| Escapes in outside text | `make escprobe` — delivers hostile sequences, and character references a renderer decodes into them, on five of the channels text reaches the TUI by (reply live and flushed, thought, tool event, approval dialog) under a private tmux server and reports what the terminal did: title, clipboard buffer, cursor, screen (ADR-0093). tmux parses the image protocols without drawing them |
 
 Version is injected via `-X main.version` from `git describe` — never edit the
 `version` var default.
@@ -118,10 +118,12 @@ internal/agent/    tool-calling loop, approval dispatch, nonce wrapping, history
                    compaction (compact.go, ADR-0006)
 internal/tools/    built-in tools, path confinement, lane-aware exec injection, Register
 internal/inert/    the one predicate that makes outside text inert for a terminal
-                   (ADR-0093): control characters out, nothing else. Callers are
-                   pinned to the ingresses — internal/tui/inert.go (every message
-                   string, by reflection, at the top of Update) and
-                   cmd/inertstreams.go (plain REPL / -p streams, terminal only)
+                   (ADR-0093): control characters out, nothing else; Styled holds a
+                   renderer's output to SGR (goldmark decodes &#27; into ESC).
+                   Importers are pinned by import path to internal/tui/inert.go
+                   (every message string by reflection at the top of Update, every
+                   Options callback, the renderer factory) and cmd/inertstreams.go
+                   (plain REPL / -p streams, terminal only)
 internal/bounded/  the one place a read, listing or process output is capped —
                    every primitive returns the `more` fact (ADR-0073 §4)
 internal/archtest/ AST tests pinning confined opens, bounded reads and the

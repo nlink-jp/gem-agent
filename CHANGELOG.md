@@ -8,17 +8,21 @@
   (ADR-0093). The model's reply, its thoughts, a tool call's detail and
   purpose, the approval and ask dialogs, `!` output and every other
   string a TUI message carries reached the terminal with its escape
-  sequences intact: measured on tmux, 58 of 80 hostile deliveries
-  retitled the window, wrote the clipboard buffer (OSC 52), erased the
-  screen, moved the cursor, or — in the approval dialog — hid the start
-  of a command behind a CR or the rest of it behind an unterminated OSC.
-  C0 controls other than tab and newline, DEL, C1 and the bidi
-  embeddings, overrides and isolates are now removed once, at the TUI's
-  ingress; the text of a sequence stays visible (`]0;…`), so nothing the
-  operator could have read is hidden. The plain REPL and `-p` do the
-  same when their stream is a terminal and stay byte-for-byte to a pipe
-  or a file (ADR-0042 §4 amended). The transcript is unchanged.
-  `make escprobe` re-runs the measurement: 0 of 80 after the change.
+  sequences intact. Measured on tmux, 58 of 80 hostile deliveries acted:
+  on every channel probed the window title was set, the clipboard buffer
+  written (OSC 52) and the screen erased; image, hyperlink and DCS
+  sequences were parsed; the cursor moved; and a CR hid the start of a
+  line and an unterminated OSC the rest of it — in the approval dialog,
+  the command being approved. C0 controls other than tab and newline,
+  DEL, C1 and the bidi embeddings, overrides and isolates are now removed
+  once, where text enters the TUI; the text of a sequence stays visible
+  (`]0;…`), so nothing the operator could have read is hidden. The
+  Markdown renderer's output is held to the colour codes it writes
+  itself, because it decodes character references such as `&#27;` into
+  real controls. The plain REPL and `-p` do the same when their stream
+  is a terminal and stay byte-for-byte to a pipe or a file (ADR-0042 §4
+  amended). The transcript is unchanged. `make escprobe` re-runs the
+  measurement: 0 of 95 after the change.
 
 ## [0.85.0] - 2026-09-29
 

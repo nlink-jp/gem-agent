@@ -3,6 +3,7 @@ package inert
 import (
 	"bytes"
 	"strings"
+	"sync"
 	"testing"
 	"unicode/utf8"
 )
@@ -121,4 +122,57 @@ func TestIncompleteTail(t *testing.T) {
 			t.Errorf("incompleteTail(%q) = %d, want %d", tc.in, got, tc.want)
 		}
 	}
+}
+
+// A renderer's output keeps its own SGR and nothing else: an ESC a decoder
+// made from "&#27;" in front of anything but an SGR is removed, and one in
+// front of an SGR can only style.
+func TestStyledKeepsOnlySGR(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"\x1b[38;5;252mtext\x1b[0m", "\x1b[38;5;252mtext\x1b[0m"},
+		{"\x1b[1;4:3mx\x1b[m", "\x1b[1;4:3mx\x1b[m"},
+		{"a\x1b]0;PWN\ab", "a]0;PWNb"},
+		{"\x1b[2J\x1b[3;60H", "[2J[3;60H"},
+		{"\x1b[31", "[31"},
+		{"\x1b", ""},
+		{"\x1b[?25l", "[?25l"},
+		{"\x1b_Gf=100\x1b\\", "_Gf=100\\"},
+		{"x\r\ny\bz\u009b\x9bq", "x\nyz�q"},
+		{"plain", "plain"},
+	} {
+		if got := Styled(tc.in); got != tc.want {
+			t.Errorf("Styled(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// The plain REPL's interrupt handler and its turn write to stderr at once;
+// the writer holds state, so it must hold a lock as the file it wraps does.
+// Run under -race this fails without the lock.
+func TestWriterIsSafeForConcurrentUse(t *testing.T) {
+	var mu sync.Mutex
+	var buf bytes.Buffer
+	w := Writer(lockedWriter{&mu, &buf})
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 100 {
+				_, _ = w.Write([]byte{"あいうえおかきくけこ"[i]})
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+type lockedWriter struct {
+	mu *sync.Mutex
+	w  *bytes.Buffer
+}
+
+func (l lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }

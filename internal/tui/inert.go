@@ -10,10 +10,14 @@ import (
 // This file is the TUI's ingress for text from outside it (ADR-0093). Every
 // string a message carries, and every string a callback hands back, is made
 // inert here — once — before any branch of Update or any renderer reads it.
-// Nothing downstream calls internal/inert: glamour's styling, lipgloss's
-// colours and termimg's payloads are this runtime's own escapes, written
-// after this point, and a renderer that sanitized as well would be a second
-// mechanism hiding the absence of the first.
+//
+// One thing downstream can make a control out of text that has none: a
+// transform over it. goldmark decodes the character reference &#27; into a
+// real ESC, so the Markdown renderer's output is held to the escapes the
+// renderer itself writes (SGR), and the box-art renderer's to none. Both are
+// wrapped here too, where the renderer is built, never where its output is
+// printed. lipgloss's colours and termimg's payloads are this runtime's own
+// and pass untouched.
 
 // ownPkg is this package's import path: only its message types are
 // rewritten. Bubble Tea's own messages carry the operator's keys and the
@@ -29,6 +33,12 @@ var errorType = reflect.TypeOf((*error)(nil)).Elem()
 // — and is left alone. msg itself is never modified: the sender may still
 // hold the slices it sent.
 func inertMsg(msg tea.Msg) tea.Msg {
+	if _, ok := msg.(initialSubmit); ok {
+		// The operator's argv, the keyboard's trust (ADR-0064), and the
+		// text of a turn: rewriting it would change what the model is
+		// sent, which is not the display's to change.
+		return msg
+	}
 	v := reflect.ValueOf(msg)
 	if !v.IsValid() || v.Type().PkgPath() != ownPkg {
 		return msg
@@ -82,6 +92,78 @@ type inertError struct {
 
 func (e inertError) Error() string { return e.text }
 func (e inertError) Unwrap() error { return e.err }
+
+// walkKinds are the kinds inertValue rewrites or deliberately passes: a
+// message field of any other kind (a pointer, a map, an interface other than
+// error) would be skipped silently, so the test holds every message type to
+// this list rather than trusting the walker to grow with them.
+var walkKinds = map[reflect.Kind]bool{
+	reflect.String: true, reflect.Struct: true, reflect.Slice: true,
+	reflect.Bool: true, reflect.Int: true, reflect.Int64: true, reflect.Uint8: true,
+	reflect.Float64: true, reflect.Chan: true,
+}
+
+// inertRenderer holds every renderer the factory builds to the escapes a
+// renderer writes: SGR, and nothing else. It is applied once, to the
+// factory, so the renders at resize and the note on a refused picture are
+// covered without a call at any of them.
+func inertRenderer(mk func(int) func(string) string) func(int) func(string) string {
+	return func(width int) func(string) string {
+		render := mk(width)
+		return func(s string) string { return inert.Styled(render(s)) }
+	}
+}
+
+// inertArt holds box art to no escapes at all: the art renderer writes
+// none, so any it produced came from the text it drew.
+func inertArt(s string) string { return inert.String(s) }
+
+// inertStrings wraps a callback that returns candidates: completion names
+// files and skills the model or a project can have created.
+func inertStrings(f func(string) []string) func(string) []string {
+	if f == nil {
+		return nil
+	}
+	return func(prefix string) []string { return inertLines(f(prefix)) }
+}
+
+// inertSettings makes the panel's content inert. Every field is shown. A
+// field that also keys an edit (a tool, an exclusion) changes only if it
+// holds a control character: a tool name the MCP layer has held to Gemini's
+// alphabet never does, and a server's raw function name that did would be
+// written as the operator saw it.
+func inertSettings(d SettingsData) SettingsData {
+	v := reflect.ValueOf(&d).Elem()
+	inertValue(v)
+	return d
+}
+
+func inertSettingsPtr(d *SettingsData) *SettingsData {
+	if d == nil {
+		return nil
+	}
+	c := inertSettings(*d)
+	return &c
+}
+
+func inertRefresh(f func() SettingsData) func() SettingsData {
+	if f == nil {
+		return nil
+	}
+	return func() SettingsData { return inertSettings(f()) }
+}
+
+// inertApply wraps an edit: the refreshed content, and the line it prints,
+// which can quote an MCP server's reconnect error.
+func inertApply(f SettingsApplier) SettingsApplier {
+	if f == nil {
+		return nil
+	}
+	return func(c SettingChange) (SettingsData, string) {
+		d, line := f(c)
+		return inertSettings(d), inert.String(line)
+	}
+}
 
 // inertSlash wraps the slash handler: its output quotes state the model can
 // have written — /memory lists what save_memory saved.

@@ -50,8 +50,9 @@ ADR-0058), `internal/trustpin` (content pins of the agent-facing files and the
 persistent-file snapshot — ADR-0074), `internal/bounded` (the capped
 read/list/capture primitives every other package uses — ADR-0073 §4),
 `internal/inert` (the one predicate that makes outside text inert for a
-terminal — control characters removed, nothing else; called only at the
-TUI's ingress and on the plain entrances' terminal streams — ADR-0093),
+terminal — control characters removed, nothing else — and the one hold on a
+renderer's output, SGR kept; imported only by the TUI's ingress file and the
+plain entrances' stream setup — ADR-0093),
 `internal/archtest` (AST tests that pin the structural rules: path
 packages open through `os.Root`, reads are bounded, the rule tier is
 consulted in one function, every loader of project content takes the
@@ -145,7 +146,10 @@ Per-round details that matter:
 - **Text from outside the runtime is made inert where it enters the
   display**, not where it is shown (ADR-0093). Every string a TUI message
   carries is rewritten at the top of `Update` by reflection — control
-  characters removed, sequence bodies kept as text — and the plain REPL
+  characters removed, sequence bodies kept as text — and every callback
+  that hands text back is wrapped in `New`. The Markdown renderer decodes
+  character references (`&#27;`) into real controls, so its output is held,
+  where the renderer is built, to the SGR it writes itself. The plain REPL
   and `-p` wrap their streams when, and only when, the stream is a
   terminal. The transcript and what the model receives stay verbatim.
 - **A response with neither text nor tool calls is never stored.** An
