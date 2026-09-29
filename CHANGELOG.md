@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Gantt charts are drawn as pictures** where the terminal draws images
+  (mermaid-render v0.4.0): sections, tasks placed by dates, durations,
+  `after` / `until` and excluded days, milestones, `vert` markers, the time
+  axis. A chart whose picture would depend on the day it is drawn shows the
+  source with a note; the today marker is never drawn. The box-art lane has
+  no gantt chart and shows its source, as before.
+
 ## [0.87.0] - 2026-09-29
 
 ### Added

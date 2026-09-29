@@ -20,7 +20,7 @@ func TestSplitWithPicture(t *testing.T) {
 	pic := func(src string) (image.Image, string, bool) {
 		got = append(got, src)
 		switch {
-		case strings.HasPrefix(src, "gantt"):
+		case strings.HasPrefix(src, "mindmap"):
 			return nil, "", false
 		case strings.Contains(src, "refuse"):
 			return nil, "syntax error: no", true
@@ -45,7 +45,7 @@ func TestSplitWithPicture(t *testing.T) {
 	for src, want := range map[string]string{
 		"flowchart TD\n    refuse": "*diagram shown as source: syntax error: no*",
 		"flowchart TD\n    panic":  "*diagram shown as source: the diagram renderer failed: boom*",
-		"gantt\n    title x":       "",
+		"mindmap\n    root":        "",
 	} {
 		fence := "```mermaid\n" + src + "\n```"
 		var segs []Segment
@@ -67,7 +67,8 @@ func TestSplitWithPicture(t *testing.T) {
 	}
 }
 
-// NewPicture draws with the engine — a pie chart and a state diagram too;
+// NewPicture draws with the engine — a pie chart, a state diagram and a
+// gantt chart too;
 // an unsupported type
 // is not attempted;
 // a character no font has is refused.
@@ -88,7 +89,11 @@ func TestNewPicture(t *testing.T) {
 	if !attempted || why != "" || img == nil {
 		t.Errorf("a state diagram (mermaid-render v0.3.0): drawn %v, why %q, attempted %v", img != nil, why, attempted)
 	}
-	if _, _, attempted := NewPicture(font)("gantt\n    title x"); attempted {
+	img, why, attempted = NewPicture(font)("gantt\n    dateFormat YYYY-MM-DD\n    section 準備\n    設計 :a1, 2026-01-05, 5d\n    実装 :after a1, 10d")
+	if !attempted || why != "" || img == nil {
+		t.Errorf("a gantt chart (mermaid-render v0.4.0): drawn %v, why %q, attempted %v", img != nil, why, attempted)
+	}
+	if _, _, attempted := NewPicture(font)("mindmap\n    root"); attempted {
 		t.Error("an unsupported type was attempted")
 	}
 	if _, why, _ := NewPicture(font)("flowchart TD\n    A --> 😀"); why == "" {
