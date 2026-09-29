@@ -3,12 +3,14 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // fakeTerm records what reaches the "terminal". Its descriptor is not a
@@ -201,21 +203,21 @@ func TestShrinkArms(t *testing.T) {
 		m := sized(ShrinkClearScreen, nil)
 		next, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
 		m = next.(Model)
-		if cmd == nil || m.hold.printed != 0 || m.hold.lastTotal != 0 {
-			t.Errorf("clear: cmd %v, printed %d, lastTotal %d", cmd != nil, m.hold.printed, m.hold.lastTotal)
+		if !clearsScreen(cmd) || m.hold.printed != 0 || m.hold.lastTotal != 0 {
+			t.Errorf("clear: clears %v, printed %d, lastTotal %d", clearsScreen(cmd), m.hold.printed, m.hold.lastTotal)
 		}
 	})
 	t.Run("none sweeps nothing and keeps the counter", func(t *testing.T) {
 		m := sized(ShrinkLeaveAlone, nil)
 		next, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
 		m = next.(Model)
-		if cmd != nil || m.hold.printed != 26 || m.hold.lastTotal != 3 {
-			t.Errorf("none: cmd %v, printed %d, lastTotal %d", cmd != nil, m.hold.printed, m.hold.lastTotal)
+		if clearsScreen(cmd) || m.hold.printed != 26 || m.hold.lastTotal != 3 {
+			t.Errorf("none: clears %v, printed %d, lastTotal %d", clearsScreen(cmd), m.hold.printed, m.hold.lastTotal)
 		}
 	})
 	t.Run("erase without a writer falls back to the clear", func(t *testing.T) {
 		m := sized(ShrinkEraseFrame, nil)
-		if _, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30}); cmd == nil {
+		if _, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30}); !clearsScreen(cmd) {
 			t.Error("an erase arm with nothing to erase through must not silently become 'none'")
 		}
 	})
@@ -234,7 +236,7 @@ func TestShrinkArms(t *testing.T) {
 
 		next, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
 		m = next.(Model)
-		if cmd != nil {
+		if clearsScreen(cmd) {
 			t.Error("erase must not clear the screen")
 		}
 		rows := len(lines) + k
@@ -255,8 +257,8 @@ func TestShrinkArms(t *testing.T) {
 		mustWrite(t, w, "\x1b[3Aframe")
 		next, cmd := m.Update(tea.WindowSizeMsg{Width: 99, Height: 30})
 		m = next.(Model)
-		if cmd != nil || m.hold.printed != 26 || m.hold.lastTotal != 3 {
-			t.Errorf("K=0: cmd %v, printed %d, lastTotal %d", cmd != nil, m.hold.printed, m.hold.lastTotal)
+		if clearsScreen(cmd) || m.hold.printed != 26 || m.hold.lastTotal != 3 {
+			t.Errorf("K=0: clears %v, printed %d, lastTotal %d", clearsScreen(cmd), m.hold.printed, m.hold.lastTotal)
 		}
 		if _, s := w.Stats(); s != 0 {
 			t.Error("nothing to sweep, yet a sweep was armed")
@@ -325,4 +327,80 @@ func TestRealRendererFlushesBeginWithCursorUp(t *testing.T) {
 	if !swept {
 		t.Errorf("no write carried the sweep: %q", term.all())
 	}
+}
+
+// clearsScreen reports whether cmd is, or batches, tea.ClearScreen. It
+// never runs a command it cannot identify beyond a moment: the resize's
+// settling tick sleeps, and waiting on it would only prove it is not a
+// clear.
+func clearsScreen(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	if reflect.ValueOf(cmd).Pointer() == reflect.ValueOf(tea.ClearScreen).Pointer() {
+		return true
+	}
+	got := make(chan tea.Msg, 1)
+	go func() { got <- cmd() }()
+	select {
+	case msg := <-got:
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, c := range batch {
+				if clearsScreen(c) {
+					return true
+				}
+			}
+		}
+		return false
+	case <-time.After(50 * time.Millisecond):
+		return false // a tick, not a clear
+	}
+}
+
+// settled delivers the tick that ends the resize the model is in.
+func settled(m Model) Model {
+	next, _ := m.Update(resizeSettled{seq: m.resizeSeq})
+	return next.(Model)
+}
+
+// While a resize is underway every frame row is narrower than any width
+// the model lays out, so a repaint that lands while the terminal is ahead
+// of its report cannot wrap; the settling tick of the LAST report restores
+// the full frame, an earlier one does not (ADR-0094).
+func TestFrameIsNarrowWhileAResizeIsUnderway(t *testing.T) {
+	m := sized(t, &capture{}, 120, 30)
+	m.ta.SetValue(strings.Repeat("w", 90))
+	if m.resizing {
+		t.Fatal("the first size report lays out the first frame; it is not a resize")
+	}
+	if widest(m.View()) < 90 {
+		t.Fatalf("the settled frame should hold the draft: %d cells", widest(m.View()))
+	}
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 110, Height: 30})
+	m = next.(Model)
+	first := m.resizeSeq
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = next.(Model)
+	if w := widest(m.View()); w > minWidth-1 {
+		t.Errorf("a row is %d cells while resizing; no row may pass %d", w, minWidth-1)
+	}
+	next, _ = m.Update(resizeSettled{seq: first})
+	m = next.(Model)
+	if !m.resizing {
+		t.Error("an earlier report's tick ended a resize a later report extended")
+	}
+	m = settled(m)
+	if m.resizing || widest(m.View()) < 90 {
+		t.Errorf("settled: resizing %v, widest row %d", m.resizing, widest(m.View()))
+	}
+}
+
+func widest(view string) int {
+	w := 0
+	for _, l := range strings.Split(view, "\n") {
+		if c := ansi.StringWidth(l); c > w {
+			w = c
+		}
+	}
+	return w
 }

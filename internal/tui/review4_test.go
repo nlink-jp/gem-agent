@@ -30,7 +30,7 @@ func boxText(view string) string {
 func TestApprovalDetailWrapsSoThePathIsVisible(t *testing.T) {
 	m, _ := runningModel(t)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	m = sized.(Model)
+	m = settled(sized.(Model))
 	detail := "new_string=" + strings.Repeat("n", 90) + " old_string=" + strings.Repeat("o", 90) + " path=src/main.go"
 	resp := make(chan ApprovalAnswer, 1)
 	next, _ := m.Update(ApprovalRequest{Tool: "edit_file", Detail: detail, Purpose: strings.Repeat("why ", 40), Reason: strings.Repeat("because ", 20), Resp: resp})
@@ -61,7 +61,7 @@ func TestAskOptionsAreBudgeted(t *testing.T) {
 		opts[i] = strings.Repeat("選択肢", 33) // ~100 runes, 3 rows at 80 columns
 	}
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	m = sized.(Model)
+	m = settled(sized.(Model))
 	resp := make(chan int, 1)
 	next, _ := m.Update(AskRequest{Question: "QUESTION-TITLE?", Options: opts, Resp: resp})
 	m = next.(Model)

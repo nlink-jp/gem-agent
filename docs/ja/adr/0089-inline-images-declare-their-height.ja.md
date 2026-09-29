@@ -19,12 +19,12 @@
 
 ### カウンタに見えるもの、見えないもの
 
-`emit`（[model.go:982](../../../internal/tui/model.go)）は 1 行を scrollback へ
+`emit`（[model.go:993](../../../internal/tui/model.go)）は 1 行を scrollback へ
 印字し、その物理行数を数える。bottom pin はその数に乗っている。`go.mod:14` が固定
 している版 `charmbracelet/x/ansi` v0.11.6 で実測すると、`ansi.StringWidth` は iTerm2 の
 `OSC 1337 File=`、kitty の `APC _G`、sixel の `DCS q` のいずれにも **0** を返し、
 `ansi.Strip` は空文字を返す。`ansi.Hardwrap` は 3 方式ともバイト同一で通すので、
-`wrapForScrollback`（[model.go:1240](../../../internal/tui/model.go)）は base64 の
+`wrapForScrollback`（[model.go:1251](../../../internal/tui/model.go)）は base64 の
 連なりを切り刻まない。独立検証パスはこれを実 PNG と現実的な sixel で取り直した。
 リポジトリ自身のテストは 3 方式のうち 2 つしか覆っていなかった。いまは
 `tools/imgpayload` が 3 つとも持つ。ある稿はそこで逆方向に行き過ぎ、より広い再測定
@@ -35,7 +35,7 @@
 それを主張するテストであって、照合する能力ではない。
 
 ただしカウンタは盲目ではない。初稿はそう書いていた。`physicalRows`
-（[model.go:1253](../../../internal/tui/model.go)）は `rows, cells := 1, 0` から始まる
+（[model.go:1264](../../../internal/tui/model.go)）は `rows, cells := 1, 0` から始まる
 ので、画像の行をちょうど **1 行**と計上する。端末が N 行進める間に、である。不足は
 `N` ではなく `N-1` である。
 
@@ -50,7 +50,7 @@
 
 領域は仮定ではなく構成する。pin の padding は `height − printed − view − 1` で、
 production はその正の分岐を「screen not full」とラベルしている
-（[model.go:1975](../../../internal/tui/model.go)）。30 行の tmux ペイン用に選んだ
+（[model.go:1994](../../../internal/tui/model.go)）。30 行の tmux ペイン用に選んだ
 filler の行数が、80 行の iTerm2 窓を分岐の反対側に置き、本記録の以前の稿はその実行を
 「full」と報告した。いま filler は端末自身の高さから計算され、各実行が何を構成したかを
 印字する。
@@ -219,7 +219,7 @@ view 層であり、ツールが返したものが「エスケープに見える
 
 これは**既存の面を塞いだと主張するものではない**。ツール出力は ANSI 除去なしで印字される。
 非テストコードで `ansi.Strip` が呼ばれるのはちょうど 1 箇所
-（[model.go:1258](../../../internal/tui/model.go)）、`physicalRows` の中で幅を**測る**ためだけで
+（[model.go:1269](../../../internal/tui/model.go)）、`physicalRows` の中で幅を**測る**ためだけで
 ある。よってシェル出力の生エスケープは既に端末へ届いている。既存であり、ここで広がらず、
 ここで直しもしない。
 
@@ -233,7 +233,7 @@ one-shot `-p` と素の REPL はその手前で戻るので描かない — diag
 解釈ではなく raw モードでの stdin 所有である。Bubble Tea が stdin を握った後は、端末の
 クエリ応答が入力欄に幽霊のキーストロークとして現れる — 記録されている実例は
 `newGlamourRenderer` の「`WithAutoStyle` を意図的に使わない」注記である
-（[model.go:490](../../../internal/tui/model.go)。規律自体は `AGENTS.md` の
+（[model.go:495](../../../internal/tui/model.go)。規律自体は `AGENTS.md` の
 「Never query the terminal after Bubble Tea starts」にあり、最初からそれが正しい引用だった）。
 以前の稿は `AGENTS.md:296` を引いたが、
 行が 1 つずれているうえ、より重要なことに、あれは**キーボード**入力の曖昧性解消の話で

@@ -797,13 +797,13 @@ func TestShrinkClearsScreenOnce(t *testing.T) {
 	}
 	next, cmd = m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m = next.(Model)
-	if cmd != nil {
+	if clearsScreen(cmd) {
 		t.Error("growth must not clear the screen")
 	}
 	m.hold.printed = 7
 	next, cmd = m.Update(tea.WindowSizeMsg{Width: 50, Height: 40})
 	m = next.(Model)
-	if cmd == nil {
+	if !clearsScreen(cmd) {
 		t.Error("shrink must trigger a screen clear")
 	}
 	if m.hold.printed != 0 {

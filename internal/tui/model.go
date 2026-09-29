@@ -339,6 +339,11 @@ type Model struct {
 	aspect     float64 // cell height over width; 0 until read
 	shrink     ShrinkMode
 	sweep      *SweepWriter
+	// resizing is true from a size report until none has come for
+	// resizeSettle; resizeSeq tells the settling tick of the last report
+	// from the earlier ones (ADR-0094).
+	resizing  bool
+	resizeSeq int
 	baseCtx    context.Context
 	cancelTurn context.CancelFunc
 	// ask is the pending ask_user dialog (ADR-0036).
@@ -706,11 +711,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.phase == phaseSettings {
 				m.settingsTotal = m.settingsPlan()
 			}
-			return m, cmd
+			return m, tea.Batch(cmd, m.resizeUnderway())
 		}
 		if m.phase == phaseSettings {
 			// A grow: the same rows are free plus the new ones.
 			m.settingsTotal = m.settingsPlan()
+		}
+		return m, m.resizeUnderway()
+
+	case resizeSettled:
+		if msg.seq == m.resizeSeq {
+			m.resizing = false // the next view is drawn at the settled width
 		}
 		return m, nil
 
@@ -1929,6 +1940,14 @@ func (m Model) view() string {
 	// Clipped, then as short as its text (ADR-0094): a row as wide as the
 	// terminal wraps when a repaint lands during a live resize.
 	content := shortRows(clipLines(m.viewContent(), m.width))
+	if m.resizing {
+		// While the window is being resized the terminal runs ahead of
+		// the width it has reported, so a row laid out for that width can
+		// be wider than the screen by the time it lands, and wraps where
+		// the renderer does not count it. Rows no wider than the narrowest
+		// width this model lays out cannot (ADR-0094).
+		content = clipLines(content, minWidth)
+	}
 	if m.height > 0 {
 		// The managed view must never exceed the terminal's height: a
 		// taller frame is cut by the renderer itself and the printed-line

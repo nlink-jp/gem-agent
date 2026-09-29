@@ -323,3 +323,19 @@ func (m *Model) shrinkSweep(termWidth int) tea.Cmd {
 	m.hold.lastTotal = 0
 	return tea.ClearScreen
 }
+
+// resizeSettle is how long without a size report ends a resize. iTerm2
+// reports a drag about every 200 ms (measured); twice that is settled.
+const resizeSettle = 400 * time.Millisecond
+
+// resizeSettled is the tick that ends a resize if no later report came.
+type resizeSettled struct{ seq int }
+
+// resizeUnderway marks a resize in progress and schedules its end: the
+// frame is drawn narrow until then (see view) and at full width after.
+func (m *Model) resizeUnderway() tea.Cmd {
+	m.resizing = true
+	m.resizeSeq++
+	seq := m.resizeSeq
+	return tea.Tick(resizeSettle, func(time.Time) tea.Msg { return resizeSettled{seq: seq} })
+}
