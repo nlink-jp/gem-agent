@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **A reply that renders to nothing printed a blank line** once replies
+  were split for pictures (v0.85.0): a comment or a link definition alone
+  now prints nothing again, as before. Found by lagent's pre-release review
+  of the same code.
+
 ## [0.85.2] - 2026-09-29
 
 ### Fixed

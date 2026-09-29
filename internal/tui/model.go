@@ -544,8 +544,13 @@ func (m *Model) renderReply(text string) []Segment {
 		case seg.Art:
 			add(Segment{Text: inertArt(seg.Text)})
 		case strings.TrimSpace(seg.Text) != "":
-			// Trimmed here too: the blank line between parts is add's.
-			add(Segment{Text: strings.Trim(m.render(seg.Text), "\n")})
+			// Trimmed here too: the blank line between parts is add's. A
+			// part that renders to nothing (a comment, a link definition)
+			// prints nothing, as the whole reply did before it was split
+			// (found by lagent's pre-release review of the same code).
+			if r := strings.Trim(m.render(seg.Text), "\n"); r != "" {
+				add(Segment{Text: r})
+			}
 		}
 	}
 	return out

@@ -245,3 +245,20 @@ func TestBandsShareTheByteLimit(t *testing.T) {
 		t.Errorf("want the source and the note, got\n%.200s", out)
 	}
 }
+
+// A reply that renders to nothing prints nothing, as before the reply was
+// split: a comment or a link definition alone is not a blank line.
+func TestReplyRenderingToNothingPrintsNothing(t *testing.T) {
+	for _, images := range []termimg.Protocol{termimg.None, termimg.ITerm2} {
+		c := &capture{}
+		m := New(Options{Theme: "notty", Images: images, Picture: fakePicture, Printer: c.printer})
+		for _, reply := range []string{"<!-- c -->", "[a]: http://example.com"} {
+			m.live.WriteString(reply)
+			before := m.hold.printed
+			m.emitAfterLive(m.takeLive())
+			if got := m.hold.printed - before; got != 0 || len(c.printed) != 0 {
+				t.Errorf("images %v, %q: %d rows, writes %q", images, reply, got, c.printed)
+			}
+		}
+	}
+}
