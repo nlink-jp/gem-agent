@@ -90,6 +90,7 @@ reads as an oversight to the next person, and gets "fixed" wrongly.
 | Operator text, collected | `make labels` → `dist/labels.md` (UI catalog ja/en, cmd notes/errors/help, `--help` pages) |
 | Inline-image row accounting | `make rowprobe` — draws payloads with declared heights and reports the rows each costs (ADR-0089). Needs a terminal that draws; one that does not reports INCONCLUSIVE, not a verdict |
 | Bottom pin under image lines | `make pinprobe` — runs the experiment under tmux and prints the table it measured (ADR-0089): real model, real emit path, every case against its control, regime arranged from the terminal's height and reported per row |
+| Resize: screen and scrollback | `make resizeprobe ARM=clear\|none\|erase` — runs one ADR-0094 shrink arm in THIS terminal (a spare tab: it clears the scrollback) and asks the operator to narrow, then widen, the window; real model, real emit path, `/show` pictures where the terminal draws. `pbpaste \| go run ./tools/resizeprobe -analyze` counts a copy of the tab's text (stale frames, black space, missing history); pictures are read by eye. `-drive` runs every arm under tmux — text only, a control |
 | Escapes in outside text | `make escprobe` — delivers hostile sequences, and character references a renderer decodes into them, on five of the channels text reaches the TUI by (reply live and flushed, thought, tool event, approval dialog) under a private tmux server and reports what the terminal did: title, clipboard buffer, cursor, screen (ADR-0093). tmux parses the image protocols without drawing them |
 
 Version is injected via `-X main.version` from `git describe` — never edit the
@@ -183,7 +184,9 @@ internal/hooks/    operator hooks on Claude Code's measured contracts: the
 internal/session/  JSONL transcript: logger + resume loader (ADR-0005); GEMAGENT_SESSION_ID
                    is exported at startup beside GEMAGENT_WORK_DIR (ADR-0069 addendum 2)
 internal/repl/     paste-safe input reader (plain REPL, non-TTY fallback)
-internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate
+internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate;
+                   sweep.go holds the shrink arms and SweepWriter (ADR-0094,
+                   proposed — the product still clears the screen)
 internal/diagram/  mermaid fences in a reply (ADR-0042/0063/0092): fence scanner;
                    pictures via mermaid-render where images draw (picture.go),
                    box art with shape normalization and wrongness guards elsewhere
@@ -413,8 +416,11 @@ a new hook) is an architecture change and takes the same rows as a
 - **No managed-view line may reach the terminal width** — a soft-wrapped
   line desyncs the inline renderer's height math and stale frames stack
   up (the resize staircase). View() clips every line to width-1; a
-  genuine shrink additionally returns tea.ClearScreen once. Keep both
-  when touching View().
+  genuine shrink additionally sweeps once (`shrinkSweep`: tea.ClearScreen
+  today; ADR-0094 is measuring an erase of only the frame's rows, which
+  loses no on-screen picture). Keep both when touching View(), and keep
+  `View()` calling `sweep.note` — the erase arm measures K on the frame
+  the renderer actually drew.
 - **One width model: go-runewidth is pinned to Ambiguous=narrow in the TUI**
   (v0.37.1) — under a CJK locale it flips box-drawing/arrows/"…" to two
   cells while x/ansi, uniseg, and the terminal say one, and glamour's

@@ -11,7 +11,7 @@ DIST_DIR := dist
 CODESIGN_IDENTITY ?= Developer ID Application
 NOTARY_PROFILE    ?= nlink-jp-notary
 
-.PHONY: build build-all package verify-release test vet lint docs-check gate-check check rowprobe pinprobe escprobe clean
+.PHONY: build build-all package verify-release test vet lint docs-check gate-check check rowprobe pinprobe resizeprobe escprobe clean
 
 build:
 	@mkdir -p $(DIST_DIR)
@@ -146,6 +146,16 @@ rowprobe:
 ## case in the foreground for a human to watch.
 pinprobe:
 	@go run ./tools/pinprobe -drive
+
+## resizeprobe: what does narrowing and widening the window do to the
+## screen and the scrollback (ADR-0094)? Runs ONE shrink arm — ARM=clear
+## (today), none or erase — in this terminal: the real model on the real
+## emit path, pictures where the terminal draws, and the operator asked to
+## resize. It clears the tab's scrollback first, so use a spare tab.
+## `pbpaste | go run ./tools/resizeprobe -analyze` counts a copy of the
+## tab's text; `go run ./tools/resizeprobe -drive` runs every arm under tmux.
+resizeprobe:
+	@go run ./tools/resizeprobe -arm $(or $(ARM),clear)
 
 ## escprobe: what does an escape sequence in text from outside the runtime
 ## do to a real terminal once the TUI shows it (ADR-0093)? Runs every case

@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Development
+
+- **`make resizeprobe`** (ADR-0094, proposed). Narrowing the window clears
+  the screen, which loses the pictures on it and leaves black space in the
+  scrollback (a known limitation of v0.85.0). Before the fix is
+  chosen, this probe runs the real TUI in the operator's own terminal with
+  one of three shrink behaviours — today's clear, nothing, or erasing only
+  the input frame's rows — asks for a narrowing and a widening, and counts
+  stale frames, black space and lost history from a copy of the tab's
+  text; pictures are read by eye. The product's behaviour is unchanged.
+
 ## [0.85.1] - 2026-09-29
 
 ### Security
