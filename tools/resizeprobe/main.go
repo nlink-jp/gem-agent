@@ -71,6 +71,7 @@ func main() {
 	yes := flag.Bool("yes", false, "start without asking (the tab's screen and scrollback are cleared)")
 	hold := flag.Duration("hold", 2*time.Second, "keep the UI up this long after PROBE-END")
 	wait := flag.Duration("wait", 90*time.Second, "how long to wait for each resize before going on without it")
+	settle := flag.Duration("settle", 1500*time.Millisecond, "after a resize, wait this long with nothing printed — raise it to look at, or screenshot, the screen the resize left")
 	steps := flag.String("steps", "", "narrow the window ITSELF (CSI 8 t) through these widths instead of asking: "+
 		"comma-separated columns, or fit / fit+N / fit-N for the widest line of the frame drawn at the time. "+
 		"a terminal that ignores it (tmux does) is reported, and the run asks for a drag instead")
@@ -88,7 +89,7 @@ func main() {
 	default:
 		var mode tui.ShrinkMode
 		if mode, err = parseArm(*arm); err == nil {
-			err = runUI(mode, *yes, *hold, *wait, *steps)
+			err = runUI(mode, *yes, *hold, *wait, *settle, *steps)
 		}
 	}
 	if err != nil {
@@ -426,7 +427,7 @@ func (s *sizeLog) waitFor(ok func(w int) bool, settle, limit time.Duration) (siz
 	return e, false
 }
 
-func runUI(mode tui.ShrinkMode, yes bool, hold, wait time.Duration, steps string) error {
+func runUI(mode tui.ShrinkMode, yes bool, hold, wait, settle time.Duration, steps string) error {
 	plan, err := parseSteps(steps)
 	if err != nil {
 		return err
@@ -474,7 +475,7 @@ func runUI(mode tui.ShrinkMode, yes bool, hold, wait time.Duration, steps string
 
 	var notes []string
 	go func() {
-		notes = script(prog, sweep, sizes, proto, mode, plan, wait, hold)
+		notes = script(prog, sweep, sizes, proto, mode, plan, wait, settle, hold)
 		prog.Quit()
 	}()
 	if _, err := prog.Run(); err != nil {
@@ -518,7 +519,7 @@ func runUI(mode tui.ShrinkMode, yes bool, hold, wait time.Duration, steps string
 
 // script is the run, sent to the program from outside its event loop.
 func script(prog *tea.Program, sweep *tui.SweepWriter, sizes *sizeLog, proto termimg.Protocol, mode tui.ShrinkMode,
-	plan []step, wait, hold time.Duration) (notes []string) {
+	plan []step, wait, settle, hold time.Duration) (notes []string) {
 	say := func(lines ...string) {
 		prog.Send(tui.Output{Lines: lines})
 		time.Sleep(120 * time.Millisecond)
@@ -569,7 +570,7 @@ func script(prog *tea.Program, sweep *tui.SweepWriter, sizes *sizeLog, proto ter
 			target := st.resolve(sweep.DrawnCells())
 			cur, _ := sizes.last()
 			_ = sweep.Inject(fmt.Sprintf("\x1b[8;%d;%dt", cur.h, target))
-			if got, ok = sizes.waitFor(func(x int) bool { return x == target }, 800*time.Millisecond, 3*time.Second); !ok {
+			if got, ok = sizes.waitFor(func(x int) bool { return x == target }, settle, settle+3*time.Second); !ok {
 				notes = append(notes, fmt.Sprintf("asked for width %d and the terminal did not resize (it ignores CSI 8 t, or refused): falling back to a drag", target))
 				driven = false
 				break
@@ -583,7 +584,7 @@ func script(prog *tea.Program, sweep *tui.SweepWriter, sizes *sizeLog, proto ter
 		} else {
 			say("RESIZE-1: NARROW the window now, to about two-thirds of its width, and wait")
 		}
-		got, ok = sizes.waitFor(func(x int) bool { return x > 0 && x < w }, 1500*time.Millisecond, wait)
+		got, ok = sizes.waitFor(func(x int) bool { return x > 0 && x < w }, settle, wait)
 		if !ok {
 			notes = append(notes, "no narrowing within the wait: the shrink zone measures nothing")
 		}
@@ -598,7 +599,7 @@ func script(prog *tea.Program, sweep *tui.SweepWriter, sizes *sizeLog, proto ter
 	} else {
 		say("RESIZE-2: WIDEN the window again now, and wait")
 	}
-	got, ok = sizes.waitFor(func(x int) bool { return x > narrow }, 1500*time.Millisecond, wait)
+	got, ok = sizes.waitFor(func(x int) bool { return x > narrow }, settle, wait)
 	if !ok {
 		notes = append(notes, "no widening within the wait: the grow zone measures nothing")
 	}
