@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.90.0] - 2026-09-30
+
 ### Changed
 
 - **Box art comes from mermaid-render** (ADR-0095). Terminals that draw no
