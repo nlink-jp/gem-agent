@@ -71,12 +71,26 @@ func TestReplyKeepsWideArtIntact(t *testing.T) {
 // the reader-facing note; the model is never told (the reader closes
 // the loop, ADR-0063 §4).
 func TestReplyKeepsSourceWithNote(t *testing.T) {
-	out := replyText(replyModel(Options{}).renderReply("```mermaid\nsequenceDiagram\n  participant U as 操作者\n  U->>A: 質問\n```\n"))
-	if !strings.Contains(out, "sequenceDiagram") || !strings.Contains(out, "操作者") {
+	out := replyText(replyModel(Options{}).renderReply("```mermaid\nflowchart TD\n  A[操作者 --> B\n```\n"))
+	if !strings.Contains(out, "flowchart TD") || !strings.Contains(out, "操作者") {
 		t.Fatalf("source lost:\n%s", out)
 	}
 	if !strings.Contains(out, "diagram shown as source") {
 		t.Errorf("note missing:\n%s", out)
+	}
+}
+
+// A sequence diagram with Japanese labels is box art now (ADR-0095); the
+// lane refused it while mermaid-ascii drew it.
+func TestReplyDrawsJapaneseSequence(t *testing.T) {
+	out := replyText(replyModel(Options{}).renderReply("```mermaid\nsequenceDiagram\n  participant U as 操作者\n  U->>A: 質問\n```\n"))
+	if strings.Contains(out, "sequenceDiagram") || strings.Contains(out, "diagram shown as source") {
+		t.Fatalf("not drawn:\n%s", out)
+	}
+	for _, want := range []string{"操作者", "質問", "►"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
 	}
 }
 

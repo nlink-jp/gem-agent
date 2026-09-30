@@ -31,8 +31,8 @@ func TestSemicolonSeparatesStatements(t *testing.T) {
 	if strings.Contains(out, "; B") || strings.Contains(out, "B[b]") {
 		t.Errorf("phantom node drawn:\n%s", out)
 	}
-	if arrowheads(out) != 2 {
-		t.Errorf("arrowheads = %d, want 2:\n%s", arrowheads(out), out)
+	if heads(out) != 2 {
+		t.Errorf("heads = %d, want 2:\n%s", heads(out), out)
 	}
 }
 
@@ -42,18 +42,18 @@ func TestKeywordPrefixedIdIsANode(t *testing.T) {
 	if strings.Contains(out, "graph LR") {
 		t.Fatalf("faithful drawing refused:\n%s", out)
 	}
-	if flowEdgeCount("direction_check[Check] --> B[b]") != 1 {
-		t.Error("edge from a keyword-prefixed id not counted")
+	if !strings.Contains(out, "Check") || !strings.Contains(out, "Sub") || heads(out) != 2 {
+		t.Errorf("keyword-prefixed ids not drawn as nodes:\n%s", out)
 	}
 }
 
-// Review round 4: a bidirectional edge draws two heads and counts two.
+// Review round 4: a bidirectional edge draws two heads.
 func TestBidirectionalEdgeCountsTwoHeads(t *testing.T) {
-	if n := flowEdgeCount("A[a] <--> B[b]"); n != 2 {
-		t.Errorf("flowEdgeCount(<-->) = %d, want 2", n)
-	}
 	out := rejoin(fence("graph LR\n  A[a] <--> B[b]\n"))
 	if strings.Contains(out, "graph LR") {
 		t.Fatalf("bidirectional edge refused:\n%s", out)
+	}
+	if heads(out) != 2 {
+		t.Errorf("heads = %d, want 2:\n%s", heads(out), out)
 	}
 }

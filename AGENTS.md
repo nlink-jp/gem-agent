@@ -196,9 +196,9 @@ internal/tui/      Bubble Tea inline TUI (ADR-0002): model, approval gate;
                    frame's rows, and the narrow-while-resizing tick (ADR-0094);
                    shortrows.go ends every frame row at its last visible
                    cell (a padded row wraps when a repaint lands mid-resize)
-internal/diagram/  mermaid fences in a reply (ADR-0042/0063/0092): fence scanner;
+internal/diagram/  mermaid fences in a reply (ADR-0063/0092/0095): fence scanner;
                    pictures via mermaid-render where images draw (picture.go),
-                   box art with shape normalization and wrongness guards elsewhere
+                   box art via mermaid-render's RenderText elsewhere
 internal/termimg/  inline images in a DECLARED box (ADR-0089): capability
                    detection before Bubble Tea owns stdin, iTerm2/kitty
                    payloads carrying the box, Fit clamping the width. The
@@ -735,18 +735,17 @@ a new hook) is an architecture change and takes the same rows as a
 - **internal/diagram is a view-layer rewrite, and the model is told
   nothing about it** (ADR-0063, superseding ADR-0043's tool). The TUI's
   `renderReply` calls `diagram.Split` on completed segments: a
-  mermaid fence that draws faithfully becomes box art in place, one that
-  does not stays source with a one-line reader-facing note, unsupported
+  mermaid fence the engine draws becomes box art in place, one it
+  refuses stays source with a one-line reader-facing note, unsupported
   types pass silently. There is no width or height gate — overflow wraps
-  at the terminal and loses nothing (measured); the guards that remain
-  are wrongness guards (label fidelity, edge count). Do not add diagram
+  at the terminal and loses nothing (measured). Do not add diagram
   wording to the system prompt or a diagram tool to the registry: both
   the fence prohibition and a format instruction were measured steering
   the model into hand-drawn box art (ADR-0063 context). The transcript
   keeps the model's source verbatim.
 - **Where images draw, a fence is a picture, never art** (ADR-0092).
-  `diagram.Split(text, pic)` offers every fence to the Picture as written
-  (before the art table); a refusal is source + note — no fallback to art
+  `diagram.Split(text, pic)` offers every fence to the Picture as written;
+  a refusal is source + note — no fallback to art
   (B4). The TUI's `renderReply` returns `[]Segment`; a picture segment
   carries its source, so `pictureSegments` shows source + note when the
   payload cannot be built (a silent `drawImage`-style refusal would lose
@@ -759,19 +758,17 @@ a new hook) is an architecture change and takes the same rows as a
   cmd (`diagramPicture`), only when images draw; a bad `[tui.diagram]`
   is a banner warning, never a refusal to start. Rendering runs in
   `takeLive` on the update path, under `recover` in `drawPicture`.
-- **internal/diagram is three rules, and nothing else** (ADR-0042 §5) —
-  translate (deterministic mapping of constructs the renderer's grammar
-  rejects; each entry a syntax fact), fit (one layout: fits or source),
-  verify (every source label present — compared THROUGH the renderer's
-  line-art decoration — and edges == arrowheads). Do not add a
-  per-construct blacklist: two were added from field reports and both
-  were deleted, one judging beauty and one written from an unverified
-  assumption that measurement disproved. When something breaks, the fix
-  goes in rule 1 or nowhere. The supported list is what the prompt
-  advertises (pinned by test), and guards are tested against the
-  renderer's REAL output, never hand-written art. New mermaid syntax the renderer
-  does not parse is normalized in `prepare`, never left to chance. The rewrite runs inside the TUI renderer only —
-  never in the plain REPL or one-shot, whose stdout is verbatim model text.
+- **Box art is mermaid-render's, and nothing here second-guesses it**
+  (ADR-0095, superseding ADR-0042's table and guards). `render` parses
+  the fence as written and calls `raster.RenderText` with the TUI's own
+  cell measure (`ansi.StringWidth` per rune), so the art's columns and the
+  screen agree; the engine checks every render on its grid and refuses a
+  fault. Do not add a rewrite, a guard or a per-construct blacklist here:
+  a diagram that draws wrong is an engine defect, fixed in mermaid-render
+  with a test there. The engine runs under `recover` in `render`, on the
+  update path. The rewrite runs inside the TUI renderer only — never in
+  the plain REPL or one-shot, whose stdout is verbatim model text; art
+  goes through `inertArt` and past glamour.
 - **The live region expands tabs too** (review round 3) — `ansi.Truncate`
   counts `\t` as zero cells while the terminal advances to the next stop,
   so a tab-indented code line passed the width clip and soft-wrapped the

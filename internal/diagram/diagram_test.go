@@ -81,23 +81,33 @@ func TestUnsupportedStaysSourceSilently(t *testing.T) {
 
 // A supported kind that cannot be drawn keeps its fence and gains the
 // reader-facing note, as its own paragraph on BOTH sides — a note
-// glued to the next paragraph reads as its prefix. The sequence-CJK
-// case is the deterministic failure: the renderer misaligns wide runes.
+// glued to the next paragraph reads as its prefix. An unclosed label is
+// the deterministic failure.
 func TestAttemptedFailureLeavesFencePlusNote(t *testing.T) {
-	md := fence("sequenceDiagram\n  participant U as 操作者\n  U->>A: 質問\n")
+	md := fence("graph TD\n  A[開始 --> B\n")
 	out := rejoin(md)
-	if !strings.Contains(out, "sequenceDiagram") || !strings.Contains(out, "操作者") {
+	if !strings.Contains(out, "graph TD") || !strings.Contains(out, "開始") {
 		t.Fatalf("source lost:\n%s", out)
 	}
 	if !strings.Contains(out, "```\n\n*diagram shown as source: ") {
 		t.Errorf("note missing or not separated from the fence:\n%s", out)
 	}
-	noteEnd := strings.Index(out, "labels*")
-	if noteEnd < 0 || !strings.HasPrefix(out[noteEnd+len("labels*"):], "\n\n") {
+	note := out[strings.Index(out, "*diagram shown as source: ")+1:]
+	end := strings.Index(note, "*")
+	if end < 0 || !strings.HasPrefix(note[end+1:], "\n\n") {
 		t.Errorf("note not followed by a blank line:\n%s", out)
 	}
 	if len(artSegments(md)) != 0 {
 		t.Error("a failed diagram produced an art segment")
+	}
+}
+
+// A refusal inside the engine is the same: a label character that takes
+// no cell (a combining mark) cannot be placed cell by cell.
+func TestEngineRefusalLeavesFencePlusNote(t *testing.T) {
+	md := fence("graph TD\n  A[e\u0301] --> B[b]\n")
+	if len(artSegments(md)) != 0 || !strings.Contains(rejoin(md), "*diagram shown as source: ") {
+		t.Errorf("a refused label drew:\n%s", rejoin(md))
 	}
 }
 
@@ -111,6 +121,21 @@ func TestSequenceASCIIAndERRender(t *testing.T) {
 	out = rejoin(er)
 	if strings.Contains(out, "erDiagram") || !strings.Contains(out, "contains") {
 		t.Errorf("ER not drawn:\n%s", out)
+	}
+}
+
+// A sequence diagram with Japanese labels draws (ADR-0095): mermaid-ascii
+// misaligned wide runes there and the lane refused them. The engine
+// places them by the TUI's own measure and checks its grid.
+func TestSequenceJapaneseDraws(t *testing.T) {
+	arts := artSegments(fence("sequenceDiagram\n  participant U as 操作者\n  participant A as エージェント\n  U->>A: 質問する\n  A-->>U: 回答する\n"))
+	if len(arts) != 1 {
+		t.Fatal("Japanese sequence not drawn")
+	}
+	for _, want := range []string{"操作者", "エージェント", "質問する", "回答する"} {
+		if !strings.Contains(arts[0], want) {
+			t.Errorf("missing %q:\n%s", want, arts[0])
+		}
 	}
 }
 
@@ -170,8 +195,8 @@ func TestMermaidInsideEnclosingFenceUntouched(t *testing.T) {
 	}
 }
 
-// Shapes the renderer does not parse are drawn as boxes carrying the
-// label — never as a literal "{text}" plus a stray node.
+// Every shape is drawn as a box carrying its label — never as a literal
+// "{text}" plus a stray node.
 func TestShapesNormalizedToBoxes(t *testing.T) {
 	md := fence("flowchart TD\n  A[開始] --> B{承認?}\n  B -->|はい| C((実行))\n  B -->|いいえ| D([停止])\n  D --> E[(DB)]:::cls\n  classDef cls fill:#f9f\n")
 	out := rejoin(md)
@@ -220,50 +245,23 @@ func TestFencesUntouchedAndMultiple(t *testing.T) {
 	}
 }
 
-// The classifier accepts exactly the renderable families.
-func TestClassify(t *testing.T) {
-	for src, want := range map[string]kind{
-		"graph LR\nA-->B":           kindFlow,
-		"flowchart TD\nA-->B":       kindFlow,
-		"sequenceDiagram\nA->>B: x": kindSequence,
-		"erDiagram\nA ||--o{ B : c": kindER,
-		"stateDiagram-v2\nA-->B":    kindUnsupported,
-		"classDiagram\nclass A":     kindUnsupported,
-	} {
-		if k := classify(src); k != want {
-			t.Errorf("classify(%q) = %v, want %v", src, k, want)
-		}
-	}
-}
+// heads counts the arrowheads in art.
+func heads(art string) int { return strings.Count(art, "►") + strings.Count(art, "◄") + strings.Count(art, "▲") + strings.Count(art, "▼") }
 
-// The fidelity guard refuses art that lost a label.
-func TestFaithfulGuard(t *testing.T) {
-	src := "graph LR\n  A[alpha] -->|edge| B[beta]\n"
-	if !faithful(kindFlow, src, "┌alpha┐ ─edge► ┌beta┐") {
-		t.Error("complete art rejected")
-	}
-	if faithful(kindFlow, src, "┌alpha┐ ─edge► ┌B┐") {
-		t.Error("art missing a node label accepted")
-	}
-}
-
-// A '&' inside a label is a fan-in operator to the renderer; it is
-// drawn as the full-width ＆ so the graph stays right and the label
-// stays readable (v0.37.1).
+// A '&' inside a label is text, and the label is drawn as written.
 func TestAmpersandInLabel(t *testing.T) {
-	md := fence("graph TD\n  A[開始] --> R([レポート作成 & 確度評価])\n")
-	out := rejoin(md)
+	out := rejoin(fence("graph TD\n  A[開始] --> R([レポート作成 & 確度評価])\n"))
 	if strings.Contains(out, "graph TD") {
 		t.Fatalf("not drawn:\n%s", out)
 	}
-	if !strings.Contains(out, "レポート作成 ＆ 確度評価") {
-		t.Errorf("label not drawn with ＆:\n%s", out)
+	if !strings.Contains(out, "レポート作成 & 確度評価") {
+		t.Errorf("label not drawn as written:\n%s", out)
 	}
 }
 
-// `A -- text --> B` edge labels are normalized to the parsed form; the
-// decision node keeps its branches (v0.37.2 — the field case: the
-// renderer read "A -- text" as a node and the label guard let it pass).
+// `A -- text --> B` edge labels are read as mermaid reads them: the
+// decision node keeps its branches, one head per edge (the field case
+// mermaid-ascii read as a node, v0.37.2).
 func TestEdgeTextSyntaxRendersCorrectly(t *testing.T) {
 	src := "flowchart TD\n    Start[Investigation Start] --> InputType{Indicator Type?}\n    InputType -- IP Address --> CheckTor[Tor Exit Node Check]\n    InputType -- Domain --> CheckWhois[WHOIS / RDAP Lookup]\n    CheckTor --> CheckASN[ASN & GeoIP Resolution]\n"
 	art, why, attempted := render(src)
@@ -273,30 +271,47 @@ func TestEdgeTextSyntaxRendersCorrectly(t *testing.T) {
 	if strings.Contains(art, "InputType --") {
 		t.Errorf("edge text parsed as a node:\n%s", art)
 	}
-	if got := arrowheads(art); got != 4 {
-		t.Errorf("arrowheads = %d, want 4 (one per edge):\n%s", got, art)
+	for _, want := range []string{"IP Address", "Domain", "Tor Exit Node Check"} {
+		if !strings.Contains(art, want) {
+			t.Errorf("missing %q:\n%s", want, art)
+		}
+	}
+	if got := heads(art); got != 4 {
+		t.Errorf("heads = %d, want 4 (one per edge):\n%s", got, art)
 	}
 }
 
-// Structural guard: the edge count, and the subgraph-id edge that a
-// blacklist once wrongly refused.
-func TestFlowStructuralGuards(t *testing.T) {
-	if n := flowEdgeCount("graph TD\n  A[a] --> B{b}\n  B -->|x| C[c] & D[d]\n  E[e] & F[f] --> G[g]\n  H --- I\n"); n != 5 {
-		t.Errorf("flowEdgeCount = %d, want 5", n)
-	}
-	if arrowheads("┌a┐ ─► ┌b┐\n ▼\n◄ ▲") != 4 {
-		t.Error("arrowheads miscounted")
-	}
-	// An edge whose endpoint is a subgraph id draws correctly (measured
-	// v0.37.6; the v0.37.2 refusal was an unverified assumption). The
-	// edge-count guard is what proves it, not a syntax blacklist.
-	sub := "flowchart LR\n    subgraph Passive_Sources [Passive Investigation Layer]\n        DNS[DoH]\n    end\n    Passive_Sources --> Aggregator[Indicator Aggregator]\n"
-	art, why, attempted := render(sub)
+// An edge whose endpoint is a subgraph id is an edge to the subgraph,
+// not a phantom node named after it (ADR-0042's `Z --> S`).
+func TestSubgraphIDEdgeIsNoPhantomNode(t *testing.T) {
+	src := "flowchart LR\n    subgraph Passive_Sources [Passive Investigation Layer]\n        DNS[DoH]\n    end\n    Passive_Sources --> Aggregator[Indicator Aggregator]\n"
+	art, why, attempted := render(src)
 	if !attempted || why != "" {
 		t.Fatalf("edge to a subgraph id refused: %s", why)
 	}
-	if arrowheads(art) != flowEdgeCount(prepare(kindFlow, sub)) {
-		t.Errorf("subgraph-id edge miscounted:\n%s", art)
+	if strings.Contains(art, "Passive_Sources") {
+		t.Errorf("the subgraph id drawn as a node:\n%s", art)
+	}
+	if !strings.Contains(art, "Passive Investigation Layer") || heads(art) != 1 {
+		t.Errorf("subgraph edge not drawn:\n%s", art)
+	}
+}
+
+// An unsupported type is not attempted; the engine's parse decides,
+// not a classifier here.
+func TestRenderAttemptsOnlyTheThreeTypes(t *testing.T) {
+	for src, want := range map[string]bool{
+		"graph LR\nA-->B":           true,
+		"flowchart TD\nA-->B":       true,
+		"sequenceDiagram\nA->>B: x": true,
+		"erDiagram\nA ||--o{ B : c": true,
+		"stateDiagram-v2\nA-->B":    false,
+		"pie\n\"a\" : 1":           false,
+		"classDiagram\nclass A":     false,
+	} {
+		if _, _, attempted := render(src); attempted != want {
+			t.Errorf("render(%q) attempted = %v, want %v", src, attempted, want)
+		}
 	}
 }
 
@@ -332,23 +347,21 @@ func TestDenseERDraws(t *testing.T) {
 	}
 }
 
-// The renderer pads edge labels with its own line art: a horizontal
-// edge label becomes "──IP─/─CIDR──" and a label crossing a subgraph
-// border "Domain│/ FQDN". The fidelity guard compares through the
-// decoration — stripping only whitespace read those as lost labels and
-// refused correct diagrams (v0.37.5, field report).
-func TestFaithfulSeesThroughLineArt(t *testing.T) {
+// Multi-word edge labels draw whole (the field case mermaid-ascii padded
+// with line art, v0.37.5).
+func TestMultiWordEdgeLabels(t *testing.T) {
 	src := "flowchart TD\n  A[Start] --> B{Target Type?}\n  B -->|Domain / FQDN| C[WHOIS Lookup]\n  B -->|IP / CIDR| D[ASN Lookup]\n"
 	art, why, attempted := render(src)
 	if !attempted || why != "" {
-		t.Fatalf("multi-word edge labels refused (%s) — the guard is reading padded labels as lost", why)
+		t.Fatalf("multi-word edge labels refused: %s", why)
 	}
-	if got := arrowheads(art); got != 3 {
-		t.Errorf("arrowheads = %d, want 3:\n%s", got, art)
+	for _, want := range []string{"Domain / FQDN", "IP / CIDR"} {
+		if !strings.Contains(art, want) {
+			t.Errorf("label %q not drawn whole:\n%s", want, art)
+		}
 	}
-	// Padding must not be mistaken for a present label either.
-	if faithful(kindFlow, src, "┌Start┐ ─► ┌WHOIS Lookup┐ ─► ┌ASN Lookup┐") {
-		t.Error("a genuinely missing edge label was accepted")
+	if got := heads(art); got != 3 {
+		t.Errorf("heads = %d, want 3:\n%s", got, art)
 	}
 }
 
@@ -375,15 +388,12 @@ func TestSubgraphIDEdgesWithJapaneseLabels(t *testing.T) {
 	if !attempted || why != "" {
 		t.Fatalf("field flowchart with subgraph-id edges refused: %s", why)
 	}
-	if got, want := arrowheads(art), flowEdgeCount(prepare(kindFlow, src)); got != want {
-		t.Errorf("arrowheads %d != source edges %d:\n%s", got, want, art)
+	if got := heads(art); got != 10 {
+		t.Errorf("heads = %d, want 10 (one per edge):\n%s", got, art)
 	}
-	// Compare the way the production guard does — through the
-	// renderer's decoration (v0.37.5).
-	flat := decorationRe.ReplaceAllString(art, "")
 	for _, want := range []string{"種別判定", "ドメイン調査", "IP調査", "相関分析", "Domain / FQDN"} {
-		if !strings.Contains(flat, decorationRe.ReplaceAllString(want, "")) {
-			t.Errorf("label %q lost", want)
+		if !strings.Contains(art, want) {
+			t.Errorf("label %q lost:\n%s", want, art)
 		}
 	}
 }

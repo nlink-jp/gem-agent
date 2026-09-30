@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Box art comes from mermaid-render** (ADR-0095). Terminals that draw no
+  images get their flowchart, sequence and ER diagrams from the same engine
+  as the pictures, placed by the TUI's own cell widths and checked on the
+  grid every time. Sequence diagrams with Japanese labels now draw. BT and
+  RL flowcharts draw in their direction. An edge to a subgraph is an edge
+  to its frame, not a stray node. The art looks different from before.
+
+### Removed
+
+- `AlexanderGrooff/mermaid-ascii`, its translation table and its two
+  guards. The binary no longer carries community code for diagrams.
+
 ## [0.89.1] - 2026-09-30
 
 ### Changed

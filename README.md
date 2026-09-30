@@ -74,7 +74,8 @@ Tab completion for `@`-paths, `/`-commands, and skill
 names, `!command` shell escape, mermaid fences drawn in place in the
 reply — as pictures where the terminal draws images (flowchart / sequence /
 ER / pie / state / gantt / mindmap, CJK labels included), as box art elsewhere
-(pie, state, gantt and mindmap stay source there); anything that cannot be
+(flowchart / sequence / ER, CJK labels included, from the same engine; pie,
+state, gantt and mindmap stay source there); anything that cannot be
 drawn right stays source — fifteen slash commands (`/help`
 `/tools` `/mcp` `/auto` `/readonly` `/compact` `/settings` `/riskbook` `/usage`
 `/memory` `/skills` `/skill` `/version` `/clear` `/quit`), a provenance-first `/settings`
