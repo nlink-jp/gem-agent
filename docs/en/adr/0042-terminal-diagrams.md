@@ -13,6 +13,10 @@ file; when the plain REPL's or `-p`'s stream is a terminal, control
 characters in the model's text are removed first — the `ls -q` / `ls -w`
 convention — because a terminal executes some of the bytes it is sent.*
 
+*Amended by ADR-0095: the renderer (mermaid-ascii), the translation table and
+the two faithfulness guards are replaced by mermaid-render's text art, which
+reads the fence as written and checks its own grid. §4 stands.*
+
 ## Context
 
 glamour renders a ```` ```mermaid ```` fence as an ordinary code block, so

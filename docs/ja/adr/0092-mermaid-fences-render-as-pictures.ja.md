@@ -9,6 +9,9 @@
 | Triggered by | 運用者: 「需要はある。罫線表示の品質が悪すぎて使わずにいただけ」、「画像はトランスクリプトの描画として使う。モデルのツールではなくランタイムの描画機能にしないと、モデルは使わない」 |
 | Relates to | [ADR-0042](0042-terminal-diagrams.ja.md)・[ADR-0063](0063-diagram-fences-render-in-place.ja.md)（フェンスのレーン。絵を描かない場所では不変）、[ADR-0089](0089-inline-images-declare-their-height.ja.md)（**A3 をここで置き換え、A2 に答え、Consequences の 1 行を改める**。宣言するボックス・レーン・行数の会計はそのまま）、[ADR-0090](0090-an-images-bytes-never-become-a-path.ja.md)・[ADR-0091](0091-showing-is-an-act-of-output.ja.md)（view 層はファイルを開かない・拒まれた payload は黙る） |
 
+*ADR-0095 による修正: 絵を描かない場所の罫線も mermaid-render が描く。本記録が迂回した
+mermaid-ascii と変換表は無くなった。*
+
 ## Context
 
 ### 罫線表示にできなかったこと

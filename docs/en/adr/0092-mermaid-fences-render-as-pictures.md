@@ -9,6 +9,10 @@
 | Triggered by | Operator: "the demand exists; it was suppressed because the text art is too poor to use", and "use images as a rendering of the transcript — a runtime feature, not a model tool, or the model will not use it" |
 | Relates to | [ADR-0042](0042-terminal-diagrams.md) and [ADR-0063](0063-diagram-fences-render-in-place.md) (the fence lane, unchanged where no picture is drawn), [ADR-0089](0089-inline-images-declare-their-height.md) (**A3 is superseded here, A2 is answered, and one Consequences line is amended**; the declared box, the lane and the accounting stand), [ADR-0090](0090-an-images-bytes-never-become-a-path.md) and [ADR-0091](0091-showing-is-an-act-of-output.md) (the view layer opens no file; a refused payload is silent) |
 
+*Amended by ADR-0095: where no picture draws, the box art now comes from
+mermaid-render too; mermaid-ascii and the table this record routes around are
+gone.*
+
 ## Context
 
 ### What the text art could not do

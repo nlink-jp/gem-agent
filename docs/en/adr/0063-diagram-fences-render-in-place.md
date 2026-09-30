@@ -10,6 +10,9 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator: the tool costs turns and interleaves status lines into the reply — and two months of sessions show chat diagrams simply disappeared, replaced by hand-drawn box art |
 
+*Amended by ADR-0095: the art in the lane comes from mermaid-render; the lane,
+the glamour bypass and the note are unchanged.*
+
 ## Context
 
 Measurements over the two months since v0.40.0 shipped ADR-0043
