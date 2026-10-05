@@ -21,9 +21,9 @@ name ([risk.go:176](../../../internal/risk/risk.go)) — cannot see it.
 That constraint rules out the obvious design. The MCP intake already writes
 an image into the session work directory and hands the model
 `[image saved at <path> … use view_image on that path]`
-([mcpresult.go:211](../../../cmd/mcpresult.go)), so a path is sitting right
+([mcpresult.go:242](../../../cmd/mcpresult.go)), so a path is sitting right
 there — and `write` short-circuits on `os.Stat`
-([mcpresult.go:234](../../../cmd/mcpresult.go)) while every call hands the
+([mcpresult.go:265](../../../cmd/mcpresult.go)) while every call hands the
 server the work directory as `_meta[workdir.MetaKey]`
 ([client.go:610](../../../internal/mcp/client.go)). A local server child
 therefore knows its own name, its tool name, the bytes it will return and
@@ -102,7 +102,7 @@ does not allow.
 One condition, not two. A block whose note does not fit the response
 budget is already neither saved nor described individually — the guard
 sizes `binaryNote` before anything is written
-([mcpresult.go:105](../../../cmd/mcpresult.go)) — and is counted into a
+([mcpresult.go:109](../../../cmd/mcpresult.go)) — and is counted into a
 leftovers line. Such a block is **not drawn** either.
 
 The alternative — drawing a picture the model was never told about, from a

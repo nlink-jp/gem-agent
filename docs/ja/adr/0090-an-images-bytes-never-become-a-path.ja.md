@@ -19,8 +19,8 @@ view 層が行う読み取りはツールコールではないので、`Agent.de
 
 その制約が、いちばん素直な設計を排除する。MCP intake は既に画像をセッションの work dir へ
 書き出し、モデルには `[image saved at <path> … use view_image on that path]` を渡している
-（[mcpresult.go:211](../../../cmd/mcpresult.go)）。つまりパスはそこにある。しかし `write` は
-`os.Stat` で短絡し（[mcpresult.go:234](../../../cmd/mcpresult.go)）、毎回の呼び出しがサーバに
+（[mcpresult.go:242](../../../cmd/mcpresult.go)）。つまりパスはそこにある。しかし `write` は
+`os.Stat` で短絡し（[mcpresult.go:265](../../../cmd/mcpresult.go)）、毎回の呼び出しがサーバに
 work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:610](../../../internal/mcp/client.go)）。
 ローカルのサーバ子プロセスは自分の名前・ツール名・返すバイト列・ディレクトリを知るので、
 応答の前に content-addressed の名前へ symlink を置ける。するとランタイムは何も書かず、パスは
@@ -87,7 +87,7 @@ sink は対話的 TUI でない入口すべてで**不活性**である。そこ
 
 条件は 1 つであって 2 つではない。注記が response budget に収まらないブロックは、既に保存も
 個別記述もされない — ガードは何かを書く前に `binaryNote` の大きさを測る
-（[mcpresult.go:105](../../../cmd/mcpresult.go)）— そして leftovers 行に数えられる。そうした
+（[mcpresult.go:109](../../../cmd/mcpresult.go)）— そして leftovers 行に数えられる。そうした
 ブロックは**描かない**。
 
 代案（モデルが知らされていない絵を、結果が切り詰められた呼び出しから描く）は、セッションの
