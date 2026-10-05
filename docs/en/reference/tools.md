@@ -76,6 +76,16 @@ with no line-number prefixes, which would poison `edit_file`'s
 exact-match contract. Everything the model reads is replayed on every
 later round, so windows are the default working style.
 
+`offset`/`length` read by bytes instead (ADR-0096 §2): a negative
+`offset` counts from the end, `length` defaults to 20,000 bytes and is
+capped at 200 KB, and the note names the bytes actually returned —
+`[bytes 251839–252639 of 252639]` — moved to rune boundaries, so a
+Japanese text never shows a broken character at either edge. This is
+the route to the tail of one long line, which a line window cannot
+reach: a tool result saved to the work directory is typically a single
+line of JSON. A plain read cut at 200 KB names it (`offset=N reads on`).
+The two windows are exclusive.
+
 A credential-named file is read only with the operator's yes
 (ADR-0085): `read_file`, `summarize_file`, `view_image`, `show_image`,
 `read_document` and `file_info` on a path matching the sandbox's credential list —

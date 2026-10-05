@@ -101,7 +101,7 @@ stderr に 1 行出して対処を示します — 何も添付しない起動�
 **[組み込みツール](docs/ja/reference/tools.ja.md)** — 方向づけ
 （`list_files`/`list_tree`/`search_files`、ignore 対応: 依存・ビルド
 ディレクトリと `.gitignore` 対象はスキップされ、skip は必ず報告）、
-窓読みと要約
+行またはバイトでの窓読み（保存された 1 行の結果の末尾にも届く）と要約
 （`read_file`/`summarize_file`）、隔離された子コンテキストでの
 委任プロジェクト検索（`agentic_file_search`）、診断つきアトミック一括編集
 （`edit_file`/`write_file` — 全文書き換えが文書を黙って要約消滅させ

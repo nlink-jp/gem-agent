@@ -107,7 +107,8 @@ approving the call, which is asked separately afterwards (ADR-0080).
 **[Built-in tools](docs/en/reference/tools.md)** — orientation
 (`list_files`/`list_tree`/`search_files`, ignore-aware: dependency and
 build directories and `.gitignore`'d content are skipped with every
-skip reported), windowed reads and
+skip reported), reads windowed by line or by byte — the tail of a
+saved single-line result included — and
 summaries (`read_file`/`summarize_file`), delegated project search in
 an isolated child context (`agentic_file_search`), atomic batched edits with
 diagnosed misses (`edit_file`/`write_file`, with a shrink guard so a

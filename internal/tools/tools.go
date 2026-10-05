@@ -1314,6 +1314,8 @@ func (r *Registry) readFile() *Tool {
 			"Pass start_line/end_line (1-based, inclusive) to read a window instead of the whole " +
 			"file — pair with search_files results (path:line) and prefer windows for large files: " +
 			"everything read here is replayed on every later round. Large reads are truncated. " +
+			"Pass offset/length (bytes) instead to read by position — a negative offset counts " +
+			"from the end; this reaches every byte of a long single-line file, such as a saved tool result. " +
 			"A credential file (.env, keys, credential stores) is read only with the operator's approval.",
 		Parameters: map[string]any{
 			"type": "object",
@@ -1329,6 +1331,14 @@ func (r *Registry) readFile() *Tool {
 				"end_line": map[string]any{
 					"type":        "integer",
 					"description": "Last line to read (inclusive). Omit to read to the end.",
+				},
+				"offset": map[string]any{
+					"type":        "integer",
+					"description": "First byte to read (0-based); negative counts from the end (-500 = the last 500 bytes). Not with start_line/end_line.",
+				},
+				"length": map[string]any{
+					"type":        "integer",
+					"description": fmt.Sprintf("Bytes to read from offset (default %d, at most %d). Not with start_line/end_line.", OutputCap, readCap),
 				},
 			},
 			"required": []string{"path"},
@@ -1355,6 +1365,13 @@ func (r *Registry) readFile() *Tool {
 				return "", err
 			}
 			defer func() { _ = f.Close() }()
+			bw, err := byteWindowArgs(args)
+			if err != nil {
+				return "", err
+			}
+			if bw.set {
+				return readBytes(f, bw)
+			}
 			// Streamed, never held whole (review after v0.68.0): the
 			// window and the cap apply as the file is read, so a huge or
 			// sparse file costs bounded memory whatever its size.
@@ -1371,7 +1388,10 @@ func (r *Registry) readFile() *Tool {
 					total = st.Size()
 				}
 				cut := cutRunes(content, readCap)
-				out = cut + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", len(cut), total)
+				// The route to the rest rides with the cut (ADR-0096 §2):
+				// offset reaches what a line window cannot — the tail of
+				// one long line.
+				out = cut + fmt.Sprintf("\n[output truncated: %d of %d bytes shown — offset=%d reads on]", len(cut), total, len(cut))
 			}
 			// The window note goes AFTER any truncation note, and the
 			// content itself stays raw (no line-number prefixes): numbered

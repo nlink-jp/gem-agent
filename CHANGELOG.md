@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`read_file` reads by bytes** (ADR-0096 §2). `offset`/`length` take a
+  byte window — a negative offset counts from the end — so the tail of a
+  long single-line file is reachable, which a line window never was: a
+  tool result saved to the work directory past 200 KB could not be read
+  to its end by the tool its notice named. The note names the bytes
+  returned, moved to rune boundaries. A plain read cut at 200 KB now says
+  where to read on.
+
 ## [0.90.0] - 2026-09-30
 
 ### Changed
