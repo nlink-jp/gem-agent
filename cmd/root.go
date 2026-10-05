@@ -1130,6 +1130,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	})
 	if len(restored) > 0 {
 		ag.SetHistory(restored)
+		// The resume fact where the work resumes, not only in the system
+		// prompt (ADR-0097 §4): against a conversation full of its own
+		// dates, the model took the conversation's date every time the
+		// fact sat only in the system prompt.
+		if note := resumeNote(dates); note != "" {
+			ag.AddContext(note)
+		}
 	}
 
 	// --- risk rulebook (ADR-0050): read both layers into the judge.

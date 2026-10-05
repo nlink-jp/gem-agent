@@ -8,7 +8,10 @@
   said "Session started: <the resume day>" while the conversation being
   resumed began days before, and the model was seen taking the
   conversation's older date for new work. A resumed session now reads
-  `Resumed: <day>; the conversation above began on <day>.` The date is also
+  `Resumed: <day>; the conversation above began on <day>.`, and the runtime
+  states the same fact as its own message at the resume point — measured on a
+  resumed session, the system prompt alone left 0 of 5 runs dating new work
+  today, the note at the resume point 5 of 5. The date is also
   captured once per session: a skills reload or MCP change after midnight
   no longer moves it, and `/clear` captures a new one.
 

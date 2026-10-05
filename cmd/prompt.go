@@ -69,6 +69,25 @@ func dateLine(d sessionDates) string {
 	return fmt.Sprintf("Resumed: %s; the conversation above began on %s.", day, d.ResumedFrom.In(start.Location()).Format("2006-01-02"))
 }
 
+// resumeNote is the same fact stated where the work resumes (ADR-0097
+// §4): the runtime's own message appended after the restored history.
+// Measured: with the date only in the system prompt, 0 of 5 resumed runs
+// used today's date for new work — all took the conversation's — and
+// with this note at the resume point, 5 of 5 did. Empty for a fresh
+// session.
+func resumeNote(d sessionDates) string {
+	if d.ResumedFrom.IsZero() {
+		return ""
+	}
+	start := d.Start
+	if start.IsZero() {
+		start = time.Now()
+	}
+	zone, _ := start.Zone()
+	return fmt.Sprintf("gem-agent: this session was resumed on %s (%s, %s); the conversation above began on %s.",
+		start.Format("2006-01-02"), start.Weekday(), zone, d.ResumedFrom.In(start.Location()).Format("2006-01-02"))
+}
+
 // workDirSection tells the model where this session's scratch space is.
 // The path is spelled out rather than left to $GEMAGENT_WORK_DIR,
 // because an MCP tool argument is JSON the model writes: no shell

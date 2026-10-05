@@ -179,3 +179,18 @@ func TestDateLineIsCapturedNotRecomputed(t *testing.T) {
 		t.Error("the prompt's date moved between rebuilds")
 	}
 }
+
+// ADR-0097 §4: the resume fact is also stated at the resume point, in
+// the runtime's words; a fresh session gets no note.
+func TestResumeNote(t *testing.T) {
+	jst := time.FixedZone("JST", 9*3600)
+	start := time.Date(2026, 10, 6, 9, 0, 0, 0, jst)
+	if got := resumeNote(sessionDates{Start: start}); got != "" {
+		t.Errorf("fresh session got a note: %q", got)
+	}
+	began := time.Date(2026, 9, 4, 14, 32, 0, 0, time.UTC)
+	want := "gem-agent: this session was resumed on 2026-10-06 (Tuesday, JST); the conversation above began on 2026-09-04."
+	if got := resumeNote(sessionDates{Start: start, ResumedFrom: began}); got != want {
+		t.Errorf("note = %q", got)
+	}
+}

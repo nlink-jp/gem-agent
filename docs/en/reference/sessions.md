@@ -25,7 +25,10 @@ from.
 A resumed session is told when it was resumed and when its conversation
 began — `Resumed: 2026-10-05 (Monday, JST); the conversation above began
 on 2026-10-02.` — rather than a "session started" day that contradicts the
-conversation it is reading (ADR-0097).
+conversation it is reading — in the system prompt, and again as the
+runtime's own message at the resume point, where it is read: with the
+system prompt alone, resumed runs dated new work with the conversation's
+date (ADR-0097).
 
 **The conversation comes back; the session's modes do not.** Auto-approve
 and the read-only ceiling and its watcher are resolved from config and
