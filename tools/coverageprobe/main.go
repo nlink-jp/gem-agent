@@ -58,10 +58,20 @@
 // and the decision rule are unchanged. score also reports a sensitivity
 // line that scores contaminated runs by their answers.
 //
+// Cost. Every run calls the configured paid model, and the isolation
+// that keeps runs apart also keeps their spend out of gem-usage-lens,
+// which reads only the real state root. The ADR-0096 runs — about 240
+// sessions, 5,862 model calls — cost $38.94 at the introductory list
+// rate, and the spend surfaced first on the cloud bill. So: estimate
+// before launching (tokens per run from one smoke run × attempts),
+// cap a cell with -max-prompt-tokens, read the spend `score` prints,
+// and ingest the run roots into gem-usage-lens afterwards (score prints
+// the command).
+//
 // Usage:
 //
 //	coverageprobe serve                 (spawned by gem-agent via mcp.json)
-//	coverageprobe run -bin B -arm a -scenario s1 -n 20 -out DIR -work DIR -fence DIR [-jobs 4]
+//	coverageprobe run -bin B -arm a -scenario s1 -n 20 -out DIR -work DIR -fence DIR [-jobs 4] [-max-prompt-tokens N]
 //	coverageprobe score -out DIR
 package main
 

@@ -342,6 +342,14 @@ What the probe also shows, and what it does not:
   score**: in S2, (c) wandered out of its directory in 6 of 26 runs
   against 1 of 21 in (a) and 2 of 22 in (b), and never used the byte
   window its note named. Small numbers, recorded as an observation.
+- **What it cost, and why it went unseen.** About 240 sessions and
+  5,862 model calls: 160.3M prompt tokens (130.3M cached) and 1.76M
+  output and thought tokens — $38.94 at the introductory list rate, which
+  matched the cloud bill for the day. The isolation that kept runs apart
+  kept their usage records out of the state root gem-usage-lens reads, so
+  the spend surfaced first on the bill; the run roots were ingested
+  afterwards. The probe now records each run's tokens, prints the spend,
+  and takes a prompt-token cap.
 - **Wandering is itself a property of the setup**: a question answerable
   in three calls took a median of 33–38 calls in S1, most of them
   examining the environment. The first launch, with a server named

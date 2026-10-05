@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -103,5 +104,24 @@ func TestContamination(t *testing.T) {
 		if got != c.bad {
 			t.Errorf("%s: contaminated=%v", c.args, got)
 		}
+	}
+}
+
+// A run's spend comes from its transcript's usage records — the only
+// account of it, since the run's state root is isolated.
+func TestReadTranscriptSumsUsage(t *testing.T) {
+	p := t.TempDir() + "/t.jsonl"
+	lines := `{"kind":"usage","data":{"source":"main","model":"m","prompt":100,"output":5,"thoughts":7,"cached":60,"total":112}}
+{"kind":"message","data":{"role":"assistant","content":"done"}}
+{"kind":"usage","data":{"source":"main","model":"m","prompt":200,"output":1,"thoughts":2,"cached":150,"total":203}}
+`
+	if err := os.WriteFile(p, []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var rec record
+	readTranscript(p, &rec)
+	want := tokens{Calls: 2, Prompt: 300, Cached: 210, Output: 6, Thoughts: 9}
+	if rec.Tokens != want || rec.Final != "done" {
+		t.Errorf("tokens = %+v final = %q", rec.Tokens, rec.Final)
 	}
 }

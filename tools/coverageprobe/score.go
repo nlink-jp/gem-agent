@@ -43,7 +43,10 @@ func scoreCmd(args []string) error {
 	out := fs.String("out", "", "output directory")
 	_ = fs.Parse(args)
 	files, _ := filepath.Glob(filepath.Join(*out, "*", "*", "attempt-*", "record.json"))
-	type cell struct{ n, ok, spills, read, invalid, contaminated, cAnswered, cOK int }
+	type cell struct {
+		n, ok, spills, read, invalid, contaminated, cAnswered, cOK int
+		spent                                                      tokens
+	}
 	cells := map[string]*cell{}
 	var audit []string
 	for _, f := range files {
@@ -60,6 +63,7 @@ func scoreCmd(args []string) error {
 			cells[k] = &cell{}
 		}
 		c := cells[k]
+		c.spent.add(r.Tokens) // every attempt spent, valid or not
 		if r.Contaminated != "" {
 			c.contaminated++
 			if r.Final != "" {
@@ -100,6 +104,15 @@ func scoreCmd(args []string) error {
 		c := cells[k]
 		fmt.Printf("| %s | %d | %d | %s | %d | %d | %d | %d |\n", k, c.n, c.ok, pct(c.ok, c.n), c.spills, c.read, c.invalid, c.contaminated)
 	}
+	var all tokens
+	fmt.Println("\nSpend — every attempt, valid or not (the run state roots are isolated, so gem-usage-lens does not see it):")
+	for _, k := range keys {
+		c := cells[k]
+		all.add(c.spent)
+		fmt.Printf("- %s: %d calls, prompt %d (cached %d), output+thoughts %d\n", k, c.spent.Calls, c.spent.Prompt, c.spent.Cached, c.spent.Output+c.spent.Thoughts)
+	}
+	fmt.Printf("- total: %d calls, prompt %d (cached %d), output+thoughts %d\n", all.Calls, all.Prompt, all.Cached, all.Output+all.Thoughts)
+	fmt.Println("  To price it and keep it in the usage record: for d in <-work>/*/state/sessions; do gem-usage-lens ingest -sessions-root \"$d\"; done")
 	fmt.Println("\nSensitivity — contaminated runs scored by their answers (not part of the decision):")
 	for _, k := range keys {
 		c := cells[k]

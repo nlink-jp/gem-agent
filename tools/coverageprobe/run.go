@@ -63,6 +63,10 @@ type record struct {
 	SpillPaths []string   `json:"spill_paths"`
 	SpillRead  bool       `json:"spill_read"`
 	Transcript string     `json:"transcript"`
+	// Tokens is what the run spent, from the transcript's usage records.
+	// The run's state root is isolated, so gem-usage-lens never sees it;
+	// this is the only account of the spend unless the root is ingested.
+	Tokens tokens `json:"tokens"`
 	// Contaminated: a tool call reached outside the run's own directory
 	// into the probe's scratch area or named the probe itself — where
 	// other runs' answers and this program's source live.
@@ -85,6 +89,7 @@ func runCmd(args []string) error {
 	jobs := fs.Int("jobs", 4, "concurrent runs")
 	model := fs.String("model", "gemini-3.8-flash", "main model")
 	timeout := fs.Duration("timeout", 10*time.Minute, "per-run timeout")
+	maxPrompt := fs.Int64("max-prompt-tokens", 0, "stop starting runs once the cell's prompt tokens reach this (0 = no cap); runs in flight finish")
 	work := fs.String("work", "", "where runs execute (their projects, homes, state); outside -out")
 	fence := fs.String("fence", "", "a tool call naming a path under this, other than the run's own directory, contaminates the run")
 	_ = fs.Parse(args)
@@ -101,12 +106,18 @@ func runCmd(args []string) error {
 	}
 	var mu sync.Mutex
 	valid, attempt, finished := 0, 0, 0
+	var spent tokens
+	capped := false
 	maxAttempts := *n * 2
 	sem := make(chan struct{}, *jobs)
 	var wg sync.WaitGroup
 	for {
 		mu.Lock()
-		done := valid >= *n || attempt >= maxAttempts
+		if *maxPrompt > 0 && spent.Prompt >= *maxPrompt && !capped {
+			capped = true
+			fmt.Fprintf(os.Stderr, "%s/%s: prompt-token cap %d reached (%d) — no new runs\n", *arm, *scenario, *maxPrompt, spent.Prompt)
+		}
+		done := valid >= *n || attempt >= maxAttempts || capped
 		// Never more runs in flight than valid runs still needed.
 		busy := attempt-finished >= *n-valid
 		mu.Unlock()
@@ -144,6 +155,7 @@ func runCmd(args []string) error {
 				}
 			}
 			mu.Lock()
+			spent.add(rec.Tokens)
 			finished++
 			if rec.Valid && valid < *n {
 				valid++
@@ -152,7 +164,11 @@ func runCmd(args []string) error {
 			mu.Unlock()
 			b, _ := json.MarshalIndent(rec, "", "  ")
 			_ = os.WriteFile(filepath.Join(dir, "record.json"), b, 0o644)
-			fmt.Fprintf(os.Stderr, "%s/%s attempt %d: valid=%v exit=%d %.0fs\n", *arm, *scenario, a, rec.Valid, rec.ExitCode, rec.Seconds)
+			mu.Lock()
+			total := spent
+			mu.Unlock()
+			fmt.Fprintf(os.Stderr, "%s/%s attempt %d: valid=%v exit=%d %.0fs prompt=%d (cell so far: prompt=%d cached=%d out+thoughts=%d)\n",
+				*arm, *scenario, a, rec.Valid, rec.ExitCode, rec.Seconds, rec.Tokens.Prompt, total.Prompt, total.Cached, total.Output+total.Thoughts)
 		}()
 	}
 	wg.Wait()
@@ -266,6 +282,10 @@ func readTranscript(path string, rec *record) {
 		var r struct {
 			Kind string `json:"kind"`
 			Data struct {
+				Prompt      int64  `json:"prompt"`
+				Cached      int64  `json:"cached"`
+				Output      int64  `json:"output"`
+				Thoughts    int64  `json:"thoughts"`
 				Role        string `json:"role"`
 				Content     string `json:"content"`
 				RuntimeNote string `json:"runtime_note"`
@@ -275,7 +295,14 @@ func readTranscript(path string, rec *record) {
 				} `json:"tool_calls"`
 			} `json:"data"`
 		}
-		if json.Unmarshal(sc.Bytes(), &r) != nil || r.Kind != "message" {
+		if json.Unmarshal(sc.Bytes(), &r) != nil {
+			continue
+		}
+		if r.Kind == "usage" {
+			rec.Tokens.add(tokens{Prompt: r.Data.Prompt, Cached: r.Data.Cached, Output: r.Data.Output, Thoughts: r.Data.Thoughts, Calls: 1})
+			continue
+		}
+		if r.Kind != "message" {
 			continue
 		}
 		switch r.Data.Role {
@@ -307,4 +334,21 @@ func readTranscript(path string, rec *record) {
 			}
 		}
 	}
+}
+
+// tokens is a run's or a cell's model spend, as the transcript records it.
+type tokens struct {
+	Calls    int64 `json:"calls"`
+	Prompt   int64 `json:"prompt"`
+	Cached   int64 `json:"cached"`
+	Output   int64 `json:"output"`
+	Thoughts int64 `json:"thoughts"`
+}
+
+func (t *tokens) add(o tokens) {
+	t.Calls += o.Calls
+	t.Prompt += o.Prompt
+	t.Cached += o.Cached
+	t.Output += o.Output
+	t.Thoughts += o.Thoughts
 }
