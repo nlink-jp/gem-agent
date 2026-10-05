@@ -14,6 +14,10 @@ error with `error:` itself; the MCP adapter returns a typed
 `RemoteError` and the executor renders the failure with its provenance.
 Budget and spill are unchanged.*
 
+*Amended by ADR-0096 §1: a spilled block is previewed by its first 600
+and last 200 runes, not its head alone, and the notice names the byte
+spans shown and the `read_file` offset/length route to the rest.*
+
 ## Context
 
 Two facts, found while designing the work directory, turned out to

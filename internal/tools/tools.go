@@ -496,18 +496,25 @@ func (r *Registry) gitignoreReader(path string, cap int64) ([]byte, error) {
 // in the same footer whether the kernel refused it or this did. Inside
 // the child the kernel still refuses what this misses, which is why
 // the list stays the fast path and not the boundary (§2).
-func (r *Registry) readForSearch(abs string) ([]byte, bool, error) {
+//
+// skip says why a file was not searched, so the walk can count it
+// (ADR-0096 §4): a "no match" over files that were never read is not
+// the answer it looks like.
+func (r *Registry) readForSearch(abs string) ([]byte, searchSkip, error) {
 	if sandbox.CredentialPath(abs) {
-		return nil, false, fs.ErrPermission
+		return nil, skipUnreadable, fs.ErrPermission
 	}
 	data, more, err := r.readFileCapped(abs, searchFileCap)
-	if err != nil || more {
-		return nil, false, err
+	if err != nil {
+		return nil, skipUnreadable, err
+	}
+	if more {
+		return nil, skipSize, nil
 	}
 	if bytes.IndexByte(data[:min(len(data), binarySniff)], 0) >= 0 {
-		return nil, false, nil // binary
+		return nil, skipBinary, nil
 	}
-	return data, true, nil
+	return data, skipNone, nil
 }
 
 // readDirIn lists the directory at abs through its root: a directory

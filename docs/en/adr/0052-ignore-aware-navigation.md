@@ -8,6 +8,11 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator field report: small projects navigate fine, but as a project grows the model lists and searches more and more, responses slow down, and noise drowns the targets — followed by "avoid external dependencies where possible; let's do everything we can" on the diagnosis below. |
 
+*Amended by ADR-0096 §4: every file `search_files` does not search is
+counted by reason — size, binary, image, unreadable, unlistable
+directory — and refusals past the named five are counted; size and
+image skips were silent.*
+
 ## Context
 
 ADR-0013 shipped `list_tree` and `search_files` on the premise that

@@ -306,8 +306,9 @@ func (r *Registry) searchFiles() *Tool {
 			"skipped and reported — pass include_ignored=true to search them too. For a broad " +
 			"\"where does this live\" question, start with mode=\"files\" (per-file counts only) " +
 			"and narrow with include (gitignore-style file pattern, e.g. \"*.go\" or \"src/**\") " +
-			"or path. Binary files, VCS internals, symlinks and files over 2MB are skipped; caps and " +
-			"skips are reported, and a file this tool may not read is named rather than hidden. " +
+			"or path. VCS internals and symlinks are not walked; binary, image and unreadable files and " +
+			"files over 2MB are not searched and are counted in a closing line (files over 2MB by name, " +
+			"for reading another way). Caps are reported, and a file this tool may not read is named rather than hidden. " +
 			"Prefer this over reading files wholesale to locate something.",
 		Parameters: map[string]any{
 			"type": "object",
@@ -364,6 +365,8 @@ func (r *Registry) searchFiles() *Tool {
 			totalMatches, filesHit, filesScanned, filteredOut, shownLines := 0, 0, 0, 0, 0
 			unwalked := 0        // directories cut at DirEntryCap
 			var refused []string // files the kernel would not let us read (ADR-0086 §3)
+			refusedAll := 0      // all of them; the names stop at searchPerFileCap
+			skips := &searchSkips{}
 			capped := false
 			interrupted := false
 			var walk func(dir string, rules *ignore.Rules)
@@ -381,6 +384,7 @@ func (r *Registry) searchFiles() *Tool {
 				}
 				items, more, err := r.readDirIn(dir)
 				if err != nil {
+					skips.dirs++
 					return
 				}
 				if more {
@@ -419,17 +423,32 @@ func (r *Registry) searchFiles() *Tool {
 						filteredOut++
 						continue
 					}
+					// Every file not searched is counted by reason
+					// (ADR-0096 §4); before, these were skipped silently.
 					info, err := e.Info()
-					if err != nil || info.Size() > searchFileCap || isImageExt(e.Name()) {
+					switch {
+					case err != nil:
+						skips.add(skipUnreadable, "")
+						continue
+					case info.Size() > searchFileCap:
+						skips.add(skipSize, relOrDot(r.projectDir, full))
+						continue
+					case isImageExt(e.Name()):
+						skips.add(skipImage, "")
 						continue
 					}
-					data, ok, readErr := r.readForSearch(full)
-					if !ok {
+					data, skip, readErr := r.readForSearch(full)
+					if skip != skipNone {
 						// A file the cage refused is named, not hidden:
 						// the shape `grep -r` has, and the shape every
 						// skip takes (ADR-0086 §3).
-						if errors.Is(readErr, fs.ErrPermission) && len(refused) < searchPerFileCap {
-							refused = append(refused, relOrDot(r.projectDir, full))
+						if errors.Is(readErr, fs.ErrPermission) {
+							refusedAll++
+							if len(refused) < searchPerFileCap {
+								refused = append(refused, relOrDot(r.projectDir, full))
+							}
+						} else {
+							skips.add(skip, relOrDot(r.projectDir, full))
 						}
 						continue
 					}
@@ -507,7 +526,14 @@ func (r *Registry) searchFiles() *Tool {
 				out += fmt.Sprintf("\n[%d director%s had more than %d entries — the rest of each was not searched]", unwalked, plural(unwalked, "y", "ies"), DirEntryCap)
 			}
 			if len(refused) > 0 {
-				out += fmt.Sprintf("\n[not read: %s — reading one needs the operator's approval]", strings.Join(refused, ", "))
+				more := ""
+				if refusedAll > len(refused) {
+					more = fmt.Sprintf(" and %d more", refusedAll-len(refused))
+				}
+				out += fmt.Sprintf("\n[not read: %s%s — reading one needs the operator's approval]", strings.Join(refused, ", "), more)
+			}
+			if s := skips.summary(); s != "" {
+				out += "\n" + s
 			}
 			if s := tally.summary(); s != "" {
 				out += "\n" + s
@@ -544,4 +570,67 @@ func plural(n int, one, many string) string {
 		return one
 	}
 	return many
+}
+
+// searchSkip is why search_files did not search a file (ADR-0096 §4).
+type searchSkip int
+
+const (
+	skipNone searchSkip = iota
+	skipSize
+	skipBinary
+	skipImage
+	skipUnreadable
+)
+
+// searchSkips counts the files a walk did not search, by reason, and
+// names the oversized ones — the ones worth reading another way (a byte
+// window, a shell command) — up to searchPerFileCap.
+type searchSkips struct {
+	n         [skipUnreadable + 1]int
+	sizeNames []string
+	dirs      int // directories that could not be listed
+}
+
+func (s *searchSkips) add(k searchSkip, name string) {
+	s.n[k]++
+	if k == skipSize && name != "" && len(s.sizeNames) < searchPerFileCap {
+		s.sizeNames = append(s.sizeNames, name)
+	}
+}
+
+// summary is the closing line, or "" when every file was searched.
+func (s *searchSkips) summary() string {
+	var parts []string
+	if n := s.n[skipSize]; n > 0 {
+		names := strings.Join(s.sizeNames, ", ")
+		if n > len(s.sizeNames) {
+			names += fmt.Sprintf(" and %d more", n-len(s.sizeNames))
+		}
+		parts = append(parts, fmt.Sprintf("%d over %d MB (%s)", n, searchFileCap>>20, names))
+	}
+	for _, k := range []struct {
+		kind       searchSkip
+		one, other string
+	}{{skipBinary, "binary", "binary"}, {skipImage, "image", "images"}, {skipUnreadable, "unreadable", "unreadable"}} {
+		if n := s.n[k.kind]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, plural(n, k.one, k.other)))
+		}
+	}
+	line := ""
+	if len(parts) > 0 {
+		line = "not searched: " + strings.Join(parts, ", ")
+	}
+	if s.dirs > 0 {
+		d := fmt.Sprintf("%d director%s could not be listed", s.dirs, plural(s.dirs, "y", "ies"))
+		if line == "" {
+			line = d
+		} else {
+			line += "; " + d
+		}
+	}
+	if line == "" {
+		return ""
+	}
+	return "[" + line + "]"
 }

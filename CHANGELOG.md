@@ -16,6 +16,12 @@
   the whole output is saved to the work directory (up to 32 MiB), named in
   the note. gem-agent writes the file, so no lane's reach changes. The
   operator lane is not saved, and says so.
+- **`search_files` counts every file it did not search** (ADR-0096 §4).
+  Files over 2 MB (named, up to five), binary files, images, unreadable
+  files and directories that could not be listed are counted in a
+  closing line; size and image skips were silent, so a "no matches" could
+  hide a large log that was never read. Refusals past the five named are
+  counted too.
 
 ### Added
 

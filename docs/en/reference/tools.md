@@ -54,7 +54,16 @@ secret and hiding it was a second rule over the same unbounded spelling
 domain. `search_files` runs inside the sandboxed child, so a file it
 may not read is skipped by the kernel and **named** in the result —
 `[not read: sub/.env — reading one needs the operator's approval]`,
-the shape `grep -r` has.
+the shape `grep -r` has; past five names the rest are counted
+(`… and 3 more`).
+
+Every other file `search_files` did not search is counted too
+(ADR-0096 §4): over 2 MB (named, up to five — the ones worth reading by
+`offset` or with a shell command), binary (UTF-16 logs and gzip
+archives included), images, unreadable files, and directories that
+could not be listed — `[not searched: 2 over 2 MB (logs/a.log,
+dump.json), 3 binary; 1 directory could not be listed]`. A "no matches"
+always comes with what was not looked at.
 
 Where that cage could not be installed on this machine, the walk
 refuses the same list itself and prints the same line (ADR-0086 §5, as

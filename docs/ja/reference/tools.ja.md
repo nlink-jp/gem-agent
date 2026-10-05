@@ -50,6 +50,14 @@ walk は資格情報名かどうかに関わらず全エントリを列挙しま
 同じ無限の綴り領域に対する第 2 の規則でした。`search_files` はサンドボックス下の
 子で走るので、読めないファイルはカーネルが飛ばし、結果に**名前が出ます** —
 `[not read: sub/.env — reading one needs the operator's approval]`。
+5 件を超えた分は件数で示します（`… and 3 more`）。
+
+`search_files` が検索しなかったその他のファイルもすべて数えます
+（ADR-0096 §4）: 2 MB 超（5 件まで名前を出す — `offset` やシェルで読む価値
+があるもの）、バイナリ（UTF-16 のログや gzip の書庫を含む）、画像、読めない
+ファイル、一覧できなかったディレクトリ —
+`[not searched: 2 over 2 MB (logs/a.log, dump.json), 3 binary; 1 directory
+could not be listed]`。「該当なし」には、見なかったものが必ず付きます。
 `grep -r` が持つ形です。
 
 この機体で檻を据え付けられなかった場合、walk は同じ一覧を自分で拒み、同じ行を
