@@ -312,11 +312,20 @@ Main model `gemini-3.8-flash`, `thinking = "high"`. Every run that
 answered, counted by arm (the decision table counts only uncontaminated
 runs; this one adds the contaminated runs, scored by their answers):
 
-| Arm | S1 success | S2 success | read the saved file | narrowed with a count query | `read_file` offset |
+| Arm | S1 success | S2 success | opened the saved file's content | narrowed with a count query | `read_file` offset |
 |---|---|---|---|---|---|
 | (a) v0.90.0 | 26/26 | 21/21 | every run | every run | — |
 | (b) Part A | 33/33 | 22/22 | every run | every run | 15 runs |
 | (c) Part A + note outside | 28/28 | 26/26 | every run | every run | none |
+
+"Opened the content" was first counted as the file's name appearing in a
+later call, which would also count a run that only copied it — the
+weakness the operator found in their own count (§6.2). Recounted
+(2026-10-06) by the strongest reference: every answered run opened it,
+with `read_file` (S1 1/6/1, S2 13/13/0 runs in a/b/c) or a shell command
+(the rest); none only copied or named it. A command opening the file is
+still not proof the model saw the mark; S1's answers rest on the count
+query, S2's on the note's §2, which only a reading reaches.
 
 Uncontaminated runs: S2 20/20 in every arm (a→b and b→c both +0 points,
 Fisher p = 1.000). S1 could not reach its 20: 30, 37 and 32 runs were
@@ -416,8 +425,8 @@ buried or missing, verification dropped — rather than in how a partial
 result is shown. They are also the demand ADR-0044 asked for: the
 operator wants a turn-end hook that checks the turn's figures against
 the tool results and the disclosure of partial results, returning its
-finding to the model (RT7). That, and the resume-date observation, are
-decided in records of their own.
+finding to the model (RT7). RT7 is decided in §7; the resume-date
+observation is left open.
 
 ## 7. Not decided here
 
@@ -441,8 +450,38 @@ These came with the same report and need decisions of their own:
   measurement; ADR-0062 measured that an in-band invitation to verify
   the sub-agent's report caused re-exploration. Decided together, with
   evidence.
-- **`post_tool_use` / stop hooks** wait for the operator to name what
-  they would run there (ADR-0044's demand rule).
+- **`post_tool_use` / stop hooks (RT7) are not taken** (2026-10-06).
+  The operator named their use (§6.2), which is what ADR-0044 waited
+  for; the use does not need a new hook.
+  - *The turn-end check* compares the turn's figures and identifiers
+    with the tool results, and checks that a partial result used is
+    disclosed. Both are judgements about the answer's prose: which
+    number is a claim and which a calculation, a quotation or a
+    reproduction note, whether a caveat "mentions" the truncation. In
+    code that is a rule over an unbounded domain — the operator's own
+    regex left 12% of a report's numbers unmatched with legitimate
+    calculations among them, and counted 0 mentions of truncation, which
+    the operator noted is likely an undercount. In a model it is another review, and the failure measured in
+    §6.2 is the main model taking in a review's claim without evidence.
+    A hook point solves neither; what the runtime can state without
+    reading prose — which calls failed, which results it cut or saved —
+    is a bounded fact, and Part B and the operator's split already show
+    that telling the model such facts does not change what it does.
+    Whether a returned finding makes the model re-check, rather than
+    reword, is unmeasured.
+  - *The post-tool record* (tool, arguments, result size, spill path,
+    truncation) already exists twice: the telemetry's `tool.call`
+    event carries the tool, an argument summary, the purpose, duration,
+    outcome and lane in real time, and the transcript — appended per
+    message, its path given to every session and prompt hook as
+    `transcript_path` — carries the full arguments, the result with its
+    spill notice, and the usage. The operator's manifest is built from
+    the transcript today.
+  - The check belongs outside the runtime: as a gate on the report
+    before it is submitted, or fed into the next turn through the
+    existing `user_prompt_submit` hook (as data). This is reconsidered
+    if a check that rests on bounded facts, and a measurement that
+    returning it improves the outcome, are brought.
 - **Declaration size**: `advertise = "on-request"` exists (ADR-0083);
   the operator runs `"all"` with 28 servers. Trying it comes before any
   change of default.
