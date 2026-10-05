@@ -210,8 +210,8 @@ func TestShellExec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "[output truncated") {
-		t.Error("large shell output should carry a truncation marker")
+	if !strings.Contains(out, "[output: 30000 bytes; shown: bytes 0–15000 and 25000–30000;") {
+		t.Errorf("large shell output should name what is shown: %q", out[len(out)-160:])
 	}
 }
 

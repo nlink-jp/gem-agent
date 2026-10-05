@@ -10,6 +10,12 @@
   the route to the rest (`read_file` offset/length). Metadata a server
   appends — `"truncated": true`, a row total — arrives as the last bytes
   and was never visible before.
+- **`shell_exec` keeps the tail of long output and saves all of it**
+  (ADR-0096 §3). Past 20,000 bytes the model sees the first 15,000 and the
+  last 5,000 bytes — a script's totals come last and used to be lost — and
+  the whole output is saved to the work directory (up to 32 MiB), named in
+  the note. gem-agent writes the file, so no lane's reach changes. The
+  operator lane is not saved, and says so.
 
 ### Added
 

@@ -388,18 +388,18 @@ func TestShellExecOutputIsBoundedAsItArrives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) > OutputCap+200 {
+	if len(out) > OutputCap+400 {
 		t.Fatalf("output is %d bytes; the cap is %d", len(out), OutputCap)
 	}
-	if !strings.Contains(out, "of 3000000 bytes shown]") {
-		t.Errorf("note does not name the real total: %q", out[len(out)-80:])
+	if !strings.Contains(out, "[output: 3000000 bytes; shown: bytes 0–15000 and 2995000–3000000;") {
+		t.Errorf("note does not name the real total and spans: %q", out[len(out)-160:])
 	}
-	b := newBoundedOutput(4)
+	b := newShellOutput(4, shellSpoolCap, nil, "")
 	n, _ := b.Write([]byte("abcdefgh"))
 	if n != 8 {
 		t.Errorf("Write must accept everything: %d", n)
 	}
-	if s := b.String(); !strings.HasPrefix(s, "abcd\n[output truncated: 4 of 8 bytes shown]") {
+	if s := b.String(); !strings.HasPrefix(s, "abc\n[… bytes 3–7 not shown …]\nh\n[output: 8 bytes;") {
 		t.Errorf("String = %q", s)
 	}
 }
@@ -448,13 +448,13 @@ func TestDirectoryListingsAreBounded(t *testing.T) {
 	}
 }
 
-// N02: the bounded shell output cuts on a rune boundary and counts
-// complete characters.
-func TestBoundedOutputKeepsRunesWhole(t *testing.T) {
-	b := newBoundedOutput(4)
-	_, _ = b.Write([]byte("あいう"))
+// N02: the shell output cuts head and tail on rune boundaries, and the
+// spans name the bytes actually shown.
+func TestShellOutputKeepsRunesWhole(t *testing.T) {
+	b := newShellOutput(8, shellSpoolCap, nil, "") // head 6, tail 2
+	_, _ = b.Write([]byte("あいうえ"))
 	s := b.String()
-	if !utf8.ValidString(s) || !strings.HasPrefix(s, "あ\n[output truncated: 3 of 9 bytes shown]") {
+	if !utf8.ValidString(s) || !strings.HasPrefix(s, "あい\n[… bytes 6–12 not shown …]\n\n[output: 12 bytes; shown: bytes 0–6 and 12–12;") {
 		t.Errorf("String = %q", s)
 	}
 }

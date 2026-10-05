@@ -666,8 +666,12 @@ a new hook) is an architecture change and takes the same rows as a
   grant (found live: `--allow write_file --auto` wrote AGENTS.md).
   Any new place that reads `v.Tier == risk.Block` must read
   `|| v.OperatorOnly` beside it — or better, read `Decision.Floor()`.
-  Process output is bounded as it arrives (`bounded.Writer` in tools
-  and hooks) — never `CombinedOutput` on a command the model wrote.
+  Process output is bounded as it arrives (`bounded.HeadTail` for
+  `shell_exec`, `bounded.Writer` in hooks) — never `CombinedOutput` on a
+  command the model wrote. `shell_exec`'s spool is written by gem-agent,
+  which holds the pipe, never by the command — and never for the
+  operator lane, whose output may carry credentials that `read_file`
+  would then open without approval (ADR-0096 §3).
   `readDirIn` returns `(entries, more, err)`: every caller renders
   `more`. Project files read before the trust prompt go through
   `readCapped` (1 MiB).

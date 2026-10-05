@@ -141,4 +141,3 @@ func TestReadFileByteWindowKeepsRunesWhole(t *testing.T) {
 		t.Error("window split a rune")
 	}
 }
-

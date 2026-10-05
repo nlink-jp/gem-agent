@@ -75,3 +75,18 @@ func TestTrimIncompleteRune(t *testing.T) {
 		t.Error("complete text trimmed")
 	}
 }
+
+// HeadTail's tail stays bounded however many small writes arrive.
+func TestHeadTailTailIsBoundedOverManyWrites(t *testing.T) {
+	b := NewHeadTail(40, 1<<20, nil)
+	for i := range 100000 {
+		_, _ = b.Write([]byte{byte('a' + i%26)})
+	}
+	if len(b.tail) > 2*b.tailLimit()+utf8.UTFMax {
+		t.Errorf("tail grew to %d", len(b.tail))
+	}
+	v := b.View()
+	if v.Total != 100000 || len(v.Head) != 30 || len(v.Tail) != 10 || v.TailStart != 99990 {
+		t.Errorf("view = total %d head %d tail %d start %d", v.Total, len(v.Head), len(v.Tail), v.TailStart)
+	}
+}

@@ -197,6 +197,18 @@ runs in the operator lane without the prompt because you typed it (see
 [interface](interface.md)). See [approval](approval.md) for what each
 lane denies.
 
+Output past 20,000 bytes keeps its first 15,000 and last 5,000 bytes —
+a script's closing totals come last — and the whole stream is saved to
+the session work directory (up to 32 MiB) once it outgrows the cap, so
+nothing it printed is lost (ADR-0096 §3). The note names the bytes shown
+and the file: `[output: 1204331 bytes; shown: bytes 0–15000 and
+1199331–1204331; the whole output is saved: <path>]`, which `read_file`
+reads by `offset`. gem-agent writes that file, not the command: it holds
+the pipe, so the read lane still writes nothing but its own scratch.
+The operator lane is not saved — it may read credentials, and a copy in
+the work directory would be readable without approval — and its note
+says the middle was not saved. Output that fits leaves no file.
+
 ## `datetime` (ADR-0032)
 
 A clock and a deterministic calendar — LLMs guess confidently at
