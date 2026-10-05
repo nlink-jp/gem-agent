@@ -20,7 +20,8 @@ report. Across six audited cases the same failures recur: a partial
 result treated as the whole, a knowledge note "read" from its first
 screen, a count stated from rows that were only a page. The operator's
 own instruction files forbid each of these explicitly, and the model
-quotes those rules and breaks them within two turns. The report is
+often broke a rule a turn or two after quoting it (the report's account,
+with one example given). The report is
 candid that this part is the model's temperament and not the
 runtime's to fix.
 
@@ -42,8 +43,11 @@ put it where it is easiest to miss.** Two reconstructed cases:
   three mistakes the analysis went on to make.
 
 Aggregates from the operator's transcripts (their script, regex-based):
-85 tool results carried a server-side `truncated: true`; 75 were
-followed by no widened or counting query. 186 spill notices; the spill
+75 MCP results carried a server-side `truncated: true`; 65 were
+followed by no widened or counting query. (The report first said 85 and
+75: the model's `read_file` re-reads of spill files carried the same
+mark and were counted again. The operator corrected this in the re-count
+of §6.2.) 186 spill notices; the spill
 file of 37 was never referenced again (149 were).
 
 ### What the code does (checked against `4cf76af`)
@@ -74,8 +78,9 @@ which Part A supplies. Case B is consistent with it but does not show
 it. Nothing shows that the existing in-text brackets of `read_file`,
 `list_tree` or `search_files` were missed. Building a general
 mechanism, a sweep of every clipping site and an architecture test on
-an unmeasured premise is the over-building the operator's own report
-warns against in its §8.3. So row 2 is **Part B**: designed here in
+an unmeasured premise would be over-building. (The operator proposed
+this, RT1, at high priority; measuring before deciding is this record's
+choice, and the operator agreed with it.) So row 2 is **Part B**: designed here in
 full, so the design is not lost, and taken only if §6 shows it changes
 behaviour beyond Part A.
 
@@ -292,8 +297,9 @@ it changes what the model does. That is measured, not argued:
    `truncated: true` the model saw inline from one only inside a spill
    file. They are asked to re-run it three ways — visible inline without
    a spill, in a spill preview, only in the spill file — over the same
-   36 sessions. If most of the 75 were visible inline, neither part will
-   move that number much, and the report should be read that way.
+   36 sessions. If most of the results used as-is were visible inline,
+   neither part will move that number much, and the report should be
+   read that way. The result is in §6.2.
 3. **After release**, the operator's two ratios on comparable sessions.
    Their script finds spills by the notice text; Part A keeps that text,
    so the instrument is unchanged. If Part B lands, the notice leaves the
@@ -355,6 +361,63 @@ What the probe also shows, and what it does not:
   examining the environment. The first launch, with a server named
   `probe`, was worse (one run disassembled the stub). Probes of this
   model's behaviour in an empty project measure that as well.
+
+### 6.2 The operator's re-count and their own runs (2026-10-05)
+
+The operator answered §6's step 2 and went further. Everything in this
+section is their measurement, reported to us as aggregates; the kit
+holds internal material and is not ours to publish.
+
+**The split.** Counting MCP results only (the correction above):
+
+| Where the mark was | Results | Used as-is |
+|---|---|---|
+| visible inline, no spill | 39 | 33 (85%) |
+| visible in a spill preview | 0 | — |
+| only inside the spill file | 36 | 32 (89%) |
+
+A visible mark was used as-is almost exactly as often as one the model
+could not see. By §6's own reading, presentation is not the lever for
+this number; the operator moves the weight to the operational side. Our
+`measure_partial_visibility.py` had the same double count (it did not
+restrict itself to MCP results); its "spill file referenced" count also
+mixes reading with copying the file for evidence.
+
+**v0.91.0 against v0.90.0, close to production.** Ten runs each, in an
+isolated home holding their real configuration, instruction files,
+memory, skills and knowledge notes; all 28 servers stubbed with their
+real tool declarations (367 tools); the production prompt and one
+leading follow-up; first prompts of about 132k tokens. Neither build
+reproduced the production failures. Part A's four items worked as
+described, and v0.91.0 issued a counting query in 4 of 10 runs against
+10 of 10: the `total_rows` now visible at the tail of the preview made
+recounting unnecessary.
+
+**Where the failures do come from.** Further runs on v0.91.0:
+
+- A resumed production session (about 505k tokens) kept its answers
+  right in 4 of 4, but **stopped verifying**: no counting query and no
+  re-read of the knowledge note in any of them (14/20 and 20/20 in the
+  short runs). In 2 of 4 it also used the original session's date from
+  the conversation instead of the session date in the system prompt.
+- A review document with two false findings, each checkable with one
+  query: both rejected in 5 of 5 runs where the model had fetched the
+  evidence in the first turn. Where it had not (the first turn's log
+  search failed), the finding that matched the only clue it held was
+  **accepted without checking in 5 of 5**, the other in 2 of 5. Length
+  made no visible difference.
+- In the production transcripts, replies opening with agreement rise
+  with the accumulated conversation (10% below 128k tokens, 25% above;
+  Fisher p = 0.02), while partial results used as-is are at 88% from the
+  first 25 calls.
+
+These place the failures in the final stages of long work — evidence
+buried or missing, verification dropped — rather than in how a partial
+result is shown. They are also the demand ADR-0044 asked for: the
+operator wants a turn-end hook that checks the turn's figures against
+the tool results and the disclosure of partial results, returning its
+finding to the model (RT7). That, and the resume-date observation, are
+decided in records of their own.
 
 ## 7. Not decided here
 
