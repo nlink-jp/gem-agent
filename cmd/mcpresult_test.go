@@ -3,8 +3,11 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/nlink-jp/gem-agent/internal/mcp"
 	"github.com/nlink-jp/gem-agent/internal/tools"
@@ -261,5 +264,55 @@ func TestExactCapBlockAndUnsavedBinaries(t *testing.T) {
 	}
 	if !strings.Contains(out, "0 saved in the work directory") && strings.Contains(out, "saved in the work directory but not listed") {
 		t.Errorf("blocks were saved without being listed:\n%s", out)
+	}
+}
+
+// ADR-0096 §1: metadata a server appends to its result — the case that
+// motivated the record — is in front of the model, and the notice gives
+// the byte spans read_file's offset takes.
+func TestSpillPreviewShowsHeadAndTailWithByteSpans(t *testing.T) {
+	work := t.TempDir()
+	in := newMCPIntake(fixedDir(work))
+	tail := `], "truncated": true, "total_rows": 200}`
+	big := `{"results":[` + strings.Repeat(`{"_raw":"x"},`, tools.OutputCap/10) + `{"_raw":"y"}` + tail
+	out := in.render("splunk", "run_query", textBlock(big))
+	if !strings.Contains(out, tail) {
+		t.Fatalf("the tail metadata is not in the preview:\n%s", out)
+	}
+	if !strings.HasPrefix(out, `{"results":[`) {
+		t.Errorf("the head is not in the preview: %q", out[:40])
+	}
+	n := len(big)
+	want := "Shown above: bytes 0–600 and " + strconv.Itoa(n-200) + "–" + strconv.Itoa(n) + "."
+	if !strings.Contains(out, want) {
+		t.Errorf("notice lacks the byte spans %q:\n%s", want, out)
+	}
+	if !strings.Contains(out, "[… bytes 600–"+strconv.Itoa(n-200)+" not shown …]") {
+		t.Errorf("no elision marker between head and tail:\n%s", out)
+	}
+	// The notice keeps the shape the operator's measurement matches.
+	if !regexp.MustCompile(`too large to hold inline.*?read_file (\S+?)\]`).MatchString(strings.ReplaceAll(out, "\n", " ")) {
+		t.Error("the notice no longer ends in read_file <path>]")
+	}
+}
+
+// Spans are bytes, cut on rune boundaries: for Japanese text a rune
+// count would put read_file's offset in the wrong place.
+func TestSpillPreviewSpansAreBytesOnRuneBoundaries(t *testing.T) {
+	in := newMCPIntake(fixedDir(t.TempDir()))
+	big := strings.Repeat("あ", tools.OutputCap) // 3 bytes each
+	out := in.render("obsidian", "get_vault_file", textBlock(big))
+	n := len(big)
+	if !strings.Contains(out, "bytes 0–1800 and "+strconv.Itoa(n-600)+"–"+strconv.Itoa(n)) {
+		t.Errorf("spans are not in bytes:\n%s", out[len(out)-300:])
+	}
+	if !utf8.ValidString(out) {
+		t.Error("the preview split a rune")
+	}
+}
+
+func TestHeadAndTailOfAShortStringIsWhole(t *testing.T) {
+	if p, shown := headAndTail("abc", 600, 200); p != "abc" || shown != "bytes 0–3" {
+		t.Errorf("got %q %q", p, shown)
 	}
 }

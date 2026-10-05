@@ -92,8 +92,8 @@
 バイト数から rune 数を引くと、ASCII 以外のテキストではオフセットを誤るから
 である。
 
-> [252,639 bytes — too large to hold inline, so the whole result is
-> saved. Shown above: bytes 0–600 and 252,439–252,639. Read the rest
+> [252639 bytes — too large to hold inline, so the whole result is
+> saved. Shown above: bytes 0–600 and 252439–252639. Read the rest
 > with read_file offset/length, or narrow the call and ask again:
 > read_file <path>]
 
@@ -121,7 +121,7 @@
   扱うので、これには使わない）。
 - 窓は rune の境界に寄せる — UTF-8 の途中で始まる開始は先へ、途中で終わる
   終端は手前へ — そして注記は実際に返したバイトを示す:
-  `[bytes 251,839–252,639 of 252,639]`。
+  `[bytes 251839–252639 of 252639]`。
 - サンドボックスの子プロセス（ADR-0086）は同じコードを走らせる。注記は
   テキストにあるので、プロセス境界を新たに越えるものはない。
 
@@ -135,7 +135,7 @@
 ファイルへ、32 MiB の上限まで書き出す。注記は、出力された量・見せている
 バイト・どこにどれだけ保存したかを示す:
 
-> [output: 1,204,331 bytes; shown: bytes 0–15,000 and 1,199,331–1,204,331;
+> [output: 1204331 bytes; shown: bytes 0–15000 and 1199331–1204331;
 > the whole output is saved: <path>]
 
 - **書き出すのはコマンドではなく gem-agent である。** パイプを持つのは
@@ -201,7 +201,7 @@ gem-agent 自身の言葉で、nonce タグの外で、データの前と後ろ�
   規則である。型の規則（自由記述の文字列フィールドを持たない）とテストで
   強制する。
 - **描画。** データの前に 1 行（「gem-agent: partial view — the text below
-  is bytes 0–600 and 252,439–252,639 of 252,639」）、後ろに経路。何も切ら
+  is bytes 0–600 and 252439–252639 of 252639」）、後ろに経路。何も切ら
   なかったときは何も付けない。**行がないことは全件を意味しない** — サーバ
   側の切り捨て、まだ移していない箇所、古い注記がある — そして、そう教える
   プロンプトの文を書いてはならない。

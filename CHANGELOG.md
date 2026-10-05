@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **A saved MCP result shows its tail as well as its head** (ADR-0096 §1).
+  A text block too large to hold inline is now previewed by its first 600
+  and last 200 characters, and the notice names the byte spans shown and
+  the route to the rest (`read_file` offset/length). Metadata a server
+  appends — `"truncated": true`, a row total — arrives as the last bytes
+  and was never visible before.
+
 ### Added
 
 - **`read_file` reads by bytes** (ADR-0096 §2). `offset`/`length` take a

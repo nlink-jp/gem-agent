@@ -95,11 +95,16 @@ a stdio MCP server, so the opt-in is just a `.mcp.json` entry:
 ### Large results
 
 A tool result is handed to the model within one response budget
-(the same 200 KB cap as tool output). A text block that does not fit
-is saved whole in the session work directory and replaced by its head
-and the path (`… [N bytes — too large to hold inline, so the whole
-result is saved. Read it, or narrow the call and ask again: read_file
-<path>]`); blocks past the budget are saved together in one file and
+(20,000 bytes, the same cap as built-in tool output). A text block that
+does not fit is saved whole in the session work directory and replaced
+by its first 600 and last 200 characters and the path (`… [N bytes —
+too large to hold inline, so the whole result is saved. Shown above:
+bytes 0–600 and 252439–252639. Read the rest with read_file
+offset/length, or narrow the call and ask again: read_file <path>]`).
+The tail is kept because formats that append metadata put it there — a
+server's `"truncated": true` or row total arrives as the last bytes —
+and the spans are bytes, the unit `read_file`'s `offset` takes
+(ADR-0096 §1). Blocks past the budget are saved together in one file and
 announced in one line (`[N more text block(s), M bytes — past the
 response budget, saved whole …]`). Images and other binary blocks are
 saved and pointed at (`use view_image on that path`), never inlined;

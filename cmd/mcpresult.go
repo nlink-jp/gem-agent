@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nlink-jp/gem-agent/internal/mcp"
 	"github.com/nlink-jp/gem-agent/internal/tools"
@@ -38,12 +39,15 @@ type mcpIntake struct {
 	workDir func() string
 	// cap is the byte size above which a text block is spilled.
 	cap int
-	// previewRunes bounds the head of a spilled block shown inline.
-	previewRunes int
+	// headRunes and tailRunes bound the preview of a spilled block
+	// (ADR-0096 §1). The tail is where formats that append metadata put
+	// it — a server's `"truncated": true, "total_rows": 200` arrives as
+	// the last bytes — and keeping it needs no parsing of any format.
+	headRunes, tailRunes int
 }
 
 func newMCPIntake(workDir func() string) mcpIntake {
-	return mcpIntake{workDir: workDir, cap: tools.OutputCap, previewRunes: 800}
+	return mcpIntake{workDir: workDir, cap: tools.OutputCap, headRunes: 600, tailRunes: 200}
 }
 
 // render assembles the text the model receives for one call. A result
@@ -152,27 +156,54 @@ func (in mcpIntake) spillRest(server, tool string, texts []string) string {
 		return fmt.Sprintf("[%d more text block(s), %d bytes, past the response budget and not saved (%v) — narrow the call and ask again]",
 			len(texts), len(joined), err)
 	}
-	return fmt.Sprintf("[%d more text block(s), %d bytes — past the response budget, saved whole. Read them, or narrow the call and ask again: read_file %s]",
+	return fmt.Sprintf("[%d more text block(s), %d bytes — past the response budget, saved whole. Read them with read_file (offset/length reach any byte), or narrow the call and ask again: read_file %s]",
 		len(texts), len(joined), path)
 }
 
 // spillText saves a block to the work directory and returns a preview
-// with the path.
+// of its head and tail with the path.
 func (in mcpIntake) spillText(server, tool, s string) string {
 	ext := ".txt"
 	if t := strings.TrimSpace(s); strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[") {
 		ext = ".json"
 	}
+	preview, shown := headAndTail(s, in.headRunes, in.tailRunes)
 	path, err := in.write(server, tool, ext, []byte(s))
 	if err != nil {
-		return fmt.Sprintf("%s\n\n[%d bytes: only the head above is shown and the rest could not be saved (%v), so it is lost — narrow the call and ask again]",
-			clipRunes(s, in.previewRunes), len(s), err)
+		return fmt.Sprintf("%s\n\n[%d bytes: only %s are shown above and the rest could not be saved (%v), so it is lost — narrow the call and ask again]",
+			preview, len(s), shown, err)
 	}
+	// The spans are bytes, the unit read_file's offset takes: a rune
+	// count subtracted from a byte count gives the wrong offset for any
+	// non-ASCII text (ADR-0096 §1).
 	// The path is the last thing before the closing bracket on purpose:
 	// a path followed by a full stop reads ambiguously, and the model
 	// has to hand it to read_file character for character.
-	return fmt.Sprintf("%s\n\n[%d bytes — too large to hold inline, so the whole result is saved. Read it, or narrow the call and ask again: read_file %s]",
-		clipRunes(s, in.previewRunes), len(s), path)
+	return fmt.Sprintf("%s\n\n[%d bytes — too large to hold inline, so the whole result is saved. Shown above: %s. Read the rest with read_file offset/length, or narrow the call and ask again: read_file %s]",
+		preview, len(s), shown, path)
+}
+
+// headAndTail returns the first head and last tail runes of s with an
+// elision line between them, and the byte spans they cover ("bytes
+// 0–600 and 252439–252639"). A string no longer than both is returned
+// whole. Both cuts fall on rune boundaries, so neither edge shows a
+// broken character.
+func headAndTail(s string, head, tail int) (preview, shown string) {
+	h := 0
+	for i := 0; i < head && h < len(s); i++ {
+		_, n := utf8.DecodeRuneInString(s[h:])
+		h += n
+	}
+	t := len(s)
+	for i := 0; i < tail && t > h; i++ {
+		_, n := utf8.DecodeLastRuneInString(s[:t])
+		t -= n
+	}
+	if t <= h {
+		return s, fmt.Sprintf("bytes 0–%d", len(s))
+	}
+	return s[:h] + fmt.Sprintf("\n[… bytes %d–%d not shown …]\n", h, t) + s[t:],
+		fmt.Sprintf("bytes 0–%d and %d–%d", h, t, len(s))
 }
 
 // binary writes a non-text block and tells the model how to look at it.

@@ -95,8 +95,8 @@ The notice states **byte** spans, because they are what `read_file`
 (§2) takes and because a rune count subtracted from a byte count gives
 the wrong offset for any non-ASCII text:
 
-> [252,639 bytes — too large to hold inline, so the whole result is
-> saved. Shown above: bytes 0–600 and 252,439–252,639. Read the rest
+> [252639 bytes — too large to hold inline, so the whole result is
+> saved. Shown above: bytes 0–600 and 252439–252639. Read the rest
 > with read_file offset/length, or narrow the call and ask again:
 > read_file <path>]
 
@@ -125,7 +125,7 @@ same route wording.
   (`intArg` treats ≤ 0 as absent and is not reused for these).
 - The window moves to rune boundaries — a start inside a UTF-8
   sequence advances, an end inside one retreats — and the note states
-  the bytes actually returned: `[bytes 251,839–252,639 of 252,639]`.
+  the bytes actually returned: `[bytes 251839–252639 of 252639]`.
 - The sandboxed child (ADR-0086) runs the same code; nothing new
   crosses the process boundary, since the note is in the text.
 
@@ -140,7 +140,7 @@ file in the session work directory up to a spool cap of 32 MiB. The
 note says how much was printed, which bytes are shown, and how much was
 saved where:
 
-> [output: 1,204,331 bytes; shown: bytes 0–15,000 and 1,199,331–1,204,331;
+> [output: 1204331 bytes; shown: bytes 0–15000 and 1199331–1204331;
 > the whole output is saved: <path>]
 
 - **gem-agent writes the spool, not the command.** gem-agent holds the
@@ -208,7 +208,7 @@ and after the data. The design, revised against the review:
   party's string at system-prompt trust; a type rule (no free-text
   string field) and a test enforce it.
 - **Rendering.** One line before the data ("gem-agent: partial view —
-  the text below is bytes 0–600 and 252,439–252,639 of 252,639"), the
+  the text below is bytes 0–600 and 252439–252639 of 252639"), the
   route after it. Nothing when nothing was cut. **No line does not mean
   complete** — server-side truncation, sites not moved, old brackets —
   and no prompt text may teach otherwise.

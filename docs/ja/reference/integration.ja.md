@@ -96,11 +96,15 @@ gem-agent の中核要件は drop-in 互換です: プロジェクトが他の
 
 ### 大きな結果
 
-ツール結果は応答 1 つの予算（ツール出力と同じ 200 KB 上限）の中でモデルに
-渡されます。収まらないテキストブロックはセッション作業ディレクトリに丸ごと
-保存され、先頭とパスに置き換わります（`… [N bytes — too large to hold inline,
-so the whole result is saved. Read it, or narrow the call and ask again:
-read_file <path>]`）。予算を超えたブロックはまとめて 1 ファイルに保存され
+ツール結果は応答 1 つの予算（20,000 バイト、組み込みツールの出力と同じ上限）の
+中でモデルに渡されます。収まらないテキストブロックはセッション作業ディレクトリに
+丸ごと保存され、先頭 600 文字と末尾 200 文字とパスに置き換わります（`… [N bytes
+— too large to hold inline, so the whole result is saved. Shown above: bytes
+0–600 and 252439–252639. Read the rest with read_file offset/length, or narrow
+the call and ask again: read_file <path>]`）。末尾を残すのは、メタ情報を後ろに
+付ける形式がそこに置くからです — サーバの `"truncated": true` や総行数は最後の
+バイトとして届きます。範囲はバイトで、`read_file` の `offset` が受け取る単位
+です（ADR-0096 §1）。予算を超えたブロックはまとめて 1 ファイルに保存され
 1 行で告げられます（`[N more text block(s), M bytes — past the response
 budget, saved whole …]`）。画像などのバイナリブロックは保存して指し示す
 （`use view_image on that path`）だけでインラインには入れません。予算を超えた
