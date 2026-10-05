@@ -215,8 +215,10 @@ and the file: `[output: 1204331 bytes; shown: bytes 0–15000 and
 reads by `offset`. gem-agent writes that file, not the command: it holds
 the pipe, so the read lane still writes nothing but its own scratch.
 The operator lane is not saved — it may read credentials, and a copy in
-the work directory would be readable without approval — and its note
-says the middle was not saved. Output that fits leaves no file.
+the work directory would be readable without approval — and neither is
+any lane when the shell runs without the sandbox; the note says the
+middle was not saved. The saved file is private (`0600`). Output that
+fits leaves no file.
 
 ## `datetime` (ADR-0032)
 

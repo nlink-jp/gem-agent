@@ -90,3 +90,14 @@ func TestHeadTailTailIsBoundedOverManyWrites(t *testing.T) {
 		t.Errorf("view = total %d head %d tail %d start %d", v.Total, len(v.Head), len(v.Tail), v.TailStart)
 	}
 }
+
+// A tail of continuation bytes (binary output) is kept, not skipped away.
+func TestHeadTailBinaryTailIsKept(t *testing.T) {
+	b := NewHeadTail(40, 1<<20, nil) // tail limit 10
+	_, _ = b.Write(make([]byte, 40))
+	_, _ = b.Write([]byte(strings.Repeat("\x80", 20)))
+	// At most UTFMax-1 leading continuation bytes are skipped.
+	if v := b.View(); len(v.Tail) != 10-(utf8.UTFMax-1) || v.TailStart != 60-int64(len(v.Tail)) {
+		t.Errorf("tail = %d bytes from %d", len(v.Tail), v.TailStart)
+	}
+}

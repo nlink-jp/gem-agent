@@ -1365,6 +1365,10 @@ func (r *Registry) readFile() *Tool {
 			}
 			out := content
 			if len(content) > readCap {
+				// offset=N names a byte of the FILE, which the cut content
+				// is only on the whole-file path: a line window starts
+				// elsewhere and re-joins its lines.
+				windowed := intArg(args, "start_line") > 0 || intArg(args, "end_line") > 0
 				// The marker names the file's real size, which the
 				// streamed read never held.
 				total := int64(len(content))
@@ -1375,7 +1379,11 @@ func (r *Registry) readFile() *Tool {
 				// The route to the rest rides with the cut (ADR-0096 §2):
 				// offset reaches what a line window cannot — the tail of
 				// one long line.
-				out = cut + fmt.Sprintf("\n[output truncated: %d of %d bytes shown — offset=%d reads on]", len(cut), total, len(cut))
+				if windowed {
+					out = cut + fmt.Sprintf("\n[output truncated: %d of %d bytes shown]", len(cut), total)
+				} else {
+					out = cut + fmt.Sprintf("\n[output truncated: %d of %d bytes shown — offset=%d reads on]", len(cut), total, len(cut))
+				}
 			}
 			// The window note goes AFTER any truncation note, and the
 			// content itself stays raw (no line-number prefixes): numbered
@@ -1613,7 +1621,7 @@ func (r *Registry) shellExec() *Tool {
 			// printing without end exhausted memory before the cap ran.
 			// Past the cap it keeps head and tail and saves the whole
 			// (ADR-0096 §3).
-			open, noSave, release := r.shellSpoolOpener(lane == sandbox.LaneOperator)
+			open, noSave, release := r.shellSpoolOpener(lane == sandbox.LaneOperator, r.Confined())
 			defer release()
 			out := newShellOutput(OutputCap, shellSpoolCap, open, noSave)
 			cmd.Stdout, cmd.Stderr = out, out
@@ -1639,7 +1647,10 @@ func (r *Registry) shellExec() *Tool {
 					// tool failure: silently dropping the status turns
 					// failed commands into false positives.
 					result += fmt.Sprintf("\n[exit status %d]", exitErr.ExitCode())
-					if r.Confined() && sandbox.DeniedHint(result) {
+					// The hint reads the command's own words, not the
+					// runtime's note after them: a save that failed with
+					// "permission denied" is not the lane's refusal.
+					if r.Confined() && sandbox.DeniedHint(out.CommandText()) {
 						// The read profile applies whether or not the lane
 						// was verified for unasked runs (review A-11).
 						switch lane {

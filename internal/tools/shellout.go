@@ -33,6 +33,16 @@ func newShellOutput(limit int, spoolCap int64, open func() (io.WriteCloser, stri
 func (o *shellOutput) Write(p []byte) (int, error) { return o.w.Write(p) }
 func (o *shellOutput) Close()                      { o.w.Close() }
 
+// CommandText is what the command printed and the model is shown,
+// without the runtime's note: the tail when the output was cut.
+func (o *shellOutput) CommandText() string {
+	v := o.w.View()
+	if v.Over {
+		return string(v.Tail)
+	}
+	return string(v.Head)
+}
+
 // String renders what the model gets: the whole output when it fit,
 // else head, an elision line and tail, and a note naming the byte spans
 // shown and where the whole output is — the spans are the unit
@@ -66,11 +76,16 @@ func (o *shellOutput) String() string {
 // leaves the file in the directory the note names. The operator lane is
 // never spooled: it may read credentials (ADR-0085), and a copy in the
 // work directory would be readable by read_file without approval — the
-// kernel cage judges paths, not contents (ADR-0086).
-func (r *Registry) shellSpoolOpener(operatorLane bool) (open func() (io.WriteCloser, string, error), noSave string, release func()) {
+// kernel cage judges paths, not contents (ADR-0086). An unconfined shell
+// (no sandbox) is not spooled for the same reason: any lane can read
+// credentials there.
+func (r *Registry) shellSpoolOpener(operatorLane, confined bool) (open func() (io.WriteCloser, string, error), noSave string, release func()) {
 	release = func() {}
 	if operatorLane {
 		return nil, "the middle was not saved (operator-lane output is not written to disk)", release
+	}
+	if !confined {
+		return nil, "the middle was not saved (unsandboxed output is not written to disk)", release
 	}
 	dir, h := r.acquireWorkRoot()
 	if h == nil {
@@ -83,7 +98,9 @@ func (r *Registry) shellSpoolOpener(operatorLane bool) (open func() (io.WriteClo
 			return nil, "", err
 		}
 		name := fmt.Sprintf("shell_exec-%s-%s.txt", time.Now().Format("20060102-150405"), hex.EncodeToString(b[:]))
-		f, err := h.root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, newFileMode)
+		// Private, like the MCP spill (CreateTemp): command output can
+		// carry anything the command could read.
+		f, err := h.root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if err != nil {
 			return nil, "", err
 		}

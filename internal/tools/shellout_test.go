@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // --- shell_exec output: head, tail and the whole saved (ADR-0096 §3) ---
@@ -80,7 +81,7 @@ func TestShellExecSmallOutputIsUntouched(t *testing.T) {
 // file read_file could open without approval, and the note says so.
 func TestShellOperatorLaneIsNotSaved(t *testing.T) {
 	r, work := registryWithWorkDir(t)
-	open, noSave, release := r.shellSpoolOpener(true)
+	open, noSave, release := r.shellSpoolOpener(true, true)
 	defer release()
 	if open != nil {
 		t.Fatal("the operator lane got a spool")
@@ -177,5 +178,61 @@ func TestShellOutputTailOverManyWrites(t *testing.T) {
 	}
 	if !strings.Contains(s, "\n"+want+"\n[output: 1000 bytes; shown: bytes 0–30 and 990–1000;") {
 		t.Errorf("String = %q, want tail %q", s, want)
+	}
+}
+
+// Without the kernel cage any lane can read credentials, so nothing is
+// spooled there either (pre-release review).
+func TestShellUnconfinedIsNotSaved(t *testing.T) {
+	r, work := registryWithWorkDir(t)
+	open, noSave, release := r.shellSpoolOpener(false, false)
+	defer release()
+	if open != nil || !strings.Contains(noSave, "unsandboxed output is not written to disk") {
+		t.Fatalf("unconfined spool: open=%v noSave=%q", open != nil, noSave)
+	}
+	if entries, _ := os.ReadDir(work); len(entries) != 0 {
+		t.Error("unconfined output reached the work directory")
+	}
+}
+
+// The saved output is private: it can hold anything the command read.
+func TestShellSavedOutputIsPrivate(t *testing.T) {
+	r, _ := registryWithWorkDir(t)
+	out, err := run(t, r, "shell_exec", map[string]any{"command": "yes | head -c 30000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := savedPath.FindStringSubmatch(out)
+	if m == nil {
+		t.Fatalf("no saved path: %q", out[len(out)-200:])
+	}
+	st, err := os.Stat(m[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o600 {
+		t.Errorf("mode %v, want 0600", st.Mode().Perm())
+	}
+}
+
+// Japanese output: the head ends on a whole character and the spans
+// still name the bytes shown.
+func TestShellOutputHeadKeepsJapaneseWhole(t *testing.T) {
+	o := newShellOutput(8, shellSpoolCap, nil, "") // head 6 bytes
+	_, _ = o.Write([]byte("aaaaaあいうえお"))
+	s := o.String()
+	if !utf8.ValidString(s) || !strings.HasPrefix(s, "aaaaa\n[… bytes 5–") {
+		t.Errorf("String = %q", s)
+	}
+}
+
+// The lane hint reads the command's words, never the runtime's note.
+func TestShellCommandTextExcludesTheNote(t *testing.T) {
+	o := newShellOutput(8, shellSpoolCap, func() (io.WriteCloser, string, error) {
+		return nil, "", errors.New("open x: permission denied")
+	}, "")
+	_, _ = o.Write([]byte(strings.Repeat("z", 20)))
+	if strings.Contains(o.CommandText(), "permission denied") || !strings.Contains(o.String(), "permission denied") {
+		t.Errorf("CommandText = %q", o.CommandText())
 	}
 }

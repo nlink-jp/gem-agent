@@ -14,8 +14,9 @@
   (ADR-0096 §3). Past 20,000 bytes the model sees the first 15,000 and the
   last 5,000 bytes — a script's totals come last and used to be lost — and
   the whole output is saved to the work directory (up to 32 MiB), named in
-  the note. gem-agent writes the file, so no lane's reach changes. The
-  operator lane is not saved, and says so.
+  the note. gem-agent writes the file, privately (`0600`), so no lane's
+  reach changes. The operator lane is not saved, nor is any lane when the
+  shell runs without the sandbox, and the note says so.
 - **`search_files` counts every file it did not search** (ADR-0096 §4).
   Files over 2 MB (named, up to five), binary files, images, unreadable
   files and directories that could not be listed are counted in a

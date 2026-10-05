@@ -670,8 +670,10 @@ a new hook) is an architecture change and takes the same rows as a
   `shell_exec`, `bounded.Writer` in hooks) — never `CombinedOutput` on a
   command the model wrote. `shell_exec`'s spool is written by gem-agent,
   which holds the pipe, never by the command — and never for the
-  operator lane, whose output may carry credentials that `read_file`
-  would then open without approval (ADR-0096 §3).
+  operator lane or an unsandboxed shell, whose output may carry
+  credentials that `read_file` would then open without approval; the
+  file is `0600` (ADR-0096 §3). `DeniedHint` reads the command's own
+  text (`CommandText`), not the runtime's note after it.
   `readDirIn` returns `(entries, more, err)`: every caller renders
   `more`. Project files read before the trust prompt go through
   `readCapped` (1 MiB).

@@ -262,12 +262,16 @@ func (b *HeadTail) View() HeadTailView {
 		v.Head = b.head
 		return v
 	}
-	v.Head = CutRunes(b.head, b.headLimit())
+	// The head is exactly headLimit bytes after the first overflow, so
+	// CutRunes would return it whole; the cut can still split a rune.
+	v.Head = TrimIncompleteRune(b.head)
 	tail := b.tail
 	if n := b.tailLimit(); len(tail) > n {
 		tail = tail[len(tail)-n:]
 	}
-	for len(tail) > 0 && !utf8.RuneStart(tail[0]) {
+	// At most UTFMax-1 leading continuation bytes belong to a rune cut
+	// off before the tail; past that the output is not UTF-8 and is kept.
+	for i := 0; i < utf8.UTFMax-1 && len(tail) > 0 && !utf8.RuneStart(tail[0]); i++ {
 		tail = tail[1:]
 	}
 	v.Tail, v.TailStart = tail, b.total-int64(len(tail))

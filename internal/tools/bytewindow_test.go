@@ -141,3 +141,40 @@ func TestReadFileByteWindowKeepsRunesWhole(t *testing.T) {
 		t.Error("window split a rune")
 	}
 }
+
+// A window shorter than the rune it starts in widens to that rune, so a
+// continuation from its end advances (pre-release review).
+func TestReadFileByteWindowNeverReturnsNothingMidText(t *testing.T) {
+	r := newRegistry(t)
+	writeProjectFile(t, r, "j.txt", "あいう")
+	out, err := run(t, r, "read_file", map[string]any{"path": "j.txt", "offset": float64(0), "length": float64(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "あ\n[bytes 0–3 of 9]" {
+		t.Errorf("out = %q", out)
+	}
+}
+
+// start_line: 0 is "absent" to the line window, so it does not conflict.
+func TestReadFileByteWindowAcceptsZeroLineArgs(t *testing.T) {
+	r := newRegistry(t)
+	writeProjectFile(t, r, "s.txt", "0123456789")
+	out, err := run(t, r, "read_file", map[string]any{"path": "s.txt", "offset": float64(2), "length": float64(3), "start_line": float64(0)})
+	if err != nil || out != "234\n[bytes 2–5 of 10]" {
+		t.Errorf("out = %q err = %v", out, err)
+	}
+}
+
+// offset=N names a byte of the file only on the whole-file path.
+func TestReadFileWindowedCutNamesNoOffset(t *testing.T) {
+	r := newRegistry(t)
+	writeProjectFile(t, r, "w.txt", "head\n"+strings.Repeat("x", readCap+100)+"\n")
+	out, err := run(t, r, "read_file", map[string]any{"path": "w.txt", "start_line": float64(1), "end_line": float64(2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "offset=") {
+		t.Errorf("a line window named a file offset: %q", out[len(out)-200:])
+	}
+}

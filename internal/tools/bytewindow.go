@@ -38,7 +38,7 @@ func byteWindowArgs(args map[string]any) (byteWindow, error) {
 	if !hasOff && !hasLen {
 		return w, nil
 	}
-	if args["start_line"] != nil || args["end_line"] != nil {
+	if intArg(args, "start_line") > 0 || intArg(args, "end_line") > 0 {
 		return w, errors.New("offset/length read by bytes and start_line/end_line by lines — pass one or the other")
 	}
 	w.set, w.offset, w.hasOffset = true, off, hasOff
@@ -118,7 +118,17 @@ func readBytes(f *os.File, w byteWindow) (string, error) {
 	}
 	if end < size {
 		kept := bounded.TrimIncompleteRune(buf)
-		end -= int64(len(buf) - len(kept))
+		if len(kept) == 0 && len(buf) > 0 {
+			// A window shorter than the one rune it starts in would
+			// return nothing and a continuation from its end would
+			// never advance: widen it to that rune instead.
+			more := make([]byte, utf8.UTFMax)
+			m, _ := f.ReadAt(more, start)
+			if _, w := utf8.DecodeRune(more[:m]); w > len(buf) {
+				kept = more[:w]
+			}
+		}
+		end += int64(len(kept) - len(buf))
 		buf = kept
 	}
 	return string(buf) + fmt.Sprintf("\n[bytes %d–%d of %d%s]", start, end, size, clamped), nil

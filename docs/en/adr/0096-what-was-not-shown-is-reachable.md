@@ -157,9 +157,15 @@ saved where:
   (disk full) stops the spool; the note says how many bytes were saved
   before it failed. Without a work directory the note says the middle
   is lost.
-- **The path is fixed at the start of the call.** A `/clear` that
+- **The directory is fixed at the start of the call.** A `/clear` that
   rotates the work directory (ADR-0071 §2) mid-command leaves the spool
-  in the directory the note names.
+  in the old directory, which the note names — unless `/clear` removed
+  that directory as empty before the first overflow, in which case the
+  save fails and the note says the middle is lost (pre-release review).
+- **An unsandboxed shell is not spooled either, and the file is private.**
+  Without the kernel cage any lane can read credentials, so the operator
+  lane's reason applies to every lane there; the note says so. The saved
+  file is created `0600`, like the MCP spill (pre-release review).
 - **An abandoned call** (ADR-0065) keeps writing after its tool message
   is recorded; the writer is safe for that and closes the file when the
   process ends. The message already says the call was abandoned.
