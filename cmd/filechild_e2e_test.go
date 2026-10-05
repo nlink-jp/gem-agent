@@ -112,6 +112,26 @@ func TestFileChildUnderTheRealProfile(t *testing.T) {
 			t.Errorf("read_file %s exited %d: %q", p, code, out)
 		}
 	}
+	// ADR-0096 §2/§4 under the real profile: the byte window's integer
+	// arguments survive the JSON hop into the child, and the walk's skip
+	// tally comes back with the result.
+	tail := `"truncated": true, "total_rows": 200}`
+	long := `{"r":"` + strings.Repeat("x", 300*1024) + `",` + tail
+	if err := os.WriteFile(filepath.Join(proj, "spill.json"), []byte(long), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(proj, "blob.bin"), []byte("needle\x00"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, code = run("read_file", map[string]any{"path": "spill.json", "offset": float64(-len(tail))})
+	if code != 0 || !strings.HasPrefix(out, tail) || !strings.Contains(out, "[bytes ") {
+		t.Errorf("byte window through the child exited %d: %q", code, out)
+	}
+	out, code = run("search_files", map[string]any{"pattern": "needle"})
+	if code != 0 || !strings.Contains(out, "[not searched: 1 binary]") {
+		t.Errorf("skip tally through the child exited %d:\n%s", code, out)
+	}
+
 	// The hidden subcommand runs the covered reads and nothing else.
 	if out, code := run("list_files", map[string]any{}); code == 0 {
 		t.Errorf("the child ran a tool outside its set: %q", out)
