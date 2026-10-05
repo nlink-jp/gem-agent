@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **A resumed session is told when it began** (ADR-0097). The system prompt
+  said "Session started: <the resume day>" while the conversation being
+  resumed began days before, and the model was seen taking the
+  conversation's older date for new work. A resumed session now reads
+  `Resumed: <day>; the conversation above began on <day>.` The date is also
+  captured once per session: a skills reload or MCP change after midnight
+  no longer moves it, and `/clear` captures a new one.
+
 ### Documentation
 
 - **Where an operator's procedures go** (ADR-0096 §7): the integration

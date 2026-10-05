@@ -348,6 +348,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 
 	var restored []llm.Message
 	resumedID := ""
+	var resumedFrom time.Time // when a resumed conversation began (ADR-0097)
 	if flagContinue || flagResume != "" {
 		if sessionDirErr != nil {
 			return fmt.Errorf("cannot resume: %w", sessionDirErr)
@@ -357,6 +358,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		resumedID = meta.ID
+		resumedFrom = meta.Started
 		// restored is loaded below, AFTER Reopen holds the flock.
 	}
 
@@ -964,8 +966,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// view-layer concern the model is never told about, and both a
 	// prohibition and a format instruction were measured steering the
 	// model away from the behavior its own prior already had.
+	// The session's dates are captured once (ADR-0097): every rebuild of
+	// the prompt states the same day, and /clear captures a new one.
+	dates := sessionDates{Start: time.Now(), ResumedFrom: resumedFrom}
 	composeSystem := func() string {
-		return buildSystemPrompt(projectDir, workDir, projectContext) + skills.PromptSection(skillsList) + memorySection + mcpOnRequestSection(adv.PromptLines())
+		return buildSystemPrompt(projectDir, workDir, projectContext, dates) + skills.PromptSection(skillsList) + memorySection + mcpOnRequestSection(adv.PromptLines())
 	}
 	// syncAdvertised follows an inventory change (a reconnect, from
 	// /mcp reload or the settings panel): the advertiser re-resolves
@@ -1500,6 +1505,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		reportPersistent("clear", func(kind string, data any) error { return curLog.Log(kind, data) })
 		sink.SessionEnd()
 		ag.Restart(newLog)
+		// A new session: a new start day, and no longer a resumed one
+		// (ADR-0097); the prompt is rebuilt below with the work directory.
+		dates = sessionDates{Start: time.Now()}
 		// The new session re-checks the pins (ADR-0074): a file that
 		// changed during the old one is left out, and the system prompt
 		// is composed from what the grant allows.

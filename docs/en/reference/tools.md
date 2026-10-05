@@ -230,8 +230,10 @@ disclosed in the output when it fires), `diff` (calendar breakdown +
 total days/hours/minutes), `convert` (IANA timezone conversion).
 Business-day counts are refused by design: weekday arithmetic without a
 holiday calendar is wrong exactly where it would be used. The
-session-start date also rides the system prompt (cache-stable),
-pointing the model here for the live moment.
+session-start date also rides the system prompt (cache-stable, captured
+once per session), pointing the model here for the live moment; a
+resumed session states the resume day and the day its conversation
+began instead (ADR-0097).
 
 ## `ask_user` (ADR-0036)
 

@@ -8,6 +8,11 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator: a built-in tool for the current date/time, and one for date arithmetic — LLMs are said to be bad at calendar math |
 
+*Amended by ADR-0097: the session-start date is captured once per session
+(a prompt rebuild no longer moves it), and a resumed session states the
+resume day and the day its conversation began instead of a "session
+started" day that contradicted the conversation.*
+
 ## Context
 
 The model has no clock: nothing in the system prompt or the tool set

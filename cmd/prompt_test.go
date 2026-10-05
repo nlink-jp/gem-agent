@@ -5,10 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSystemPromptShape(t *testing.T) {
-	sys := buildSystemPrompt("/tmp/proj", "", "")
+	sys := buildSystemPrompt("/tmp/proj", "", "", sessionDates{})
 
 	// The defensive framing must stay at the very top, ahead of
 	// anything a project could put in front of it.
@@ -26,7 +27,7 @@ func TestSystemPromptShape(t *testing.T) {
 }
 
 func TestSystemPromptAppendsProjectContext(t *testing.T) {
-	sys := buildSystemPrompt("/tmp/proj", "", "\n\nProject instructions:\n\n### AGENTS.md\n\nbuild with make")
+	sys := buildSystemPrompt("/tmp/proj", "", "\n\nProject instructions:\n\n### AGENTS.md\n\nbuild with make", sessionDates{})
 	if !strings.Contains(sys, "build with make") {
 		t.Error("project context not appended")
 	}
@@ -82,7 +83,7 @@ func TestLoadInstructionsReadsVendorFiles(t *testing.T) {
 // intermediates in the project (ADR-0058).
 func TestSystemPromptNamesTheWorkDirectory(t *testing.T) {
 	work := "/state/gem-agent/proj/work/sess-1"
-	got := buildSystemPrompt("/proj", work, "")
+	got := buildSystemPrompt("/proj", work, "", sessionDates{})
 	if !strings.Contains(got, work) {
 		t.Error("the work directory is not named in the prompt")
 	}
@@ -97,7 +98,7 @@ func TestSystemPromptNamesTheWorkDirectory(t *testing.T) {
 }
 
 func TestSystemPromptOmitsTheSectionWithoutAWorkDirectory(t *testing.T) {
-	got := buildSystemPrompt("/proj", "", "")
+	got := buildSystemPrompt("/proj", "", "", sessionDates{})
 	if strings.Contains(got, "Session work directory") {
 		t.Error("a session with no work directory should not be told it has one")
 	}
@@ -110,7 +111,7 @@ func TestSystemPromptOmitsTheSectionWithoutAWorkDirectory(t *testing.T) {
 // guidance must exist, keep its concrete trigger, and come BEFORE the
 // self-navigation guidance.
 func TestSystemPromptDelegatesExplorationFirst(t *testing.T) {
-	sys := buildSystemPrompt("/proj", "", "")
+	sys := buildSystemPrompt("/proj", "", "", sessionDates{})
 	di := strings.Index(sys, "agentic_file_search")
 	if di < 0 {
 		t.Fatal("the system prompt does not name agentic_file_search")
@@ -136,10 +137,45 @@ func TestSystemPromptDelegatesExplorationFirst(t *testing.T) {
 // wanted behavior. The measured failure this pins against: "do NOT
 // write a mermaid fence" bred hand-drawn box art in replies and files.
 func TestSystemPromptSaysNothingAboutDiagrams(t *testing.T) {
-	sys := strings.ToLower(buildSystemPrompt("/proj", "/work", ""))
+	sys := strings.ToLower(buildSystemPrompt("/proj", "/work", "", sessionDates{}))
 	for _, banned := range []string{"mermaid", "diagram", "ascii art", "box art"} {
 		if strings.Contains(sys, banned) {
 			t.Errorf("system prompt mentions %q — ADR-0063 keeps diagrams out of the prompt", banned)
 		}
+	}
+}
+
+// ADR-0097: a fresh session states its start day; a resumed one states
+// the resume day and the day its conversation began — never "started"
+// on the resume day, which contradicted the conversation.
+func TestDateLineFreshAndResumed(t *testing.T) {
+	jst := time.FixedZone("JST", 9*3600)
+	start := time.Date(2026, 10, 5, 9, 0, 0, 0, jst)
+	if got := dateLine(sessionDates{Start: start}); got != "Session started: 2026-10-05 (Monday, JST)" {
+		t.Errorf("fresh = %q", got)
+	}
+	began := time.Date(2026, 10, 1, 16, 0, 0, 0, time.UTC) // 10/2 in JST
+	got := dateLine(sessionDates{Start: start, ResumedFrom: began})
+	if got != "Resumed: 2026-10-05 (Monday, JST); the conversation above began on 2026-10-02." {
+		t.Errorf("resumed = %q", got)
+	}
+	if strings.Contains(got, "Session started") || strings.Contains(strings.ToLower(got), "today") {
+		t.Errorf("a resumed session must not claim to start, or to be today: %q", got)
+	}
+	sys := buildSystemPrompt("/proj", "", "", sessionDates{Start: start, ResumedFrom: began})
+	if !strings.Contains(sys, got+" — for the current moment") {
+		t.Errorf("the prompt does not carry the line before the datetime pointer")
+	}
+}
+
+// The date is captured once: the same dates give the same prompt
+// however late it is rebuilt (a skills reload after midnight moved it).
+func TestDateLineIsCapturedNotRecomputed(t *testing.T) {
+	start := time.Date(2026, 10, 5, 23, 59, 0, 0, time.UTC)
+	a := buildSystemPrompt("/proj", "", "", sessionDates{Start: start})
+	time.Sleep(time.Millisecond)
+	b := buildSystemPrompt("/proj", "", "", sessionDates{Start: start})
+	if a != b || !strings.Contains(a, "Session started: 2026-10-05") {
+		t.Error("the prompt's date moved between rebuilds")
 	}
 }

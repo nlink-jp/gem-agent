@@ -12,7 +12,7 @@ import (
 // the "denial is a decision — ask" rule; the shell_exec description
 // agrees with it.
 func TestPromptSaysWhatTheLanesNowDo(t *testing.T) {
-	sys := buildSystemPrompt("/tmp/proj", "", "")
+	sys := buildSystemPrompt("/tmp/proj", "", "", sessionDates{})
 	for _, want := range []string{"compiling, vetting and testing", "toolchain cache lives in the lane's scratch", "writes a binary into the project", "in the read lane — no approval needed"} {
 		if !strings.Contains(sys, want) {
 			t.Errorf("prompt lacks %q", want)
