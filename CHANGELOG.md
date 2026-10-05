@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.91.1] - 2026-10-06
+
 ### Fixed
 
 - **A resumed session is told when it began** (ADR-0097). The system prompt
