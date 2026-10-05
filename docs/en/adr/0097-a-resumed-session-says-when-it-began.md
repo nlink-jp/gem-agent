@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-10-06) — implemented |
+| Status | **Accepted** (2026-10-06) — implemented; revised the same day after measuring where the fact is stated (§4) |
 | Date | 2026-10-06 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -31,9 +31,7 @@ has two faults:
 Whether *where* the date is stated changes what the model does — a note at
 the resume point, near the work, instead of the system prompt — is a
 separate claim about behaviour, the kind ADR-0096 measured before
-deciding. lagent already states its facts in a message at the resume
-point, so the comparison is cheap to set up; it is measured separately and
-is not decided here.
+deciding. It was measured the same day (§4).
 
 ## Decision
 
@@ -49,8 +47,32 @@ is not decided here.
    moment. The original date is the transcript's first record (the
    session list's "started"). A fresh session keeps `Session started:`,
    and `/clear` returns to it.
-3. **Nothing else moves.** The line stays in the system prompt; the
-   pointer to `datetime` is unchanged.
+3. **The line stays in the system prompt**, with the pointer to
+   `datetime` unchanged.
+4. **The same fact is also stated at the resume point.** On resume the
+   runtime appends its own message after the restored history:
+   `gem-agent: this session was resumed on 2026-10-06 (Tuesday, JST); the
+   conversation above began on 2026-09-04.` It is recorded in the
+   transcript like any message, so a later resume reads an earlier note
+   as the history it is, and adds its own.
+
+   *Measured (2026-10-06).* A real 2026-09-04 investigation session
+   (128 messages, about 128k tokens, its conversation dated 2026-09-04
+   sixteen times) was copied into an isolated home and resumed on
+   2026-10-06 with the request to save three follow-up points "in a memo
+   with a dated filename" — no date named, as in the operator's case.
+   Five runs per build, `gemini-3.8-flash`, `thinking = "high"`:
+
+   | Build | Memo dated 2026-10-06 | Called `datetime` |
+   |---|---|---|
+   | v0.91.0 ("Session started: 2026-10-06") | 0/5 — all 2026-09-04 | 0/5 |
+   | §1–§3 only (the truthful line) | 0/5 — all 2026-09-04 | 0/5 |
+   | §1–§4 (plus the note at the resume point) | **5/5** | 4/5 |
+
+   Correcting the system prompt's line did not move the model at all; the
+   same fact at the resume point moved every run (Fisher p = 0.008 for
+   the last two rows). Where two sources of the date disagree, the model
+   took the one next to the work. The runs cost $2.61 in all.
 
 The system prompt was already rebuilt by every resume, so the prefix
 cache (ADR-0018) loses nothing it had.
@@ -60,8 +82,9 @@ cache (ADR-0018) loses nothing it had.
 - On resume the model reads one statement that agrees with the
   conversation: it began on 10/2 and was resumed on 10/5.
 - The date in the prompt no longer moves on a reload.
-- Whether the operator's observation changes is not claimed here; that is
-  the measurement of where the date is stated.
+- Resumed runs that named a date took today's in 5 of 5 (§4); with the
+  line alone they took the conversation's in 5 of 5.
+- A resumed session's history carries one runtime note per resume.
 - lagent states the same fact in its session-facts message and has the
   same fault on resume (a second "session started" line with today's
   date beside the original one); it ports this as its own record.
@@ -71,8 +94,8 @@ cache (ADR-0018) loses nothing it had.
 - **Say "Today:" on resume.** Rejected: true only until midnight.
 - **Restate the date every turn.** Rejected for ADR-0018's reason: the
   system prompt would change on every request.
-- **Also move the date to a note at the resume point now.** Not decided:
-  a claim about behaviour, measured first.
+- **Correct the system prompt's line only.** Measured: 0 of 5 (§4). It is
+  kept because it is true, not because it is enough.
 
 ## References
 
