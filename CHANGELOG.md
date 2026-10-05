@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Documentation
+
+- **Where an operator's procedures go** (ADR-0096 §7): the integration
+  reference now says which routes arrive as instructions (instruction files,
+  skills) and which as data (every tool result, a knowledge-vault server's
+  notes included), so a procedure meant to be followed is written as a skill
+  rather than read from a vault; with the skill limits and why no path or
+  server can be made instruction-grade.
+
 ## [0.91.0] - 2026-10-05
 
 ### Changed

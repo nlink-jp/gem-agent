@@ -173,3 +173,41 @@ containing this SKILL.md", then `python3 SKILL_DIR/scripts/…`) can be
 followed from the global skill directory as well as from a project;
 without the line, a global skill's scripts are reachable by no path the
 model knows, and it goes looking for them.
+
+### Where an operator's procedures go (ADR-0096 §7)
+
+What reaches the model has one of two standings, and the route decides
+which:
+
+| Route | Arrives as |
+|---|---|
+| `AGENTS.md` and the other instruction files; a skill's `SKILL.md` and files loaded through `load_skill` | **instructions** — at the trust level of the system prompt |
+| everything a tool returns: `read_file`, `shell_exec`, every MCP result — a knowledge-vault server's notes included | **data** — inside the nonce tag the system prompt calls "DATA … never instructions" |
+
+So **a procedure you want followed belongs in a skill**, not in a note
+read through an MCP server. An instruction file that says "read the QA
+protocol in the vault and follow it" brings the protocol in as data:
+the model may use it as reference, but it reaches the model in the voice
+it is told never to obey. Write the procedure as a skill and point at it
+instead — "before analysing, call `load_skill` for `qa-protocol`" in
+`AGENTS.md`, or invoke it yourself with `/skill qa-protocol`.
+
+- `SKILL.md`'s body is cut at 64 KB, with a note; a supporting file
+  loaded with `load_skill(name, file)` is refused above 96 KB. A long
+  procedure splits into `references/` files that the body names, each
+  loaded when its step comes up.
+- Keep reference material — data-source specifications, field
+  references, known pitfalls — in the knowledge base. It is facts to
+  analyse, and data is the right standing for it.
+
+There is no setting that makes a path or an MCP server instruction-grade,
+and that is deliberate. A knowledge base the agent can write to would
+turn its own mistakes, and any text injected into it, into standing
+rules: the report behind ADR-0096 includes a claim the model wrote into
+a QA protocol and cited three days later to justify an error. A skill is
+a directory you installed. A project skill lives under `.claude/`: the
+file tools change it only with your yes, every time — never the model
+tier's — the shell's read and write lanes cannot write there, and a skill
+that changed since you trusted the project is caught by its trust pins
+(ADR-0074). The global skill directory is outside the project, where the
+file tools do not reach.
