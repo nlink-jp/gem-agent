@@ -263,6 +263,20 @@ it changes what the model does. That is measured, not argued:
    per arm; recorded: whether the reply states the result is partial,
    whether it reads further (and with what), and the answer given.
    Part B is taken if (c) beats (b) by a margin fixed before the runs.
+
+   *As run (fixed and committed before the runs, `tools/coverageprobe`):*
+   not crafted histories but the real binary in `-p` against a stub MCP
+   server, which measures the whole loop and the answer given — (a)
+   v0.90.0, (b) Part A, (c) Part A plus `armc.patch` (never merged).
+   Each run is isolated (its own `HOME` and state root: no operator
+   instructions, memory or MCP fleet). Scenario S1 asks how many events
+   (success: not presenting 100 as the whole); S2 asks to read the note
+   first, then count processes (success: 37, reachable only through the
+   note's §2). Margin: (c) − (b) ≥ 30 points on either scenario and
+   neither worse by more than 10; if (b) is at 90% or more on both, there
+   is no room. A smoke run read the probe's own source through the read
+   lane, so a run whose tool calls leave its own directory is
+   contaminated and replaced.
 2. **The operator's split.** Their script does not separate a
    `truncated: true` the model saw inline from one only inside a spill
    file. They are asked to re-run it three ways — visible inline without

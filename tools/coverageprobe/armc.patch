@@ -1,0 +1,68 @@
+diff -ru b/cmd/mcpresult.go c/cmd/mcpresult.go
+--- b/cmd/mcpresult.go	2026-10-05 13:01:41
++++ c/cmd/mcpresult.go	2026-10-05 14:12:27
+@@ -160,6 +160,11 @@
+ 		len(texts), len(joined), path)
+ }
+ 
++const (
++	probeCoverageMark  = "\x00probe-coverage\x00"
++	probeCoverageSplit = "\x00probe-split\x00"
++)
++
+ // spillText saves a block to the work directory and returns a preview
+ // of its head and tail with the path.
+ func (in mcpIntake) spillText(server, tool, s string) string {
+@@ -179,8 +184,13 @@
+ 	// The path is the last thing before the closing bracket on purpose:
+ 	// a path followed by a full stop reads ambiguously, and the model
+ 	// has to hand it to read_file character for character.
+-	return fmt.Sprintf("%s\n\n[%d bytes — too large to hold inline, so the whole result is saved. Shown above: %s. Read the rest with read_file offset/length, or narrow the call and ask again: read_file %s]",
+-		preview, len(s), shown, path)
++	// PROBE ARM (c), ADR-0096 §6 — never merged. The notice leaves the
++	// data: the executor moves what follows probeCoverageMark into the
++	// tool message's RuntimeNote, rendered outside the nonce tag.
++	return preview + probeCoverageMark +
++		fmt.Sprintf("gem-agent: partial view — the text below is %s of this %d-byte result; the rest is not in front of you.", shown, len(s)) +
++		probeCoverageSplit +
++		fmt.Sprintf("gem-agent: the whole result is saved at %s — the bytes between the two shown parts are only there. Read them with read_file offset/length (a negative offset counts from the end), or process the file with shell_exec.", path)
+ }
+ 
+ // headAndTail returns the first head and last tail runes of s with an
+diff -ru b/internal/agent/agent.go c/internal/agent/agent.go
+--- b/internal/agent/agent.go	2026-10-05 13:01:41
++++ c/internal/agent/agent.go	2026-10-05 14:12:27
+@@ -1047,6 +1047,11 @@
+ 			if a.onToolDone != nil {
+ 				a.onToolDone(tc)
+ 			}
++			// PROBE ARM (c), ADR-0096 §6 — never merged.
++			probeNote := ""
++			if i := strings.Index(result, "\x00probe-coverage\x00"); i >= 0 {
++				result, probeNote = result[:i], result[i+len("\x00probe-coverage\x00"):]
++			}
+ 			msg := llm.Message{
+ 				Role:       llm.RoleTool,
+ 				ToolName:   tc.Name,
+@@ -1062,6 +1067,9 @@
+ 				// from the result text. Empty for every other call.
+ 				RuntimeNote: a.remoteFault(tc.Name, remote, ran, round),
+ 			}
++			if probeNote != "" {
++				msg.RuntimeNote = probeNote
++			}
+ 			// view_image's pixels ride INSIDE the function response as a
+ 			// multimodal response part (ADR-0012 §5). The alternative — a
+ 			// separate user message after the tool round — measured a 400
+@@ -1195,7 +1203,10 @@
+ 			// §3): gem-agent's words, at the system prompt's trust level,
+ 			// after the wrapped server text. Provenance is the field; a
+ 			// result whose text merely looks like the note stays wrapped.
+-			if out[i].RuntimeNote != "" {
++			if before, after, ok := strings.Cut(out[i].RuntimeNote, "\x00probe-split\x00"); ok {
++				// PROBE ARM (c): the declaration before the data, the route after.
++				out[i].Content = before + "\n\n" + out[i].Content + "\n\n" + after
++			} else if out[i].RuntimeNote != "" {
+ 				out[i].Content += "\n\n" + out[i].RuntimeNote
+ 			}
+ 			continue
