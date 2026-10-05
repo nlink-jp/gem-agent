@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-10-05) — Part A for implementation; Part B decided by the measurement in §6. Revised once against an independent design review (16 findings; see §8) |
+| Status | **Accepted** (2026-10-05) — Part A implemented; **Part B not taken**: the §6 probe found no room — every arm, today's included, answered correctly (§6.1). Revised once against an independent design review (16 findings; see §8) |
 | Date | 2026-10-05 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -293,6 +293,54 @@ it changes what the model does. That is measured, not argued:
    so the instrument is unchanged. If Part B lands, the notice leaves the
    content, and a reader of the `coverage` field is supplied and run
    alongside the old one.
+
+### 6.1 Result of the probe (2026-10-05)
+
+Main model `gemini-3.8-flash`, `thinking = "high"`. Every run that
+answered, counted by arm (the decision table counts only uncontaminated
+runs; this one adds the contaminated runs, scored by their answers):
+
+| Arm | S1 success | S2 success | read the saved file | narrowed with a count query | `read_file` offset |
+|---|---|---|---|---|---|
+| (a) v0.90.0 | 26/26 | 21/21 | every run | every run | — |
+| (b) Part A | 33/33 | 22/22 | every run | every run | 15 runs |
+| (c) Part A + note outside | 28/28 | 26/26 | every run | every run | none |
+
+Uncontaminated runs: S2 20/20 in every arm (a→b and b→c both +0 points,
+Fisher p = 1.000). S1 could not reach its 20: 30, 37 and 32 runs were
+contaminated — after answering, the model listed the parent directory
+(`ls -la ..`) in a project that held nothing else — leaving 1, 0 and 1
+valid runs. Every S1 answer, contaminated or not, said 200.
+
+**Decision, by the rule fixed before the runs: Part B is not taken.**
+(c) − (b) is +0 on S2, and (b) is at 100% there and, counting every
+answer, on S1 — there is no room for a note's position or voice to
+change the answer. The rule's "both scenarios" clause rests on S1's
+answers rather than its 20 valid runs; that is the residual, recorded
+here rather than re-run, because no run of any arm failed the task.
+
+What the probe also shows, and what it does not:
+
+- **The reported failure did not reproduce.** In a short, clean
+  session the model read the saved file and narrowed with a count query
+  every time, under today's head-only preview as well. The operator's
+  failures are therefore not explained by the presentation alone;
+  their sessions differ in what this probe did not have — 28 servers,
+  first prompts of ~120k tokens, a hundred-odd calls, a task that is one
+  step of a longer analysis, rules in the instructions. That makes
+  §6's step 2 (the operator's own split) the evidence that matters.
+- **Part A stands on its own grounds** (§Context): a route that could
+  not reach the end of what was saved, and skips that were not counted.
+  The probe neither supports nor undercuts it — nothing failed in (a).
+- **The note outside the tag changed one thing the probe did not
+  score**: in S2, (c) wandered out of its directory in 6 of 26 runs
+  against 1 of 21 in (a) and 2 of 22 in (b), and never used the byte
+  window its note named. Small numbers, recorded as an observation.
+- **Wandering is itself a property of the setup**: a question answerable
+  in three calls took a median of 33–38 calls in S1, most of them
+  examining the environment. The first launch, with a server named
+  `probe`, was worse (one run disassembled the stub). Probes of this
+  model's behaviour in an empty project measure that as well.
 
 ## 7. Not decided here
 
