@@ -49,6 +49,15 @@
 // runs execute in random directories under -work, apart from -out, and
 // the stub is built with -trimpath under a neutral name.
 //
+// Amended before the counted runs (the first launch is a discarded
+// pilot): the stub was one server named "probe", and runs read its
+// binary with otool and strings — the model investigating the harness,
+// not the task. The stub now presents as the operator's setup did: two
+// servers, "splunk" (splunk_run_query) and "obsidian" (get_vault_file),
+// behind a binary named mcp-bridge. Scenarios, prompts, success rules
+// and the decision rule are unchanged. score also reports a sensitivity
+// line that scores contaminated runs by their answers.
+//
 // Usage:
 //
 //	coverageprobe serve                 (spawned by gem-agent via mcp.json)
@@ -69,7 +78,7 @@ func main() {
 	var err error
 	switch os.Args[1] {
 	case "serve":
-		err = serve(os.Stdin, os.Stdout, os.Getenv("COVERAGEPROBE_SCENARIO"))
+		err = serve(os.Stdin, os.Stdout, os.Getenv("BRIDGE_TARGET"), os.Getenv("BRIDGE_DATASET"))
 	case "run":
 		err = runCmd(os.Args[2:])
 	case "score":

@@ -276,7 +276,12 @@ it changes what the model does. That is measured, not argued:
    neither worse by more than 10; if (b) is at 90% or more on both, there
    is no room. A smoke run read the probe's own source through the read
    lane, so a run whose tool calls leave its own directory is
-   contaminated and replaced.
+   contaminated and replaced. The first launch was discarded as a pilot
+   before any scoring: its stub was one server named `probe`, and runs
+   investigated the harness instead of the task (one disassembled the
+   stub with `otool`). The stub now presents as the operator's setup
+   did — `splunk` and `obsidian` behind a binary named `mcp-bridge`;
+   scenarios, prompts and rules are unchanged.
 2. **The operator's split.** Their script does not separate a
    `truncated: true` the model saw inline from one only inside a spill
    file. They are asked to re-run it three ways — visible inline without

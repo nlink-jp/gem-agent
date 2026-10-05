@@ -43,7 +43,7 @@ func scoreCmd(args []string) error {
 	out := fs.String("out", "", "output directory")
 	_ = fs.Parse(args)
 	files, _ := filepath.Glob(filepath.Join(*out, "*", "*", "attempt-*", "record.json"))
-	type cell struct{ n, ok, spills, read, invalid, contaminated int }
+	type cell struct{ n, ok, spills, read, invalid, contaminated, cAnswered, cOK int }
 	cells := map[string]*cell{}
 	var audit []string
 	for _, f := range files {
@@ -62,6 +62,12 @@ func scoreCmd(args []string) error {
 		c := cells[k]
 		if r.Contaminated != "" {
 			c.contaminated++
+			if r.Final != "" {
+				c.cAnswered++
+				if ok, _ := classify(r.Scenario, r.Final); ok {
+					c.cOK++
+				}
+			}
 			continue
 		}
 		if !r.Valid || r.Run == 0 {
@@ -93,6 +99,12 @@ func scoreCmd(args []string) error {
 	for _, k := range keys {
 		c := cells[k]
 		fmt.Printf("| %s | %d | %d | %s | %d | %d | %d | %d |\n", k, c.n, c.ok, pct(c.ok, c.n), c.spills, c.read, c.invalid, c.contaminated)
+	}
+	fmt.Println("\nSensitivity — contaminated runs scored by their answers (not part of the decision):")
+	for _, k := range keys {
+		c := cells[k]
+		fmt.Printf("- %s: contaminated %d (answered %d, success %d); valid+contaminated success %s\n",
+			k, c.contaminated, c.cAnswered, c.cOK, pct(c.ok+c.cOK, c.n+c.cAnswered))
 	}
 	fmt.Println()
 	for _, s := range []string{"s1", "s2"} {

@@ -175,17 +175,18 @@ func oneRun(self, bin, arm, scenario, model, dir string, attempt int, timeout ti
 		}
 	}
 	_ = os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(fmt.Sprintf(probeConfig, model)), 0o644)
-	mcp := map[string]any{"mcpServers": map[string]any{"probe": map[string]any{
-		"command": self, "args": []string{"serve"},
-		"env": map[string]string{"COVERAGEPROBE_SCENARIO": scenario},
-	}}}
+	server := func(target string) map[string]any {
+		return map[string]any{"command": self, "args": []string{"serve"},
+			"env": map[string]string{"BRIDGE_TARGET": target, "BRIDGE_DATASET": scenario}}
+	}
+	mcp := map[string]any{"mcpServers": map[string]any{"splunk": server("splunk"), "obsidian": server("obsidian")}}
 	mb, _ := json.Marshal(mcp)
 	_ = os.WriteFile(filepath.Join(cfgDir, "mcp.json"), mb, 0o644)
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "-p", prompts[scenario],
-		"--allow", "mcp__probe__run_query,mcp__probe__get_vault_file")
+		"--allow", "mcp__splunk__splunk_run_query,mcp__obsidian__get_vault_file")
 	cmd.Dir = project
 	// The child-environment rule (ADR-0087 §2) strips gem-agent's own
 	// variables; the run's isolation is then set explicitly. Exec keeps

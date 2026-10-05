@@ -12,7 +12,7 @@ import (
 
 // serve is a minimal MCP server over stdio: newline-delimited JSON-RPC,
 // the methods gem-agent's client uses and nothing else.
-func serve(in io.Reader, out io.Writer, scenario string) error {
+func serve(in io.Reader, out io.Writer, target, scenario string) error {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 64*1024), 16<<20)
 	enc := json.NewEncoder(out)
@@ -42,12 +42,12 @@ func serve(in io.Reader, out io.Writer, scenario string) error {
 			result = map[string]any{
 				"protocolVersion": p.ProtocolVersion,
 				"capabilities":    map[string]any{"tools": map[string]any{}},
-				"serverInfo":      map[string]any{"name": "probe", "version": "0"},
+				"serverInfo":      map[string]any{"name": target, "version": "1.4.2"},
 			}
 		case "ping":
 			result = map[string]any{}
 		case "tools/list":
-			result = map[string]any{"tools": toolList()}
+			result = map[string]any{"tools": toolList(target)}
 		case "tools/call":
 			var p struct {
 				Name      string         `json:"name"`
@@ -75,22 +75,9 @@ func serve(in io.Reader, out io.Writer, scenario string) error {
 	return sc.Err()
 }
 
-func toolList() []map[string]any {
-	return []map[string]any{
-		{
-			"name":        "run_query",
-			"description": "Run a search query (SPL) against the security log store and return the matching events as JSON. At most 100 rows are returned per call.",
-			"inputSchema": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"query":    map[string]any{"type": "string", "description": "SPL query"},
-					"earliest": map[string]any{"type": "string", "description": "start time (ISO 8601)"},
-					"latest":   map[string]any{"type": "string", "description": "end time (ISO 8601)"},
-				},
-				"required": []string{"query"},
-			},
-		},
-		{
+func toolList(target string) []map[string]any {
+	if target != "splunk" {
+		return []map[string]any{{
 			"name":        "get_vault_file",
 			"description": "Return the full Markdown content of a note in the knowledge vault.",
 			"inputSchema": map[string]any{
@@ -99,6 +86,21 @@ func toolList() []map[string]any {
 					"path": map[string]any{"type": "string", "description": "vault-relative path of the note"},
 				},
 				"required": []string{"path"},
+			},
+		}}
+	}
+	return []map[string]any{
+		{
+			"name":        "splunk_run_query",
+			"description": "Run a Splunk search (SPL) and return the matching events as JSON. At most 100 rows are returned per call.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query":    map[string]any{"type": "string", "description": "SPL query"},
+					"earliest": map[string]any{"type": "string", "description": "start time (ISO 8601)"},
+					"latest":   map[string]any{"type": "string", "description": "end time (ISO 8601)"},
+				},
+				"required": []string{"query"},
 			},
 		},
 	}
@@ -117,7 +119,7 @@ func call(scenario, name string, args map[string]any) (string, bool) {
 			return fmt.Sprintf("note not found: %s (available: kb/datasources/DeviceProcessEvents.md)", p), true
 		}
 		return note(), false
-	case "run_query":
+	case "splunk_run_query", "run_query":
 		q, _ := args["query"].(string)
 		if scenario == "s2" {
 			switch {

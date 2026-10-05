@@ -43,7 +43,7 @@ func TestS2AnswerIsInSectionTwoOnly(t *testing.T) {
 }
 
 func TestStubAnswers(t *testing.T) {
-	if got, _ := call("s2", "run_query", map[string]any{"query": "index=edr | stats dc(ProcLineageKey)"}); !strings.Contains(got, `"37"`) {
+	if got, _ := call("s2", "splunk_run_query", map[string]any{"query": "index=edr | stats dc(ProcLineageKey)"}); !strings.Contains(got, `"37"`) {
 		t.Errorf("lineage query = %s", got)
 	}
 	if got, _ := call("s2", "run_query", map[string]any{"query": "index=edr | stats dc(ProcessId)"}); !strings.Contains(got, `"52"`) {
