@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/instructions"
+	"github.com/nlink-jp/gem-agent/internal/session"
 )
 
 // loadInstructions collects the project's agent-instruction files (the
@@ -84,7 +85,7 @@ func resumeNote(d sessionDates) string {
 		start = time.Now()
 	}
 	zone, _ := start.Zone()
-	return fmt.Sprintf("gem-agent: this session was resumed on %s (%s, %s); the conversation above began on %s.",
+	return fmt.Sprintf("%s %s (%s, %s); the conversation above began on %s.", session.ResumeNotePrefix,
 		start.Format("2006-01-02"), start.Weekday(), zone, d.ResumedFrom.In(start.Location()).Format("2006-01-02"))
 }
 

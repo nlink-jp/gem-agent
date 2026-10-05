@@ -54,7 +54,9 @@ deciding. It was measured the same day (§4).
    `gem-agent: this session was resumed on 2026-10-06 (Tuesday, JST); the
    conversation above began on 2026-09-04.` It is recorded in the
    transcript like any message, so a later resume reads an earlier note
-   as the history it is, and adds its own.
+   as the history it is, and adds its own. Its prefix is the session
+   package's `ResumeNotePrefix`, and the session list never shows it as a
+   session's opening line.
 
    *Measured (2026-10-06).* A real 2026-09-04 investigation session
    (128 messages, about 128k tokens, its conversation dated 2026-09-04
@@ -84,7 +86,15 @@ cache (ADR-0018) loses nothing it had.
 - The date in the prompt no longer moves on a reload.
 - Resumed runs that named a date took today's in 5 of 5 (§4); with the
   line alone they took the conversation's in 5 of 5.
-- A resumed session's history carries one runtime note per resume.
+- A resumed session's history carries one runtime note per resume —
+  also a resume the operator leaves without sending anything. Accepted:
+  each note stays true as history.
+- When `/clear` cannot open a new transcript and clears the history in
+  place, the dates start over too: "the conversation above began on"
+  would name a conversation that is gone.
+- "Began on" is the transcript header's time. A transcript whose header
+  line is unreadable falls back to its last-modified time, as the session
+  list already does; rare, and accepted.
 - lagent states the same fact in its session-facts message and has the
   same fault on resume (a second "session started" line with today's
   date beside the original one); it ports this as its own record.

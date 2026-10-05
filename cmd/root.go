@@ -1494,6 +1494,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// against the working directory, the operator's project.
 		if sessionDirErr != nil {
 			ag.Reset()
+			// The history is gone, so "the conversation above began on"
+			// would name nothing: the dates start over (ADR-0097).
+			dates = sessionDates{Start: time.Now()}
+			ag.SetSystem(composeSystem())
 			note("history cleared; a new session could not be started (%v) — the conversation continues in this session", sessionDirErr)
 			sessionHooks("clear")
 			return render()
@@ -1501,6 +1505,8 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		newLog, err := openSessionLog(sessionDir, "", projectDir, cfg.Model.Name, cfg.GCP.Location, cmd.Root().Version)
 		if err != nil {
 			ag.Reset()
+			dates = sessionDates{Start: time.Now()}
+			ag.SetSystem(composeSystem())
 			note("history cleared; a new session could not be started (%v) — the conversation continues in this session", err)
 			sessionHooks("clear")
 			return render()

@@ -508,3 +508,15 @@ func TestInUseTracksTheTranscriptLock(t *testing.T) {
 		t.Error("a malformed id must read as not in use, and must not be probed")
 	}
 }
+
+// ADR-0097 §4: the runtime's resume note is not the operator's words, so
+// a session whose only typed lines were `!` commands keeps its `!`
+// preview after a resume instead of being listed as the note.
+func TestResumeNoteIsNeverThePreview(t *testing.T) {
+	if got := previewOf(ResumeNotePrefix + " 2026-10-06 (Tuesday, JST); the conversation above began on 2026-09-04."); got != "" {
+		t.Errorf("preview = %q", got)
+	}
+	if got := previewOf(ShellContextPrefix + "\n$ ls\n\nOutput:\n"); got != "!ls" {
+		t.Errorf("the shell preview changed: %q", got)
+	}
+}

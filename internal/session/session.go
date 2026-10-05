@@ -95,6 +95,11 @@ type UsageRecord struct {
 // wrapper text as a session's preview reads like a bug.
 const ShellContextPrefix = "I ran this shell command myself:"
 
+// ResumeNotePrefix opens the runtime's message at a resume point
+// (ADR-0097 §4). It is not the operator's words, so the session list
+// never shows it as the session's opening question.
+const ResumeNotePrefix = "gem-agent: this session was resumed on"
+
 // Record is one JSONL line.
 type Record struct {
 	Time time.Time `json:"ts"`
@@ -778,6 +783,9 @@ const (
 // context message is shown as the command the operator ran, not as the
 // wrapper sentence the agent injected around it.
 func previewOf(content string) string {
+	if strings.HasPrefix(content, ResumeNotePrefix) {
+		return ""
+	}
 	if !strings.HasPrefix(content, ShellContextPrefix) {
 		return firstLine(content, previewChars)
 	}
