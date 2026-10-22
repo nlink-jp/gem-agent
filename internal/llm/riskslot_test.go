@@ -16,7 +16,7 @@ func testVertex(model, level string) *Vertex {
 func TestWithThinkingComposesWithWithModel(t *testing.T) {
 	main := testVertex("main", "high")
 	main.safety = SafetySettings("relaxed")
-	slot := main.WithModel("judge").WithThinking("low")
+	slot := main.WithModel("judge").WithThinking("low", "[model].risk_thinking")
 	if slot.model != "judge" {
 		t.Errorf("slot model = %q", slot.model)
 	}
@@ -39,8 +39,12 @@ func TestWithThinkingNamesItsOwnKeyInTheHint(t *testing.T) {
 	if got := main.thinkingKeyName(); got != "[model].thinking" {
 		t.Errorf("main key = %q", got)
 	}
-	if got := main.WithModel("judge").WithThinking("minimal").thinkingKeyName(); got != "[model].risk_thinking" {
+	if got := main.WithModel("judge").WithThinking("minimal", "[model].risk_thinking").thinkingKeyName(); got != "[model].risk_thinking" {
 		t.Errorf("slot key = %q", got)
+	}
+	// The librarian's slot names its own key, not the risk slot's.
+	if got := main.WithModel("lib").WithThinking("minimal", "[model].librarian_thinking").thinkingKeyName(); got != "[model].librarian_thinking" {
+		t.Errorf("librarian key = %q", got)
 	}
 }
 
@@ -48,11 +52,11 @@ func TestWithThinkingNamesItsOwnKeyInTheHint(t *testing.T) {
 // level (ADR-0025 §2, unchanged).
 func TestWithThinkingEmptyIsModelDefault(t *testing.T) {
 	main := testVertex("main", "high")
-	if got := main.WithModel("judge").WithThinking("").Thinking(); got != "" {
+	if got := main.WithModel("judge").WithThinking("", "[model].risk_thinking").Thinking(); got != "" {
 		t.Errorf("empty level became %q", got)
 	}
 	// And WithThinking alone (the level-only slot) keeps the main name.
-	if got := main.WithThinking("low"); got.model != "main" || got.Thinking() != "low" {
+	if got := main.WithThinking("low", "[model].risk_thinking"); got.model != "main" || got.Thinking() != "low" {
 		t.Errorf("level-only slot = %+v", got)
 	}
 }

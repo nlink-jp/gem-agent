@@ -701,7 +701,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	riskModel := cfg.Model.RiskModel()
 	var riskBackend llm.Backend
 	if cfg.Model.RiskSlot() {
-		riskBackend = backend.WithModel(riskModel).WithThinking(cfg.Model.RiskThinking)
+		riskBackend = backend.WithModel(riskModel).WithThinking(cfg.Model.RiskThinking, "[model].risk_thinking")
 	}
 	// sideLog forwards to the transcript in use: /clear swaps it
 	// (ADR-0071 §2), and a tool that captured the value at startup wrote
@@ -725,7 +725,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 	if cfg.Model.LibrarianSlot() {
 		librarianModel = cfg.Model.LibrarianModel()
-		librarianBackend = backend.WithModel(librarianModel).WithThinking(cfg.Model.LibrarianThinking)
+		librarianBackend = backend.WithModel(librarianModel).WithThinking(cfg.Model.LibrarianThinking, "[model].librarian_thinking")
 	}
 	if cfg.MCP.OnRequest() {
 		if err := registerMCPLoadTool(registry, adv); err != nil {

@@ -40,8 +40,8 @@ func TestWithModelDoesNotInheritThinking(t *testing.T) {
 func TestSetThinkingMovesOnlyTheMainDial(t *testing.T) {
 	main := testVertex("main", "high")
 	summary := main.WithModel("light")
-	slot := main.WithModel("judge").WithThinking("low")
-	levelOnly := main.WithThinking("medium")
+	slot := main.WithModel("judge").WithThinking("low", "[model].risk_thinking")
+	levelOnly := main.WithThinking("medium", "[model].risk_thinking")
 	riding := main // the model tier and librarian without a slot
 
 	main.SetThinking("low")

@@ -17,6 +17,12 @@
   hint naming `/thinking`, and the MAX_TOKENS hint now points at
   `/thinking low`.
 
+### Fixed
+
+- **A 400 on the librarian's own slot names `[model].librarian_thinking`**,
+  not `[model].risk_thinking` — the hint told the operator to edit the
+  wrong key (found by the ADR-0098 review).
+
 ## [0.91.1] - 2026-10-06
 
 ### Fixed

@@ -74,7 +74,6 @@ type thinkingSetting struct {
 // The keys the 400 hint can name.
 const (
 	mainThinkingKey = "[model].thinking"
-	riskThinkingKey = "[model].risk_thinking"
 	liveThinkingKey = "/thinking"
 )
 
@@ -175,14 +174,15 @@ func (v *Vertex) WithModel(name string) *Vertex {
 }
 
 // WithThinking returns a copy of this backend at the given thinking
-// level ("" = the model's own default) — the [model].risk_thinking
-// slot (ADR-0082 §2-3). Composes with WithModel: the receiver is not
-// changed, so the main backend keeps the operator's dial.
-func (v *Vertex) WithThinking(level string) *Vertex {
+// level ("" = the model's own default) — a slot's level, such as
+// [model].risk_thinking (ADR-0082 §2-3). key is the config key that set
+// it: the 400 hint names it, and the librarian's slot has a key of its
+// own (it named the risk slot's). Composes with WithModel: the receiver
+// is not changed, so the main backend keeps the operator's dial.
+func (v *Vertex) WithThinking(level, key string) *Vertex {
 	out := *v
-	// The 400 hint below names the key the operator has to edit. A dial
-	// of its own, never the receiver's (ADR-0098 §5).
-	out.thinking = newThinking(level, riskThinkingKey)
+	// A dial of its own, never the receiver's (ADR-0098 §5).
+	out.thinking = newThinking(level, key)
 	return &out
 }
 
