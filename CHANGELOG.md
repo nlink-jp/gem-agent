@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`/thinking` — change the thinking level during a session** (ADR-0098).
+  `/thinking minimal|low|medium|high|default` sets it, a bare `/thinking`
+  shows the level and where it came from, and the `model.thinking` row in
+  `/settings` is now editable and turns the same dial. It applies from the
+  next request and only to this session — nothing is written to a file, and
+  a new process or `--resume` starts from `[model].thinking` again. It
+  reaches everything that rides the main model; a named risk, librarian or
+  summary slot keeps its own level. Measured first: a conversation produced
+  at one level and replayed with its thought signatures at another is
+  accepted. A level the model does not support fails the next request with a
+  hint naming `/thinking`, and the MAX_TOKENS hint now points at
+  `/thinking low`.
+
 ## [0.91.1] - 2026-10-06
 
 ### Fixed

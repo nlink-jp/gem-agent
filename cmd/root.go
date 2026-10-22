@@ -902,7 +902,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			OSVersion:      macOSVersion(),
 			Model:          cfg.Model.Name,
 			SummaryModel:   summaryModel,
-			Thinking:       cfg.Model.Thinking,
+			Thinking:       backend.Thinking(),
 			RiskModel:      riskModel,
 			RiskThinking:   cfg.Model.RiskThinking,
 			RiskSlot:       cfg.Model.RiskSlot(),
@@ -1232,8 +1232,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		policyPath: policyPath, projectDir: projectDir,
 		registry: registry, ag: ag, current: approvalPolicy,
 		filter: mcpFilter, inv: mcpInv, images: images,
+		thinking: backend,
 	}
 	settingsData := settings.data()
+	// /thinking turns the same dial the panel's model.thinking row does
+	// (ADR-0098 §2).
+	thinkingSlash := func(args []string) (string, bool) {
+		return thinkingCmd(args, backend, cfg, msgs)
+	}
 
 	// --- in-session integration reload (ADR-0039) ---
 	// Both closures reuse the startup code paths and the startup trust
@@ -1779,7 +1785,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			},
 			Slash: func(in string) (string, bool, bool) {
 				return slashOutput(in, ag, registry, mcpSummary, skillsList,
-					slashReloads{mcp: reloadMCP, skills: reloadSkills, mcpLoad: loadMCP, mcpStatus: adv.Status, mcpWithheld: adv.Withheld, show: showPath},
+					slashReloads{mcp: reloadMCP, skills: reloadSkills, mcpLoad: loadMCP, mcpStatus: adv.Status, mcpWithheld: adv.Withheld, show: showPath, thinking: thinkingSlash},
 					func() string { return usageReport(ag, tally, cfg.Model.Name, riskModel) },
 					func() string { return memoryListing(memBase, projectDir) },
 					rbRunner.Command, appVersion, msgs, onClear)
@@ -1888,7 +1894,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		if strings.HasPrefix(input, "/") {
 			out, _, quit := slashOutput(input, ag, registry, mcpSummary, skillsList,
-				slashReloads{mcp: reloadMCP, skills: reloadSkills, mcpLoad: loadMCP, mcpStatus: adv.Status, mcpWithheld: adv.Withheld, show: showPath},
+				slashReloads{mcp: reloadMCP, skills: reloadSkills, mcpLoad: loadMCP, mcpStatus: adv.Status, mcpWithheld: adv.Withheld, show: showPath, thinking: thinkingSlash},
 				func() string { return usageReport(ag, tally, cfg.Model.Name, riskModel) },
 				func() string { return memoryListing(memBase, projectDir) },
 				rbRunner.Command, appVersion, msgs, onClear)
@@ -2501,7 +2507,7 @@ func slashCompletions(getSkills func() []skills.Skill) func(string) []string {
 	commands := []string{
 		"/auto", "/clear", "/compact", "/exit", "/help", "/mcp", "/memory",
 		"/quit", "/readonly", "/riskbook", "/settings", "/skill", "/skills",
-		"/tools", "/usage", "/version",
+		"/thinking", "/tools", "/usage", "/version",
 	}
 	return func(prefix string) []string {
 		if rest, ok := strings.CutPrefix(prefix, "/skill "); ok {
@@ -2623,6 +2629,9 @@ type slashReloads struct {
 	// `@<image>`, and it is why the symlink hazard that rules out a
 	// runtime-chosen path does not apply.
 	show func(path string) (string, bool)
+	// thinking is /thinking (ADR-0098): the args after the command, the
+	// output, and whether it is an error. nil reads as unknown.
+	thinking func(args []string) (string, bool)
 }
 
 func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, reload slashReloads, usage func() string, memoryInfo func() string, riskbookCmd func(args []string) (string, bool), version string, msgs *uitext.Messages, onClear func() string) (output string, isErr bool, quit bool) {
@@ -2789,6 +2798,13 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 				b.WriteString(msgs.ReadOnlyAuto)
 			}
 		}
+	case "/thinking":
+		if reload.thinking == nil {
+			fmt.Fprintf(&b, msgs.UnknownCommandFmt, input)
+			return b.String(), true, false
+		}
+		out, isErr := reload.thinking(fields[1:])
+		return out, isErr, false
 	case "/usage":
 		b.WriteString(usage())
 	case "/version":

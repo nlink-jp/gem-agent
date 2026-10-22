@@ -1119,7 +1119,7 @@ func emptyResponseError(resp *llm.Response) error {
 		return fmt.Errorf("the provider's content filter blocked this exchange (%s) — send it again, or /clear and narrow the request",
 			resp.BlockReason)
 	case resp.FinishReason == "MAX_TOKENS":
-		return fmt.Errorf("the model hit its output limit before answering (%d reasoning tokens spent) — ask for something narrower, or lower [model].thinking (--thinking low)",
+		return fmt.Errorf("the model hit its output limit before answering (%d reasoning tokens spent) — ask for something narrower, or lower the thinking level (/thinking low)",
 			resp.ThoughtTokens)
 	case resp.FinishReason == "SAFETY":
 		return fmt.Errorf("the model stopped without answering: its response tripped a content filter (SAFETY); set [model].safety = \"relaxed\" or \"off\" if this is legitimate work, or rephrase")

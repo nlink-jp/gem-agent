@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/nlink-jp/nlk/backoff"
@@ -21,13 +22,14 @@ type Vertex struct {
 	model  string
 	safety []*genai.SafetySetting
 	// thinking is the Gemini 3 thinking level for ChatStream calls
-	// (ADR-0025); empty means the model's own default. Set once at
-	// construction — deliberately immutable (no live edit, no mutex).
-	thinking genai.ThinkingLevel
-	// thinkingKey names the config key the level came from, for the 400
-	// hint; "" is [model].thinking, WithThinking sets the slot's key
-	// (ADR-0082).
-	thinkingKey string
+	// (ADR-0025), read when each request is built. The main backend's
+	// is the live dial /thinking turns (ADR-0098 §6), so it is atomic:
+	// side calls read it while the UI writes it. A pointer, which keeps
+	// the struct copies in WithModel and WithThinking vet-clean — and
+	// is why both MUST give their copy a dial of its own: a shared one
+	// would move a slot with the main level (ADR-0098 §5). nil reads
+	// as the model's own default.
+	thinking *atomic.Pointer[thinkingSetting]
 	// includeThoughts asks the model for thought summaries, streamed
 	// to the observer for display and NEVER stored (ADR-0033 §3).
 	includeThoughts bool
@@ -58,7 +60,49 @@ func NewVertex(ctx context.Context, project, location, model, safety, thinking s
 	if err != nil {
 		return nil, fmt.Errorf("vertex AI client: %w", err)
 	}
-	return &Vertex{client: client, model: model, safety: SafetySettings(safety), thinking: ThinkingLevel(thinking), includeThoughts: includeThoughts}, nil
+	return &Vertex{client: client, model: model, safety: SafetySettings(safety), thinking: newThinking(thinking, mainThinkingKey), includeThoughts: includeThoughts}, nil
+}
+
+// thinkingSetting is one backend's thinking level and what the operator
+// edits to change it, swapped as a whole so a reader never pairs one
+// level with another's key.
+type thinkingSetting struct {
+	level string // "" = the model's own default; else "minimal".."high"
+	key   string // named by the 400 hint
+}
+
+// The keys the 400 hint can name.
+const (
+	mainThinkingKey = "[model].thinking"
+	riskThinkingKey = "[model].risk_thinking"
+	liveThinkingKey = "/thinking"
+)
+
+func newThinking(level, key string) *atomic.Pointer[thinkingSetting] {
+	p := &atomic.Pointer[thinkingSetting]{}
+	p.Store(&thinkingSetting{level: level, key: key})
+	return p
+}
+
+// thinkingNow is the level in force for the request being built.
+func (v *Vertex) thinkingNow() thinkingSetting {
+	if v.thinking == nil {
+		return thinkingSetting{key: mainThinkingKey}
+	}
+	return *v.thinking.Load()
+}
+
+// Thinking returns the level in force ("" = the model's own default).
+func (v *Vertex) Thinking() string { return v.thinkingNow().level }
+
+// SetThinking turns this backend's dial (ADR-0098): level is a validated
+// config value, "" for the model's own default. It applies from the next
+// request; a request in flight already read its level. Only the main
+// backend is turned — the slots hold dials of their own. The backend
+// must come from NewVertex, WithModel or WithThinking, which give it a
+// dial; installing one here would be an unsynchronised write.
+func (v *Vertex) SetThinking(level string) {
+	v.thinking.Store(&thinkingSetting{level: level, key: liveThinkingKey})
 }
 
 // ThinkingLevel maps a config value ("minimal".."high") to the SDK
@@ -125,7 +169,7 @@ func (v *Vertex) WithModel(name string) *Vertex {
 	// here. Compose WithThinking AFTER this (ADR-0082 §3).
 	out := *v
 	out.model = name
-	out.thinking, out.thinkingKey = "", ""
+	out.thinking = newThinking("", mainThinkingKey)
 	out.includeThoughts, out.observer = false, nil
 	return &out
 }
@@ -136,20 +180,24 @@ func (v *Vertex) WithModel(name string) *Vertex {
 // changed, so the main backend keeps the operator's dial.
 func (v *Vertex) WithThinking(level string) *Vertex {
 	out := *v
-	out.thinking = ThinkingLevel(level)
-	// The 400 hint below names the key the operator has to edit.
-	out.thinkingKey = "[model].risk_thinking"
+	// The 400 hint below names the key the operator has to edit. A dial
+	// of its own, never the receiver's (ADR-0098 §5).
+	out.thinking = newThinking(level, riskThinkingKey)
 	return &out
+}
+
+// thinkingHint names the level and the way back. A level set live is
+// fixed live (ADR-0098 §7); a configured one in the file.
+func thinkingHint(err error, t thinkingSetting) error {
+	if t.key == liveThinkingKey {
+		return fmt.Errorf("%w (note: the thinking level was set to %q with /thinking — this model may not support that level; /thinking default or another level fixes it)", err, t.level)
+	}
+	return fmt.Errorf("%w (note: %s = %q — this model may not support that level; unset it or pick another)", err, t.key, t.level)
 }
 
 // thinkingKeyName is the config key the thinking level came from, for
 // the error that tells the operator what to change.
-func (v *Vertex) thinkingKeyName() string {
-	if v.thinkingKey == "" {
-		return "[model].thinking"
-	}
-	return v.thinkingKey
-}
+func (v *Vertex) thinkingKeyName() string { return v.thinkingNow().key }
 
 // ContextWindow fetches the model's input token limit from the model
 // metadata. Callers treat failures as "unknown", never fatal — a
@@ -164,12 +212,15 @@ func (v *Vertex) ContextWindow(ctx context.Context) (int, error) {
 
 // ChatStream implements Backend.
 func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Message, tools []ToolDef, onText func(string)) (*Response, error) {
+	// Read once: the retries below and the hint must agree with the
+	// level this request was sent at, whatever /thinking does meanwhile.
+	thinking := v.thinkingNow()
 	cfg := &genai.GenerateContentConfig{
 		// Keep chain-of-thought text out of responses; Gemini 3 still
 		// attaches thought signatures, which we capture regardless.
 		// ThinkingLevel "" leaves the model at its own default
 		// (ADR-0025).
-		ThinkingConfig: &genai.ThinkingConfig{IncludeThoughts: v.includeThoughts, ThinkingLevel: v.thinking},
+		ThinkingConfig: &genai.ThinkingConfig{IncludeThoughts: v.includeThoughts, ThinkingLevel: ThinkingLevel(thinking.level)},
 		SafetySettings: v.safety,
 	}
 	if system != "" {
@@ -232,8 +283,8 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 			// model-dependent (minimal → 400 on some models, measured
 			// in ADR-0025) and the raw API error never names the knob
 			// (review round 2).
-			if v.thinking != "" && strings.Contains(streamErr.Error(), "400") {
-				return nil, fmt.Errorf("vertex AI stream: %w (note: %s = %q — this model may not support that level; unset it or pick another)", streamErr, v.thinkingKeyName(), v.thinking)
+			if thinking.level != "" && strings.Contains(streamErr.Error(), "400") {
+				return nil, fmt.Errorf("vertex AI stream: %w", thinkingHint(streamErr, thinking))
 			}
 			return nil, fmt.Errorf("vertex AI stream: %w", streamErr)
 		}

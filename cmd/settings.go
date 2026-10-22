@@ -60,6 +60,10 @@ type settingsStore struct {
 	// shown with its startup provenance: a live "true" attributed to a
 	// config.toml that says false (independent review, 2026-09-09).
 	startValues map[string]string
+	// thinking is the main backend's live level (ADR-0098): the
+	// model.thinking row reads and turns it. nil in tests that build no
+	// backend, which shows the row read-only as before.
+	thinking thinkingDial
 }
 
 // liveSource is settingSource for a row whose value comes from the
@@ -147,7 +151,20 @@ func (s *settingsStore) data() tui.SettingsData {
 	ro("backend", "model.name", s.cfg.Model.Name, "model.name", needsRestart)
 	ro("backend", "model.safety", s.cfg.Model.Safety, "model.safety", needsRestart)
 	ro("backend", "model.summary", summaryLabel(s.cfg.Model.Summary), "model.summary", needsRestart)
-	ro("backend", "model.thinking", thinkingLabel(s.cfg.Model.Thinking), "model.thinking", needsRestart)
+	if s.thinking != nil {
+		// Editable (ADR-0098 §2): the level is a per-request field, so
+		// nothing is rebuilt. The source compares against the startup
+		// value, like /thinking's own.
+		live := s.thinking.Thinking()
+		d.Rows = append(d.Rows, tui.SettingRow{
+			Section: "backend", Label: "model.thinking",
+			Value: thinkingWord(live), Source: thinkingSource(s.cfg, live),
+			Values: thinkingValues,
+			Detail: "from the next request, this session only — default is the model's own; /thinking does the same",
+		})
+	} else {
+		ro("backend", "model.thinking", thinkingLabel(s.cfg.Model.Thinking), "model.thinking", needsRestart)
+	}
 	ro("backend", "model.risk", riskModelLabel(s.cfg.Model), "model.risk", needsRestart)
 	ro("backend", "model.risk_thinking", riskThinkingLabel(s.cfg.Model), "model.risk_thinking", needsRestart)
 	ro("backend", "model.librarian", librarianModelLabel(s.cfg.Model), "model.librarian", needsRestart)
@@ -450,6 +467,13 @@ func (s *settingsStore) Apply(ch tui.SettingChange) (tui.SettingsData, string) {
 		s.ag.SetReadOnly(ch.Value == "true", "operator")
 		s.markSessionEdit("agent.read_only")
 		return s.data(), "read-only: " + ch.Value + " (this session)"
+	case "model.thinking":
+		level, ok := parseThinking(ch.Value)
+		if !ok || s.thinking == nil {
+			return s.data(), ""
+		}
+		s.thinking.SetThinking(level)
+		return s.data(), "thinking level: " + thinkingWord(level) + " (this session)"
 	case "agent.read_only_auto":
 		s.ag.SetReadOnlyAuto(ch.Value == "true", "operator")
 		s.markSessionEdit("agent.read_only_auto")

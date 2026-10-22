@@ -42,7 +42,8 @@ name = "<gemini model id>"
 # context_window = 1048576  # optional; exact window for the footer and compaction
 # thinking = "high"         # optional; Gemini 3 thinking level: minimal|low|medium|high
 #                           # (unset = model default; supported levels are model-dependent;
-#                           #  summarize model unaffected — ADR-0025)
+#                           #  summarize model unaffected — ADR-0025; /thinking changes it
+#                           #  for the session — ADR-0098)
 # risk = "<judge model>"    # optional; the model tier — auto mode's risk evaluation, the
 #                           # progress review, the read-only watcher (ADR-0082); unset = main model
 # risk_thinking = "low"     # optional; that slot's thinking level (unset = its model's default;
