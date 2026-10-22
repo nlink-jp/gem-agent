@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.92.0] - 2026-10-23
+
 ### Added
 
 - **`/thinking` — change the thinking level during a session** (ADR-0098).
