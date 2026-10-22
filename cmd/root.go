@@ -1432,6 +1432,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// One value for both surfaces: the TUI and the plain REPL each built
+	// this literal, so a closure added to one could be missed in the
+	// other and its command read as unknown there (pre-release review).
+	reloads := slashReloads{mcp: reloadMCP, skills: reloadSkills, mcpLoad: loadMCP, mcpStatus: adv.Status, mcpWithheld: adv.Withheld, show: showPath, thinking: thinkingSlash}
+
 	// --- session-start hooks (ADR-0069): startup / resume, and /clear ---
 	// The output rides the next turn's user message as a data
 	// attachment (ADR-0055's lane): never the system prompt, so the
@@ -1785,7 +1790,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			},
 			Slash: func(in string) (string, bool, bool) {
 				return slashOutput(in, ag, registry, mcpSummary, skillsList,
-					slashReloads{mcp: reloadMCP, skills: reloadSkills, mcpLoad: loadMCP, mcpStatus: adv.Status, mcpWithheld: adv.Withheld, show: showPath, thinking: thinkingSlash},
+					reloads,
 					func() string { return usageReport(ag, tally, cfg.Model.Name, riskModel) },
 					func() string { return memoryListing(memBase, projectDir) },
 					rbRunner.Command, appVersion, msgs, onClear)
@@ -1894,7 +1899,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		if strings.HasPrefix(input, "/") {
 			out, _, quit := slashOutput(input, ag, registry, mcpSummary, skillsList,
-				slashReloads{mcp: reloadMCP, skills: reloadSkills, mcpLoad: loadMCP, mcpStatus: adv.Status, mcpWithheld: adv.Withheld, show: showPath, thinking: thinkingSlash},
+				reloads,
 				func() string { return usageReport(ag, tally, cfg.Model.Name, riskModel) },
 				func() string { return memoryListing(memBase, projectDir) },
 				rbRunner.Command, appVersion, msgs, onClear)

@@ -186,11 +186,15 @@ func (v *Vertex) WithThinking(level, key string) *Vertex {
 	return &out
 }
 
-// thinkingHint names the level and the way back. A level set live is
-// fixed live (ADR-0098 §7); a configured one in the file.
+// thinkingHint names the level and the way back (ADR-0098 §7). The
+// main level can be put back mid-session, whether /thinking, the file or
+// --thinking set it; a slot's level only in the file.
 func thinkingHint(err error, t thinkingSetting) error {
-	if t.key == liveThinkingKey {
-		return fmt.Errorf("%w (note: the thinking level was set to %q with /thinking — this model may not support that level; /thinking default or another level fixes it)", err, t.level)
+	switch t.key {
+	case liveThinkingKey:
+		return fmt.Errorf("%w (note: /thinking set the level to %q, which this model may not support — try /thinking default)", err, t.level)
+	case mainThinkingKey:
+		return fmt.Errorf("%w (note: thinking level %q may not be supported by this model — /thinking default, or change [model].thinking / --thinking)", err, t.level)
 	}
 	return fmt.Errorf("%w (note: %s = %q — this model may not support that level; unset it or pick another)", err, t.key, t.level)
 }

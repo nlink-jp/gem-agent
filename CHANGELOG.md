@@ -9,13 +9,15 @@
   shows the level and where it came from, and the `model.thinking` row in
   `/settings` is now editable and turns the same dial. It applies from the
   next request and only to this session — nothing is written to a file, and
-  a new process or `--resume` starts from `[model].thinking` again. It
-  reaches everything that rides the main model; a named risk, librarian or
-  summary slot keeps its own level. Measured first: a conversation produced
+  a new process or `--resume` starts from config and `--thinking` again. It
+  reaches everything that rides the main model; a slot of its own (any of
+  `[model].risk`, `risk_thinking`, `librarian`, `librarian_thinking`, or a
+  named summary model) keeps its own level. Measured first: a conversation produced
   at one level and replayed with its thought signatures at another is
   accepted. A level the model does not support fails the next request with a
-  hint naming `/thinking`, and the MAX_TOKENS hint now points at
-  `/thinking low`.
+  hint naming `/thinking`, and the MAX_TOKENS hint now names `/thinking low`
+  beside `--thinking low` / `[model].thinking` — and no longer suggests
+  lowering the level when no reasoning tokens were spent.
 
 ### Fixed
 

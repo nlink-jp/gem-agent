@@ -317,7 +317,8 @@ func TestEmptyResponseErrorNamesTheCause(t *testing.T) {
 		want string
 	}{
 		{llm.Response{BlockReason: "PROHIBITED_CONTENT"}, "PROHIBITED_CONTENT"},
-		{llm.Response{FinishReason: "MAX_TOKENS", ThoughtTokens: 4096}, "output limit"},
+		{llm.Response{FinishReason: "MAX_TOKENS", ThoughtTokens: 4096}, "--thinking low"},
+		{llm.Response{FinishReason: "MAX_TOKENS"}, "output limit"},
 		{llm.Response{FinishReason: "SAFETY"}, "SAFETY"},
 		{llm.Response{}, "no usable response"},
 	}
@@ -326,6 +327,15 @@ func TestEmptyResponseErrorNamesTheCause(t *testing.T) {
 		if err := emptyResponseError(&resp); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%+v -> %v, want mention of %q", c.resp, err, c.want)
 		}
+	}
+}
+
+// With no reasoning tokens spent, lowering the thinking level is not a
+// remedy, and the message must not offer it.
+func TestMaxTokensWithoutThoughtsOffersNoThinkingRemedy(t *testing.T) {
+	err := emptyResponseError(&llm.Response{FinishReason: "MAX_TOKENS"})
+	if err == nil || strings.Contains(err.Error(), "thinking") {
+		t.Errorf("got %v", err)
 	}
 }
 

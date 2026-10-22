@@ -239,7 +239,10 @@ type Messages struct {
 	// /thinking (ADR-0098): ThinkingNowFmt takes the level and its
 	// source, ThinkingSetFmt the level just set.
 	ThinkingNowFmt string
-	ThinkingSetFmt string
+	// ThinkingNowDefault is the bare line when nothing set a level:
+	// "default (default)" said nothing about whose default.
+	ThinkingNowDefault string
+	ThinkingSetFmt     string
 	ThinkingUsage  string
 	// ReadOnlyOn/Off is the ceiling and ReadOnlyAuto is the watcher —
 	// two independent settings, so /readonly prints one line each and
@@ -492,7 +495,7 @@ var en = Messages{
   /mcp       list connected MCP servers (/mcp reload reconnects · /mcp load <server> loads one)
   /auto      auto-approve: on|off, or bare to toggle (shift+tab too)
   /readonly  read-only: on|off · auto on|off arms the watcher · bare shows both
-  /thinking  thinking level: minimal|low|medium|high|default · bare shows it (this session only)
+  /thinking  thinking level for this session: minimal|low|medium|high|default · bare shows it
   /compact   summarise the older half of the conversation
   /settings  view and edit settings, with provenance
   /riskbook  view the risk rules; /riskbook learn drafts them from your answers
@@ -523,6 +526,7 @@ keys:
 	AutoOff:                "auto-approve: OFF — every change asks\n",
 	AutoUsage:              "usage: /auto on|off (no argument toggles)\n",
 	ThinkingNowFmt:         "thinking level: %s (%s)\n",
+	ThinkingNowDefault:     "thinking level: default (the model's own)\n",
 	ThinkingSetFmt:         "thinking level: %s — from the next request, this session only\n",
 	ThinkingUsage:          "usage: /thinking minimal|low|medium|high|default (no argument shows the level; default is the model's own)\n",
 	CeilingLiftTitle:       "Lift read-only?",
@@ -689,7 +693,7 @@ var ja = Messages{
   /mcp       接続中の MCP サーバー一覧（/mcp reload で再接続 · /mcp load <サーバー> で 1 つロード）
   /auto      auto-approve: on|off、引数なしで切替（shift+tab でも可）
   /readonly  読み取り専用: on|off・auto on|off で自動切り替え・引数なしで両方表示
-  /thinking  思考レベル: minimal|low|medium|high|default・引数なしで表示（このセッションに限り）
+  /thinking  このセッションの思考レベル: minimal|low|medium|high|default・引数なしで表示
   /compact   会話の古い半分を要約
   /settings  設定の表示と編集（出所つき）
   /riskbook  リスクルールの表示。/riskbook learn は回答記録から起草
@@ -720,8 +724,9 @@ var ja = Messages{
 	AutoOff:                "auto-approve: OFF — すべての変更で確認します\n",
 	AutoUsage:              "使い方: /auto on|off（引数なしで切り替え）\n",
 	ThinkingNowFmt:         "思考レベル: %s（%s）\n",
-	ThinkingSetFmt:         "思考レベル: %s — 次のリクエストから、このセッションに限り\n",
-	ThinkingUsage:          "使い方: /thinking minimal|low|medium|high|default（引数なしでレベルを表示。default はモデル自身の既定）\n",
+	ThinkingNowDefault:     "思考レベル: default（モデルの既定値）\n",
+	ThinkingSetFmt:         "思考レベル: %s — 次のリクエストから適用（このセッションのみ）\n",
+	ThinkingUsage:          "使い方: /thinking minimal|low|medium|high|default（引数なしでレベルを表示。default はモデルの既定値）\n",
 	CeilingLiftTitle:       "read-only を解除しますか",
 	CeilingLiftConsequence: "「はい」はこのセッションの残りで read-only を解除します",
 	CeilingLiftHint:        "←→/Tab 選択 · Enter 決定 · y/n/N 直接指定 · Esc 拒否",

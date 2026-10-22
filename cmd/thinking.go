@@ -64,5 +64,9 @@ func thinkingCmd(args []string, dial thinkingDial, cfg *config.Config, msgs *uit
 		return fmt.Sprintf(msgs.ThinkingSetFmt, thinkingWord(level)), false
 	}
 	live := dial.Thinking()
-	return fmt.Sprintf(msgs.ThinkingNowFmt, thinkingWord(live), thinkingSource(cfg, live)), false
+	source := thinkingSource(cfg, live)
+	if live == "" && source == config.FromDefault {
+		return msgs.ThinkingNowDefault, false
+	}
+	return fmt.Sprintf(msgs.ThinkingNowFmt, thinkingWord(live), source), false
 }

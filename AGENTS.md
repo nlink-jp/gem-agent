@@ -805,7 +805,10 @@ a new hook) is an architecture change and takes the same rows as a
   struct copy `out := *v` would otherwise share the pointer and move every
   slot with `/thinking`. Read the live level with `backend.Thinking()`,
   never `cfg.Model.Thinking` (that is the startup value, kept for the
-  /settings source column).
+  /settings source column). `TestSetThinkingIsSafeForConcurrentUse` only
+  proves anything under `go test -race` — `make test` does not pass it,
+  so run the llm package with `-race` after touching the dial. Both slash
+  surfaces share one `reloads` value; add a closure there, not per site.
 - **Registered is not advertised under `[mcp].advertise = "on-request"`**
   (ADR-0083) — `cmd/mcpadvertise.go` owns the advertised and withheld
   sets; `Options.Advertise` is its predicate and serves BOTH `toolDefs`

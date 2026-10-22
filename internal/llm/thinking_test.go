@@ -67,8 +67,14 @@ func TestSetThinkingMovesOnlyTheMainDial(t *testing.T) {
 func TestThinkingHintNamesWhereTheLevelCameFrom(t *testing.T) {
 	base := errors.New("Error 400, Thinking level is unsupported")
 	main := testVertex("main", "minimal")
-	if got := thinkingHint(base, main.thinkingNow()).Error(); !strings.Contains(got, `[model].thinking = "minimal"`) {
+	if got := thinkingHint(base, main.thinkingNow()).Error(); !strings.Contains(got, `"minimal"`) ||
+		!strings.Contains(got, "/thinking default") || !strings.Contains(got, "[model].thinking") {
 		t.Errorf("configured hint = %q", got)
+	}
+	// A slot is not moved by /thinking, so its hint names only its key.
+	slot := main.WithModel("judge").WithThinking("minimal", "[model].risk_thinking")
+	if got := thinkingHint(base, slot.thinkingNow()).Error(); !strings.Contains(got, `[model].risk_thinking = "minimal"`) || strings.Contains(got, "/thinking") {
+		t.Errorf("slot hint = %q", got)
 	}
 	main.SetThinking("minimal")
 	got := thinkingHint(base, main.thinkingNow())

@@ -35,6 +35,10 @@ func TestThinkingCmdSetsAndShows(t *testing.T) {
 	if isErr || !strings.Contains(out, "high") || !strings.Contains(out, config.FromFlag) {
 		t.Errorf("bare at startup = %q (err %v), want high with the flag's source", out, isErr)
 	}
+	// Nothing set a level: say whose default it is, not "default (default)".
+	if out, _ = thinkingCmd(nil, &fakeDial{}, thinkingCfg("", ""), en); out != en.ThinkingNowDefault {
+		t.Errorf("bare with nothing set = %q", out)
+	}
 	if out, isErr = thinkingCmd([]string{"low"}, dial, cfg, en); isErr || dial.level != "low" || !strings.Contains(out, "low") {
 		t.Errorf("/thinking low = %q (err %v), level %q", out, isErr, dial.level)
 	}

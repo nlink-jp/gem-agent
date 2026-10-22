@@ -41,7 +41,7 @@ name = "<gemini model id>"
 # context_window = 1048576  # 任意; フッター表示と圧縮判定に使う厳密値
 # thinking = "high"         # 任意; Gemini 3 の思考レベル: minimal|low|medium|high
 #                           # (未設定 = モデル既定。対応レベルはモデル依存。
-#                           #  要約モデルには効かない — ADR-0025。/thinking で
+#                           #  名前のある要約モデルには効かない — ADR-0025。/thinking で
 #                           #  セッション中に変えられる — ADR-0098)
 # risk = "<judge model>"    # 任意; モデル層 — auto モードのリスク評価・進捗レビュー・
 #                           # read-only ウォッチャー（ADR-0082）; 未設定 = メインモデル
