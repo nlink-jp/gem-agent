@@ -14,6 +14,9 @@
 専用の枠で走り、このレベルを継承しない。圧縮は引き続きメインバックエンドで
 このレベルのまま。*
 
+*ADR-0098 により改訂: §3 はもう成り立たない — `/thinking` と /settings の
+`model.thinking` 行が、セッション中にレベルを変える。*
+
 ## Context
 
 Gemini 3 はリクエスト単位の思考レベル（MINIMAL / LOW / MEDIUM / HIGH）を

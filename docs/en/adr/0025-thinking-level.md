@@ -14,6 +14,9 @@ Once either is set, the model tier — risk evaluation, progress review,
 read-only watcher — runs on a slot of its own and never inherits this
 level. Compaction still rides the main backend at this level.*
 
+*Amended by ADR-0098: §3 no longer holds — `/thinking` and the
+`model.thinking` row in /settings change the level for the session.*
+
 ## Context
 
 Gemini 3 exposes a per-request thinking level (MINIMAL / LOW / MEDIUM /
