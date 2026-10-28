@@ -190,7 +190,7 @@ func TestPersistentAndCredentialRulesAgree(t *testing.T) {
 			t.Errorf("%q wrongly persistent", rel)
 		}
 	}
-	for _, p := range []string{"~/.ssh/id_rsa", ".env", ".env.local", "/x/credentials.json", "~/.aws/credentials", "sa-service-account.json", "~/.netrc", "~/.gemini/oauth_creds.json", "~/.claude/.credentials.json", "~/.claude.json", "~/Library/Keychains/login.keychain-db", "~/.config/mcp-bridge/config.json", "~/.config/mcp-bridge/state/github/tokens.json", "/Users/x/.config/mcp-bridge", "~/.Config/MCP-Bridge/config.json"} {
+	for _, p := range []string{"~/.ssh/id_rsa", ".env", ".env.local", "/x/credentials.json", "~/.aws/credentials", "sa-service-account.json", "~/.netrc", "~/.gemini/oauth_creds.json", "~/.claude/.credentials.json", "~/.claude.json", "~/Library/Keychains/login.keychain-db", "~/.config/mcp-bridge/config.json", "~/.config/mcp-bridge/state/github/tokens.json", "/Users/x/.config/mcp-bridge", "~/.Config/MCP-Bridge/config.json", "~/.ssh/.env.example", "~/Library/Keychains/.env.example"} {
 		if !CredentialPath(p) {
 			t.Errorf("%q not credential", p)
 		}
@@ -753,13 +753,29 @@ func TestFileReadProfileRefusesContentAndListsNames(t *testing.T) {
 	if err := Available(); err != nil {
 		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
 	}
-	dir := t.TempDir()
+	// The real path: Seatbelt matches resolved paths, and the home the
+	// credential directories are anchored to is the parent of this one
+	// (t.TempDir sits under /var → /private/var).
+	dir, err := ResolveWriteDir(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, body := range map[string]string{
 		".env": "SECRET=x\n", ".env.example": "SECRET=\n", "notes.txt": "ordinary\n",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// A template inside a home credential directory is refused: the
+	// templates are carved out of the name rule, not re-allowed over
+	// the directory deny (review of v0.92.1).
+	sshDir := filepath.Join(filepath.Dir(dir), ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sshDir, ".env.example"), []byte("SECRET=\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	profile := FileReadProfile(filepath.Dir(dir))
 	run := func(command string) error {
@@ -781,6 +797,7 @@ func TestFileReadProfileRefusesContentAndListsNames(t *testing.T) {
 		// move, and the defect the wider operation caused.
 		{"listing a directory holding .env", "ls " + shellQuote(dir), false},
 		{"the committed template", "cat " + shellQuote(filepath.Join(dir, ".env.example")), false},
+		{"a template inside a home credential directory", "cat " + shellQuote(filepath.Join(sshDir, ".env.example")), true},
 		{"an ordinary file", "cat " + shellQuote(filepath.Join(dir, "notes.txt")), false},
 		{"writing anything", "echo x > " + shellQuote(filepath.Join(dir, "w.txt")), true},
 		{"the network", "exec 3<>/dev/tcp/127.0.0.1/1", true},

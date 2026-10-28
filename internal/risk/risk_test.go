@@ -289,7 +289,7 @@ func TestTmpAliasIsTheProject(t *testing.T) {
 // ADR-0085: a read tool on a credential path is Review that only the
 // operator may answer — the file-tool analogue of the operator lane
 // being the only lane that may read credentials. The rule is the write
-// tools' own (sandbox.CredentialPath, templates re-allowed, case
+// tools' own (sandbox.CredentialPath, templates exempted, case
 // folded); the walks are not judged here — they withhold and count.
 func TestCredentialReadsAreOperatorOnly(t *testing.T) {
 	readTools := []string{"read_file", "view_image", "read_document", "file_info", "summarize_file"}

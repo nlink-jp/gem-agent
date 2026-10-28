@@ -48,7 +48,7 @@ func TestSearchFilesRefusesCredentialsWithoutTheCage(t *testing.T) {
 			t.Errorf("result missing %q:\n%s", want, out)
 		}
 	}
-	// The template stays an ordinary file: the re-allow the profile
+	// The template stays an ordinary file: the exemption the profile
 	// carries is the one the list carries.
 	if !strings.Contains(out, "needle-placeholder") {
 		t.Errorf(".env.example must stay searchable:\n%s", out)

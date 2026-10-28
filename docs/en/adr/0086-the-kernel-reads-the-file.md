@@ -10,6 +10,15 @@
 | Amends | ADR-0085 (§2 is withdrawn: names are not withheld), ADR-0073 §3 (the credential list gains a kernel enforcer for the file tools and loses its role as their boundary) |
 | Relates to | ADR-0001 (sandbox-exec is the mechanism), ADR-0072 §4 (`os.Root` confinement, unchanged), ADR-0076 (the finite list stays the list), ADR-0052 (every skip is reported) |
 
+*Amended 2026-10-29 (v0.92.1): the child's profile denies
+`file-read-data`, not `file-read*`, and the `.env.example` family is no
+longer re-allowed after the credential deny. `CredentialFilters` carves
+the templates out of its name filter with `require-not` and returns no
+allow, because a trailing allow beats every deny before it: in the read
+lane it re-opened templates inside the trees denied for reach. A
+template inside a home credential directory (`~/.ssh/.env.example`) is
+now refused here too, as `CredentialPath` already judged it.*
+
 ## Context
 
 ADR-0073 withdrew the Safe derivation from shell command text. Its
