@@ -215,10 +215,15 @@ var credentialFiles = []string{
 var credentialNames = `(\.env(\.[^/]*)?|id_rsa|id_ed25519|id_ecdsa|id_dsa|\.?credentials\.json|[^/]*service-account[^/]*\.json|application_default_credentials\.json)`
 
 // CredentialFilters returns the SBPL file-read filters for credential
-// material under home and by name anywhere, and the re-allow for the
-// committed .env templates (.env.example and friends are not secrets;
-// Seatbelt is last-match-wins, so the allow follows the deny).
-func CredentialFilters(home string) (deny []string, allow []string) {
+// material under home and by name anywhere. The committed .env
+// templates (.env.example and friends are not secrets) are carved out
+// of the name filter itself with require-not, not re-allowed after it:
+// an allow is last-match-wins against every deny before it, so a
+// trailing template allow re-opened templates inside trees the read
+// lane denies for reach (/Volumes, ~/Library) and inside the home's
+// credential directories (review of v0.92.1, measured). A template
+// under a credential directory stays denied, as CredentialPath says.
+func CredentialFilters(home string) (deny []string) {
 	if home != "" {
 		h := filepath.Clean(home)
 		for _, d := range credentialDirs {
@@ -228,9 +233,8 @@ func CredentialFilters(home string) (deny []string, allow []string) {
 			deny = append(deny, fmt.Sprintf(`(literal %s)`, sbplString(filepath.Join(h, f))))
 		}
 	}
-	deny = append(deny, fmt.Sprintf(`(regex #"/%s$")`, credentialNames))
-	allow = append(allow, `(regex #"/\.env\.(example|sample|template|dist)$")`)
-	return deny, allow
+	deny = append(deny, fmt.Sprintf(`(require-all (regex #"/%s$") (require-not (regex #"/\.env\.(example|sample|template|dist)$")))`, credentialNames))
+	return deny
 }
 
 // CredentialPath reports whether p (any spelling: relative, absolute,
@@ -496,17 +500,12 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 	return b.String(), nil
 }
 
-// writeCredentialBlock writes the credential denials and the template
-// re-allow that follows them. LaneProfile calls it last, after every
-// other file-read rule, so no later allow can re-open what it denies.
+// writeCredentialBlock writes the credential denials. LaneProfile calls
+// it last, after every other file-read rule, so no later allow can
+// re-open what it denies; it carries no allow of its own.
 func writeCredentialBlock(b *strings.Builder, home string) {
-	deny, allow := CredentialFilters(home)
 	b.WriteString("(deny file-read*\n")
-	for _, f := range deny {
-		fmt.Fprintf(b, "    %s\n", f)
-	}
-	b.WriteString(")\n(allow file-read*\n")
-	for _, f := range allow {
+	for _, f := range CredentialFilters(home) {
 		fmt.Fprintf(b, "    %s\n", f)
 	}
 	b.WriteString(")\n")
@@ -808,8 +807,8 @@ func ChildEnv(env []string) []string {
 //
 // It grants nothing and takes three things away: every write, the
 // network, and the credential list — the same CredentialFilters every
-// other enforcer reads, with the .env template re-allow after it
-// because Seatbelt is last-match-wins. Project confinement stays in Go
+// other enforcer reads, the .env templates carved out of it rather than
+// re-allowed after it. Project confinement stays in Go
 // (os.Root refuses an escape at the syscall, ADR-0072 §4); the kernel
 // is given exactly one job, which is that in this process credential
 // material cannot be opened.
@@ -837,13 +836,8 @@ func FileReadProfile(home string) string {
 	// (independent review, measured). The secret is the content; a
 	// size and an mtime are not, and the kernel keeps listing names
 	// either way.
-	deny, allow := CredentialFilters(home)
 	b.WriteString("(deny file-read-data\n")
-	for _, f := range deny {
-		fmt.Fprintf(&b, "    %s\n", f)
-	}
-	b.WriteString(")\n(allow file-read-data\n")
-	for _, f := range allow {
+	for _, f := range CredentialFilters(home) {
 		fmt.Fprintf(&b, "    %s\n", f)
 	}
 	b.WriteString(")\n")

@@ -195,7 +195,7 @@ func JudgesPath(name string) bool {
 // the operator may answer. The read and write lanes deny these files
 // at the kernel and the operator lane alone may read them; the file
 // tools mirror that lane with the operator's own answer. The
-// .env templates are re-allowed by the same rule. The reason names
+// .env templates are exempted by the same rule. The reason names
 // the path that matched — in a `paths` batch the approval detail may
 // clip it away, and a link's spelling is not its target (independent
 // review, A4).
