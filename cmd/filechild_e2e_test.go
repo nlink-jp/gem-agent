@@ -185,3 +185,69 @@ func TestInstallFileChildSucceedsOnThisMachine(t *testing.T) {
 		}
 	}
 }
+
+// TestFileChildReadsAddedRoots drives the real child with added roots
+// (ADR-0099 §6): a read in an added root is kernel-confined like a
+// project read — an ordinary file reads, a `.env` is refused by the
+// kernel — and an added root that will not open does not take project
+// reads down with it (review of the step 1 implementation, #3).
+func TestFileChildReadsAddedRoots(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-only")
+	}
+	if testing.Short() {
+		t.Skip("builds the binary")
+	}
+	if err := sandbox.Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
+	}
+	bin := filepath.Join(t.TempDir(), "gem-agent-child-test")
+	build := exec.Command("go", "build", "-o", bin, "..")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	proj, _ := filepath.EvalSymlinks(t.TempDir())
+	added, _ := filepath.EvalSymlinks(t.TempDir())
+	for _, f := range []struct{ path, body string }{
+		{filepath.Join(proj, "p.txt"), "project needle\n"},
+		{filepath.Join(added, "a.txt"), "added needle\n"},
+		{filepath.Join(added, ".env"), "SECRET=hunter2\n"},
+	} {
+		if err := os.WriteFile(f.path, []byte(f.body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	profile := sandbox.FileReadProfile(filepath.Dir(proj))
+	run := func(roots []sandbox.AddedRoot, path string) (string, error) {
+		req, err := json.Marshal(fileChildRequest{ProjectDir: proj, Added: roots, Tool: "read_file", Args: map[string]any{"path": path}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(sandbox.Executable, "-p", profile, bin, fileChildCommand)
+		cmd.Env = sandbox.ChildEnv(os.Environ())
+		cmd.Stdin = bytes.NewReader(req)
+		var out, errb bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &out, &errb
+		if err := cmd.Run(); err != nil {
+			return errb.String(), err
+		}
+		return out.String(), nil
+	}
+	roots := []sandbox.AddedRoot{{Dir: added}}
+	if out, err := run(roots, filepath.Join(added, "a.txt")); err != nil || !strings.Contains(out, "added needle") {
+		t.Errorf("a read in an added root: %v %q", err, out)
+	}
+	if out, err := run(roots, filepath.Join(added, ".env")); err == nil || strings.Contains(out, "hunter2") {
+		t.Errorf("the child read a .env in an added root: %v %q", err, out)
+	}
+	if out, err := run(nil, filepath.Join(added, "a.txt")); err == nil {
+		t.Errorf("without the root the child read it: %q", out)
+	}
+	gone := []sandbox.AddedRoot{{Dir: filepath.Join(added, "missing")}, {Dir: added}}
+	if out, err := run(gone, filepath.Join(proj, "p.txt")); err != nil || !strings.Contains(out, "project needle") {
+		t.Errorf("an unopenable added root broke a project read: %v %q", err, out)
+	}
+	if out, err := run(gone, filepath.Join(added, "a.txt")); err != nil || !strings.Contains(out, "added needle") {
+		t.Errorf("an unopenable added root broke the other root: %v %q", err, out)
+	}
+}

@@ -214,7 +214,7 @@ finding of its round:
 
 | draft | the source it named | why it failed |
 |---|---|---|
-| first | a local image path the model names | a view-layer file open is not a tool call: it never reaches `Agent.decide`, never runs in ADR-0086's sandboxed child, and is invisible to the credential list, which is keyed on built-in tool name ([risk.go:176](../../../internal/risk/risk.go)) — the class ADR-0085/0086 repaired |
+| first | a local image path the model names | a view-layer file open is not a tool call: it never reaches `Agent.decide`, never runs in ADR-0086's sandboxed child, and is invisible to the credential list, which is keyed on built-in tool name ([risk.go:187](../../../internal/risk/risk.go)) — the class ADR-0085/0086 repaired |
 | second | the path the MCP intake wrote | `write` short-circuits on `os.Stat(path) == nil` ([mcpresult.go:265](../../../cmd/mcpresult.go)), and a server knows its own name, its tool name, the bytes it will return **and the work directory, which every call hands it** as `_meta[workdir.MetaKey]` ([client.go:610](../../../internal/mcp/client.go)) — so it can plant a symlink at the content-addressed path and the runtime writes nothing |
 | third | the decoded bytes the intake holds | **there is no such carrier.** `render` returns a `string` ([mcpresult.go:53](../../../cmd/mcpresult.go)), `mcpIntake` retains no bytes, and `Tool.Run` is `func(ctx, args) (string, error)` ([tools.go:65](../../../internal/tools/tools.go)). The bytes are a local; after `Run` returns they are unreachable |
 
@@ -267,7 +267,7 @@ Pre-existing, not widened here, not repaired here.
 ### 7. Drawing is a TUI-only capability, and the other entrances say so
 
 `tea.NewProgram` is constructed at one site in the product
-([root.go:1799](../../../cmd/root.go)), reached only when the session is
+([root.go:1839](../../../cmd/root.go)), reached only when the session is
 interactive; one-shot `-p` and the plain REPL return before it, so they
 never draw — the same boundary the diagram lane already has. (An earlier
 draft said "exactly one site" in the module, which `tools/pinprobe` has
@@ -326,8 +326,8 @@ terminal; it now has pseudo-terminal tests, and the one that states this
 property fails on the first implementation for all three verdicts.
 
 `[tui] images = "auto"` selects it
-([config.go:194](../../../internal/config/config.go)), beside `theme` and
-`language` (`:179` and `:183`). Inside a multiplexer
+([config.go:220](../../../internal/config/config.go)), beside `theme` and
+`language` (`:205` and `:209`). Inside a multiplexer
 the answer is **off** — not because passthrough is someone else's
 configuration, which is what the first draft said, but because the one
 multiplexer measured rendering a payload stranded a frame for every image.

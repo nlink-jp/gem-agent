@@ -13,6 +13,10 @@
 `persistent.json`, the digests of the persistent files under the project
 as the last session left them (advisory change notes at startup).*
 
+*Amended by ADR-0099 §10: it also holds `added-persistent.json`, the same
+digests for each write directory the project's sessions added, keyed by
+the directory.*
+
 ## Context
 
 Session transcripts lived flat in `~/.local/state/gem-agent/sessions/`,

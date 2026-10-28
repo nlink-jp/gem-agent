@@ -855,7 +855,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 		lim.Clipboard = a.clipboard
 		lim.UploadMedia = a.mediaUpload
 		var problems []mention.Problem
-		atts, problems = mention.Expand(ctx, input, a.registry.ProjectDir(), a.registry.WorkDir(), lim)
+		atts, problems = mention.Expand(ctx, input, a.registry.ProjectDir(), a.registry.WorkDir(), lim, addedDirNames(a.registry.AddedDirs())...)
 		if a.onAttach != nil && (len(atts) > 0 || len(problems) > 0) {
 			a.onAttach(atts, problems)
 		}
@@ -2042,4 +2042,16 @@ func approvalDecision(ok bool) string {
 		return "approved"
 	}
 	return "denied"
+}
+
+// addedDirNames returns the added roots' paths (ADR-0099 §6), for the
+// consumers that take a root as a path and judge no level: an `@`
+// reference reads, and a read in a read root is as ordinary as one in
+// the project.
+func addedDirNames(added []sandbox.AddedRoot) []string {
+	out := make([]string, 0, len(added))
+	for _, a := range added {
+		out = append(out, a.Dir)
+	}
+	return out
 }

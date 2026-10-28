@@ -125,6 +125,21 @@ enabled = true
 #UV_CACHE_DIR = "uv"
 #npm_config_cache = "npm"
 
+[directories]
+# Directories outside the project to work in, under the same lanes
+# (ADR-0099). "write": the file tools and the write and operator lanes
+# write it like the project, its AGENTS.md / CLAUDE.md / .mcp.json and
+# .git hooks protected the same way. "read": read like the project,
+# written by nothing — the read lane reads it even on an external
+# volume. Nothing in them is loaded: their instruction files, MCP
+# servers and skills are not read. Refused: /, your home, anything
+# holding the project or a credential location, anything in or around a
+# shared temporary directory or /dev, and for write ~/Library or the
+# config file in use. The same path given twice is one root.
+# --add-dir / --read-dir add more.
+#write = ["~/notes"]
+#read = ["/Volumes/Archive/reference"]
+
 [agent]
 # Round budget for one turn. Reaching it is an intervention, not a
 # guillotine (ADR-0040): a progress review runs, the operator is asked

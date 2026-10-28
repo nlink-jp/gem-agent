@@ -52,7 +52,14 @@ gem-agent -p "このリポジトリを要約して"      # 単発実行、パイ
 落ちるので、作業コピーは汚れません。今回の場所は `$GEMAGENT_WORK_DIR` が
 示し、中身が自動で削除されることはありません。過去セッションの残置分は
 `gem-agent workdirs` が一覧し、`workdirs clean` が対象を提示して
-確認の上で削除します。動作要件は macOS
+確認の上で削除します。プロジェクト外のディレクトリ——ノート、vault、隣の
+チェックアウト——で作業したいときは、`--add-dir <path>`（プロジェクトと
+同じく書く）か `--read-dir <path>`（読むだけで書かない）で足すか、設定
+ファイルの `[directories]` に並べます。同じサンドボックスのレーンの下に入り、
+中のもの（その `AGENTS.md`・`.mcp.json`・skill）は何も読み込みません。write の
+ディレクトリに指示ファイルや git の hooks が現れたら、次の `/clear` か終了時に
+知らせます — その下で開くプロジェクトはそれを読み込むか実行し、そのプロジェクト
+には知らされないので、開くプロジェクトの上位を write で足さないでください。動作要件は macOS
 （Apple Silicon）、Vertex AI が有効な Google Cloud プロジェクト、ADC
 （`gcloud auth application-default login`）— 詳細は
 [設定](docs/ja/reference/configuration.ja.md)。

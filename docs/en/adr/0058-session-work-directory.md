@@ -18,6 +18,10 @@ Budget and spill are unchanged.*
 and last 200 runes, not its head alone, and the notice names the byte
 spans shown and the `read_file` offset/length route to the rest.*
 
+*Amended by ADR-0099: the work directory is no longer the only root
+beside the project — the operator's added directories are more, each
+with a level, read through the same registry and the same lanes.*
+
 ## Context
 
 Two facts, found while designing the work directory, turned out to

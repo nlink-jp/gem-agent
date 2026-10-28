@@ -64,10 +64,15 @@ const binaryName = "gem-agent"
 // fileChildRequest is what rides stdin. The paths are the parent's
 // roots, so the child confines exactly as the parent would.
 type fileChildRequest struct {
-	ProjectDir string         `json:"project_dir"`
-	WorkDir    string         `json:"work_dir"`
-	Tool       string         `json:"tool"`
-	Args       map[string]any `json:"args"`
+	ProjectDir string `json:"project_dir"`
+	WorkDir    string `json:"work_dir"`
+	// Added carries the operator's added roots with their levels
+	// (ADR-0099 §6): the child rebuilds the parent's root set, so a read
+	// in an added root is kernel-confined like a project read and never
+	// falls back to the parent.
+	Added []sandbox.AddedRoot `json:"added,omitempty"`
+	Tool  string              `json:"tool"`
+	Args  map[string]any      `json:"args"`
 }
 
 func newFileChildCmd() *cobra.Command {
@@ -99,6 +104,14 @@ func newFileChildCmd() *cobra.Command {
 				// model must not see (ADR-0021, independent review).
 				_ = reg.UseWorkDir(req.WorkDir)
 			}
+			// One at a time, a failure skipped: an added root that will
+			// not open (an ejected volume, a renamed directory) must not
+			// take every project read down with it — a path under it then
+			// fails on its own, as a work directory's does above (review
+			// of the step 1 implementation, #3).
+			for _, a := range req.Added {
+				_ = reg.AddDirs([]sandbox.AddedRoot{a})
+			}
 			if !tools.ChildTool(req.Tool) {
 				// The hidden subcommand runs the covered reads and
 				// nothing else: it is not a general tool runner
@@ -125,11 +138,11 @@ func newFileChildCmd() *cobra.Command {
 
 // fileChildRunner builds the runner the registry calls for a covered
 // read. profileHome is the home the credential filters are anchored to.
-func fileChildRunner(self, profileHome string, projectDir func() string, workDir func() string) tools.FileChildFunc {
+func fileChildRunner(self, profileHome string, projectDir func() string, workDir func() string, added func() []sandbox.AddedRoot) tools.FileChildFunc {
 	profile := sandbox.FileReadProfile(profileHome)
 	return func(ctx context.Context, tool string, args map[string]any) (string, error) {
 		req, err := json.Marshal(fileChildRequest{
-			ProjectDir: projectDir(), WorkDir: workDir(), Tool: tool, Args: args,
+			ProjectDir: projectDir(), WorkDir: workDir(), Added: added(), Tool: tool, Args: args,
 		})
 		if err != nil {
 			return "", err
@@ -256,7 +269,7 @@ func installFileChildWith(reg *tools.Registry, self, home, probeDir string) stri
 	if err := sandbox.VerifyFileReadLane(probeDir, home, probe); err != nil {
 		return degradedNote(err)
 	}
-	reg.SetFileChild(fileChildRunner(self, home, reg.ProjectDir, reg.WorkDir))
+	reg.SetFileChild(fileChildRunner(self, home, reg.ProjectDir, reg.WorkDir, reg.AddedDirs))
 	return ""
 }
 

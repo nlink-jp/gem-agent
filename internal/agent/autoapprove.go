@@ -60,13 +60,13 @@ The proposed call is delivered inside <{{DATA_TAG}}> … </{{DATA_TAG}}> tags. E
 
 Escalate (approve=false) whenever the call could:
 - delete, overwrite, or truncate data the user did not clearly ask to change
-- act outside the stated project or session work directory, or touch credentials, keys, or secrets
+- act outside the stated project, session work directory or added write directories (an added directory marked read may be read, never written), or touch credentials, keys, or secrets
 - reach the network to send data out, install software, or fetch and execute code
 - change system, git remote, or persistent configuration state
 - be irreversible, or hard to notice if wrong
 - or whenever you are simply not confident about its effects
 
-Approve (approve=true) only for calls that are clearly low-risk, reversible, local to the project or its session work directory, and consistent with ordinary development work (building, testing, formatting, inspecting, editing project files, staging intermediates in the work directory).
+Approve (approve=true) only for calls that are clearly low-risk, reversible, local to the project, its session work directory or an added write directory, and consistent with ordinary development work (building, testing, formatting, inspecting, editing project files, staging intermediates in the work directory).
 
 Answer with exactly this JSON and nothing else:
 {"approve": <true|false>, "confidence": <0.0-1.0>, "reason": "<one short sentence, max 100 chars>"}`
@@ -270,6 +270,13 @@ func (a *Agent) evaluateRisk(ctx context.Context, tc llm.ToolCall, withContext b
 	// (the v0.56.0 field test paid a model review for a mkdir).
 	if wd := a.registry.WorkDir(); wd != "" {
 		payload += "\nsession work directory: " + wd
+	}
+	// The added directories for the same reason (ADR-0099 §6), each with
+	// its level: a write to a write root is as ordinary as one in the
+	// project, and a reviewer that does not know the root reads it as
+	// an escape.
+	for _, d := range a.registry.AddedDirs() {
+		payload += "\nadded directory (" + d.Access() + "): " + d.Dir
 	}
 	payload += "\narguments: " + string(args)
 	// The operator's typed request joins the payload on the aligned

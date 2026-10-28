@@ -37,6 +37,7 @@ layers: sandbox-exec plus approval gates.
 - `--no-sandbox` — disable the sandbox-exec wrapper (debugging only; prints a warning at startup)
 - `--thinking <level>` — override the reasoning level ([ADR-0025](adr/0025-thinking-level.md))
 - `--mcp on|off` — enable or disable MCP for this run ([ADR-0039](adr/0039-integration-reload.md))
+- `--add-dir <path>` / `--read-dir <path>` — add a directory outside the project as a `write` or `read` root under the same lanes; nothing in it is loaded ([ADR-0099](adr/0099-added-directories-are-roots-the-operator-grants.md))
 - `-p, --prompt <text>` — one-shot execution, for pipes
 - `-c, --continue` / `--resume <id>` — resume a session ([ADR-0005](adr/0005-session-resume.md))
 
@@ -139,7 +140,10 @@ max_turns = 50
    the structural answer to the agent-skeleton external-review finding that heuristic
    path (and text) validation cannot stop dynamic construction (command substitution,
    etc.); text rules survive only as a Block floor that can raise a verdict, never
-   lower it
+   lower it. No lane, the `operator` lane included, writes outside the project, the
+   work directory, the scratch directories and the directories the operator added
+   for `write` (ADR-0099);
+   an added `read` directory is written by none
 2. **MITL approval gates within that reach** — `write`-lane commands, file writes,
    memory writes, web egress and MCP calls ask per call, with a session-scoped
    allowlist; writes into the instruction/configuration files, `operator`-lane and

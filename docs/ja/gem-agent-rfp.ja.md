@@ -36,6 +36,7 @@
 - `--no-sandbox` — sandbox-exec ラップを無効化（デバッグ用、起動時に警告表示）
 - `--thinking <level>` — 推論レベルの上書き（[ADR-0025](adr/0025-thinking-level.ja.md)）
 - `--mcp on|off` — この実行での MCP 有効/無効（[ADR-0039](adr/0039-integration-reload.ja.md)）
+- `--add-dir <path>` / `--read-dir <path>` — プロジェクト外のディレクトリを、同じレーンの下の `write` または `read` のルートとして足す。中のものは何も読み込まない（[ADR-0099](adr/0099-added-directories-are-roots-the-operator-grants.ja.md)）
 - `-p, --prompt <text>` — 単発実行、パイプ向け
 - `-c, --continue` / `--resume <id>` — セッション再開（[ADR-0005](adr/0005-session-resume.ja.md)）
 
@@ -134,7 +135,10 @@ max_turns = 50
    何が確認を求めるかはコマンドの文面ではなくレーンが決める。ヒューリスティックな
    パス（および文面）検証では動的構築（コマンド置換等）を防げないという agent-skeleton
    外部レビューの指摘への構造的回答であり、文字列規則は判定を上げることしかできない
-   Block の床としてだけ残る
+   Block の床としてだけ残る。`operator` レーンも含めてどのレーンも、プロジェクト・
+   作業ディレクトリ・scratch・操作者が `write` で足したディレクトリの外には書かない
+   （ADR-0099）。
+   `read` で足したディレクトリにはどのレーンも書かない
 2. **その範囲の内側の MITL 承認ゲート** — `write` レーンのコマンド・ファイル書込・
    メモリ書込・Web 送信・MCP 呼出は都度承認 + セッション内 allowlist。指示/設定ファイル
    への書込・`operator` レーン・sandbox 無しのコマンドは操作者専用で、資格情報パスへの

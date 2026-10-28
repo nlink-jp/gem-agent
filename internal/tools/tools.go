@@ -108,7 +108,11 @@ type Registry struct {
 	// work directory is set.
 	projectRoot *rootHandle
 	workRoot    *rootHandle
-	// rootsMu guards workDir and workRoot: /clear rotates them from
+	// added are the directories the operator added as roots (ADR-0099),
+	// each with its access level and its own os.Root. A read root is
+	// read like the project and written by nothing (rootForWrite).
+	added []addedHandle
+	// rootsMu guards workDir, workRoot and added: /clear rotates them from
 	// the UI goroutine while an abandoned call (ADR-0065) may still be
 	// resolving or opening on its own goroutine. A reader acquires the
 	// handle under the lock and releases it after its open; a rotated-
@@ -223,12 +227,19 @@ func (h *rootHandle) close() {
 	}
 }
 
+// addedHandle is one added root and its handle.
+type addedHandle struct {
+	root sandbox.AddedRoot
+	h    *rootHandle
+}
+
 // rootState is the confinement roots as one consistent snapshot.
 type rootState struct {
 	projectDir  string
 	projectRoot *rootHandle
 	workDir     string
 	workRoot    *rootHandle
+	added       []addedHandle
 }
 
 func (r *Registry) rootState() rootState {
@@ -237,7 +248,42 @@ func (r *Registry) rootState() rootState {
 	}
 	r.rootsMu.RLock()
 	defer r.rootsMu.RUnlock()
-	return rootState{r.projectDir, r.projectRoot, r.workDir, r.workRoot}
+	return rootState{r.projectDir, r.projectRoot, r.workDir, r.workRoot, r.added}
+}
+
+// AddDirs adds the operator's directories as roots (ADR-0099 §1). Each
+// is already a real path that sandbox.RefuseRoot accepted; it is
+// opened here, so the file tools reach it through its own os.Root.
+func (r *Registry) AddDirs(roots []sandbox.AddedRoot) error {
+	if r.parent != nil {
+		return r.parent.AddDirs(roots)
+	}
+	var opened []addedHandle
+	for _, a := range roots {
+		root, err := os.OpenRoot(a.Dir)
+		if err != nil {
+			for _, o := range opened {
+				o.h.close()
+			}
+			return fmt.Errorf("added directory: %w", err)
+		}
+		opened = append(opened, addedHandle{root: a, h: &rootHandle{root: root}})
+	}
+	r.rootsMu.Lock()
+	r.added = append(append([]addedHandle(nil), r.added...), opened...)
+	r.rootsMu.Unlock()
+	return nil
+}
+
+// AddedDirs returns the added roots with their levels, in the order
+// they were added.
+func (r *Registry) AddedDirs() []sandbox.AddedRoot {
+	st := r.rootState()
+	out := make([]sandbox.AddedRoot, 0, len(st.added))
+	for _, a := range st.added {
+		out = append(out, a.root)
+	}
+	return out
 }
 
 // UseWorkDir adds dir as a second root for the file tools. It is
@@ -289,26 +335,62 @@ func (r *Registry) UseWorkDir(dir string) error {
 // its open is done. The handle is acquired under the same lock that
 // rotates it, so a retire cannot slip between the choice and the use.
 func (r *Registry) rootFor(abs string) (*os.Root, string, func(), error) {
+	root, rel, release, _, err := r.rootAndLevel(abs)
+	return root, rel, release, err
+}
+
+// rootForWrite is rootFor for a write: a path whose innermost root is a
+// directory added read-only is refused here, whatever the verdict said
+// (ADR-0099 §1 — no write path reaches a read root).
+func (r *Registry) rootForWrite(abs string) (*os.Root, string, func(), error) {
+	root, rel, release, write, err := r.rootAndLevel(abs)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	if !write {
+		release()
+		return nil, "", nil, fmt.Errorf("path is in a directory added read-only: %s", abs)
+	}
+	return root, rel, release, nil
+}
+
+// rootAndLevel picks the innermost root containing abs — an added write
+// root may sit inside an added read root — and reports whether it may
+// be written.
+func (r *Registry) rootAndLevel(abs string) (*os.Root, string, func(), bool, error) {
 	if r.parent != nil {
-		return r.parent.rootFor(abs)
+		return r.parent.rootAndLevel(abs)
 	}
 	r.rootsMu.RLock()
 	defer r.rootsMu.RUnlock()
-	for _, c := range []struct {
-		dir string
-		h   *rootHandle
-	}{{r.projectDir, r.projectRoot}, {r.workDir, r.workRoot}} {
+	type cand struct {
+		dir   string
+		h     *rootHandle
+		write bool
+	}
+	cands := []cand{{r.projectDir, r.projectRoot, true}, {r.workDir, r.workRoot, true}}
+	for _, a := range r.added {
+		cands = append(cands, cand{a.root.Dir, a.h, a.root.Write})
+	}
+	var best *cand
+	for i := range cands {
+		c := &cands[i]
 		if c.dir == "" || c.h == nil || !within(c.dir, abs) {
 			continue
 		}
-		rel, err := filepath.Rel(c.dir, abs)
-		if err != nil {
-			return nil, "", nil, err
+		if best == nil || len(c.dir) > len(best.dir) {
+			best = c
 		}
-		c.h.acquire()
-		return c.h.root, rel, c.h.release, nil
 	}
-	return nil, "", nil, fmt.Errorf("path escapes the project directory: %s", abs)
+	if best == nil {
+		return nil, "", nil, false, fmt.Errorf("path escapes the project directory: %s", abs)
+	}
+	rel, err := filepath.Rel(best.dir, abs)
+	if err != nil {
+		return nil, "", nil, false, err
+	}
+	best.h.acquire()
+	return best.h.root, rel, best.h.release, best.write, nil
 }
 
 // openRead opens abs for reading through its root. os.Root resolves
@@ -368,7 +450,7 @@ func openRegular(open func(flag int) (*os.File, error)) (*os.File, error) {
 // 2026-09-08, F-03). newFileMode applies only when rel does not exist,
 // and a name that is a symlink or a directory is not a mode to inherit.
 func (r *Registry) replaceFile(abs string, data []byte) error {
-	root, rel, release, err := r.rootFor(abs)
+	root, rel, release, err := r.rootForWrite(abs)
 	if err != nil {
 		return err
 	}
@@ -563,10 +645,14 @@ func readAllCapped(f io.Reader, cap int) (data []byte, more bool, err error) {
 // roots returns the directories the file tools may touch.
 func (r *Registry) roots() []string {
 	st := r.rootState()
-	if st.workDir == "" {
-		return []string{st.projectDir}
+	roots := []string{st.projectDir}
+	if st.workDir != "" {
+		roots = append(roots, st.workDir)
 	}
-	return []string{st.projectDir, st.workDir}
+	for _, a := range st.added {
+		roots = append(roots, a.root.Dir)
+	}
+	return roots
 }
 
 // Register adds an external tool (MCP). Name collisions are errors — a
@@ -1558,7 +1644,7 @@ const readLaneDeniedNote = "\n[the read lane denied an operation — the sandbox
 // clone`, `git remote add` (they write .git/config and hooks) and an
 // edit of AGENTS.md need the operator lane, and the model is told
 // rather than left to retry (agent-board review of ADR-0073).
-const writeLaneDeniedNote = "\n[the write lane denied a write — inside the project it denies only the instruction/configuration files (AGENTS.md, CLAUDE.md, .mcp.json, .gem-agent.toml, .lagent.toml, .claude/) and .git/hooks, .git/info, .git/config (so git init, clone and remote add land here), renaming or removing a directory that contains one of those files, plus credential reads and anything outside the project and work directory; if the command must do that, call shell_exec again with access: \"operator\", which asks the user]"
+const writeLaneDeniedNote = "\n[the write lane denied a write — inside the project it denies only the instruction/configuration files (AGENTS.md, CLAUDE.md, .mcp.json, .gem-agent.toml, .lagent.toml, .claude/) and .git/hooks, .git/info, .git/config (so git init, clone and remote add land here), renaming or removing a directory that contains one of those files, plus credential reads; if the command must do that, call shell_exec again with access: \"operator\", which asks the user. A write outside the project, the work directory, the scratch directories and any directory the user added for write is denied in every lane, the operator lane included]"
 
 func (r *Registry) shellExec() *Tool {
 	return &Tool{
@@ -1566,7 +1652,7 @@ func (r *Registry) shellExec() *Tool {
 		Description: "Run a shell command (bash) with the project root as the working directory. " +
 			"The OS sandbox enforces the lane you declare with `access`. " +
 			"Declare \"read\" (default) for inspection — ls, cat, grep, git status/diff/log, jq — and for compiling, vetting and testing (the toolchain cache lives in the lane's scratch): it runs without approval and can write only its own temporary directory ($TMPDIR): no project or work-directory writes, no network, no IPC or system settings. " +
-			"Declare \"write\" up front for anything that changes files, installs, commits, uses the network, or writes a binary into the project; it may write the project and $GEMAGENT_WORK_DIR and is approval-gated. " +
+			"Declare \"write\" up front for anything that changes files, installs, commits, uses the network, or writes a binary into the project; it may write the project, $GEMAGENT_WORK_DIR and any directory the user added for write, and is approval-gated. " +
 			"Declare \"operator\" only when the command must change the instruction/configuration files (AGENTS.md, CLAUDE.md, AGENT.md, GEMINI.md, .mcp.json, .gem-agent.toml, .lagent.toml, .claude/) or .git hooks/info/config (git init, clone, remote add), or read credential files; the user always decides. " +
 			"A command refused in a lane with 'Operation not permitted' needs the wider lane it names, not a retry. " +
 			"Long output keeps its head and tail and is saved whole in the work directory (not in the operator lane); the note names the bytes shown and the file. The exit status is reported when non-zero.",

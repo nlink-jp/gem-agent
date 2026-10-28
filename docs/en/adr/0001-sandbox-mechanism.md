@@ -14,6 +14,11 @@ read-lane `shell_exec`, verified at startup, is non-mutating and runs
 without the MITL prompt; unconfined execution (`--no-sandbox`) is an
 operator-only mode rather than a degraded default.*
 
+*Amended by ADR-0099: the write roots are the project, the work directory
+and the directories the operator added for `write`; an added `read`
+directory is written by no lane, and the read lane reads every added
+directory even under a tree it denies for reach.*
+
 ## Context
 
 gem-agent executes LLM-proposed shell commands on the operator's machine. An

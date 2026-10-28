@@ -193,8 +193,8 @@ credential or `~/Library` reads; runs without a prompt where the lane
 was verified at startup; the Go build cache is pointed into that
 scratch in every lane, so `go build`, `go vet` and `go test` run here
 unasked — ADR-0084 — while a build that writes its binary into the
-project needs `write`), `write` (the project and the work directory
-writable, network allowed, the instruction/configuration files and
+project needs `write`), `write` (the project, the work directory and
+the added write directories writable, network allowed, the instruction/configuration files and
 `.git` itself, hooks and config denied, credential reads denied;
 approval-gated; verified at startup too — where its denials cannot be
 confirmed the session runs unconfined and every command asks you) or `operator` (the full ADR-0001 profile; you always

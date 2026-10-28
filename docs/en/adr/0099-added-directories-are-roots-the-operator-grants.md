@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** |
+| Status | **Accepted** (2026-10-29) — step 1 (§1–§3, §5–§7, §10) implemented; step 2 (§4, §8) not yet |
 | Date | 2026-10-29 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -116,10 +116,16 @@ choosing.
   like any other unknown key. A repository cannot grant itself writes
   outside itself.
 
-A path given at startup is opened as an `os.Root`, and the real path read
-back from that descriptor is what the profile names (§4's step 1 applies
-here too). A path that fails §5 is a startup error, not a note: the
-operator typed it, so the operator must hear that it did not apply.
+A path given at startup is resolved to its real path, judged by §5, and
+then opened as an `os.Root`; that real path is what the profile names.
+The descriptor read-back of §4's step 1 is not repeated here: at startup
+no model-driven command is running yet, so nothing inside gem-agent can
+swap the path between the judgement and the open, and an outside
+process that can rewrite the operator's directories already has more
+than this would give it. §4 needs it because a write-lane command may be
+running while the operator answers. A path that fails §5 is a startup
+error, not a note: the operator typed it, so the operator must hear that
+it did not apply.
 `-p` takes startup directories like any other flag.
 
 ### 4. The model may request a directory; the operator always answers
@@ -199,6 +205,15 @@ real path, and a directory is refused when it:
   path, and the file tools hold a descriptor, so the two would part. This
   is the rule the project already follows (`LaneProfile` never lets a
   scratch root cover the project's parent);
+- contains a shared scratch root, `/private/var/tmp` or `/dev`. The root
+  would take the lanes' own allowances with it: the write and operator
+  lanes write scratch under a read root the file tools refuse, and a
+  read re-allow over `/dev` reopens the terminal devices every lane
+  denies (implementation review, 2026-10-29);
+- for `write` only: contains the configuration file in effect — `--config`
+  may name one outside `~/.config/gem-agent` — since the model could
+  otherwise rewrite the operator's hooks, approvals and roots for every
+  later session (implementation review);
 - for `write` only: lies inside `~/Library`. The read lane already denies
   that tree, and `LaunchAgents`, `Application Support` and the like hold
   files that other programs run outside the sandbox;
@@ -261,7 +276,12 @@ profiles:
 - for a `read` root, the write lane cannot create a file in it.
 
 A probe file is created under a random name and removed, as the existing
-probes do. `TestLaneEnforcement` gains the same cases.
+probes do. At startup a root that fails its probes stops the start, for
+§3's reason. A read root this process cannot write at all (a read-only
+volume) cannot hold a probe file; nothing can write it either, so its
+probes are skipped with a note, and the order test covers its credential
+block. The same cases run in the package tests against real
+`sandbox-exec` (`TestAddedRootEnforcement`).
 
 ### 8. Listing
 
@@ -271,12 +291,67 @@ so it can be added later without new machinery.
 
 ### 9. It ships in two steps
 
-1. §1–§3 and §5–§7: the roots and every consumer, startup flags and
-   configuration, the refusal rule, the order and the probes.
+1. §1–§3, §5–§7 and §10: the roots and every consumer, startup flags and
+   configuration, the refusal rule, the order and the probes, and the
+   watch on write roots' persistent files.
 2. §4 and §8: the request tool and `/dirs`, built on step 1's rebuild,
    verify and swap.
 
 Step 2 depends on step 1. Nothing in step 1 is redone by step 2.
+
+### 10. A write root's persistent files are watched and reported
+
+*Added 2026-10-29, after the implementation review found that the
+residual below was wider than first written.*
+
+`instructions.Load` gates only the project's own files by the trust
+grant. The instruction files of the project's **ancestors**, up to the
+home, load without asking, on the premise that only the operator writes
+above a project. A write root breaks that premise. A write-lane command
+can build `d/AGENTS.md` in scratch and move `d` into the root, and a later
+session started under `<root>/d/...` loads it as an ancestor file, with
+no prompt. A moved-in checkout can carry a `.git/hooks` script that runs
+outside the sandbox on the operator's next `git commit` there. The name
+denials do not stop either, because the rename names the directory, not
+the file.
+
+So a write root gets the same change detection the project has had
+since ADR-0074 §3. It does not block anything. It makes the change
+visible when it happens:
+
+- **What is watched**: every `write` root. A `read` root is written by no
+  lane, so it is not walked.
+- **The walk**: `trustpin.Snapshot` — the project's own walk. It records
+  every name `sandbox.PersistentFile` protects (instruction files,
+  `.mcp.json`, `.gem-agent.toml`, `.claude/`, `.git/hooks`, …) at any
+  depth, by digest, without following links, and stops at
+  `trustpin.WalkEntries` entries. A cut walk is said once at startup, per
+  root.
+- **When**: at startup, the walk is compared with what the previous
+  session of this project recorded for the same root, so a change made
+  between sessions — by anything — is reported. At `/clear` and at exit,
+  it is compared with the session's own starting point, so what this
+  session added or changed is reported before the operator opens that
+  tree anywhere else.
+- **The report**: one note per root that changed, naming the root and the
+  added, changed and removed files. The `/clear` and exit reports also
+  write a `persistent_changes` transcript record carrying `root` (and
+  `cut` when the walk stopped at the cap) beside the project's own; the
+  startup report writes none, as the project's does not — the record is
+  of what a session did. A walk cut short names nothing past the cut as
+  removed: past the cut is unknown, not gone.
+- **Who is told**: the sessions of the project that added the root. The
+  state lives in that project's state directory, so a different project
+  opened under the root — the one that would load the planted file — is
+  not told. The advice in the residual below is the mitigation for that
+  case.
+- **State**: one file in the project's state directory,
+  `added-persistent.json`, holding the last snapshot of each write root
+  this project added. Nothing is written into the root.
+
+The walk is per root and bounded, so its cost is the cap at worst: a
+root larger than `WalkEntries` is watched for its first entries only,
+and the note says so.
 
 ## Alternatives considered
 
@@ -318,15 +393,25 @@ Step 2 depends on step 1. Nothing in step 1 is redone by step 2.
   auto-approval, later writes there are not asked about. That is the grant
   itself, not a hole. The prompt states it, and the "approve as read"
   answer exists for the cases where the operator wants less.
-- **Residual: a write root can be given persistent files at any time.**
-  Names are denied, but a write-lane command can build `d/AGENTS.md` in
-  scratch and move `d` into the root (measured by the review: the move
-  succeeded, a direct write was refused). The project closes this with
-  pins checked at the next startup (ADR-0074). An added root has no pins
-  (§2), so the only guard is the trust check of whatever later session
-  opens that tree as its project. Accepted: this session does not trust
-  those files, and walking a tree of unknown size on every grant costs
-  more than the case is worth. Revisit if an added root is ever loaded.
+- **Residual: a write root can be given persistent files at any time, and
+  they are reported, not refused.** Names are denied, but a write-lane
+  command can build `d/AGENTS.md` in scratch and move `d` into the root
+  (measured by the review: the move succeeded, a direct write was
+  refused). A later session started under `<root>/d/...` loads it as an
+  ancestor instruction file without asking, and a moved-in checkout's
+  `.git/hooks` run on the operator's next git command there. §10 reports
+  every such file at the next `/clear` or exit (or, after a session that
+  was killed, at the next start), to the sessions of the project that
+  added the root only; it does not stop the move. Accepted: blocking it would mean denying
+  every rename into the root, which is most of what writing a tree is,
+  or gating ancestor files by trust, which changes what every project
+  loads. Do not add as a write root a directory above projects you open
+  with gem-agent or Claude Code; read the note when it appears.
+- **Residual: walks in an added root apply the project's ignore rules.**
+  `list_tree`, `list_files` and `search_files` root `.gitignore` at the
+  project, so for an added root a project rule can match its entries. The
+  work directory has had the same behaviour since ADR-0058. Accepted for
+  now; rooting the rules at the innermost root is a change of its own.
 - **Residual: a write root may hold files other programs run outside the
   sandbox** — `~/bin`, `~/.local/bin`, a shell's configuration under
   `~/.config`. §5 refuses `~/Library` and the home itself, not these.

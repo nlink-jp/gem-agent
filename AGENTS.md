@@ -171,6 +171,8 @@ internal/workdir/  per-session work directory (ADR-0058): layout under the state
                    List/Remove back the workdirs cleanup command (ADR-0059) —
                    confirmation-gated, never a live session's directory
 cmd/workdirs.go    `workdirs` list + `clean` (ADR-0059): the remedy the startup note points at
+cmd/addeddirs.go   --add-dir / --read-dir / [directories] judged by RefuseRoot at startup (ADR-0099)
+cmd/addedwatch.go  write roots' persistent files: snapshot at start, reported at /clear and exit (ADR-0099 §10)
 internal/telemetry/ opt-in audit events (ADR-0035): metadata only, Cloud Logging or OTLP, Sub(label) for child agents
 cmd/filechild.go   the sandboxed child the covered reads run in (ADR-0086):
                    the hidden `__file-read` subcommand, the spawn, the startup probe
@@ -182,7 +184,9 @@ internal/trustpin/ content pins for the agent-facing files and the persistent-fi
                    snapshot (ADR-0074); cmd/pins.go applies them to the grant
 internal/sandbox/  SBPL profile generation per lane (read/write/operator), the
                    shared scratch / persistent-file / credential lists,
-                   sandbox-exec wrapping (ADR-0001, ADR-0073)
+                   sandbox-exec wrapping (ADR-0001, ADR-0073); roots.go is
+                   the added-directory rule (RefuseRoot) and the per-root
+                   probes (VerifyAddedRoots, ADR-0099)
 internal/approve/  MITL gate (y/n/N/a + session allowlist; N = deny with
                    a typed reason, ADR-0060)
 internal/hooks/    operator hooks on Claude Code's measured contracts: the
@@ -576,6 +580,24 @@ a new hook) is an architecture change and takes the same rows as a
   matcher changed six times in one release before this).
   Hard links, copies and secrets in unlisted files are the written
   ceiling, not holes.
+- **Added directories are one list with levels, read by every root
+  consumer** (ADR-0099) — `Registry.AddedDirs()` is the list; the
+  profiles (`Spec.Added`), the file-read child (`fileChildRequest.Added`
+  — a read in an added root must never fall back to in-process), the
+  verdict (`risk.Classify(..., added...)`), the reviewer's payload, `@`
+  mentions and the system prompt take it. A new consumer of "the
+  project and the work directory" takes it too, or the feature fails
+  there. A write goes through `rootForWrite`, which refuses a read root
+  whatever the verdict said — never `rootFor`. Whether a path may be a
+  root is `sandbox.RefuseRoot` alone; nothing in an added directory is
+  loaded (no instructions, `.mcp.json`, policy, skills — the operator's
+  decision). `.gem-agent.toml` cannot add one because `LoadProject`
+  refuses unknown keys: keep it that way. Startup probes failing on an
+  added root are a startup error, not the unconfined fallback. A write
+  root's persistent files are watched by `addedWatch` (cmd/addedwatch.go,
+  ADR-0099 §10) with the project's own `trustpin.Snapshot`: the
+  ancestor instruction files a later project under the root loads
+  ungated are why — report, never block.
 - **The credential block is a lane profile's last file-read rule** —
   Seatbelt is last-match-wins, so a `(allow file-read* …)` written after
   `writeCredentialBlock` re-opens every credential name inside that tree:

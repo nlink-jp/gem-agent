@@ -11,6 +11,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/risk"
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
@@ -439,6 +440,31 @@ func TestRiskEvaluatorIsToldTheWorkDirectory(t *testing.T) {
 	}
 	if !strings.Contains(b.evalSystems[0], "session work directory") {
 		t.Errorf("the instructions never mention the work directory:\n%s", b.evalSystems[0])
+	}
+}
+
+// The added directories ride the payload with their levels (ADR-0099
+// §6), for the work directory's reason: a write into a write root is
+// ordinary, and a reviewer that does not know the root reads an escape.
+func TestRiskEvaluatorIsToldTheAddedDirectories(t *testing.T) {
+	b := &autoBackend{verdict: `{"approve": true, "confidence": 0.9, "reason": "ok"}`}
+	a, reg, _ := newAutoAgent(t, b, &recordingGate{})
+	notes, _ := filepath.EvalSymlinks(t.TempDir())
+	ref, _ := filepath.EvalSymlinks(t.TempDir())
+	if err := reg.AddDirs([]sandbox.AddedRoot{{Dir: notes, Write: true}, {Dir: ref}}); err != nil {
+		t.Fatal(err)
+	}
+	a.decideAuto(context.Background(), shellCall("mkdir -p "+notes+"/x"))
+	if len(b.evals) == 0 {
+		t.Fatal("the model tier was never consulted")
+	}
+	for i, payload := range b.evals {
+		if !strings.Contains(payload, "added directory (write): "+notes) || !strings.Contains(payload, "added directory (read): "+ref) {
+			t.Errorf("round %d does not state the added directories:\n%s", i, payload)
+		}
+	}
+	if !strings.Contains(b.evalSystems[0], "added write directories") {
+		t.Errorf("the instructions never mention the added directories:\n%s", b.evalSystems[0])
 	}
 }
 

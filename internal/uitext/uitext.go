@@ -243,7 +243,7 @@ type Messages struct {
 	// "default (default)" said nothing about whose default.
 	ThinkingNowDefault string
 	ThinkingSetFmt     string
-	ThinkingUsage  string
+	ThinkingUsage      string
 	// ReadOnlyOn/Off is the ceiling and ReadOnlyAuto is the watcher —
 	// two independent settings, so /readonly prints one line each and
 	// the watcher line only when it is armed (ADR-0080 §1).
@@ -373,6 +373,11 @@ type Messages struct {
 	PinStaleWriteFmt       string // %s = name — had drifted before the approved write; not re-pinned
 	PersistentSinceLastFmt string // %s = comma list — changed since the previous session
 	PersistentSessionFmt   string // %s = comma list — added/changed by this session
+	// The same for an added write directory (ADR-0099 §10): the first %s
+	// is the directory, the second the comma list.
+	AddedPersistentSinceLastFmt string
+	AddedPersistentSessionFmt   string
+	AddedPersistentCutFmt       string // %d = the walk's cap, %s = the directory
 	// TrustDeclinedFmt is the banner note after declining: policy path.
 	TrustDeclinedFmt string
 	TrustUndecided   string // non-interactive, undecided: ran bare
@@ -568,33 +573,36 @@ keys:
 	MCPReloadedFmt:         "mcp reloaded: %d server(s), %d tool(s)\n",
 	SkillsReloadedFmt:      "skills reloaded: %d found\n",
 
-	TrustHeaderFmt:           "\nnew project: %s\nthis project provides:\n",
-	TrustItemInstructionsFmt: "%s (loaded as your instructions)",
-	TrustItemMCPFmt:          ".mcp.json (%d server(s) — will be started)",
-	TrustItemSkillsFmt:       ".claude/skills/ (%d skill(s) — loaded as your instructions)",
-	TrustQuestion:            "trust this project? These files will be treated as YOUR instructions and its MCP servers will run. [y/N]: ",
-	PinRecordedFmt:           "project trust: %d file(s) recorded as trusted: %s",
-	PinNonePending:           "project trust: no trusted files recorded yet — start interactively once, or run `gem-agent trust --accept`",
-	PinChangeFmt:             "%s %s %s",
-	PinKindChanged:           "changed",
-	PinKindAdded:             "added",
-	PinChangedFmt:            "\n%s since you trusted it.",
-	PinQuestion:              "trust the new content? [y/N]: ",
-	PinNotLoadedFmt:          "project trust: %s since you trusted it — not loaded; re-trust with `gem-agent trust --accept` or at an interactive start",
-	PinAcceptedFmt:           "project trust: %s re-trusted",
-	PinRemovedFmt:            "project trust: %s was removed since you trusted it",
-	PinPendingFmt:            "project trust: %s since you trusted it — not re-trusted; `gem-agent trust --accept` or the next interactive start",
-	PinStaleWriteFmt:         "project trust: %s had changed before this write — not re-trusted; asks at the next interactive start",
-	PersistentSinceLastFmt:   "note: changed since your previous session: %s",
-	PersistentSessionFmt:     "note: this session added or changed: %s",
-	TrustDeclinedFmt:         "project trust: declined — the project's own files are not loaded (edit %s to be asked again)",
-	TrustUndecided:           "project trust: undecided — the project's own files are not loaded; start interactively once to decide",
-	ReasonFSRoot:             "the filesystem root",
-	ReasonHome:               "your home directory",
-	ReasonHomeAncestor:       "an ancestor of your home directory",
-	BroadRootPromptFmt:       "\n⚠ %s is %s.\nFile tools and sandboxed shell writes would span this ENTIRE tree.\nstart anyway? [y/N]: ",
-	BroadRootRefusedFmt:      "refusing to start in %s (%s): file tools and shell writes would span this entire tree; run interactively to confirm, or start in a project directory",
-	BroadRootAbortFmt:        "not starting in %s — cd into a project directory first",
+	TrustHeaderFmt:              "\nnew project: %s\nthis project provides:\n",
+	TrustItemInstructionsFmt:    "%s (loaded as your instructions)",
+	TrustItemMCPFmt:             ".mcp.json (%d server(s) — will be started)",
+	TrustItemSkillsFmt:          ".claude/skills/ (%d skill(s) — loaded as your instructions)",
+	TrustQuestion:               "trust this project? These files will be treated as YOUR instructions and its MCP servers will run. [y/N]: ",
+	PinRecordedFmt:              "project trust: %d file(s) recorded as trusted: %s",
+	PinNonePending:              "project trust: no trusted files recorded yet — start interactively once, or run `gem-agent trust --accept`",
+	PinChangeFmt:                "%s %s %s",
+	PinKindChanged:              "changed",
+	PinKindAdded:                "added",
+	PinChangedFmt:               "\n%s since you trusted it.",
+	PinQuestion:                 "trust the new content? [y/N]: ",
+	PinNotLoadedFmt:             "project trust: %s since you trusted it — not loaded; re-trust with `gem-agent trust --accept` or at an interactive start",
+	PinAcceptedFmt:              "project trust: %s re-trusted",
+	PinRemovedFmt:               "project trust: %s was removed since you trusted it",
+	PinPendingFmt:               "project trust: %s since you trusted it — not re-trusted; `gem-agent trust --accept` or the next interactive start",
+	PinStaleWriteFmt:            "project trust: %s had changed before this write — not re-trusted; asks at the next interactive start",
+	PersistentSinceLastFmt:      "note: changed since your previous session: %s",
+	PersistentSessionFmt:        "note: this session added or changed: %s",
+	AddedPersistentSinceLastFmt: "note: in the added directory %s, changed since your previous session: %s — a project opened under it would load or run these",
+	AddedPersistentSessionFmt:   "note: in the added directory %s, this session added, changed or removed: %s — a project opened under it would load or run these",
+	AddedPersistentCutFmt:       "note: change detection covers the first %d entries under the added directory %s only",
+	TrustDeclinedFmt:            "project trust: declined — the project's own files are not loaded (edit %s to be asked again)",
+	TrustUndecided:              "project trust: undecided — the project's own files are not loaded; start interactively once to decide",
+	ReasonFSRoot:                "the filesystem root",
+	ReasonHome:                  "your home directory",
+	ReasonHomeAncestor:          "an ancestor of your home directory",
+	BroadRootPromptFmt:          "\n⚠ %s is %s.\nFile tools and sandboxed shell writes would span this ENTIRE tree.\nstart anyway? [y/N]: ",
+	BroadRootRefusedFmt:         "refusing to start in %s (%s): file tools and shell writes would span this entire tree; run interactively to confirm, or start in a project directory",
+	BroadRootAbortFmt:           "not starting in %s — cd into a project directory first",
 }
 
 var ja = Messages{
@@ -766,31 +774,34 @@ var ja = Messages{
 	MCPReloadedFmt:         "MCP を再接続しました: %d サーバー・%d ツール\n",
 	SkillsReloadedFmt:      "skill を再読込しました: %d 件\n",
 
-	TrustHeaderFmt:           "\n新しいプロジェクト: %s\nこのプロジェクトの提供物:\n",
-	TrustItemInstructionsFmt: "%s（あなたへの指示として読み込まれます）",
-	TrustItemMCPFmt:          ".mcp.json（サーバー %d 件 — 起動されます）",
-	TrustItemSkillsFmt:       ".claude/skills/（スキル %d 件 — あなたへの指示として読み込まれます）",
-	TrustQuestion:            "このプロジェクトを信用しますか？ これらのファイルはあなたへの指示として扱われ、MCP サーバーが起動します。 [y/N]: ",
-	PinRecordedFmt:           "project trust: %d 件を信用済みとして記録: %s",
-	PinNonePending:           "project trust: 信用済みファイルは未記録です — 一度対話起動するか `gem-agent trust --accept` を実行",
-	PinChangeFmt:             "%s が%s %s",
-	PinKindChanged:           "変更されました",
-	PinKindAdded:             "追加されました",
-	PinChangedFmt:            "\n信用した時点から %s。",
-	PinQuestion:              "新しい内容を信用しますか？ [y/N]: ",
-	PinNotLoadedFmt:          "project trust: 信用した時点から %s — 読み込みません。`gem-agent trust --accept` か対話起動で再信用",
-	PinAcceptedFmt:           "project trust: %s を再信用しました",
-	PinRemovedFmt:            "project trust: %s は信用した時点から削除されています",
-	PinPendingFmt:            "project trust: 信用した時点から %s — 再信用していません。`gem-agent trust --accept` か次の対話起動で",
-	PinStaleWriteFmt:         "project trust: %s はこの書込の前から変わっていました — 再信用していません。次の対話起動で確認",
-	PersistentSinceLastFmt:   "note: 前回のセッション以降に変更: %s",
-	PersistentSessionFmt:     "note: このセッションが追加・変更: %s",
-	TrustDeclinedFmt:         "project trust: 拒否 — このプロジェクト自身のファイルは読み込みません（再確認するには %s を編集）",
-	TrustUndecided:           "project trust: 未決定 — このプロジェクト自身のファイルは読み込みません。一度対話起動して決めてください",
-	ReasonFSRoot:             "ファイルシステムのルート",
-	ReasonHome:               "ホームディレクトリ",
-	ReasonHomeAncestor:       "ホームディレクトリの祖先",
-	BroadRootPromptFmt:       "\n⚠ %s は %s です。\nファイルツールとサンドボックス内シェルの書き込みが、このツリー全体に及びます。\nこのまま起動しますか？ [y/N]: ",
-	BroadRootRefusedFmt:      "%s（%s）では起動を拒否します: ファイルツールとシェル書き込みがツリー全体に及びます。対話モードで確認するか、プロジェクトディレクトリで起動してください",
-	BroadRootAbortFmt:        "%s では起動しません — まずプロジェクトディレクトリに cd してください",
+	TrustHeaderFmt:              "\n新しいプロジェクト: %s\nこのプロジェクトの提供物:\n",
+	TrustItemInstructionsFmt:    "%s（あなたへの指示として読み込まれます）",
+	TrustItemMCPFmt:             ".mcp.json（サーバー %d 件 — 起動されます）",
+	TrustItemSkillsFmt:          ".claude/skills/（スキル %d 件 — あなたへの指示として読み込まれます）",
+	TrustQuestion:               "このプロジェクトを信用しますか？ これらのファイルはあなたへの指示として扱われ、MCP サーバーが起動します。 [y/N]: ",
+	PinRecordedFmt:              "project trust: %d 件を信用済みとして記録: %s",
+	PinNonePending:              "project trust: 信用済みファイルは未記録です — 一度対話起動するか `gem-agent trust --accept` を実行",
+	PinChangeFmt:                "%s が%s %s",
+	PinKindChanged:              "変更されました",
+	PinKindAdded:                "追加されました",
+	PinChangedFmt:               "\n信用した時点から %s。",
+	PinQuestion:                 "新しい内容を信用しますか？ [y/N]: ",
+	PinNotLoadedFmt:             "project trust: 信用した時点から %s — 読み込みません。`gem-agent trust --accept` か対話起動で再信用",
+	PinAcceptedFmt:              "project trust: %s を再信用しました",
+	PinRemovedFmt:               "project trust: %s は信用した時点から削除されています",
+	PinPendingFmt:               "project trust: 信用した時点から %s — 再信用していません。`gem-agent trust --accept` か次の対話起動で",
+	PinStaleWriteFmt:            "project trust: %s はこの書込の前から変わっていました — 再信用していません。次の対話起動で確認",
+	PersistentSinceLastFmt:      "note: 前回のセッション以降に変更: %s",
+	PersistentSessionFmt:        "note: このセッションが追加・変更: %s",
+	AddedPersistentSinceLastFmt: "note: 追加ディレクトリ %s で、前回のセッション以降に変更: %s — その下で開くプロジェクトはこれらを読み込むか実行します",
+	AddedPersistentSessionFmt:   "note: 追加ディレクトリ %s で、このセッションが追加・変更・削除: %s — その下で開くプロジェクトはこれらを読み込むか実行します",
+	AddedPersistentCutFmt:       "note: 変化の検出は最初の %d 項目だけが対象です（追加ディレクトリ %s）",
+	TrustDeclinedFmt:            "project trust: 拒否 — このプロジェクト自身のファイルは読み込みません（再確認するには %s を編集）",
+	TrustUndecided:              "project trust: 未決定 — このプロジェクト自身のファイルは読み込みません。一度対話起動して決めてください",
+	ReasonFSRoot:                "ファイルシステムのルート",
+	ReasonHome:                  "ホームディレクトリ",
+	ReasonHomeAncestor:          "ホームディレクトリの祖先",
+	BroadRootPromptFmt:          "\n⚠ %s は %s です。\nファイルツールとサンドボックス内シェルの書き込みが、このツリー全体に及びます。\nこのまま起動しますか？ [y/N]: ",
+	BroadRootRefusedFmt:         "%s（%s）では起動を拒否します: ファイルツールとシェル書き込みがツリー全体に及びます。対話モードで確認するか、プロジェクトディレクトリで起動してください",
+	BroadRootAbortFmt:           "%s では起動しません — まずプロジェクトディレクトリに cd してください",
 }

@@ -61,6 +61,10 @@ enabled = true             # デフォルト。無効なら read レーンが無
 # [sandbox.scratch_caches]   # セッション scratch に向けるツールチェインのキャッシュ（ADR-0084）。既定は GOCACHE = "go-build"
 # PIP_CACHE_DIR = "pip"      # 変数 = ディレクトリ名 1 つ。"" で行を削除。ローダー変数は拒否
 
+[directories]              # プロジェクト外で作業するディレクトリ（ADR-0099）。グローバルのファイルだけ
+# write = ["~/notes"]        # ファイルツールと write/operator レーンがプロジェクトと同じく書く
+# read = ["/Volumes/Archive/reference"]   # プロジェクトと同じく読み、何も書かない
+
 [agent]
 max_turns = 50             # デフォルト。介入チェックポイントで、延長は 3 倍まで（ADR-0040）
 shell_timeout_sec = 120    # デフォルト
@@ -393,6 +397,8 @@ MCP はクライアントが照合できる能力を公開しないので、フ�
 | `--config <path>` | 別の設定ファイルを使う |
 | `--mcp <on\|off>` | この実行だけ `[mcp].enabled` を上書き — `off` は全 MCP サーバー起動をスキップ。`-p` パイプラインが通常求めるもの（ADR-0039） |
 | `--no-sandbox` | Seatbelt ラップの無効化（デバッグ専用）— 全 `shell_exec` があなたの承認事項になり、ポリシーも auto モードも持ち上げない（ADR-0073 §5） |
+| `--add-dir <path>` | プロジェクト外のディレクトリを `write` のルートとして足す（繰り返し指定可。`[directories].write` に加わる）。ファイルツールと write・operator レーンがプロジェクトと同じく書き、永続ファイルの名前（`AGENTS.md`・`.mcp.json`・`.git/hooks` など）も同じく守る。中のものは何も読み込まない — 指示ファイルも MCP サーバも skill も読まない（ADR-0099） |
+| `--read-dir <path>` | ディレクトリを `read` のルートとして足す（繰り返し指定可。`[directories].read` に加わる）。ファイルツールと read レーンが、外付けボリューム上や `~/Library` の下にあっても読む。operator レーンも含めてどのレーンも書かない。`/`・ホーム・プロジェクトや資格情報の置き場所を含むもの・共有の一時ディレクトリや `/dev` の中またはそれを含むもの・（`--add-dir` なら）`~/Library` の下や使っている設定ファイルを含むものは断り、理由を示して起動を止める。同じパスを 2 回与えても 1 つのルートになる |
 | `sessions` | 再開可能なセッション一覧 |
 | `workdirs` | このプロジェクトのセッション作業ディレクトリ一覧。`workdirs clean [session-id]...` は確認のうえ削除（ADR-0058、[sessions](sessions.ja.md) 参照） |
 | `trust` | このプロジェクトの信頼状態と信用済みファイルを表示。`--accept` で現在の内容を信頼済みとして記録、`--config <path>` で別の設定ファイルを読む（ADR-0074） |

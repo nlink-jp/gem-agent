@@ -62,6 +62,10 @@ enabled = true             # default; off = no read lane, every shell_exec asks 
 # [sandbox.scratch_caches]   # toolchain caches pointed into the session scratch (ADR-0084); default GOCACHE = "go-build"
 # PIP_CACHE_DIR = "pip"      # variable = one directory name; "" removes a row; loader variables are refused
 
+[directories]              # directories outside the project to work in (ADR-0099); global file only
+# write = ["~/notes"]        # written like the project by the file tools and the write/operator lanes
+# read = ["/Volumes/Archive/reference"]   # read like the project, written by nothing
+
 [agent]
 max_turns = 50             # default; an intervention checkpoint, extensions up to 3× (ADR-0040)
 shell_timeout_sec = 120    # default
@@ -407,6 +411,8 @@ the function name is the only place the intent can be said (ADR-0077).
 | `--config <path>` | use another config file |
 | `--mcp <on\|off>` | override `[mcp].enabled` for this run — `off` skips every MCP server spawn, which is what a `-p` pipeline usually wants (ADR-0039) |
 | `--no-sandbox` | disable the Seatbelt wrapper (debugging only) — every `shell_exec` then needs your approval and no policy or auto mode lifts that (ADR-0073 §5) |
+| `--add-dir <path>` | add a directory outside the project as a `write` root (repeatable; joins `[directories].write`): the file tools and the write and operator lanes write it like the project, with its persistent names (`AGENTS.md`, `.mcp.json`, `.git/hooks`, …) protected the same way. Nothing in it is loaded — not its instruction files, MCP servers or skills (ADR-0099) |
+| `--read-dir <path>` | add a directory as a `read` root (repeatable; joins `[directories].read`): the file tools and the read lane read it, even on an external volume or under `~/Library`; no lane writes it, the operator lane included. A path that is `/`, your home, holds the project or a credential location, lies in or holds a shared temporary directory or `/dev`, or (for `--add-dir`) lies under `~/Library` or holds the config file in use is refused, and the start stops with the reason; the same path given twice is one root |
 | `sessions` | list resumable sessions |
 | `workdirs` | list this project's session work directories; `workdirs clean [session-id]...` deletes them after asking (ADR-0058, see [sessions](sessions.md)) |
 | `trust` | show this project's trust state and trusted files; `--accept` records the current content as trusted, `--config <path>` reads another config file (ADR-0074) |

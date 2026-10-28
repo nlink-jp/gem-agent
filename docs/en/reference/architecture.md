@@ -109,6 +109,16 @@ purpose:
   (every shell command asks) and says so. `--no-sandbox`
   removes this layer (and the read lane) and says so in the banner.
 
+**Added directories** (ADR-0099) extend both boundaries without a
+second mechanism. `sandbox.RefuseRoot` judges each one at startup; the
+registry opens it as one more `os.Root` with its level (`rootForWrite`
+refuses a write whose innermost root is `read`); the profiles list a
+write root beside the project and re-allow reading every added root in
+the read lane before the credential block; the file-read child, the
+verdict (`risk.Classify`), the auto-approve reviewer's payload, `@`
+mentions and the system prompt all take the same list
+(`Registry.AddedDirs`). Nothing in an added directory is loaded.
+
 ## One turn
 
 ```mermaid

@@ -197,6 +197,20 @@ because its author is gem-agent (the same trust as `denial`). An older
 build resuming such a transcript ignores the field and replays the
 result without the note.
 
+## Added directories in the transcript (ADR-0099)
+
+A session started with added directories (`--add-dir`, `--read-dir`,
+`[directories]`) records the grants once, after they passed
+`sandbox.RefuseRoot` and before any call runs:
+
+    {"kind":"added_directories","data":{"roots":[
+      {"dir":"/Users/op/notes","access":"write","source":"config"},
+      {"dir":"/Volumes/Archive/reference","access":"read","source":"flag"}]}}
+
+`dir` is the real path the profiles and the file tools use, `access`
+the level and `source` where you gave it. A session with none writes no
+record. An older build resuming such a transcript skips the record.
+
 ## Agent memory (ADR-0020)
 
 The agent persists short facts across sessions: decisions, preferences,
@@ -277,7 +291,12 @@ persistent files under the project are compared with the set the
 session started from; a difference is noted and written to the
 transcript as a `persistent_changes` record (`reason` of `clear` or
 `exit`, and the `added`, `changed` and `removed` names) — the nested
-file a directory swap can plant, made visible (ADR-0074 §3). The new
+file a directory swap can plant, made visible (ADR-0074 §3). Each
+added write directory is compared the same way, and its record carries
+`root` (the directory) beside the same fields; its last snapshot is kept
+in `added-persistent.json` in the project's state directory, so the
+next start also notes what changed there between sessions (ADR-0099
+§10). The new
 session also re-checks the content pins (ADR-0074): an instruction
 file, `.mcp.json` or project skill that changed during the old session
 is left out and named.

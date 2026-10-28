@@ -540,3 +540,37 @@ func TestDiagramFontSetting(t *testing.T) {
 		t.Errorf("sources: font %s, bold_font %s", cfg.Source("tui.diagram.font"), cfg.Source("tui.diagram.bold_font"))
 	}
 }
+
+// A repository cannot add a directory for itself (ADR-0099 §3): the
+// project file's loader refuses the table like any other unknown key,
+// and the global file reads it with ~ resolved.
+func TestDirectoriesAreGlobalOnly(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".gem-agent.toml"), []byte("[directories]\nwrite = [\"~\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadProject(dir); err == nil || !strings.Contains(err.Error(), "unknown key") {
+		t.Fatalf("a project file added a directory: err = %v", err)
+	}
+	clearEnv(t)
+	path := writeConfig(t, `
+[gcp]
+project = "example-project"
+
+[model]
+name = "example-model"
+
+[directories]
+write = ["~/notes"]
+read = ["/Volumes/A"]
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, _ := os.UserHomeDir()
+	w, r := cfg.Directories.Paths()
+	if len(w) != 1 || w[0] != filepath.Join(home, "notes") || len(r) != 1 || r[0] != "/Volumes/A" {
+		t.Errorf("Paths() = %v %v", w, r)
+	}
+}

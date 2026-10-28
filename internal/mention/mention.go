@@ -195,7 +195,9 @@ func Refs(text string) []string {
 // see a path in the conversation must be able to @-reference it. Text
 // itself is not modified: what the operator typed stays what the model
 // sees as the instruction, with the contents delivered alongside.
-func Expand(ctx context.Context, text, projectDir, workDir string, lim Limits) ([]Attachment, []Problem) {
+// added are the operator's added directories (ADR-0099 §6): an
+// absolute reference under one resolves like one under the project.
+func Expand(ctx context.Context, text, projectDir, workDir string, lim Limits, added ...string) ([]Attachment, []Problem) {
 	var atts []Attachment
 	var problems []Problem
 	total := 0
@@ -238,7 +240,7 @@ func Expand(ctx context.Context, text, projectDir, workDir string, lim Limits) (
 			atts = append(atts, att)
 			continue
 		}
-		abs, err := resolve(projectDir, workDir, ref)
+		abs, err := resolve(projectDir, workDir, ref, added...)
 		if err != nil {
 			problems = append(problems, Problem{ref, err.Error()})
 			continue
@@ -247,7 +249,7 @@ func Expand(ctx context.Context, text, projectDir, workDir string, lim Limits) (
 		// size, the read or the listing — comes from that descriptor
 		// (ADR-0073 §4: a Stat by name before the open was the
 		// check-then-use shape the roots exist to remove).
-		f, err := openConfined(abs, projectDir, workDir)
+		f, err := openConfined(abs, append([]string{projectDir, workDir}, added...)...)
 		if err != nil {
 			problems = append(problems, Problem{ref, "not found"})
 			continue
@@ -617,19 +619,30 @@ func attachDir(ref string, d *os.File, lim Limits) (Attachment, error) {
 }
 
 // resolve confines a reference to the project directory and, when the
-// session has one, the work directory — checking both the lexical path
-// and the symlink-resolved one. A relative reference always means the
-// project; the work directory is reached only by the absolute path the
-// conversation shows.
-func resolve(projectDir, workDir, ref string) (string, error) {
+// session has them, the work directory and the added directories —
+// checking both the lexical path and the symlink-resolved one. A
+// relative reference always means the project; the other roots are
+// reached only by an absolute path.
+func resolve(projectDir, workDir, ref string, added ...string) (string, error) {
 	if projectDir == "" {
 		return "", fmt.Errorf("no project directory")
 	}
 	inRoots := func(p string) bool {
-		return within(projectDir, p) || (workDir != "" && within(workDir, p))
+		if within(projectDir, p) || (workDir != "" && within(workDir, p)) {
+			return true
+		}
+		for _, d := range added {
+			if within(d, p) {
+				return true
+			}
+		}
+		return false
 	}
 	outside := func(suffix string) error {
-		if workDir == "" {
+		switch {
+		case len(added) > 0:
+			return fmt.Errorf("outside the project, work and added directories%s", suffix)
+		case workDir == "":
 			return fmt.Errorf("outside the project directory%s", suffix)
 		}
 		return fmt.Errorf("outside the project and work directories%s", suffix)

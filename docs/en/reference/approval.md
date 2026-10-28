@@ -642,8 +642,9 @@ What remains, and what to check if you used it:
 the lane the model declared (see the auto-approve section above for
 what each lane denies); `!` commands run in the operator lane because
 you typed them. The write and operator lanes confine file writes to
-the project directory, the session work directory and the scratch dirs
-(`TMPDIR`, `/private/tmp`, `/dev/fd` and the device sinks); the read
+the project directory, the session work directory, the added write
+directories (below) and the scratch dirs (`TMPDIR`, `/private/tmp`,
+`/dev/fd` and the device sinks); the read
 lane to its private scratch, `/private/var/tmp`, `/dev/fd` and the
 sinks. Every lane runs the command in its own session with no
 controlling terminal and denies the terminal devices, so a command
@@ -657,6 +658,66 @@ each one function in `internal/sandbox`, read by the profile and by
 the file tools' verdict (ADR-0070 §2, ADR-0073 §3). `--no-sandbox`
 disables the wrapper (debugging only) — and with it the read lane, so
 every `shell_exec` asks. The sandbox applies in every approval mode.
+
+### Added directories (ADR-0099)
+
+Under the sandbox no lane — the operator lane included — writes outside
+the project, the work directory and the scratch dirs. `--add-dir` /
+`--read-dir` and `[directories]` in the global config add directories
+beside the project:
+
+| Level | File tools | read lane | write lane | operator lane |
+|---|---|---|---|---|
+| `write` | read and write, like the project | reads; never writes | writes, except its persistent names (`AGENTS.md`, `.mcp.json`, `.git/hooks`, …) | writes |
+| `read` | read; a write is a Block | reads, even under `/Volumes` or `~/Library` | — | — |
+
+The credential list stays denied inside both, in every enforcer. A
+write root's persistent names are `OperatorOnly` for the file tools,
+as in the project. Nothing in an added directory is loaded: not its
+instruction files, `.mcp.json`, `.gem-agent.toml` or skills — it gets
+no trust prompt and no pins. A project's `.gem-agent.toml` cannot add a
+directory (its loader refuses the key).
+
+At startup each path is resolved to its real path and judged by one
+rule (`sandbox.RefuseRoot`): `/`, your home, anything holding the
+project, the work directory, `~/.config/gem-agent`, the state
+directory or a home credential location, anything inside or holding a
+shared temporary directory or `/dev`, and — for `write` — anything under
+`~/Library` or holding the configuration file in use (`--config`) is
+refused, and the start stops with the reason. Each added root then gets
+its own probes under the real profiles (the read lane cannot create a
+file there or read a `.env` there, and can read an ordinary file; a
+write root is written by the write lane with `AGENTS.md` denied; a read
+root is written by neither the write nor the operator lane). A root that
+fails them stops the start; a read root this process cannot write at
+all (a read-only volume) skips the probes with a note. `/clear` keeps
+the added directories, and its new transcript records them again. The
+grants are recorded in the transcript (`added_directories`, see
+[sessions](sessions.md)). Each added directory is held open for the
+session, so ejecting the volume it lies on can report it busy until
+gem-agent exits (not measured).
+
+**Persistent files in a write root are watched** (ADR-0099 §10). The
+name denials stop a write onto `AGENTS.md`, but not a command that
+builds a directory holding one elsewhere and moves it in — and a project
+you later open under that directory loads it as an ancestor instruction
+file without asking; a moved-in checkout's `.git/hooks` run on your next
+git command there. So each write root is walked the way the project is
+(every persistent name, by digest, up to 20,000 entries): at startup
+against what the previous session of this project recorded, and at
+`/clear` and exit against this session's start. A change is a note
+naming the root and the files, and a `persistent_changes` record with
+`root`. Nothing is blocked, and only this project's sessions are told —
+a different project opened under the root is not. Do not add as a write
+root a directory above projects you open with gem-agent or Claude Code,
+and read the note when it appears.
+
+**Residuals** (ADR-0099 §Consequences): a write root may hold files
+other programs run outside the sandbox (`~/bin`, a shell's
+configuration under `~/.config`) — the grant itself, which you made with
+the path in front of you; and `list_tree` / `list_files` /
+`search_files` in an added root apply the project's `.gitignore`, as in
+the work directory.
 
 ## Startup safety (ADR-0023)
 

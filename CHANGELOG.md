@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Directories outside the project, under the same lanes** (ADR-0099,
+  issue #2). `--add-dir <path>` adds a `write` directory — the file tools
+  and the write and operator lanes write it like the project, its
+  `AGENTS.md`, `.mcp.json` and `.git/hooks` protected the same way;
+  `--read-dir <path>` adds a `read` directory — read by the file tools and
+  the read lane, even on an external volume or under `~/Library`, and
+  written by no lane. Both flags repeat, and `[directories].write` /
+  `.read` in the global config file list them too (a project's
+  `.gem-agent.toml` cannot). Nothing in an added directory is loaded —
+  not its instruction files, MCP servers or skills. Each path is resolved
+  and judged at startup: `/`, your home, anything holding the project, the
+  configuration or state directory or a credential location, shared
+  temporary directories or `/dev` (inside or around), and (for
+  `--add-dir`) `~/Library` or the configuration file in use are refused,
+  and the start stops with the reason; each root then gets its own
+  sandbox probes. The grants are recorded in the transcript
+  (`added_directories`). The persistent files of every write directory
+  are watched the way the project's are: a directory moved in with an
+  `AGENTS.md` or a `.git/hooks` script in it — which a project later
+  opened under it would load or run without asking — is noted to this
+  project's sessions at the next `/clear` or exit (at the next start
+  after a killed session), naming the directory, and recorded as
+  `persistent_changes` with its `root`. Do not add as a write
+  directory one above projects you open. The model asking for a
+  directory is the next step and not in this release.
+
+### Fixed
+
+- **The write lane's denial note no longer says the operator lane can
+  write outside the project.** It cannot: the operator lane writes the
+  same roots and scratch directories the write lane does. The note now
+  says a write outside them is denied in every lane.
+
 ## [0.92.1] - 2026-10-29
 
 ### Security

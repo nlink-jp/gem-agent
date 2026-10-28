@@ -110,7 +110,7 @@ func (a *Agent) decide(tc llm.ToolCall) Decision {
 		// fails at the open as before.
 		args = a.withRealPaths(tc.Args)
 	}
-	v := risk.Classify(tc.Name, mutating, args, a.registry.ProjectDir(), a.registry.WorkDir())
+	v := risk.Classify(tc.Name, mutating, args, a.registry.ProjectDir(), a.registry.WorkDir(), a.registry.AddedDirs()...)
 	if tc.Name == tools.ShellExecName && !a.registry.Confined() && v.Tier != risk.Block {
 		// Unconfined mode (--no-sandbox): the approval buys none of the
 		// lane's constraints, so it is not an ordinary write-lane call
