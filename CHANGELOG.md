@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Security
+
+- **The read lane no longer reads credential files under the toolchain
+  caches in `~/Library`.** The read-lane profile re-allowed
+  `~/Library/{Caches,Developer,Python,Go}` after its credential denials, and
+  Seatbelt applies the last matching rule, so a `.env`, `credentials.json`
+  or service-account key inside those trees could be read without asking.
+  The credential block is now the last file-read rule of the read and write
+  lane profiles, and a test holds that order. The write lane was not
+  affected (it has no read re-allow), and other credential paths were
+  denied as before (found by the ADR-0099 design review).
+
 ## [0.92.0] - 2026-10-23
 
 ### Added

@@ -423,17 +423,11 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 	if lane == LaneOperator {
 		return b.String(), nil
 	}
-	// Credential material: unreadable in the read and write lanes.
-	deny, allow := CredentialFilters(spec.Home)
-	b.WriteString("(deny file-read*\n")
-	for _, f := range deny {
-		fmt.Fprintf(&b, "    %s\n", f)
-	}
-	b.WriteString(")\n(allow file-read*\n")
-	for _, f := range allow {
-		fmt.Fprintf(&b, "    %s\n", f)
-	}
-	b.WriteString(")\n")
+	// Credential material is unreadable in the read and write lanes, and
+	// its block is each profile's last file-read rule: Seatbelt is
+	// last-match-wins, so a read re-allow written after it (the read
+	// lane's Library toolchain trees) re-opened a .env inside that tree
+	// (review of ADR-0099, #4).
 	if lane == LaneWrite {
 		b.WriteString("(deny file-write*\n")
 		for _, f := range PersistentFiles(spec.ProjectDir) {
@@ -445,6 +439,7 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 			}
 		}
 		b.WriteString(")\n")
+		writeCredentialBlock(&b, spec.Home)
 		return b.String(), nil
 	}
 	// The read lane's side-effect denials, by capability.
@@ -497,7 +492,24 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 		}
 		b.WriteString(")\n")
 	}
+	writeCredentialBlock(&b, spec.Home)
 	return b.String(), nil
+}
+
+// writeCredentialBlock writes the credential denials and the template
+// re-allow that follows them. LaneProfile calls it last, after every
+// other file-read rule, so no later allow can re-open what it denies.
+func writeCredentialBlock(b *strings.Builder, home string) {
+	deny, allow := CredentialFilters(home)
+	b.WriteString("(deny file-read*\n")
+	for _, f := range deny {
+		fmt.Fprintf(b, "    %s\n", f)
+	}
+	b.WriteString(")\n(allow file-read*\n")
+	for _, f := range allow {
+		fmt.Fprintf(b, "    %s\n", f)
+	}
+	b.WriteString(")\n")
 }
 
 // DeniedHint reports whether a command's output looks like the kernel

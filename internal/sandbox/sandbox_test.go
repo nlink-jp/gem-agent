@@ -147,6 +147,34 @@ func TestLaneProfiles(t *testing.T) {
 	}
 }
 
+// TestCredentialBlockIsTheLastReadRule holds the order that
+// TestLaneEnforcement measures: Seatbelt is last-match-wins, so any
+// file-read allow written after the credential denials re-opens a
+// credential name inside the allowed tree (review of ADR-0099, #4 —
+// the Library toolchain re-allow once did). After the credential deny
+// only its own template re-allow may follow.
+func TestCredentialBlockIsTheLastReadRule(t *testing.T) {
+	spec := Spec{ProjectDir: "/private/tmp/proj", WorkDir: "/private/tmp/work", Home: "/Users/op", DenyExec: []string{"osascript"}, ReadScratch: "/private/tmp/work/scratch"}
+	deny, allow := CredentialFilters(spec.Home)
+	for _, lane := range []Lane{LaneRead, LaneWrite} {
+		p, err := LaneProfile(lane, spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := strings.LastIndex(p, "(deny file-read*\n    "+deny[0])
+		if i < 0 {
+			t.Fatalf("lane %v lacks the credential block:\n%s", lane, p)
+		}
+		tail := p[i:]
+		if n := strings.Count(tail, "file-read"); n != 2 {
+			t.Errorf("lane %v: %d file-read rules from the credential deny on, want the deny and its template allow:\n%s", lane, n, tail)
+		}
+		if !strings.Contains(tail, "(allow file-read*\n    "+allow[0]) {
+			t.Errorf("lane %v: the template re-allow does not follow the credential deny:\n%s", lane, tail)
+		}
+	}
+}
+
 func TestPersistentAndCredentialRulesAgree(t *testing.T) {
 	for _, rel := range []string{"AGENTS.md", "sub/CLAUDE.md", ".git", "sub/.git", ".git/hooks/pre-commit", ".git/config", "vendor/x/.git/config.lock", ".claude/skills/a/SKILL.md", ".mcp.json", "docs/.gem-agent.toml", ".lagent.toml", "sub/.lagent.toml"} {
 		if !PersistentFile(rel) {
@@ -215,7 +243,7 @@ func TestLaneEnforcement(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for name, body := range map[string]string{"AGENTS.md": "rules\n", ".lagent.toml": "[approval]\n", ".git/config": "cfg\n", "home/.ssh/id_rsa": "secret\n", ".env": "K=v\n", ".env.example": "K=\n", "home/Library/Cookies/x": "c\n", "home/Library/Caches/x": "c\n", "home/.gemini/oauth_creds.json": "{}\n", "home/.config/mcp-bridge/config.json": "{}\n", "home/.config/mcp-bridge/state/github/tokens.json": "{}\n", "home/.config/git/ignore": "*.o\n"} {
+	for name, body := range map[string]string{"AGENTS.md": "rules\n", ".lagent.toml": "[approval]\n", ".git/config": "cfg\n", "home/.ssh/id_rsa": "secret\n", ".env": "K=v\n", ".env.example": "K=\n", "home/Library/Cookies/x": "c\n", "home/Library/Caches/x": "c\n", "home/Library/Caches/.env": "K=v\n", "home/Library/Caches/credentials.json": "{}\n", "home/Library/Caches/.env.example": "K=\n", "home/.gemini/oauth_creds.json": "{}\n", "home/.config/mcp-bridge/config.json": "{}\n", "home/.config/mcp-bridge/state/github/tokens.json": "{}\n", "home/.config/git/ignore": "*.o\n"} {
 		if err := os.WriteFile(filepath.Join(proj, name), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -275,6 +303,12 @@ func TestLaneEnforcement(t *testing.T) {
 		{LaneRead, "echo x > /dev/fd/1", true, "read lane writes its own descriptors (review F-06)"},
 		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, "Library/Cookies/x")), false, "read lane denies the user's Library (design review V2)"},
 		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, "Library/Caches/x")), true, "read lane allows toolchain caches under Library"},
+		// The Library re-allow must not re-open the credential names
+		// inside it: the credential block is the profile's last word
+		// (ADR-0099 review #4 — the re-allow once followed it).
+		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, "Library/Caches/.env")), false, "read lane denies .env under a re-allowed Library tree"},
+		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, "Library/Caches/credentials.json")), false, "read lane denies credentials.json under a re-allowed Library tree"},
+		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, "Library/Caches/.env.example")), true, "read lane allows the .env template under a re-allowed Library tree"},
 		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, ".gemini/oauth_creds.json")), false, "read lane denies agent token stores (review F-07)"},
 		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, ".config/mcp-bridge/config.json")), false, "read lane denies the MCP bridge's configuration (the ADR-0076 trigger)"},
 		{LaneRead, "cat " + shellQuote(filepath.Join(fakeHome, ".config/mcp-bridge/state/github/tokens.json")), false, "read lane denies the MCP bridge's token store"},

@@ -576,6 +576,13 @@ a new hook) is an architecture change and takes the same rows as a
   matcher changed six times in one release before this).
   Hard links, copies and secrets in unlisted files are the written
   ceiling, not holes.
+- **The credential block is a lane profile's last file-read rule** —
+  Seatbelt is last-match-wins, so a `(allow file-read* …)` written after
+  `writeCredentialBlock` re-opens every credential name inside that tree:
+  the read lane's `~/Library` toolchain re-allow once followed it, and
+  `~/Library/Caches/.env` was readable unasked (review of ADR-0099, #4).
+  Any new read re-allow goes before `writeCredentialBlock`;
+  `TestCredentialBlockIsTheLastReadRule` fails the build otherwise.
 - **One list, four enforcers** (ADR-0073 §3, ADR-0085) —
   `sandbox.PersistentFiles` / `PersistentFile` and
   `sandbox.CredentialFilters` / `CredentialPath` are read by the profile
