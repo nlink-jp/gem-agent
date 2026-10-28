@@ -598,6 +598,15 @@ a new hook) is an architecture change and takes the same rows as a
   ADR-0099 §10) with the project's own `trustpin.Snapshot`: the
   ancestor instruction files a later project under the root loads
   ungated are why — report, never block.
+- **Two persistent-state residuals were weighed and kept** (pre-release
+  review, 2026-10-29) — after a walk cut at `trustpin.WalkEntries`,
+  `reportPersistent` makes the partial snapshot the new baseline, so
+  `/clear`'s `PersistentParents` lose the directories past the cut until
+  the next start (only a project past 20,000 entries, and the cut is now
+  noted); `internal/riskbook/store.go` still saves through a fixed
+  temporary name (its writes are operator edits, not concurrent session
+  ends). Move either to `replaceStateFile` / a merged baseline if that
+  changes, not before.
 - **The credential block is a lane profile's last file-read rule** —
   Seatbelt is last-match-wins, so a `(allow file-read* …)` written after
   `writeCredentialBlock` re-opens every credential name inside that tree:

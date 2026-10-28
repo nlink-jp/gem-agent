@@ -249,7 +249,9 @@ read/write レーンと read ツールで読め、write レーンではネット
 取る先に残るので、提案した当事者が裁くことはできません（下のメモリの規則を
 同じ永続化の類型に適用したもの）。シェルからは、write レーンのプロファイルが
 それらのファイルと `.git/hooks`・`.git/info`・`.git/config` — そして
-`.git/modules/<名前>/` の下にある、どの深さのサブモジュールの同じ 3 つ — への書込を
+`.git/modules/<名前>/` の下にある、どの深さのサブモジュールの同じ 3 つ（その
+`objects`・`refs`・`logs` は除く）、そして git に別のディレクトリの設定と hooks を
+読ませるすべての `commondir` — への書込を
 そのまま拒みます — リダイレクト・`mv`・`sed -i`・`rm`・`git config` は
 `Operation not permitted` で失敗し — 触れられるのはあなたが承認する
 `operator` レーンだけです。一覧は関数 1 つ（`sandbox.PersistentFiles`）で、

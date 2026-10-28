@@ -10,9 +10,22 @@
 | 修正する ADR | ADR-0004（ルール層はシェルコマンドの Safe を決めない）、ADR-0001（read レーンのシェルコマンドは非変更系）、ADR-0070 §2（共有一覧を 3 つに一般化） |
 
 *2026-10-29 修正: 永続ファイルの一覧（§3）は、`.git/modules/<名前>/` の下の、どの深さの
-サブモジュールの `hooks/`・`info/`・`config` も覆う。write レーンがそれらに書けていた
-ためである。そのため `git submodule add` と `update --init` は、`git init` と同じく
-operator レーンを要する。*
+サブモジュールの `hooks/`・`info/`・`config` も覆う（その `objects`・`refs`・`logs` は
+`require-not` で外すので、`git gc` や `hooks` という名前のブランチは動く）。さらに
+すべての `.git/.../commondir` を覆う — git に別のディレクトリの設定と hooks を読ませる
+もので、書けていた: 実測で、操作者の普通の `git commit` が仕込んだ hook を走らせた。
+そのため `git submodule add` と `update --init` は、`git init` と同じく operator
+レーンを要する。リリース前のレビューを量った釣り合いのもとで、次は受け入れる —
+この保護があるのは、hook が操作者の次の git 操作で聞かずに走るからであり、write
+レーンはもともと操作者が後で走らせるコード（Makefile やテスト）を書ける: 新しい
+モジュール名で移し込んだ git ディレクトリが使われるのは、操作者が受け入れた
+`.gitmodules` の変更に `git submodule update --init` を走らせたときだけである。
+途中に `x.git/` を持つパスは、Go の判定がカーネルより緩く判定するが、カーネルが
+拒む。`objects`・`refs`・`logs` という名前そのもののサブモジュールは緩く、パスに
+`hooks` か `info` の段を持つサブモジュールは厳しく判定される。`config.worktree` が
+効くのは、それ自体が拒否される config に `extensions.worktreeConfig` があるときだけ
+である。`.git` の規則を、git が書く場所の許可リストとして書き直す案は量ったうえで
+採らない: それ自体が別の列挙だからである。*
 
 ## 背景 — 9 パスが実際に見つけたもの
 

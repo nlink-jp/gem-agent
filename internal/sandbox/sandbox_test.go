@@ -181,13 +181,15 @@ func TestCredentialBlockIsTheLastReadRule(t *testing.T) {
 
 func TestPersistentAndCredentialRulesAgree(t *testing.T) {
 	for _, rel := range []string{"AGENTS.md", "sub/CLAUDE.md", ".git", "sub/.git", ".git/hooks/pre-commit", ".git/config", "vendor/x/.git/config.lock", ".claude/skills/a/SKILL.md", ".mcp.json", "docs/.gem-agent.toml", ".lagent.toml", "sub/.lagent.toml",
-		".git/modules/sub/hooks/pre-commit", ".git/modules/a/b/hooks", ".git/modules/sub/config", ".git/modules/sub/info/attributes", ".git/modules/x/modules/y/hooks/post-checkout", "vendor/.git/modules/s/config.lock", ".GIT/Modules/Sub/Hooks/pre-commit"} {
+		".git/modules/sub/hooks/pre-commit", ".git/modules/a/b/hooks", ".git/modules/sub/config", ".git/modules/sub/info/attributes", ".git/modules/x/modules/y/hooks/post-checkout", "vendor/.git/modules/s/config.lock", ".GIT/Modules/Sub/Hooks/pre-commit",
+		".git/commondir", ".git/worktrees/wt/commondir", ".git/modules/sub/commondir", "sub/.git/COMMONDIR", ".git/modules/sub/objects/AGENTS.md"} {
 		if !PersistentFile(rel) {
 			t.Errorf("%q not persistent", rel)
 		}
 	}
 	for _, rel := range []string{"README.md", ".git/index", ".git/objects/ab/cd", "src/agents.go", "gitconfig", ".github/workflows/x.yml", "lagent.toml", ".lagent.toml.bak", "docs/lagent.toml.md",
-		".git/modules/sub/objects/ab/cd", ".git/modules/sub/index", ".git/modules/sub/config/x"} {
+		".git/modules/sub/objects/ab/cd", ".git/modules/sub/index", ".git/modules/sub/config/x",
+		".git/modules/sub/objects/info/packs", ".git/modules/sub/refs/heads/hooks", ".git/modules/sub/refs/heads/config", ".git/modules/sub/logs/refs/heads/info", "docs/commondir"} {
 		if PersistentFile(rel) {
 			t.Errorf("%q wrongly persistent", rel)
 		}
@@ -239,7 +241,7 @@ func TestLaneEnforcement(t *testing.T) {
 	defer func() { _ = os.RemoveAll(proj) }()
 	proj, _ = ResolveWriteDir(proj)
 	fakeHome := filepath.Join(proj, "home")
-	for _, d := range []string{".git/hooks", "home/.ssh", ".git/modules/sub/hooks", ".git/modules/sub/info", ".git/modules/a/b/hooks", ".git/modules/sub/objects"} {
+	for _, d := range []string{".git/hooks", "home/.ssh", ".git/modules/sub/hooks", ".git/modules/sub/info", ".git/modules/a/b/hooks", ".git/modules/sub/objects", ".git/worktrees/wt", ".git/modules/sub/objects/info", ".git/modules/sub/refs/heads", ".git/modules/sub/logs/refs/heads"} {
 		if err := os.MkdirAll(filepath.Join(proj, d), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -307,6 +309,17 @@ func TestLaneEnforcement(t *testing.T) {
 		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/sub/info/attributes"), false, "write lane denies a submodule's info"},
 		{LaneWrite, "mv " + filepath.Join(proj, ".git/modules/sub/hooks") + " " + filepath.Join(proj, ".git/modules/sub/hooks-old"), false, "write lane denies moving a submodule's hooks away"},
 		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/sub/objects/o"), true, "write lane allows a submodule's ordinary git writes"},
+		// commondir points git at another directory's config and hooks:
+		// writing it bypassed every rule above (pre-release review, F1).
+		{LaneWrite, "echo ../evil > " + filepath.Join(proj, ".git/commondir"), false, "write lane denies .git/commondir"},
+		{LaneWrite, "echo ../evil > " + filepath.Join(proj, ".git/worktrees/wt/commondir"), false, "write lane denies a worktree's commondir"},
+		{LaneWrite, "echo ../evil > " + filepath.Join(proj, ".git/modules/sub/commondir"), false, "write lane denies a submodule's commondir"},
+		// A submodule's data is not its hooks: gc writes objects/info,
+		// and a branch may be named hooks, info or config (F3).
+		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/sub/objects/info/packs"), true, "write lane allows a submodule's objects/info (git gc)"},
+		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/sub/refs/heads/hooks"), true, "write lane allows a submodule branch named hooks"},
+		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/sub/refs/heads/config"), true, "write lane allows a submodule branch named config"},
+		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/sub/logs/refs/heads/info"), true, "write lane allows a submodule reflog named info"},
 		{LaneWrite, "cat " + filepath.Join(fakeHome, ".ssh/id_rsa"), false, "write lane denies a credential read"},
 		{LaneWrite, "cd " + shellQuote(proj) + " && git init -q .", false, "write lane denies git init (it writes .git/config and hooks) — agent-board review"},
 		{LaneWrite, "cd " + shellQuote(proj) + " && mv .git .git-old", false, "write lane denies renaming .git away (review F-02)"},

@@ -175,9 +175,19 @@ func PersistentFiles(projectDir string) []string {
 		// modules/ again), carries the same hooks, info and config:
 		// git runs those hooks when the operator commits inside the
 		// submodule, and core.hooksPath in that config moves them.
-		// Measured writable by the write lane before this rule.
-		fmt.Sprintf(`(regex #"%s\.git/modules/(.*/)?(hooks|info)(/|$)")`, anchor),
-		fmt.Sprintf(`(regex #"%s\.git/modules/(.*/)?config(\.lock)?$")`, anchor),
+		// Measured writable by the write lane before this rule. A
+		// submodule's data is not its hooks: objects (git gc writes
+		// objects/info), refs and logs (a branch may be named hooks,
+		// info or config) are carved out with require-not — never
+		// re-allowed after the deny, which would beat every deny before
+		// it (pre-release review, F3).
+		fmt.Sprintf(`(require-all (regex #"%s\.git/modules/(.*/)?(hooks|info)(/|$)") (require-not (regex #"%s\.git/modules/(.*/)?(objects|refs|logs)/")))`, anchor, anchor),
+		fmt.Sprintf(`(require-all (regex #"%s\.git/modules/(.*/)?config(\.lock)?$") (require-not (regex #"%s\.git/modules/(.*/)?(objects|refs|logs)/")))`, anchor, anchor),
+		// commondir points git at another directory's config and hooks
+		// — the main repository's, a worktree's or a submodule's: a
+		// write to it bypassed every rule above (pre-release review, F1,
+		// measured: the operator's plain git commit ran a planted hook).
+		fmt.Sprintf(`(regex #"%s\.git/(.*/)?commondir$")`, anchor),
 		fmt.Sprintf(`(regex #"%s\.claude(/|$)")`, anchor),
 		fmt.Sprintf(`(regex #"%s(AGENTS|AGENT|CLAUDE|GEMINI)\.md$")`, anchor),
 		fmt.Sprintf(`(regex #"%s(\.mcp\.json|\.gem-agent\.toml|\.lagent\.toml)$")`, anchor),
@@ -208,11 +218,25 @@ func PersistentFile(rel string) bool {
 			strings.HasPrefix(rest, "hooks/") || strings.HasPrefix(rest, "info/") {
 			return true
 		}
+		// commondir anywhere under .git redirects config and hooks.
+		if rest == "commondir" || strings.HasSuffix(rest, "/commondir") {
+			return true
+		}
 		// A submodule's git directory under modules/ (any depth): its
-		// hooks and info at or below, its config — the profile's rule.
+		// hooks and info at or below, its config — the profile's rule,
+		// with the same carve-out for its objects, refs and logs.
 		if strings.HasPrefix(rest, "modules/") {
 			segs := strings.Split(strings.TrimPrefix(rest, "modules/"), "/")
+			data := false
+			for _, seg := range segs[:len(segs)-1] {
+				if seg == "objects" || seg == "refs" || seg == "logs" {
+					data = true
+				}
+			}
 			for j, seg := range segs {
+				if data {
+					break
+				}
 				if seg == "hooks" || seg == "info" {
 					return true
 				}

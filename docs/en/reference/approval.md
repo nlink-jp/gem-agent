@@ -273,8 +273,10 @@ what every later session takes instructions or configuration from, so
 the party that proposed it cannot be its judge (the memory rule below,
 applied to the same class of persistence). From the shell, the write
 lane's profile denies those files and `.git/hooks`, `.git/info` and
-`.git/config` — and the same three of every submodule, under
-`.git/modules/<name>/` at any depth — outright — a redirect, `mv`, `sed -i`, `rm` or
+`.git/config` — the same three of every submodule, under
+`.git/modules/<name>/` at any depth (its `objects`, `refs` and `logs`
+excepted), and every `commondir`, which points git at another
+directory's config and hooks — outright — a redirect, `mv`, `sed -i`, `rm` or
 `git config` onto them fails with `Operation not permitted` — and only
 the `operator` lane, which you approve, may touch them. The list is one
 function (`sandbox.PersistentFiles`) read by the profile and by the
