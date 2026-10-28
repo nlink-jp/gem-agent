@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.92.1] - 2026-10-29
+
 ### Security
 
 - **The read lane no longer reads credential files under the toolchain
