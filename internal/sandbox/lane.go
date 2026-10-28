@@ -178,11 +178,15 @@ func PersistentFiles(projectDir string) []string {
 		// Measured writable by the write lane before this rule. A
 		// submodule's data is not its hooks: objects (git gc writes
 		// objects/info), refs and logs (a branch may be named hooks,
-		// info or config) are carved out with require-not — never
+		// info or config) are carved out with require-not, by the shape
+		// git gives them — objects/{info,pack,xx}/, refs/{heads,tags,
+		// remotes}/, logs/{HEAD,refs/} — so a submodule whose own path
+		// has a logs, refs or objects segment keeps its hooks denied
+		// (automated security review of the first cut) — never
 		// re-allowed after the deny, which would beat every deny before
 		// it (pre-release review, F3).
-		fmt.Sprintf(`(require-all (regex #"%s\.git/modules/(.*/)?(hooks|info)(/|$)") (require-not (regex #"%s\.git/modules/(.*/)?(objects|refs|logs)/")))`, anchor, anchor),
-		fmt.Sprintf(`(require-all (regex #"%s\.git/modules/(.*/)?config(\.lock)?$") (require-not (regex #"%s\.git/modules/(.*/)?(objects|refs|logs)/")))`, anchor, anchor),
+		fmt.Sprintf(`(require-all (regex #"%s\.git/modules/(.*/)?(hooks|info)(/|$)") (require-not (regex #"%s\.git/modules/(.*/)?(objects/(info|pack|[0-9a-f][0-9a-f])(/|$)|refs/(heads|tags|remotes)/|logs/(HEAD$|refs/))")))`, anchor, anchor),
+		fmt.Sprintf(`(require-all (regex #"%s\.git/modules/(.*/)?config(\.lock)?$") (require-not (regex #"%s\.git/modules/(.*/)?(objects/(info|pack|[0-9a-f][0-9a-f])(/|$)|refs/(heads|tags|remotes)/|logs/(HEAD$|refs/))")))`, anchor, anchor),
 		// commondir points git at another directory's config and hooks
 		// — the main repository's, a worktree's or a submodule's: a
 		// write to it bypassed every rule above (pre-release review, F1,
@@ -228,9 +232,15 @@ func PersistentFile(rel string) bool {
 		if strings.HasPrefix(rest, "modules/") {
 			segs := strings.Split(strings.TrimPrefix(rest, "modules/"), "/")
 			data := false
-			for _, seg := range segs[:len(segs)-1] {
-				if seg == "objects" || seg == "refs" || seg == "logs" {
-					data = true
+			for k := 0; k+1 < len(segs); k++ {
+				next := segs[k+1]
+				switch segs[k] {
+				case "objects":
+					data = data || next == "info" || next == "pack" || hexPair(next)
+				case "refs":
+					data = data || ((next == "heads" || next == "tags" || next == "remotes") && k+2 < len(segs))
+				case "logs":
+					data = data || (next == "head" && k+2 == len(segs)) || (next == "refs" && k+2 < len(segs))
 				}
 			}
 			for j, seg := range segs {
@@ -251,6 +261,20 @@ func PersistentFile(rel string) bool {
 		return true
 	}
 	return false
+}
+
+// hexPair reports a two-hex-digit name — a loose-object fan-out
+// directory (objects/ab/), lower-case as PersistentFile folds it.
+func hexPair(s string) bool {
+	if len(s) != 2 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // credentialDirs are the home-relative directories whose contents are

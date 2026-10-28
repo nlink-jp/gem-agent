@@ -182,14 +182,15 @@ func TestCredentialBlockIsTheLastReadRule(t *testing.T) {
 func TestPersistentAndCredentialRulesAgree(t *testing.T) {
 	for _, rel := range []string{"AGENTS.md", "sub/CLAUDE.md", ".git", "sub/.git", ".git/hooks/pre-commit", ".git/config", "vendor/x/.git/config.lock", ".claude/skills/a/SKILL.md", ".mcp.json", "docs/.gem-agent.toml", ".lagent.toml", "sub/.lagent.toml",
 		".git/modules/sub/hooks/pre-commit", ".git/modules/a/b/hooks", ".git/modules/sub/config", ".git/modules/sub/info/attributes", ".git/modules/x/modules/y/hooks/post-checkout", "vendor/.git/modules/s/config.lock", ".GIT/Modules/Sub/Hooks/pre-commit",
-		".git/commondir", ".git/worktrees/wt/commondir", ".git/modules/sub/commondir", "sub/.git/COMMONDIR", ".git/modules/sub/objects/AGENTS.md"} {
+		".git/commondir", ".git/worktrees/wt/commondir", ".git/modules/sub/commondir", "sub/.git/COMMONDIR", ".git/modules/sub/objects/AGENTS.md",
+		".git/modules/logs/hooks/pre-commit", ".git/modules/refs/config", ".git/modules/sub/modules/objects/hooks/x", ".git/modules/docs/logs/hooks/pre-commit", ".git/modules/sub/objects/hooks/x"} {
 		if !PersistentFile(rel) {
 			t.Errorf("%q not persistent", rel)
 		}
 	}
 	for _, rel := range []string{"README.md", ".git/index", ".git/objects/ab/cd", "src/agents.go", "gitconfig", ".github/workflows/x.yml", "lagent.toml", ".lagent.toml.bak", "docs/lagent.toml.md",
 		".git/modules/sub/objects/ab/cd", ".git/modules/sub/index", ".git/modules/sub/config/x",
-		".git/modules/sub/objects/info/packs", ".git/modules/sub/refs/heads/hooks", ".git/modules/sub/refs/heads/config", ".git/modules/sub/logs/refs/heads/info", "docs/commondir"} {
+		".git/modules/sub/objects/info/packs", ".git/modules/sub/refs/heads/hooks", ".git/modules/sub/refs/heads/config", ".git/modules/sub/logs/refs/heads/info", "docs/commondir", ".git/modules/sub/objects/ab/info", ".git/modules/sub/objects/pack/config", ".git/modules/sub/objects/info"} {
 		if PersistentFile(rel) {
 			t.Errorf("%q wrongly persistent", rel)
 		}
@@ -317,9 +318,16 @@ func TestLaneEnforcement(t *testing.T) {
 		// A submodule's data is not its hooks: gc writes objects/info,
 		// and a branch may be named hooks, info or config (F3).
 		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/sub/objects/info/packs"), true, "write lane allows a submodule's objects/info (git gc)"},
+		{LaneWrite, "mkdir " + filepath.Join(proj, ".git/modules/sub/objects/pack") + " && mkdir -p " + filepath.Join(proj, ".git/modules/sub2/objects") + " && mkdir " + filepath.Join(proj, ".git/modules/sub2/objects/info"), true, "write lane creates a submodule's objects/info and pack directories"},
 		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/sub/refs/heads/hooks"), true, "write lane allows a submodule branch named hooks"},
 		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/sub/refs/heads/config"), true, "write lane allows a submodule branch named config"},
 		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/sub/logs/refs/heads/info"), true, "write lane allows a submodule reflog named info"},
+		// The carve-out is by shape, not by segment name: a submodule
+		// whose own path has a logs, refs or objects segment keeps its
+		// hooks and config denied (automated security review).
+		{LaneWrite, "mkdir -p " + filepath.Join(proj, ".git/modules/logs/hooks") + " && echo x > " + filepath.Join(proj, ".git/modules/logs/hooks/pre-commit"), false, "write lane denies the hook of a submodule named logs"},
+		{LaneWrite, "mkdir -p " + filepath.Join(proj, ".git/modules/refs") + " && echo x > " + filepath.Join(proj, ".git/modules/refs/config"), false, "write lane denies the config of a submodule named refs"},
+		{LaneWrite, "mkdir -p " + filepath.Join(proj, ".git/modules/sub/modules/objects/hooks") + " && echo x > " + filepath.Join(proj, ".git/modules/sub/modules/objects/hooks/x"), false, "write lane denies the hook of a nested submodule named objects"},
 		{LaneWrite, "cat " + filepath.Join(fakeHome, ".ssh/id_rsa"), false, "write lane denies a credential read"},
 		{LaneWrite, "cd " + shellQuote(proj) + " && git init -q .", false, "write lane denies git init (it writes .git/config and hooks) — agent-board review"},
 		{LaneWrite, "cd " + shellQuote(proj) + " && mv .git .git-old", false, "write lane denies renaming .git away (review F-02)"},

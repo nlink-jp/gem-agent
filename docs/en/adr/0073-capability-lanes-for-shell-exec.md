@@ -11,8 +11,11 @@
 
 *Amended 2026-10-29: the persistent-file list (§3) also covers each
 submodule's `hooks/`, `info/` and `config` under `.git/modules/<name>/`
-at any depth (its `objects`, `refs` and `logs` carved out with
-`require-not`, so `git gc` and branches named `hooks` keep working), and
+at any depth (its data carved out with `require-not` by the shapes git
+gives it — `objects/{info,pack,xx}`, `refs/{heads,tags,remotes}/`,
+`logs/{HEAD,refs/}` — so `git gc` and branches named `hooks` keep
+working, while a submodule whose own path has a `logs`, `refs` or
+`objects` segment keeps its hooks denied), and
 every `.git/.../commondir` — which redirects git to another directory's
 config and hooks, and was writable: measured, the operator's plain
 `git commit` ran a planted hook. `git submodule add` and `update --init`
@@ -24,9 +27,9 @@ Makefile, a test): a prepared gitdir moved in under a new module name
 is used only when the operator runs `git submodule update --init` on a
 `.gitmodules` change they accepted; a path holding an earlier `x.git/`
 is judged more loosely by the Go matcher than by the kernel, which
-refuses it; a submodule literally named `objects`, `refs` or `logs`, or
-one whose path has a `hooks` or `info` segment, is matched loosely or
-strictly respectively; `config.worktree` matters only where
+refuses it; a submodule whose path itself has one of git's data shapes
+(`objects/pack`, `refs/heads/x`) is matched loosely, and one whose path
+has a `hooks` or `info` segment strictly; `config.worktree` matters only where
 `extensions.worktreeConfig` is set in a config that is itself denied.
 Rewriting the `.git` rules as an allowlist of what git writes was
 weighed and not taken: it is an enumeration of its own.*
