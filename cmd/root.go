@@ -328,12 +328,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		_ = savePersistentSnapshot(persistentPath, persistentSnap)
 	}
 	reportPersistent := func(reason string, log func(kind string, data any) error) {
-		now, _ := trustpin.Snapshot(projectDir)
-		a, c, r := trustpin.SnapshotDiff(persistentSnap, now)
-		if len(a)+len(c)+len(r) > 0 {
-			fmt.Fprintf(stderr, msgs.PersistentSessionFmt+"\n", describeSnapshotDiff(a, c, r))
+		now, a, c, r, cut := persistentReport(persistentSnap, func() (map[string]string, bool) { return trustpin.Snapshot(projectDir) })
+		if cut {
+			fmt.Fprintf(stderr, "note: change detection covers the first %d files under the project only\n", trustpin.WalkEntries)
+		}
+		if len(a)+len(c)+len(r) > 0 || cut {
+			if len(a)+len(c)+len(r) > 0 {
+				fmt.Fprintf(stderr, msgs.PersistentSessionFmt+"\n", describeSnapshotDiff(a, c, r))
+			}
 			if log != nil {
-				_ = log("persistent_changes", map[string]any{"reason": reason, "added": a, "changed": c, "removed": r})
+				_ = log("persistent_changes", map[string]any{"reason": reason, "added": a, "changed": c, "removed": r, "cut": cut})
 			}
 		}
 		persistentSnap = now

@@ -351,11 +351,50 @@ func savePersistentSnapshot(path string, snap map[string]string) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	return replaceStateFile(path, data)
+}
+
+// persistentReport walks again and diffs against base: the judgement
+// reportPersistent prints and records. A walk cut at the cap is
+// reported as cut, and names nothing as removed — past the cut is
+// unknown, not gone. The session can fill the project past the cap and
+// then plant a file the lexical walk never reaches; ignoring the cut
+// made that silent (measured: TestPersistentReportSaysWhenTheWalkWasCut).
+func persistentReport(base map[string]string, snapshot func() (map[string]string, bool)) (now map[string]string, added, changed, removed []string, cut bool) {
+	now, cut = snapshot()
+	added, changed, removed = trustpin.SnapshotDiff(base, now)
+	if cut {
+		removed = nil
+	}
+	return now, added, changed, removed, cut
+}
+
+// replaceStateFile writes data to path through a temporary file of its
+// own, then renames it into place (0600). Two sessions of one project
+// may save at once — the exit of one, the /clear of another — and a
+// shared temporary name let one writer truncate or rename away the
+// other's file: 149 of 200 concurrent saves failed, measured before
+// this (TestSavePersistentSnapshotConcurrently).
+func replaceStateFile(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	tmp := f.Name()
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // describeSnapshotDiff renders added/changed/removed names as one

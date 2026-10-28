@@ -141,26 +141,6 @@ func saveAddedSnapshots(path string, snaps map[string]map[string]string) error {
 	if err != nil {
 		return err
 	}
-	// A temporary name of its own: two sessions of one project may save
-	// at once, and a shared name could rename a torn file into place
-	// (review of §10, #3).
-	f, err := os.CreateTemp(filepath.Dir(path), ".added-persistent-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return nil
+	// A temporary name of its own (review of §10, #3).
+	return replaceStateFile(path, data)
 }

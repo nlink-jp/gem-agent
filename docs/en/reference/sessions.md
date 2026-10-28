@@ -290,7 +290,9 @@ Before the old transcript closes — at `/clear` and at exit — the
 persistent files under the project are compared with the set the
 session started from; a difference is noted and written to the
 transcript as a `persistent_changes` record (`reason` of `clear` or
-`exit`, and the `added`, `changed` and `removed` names) — the nested
+`exit`, the `added`, `changed` and `removed` names, and `cut` — true
+when the walk stopped at its 20,000-entry cap, which is also noted, and
+then nothing is named removed: past the cut is unknown) — the nested
 file a directory swap can plant, made visible (ADR-0074 §3). Each
 added write directory is compared the same way, and its record carries
 `root` (the directory) beside the same fields; its last snapshot is kept
