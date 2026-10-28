@@ -41,7 +41,7 @@
   in the profile and for the file tools, in the project and in every
   write directory — the submodule's `objects`, `refs` and `logs` excepted,
   so `git gc` and branches named `hooks` or `config` keep working. `git
-  submodule add` and `git submodule update --init` write that config, so
+  submodule add` and `git submodule update` write that config, so
   they now need the operator lane, as `git init`, `git clone` and `git
   remote add` already did.
 - **`commondir` is protected.** A `commondir` file under `.git` — the

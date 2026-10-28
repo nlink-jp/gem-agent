@@ -18,8 +18,9 @@ working, while a submodule whose own path has a `logs`, `refs` or
 `objects` segment keeps its hooks denied), and
 every `.git/.../commondir` — which redirects git to another directory's
 config and hooks, and was writable: measured, the operator's plain
-`git commit` ran a planted hook. `git submodule add` and `update --init`
-therefore need the operator lane, like `git init`. Accepted, with the
+`git commit` ran a planted hook. `git submodule add` and `update` (which
+may write `core.worktree` there) therefore need the operator lane, like
+`git init`. Accepted, with the
 balance the pre-release review was weighed by — the protection exists
 because a hook runs on the operator's next git command unasked, while
 the write lane can already write code the operator later runs (a
@@ -30,7 +31,14 @@ is judged more loosely by the Go matcher than by the kernel, which
 refuses it; a submodule whose path itself has one of git's data shapes
 (`objects/pack`, `refs/heads/x`) is matched loosely, and one whose path
 has a `hooks` or `info` segment strictly; `config.worktree` matters only where
-`extensions.worktreeConfig` is set in a config that is itself denied.
+`extensions.worktreeConfig` is set in a config that is itself denied; in
+a submodule whose name ends in `objects`, `info/exclude` and
+`info/attributes` match the data carve-out (no code runs from them;
+hooks and config stay denied); a worktree or submodule gitdir the
+operator creates mid-session is outside that session's rename
+denials (`PersistentParents` are taken at start), so the write lane can
+swap it to plant a `commondir` — reported at the next `/clear` or exit
+(measured by the pre-release verification).
 Rewriting the `.git` rules as an allowlist of what git writes was
 weighed and not taken: it is an enumeration of its own.*
 
