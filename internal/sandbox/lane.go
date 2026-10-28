@@ -170,6 +170,14 @@ func PersistentFiles(projectDir string) []string {
 		fmt.Sprintf(`(regex #"%s\.git$")`, anchor),
 		fmt.Sprintf(`(regex #"%s\.git/(hooks|info)(/|$)")`, anchor),
 		fmt.Sprintf(`(regex #"%s\.git/config(\.lock)?$")`, anchor),
+		// A submodule's git directory, .git/modules/<name>/ (the name
+		// may nest, and a submodule has submodules of its own under
+		// modules/ again), carries the same hooks, info and config:
+		// git runs those hooks when the operator commits inside the
+		// submodule, and core.hooksPath in that config moves them.
+		// Measured writable by the write lane before this rule.
+		fmt.Sprintf(`(regex #"%s\.git/modules/(.*/)?(hooks|info)(/|$)")`, anchor),
+		fmt.Sprintf(`(regex #"%s\.git/modules/(.*/)?config(\.lock)?$")`, anchor),
 		fmt.Sprintf(`(regex #"%s\.claude(/|$)")`, anchor),
 		fmt.Sprintf(`(regex #"%s(AGENTS|AGENT|CLAUDE|GEMINI)\.md$")`, anchor),
 		fmt.Sprintf(`(regex #"%s(\.mcp\.json|\.gem-agent\.toml|\.lagent\.toml)$")`, anchor),
@@ -199,6 +207,19 @@ func PersistentFile(rel string) bool {
 		if rest == "config" || rest == "config.lock" || rest == "hooks" || rest == "info" ||
 			strings.HasPrefix(rest, "hooks/") || strings.HasPrefix(rest, "info/") {
 			return true
+		}
+		// A submodule's git directory under modules/ (any depth): its
+		// hooks and info at or below, its config — the profile's rule.
+		if strings.HasPrefix(rest, "modules/") {
+			segs := strings.Split(strings.TrimPrefix(rest, "modules/"), "/")
+			for j, seg := range segs {
+				if seg == "hooks" || seg == "info" {
+					return true
+				}
+				if j == len(segs)-1 && (seg == "config" || seg == "config.lock") {
+					return true
+				}
+			}
 		}
 	}
 	switch filepath.Base(c) {

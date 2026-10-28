@@ -30,6 +30,19 @@
   directory one above projects you open. The model asking for a
   directory is the next step and not in this release.
 
+### Security
+
+- **A submodule's hooks, info and config are protected like the
+  project's.** A submodule's git directory lives under
+  `.git/modules/<name>/` (the name may nest), and the write lane could
+  write its `hooks/`, `info/` and `config` — git runs those hooks when
+  you commit inside the submodule, and `core.hooksPath` in that config
+  moves them (measured before the fix). They are now persistent files
+  in the profile and for the file tools, in the project and in every
+  write directory. `git submodule add` and `git submodule update
+  --init` write that config, so they now need the operator lane, as
+  `git init`, `git clone` and `git remote add` already did.
+
 ### Fixed
 
 - **The write lane's denial note no longer says the operator lane can

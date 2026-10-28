@@ -180,12 +180,14 @@ func TestCredentialBlockIsTheLastReadRule(t *testing.T) {
 }
 
 func TestPersistentAndCredentialRulesAgree(t *testing.T) {
-	for _, rel := range []string{"AGENTS.md", "sub/CLAUDE.md", ".git", "sub/.git", ".git/hooks/pre-commit", ".git/config", "vendor/x/.git/config.lock", ".claude/skills/a/SKILL.md", ".mcp.json", "docs/.gem-agent.toml", ".lagent.toml", "sub/.lagent.toml"} {
+	for _, rel := range []string{"AGENTS.md", "sub/CLAUDE.md", ".git", "sub/.git", ".git/hooks/pre-commit", ".git/config", "vendor/x/.git/config.lock", ".claude/skills/a/SKILL.md", ".mcp.json", "docs/.gem-agent.toml", ".lagent.toml", "sub/.lagent.toml",
+		".git/modules/sub/hooks/pre-commit", ".git/modules/a/b/hooks", ".git/modules/sub/config", ".git/modules/sub/info/attributes", ".git/modules/x/modules/y/hooks/post-checkout", "vendor/.git/modules/s/config.lock", ".GIT/Modules/Sub/Hooks/pre-commit"} {
 		if !PersistentFile(rel) {
 			t.Errorf("%q not persistent", rel)
 		}
 	}
-	for _, rel := range []string{"README.md", ".git/index", ".git/objects/ab/cd", "src/agents.go", "gitconfig", ".github/workflows/x.yml", "lagent.toml", ".lagent.toml.bak", "docs/lagent.toml.md"} {
+	for _, rel := range []string{"README.md", ".git/index", ".git/objects/ab/cd", "src/agents.go", "gitconfig", ".github/workflows/x.yml", "lagent.toml", ".lagent.toml.bak", "docs/lagent.toml.md",
+		".git/modules/sub/objects/ab/cd", ".git/modules/sub/index", ".git/modules/sub/config/x"} {
 		if PersistentFile(rel) {
 			t.Errorf("%q wrongly persistent", rel)
 		}
@@ -237,7 +239,7 @@ func TestLaneEnforcement(t *testing.T) {
 	defer func() { _ = os.RemoveAll(proj) }()
 	proj, _ = ResolveWriteDir(proj)
 	fakeHome := filepath.Join(proj, "home")
-	for _, d := range []string{".git/hooks", "home/.ssh"} {
+	for _, d := range []string{".git/hooks", "home/.ssh", ".git/modules/sub/hooks", ".git/modules/sub/info", ".git/modules/a/b/hooks", ".git/modules/sub/objects"} {
 		if err := os.MkdirAll(filepath.Join(proj, d), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -295,6 +297,16 @@ func TestLaneEnforcement(t *testing.T) {
 		{LaneWrite, "rm " + lagentToml, false, "write lane denies removing .lagent.toml"},
 		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/hooks/pre-commit"), false, "write lane denies a hook"},
 		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/index"), true, "write lane allows ordinary .git writes"},
+		// A submodule's git directory lives under .git/modules/<name>/
+		// (the name may nest) with hooks, info and a config of its own;
+		// git runs those hooks when the operator commits in the
+		// submodule, and core.hooksPath in that config moves them.
+		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/sub/hooks/pre-commit"), false, "write lane denies a submodule's hook"},
+		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/a/b/hooks/pre-commit"), false, "write lane denies a nested submodule's hook"},
+		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/sub/config"), false, "write lane denies a submodule's config"},
+		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/sub/info/attributes"), false, "write lane denies a submodule's info"},
+		{LaneWrite, "mv " + filepath.Join(proj, ".git/modules/sub/hooks") + " " + filepath.Join(proj, ".git/modules/sub/hooks-old"), false, "write lane denies moving a submodule's hooks away"},
+		{LaneWrite, "echo x > " + filepath.Join(proj, ".git/modules/sub/objects/o"), true, "write lane allows a submodule's ordinary git writes"},
 		{LaneWrite, "cat " + filepath.Join(fakeHome, ".ssh/id_rsa"), false, "write lane denies a credential read"},
 		{LaneWrite, "cd " + shellQuote(proj) + " && git init -q .", false, "write lane denies git init (it writes .git/config and hooks) — agent-board review"},
 		{LaneWrite, "cd " + shellQuote(proj) + " && mv .git .git-old", false, "write lane denies renaming .git away (review F-02)"},

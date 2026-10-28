@@ -9,6 +9,11 @@
 | Triggered by | Nine review passes after v0.67.0 (ADR-0072 §4) produced 103 findings; the operator judged the fixes symptomatic — "局所ケースにフォーカスしすぎ" — and asked for the root causes to be found and fixed at the source, as the organisation's contribution rules require |
 | Amends | ADR-0004 (the rule tier no longer decides Safe for shell commands), ADR-0001 (a read-lane shell command is non-mutating), ADR-0070 §2 (the shared list generalises to three lists) |
 
+*Amended 2026-10-29: the persistent-file list (§3) also covers each
+submodule's `hooks/`, `info/` and `config` under `.git/modules/<name>/`
+at any depth, which the write lane could write; `git submodule add` and
+`update --init` therefore need the operator lane, like `git init`.*
+
 ## Context — what nine passes actually found
 
 The 103 findings recorded in ADR-0072 fall into seven classes. Three of
