@@ -2,9 +2,12 @@
 
 ## [Unreleased]
 
+## [0.94.0] - 2026-10-29
+
 ### Added
 
-- **Adding a directory during a session** (ADR-0099 step 2). `/add-dir
+- **Adding a directory during a session** (ADR-0099 step 2, closes
+  issue #2). `/add-dir
   <path>` and `/read-dir <path>` add one at the prompt — the flags'
   names, no approval prompt since you typed it; a bare one, or `/dirs`,
   lists the roots. The model can ask with `request_directory`, which you
