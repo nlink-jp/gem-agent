@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-10-29) — step 1 (§1–§3, §5–§7, §10) implemented; step 2 (§4, §8) not yet |
+| Status | **Accepted** (2026-10-29) — step 1 (§1–§3, §5–§7, §10) implemented in v0.93.0; step 2 (§4, §8, §11) not yet |
 | Date | 2026-10-29 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -155,20 +155,10 @@ request_directory(path, access, reason)
   (offered when `write` was requested); deny. A `write` request for a
   directory that is already a `read` root is an upgrade and is asked the
   same way.
-- **The order after approval is fixed, and every step must pass before the
-  grant takes effect:**
-  1. Open the directory as an `os.Root` and read its real path back from
-     the open descriptor (`F_GETPATH`). Refuse the request if that path
-     differs from the one shown. Opening first means a symlink swapped in
-     between the answer and the open cannot redirect the root.
-  2. Build all three lane profiles with the new root.
-  3. Verify them (§7). A request rebuild has its own entry point that
-     returns the failure as an error. It does not reuse `buildExecFn`'s
-     startup fallback.
-  4. Swap the shell runner, then add the root to the file tools and the
-     file-read child, then rebuild the system prompt's description of the
-     roots. A grant only adds reach, so this order is enough; no lock
-     spans the steps.
+- **After approval, the grant goes through §12** — the one grant path
+  this request and the operator's `/add-dir` (§11) share. Its first step
+  opens the directory and reads the real path back from the descriptor;
+  a path that differs from the one shown is refused.
 - **A failed verification refuses the request and leaves the session
   exactly as it was.** At startup (and on `/clear` today), an unverifiable
   write lane makes the session unconfined (ADR-0073 §7). Here, that
@@ -176,13 +166,20 @@ request_directory(path, access, reason)
   session. So a request may only add a root to a verified cage, never
   trade the cage away.
 - **The tool's result** names the granted path and level, or the refusal
-  and its reason.
-- **Session-only.** Nothing is written to a file. `--resume` does not
-  restore a requested directory, and `/clear` drops it: it was granted for
-  that conversation's reason. A directory given at startup stays for the
-  life of the process, and `/clear`'s rebuild carries it.
+  and its reason. The system prompt's list of roots is rebuilt at the next
+  turn boundary, not inside the call (§12).
+- **Not advertised under `-p`**, where it could only be denied.
+- **For the life of the process, nothing written to a file.** A granted
+  directory stays across `/clear` like a startup one: dropping it would
+  need the removal this ADR leaves out (§8), and the operator approved it
+  with the path in front of them. A new process or `--resume` starts from
+  the flags and the configuration again; a resumed conversation that
+  mentions an earlier grant meets the outside-roots refusal, whose reason
+  says earlier grants are not restored.
 - Every grant and refusal is written to the session log and the audit trail
-  with its source (`flag`, `config` or `request`), real path and level.
+  with its source (`flag`, `config`, `slash` or `request`), real path and
+  level; a request's record also carries the model's reason and the
+  operator's answer (as asked, as read, denied).
 
 ### 5. One rule decides which directories may be roots
 
@@ -219,7 +216,8 @@ real path, and a directory is refused when it:
   files that other programs run outside the sandbox;
 - already lies inside a root of the same or a higher level. At startup this
   is an error, because the two settings contradict each other. On request
-  it is a no-op note that says which root covers it.
+  it is a no-op note that says which root covers it. During a session, a
+  write root that would contain a read root absorbs it (§12).
 
 There is no list of system directories. SIP guards those that matter, and
 writing anywhere else outside the home is a choice the operator can make.
@@ -285,17 +283,19 @@ block. The same cases run in the package tests against real
 
 ### 8. Listing
 
-`/dirs` lists the roots with their level and source. Removing a root
-during a session is not in this ADR. It would use the same rebuild as §4,
-so it can be added later without new machinery.
+`/dirs` lists the roots with their level and source (`flag`, `config`,
+`slash`, `request`). Removing a root during a session is not in this
+ADR. It would use the same rebuild as §4, so it can be added later
+without new machinery.
 
 ### 9. It ships in two steps
 
 1. §1–§3, §5–§7 and §10: the roots and every consumer, startup flags and
    configuration, the refusal rule, the order and the probes, and the
    watch on write roots' persistent files.
-2. §4 and §8: the request tool and `/dirs`, built on step 1's rebuild,
-   verify and swap.
+2. §4, §8, §11 and §12: the request tool, `/dirs` and the operator's
+   `/add-dir` / `/read-dir`, through one grant path built on step 1's
+   rebuild, verify and swap.
 
 Step 2 depends on step 1. Nothing in step 1 is redone by step 2.
 
@@ -352,6 +352,121 @@ visible when it happens:
 The walk is per root and bounded, so its cost is the cap at worst: a
 root larger than `WalkEntries` is watched for its first entries only,
 and the note says so.
+
+A write root granted during the session (§4, §11) joins the watch with a
+snapshot taken at the grant, so what the session puts in it afterwards
+is reported at the next `/clear` or exit like any other write root.
+
+### 11. The operator may add a directory during the session
+
+*Added 2026-10-29 at the operator's request, with step 2.*
+
+The startup flags make the operator restart to add a directory, and the
+model's request (§4) makes the model ask for something the operator
+already knows they want. So the operator can add one at the prompt:
+
+```
+/add-dir <path>     a write root, as --add-dir
+/read-dir <path>    a read root, as --read-dir
+```
+
+The names are the flags' names, and `/add-dir` is the name Claude Code
+uses for the same act.
+
+- **No approval prompt.** The operator typed the path: that is the trust
+  line `--add-dir` and `@<path>` already draw. The prompt in §4 exists
+  because the model proposes; here nobody proposes.
+- **The same rule and the same grant path.** `RefuseRoot` (§5) decides,
+  and a refusal names its reason; a path that passes goes through §12,
+  exactly as an approved request does. A failed verification refuses the
+  add and leaves the session as it was.
+- **A path that resolves through a link asks once.** The model can plant
+  `notes -> ~/Documents` in the project and suggest `/add-dir notes`; the
+  typed path then names one place and grants another. When the real path
+  differs from the cleaned typed path, the real path is shown and the
+  operator answers once; otherwise there is no prompt. Every note names
+  the real path.
+- **Grammar** (ADR-0098's precedent): the rest of the line is the path, so
+  a path with spaces needs no quoting; a leading `~` is the home; a
+  relative path is relative to the project. A bare `/add-dir` or
+  `/read-dir` lists the roots, as `/dirs` does.
+- **Where it works**: the interactive surfaces (TUI and the plain REPL),
+  between turns, as every slash command does. `-p` has no slash
+  commands; it takes the flags.
+- **An existing root**: `/add-dir` on a read root raises it to write
+  (§12 replaces the entry); `/read-dir` on a root already covered, and
+  `/add-dir` on a write root, are notes that change nothing.
+- **The read-only ceiling** (ADR-0080) is not lifted: a write root added
+  under it is written by nothing until the ceiling is.
+- **Lifetime**: as §4's — it stays across `/clear`, and nothing is
+  written to a file. The note says how to make it permanent
+  (`[directories]` or the flag).
+- **The record**: an `added_directories` record with `source: "slash"`.
+
+### 12. One grant path, for a request and for the operator
+
+*Added 2026-10-29 from the design review of step 2.*
+
+A mid-session grant changes four things that are read concurrently —
+the shell runner, the registry's roots, the watch and the system prompt
+— while a call the floor abandoned (ADR-0065) can still be running, and
+`/clear` rebuilds the runner on its own. So both entrances call one
+function, and it runs in this order:
+
+1. **Judge.** `RefuseRoot` with the current roots. "Already covered" is a
+   typed result shown as a note, not an error. A write root that would
+   contain a read root absorbs it: the inner entry is replaced, and the
+   note names it (otherwise the write lanes would write a root the file
+   tools refuse, and the probes would fail opaquely).
+2. **Open.** `os.Root` on the path, the real path read back from the
+   descriptor (`F_GETPATH`) and compared with the one judged. The
+   processes that could swap the path in between are the ones outside
+   every lane — MCP servers (ADR-0077) and an unconfined command — since a
+   root `RefuseRoot` accepts has no ancestor a sandboxed lane can write.
+3. **Take the grant lock.** One mutex, held by every grant and by
+   `/clear`'s `rotateWorkDir`, so a late grant from an abandoned call and
+   a rotation cannot each build from a stale snapshot and the last swap
+   win. Under it: check the call's context and the session epoch — a
+   grant whose session has moved on, or whose call was cancelled, is
+   dropped and logged — and build the `Spec` from the current project,
+   work directory and roots.
+4. **Build and verify.** The three profiles, then §7's probes on the
+   changed root. Probes run only where the session is confined: under
+   `--no-sandbox` or an unconfined session (`Enforcement{}`) the grant
+   reaches the file tools alone and the note says shell commands still
+   ask. The rebuilt `Enforcement` must equal the current one — a grant
+   never turns the read lane on or off (the `ReadLanePrompts` opt-out is
+   kept) — or the grant is refused.
+5. **Snapshot** the root for §10's watch (a write root), before anything
+   can write it under the new profile.
+6. **Swap**: the shell runner, then the registry's root — appended, or the
+   existing entry replaced on an upgrade or an absorption, its old handle
+   retired as `UseWorkDir` retires one. The file-read child, the verdict,
+   the reviewer's payload and `@` mentions read the registry, so they
+   follow.
+7. **Record** `added_directories` for the transcript in use, and mark the
+   system prompt for a rebuild at the next turn boundary. `SetSystem` is a
+   between-turns operation; the tool result (§4) or the note (§11) tells
+   the model now. The rebuild re-warms the prompt cache, as a skills
+   reload does.
+
+`/clear` rebuilds from the registry's roots — startup, slash and
+requested alike — and writes their record into the new transcript; the
+watch carries them across.
+
+Names reach the system prompt and the notes with control and
+bidirectional-override characters removed, as the operator's prompt
+already does for what the model wrote.
+
+Tests that must exist: an upgrade takes effect in the file tools, the
+verdict and the probes; write-over-read absorption; a failed
+verification leaves the runner, the registry, the prompt and the watch
+unchanged; a cancelled or abandoned grant does not commit; `/clear`
+racing a late grant; the read-lane opt-out survives a grant;
+`request_directory` stays operator-only under `a`, a `never` policy and
+`--allow request_directory --auto`, and is not in `Subset`; `/add-dir`
+through a link asks; the `/clear` record lists slash and requested
+roots.
 
 ## Alternatives considered
 
