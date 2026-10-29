@@ -48,6 +48,10 @@ type dirGranter struct {
 	// boundary: SetSystem is a between-turns operation (§12 step 7).
 	promptStale atomic.Bool
 	msgs        *uitext.Messages
+	// notice shows the operator a line mid-turn (the agent's OnNotice
+	// path): a request's result goes to the model, so what the operator
+	// must read about it goes here.
+	notice func(string)
 	// build is buildExecFn; a test replaces it to act while the probes
 	// run.
 	build func(sandboxOn bool, projectDir, workDir string, denyExec []string, caches map[string]string, persistentParents []string, added []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error)
@@ -133,6 +137,11 @@ func (g *dirGranter) resolveTyped(path string) string {
 // for a slash command.
 func (g *dirGranter) grant(ctx context.Context, path string, write bool, source string, epoch uint64, extra map[string]any) (string, error) {
 	m := g.text()
+	if source == "request" {
+		// The result is the model's to read; the operator's words for it
+		// are the approval prompt's and the notices below.
+		m = uitext.For(uitext.EN)
+	}
 	typed := g.resolveTyped(path)
 	// Resolving keeps each typed component that is not a link as typed,
 	// so a difference here is a link and nothing else — not the case or
@@ -194,6 +203,15 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 	if canonical != real {
 		_ = root.Close()
 		return "", fmt.Errorf(m.GrantChangedFmt, real, canonical)
+	}
+	// The typed path still names, without a link, the directory that was
+	// opened: the link check above ran before the open, and a process in
+	// the write lane can swap a link in and out of the project between
+	// the two (review of v0.94.0, re-review #1). A swap after this is
+	// harmless — the open root and the kernel's name are what install.
+	if !typedStillNames(typed, root) {
+		_ = root.Close()
+		return "", fmt.Errorf(m.GrantChangedFmt, typed, real)
 	}
 
 	absorbed := sandbox.Absorbed(canonical, write, current)
@@ -283,13 +301,34 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 	if source == "slash" {
 		note += fmt.Sprintf(m.GrantThisProcessFmt, map[bool]string{true: "add-dir", false: "read-dir"}[write])
 	}
-	// An absorbed root's unreported changes, and a cut walk, ride the
-	// note: it is what reaches the operator in the TUI, where a stray
-	// stderr line is painted over (review of v0.94.0, #4).
+	// An absorbed root's unreported changes, and a cut walk, are the
+	// operator's to read: on a typed command they ride the note, which
+	// the TUI shows, where a stray stderr line is painted over; a
+	// request's result goes to the model — which may have made the
+	// changes — so they go to the operator's notices (review of v0.94.0,
+	// #4 and re-review #2).
 	for _, n := range watchNotes {
+		if source == "request" && g.notice != nil {
+			g.notice(n)
+			continue
+		}
 		note += "\n" + n
 	}
 	return note, nil
+}
+
+// typedStillNames says whether the typed path, resolving through no
+// link, names the directory root holds.
+func typedStillNames(path string, root *os.Root) bool {
+	if again, err := sandbox.ResolveWriteDir(path); err != nil || again != path {
+		return false
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	held, err := root.Stat(".")
+	return err == nil && os.SameFile(st, held)
 }
 
 // record is the added_directories record of the roots in force, each

@@ -1046,6 +1046,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Fprintf(stderr, "[⚠ %s]\n", msg)
 	}
+	granter.notice = notice
 	ag = agent.New(agent.Options{
 		// The operator's language for the notices the agent writes
 		// mid-turn (ADR-0029 §3: they are chrome, not error chains).

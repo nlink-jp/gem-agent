@@ -611,11 +611,13 @@ a new hook) is an architecture change and takes the same rows as a
   non-link component as typed, so the volume's case and Unicode folding
   never read as a link (an `EqualFold` against the kernel's name refused
   a decomposed Japanese name for ever). Kernel names are compared
-  exactly. `sandbox.CanonicalDir` opens `O_NONBLOCK|O_DIRECTORY` — a
+  exactly, and after the open `typedStillNames` checks the typed path
+  again — the first check runs before the open, and a write-lane process
+  can swap a link in between. A request's result is the model's
+  (English); the operator's lines about it go through `granter.notice`. `sandbox.CanonicalDir` opens `O_NONBLOCK|O_DIRECTORY` — a
   plain open of a FIFO blocks the TUI's event loop. An unconfined
   session's grant builds no profile and keeps its runner. The grant's
-  operator words live in `uitext` (`Grant*`, `Dirs*`); what goes only to
-  the model stays English in cmd/grant.go.
+  operator words live in `uitext` (`Grant*`, `Dirs*`).
 - **Two persistent-state residuals were weighed and kept** (pre-release
   review, 2026-10-29) — after a walk cut at `trustpin.WalkEntries`,
   `reportPersistent` makes the partial snapshot the new baseline, so

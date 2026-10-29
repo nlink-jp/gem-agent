@@ -531,3 +531,71 @@ func TestGrantSpeaksTheOperatorsLanguage(t *testing.T) {
 		t.Errorf("a link names the line to type: %v", err)
 	}
 }
+
+// The check after the open (re-review #1): the typed path must still
+// name, through no link, the directory that was opened — a link swapped
+// in, or another directory swapped back, between the link check and the
+// open is a change, not a grant.
+func TestTypedStillNamesTheOpenedDirectory(t *testing.T) {
+	base := filepath.Dir(underHome(t, "x"))
+	typed := filepath.Join(base, "x")
+	other := filepath.Join(base, "other")
+	if err := os.Mkdir(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	// x is a directory, but not the one opened (swapped back after the
+	// open followed a link to other).
+	if typedStillNames(typed, root) {
+		t.Error("another directory under the typed name passed")
+	}
+	// x is now the link the open followed.
+	if err := os.Remove(typed); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(other, typed); err != nil {
+		t.Fatal(err)
+	}
+	if typedStillNames(typed, root) {
+		t.Error("a link under the typed name passed")
+	}
+	if !typedStillNames(other, root) {
+		t.Error("the opened directory under its own name was refused")
+	}
+}
+
+// A request's result is the model's, in English whatever the operator's
+// language; an absorbed root's changes go to the operator's notices,
+// not to the model that may have made them (re-review #2).
+func TestGrantRequestSpeaksToEachReader(t *testing.T) {
+	outer := underHome(t, "outer")
+	inner := filepath.Join(outer, "inner")
+	if err := os.Mkdir(inner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	g, _, _ := newTestGranter(t, nil, false)
+	g.msgs = uitext.For(uitext.JA)
+	g.watch.msgs = g.msgs // as runREPL builds both from one catalog
+	var notices []string
+	g.notice = func(s string) { notices = append(notices, s) }
+	if _, err := g.grant(context.Background(), inner, true, "slash", g.currentEpoch(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inner, "AGENTS.md"), []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := g.grant(context.Background(), outer, true, "request", g.currentEpoch(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(result, "added "+outer) || strings.Contains(result, "AGENTS.md") {
+		t.Errorf("the model's result = %q", result)
+	}
+	if len(notices) != 1 || !strings.Contains(notices[0], "AGENTS.md") || !strings.Contains(notices[0], "追加ディレクトリ") {
+		t.Errorf("the operator's notices = %q", notices)
+	}
+}

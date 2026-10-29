@@ -500,12 +500,23 @@ held by a test:
   lock, the next `/clear` (measured).
 - *An unconfined session keeps its runner* (step 4 as written): no
   profile is built or probed, and the grant reaches the file tools.
-- *An absorbed write root's changes ride the grant's note* and are
-  recorded, instead of a stderr line the TUI paints over.
-- *The operator's words are the catalog's*, in both languages; what goes
-  only to the model stays in English.
+- *The typed path is checked again after the open*: it must still
+  resolve through no link and name the opened directory. The link check
+  runs before the open, and a write-lane process can swap a link in and
+  out of the project between the two (measured: a swap loop passed the
+  first check and landed elsewhere).
+- *An absorbed write root's changes reach the operator* and are recorded:
+  on a typed command they ride the note, which the TUI shows, instead of
+  a stderr line it paints over; for a request they go to the operator's
+  notices, not into the result the model reads.
+- *The operator's words are the catalog's*, in both languages; a
+  request's result, which only the model reads, stays in English.
 
-One residual is kept: the granter builds with the kernel's name of the
+Two residuals are kept. `os.OpenRoot` opens without `O_NONBLOCK`, so a
+root swapped for a FIFO between `RefuseRoot` and the open would hang the
+grant under its lock; an accepted root has no ancestor a lane can write
+(step 2), so only a process outside every lane can make that swap, and
+Go offers no root from a descriptor to close it. And the granter builds with the kernel's name of the
 project, startup with the resolved typed one, so a session started from
 a working directory typed in other capitals rebuilds its profile with a
 different spelling at a grant and back at `/clear`. Both are built and
@@ -524,7 +535,9 @@ through a link asks; the `/clear` record lists slash and requested
 roots; another Unicode form of a stored name adds; a FIFO is refused
 without blocking; a cancel during the probes drops the grant; an absorbed
 write root's changes reach the note and the record; an unconfined
-session keeps its runner; the grant's words follow the catalog.
+session keeps its runner; the grant's words follow the catalog; the typed
+path is checked again after the open; a request's absorbed changes reach
+the operator.
 
 ## Alternatives considered
 
