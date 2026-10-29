@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -125,7 +127,7 @@ func TestGrantAbsorbsAReadRootInside(t *testing.T) {
 	}
 	// Covered: a read root inside the write root changes nothing.
 	note, err = g.grant(context.Background(), inner, false, "slash", g.currentEpoch(), nil)
-	if err != nil || !strings.Contains(note, "already covered") {
+	if err != nil || !strings.Contains(note, "already inside") {
 		t.Errorf("covered: %q %v", note, err)
 	}
 }
@@ -279,7 +281,7 @@ func TestRequestDirectoryToolAndSubset(t *testing.T) {
 	}
 	notes := underHome(t, "notes")
 	out, err := tool.Run(context.Background(), map[string]any{"path": notes, "access": "read", "reason": "r"})
-	if err != nil || !strings.Contains(out, "(read)") {
+	if err != nil || !strings.Contains(out, "(read only)") {
 		t.Errorf("run: %q %v", out, err)
 	}
 	if _, err := tool.Run(context.Background(), map[string]any{"path": notes, "access": "all", "reason": "r"}); err == nil {
@@ -345,18 +347,21 @@ func TestGrantCancelledMidVerificationAndClearRace(t *testing.T) {
 	g, _, _ := newTestGranter(t, nil, false)
 	notes := underHome(t, "notes")
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		_, err := g.grant(ctx, notes, true, "request", g.currentEpoch(), nil)
-		done <- err
-	}()
-	cancel()
-	if err := <-done; !errors.Is(err, errDropped) {
-		t.Errorf("a cancelled grant: %v", err)
+	// The call is cancelled while the profiles are built and probed —
+	// after the first check passed (review of v0.94.0, #9).
+	probed := false
+	g.build = func(on bool, p, w string, d []string, c map[string]string, pp []string, a []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
+		probed = true
+		cancel()
+		return buildExecFn(on, p, w, d, c, pp, a)
 	}
-	if len(g.registry.AddedDirs()) != 0 {
-		t.Fatalf("a cancelled grant committed: %v", g.registry.AddedDirs())
+	if _, err := g.grant(ctx, notes, true, "request", g.currentEpoch(), nil); !errors.Is(err, errDropped) || !probed {
+		t.Errorf("a grant cancelled mid-verification: %v (probed %v)", err, probed)
 	}
+	if len(g.registry.AddedDirs()) != 0 || len(g.watch.roots) != 0 {
+		t.Fatalf("a cancelled grant committed: %v %v", g.registry.AddedDirs(), g.watch.roots)
+	}
+	g.build = nil
 	dirs := []string{underHome(t, "a"), underHome(t, "b"), underHome(t, "c")}
 	results := make(chan error, len(dirs))
 	for _, d := range dirs {
@@ -380,5 +385,149 @@ func TestGrantCancelledMidVerificationAndClearRace(t *testing.T) {
 	}
 	if got := len(g.registry.AddedDirs()); got != committed {
 		t.Errorf("%d grants reported success, %d roots installed", committed, got)
+	}
+}
+
+// A name stored decomposed — a Japanese name another tool created — is
+// added by the composed spelling the IME types: the volume finds it
+// under either, and only a link asks for the real path (review of
+// v0.94.0, #2).
+func TestGrantAcceptsAnotherUnicodeForm(t *testing.T) {
+	g, _, _ := newTestGranter(t, nil, false)
+	base := filepath.Dir(underHome(t, "x"))
+	stored := filepath.Join(base, "\u30c8\u3099"+"キュメント")
+	if err := os.Mkdir(stored, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	typed := filepath.Join(base, "ドキュメント")
+	if _, err := os.Stat(typed); err != nil {
+		t.Skip("this volume does not fold Unicode forms")
+	}
+	note, err := g.grant(context.Background(), typed, true, "slash", g.currentEpoch(), nil)
+	if err != nil {
+		t.Fatalf("the composed spelling: %v", err)
+	}
+	if got := g.registry.AddedDirs(); len(got) != 1 || got[0].Dir != stored || !strings.Contains(note, stored) {
+		t.Errorf("installed %+v (%q), want the stored name %q", got, note, stored)
+	}
+}
+
+// A FIFO is refused at once, not waited on (review of v0.94.0, #1): the
+// model can make one in the project and suggest /add-dir on it.
+func TestGrantRefusesAFIFOWithoutBlocking(t *testing.T) {
+	g, _, _ := newTestGranter(t, nil, false)
+	if err := syscall.Mkfifo(filepath.Join(g.projectDir, "pipe"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := g.grant(context.Background(), "pipe", true, "slash", g.currentEpoch(), nil)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("a FIFO was added")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the grant blocked on a FIFO")
+	}
+	// The lock was not left held: the next /clear proceeds.
+	g.rotate(func() {})
+}
+
+// A write root over a write root it absorbs says that root's unreported
+// changes in the grant's note — what the TUI shows — and records them
+// (review of v0.94.0, #4).
+func TestGrantAbsorbingAWriteRootReportsItsChanges(t *testing.T) {
+	outer := underHome(t, "outer")
+	inner := filepath.Join(outer, "inner")
+	if err := os.Mkdir(inner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	g, _, out := newTestGranter(t, nil, false)
+	var changes []map[string]any
+	log := g.log
+	g.log = func(kind string, data any) error {
+		if kind == "persistent_changes" {
+			changes = append(changes, data.(map[string]any))
+		}
+		return log(kind, data)
+	}
+	if _, err := g.grant(context.Background(), inner, true, "slash", g.currentEpoch(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inner, "AGENTS.md"), []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	note, err := g.grant(context.Background(), outer, true, "slash", g.currentEpoch(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(note, inner+" is now part of it") || !strings.Contains(note, "AGENTS.md (added)") {
+		t.Errorf("note = %q", note)
+	}
+	if len(changes) != 1 || changes[0]["root"] != inner || changes[0]["reason"] != "absorbed" {
+		t.Errorf("records = %v", changes)
+	}
+	if out.Len() != 0 {
+		t.Errorf("the watch printed past the note: %q", out.String())
+	}
+	if got := g.registry.AddedDirs(); len(got) != 1 || got[0].Dir != outer {
+		t.Errorf("roots = %+v", got)
+	}
+}
+
+// An unconfined session keeps its runner: there is no cage to verify,
+// every command asks, and the grant reaches the file tools only
+// (ADR-0099 §12 step 4; review of v0.94.0, #8).
+func TestGrantInAnUnconfinedSessionKeepsTheRunner(t *testing.T) {
+	g, _, _ := newTestGranter(t, nil, false)
+	ran := false
+	unconfined := func(ctx context.Context, command string, lane sandbox.Lane) *exec.Cmd {
+		ran = true
+		return exec.CommandContext(ctx, "/usr/bin/true")
+	}
+	g.shellExec.set(unconfined)
+	g.registry.SetLaneExec(g.shellExec.run, sandbox.Enforcement{})
+	g.build = func(bool, string, string, []string, map[string]string, []string, []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
+		t.Error("an unconfined session built and probed a profile")
+		return nil, sandbox.Enforcement{}, nil, errors.New("unexpected")
+	}
+	notes := underHome(t, "notes")
+	note, err := g.grant(context.Background(), notes, true, "slash", g.currentEpoch(), nil)
+	if err != nil || !strings.Contains(note, "shell commands still ask") {
+		t.Fatalf("grant: %q %v", note, err)
+	}
+	if len(g.registry.AddedDirs()) != 1 || g.registry.Enforcement() != (sandbox.Enforcement{}) {
+		t.Errorf("roots %v enforcement %+v", g.registry.AddedDirs(), g.registry.Enforcement())
+	}
+	if err := runLane(t, g, sandbox.LaneWrite, "true"); err != nil || !ran {
+		t.Errorf("the runner was replaced: %v (ran %v)", err, ran)
+	}
+}
+
+// The operator's words are the catalog's: /dirs and the grant's note in
+// Japanese, each line ending as the other slash outputs do.
+func TestGrantSpeaksTheOperatorsLanguage(t *testing.T) {
+	g, _, _ := newTestGranter(t, nil, false)
+	g.msgs = uitext.For(uitext.JA)
+	if got := g.listing(); !strings.Contains(got, "追加ディレクトリはありません") || !strings.HasSuffix(got, "\n") {
+		t.Errorf("listing = %q", got)
+	}
+	notes := underHome(t, "notes")
+	note, err := g.grant(context.Background(), notes, false, "slash", g.currentEpoch(), nil)
+	if err != nil || !strings.Contains(note, "を足しました（読み取りのみ）") || !strings.Contains(note, "--read-dir") {
+		t.Errorf("note = %q %v", note, err)
+	}
+	if got := g.listing(); !strings.Contains(got, "追加: "+notes+"（読み取りのみ、このセッションで入力）") {
+		t.Errorf("listing = %q", got)
+	}
+	link := filepath.Join(g.projectDir, "l")
+	if err := os.Symlink(notes, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.grant(context.Background(), "l", true, "slash", g.currentEpoch(), nil); err == nil || !strings.Contains(err.Error(), "/add-dir "+notes) {
+		t.Errorf("a link names the line to type: %v", err)
 	}
 }

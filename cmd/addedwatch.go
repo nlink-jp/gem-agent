@@ -125,11 +125,14 @@ func (w *addedWatch) report(reason string, log func(kind string, data any) error
 // add starts watching a write root granted during the session, from a
 // snapshot taken now — before the grant's profile can write it — and
 // drops the roots it absorbed (ADR-0099 §10, §12). A root already
-// watched keeps its baseline.
-func (w *addedWatch) add(root string, absorbed []string) {
+// watched keeps its baseline. It returns the notes to show with the
+// grant — an absorbed root's unreported changes, a cut walk — rather
+// than printing them, and records the changes as report does.
+func (w *addedWatch) add(root string, absorbed []string, log func(kind string, data any) error) []string {
 	if w == nil {
-		return
+		return nil
 	}
+	var notes []string
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	drop := map[string]bool{}
@@ -142,9 +145,16 @@ func (w *addedWatch) add(root string, absorbed []string) {
 			// An absorbed write root's changes since its last report are
 			// said now, before its baseline goes (review of step 2, #5);
 			// the new root's snapshot covers it from here.
-			now, _ := w.snapshot(r)
-			if a, c, rm := trustpin.SnapshotDiff(w.base[r], now); len(a)+len(c)+len(rm) > 0 {
-				_, _ = fmt.Fprintf(w.out, w.msgs.AddedPersistentSessionFmt+"\n", r, describeSnapshotDiff(a, c, rm))
+			now, cut := w.snapshot(r)
+			a, c, rm := trustpin.SnapshotDiff(w.base[r], now)
+			if cut {
+				rm = nil
+			}
+			if len(a)+len(c)+len(rm) > 0 {
+				notes = append(notes, fmt.Sprintf(w.msgs.AddedPersistentSessionFmt, r, describeSnapshotDiff(a, c, rm)))
+				if log != nil {
+					_ = log("persistent_changes", map[string]any{"reason": "absorbed", "root": r, "added": a, "changed": c, "removed": rm, "cut": cut})
+				}
 			}
 			delete(w.base, r)
 			continue
@@ -153,7 +163,7 @@ func (w *addedWatch) add(root string, absorbed []string) {
 	}
 	w.roots = kept
 	if _, ok := w.base[root]; ok {
-		return
+		return notes
 	}
 	if w.path == "" && w.projectDir != "" {
 		if p, err := persistentStateFile(w.projectDir); err == nil {
@@ -162,11 +172,12 @@ func (w *addedWatch) add(root string, absorbed []string) {
 	}
 	snap, cut := w.snapshot(root)
 	if cut {
-		_, _ = fmt.Fprintf(w.out, w.msgs.AddedPersistentCutFmt+"\n", trustpin.WalkEntries, root)
+		notes = append(notes, fmt.Sprintf(w.msgs.AddedPersistentCutFmt, trustpin.WalkEntries, root))
 	}
 	w.roots = append(w.roots, root)
 	w.base[root] = snap
 	w.save()
+	return notes
 }
 
 func (w *addedWatch) save() {

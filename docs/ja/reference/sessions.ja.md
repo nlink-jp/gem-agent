@@ -199,11 +199,14 @@ transcript を resume するとフィールドを無視し、注記なしで結�
 `dir` はプロファイルとファイルツールが使う実パス、`access` はレベル、
 `source` は出どころ（`flag`・`config`、`/add-dir` / `/read-dir` なら `slash`、承認した
 `request_directory` なら `request`）です。セッションの途中の付与は、有効なすべての
-ルートに `granted`（`dir`・`access`・`source`）、write ルートが read ルートを取り込んだ
+ルートに `granted`（`dir`・`access`・`source`）、write ルートがその中のルートを取り込んだ
 ときは `absorbed`、要請ならモデルの `reason` と `answer` を加えて、記録を書き直します。
-`/clear` は新しい transcript に全体の一覧を書きます。追加ディレクトリの無いセッションは
-記録を書きません。古い版がこのような transcript を再開すると、この記録は
-飛ばされます。
+取り込まれた write ルートの、まだ知らせていない変化は `"reason":"absorbed"` の
+`persistent_changes` として書きます。`/clear` は新しい transcript に全体の一覧を書きます。
+追加ディレクトリの無いセッションは記録を書きません。古い版がこのような transcript を
+再開すると、この記録は飛ばされます。再開はこの記録を読み戻しません: `--resume` は
+フラグと `[directories]` から始めるので、前のセッションの途中で足したディレクトリは
+`/add-dir` か `/read-dir` でもう一度足します — 今有効なものは `/dirs` で見られます。
 
 ## エージェントメモリ（ADR-0020）
 

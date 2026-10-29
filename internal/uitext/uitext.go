@@ -378,6 +378,32 @@ type Messages struct {
 	AddedPersistentSinceLastFmt string
 	AddedPersistentSessionFmt   string
 	AddedPersistentCutFmt       string // %d = the walk's cap, %s = the directory
+	// A directory added during the session (ADR-0099 §11, §12): the
+	// operator's /add-dir, /read-dir and /dirs, and the model's approved
+	// request. Each says what changed, or why nothing did and what to type.
+	GrantNotFoundFmt   string // %s = the path
+	GrantCannotOpenFmt string // %s = the path, %v = why
+	// GrantLinkFmt: the typed path, its real path, the command, the real
+	// path again — the line to type.
+	GrantLinkFmt        string
+	GrantCoveredFmt     string // %s = the path, %s = the root, %s = its level
+	GrantChangedFmt     string // %s = the path, %s = what it is now
+	GrantNotAddedFmt    string // %s = the path, %v = why
+	GrantStateFmt       string // %s = the path — the sandbox would not set up as it is
+	GrantAddedFmt       string // %s = the path, %s = its level
+	GrantAbsorbedFmt    string // %s = an added directory now inside the new one
+	GrantUnconfined     string // appended: shell commands still ask
+	GrantThisProcessFmt string // appended to a typed one; %s = the flag to keep it
+	AccessWrite         string
+	AccessRead          string
+	DirsProjectFmt      string // %s = the project, %s = AccessWrite
+	DirsWorkFmt         string // %s = the work directory, %s = AccessWrite
+	DirsAddedFmt        string // %s = the directory, %s = its level, %s = where it came from
+	DirsNone            string
+	SourceFlag          string
+	SourceConfig        string
+	SourceSlash         string
+	SourceRequest       string
 	// TrustDeclinedFmt is the banner note after declining: policy path.
 	TrustDeclinedFmt string
 	TrustUndecided   string // non-interactive, undecided: ran bare
@@ -598,6 +624,27 @@ keys:
 	AddedPersistentSinceLastFmt: "note: in the added directory %s, changed since your previous session: %s — a project opened under it would load or run these",
 	AddedPersistentSessionFmt:   "note: in the added directory %s, this session added, changed or removed: %s — a project opened under it would load or run these",
 	AddedPersistentCutFmt:       "note: change detection covers the first %d entries under the added directory %s only",
+	GrantNotFoundFmt:            "%s: not found",
+	GrantCannotOpenFmt:          "%s: cannot be opened as a directory: %v",
+	GrantLinkFmt:                "%s resolves to %s — to add that directory, type: %s %s",
+	GrantCoveredFmt:             "%s is already inside %s (%s); nothing changed",
+	GrantChangedFmt:             "%s changed while it was being added (it is now %s); nothing changed — add it again",
+	GrantNotAddedFmt:            "%s was not added: %v",
+	GrantStateFmt:               "%s was not added: with it the shell sandbox would not set up the way it is now; nothing changed",
+	GrantAddedFmt:               "added %s (%s)",
+	GrantAbsorbedFmt:            "; %s is now part of it",
+	GrantUnconfined:             " — the file tools reach it; shell commands still ask, as everything does in this session",
+	GrantThisProcessFmt:         " — for this process only; to keep it, add it to [directories] or pass --%s",
+	AccessWrite:                 "write",
+	AccessRead:                  "read only",
+	DirsProjectFmt:              "project: %s (%s)",
+	DirsWorkFmt:                 "work directory: %s (%s)",
+	DirsAddedFmt:                "added: %s (%s, %s)",
+	DirsNone:                    "no added directories — /add-dir <path> or /read-dir <path> adds one",
+	SourceFlag:                  "from a flag",
+	SourceConfig:                "from [directories]",
+	SourceSlash:                 "typed in this session",
+	SourceRequest:               "asked for by the model, approved by you",
 	TrustDeclinedFmt:            "project trust: declined — the project's own files are not loaded (edit %s to be asked again)",
 	TrustUndecided:              "project trust: undecided — the project's own files are not loaded; start interactively once to decide",
 	ReasonFSRoot:                "the filesystem root",
@@ -802,6 +849,27 @@ var ja = Messages{
 	AddedPersistentSinceLastFmt: "note: 追加ディレクトリ %s で、前回のセッション以降に変更: %s — その下で開くプロジェクトはこれらを読み込むか実行します",
 	AddedPersistentSessionFmt:   "note: 追加ディレクトリ %s で、このセッションが追加・変更・削除: %s — その下で開くプロジェクトはこれらを読み込むか実行します",
 	AddedPersistentCutFmt:       "note: 変化の検出は最初の %d 項目だけが対象です（追加ディレクトリ %s）",
+	GrantNotFoundFmt:            "%s: 見つかりません",
+	GrantCannotOpenFmt:          "%s: ディレクトリとして開けません: %v",
+	GrantLinkFmt:                "%s の実体は %s です — そのディレクトリを足すには次のように打ってください: %s %s",
+	GrantCoveredFmt:             "%s はすでに %s（%s）の中にあります。変更はありません",
+	GrantChangedFmt:             "%s は追加の途中で変わりました（現在は %s）。変更はありません — もう一度足してください",
+	GrantNotAddedFmt:            "%s は足せませんでした: %v",
+	GrantStateFmt:               "%s は足せませんでした: これを足すとシェルのサンドボックスを今と同じ形で準備できません。変更はありません",
+	GrantAddedFmt:               "%s を足しました（%s）",
+	GrantAbsorbedFmt:            "。%s はこの中に含まれるようになりました",
+	GrantUnconfined:             " — ファイルツールから届きます。シェルコマンドは、このセッションのほかの操作と同じく毎回確認します",
+	GrantThisProcessFmt:         " — このプロセスの間だけです。続けて使うなら [directories] に書くか、--%s を付けて起動してください",
+	AccessWrite:                 "書き込み可",
+	AccessRead:                  "読み取りのみ",
+	DirsProjectFmt:              "プロジェクト: %s（%s）",
+	DirsWorkFmt:                 "作業ディレクトリ: %s（%s）",
+	DirsAddedFmt:                "追加: %s（%s、%s）",
+	DirsNone:                    "追加ディレクトリはありません — /add-dir <パス> か /read-dir <パス> で足せます",
+	SourceFlag:                  "起動フラグ",
+	SourceConfig:                "[directories] の設定",
+	SourceSlash:                 "このセッションで入力",
+	SourceRequest:               "モデルの要請をあなたが承認",
 	TrustDeclinedFmt:            "project trust: 拒否 — このプロジェクト自身のファイルは読み込みません（再確認するには %s を編集）",
 	TrustUndecided:              "project trust: 未決定 — このプロジェクト自身のファイルは読み込みません。一度対話起動して決めてください",
 	ReasonFSRoot:                "ファイルシステムのルート",

@@ -212,9 +212,14 @@ the level and `source` where it came from (`flag`, `config`, `slash` for
 `/add-dir` / `/read-dir`, `request` for an approved `request_directory`).
 A grant during the session writes the record again with every root in
 force plus `granted` (`dir`, `access`, `source`), `absorbed` when a write
-root took in read roots, and for a request the model's `reason` and
-`answer`; `/clear` writes the full list into the new transcript. A
-session with none writes no record. An older build resuming such a transcript skips the record.
+root took in roots inside it, and for a request the model's `reason` and
+`answer`; an absorbed write root's changes not yet reported are written
+as `persistent_changes` with `"reason":"absorbed"`. `/clear` writes the
+full list into the new transcript. A session with none writes no record.
+An older build resuming such a transcript skips the record. Resuming
+reads none of it back: `--resume` starts from the flags and
+`[directories]`, so a directory added during the earlier session is added
+again with `/add-dir` or `/read-dir` — `/dirs` shows what is in force.
 
 ## Agent memory (ADR-0020)
 

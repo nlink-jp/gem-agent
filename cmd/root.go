@@ -550,7 +550,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		projectDir: realOrSelf(projectDir), workDir: func() string { return workDir },
 		denyExec: cfg.Sandbox.ReadLaneDenyExec, caches: cfg.Sandbox.Caches(), readLanePrompts: cfg.Sandbox.ReadLanePrompts,
 		parents: func() []string { return trustpin.Parents(projectDir, persistentSnap) },
-		base:    rootBaseContext(cfgPath), watch: watch, sources: map[string]string{},
+		base:    rootBaseContext(cfgPath), watch: watch, sources: map[string]string{}, msgs: msgs,
 		log: func(kind string, data any) error {
 			if sessionLog == nil {
 				return nil
@@ -1490,9 +1490,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	addDirSlash := func(rest string, write bool) (string, bool) {
 		note, err := granter.grant(context.Background(), rest, write, "slash", granter.currentEpoch(), nil)
 		if err != nil {
-			return err.Error(), true
+			return err.Error() + "\n", true
 		}
-		return note, false
+		return note + "\n", false
 	}
 	reloads := slashReloads{mcp: reloadMCP, skills: reloadSkills, mcpLoad: loadMCP, mcpStatus: adv.Status, mcpWithheld: adv.Withheld, show: showPath, thinking: thinkingSlash, addDir: addDirSlash, dirs: granter.listing}
 

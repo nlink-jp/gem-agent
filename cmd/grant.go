@@ -12,6 +12,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/tools"
+	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
 // dirGranter is ADR-0099 §12: the one grant path the operator's
@@ -46,6 +47,37 @@ type dirGranter struct {
 	// promptStale asks for the system prompt's rebuild at the next turn
 	// boundary: SetSystem is a between-turns operation (§12 step 7).
 	promptStale atomic.Bool
+	msgs        *uitext.Messages
+	// build is buildExecFn; a test replaces it to act while the probes
+	// run.
+	build func(sandboxOn bool, projectDir, workDir string, denyExec []string, caches map[string]string, persistentParents []string, added []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error)
+}
+
+func (g *dirGranter) text() *uitext.Messages {
+	if g.msgs == nil {
+		return uitext.For(uitext.EN)
+	}
+	return g.msgs
+}
+
+func (g *dirGranter) access(write bool) string {
+	if write {
+		return g.text().AccessWrite
+	}
+	return g.text().AccessRead
+}
+
+func (g *dirGranter) source(s string) string {
+	m := g.text()
+	switch s {
+	case "config":
+		return m.SourceConfig
+	case "slash":
+		return m.SourceSlash
+	case "request":
+		return m.SourceRequest
+	}
+	return m.SourceFlag
 }
 
 // errDropped is a grant whose call was cancelled or whose session moved
@@ -100,22 +132,30 @@ func (g *dirGranter) resolveTyped(path string) string {
 // belongs to: the request's at the start of its Run, the current one
 // for a slash command.
 func (g *dirGranter) grant(ctx context.Context, path string, write bool, source string, epoch uint64, extra map[string]any) (string, error) {
+	m := g.text()
 	typed := g.resolveTyped(path)
-	// The kernel's name for it (case and all): every check below judges
-	// that, never the typed spelling.
-	real, err := sandbox.CanonicalDir(typed)
+	// Resolving keeps each typed component that is not a link as typed,
+	// so a difference here is a link and nothing else — not the case or
+	// the Unicode form, which the volume folds (review of v0.94.0, #2).
+	resolved, err := sandbox.ResolveWriteDir(typed)
 	if err != nil {
-		if real == "" {
-			return "", fmt.Errorf("%s: not found", typed)
-		}
-		return "", fmt.Errorf("%s: cannot be opened: %v", real, err)
+		return "", fmt.Errorf(m.GrantNotFoundFmt, typed)
+	}
+	// The kernel's name for it (case and stored form): every check below
+	// judges that, never the typed spelling.
+	real, err := sandbox.CanonicalDir(resolved)
+	if err != nil {
+		return "", fmt.Errorf(m.GrantCannotOpenFmt, resolved, err)
 	}
 	// A path that resolves through a link names one place and grants
 	// another: the model can plant the link and suggest the command.
 	// The real path is named, and the grant happens when that path is
 	// given (§11; for a request, asked again).
-	if !strings.EqualFold(real, typed) {
-		return "", fmt.Errorf("%s resolves to %s — add the real path to confirm it: %s", typed, real, real)
+	if resolved != typed {
+		if source == "request" {
+			return "", fmt.Errorf("%s resolves to %s — request the real path to add it", typed, real)
+		}
+		return "", fmt.Errorf(m.GrantLinkFmt, typed, real, map[bool]string{true: "/add-dir", false: "/read-dir"}[write], real)
 	}
 
 	g.mu.Lock()
@@ -126,27 +166,34 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 	current := g.registry.AddedDirs()
 	rc := g.base
 	rc.ProjectDir, rc.WorkDir, rc.Roots = g.projectDir, realOrSelf(g.workDir()), current
-	if _, err := sandbox.RefuseRoot(real, write, rc); err != nil {
+	judged, err := sandbox.RefuseRoot(real, write, rc)
+	if err != nil {
 		var cov *sandbox.CoveredError
 		if errors.As(err, &cov) {
-			return fmt.Sprintf("%s is already covered by %s (%s); nothing changed", cov.Path, cov.By.Dir, cov.By.Access()), nil
+			return fmt.Sprintf(m.GrantCoveredFmt, cov.Path, cov.By.Dir, g.access(cov.By.Write)), nil
 		}
 		return "", err
 	}
+	// What is installed is what was judged, byte for byte: both names
+	// come from the kernel, so any difference is the path changing in
+	// between (review of v0.94.0, #3).
+	if judged != real {
+		return "", fmt.Errorf(m.GrantChangedFmt, real, judged)
+	}
 
-	// Open first and read the real path back from the descriptor: what
-	// is installed is what was judged.
+	// Open first and read the real path back from the descriptor.
 	root, err := os.OpenRoot(real)
 	if err != nil {
-		return "", fmt.Errorf("%s: %v", real, err)
+		return "", fmt.Errorf(m.GrantCannotOpenFmt, real, err)
 	}
 	canonical, err := descriptorPathOf(root)
-	if err != nil || !strings.EqualFold(canonical, real) {
+	if err != nil {
 		_ = root.Close()
-		if err != nil {
-			return "", fmt.Errorf("%s: cannot read its real path back: %v", real, err)
-		}
-		return "", fmt.Errorf("%s changed while it was being added (it is now %s); nothing changed", real, canonical)
+		return "", fmt.Errorf(m.GrantCannotOpenFmt, real, err)
+	}
+	if canonical != real {
+		_ = root.Close()
+		return "", fmt.Errorf(m.GrantChangedFmt, real, canonical)
 	}
 
 	absorbed := sandbox.Absorbed(canonical, write, current)
@@ -166,18 +213,29 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 	// Build and verify against the current project and work directory;
 	// the grant must not change what the runtime established about the
 	// sandbox — never the unconfined fallback, never the read lane
-	// switched on or off.
-	fn, enf, _, err := buildExecFn(g.sandboxOn, g.projectDir, g.workDir(), g.denyExec, g.caches, g.parents(), next)
-	if err != nil {
-		_ = root.Close()
-		return "", fmt.Errorf("%s was not added: %v", canonical, err)
-	}
-	if g.readLanePrompts {
-		enf.ReadLane = false
-	}
-	if cur := g.registry.Enforcement(); enf != cur {
-		_ = root.Close()
-		return "", fmt.Errorf("%s was not added: with it the sandbox's verified state would change (%+v, now %+v), and a grant never changes that", canonical, enf, cur)
+	// switched on or off. An unconfined session has no cage to verify:
+	// its runner stays, every command asks, and the grant reaches the
+	// file tools only (§12 step 4).
+	cur := g.registry.Enforcement()
+	var fn tools.LaneExecFunc
+	enf := cur
+	if cur.Confined {
+		build := g.build
+		if build == nil {
+			build = buildExecFn
+		}
+		fn, enf, _, err = build(g.sandboxOn, g.projectDir, g.workDir(), g.denyExec, g.caches, g.parents(), next)
+		if err != nil {
+			_ = root.Close()
+			return "", fmt.Errorf(m.GrantNotAddedFmt, canonical, err)
+		}
+		if g.readLanePrompts {
+			enf.ReadLane = false
+		}
+		if enf != cur {
+			_ = root.Close()
+			return "", fmt.Errorf(m.GrantStateFmt, canonical)
+		}
 	}
 	// The probes take time; a call cancelled meanwhile, or a session
 	// that moved on, does not commit (review of step 2, #3).
@@ -186,11 +244,14 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 		return "", errDropped
 	}
 
+	var watchNotes []string
 	if write {
-		g.watch.add(canonical, absorbedDirs)
+		watchNotes = g.watch.add(canonical, absorbedDirs, g.log)
 	}
-	g.shellExec.set(fn)
-	g.registry.SetLaneExec(g.shellExec.run, enf)
+	if cur.Confined {
+		g.shellExec.set(fn)
+		g.registry.SetLaneExec(g.shellExec.run, enf)
+	}
 	g.registry.GrantAddedDir(granted, root, absorbedDirs)
 	for _, d := range absorbedDirs {
 		delete(g.sources, d)
@@ -210,17 +271,23 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 		_ = g.log("added_directories", rec)
 	}
 
-	note := fmt.Sprintf("added %s (%s)", canonical, granted.Access())
+	note := fmt.Sprintf(m.GrantAddedFmt, canonical, g.access(write))
 	for _, d := range absorbedDirs {
 		if d != canonical {
-			note += fmt.Sprintf("; %s is now part of it", d)
+			note += fmt.Sprintf(m.GrantAbsorbedFmt, d)
 		}
 	}
 	if !enf.Confined {
-		note += " — the file tools reach it; shell commands still ask, as everything does in this session"
+		note += m.GrantUnconfined
 	}
 	if source == "slash" {
-		note += fmt.Sprintf(" — for this process only; to keep it, add it to [directories] or pass --%s", map[bool]string{true: "add-dir", false: "read-dir"}[write])
+		note += fmt.Sprintf(m.GrantThisProcessFmt, map[bool]string{true: "add-dir", false: "read-dir"}[write])
+	}
+	// An absorbed root's unreported changes, and a cut walk, ride the
+	// note: it is what reaches the operator in the TUI, where a stray
+	// stderr line is painted over (review of v0.94.0, #4).
+	for _, n := range watchNotes {
+		note += "\n" + n
 	}
 	return note, nil
 }
@@ -243,24 +310,21 @@ func (g *dirGranter) record() map[string]any {
 func (g *dirGranter) listing() string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	m := g.text()
 	var b strings.Builder
-	b.WriteString("project: " + g.projectDir + " (write)\n")
+	fmt.Fprintf(&b, m.DirsProjectFmt+"\n", g.projectDir, m.AccessWrite)
 	if wd := g.workDir(); wd != "" {
-		b.WriteString("work directory: " + wd + " (write)\n")
+		fmt.Fprintf(&b, m.DirsWorkFmt+"\n", wd, m.AccessWrite)
 	}
 	added := g.registry.AddedDirs()
 	if len(added) == 0 {
-		b.WriteString("no added directories — /add-dir <path> or /read-dir <path> adds one")
+		b.WriteString(m.DirsNone + "\n")
 		return b.String()
 	}
 	for _, a := range added {
-		src := g.sources[a.Dir]
-		if src == "" {
-			src = "flag"
-		}
-		fmt.Fprintf(&b, "added: %s (%s, %s)\n", a.Dir, a.Access(), src)
+		fmt.Fprintf(&b, m.DirsAddedFmt+"\n", a.Dir, g.access(a.Write), g.source(g.sources[a.Dir]))
 	}
-	return strings.TrimRight(b.String(), "\n")
+	return b.String()
 }
 
 func descriptorPathOf(root *os.Root) (string, error) {

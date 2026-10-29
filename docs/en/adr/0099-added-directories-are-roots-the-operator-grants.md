@@ -183,8 +183,11 @@ request_directory(path, access, reason)
   need the removal this ADR leaves out (§8), and the operator approved it
   with the path in front of them. A new process or `--resume` starts from
   the flags and the configuration again; a resumed conversation that
-  mentions an earlier grant meets the outside-roots refusal, whose reason
-  says earlier grants are not restored.
+  mentions an earlier grant meets the ordinary outside-roots refusal, and
+  the sessions reference says a grant is added again (`/dirs` shows what
+  is in force). *Amended at the v0.94.0 pre-release review: the refusal's
+  reason was to say so itself; it names the roots in force instead, which
+  the operator reads next to `/dirs`.*
 - Every grant is written to the transcript as an `added_directories`
   record with its source (`flag`, `config`, `slash` or `request`), real
   path and level; a request's record also carries the model's reason. A
@@ -445,7 +448,9 @@ function, and it runs in this order:
    a rotation cannot each build from a stale snapshot and the last swap
    win. Under it: check the call's context and the session epoch — a
    grant whose session has moved on, or whose call was cancelled, is
-   dropped and logged — and build the `Spec` from the current project,
+   dropped, and its call's result says so (an abandoned call's late
+   return is recorded as ADR-0065 records one) — and build the `Spec`
+   from the current project,
    work directory and roots.
 4. **Build and verify.** The three profiles, then §7's probes on the
    changed root. Probes run only where the session is confined: under
@@ -475,6 +480,39 @@ Names reach the operator through the TUI's ingress, which makes text
 inert where it enters (ADR-0093 §2) — the approval prompt, the notes
 and `/dirs` alike; nothing is stripped again where it is shown.
 
+**Amended at the v0.94.0 pre-release review.** The independent review
+of the release found what the step-2 review had not, and each is now
+held by a test:
+
+- *A link is told by resolving, not by comparing names.* The check is
+  `ResolveWriteDir(typed) != typed`, byte for byte: resolving keeps every
+  component that is not a link as typed, so the volume's case and
+  Unicode folding never read as a link. Comparing the typed path with
+  the kernel's name under `EqualFold` refused, for ever, a directory
+  whose name is stored decomposed — a Japanese name another tool made —
+  typed through the IME in composed form (measured).
+- *The kernel's names are compared exactly*: `RefuseRoot`'s judged path
+  and the descriptor's must equal the one opened, so a case-only swap on
+  a case-sensitive volume is a change, not the same place.
+- *What is not a directory is refused without waiting.* The directory
+  is opened `O_NONBLOCK|O_DIRECTORY`: a plain open of a FIFO the model
+  made in the project blocked the TUI's event loop, and, under the grant
+  lock, the next `/clear` (measured).
+- *An unconfined session keeps its runner* (step 4 as written): no
+  profile is built or probed, and the grant reaches the file tools.
+- *An absorbed write root's changes ride the grant's note* and are
+  recorded, instead of a stderr line the TUI paints over.
+- *The operator's words are the catalog's*, in both languages; what goes
+  only to the model stays in English.
+
+One residual is kept: the granter builds with the kernel's name of the
+project, startup with the resolved typed one, so a session started from
+a working directory typed in other capitals rebuilds its profile with a
+different spelling at a grant and back at `/clear`. Both are built and
+probed, and a difference in what they establish refuses the grant, so
+the failure is a refusal, never a wider cage; aligning the two would
+touch every startup path for a case only a mistyped `cd` reaches.
+
 Tests that must exist: an upgrade takes effect in the file tools, the
 verdict and the probes; write-over-read absorption; a failed
 verification leaves the runner, the registry, the prompt and the watch
@@ -483,7 +521,10 @@ racing a late grant; the read-lane opt-out survives a grant;
 `request_directory` stays operator-only under `a`, a `never` policy and
 `--allow request_directory --auto`, and is not in `Subset`; `/add-dir`
 through a link asks; the `/clear` record lists slash and requested
-roots.
+roots; another Unicode form of a stored name adds; a FIFO is refused
+without blocking; a cancel during the probes drops the grant; an absorbed
+write root's changes reach the note and the record; an unconfined
+session keeps its runner; the grant's words follow the catalog.
 
 ## Alternatives considered
 

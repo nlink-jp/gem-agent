@@ -600,12 +600,22 @@ a new hook) is an architecture change and takes the same rows as a
   ancestor instruction files a later project under the root loads
   ungated are why — report, never block. A mid-session grant goes
   through `dirGranter.grant` (cmd/grant.go, §12) and nothing else: it
-  holds the same lock as `/clear`'s rotation (`granter.rotate`), drops a
+  holds the same lock as `/clear`'s swap (`granter.beginClear` /
+  `endClear`, from the hooks through `rotateWorkDir`), drops a
   grant whose epoch or context moved on, refuses one that would change
   `Registry.Enforcement()`, replaces an entry in place
   (`Registry.GrantAddedDir`) rather than appending a duplicate, and
   marks the system prompt stale for the next turn boundary — never
-  `SetSystem` from inside a tool call.
+  `SetSystem` from inside a tool call. Its link check is
+  `ResolveWriteDir(typed) != typed`, byte for byte: resolving keeps each
+  non-link component as typed, so the volume's case and Unicode folding
+  never read as a link (an `EqualFold` against the kernel's name refused
+  a decomposed Japanese name for ever). Kernel names are compared
+  exactly. `sandbox.CanonicalDir` opens `O_NONBLOCK|O_DIRECTORY` — a
+  plain open of a FIFO blocks the TUI's event loop. An unconfined
+  session's grant builds no profile and keeps its runner. The grant's
+  operator words live in `uitext` (`Grant*`, `Dirs*`); what goes only to
+  the model stays English in cmd/grant.go.
 - **Two persistent-state residuals were weighed and kept** (pre-release
   review, 2026-10-29) — after a walk cut at `trustpin.WalkEntries`,
   `reportPersistent` makes the partial snapshot the new baseline, so

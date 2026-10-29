@@ -87,9 +87,9 @@ reply — as pictures where the terminal draws images (flowchart / sequence /
 ER / pie / state / gantt / mindmap, CJK labels included), as box art elsewhere
 (flowchart / sequence / ER, CJK labels included, from the same engine; pie,
 state, gantt and mindmap stay source there); anything that cannot be
-drawn right stays source — sixteen slash commands (`/help`
+drawn right stays source — nineteen slash commands (`/help`
 `/tools` `/mcp` `/auto` `/readonly` `/thinking` `/compact` `/settings` `/riskbook` `/usage`
-`/memory` `/skills` `/skill` `/version` `/clear` `/quit`), a provenance-first `/settings`
+`/memory` `/skills` `/skill` `/add-dir` `/read-dir` `/dirs` `/version` `/clear` `/quit`), a provenance-first `/settings`
 panel, theme control, and a fully bilingual chrome
 (`[tui].language = auto|ja|en`). A positional argument is the first
 interactive turn — `gem-agent "…"` runs it and hands you the keyboard

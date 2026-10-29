@@ -34,13 +34,16 @@ func DescriptorPath(f *os.File) (string, error) {
 // folds case, so a judgement on the typed case let
 // /users/x/library/launchagents pass as not-under ~/Library (review of
 // ADR-0099 step 2, measured). Where the directory cannot be opened the
-// resolved path is returned with the error.
+// resolved path is returned with the error. It opens without blocking
+// and admits a directory only: a FIFO opened plainly waits for a writer
+// for ever, and the model can make one in the project and suggest
+// /add-dir on it (review of v0.94.0, #1).
 func CanonicalDir(dir string) (string, error) {
 	real, err := ResolveWriteDir(dir)
 	if err != nil {
 		return "", err
 	}
-	f, err := os.Open(real)
+	f, err := os.OpenFile(real, os.O_RDONLY|unix.O_NONBLOCK|unix.O_DIRECTORY, 0)
 	if err != nil {
 		return real, err
 	}
