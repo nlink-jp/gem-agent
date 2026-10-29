@@ -33,9 +33,15 @@ type RootContext struct {
 // startup flags, the configuration and (later) the model's request all
 // read. A refusal names the reason in the operator's terms.
 func RefuseRoot(path string, write bool, c RootContext) (string, error) {
-	real, err := ResolveWriteDir(path)
+	// Judged on the kernel's name for it: the typed case would slip past
+	// every case-sensitive containment check below on a case-folding
+	// volume.
+	real, err := CanonicalDir(path)
 	if err != nil {
-		return "", fmt.Errorf("%s: not found", path)
+		if real == "" {
+			return "", fmt.Errorf("%s: not found", path)
+		}
+		return "", fmt.Errorf("%s: cannot be opened: %v", real, err)
 	}
 	st, err := os.Stat(real)
 	if err != nil {
@@ -115,10 +121,37 @@ func RefuseRoot(path string, write bool, c RootContext) (string, error) {
 	covers = append(covers, c.Roots...)
 	for _, r := range covers {
 		if r.Dir != "" && within(r.Dir, real) && (r.Write || !write) {
-			return "", fmt.Errorf("%s is already covered by %s (%s)", real, r.Dir, r.Access())
+			return "", &CoveredError{Path: real, By: r}
 		}
 	}
 	return real, nil
+}
+
+// CoveredError is RefuseRoot's "already covered": the path lies inside a
+// root of the same or a higher level. At startup it is an error; during
+// a session it is a note that changes nothing (ADR-0099 §12).
+type CoveredError struct {
+	Path string
+	By   AddedRoot
+}
+
+func (e *CoveredError) Error() string {
+	return fmt.Sprintf("%s is already covered by %s (%s)", e.Path, e.By.Dir, e.By.Access())
+}
+
+// Absorbed returns the added roots a new root at real absorbs (ADR-0099
+// §12): those at or inside it whose level is not higher than the new
+// one. A write root over a read root replaces it — otherwise the write
+// lanes would write a root the file tools refuse — and the same
+// directory given at a higher level is an upgrade.
+func Absorbed(real string, write bool, roots []AddedRoot) []AddedRoot {
+	var out []AddedRoot
+	for _, r := range roots {
+		if within(real, r.Dir) && (write || !r.Write) {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // VerifyAddedRoots probes each added root under the real profiles

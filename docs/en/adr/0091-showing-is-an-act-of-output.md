@@ -95,7 +95,7 @@ the pair differs in exactly one thing, which is the audience:
 This keeps the constraint ADR-0090 was built to protect — **the view layer
 opens no file** — because the file is opened by the TOOL layer, where a read is
 a tool call that every enforcer already sees. `show_image` joins
-`credentialReadTools` ([risk.go:187](../../../internal/risk/risk.go)) beside
+`credentialReadTools` ([risk.go:200](../../../internal/risk/risk.go)) beside
 `view_image`, which is the one list `JudgesPath` reads, so its argument is
 resolved to a real path and classified before it runs, and it reads through
 the same caged child. A model-named path is

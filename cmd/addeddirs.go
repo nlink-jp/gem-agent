@@ -26,16 +26,8 @@ type addedDir struct {
 // lies inside a write root is "already covered" whichever way it was
 // given. A refusal is an error naming where the path came from.
 func resolveAddedDirs(cfg *config.Config, projectDir, workDir, cfgPath string) ([]addedDir, error) {
-	ctx := sandbox.RootContext{ProjectDir: realOrSelf(projectDir), WorkDir: realOrSelf(workDir), ConfigFile: realOrSelf(cfgPath)}
-	if home, err := os.UserHomeDir(); err == nil {
-		ctx.Home = realOrSelf(home)
-	}
-	if p, err := config.DefaultPath(); err == nil {
-		ctx.ConfigHome = realOrSelf(filepath.Dir(p))
-	}
-	if d, err := statedir.Root(); err == nil {
-		ctx.StateDir = realOrSelf(d)
-	}
+	ctx := rootBaseContext(cfgPath)
+	ctx.ProjectDir, ctx.WorkDir = realOrSelf(projectDir), realOrSelf(workDir)
 	cfgWrite, cfgRead := cfg.Directories.Paths()
 	type given struct {
 		path, source, label string
@@ -84,11 +76,33 @@ func indexOfRoot(roots []addedDir, dir string) int {
 	return -1
 }
 
+// rootBaseContext is RefuseRoot's context without the project, the work
+// directory and the roots: what stays the same for the whole process,
+// at startup and for every mid-session grant.
+func rootBaseContext(cfgPath string) sandbox.RootContext {
+	ctx := sandbox.RootContext{ConfigFile: realOrSelf(cfgPath)}
+	if home, err := os.UserHomeDir(); err == nil {
+		ctx.Home = realOrSelf(home)
+	}
+	if p, err := config.DefaultPath(); err == nil {
+		ctx.ConfigHome = realOrSelf(filepath.Dir(p))
+	}
+	if d, err := statedir.Root(); err == nil {
+		ctx.StateDir = realOrSelf(d)
+	}
+	return ctx
+}
+
 // realOrSelf resolves an existing directory to the real path Seatbelt
 // matches, leaving one that does not exist (or "") as given.
 func realOrSelf(dir string) string {
 	if dir == "" {
 		return ""
+	}
+	// The kernel's name, so the context compares like with like with
+	// what RefuseRoot judges (case included).
+	if real, err := sandbox.CanonicalDir(dir); err == nil {
+		return real
 	}
 	if real, err := sandbox.ResolveWriteDir(dir); err == nil {
 		return real

@@ -62,3 +62,11 @@ func TestAddedRootVerdicts(t *testing.T) {
 		t.Errorf("write-lane reason with only a read root names added directories: %q", sh(sandbox.AddedRoot{Dir: "/Users/op/ref"}))
 	}
 }
+
+// request_directory is the operator's alone in every mode (ADR-0099 §4).
+func TestRequestDirectoryIsOperatorOnly(t *testing.T) {
+	v := Classify("request_directory", true, map[string]any{"path": "/Users/op/notes", "access": "write", "reason": "x"}, proj, "")
+	if v.Tier != Review || !v.OperatorOnly || !strings.Contains(v.Reason, "/Users/op/notes") || !strings.Contains(v.Reason, "write") {
+		t.Errorf("request_directory = %+v", v)
+	}
+}

@@ -173,6 +173,7 @@ internal/workdir/  per-session work directory (ADR-0058): layout under the state
 cmd/workdirs.go    `workdirs` list + `clean` (ADR-0059): the remedy the startup note points at
 cmd/addeddirs.go   --add-dir / --read-dir / [directories] judged by RefuseRoot at startup (ADR-0099)
 cmd/addedwatch.go  write roots' persistent files: snapshot at start, reported at /clear and exit (ADR-0099 §10)
+cmd/grant.go       the one mid-session grant path: /add-dir, /read-dir, /dirs and request_directory (ADR-0099 §4, §11, §12)
 internal/telemetry/ opt-in audit events (ADR-0035): metadata only, Cloud Logging or OTLP, Sub(label) for child agents
 cmd/filechild.go   the sandboxed child the covered reads run in (ADR-0086):
                    the hidden `__file-read` subcommand, the spawn, the startup probe
@@ -597,7 +598,14 @@ a new hook) is an architecture change and takes the same rows as a
   root's persistent files are watched by `addedWatch` (cmd/addedwatch.go,
   ADR-0099 §10) with the project's own `trustpin.Snapshot`: the
   ancestor instruction files a later project under the root loads
-  ungated are why — report, never block.
+  ungated are why — report, never block. A mid-session grant goes
+  through `dirGranter.grant` (cmd/grant.go, §12) and nothing else: it
+  holds the same lock as `/clear`'s rotation (`granter.rotate`), drops a
+  grant whose epoch or context moved on, refuses one that would change
+  `Registry.Enforcement()`, replaces an entry in place
+  (`Registry.GrantAddedDir`) rather than appending a duplicate, and
+  marks the system prompt stale for the next turn boundary — never
+  `SetSystem` from inside a tool call.
 - **Two persistent-state residuals were weighed and kept** (pre-release
   review, 2026-10-29) — after a walk cut at `trustpin.WalkEntries`,
   `reportPersistent` makes the partial snapshot the new baseline, so

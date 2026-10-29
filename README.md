@@ -56,7 +56,9 @@ removes it after showing you exactly what and asking first. To work in a
 directory outside the project — notes, a vault, a sibling checkout — add
 it with `--add-dir <path>` (written like the project) or `--read-dir
 <path>` (read, never written), or list it under `[directories]` in the
-config file; it comes under the same sandbox lanes, and nothing in it
+config file — or during a session with `/add-dir` / `/read-dir`, and the
+model may ask for one, which you always answer; it comes under the same
+sandbox lanes, and nothing in it
 (its `AGENTS.md`, `.mcp.json`, skills) is loaded. Instruction files and git
 hooks that appear in a write directory are reported at the next `/clear`
 or exit — a project you open under it would load or run them, and that

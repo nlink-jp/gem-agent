@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/nlink-jp/gem-agent/internal/bounded"
 	"github.com/nlink-jp/gem-agent/internal/trustpin"
@@ -23,6 +24,9 @@ import (
 // session's own start. A read root is written by no lane and is not
 // walked.
 type addedWatch struct {
+	// mu serialises a mid-session grant's add against the /clear and
+	// exit reports (ADR-0099 §12).
+	mu    sync.Mutex
 	roots []string
 	base  map[string]map[string]string
 	// path is the state file (added-persistent.json beside the project's
@@ -33,6 +37,9 @@ type addedWatch struct {
 	path string
 	out  io.Writer
 	msgs *uitext.Messages
+	// projectDir locates the state file for a session that started
+	// with no write roots and gains one by a grant.
+	projectDir string
 	// snapshot is trustpin.Snapshot; a test injects a cut walk.
 	snapshot func(dir string) (map[string]string, bool)
 }
@@ -46,7 +53,7 @@ func newAddedWatch(added []addedDir, projectDir string, out io.Writer, msgs *uit
 }
 
 func newAddedWatchWith(added []addedDir, projectDir string, out io.Writer, msgs *uitext.Messages, snapshot func(string) (map[string]string, bool)) *addedWatch {
-	w := &addedWatch{base: map[string]map[string]string{}, out: out, msgs: msgs, snapshot: snapshot}
+	w := &addedWatch{base: map[string]map[string]string{}, out: out, msgs: msgs, snapshot: snapshot, projectDir: projectDir}
 	for _, a := range added {
 		if a.Write {
 			w.roots = append(w.roots, a.Dir)
@@ -84,7 +91,12 @@ func newAddedWatchWith(added []addedDir, projectDir string, out io.Writer, msgs 
 // changed or removed since the last report, writing a
 // persistent_changes record with the root beside the project's own.
 func (w *addedWatch) report(reason string, log func(kind string, data any) error) {
-	if w == nil || len(w.roots) == 0 {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.roots) == 0 {
 		return
 	}
 	for _, root := range w.roots {
@@ -107,6 +119,53 @@ func (w *addedWatch) report(reason string, log func(kind string, data any) error
 		}
 		w.base[root] = now
 	}
+	w.save()
+}
+
+// add starts watching a write root granted during the session, from a
+// snapshot taken now — before the grant's profile can write it — and
+// drops the roots it absorbed (ADR-0099 §10, §12). A root already
+// watched keeps its baseline.
+func (w *addedWatch) add(root string, absorbed []string) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	drop := map[string]bool{}
+	for _, d := range absorbed {
+		drop[d] = true
+	}
+	kept := w.roots[:0]
+	for _, r := range w.roots {
+		if drop[r] && r != root {
+			// An absorbed write root's changes since its last report are
+			// said now, before its baseline goes (review of step 2, #5);
+			// the new root's snapshot covers it from here.
+			now, _ := w.snapshot(r)
+			if a, c, rm := trustpin.SnapshotDiff(w.base[r], now); len(a)+len(c)+len(rm) > 0 {
+				_, _ = fmt.Fprintf(w.out, w.msgs.AddedPersistentSessionFmt+"\n", r, describeSnapshotDiff(a, c, rm))
+			}
+			delete(w.base, r)
+			continue
+		}
+		kept = append(kept, r)
+	}
+	w.roots = kept
+	if _, ok := w.base[root]; ok {
+		return
+	}
+	if w.path == "" && w.projectDir != "" {
+		if p, err := persistentStateFile(w.projectDir); err == nil {
+			w.path = filepath.Join(filepath.Dir(p), "added-persistent.json")
+		}
+	}
+	snap, cut := w.snapshot(root)
+	if cut {
+		_, _ = fmt.Fprintf(w.out, w.msgs.AddedPersistentCutFmt+"\n", trustpin.WalkEntries, root)
+	}
+	w.roots = append(w.roots, root)
+	w.base[root] = snap
 	w.save()
 }
 

@@ -501,6 +501,9 @@ var en = Messages{
   /auto      auto-approve: on|off, or bare to toggle (shift+tab too)
   /readonly  read-only: on|off · auto on|off arms the watcher · bare shows both
   /thinking  thinking level for this session: minimal|low|medium|high|default · bare shows it
+  /add-dir <path>   add a directory outside the project, written like the project (this process only)
+  /read-dir <path>  add a directory outside the project, read only (this process only)
+  /dirs      list the project, the work directory and the added directories
   /compact   summarise the older half of the conversation
   /settings  view and edit settings, with provenance
   /riskbook  view the risk rules; /riskbook learn drafts them from your answers
@@ -702,6 +705,9 @@ var ja = Messages{
   /auto      auto-approve: on|off、引数なしで切替（shift+tab でも可）
   /readonly  読み取り専用: on|off・auto on|off で自動切り替え・引数なしで両方表示
   /thinking  このセッションの思考レベル: minimal|low|medium|high|default・引数なしで表示
+  /add-dir <path>   プロジェクト外のディレクトリを、プロジェクトと同じく書ける形で足す（このプロセスの間だけ）
+  /read-dir <path>  プロジェクト外のディレクトリを、読むだけの形で足す（このプロセスの間だけ）
+  /dirs      プロジェクト・作業ディレクトリ・追加ディレクトリの一覧
   /compact   会話の古い半分を要約
   /settings  設定の表示と編集（出所つき）
   /riskbook  リスクルールの表示。/riskbook learn は回答記録から起草

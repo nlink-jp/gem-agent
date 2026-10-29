@@ -163,6 +163,19 @@ func Classify(toolName string, mutating bool, args map[string]any, projectDir, w
 		}
 		return Verdict{Tier: Safe, Reason: "edits a file inside the project"}
 
+	case "request_directory":
+		// The model asking for reach (ADR-0099 §4): the proposer cannot
+		// be the judge (ADR-0020 §4), so the operator alone answers, in
+		// every mode — the floor OperatorOnly carries.
+		access, _ := args["access"].(string)
+		p, _ := args["path"].(string)
+		what := "read only — nothing may write it"
+		if access == "write" {
+			what = "written like the project — later writes there under auto-approval run without asking"
+		}
+		return Verdict{Tier: Review, OperatorOnly: true,
+			Reason: "adds " + p + " to the session's roots, " + what + "; the operator decides, not the model tier"}
+
 	case "save_memory", "delete_memory":
 		// Never Safe: a persisted memory reappears in every later
 		// session's prompt, so memory is a persistence vector for

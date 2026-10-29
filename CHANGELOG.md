@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Adding a directory during a session** (ADR-0099 step 2). `/add-dir
+  <path>` and `/read-dir <path>` add one at the prompt — the flags'
+  names, no approval prompt since you typed it; a bare one, or `/dirs`,
+  lists the roots. The model can ask with `request_directory`, which you
+  always answer (operator-only in every mode, not offered under `-p`; to
+  give read-only, deny and type `/read-dir`). Both go through one grant:
+  the same rule as at startup, the real path read back from the opened
+  directory, the sandbox probes, and nothing changed if any fails; it
+  never changes the sandbox's verified state. A write directory around
+  read ones absorbs them, `/add-dir` on a read one raises it, and a path
+  that resolves through a symlink adds nothing and names its real path.
+  Granted directories stay across `/clear`, are watched from the grant,
+  are recorded with their source, and are never written to a file.
+
+### Security
+
+- **The added-directory rule judges the path by the kernel's name for
+  it.** In 0.93.0 it judged the typed spelling, and its containment
+  checks compare strings, so on the default case-folding volume a path
+  typed in other capitals — `--add-dir /users/<you>/library/launchagents`,
+  or your home as `/USERS/<you>` — passed the refusals for `~/Library`
+  and the home (measured by the review of this release's grant path).
+  Only a path you typed yourself reached it in 0.93.0. The rule now
+  opens the directory and judges the name the kernel gives back.
+
 ## [0.93.0] - 2026-10-29
 
 ### Added

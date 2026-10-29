@@ -138,6 +138,27 @@ func TestRefuseRoot(t *testing.T) {
 			t.Errorf("%s (write=%v): want %q, got %v", tc.path, tc.write, tc.want, err)
 		}
 	}
+	// The typed case does not slip past the rule: the kernel's name is
+	// judged (review of step 2, #1 — measured before the fix).
+	upper := strings.ToUpper(home)
+	if _, err := os.Stat(upper); err == nil {
+		for _, tc := range []struct {
+			path, want string
+			write      bool
+		}{
+			{upper, "home directory", false},
+			{strings.ToUpper(filepath.Join(home, ".ssh")), "credential location", false},
+			{strings.ToUpper(filepath.Join(home, "Library/LaunchAgents")), "~/Library", true},
+			{strings.ToUpper(filepath.Join(home, "dev")), "contains the project", true},
+		} {
+			if _, err := RefuseRoot(tc.path, tc.write, c); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("case variant %s: want %q, got %v", tc.path, tc.want, err)
+			}
+		}
+		if got, err := RefuseRoot(strings.ToUpper(filepath.Join(home, "vault")), true, c); err != nil || got != filepath.Join(home, "vault") {
+			t.Errorf("a case variant resolves to %q (%v), want the volume's name", got, err)
+		}
+	}
 	// A write request inside a read root is an upgrade, not covered.
 	if _, err := RefuseRoot(mk("home/ref/sub"), true, c); err != nil {
 		t.Errorf("a write root inside a read root was refused: %v", err)

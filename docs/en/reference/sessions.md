@@ -208,8 +208,13 @@ A session started with added directories (`--add-dir`, `--read-dir`,
       {"dir":"/Volumes/Archive/reference","access":"read","source":"flag"}]}}
 
 `dir` is the real path the profiles and the file tools use, `access`
-the level and `source` where you gave it. A session with none writes no
-record. An older build resuming such a transcript skips the record.
+the level and `source` where it came from (`flag`, `config`, `slash` for
+`/add-dir` / `/read-dir`, `request` for an approved `request_directory`).
+A grant during the session writes the record again with every root in
+force plus `granted` (`dir`, `access`, `source`), `absorbed` when a write
+root took in read roots, and for a request the model's `reason` and
+`answer`; `/clear` writes the full list into the new transcript. A
+session with none writes no record. An older build resuming such a transcript skips the record.
 
 ## Agent memory (ADR-0020)
 

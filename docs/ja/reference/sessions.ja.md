@@ -197,7 +197,11 @@ transcript を resume するとフィールドを無視し、注記なしで結�
       {"dir":"/Volumes/Archive/reference","access":"read","source":"flag"}]}}
 
 `dir` はプロファイルとファイルツールが使う実パス、`access` はレベル、
-`source` はあなたがどこで与えたかです。追加ディレクトリの無いセッションは
+`source` は出どころ（`flag`・`config`、`/add-dir` / `/read-dir` なら `slash`、承認した
+`request_directory` なら `request`）です。セッションの途中の付与は、有効なすべての
+ルートに `granted`（`dir`・`access`・`source`）、write ルートが read ルートを取り込んだ
+ときは `absorbed`、要請ならモデルの `reason` と `answer` を加えて、記録を書き直します。
+`/clear` は新しい transcript に全体の一覧を書きます。追加ディレクトリの無いセッションは
 記録を書きません。古い版がこのような transcript を再開すると、この記録は
 飛ばされます。
 

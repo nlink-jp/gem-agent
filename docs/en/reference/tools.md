@@ -235,6 +235,19 @@ once per session), pointing the model here for the live moment; a
 resumed session states the resume day and the day its conversation
 began instead (ADR-0097).
 
+## `request_directory` (ADR-0099 §4)
+
+The model asks for a directory outside the project — `path`, `access`
+(`read` or `write`) and a one-sentence `reason` for you. It is
+operator-only in every mode: the session allowlist, the model tier, a
+`never` policy and `--allow` never answer it, and it is not registered
+under `-p`. You approve or deny; to give it read-only, deny and type
+`/read-dir`. After approval it goes through the same grant as
+`/add-dir`: the rule, the real path read back, the probes, and nothing
+changed if any of them fails. A path that resolves through a link is
+refused with its real path. The roots appear in the system prompt from
+the next turn; the tool result says so at once.
+
 ## `ask_user` (ADR-0036)
 
 A structured mid-turn choice: the model presents a question and 2–8

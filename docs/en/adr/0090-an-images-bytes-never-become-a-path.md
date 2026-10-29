@@ -16,7 +16,7 @@ drafts and three refutations, and one constraint that survived all of them:
 **the view layer opens no file.** A read the view layer performs is not a
 tool call, so it reaches neither `Agent.decide` nor ADR-0086's sandboxed
 child, and the credential list — the `credentialReadTools` map, keyed on built-in tool
-name ([risk.go:187](../../../internal/risk/risk.go)) — cannot see it.
+name ([risk.go:200](../../../internal/risk/risk.go)) — cannot see it.
 
 That constraint rules out the obvious design. The MCP intake already writes
 an image into the session work directory and hands the model
@@ -47,7 +47,7 @@ blocks are gone.
 
 But the runtime is not short of a channel. The agent loop already talks to
 the UI **during** a tool call — `prog.Send(tui.ToolCall{…})` at
-[root.go:976](../../../cmd/root.go) — so an out-of-band route from a tool
+[root.go:1001](../../../cmd/root.go) — so an out-of-band route from a tool
 result to the screen is an existing, working pattern rather than a new
 mechanism. Nothing about the string contract has to move.
 

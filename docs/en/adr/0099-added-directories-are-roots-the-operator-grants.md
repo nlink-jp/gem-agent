@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-10-29) — step 1 (§1–§3, §5–§7, §10) implemented in v0.93.0; step 2 (§4, §8, §11) not yet |
+| Status | **Accepted** (2026-10-29) — step 1 (§1–§3, §5–§7, §10) implemented in v0.93.0; step 2 (§4, §8, §11, §12) implemented |
 | Date | 2026-10-29 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -138,23 +138,32 @@ request_directory(path, access, reason)
 
 - **Always `OperatorOnly`.** It must prompt in every approval mode. The
   session allowlist and the model tier never answer it. It is denied under
-  `-p`, where no human is present. When the session has a read-only
-  ceiling, a `write` request is refused before anyone is asked. A
+  `-p`, where no human is present. Under a read-only ceiling it is a
+  mutating call like any other: the ceiling's own question to lift it
+  comes first (ADR-0080) *(the first text refused a write request
+  there; the ceiling's existing path already stops it unasked-for)*. A
   delegated child registry (`Registry.Subset`) does not carry the tool; a
   child sees the roots in force through its parent.
-- **§5 runs before the operator is asked.** A path that fails it is refused
-  by rule. Approval fatigue never decides whether `~` becomes writable.
-- **The prompt shows,** with control and bidirectional-override characters
-  removed from everything the model wrote:
-  - the resolved real path first, and the path as the model wrote it when
-    the two differ;
-  - the access level, and what it means in the current mode (for `write`
-    under auto-approval: "later writes there run without asking");
-  - the model's `reason`, labelled as the model's claim.
-- **The operator's answers** are: approve as requested; approve as `read`
-  (offered when `write` was requested); deny. A `write` request for a
-  directory that is already a `read` root is an upgrade and is asked the
-  same way.
+- **§5 decides at the grant, and approval never overrides it.** A path
+  that fails it is refused by rule after the answer, so approval fatigue
+  never decides whether `~` becomes writable. *(Implementation note,
+  2026-10-29: the first text ran §5 before the prompt; the approval gate
+  has no pre-prompt hook, and the order changes nothing a refusal
+  protects — a refused path is refused either way.)*
+- **The prompt is the approval gate's**, with the verdict's reason naming
+  the path as written, the level, and what it means under auto-approval
+  ("later writes there run without asking"), control and
+  bidirectional-override characters removed at the TUI's ingress
+(ADR-0093 §2); the model's `reason` is in
+  the call's arguments. A path the model wrote that resolves through a
+  link is refused at the grant with its real path, so what the operator
+  approved is never a different place.
+- **The operator's answers** are the gate's own: approve or deny. A
+  directory wanted read-only is denied and added with `/read-dir` (§11)
+  — the operator's entrance makes a third answer unnecessary *(changed
+  from "approve as read" in the first text, 2026-10-29)*. A `write`
+  request for a directory that is already a `read` root is an upgrade
+  and is asked the same way.
 - **After approval, the grant goes through §12** — the one grant path
   this request and the operator's `/add-dir` (§11) share. Its first step
   opens the directory and reads the real path back from the descriptor;
@@ -176,10 +185,12 @@ request_directory(path, access, reason)
   the flags and the configuration again; a resumed conversation that
   mentions an earlier grant meets the outside-roots refusal, whose reason
   says earlier grants are not restored.
-- Every grant and refusal is written to the session log and the audit trail
-  with its source (`flag`, `config`, `slash` or `request`), real path and
-  level; a request's record also carries the model's reason and the
-  operator's answer (as asked, as read, denied).
+- Every grant is written to the transcript as an `added_directories`
+  record with its source (`flag`, `config`, `slash` or `request`), real
+  path and level; a request's record also carries the model's reason. A
+  denial is the approval gate's own record, and a refusal or a dropped
+  grant is the tool's result — with its reason — in the transcript; the
+  call and its answer reach the audit trail as every gated call does.
 
 ### 5. One rule decides which directories may be roots
 
@@ -380,12 +391,13 @@ uses for the same act.
   and a refusal names its reason; a path that passes goes through §12,
   exactly as an approved request does. A failed verification refuses the
   add and leaves the session as it was.
-- **A path that resolves through a link asks once.** The model can plant
-  `notes -> ~/Documents` in the project and suggest `/add-dir notes`; the
-  typed path then names one place and grants another. When the real path
-  differs from the cleaned typed path, the real path is shown and the
-  operator answers once; otherwise there is no prompt. Every note names
-  the real path.
+- **A path that resolves through a link is confirmed by its real path.**
+  The model can plant `notes -> ~/Documents` in the project and suggest
+  `/add-dir notes`; the typed path then names one place and grants
+  another. When the real path differs from the cleaned typed path
+  (ignoring case, as the volume does), nothing is added and the note
+  names the real path; typing that path adds it. Otherwise there is no
+  prompt. Every note names the real path.
 - **Grammar** (ADR-0098's precedent): the rest of the line is the path, so
   a path with spaces needs no quoting; a leading `~` is the home; a
   relative path is relative to the project. A bare `/add-dir` or
@@ -414,10 +426,15 @@ the shell runner, the registry's roots, the watch and the system prompt
 function, and it runs in this order:
 
 1. **Judge.** `RefuseRoot` with the current roots. "Already covered" is a
-   typed result shown as a note, not an error. A write root that would
-   contain a read root absorbs it: the inner entry is replaced, and the
-   note names it (otherwise the write lanes would write a root the file
-   tools refuse, and the probes would fail opaquely).
+   typed result shown as a note, not an error. The path judged is the
+   kernel's name for it (`CanonicalDir`), case included: the
+   containment checks compare strings, and a typed case variant on a
+   case-folding volume slipped past them (implementation review). A new
+   root absorbs the added roots inside it whose level is not higher —
+   a write root over a read root, or the same directory at a higher
+   level: the inner entry is replaced, and the note names it
+   (otherwise the write lanes would write a root the file tools refuse,
+   and the probes would fail opaquely).
 2. **Open.** `os.Root` on the path, the real path read back from the
    descriptor (`F_GETPATH`) and compared with the one judged. The
    processes that could swap the path in between are the ones outside
@@ -454,9 +471,9 @@ function, and it runs in this order:
 requested alike — and writes their record into the new transcript; the
 watch carries them across.
 
-Names reach the system prompt and the notes with control and
-bidirectional-override characters removed, as the operator's prompt
-already does for what the model wrote.
+Names reach the operator through the TUI's ingress, which makes text
+inert where it enters (ADR-0093 §2) — the approval prompt, the notes
+and `/dirs` alike; nothing is stripped again where it is shown.
 
 Tests that must exist: an upgrade takes effect in the file tools, the
 verdict and the probes; write-over-read absorption; a failed

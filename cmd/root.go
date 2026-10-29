@@ -543,6 +543,24 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if err := registry.AddDirs(rootsOf(added)); err != nil {
 		return err
 	}
+	// Mid-session grants (ADR-0099 §12): the operator's /add-dir and
+	// /read-dir and the model's request_directory share this one path.
+	granter := &dirGranter{
+		registry: registry, shellExec: shellExec, sandboxOn: sandboxOn,
+		projectDir: realOrSelf(projectDir), workDir: func() string { return workDir },
+		denyExec: cfg.Sandbox.ReadLaneDenyExec, caches: cfg.Sandbox.Caches(), readLanePrompts: cfg.Sandbox.ReadLanePrompts,
+		parents: func() []string { return trustpin.Parents(projectDir, persistentSnap) },
+		base:    rootBaseContext(cfgPath), watch: watch, sources: map[string]string{},
+		log: func(kind string, data any) error {
+			if sessionLog == nil {
+				return nil
+			}
+			return sessionLog.Log(kind, data)
+		},
+	}
+	for _, a := range added {
+		granter.sources[a.Dir] = a.Source
+	}
 	// The file tools' reads run in a child under a profile that denies
 	// the credential list at the kernel (ADR-0086), proven on this
 	// machine before it is trusted. Where it cannot be proven the reads
@@ -922,6 +940,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 
 	// ag.Run, so the pointer is always set by then.
 	var ag *agent.Agent
+	if flagPrompt == "" {
+		// Only where a human answers (ADR-0099 §4): under -p it could
+		// only be denied.
+		if err := registerRequestDirectory(registry, granter); err != nil {
+			return err
+		}
+	}
 	if err := registerInfoTool(registry, func() infoSnapshot {
 		mcpRegistered, mcpAdvertised, mcpWithheld := adv.Counts()
 		return infoSnapshot{
@@ -1462,7 +1487,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// One value for both surfaces: the TUI and the plain REPL each built
 	// this literal, so a closure added to one could be missed in the
 	// other and its command read as unknown there (pre-release review).
-	reloads := slashReloads{mcp: reloadMCP, skills: reloadSkills, mcpLoad: loadMCP, mcpStatus: adv.Status, mcpWithheld: adv.Withheld, show: showPath, thinking: thinkingSlash}
+	addDirSlash := func(rest string, write bool) (string, bool) {
+		note, err := granter.grant(context.Background(), rest, write, "slash", granter.currentEpoch(), nil)
+		if err != nil {
+			return err.Error(), true
+		}
+		return note, false
+	}
+	reloads := slashReloads{mcp: reloadMCP, skills: reloadSkills, mcpLoad: loadMCP, mcpStatus: adv.Status, mcpWithheld: adv.Withheld, show: showPath, thinking: thinkingSlash, addDir: addDirSlash, dirs: granter.listing}
 
 	// --- session-start hooks (ADR-0069): startup / resume, and /clear ---
 	// The output rides the next turn's user message as a data
@@ -1559,6 +1591,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			sessionHooks("clear")
 			return render()
 		}
+		// From here to the runner's rebuild the session's identity, its
+		// transcript and its work directory change: a grant — a late one
+		// from an abandoned call included — waits, and one from the old
+		// session is dropped by the epoch advanced now (ADR-0099 §12;
+		// review of step 2, #2).
+		granter.beginClear()
 		// Hook first, then the audit event — the order ADR-0071 §4a
 		// states and external consumers observe; the trail closes under
 		// the old id before the sink is re-resourced for the new one.
@@ -1593,11 +1631,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		curLog = newLog
 		sessionLog = newLog
 		sessionPath, sessionID = newLog.Path(), newLog.ID()
-		if len(added) > 0 {
-			// The roots stay in force across /clear, so the new
-			// transcript records them too (ADR-0099 §4: every grant is
-			// in the transcript it applies to).
-			_ = newLog.Log("added_directories", addedDirsRecord(added))
+		if len(registry.AddedDirs()) > 0 {
+			// The roots stay in force across /clear — startup, slash and
+			// requested alike — so the new transcript records them too
+			// (ADR-0099 §12).
+			_ = newLog.Log("added_directories", granter.record())
 		}
 		if err := session.Export(sessionID); err != nil {
 			note("cannot set %s: %v", session.EnvVar, err)
@@ -1626,7 +1664,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// §8); the rebuilt system prompt below carries the same list.
 		adv.Reset()
 		ag.RefreshTools()
+		// Still under the grant lock taken above: a late grant cannot
+		// swap in a runner built against the old work directory.
 		notes = append(notes, rotateWorkDir(registry, shellExec, sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec, cfg.Sandbox.Caches(), cfg.Sandbox.ReadLanePrompts, trustpin.Parents(projectDir, persistentSnap), registry.AddedDirs(), func() { ag.SetSystem(composeSystem()) })...)
+		granter.endClear()
 		// A cleared session restarts what carries its identity (ADR-0071
 		// addendum): telemetry is re-resourced with the new id, and the
 		// MCP servers — spawned at startup with the old id in their
@@ -1817,6 +1858,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			},
 			StartTurn: func(turnCtx context.Context, input string) {
 				go func() {
+					if granter.promptStale.Swap(false) {
+						// A grant since the last turn (ADR-0099 §12 step 7):
+						// the prompt's roots are rebuilt between turns.
+						ag.SetSystem(composeSystem())
+					}
 					_, err := ag.Run(turnCtx, input, func(s string) { prog.Send(tui.TextDelta(s)) })
 					if err != nil && turnCtx.Err() != nil {
 						// Mirror runTurn's mapping: a cancellation-caused
@@ -1906,6 +1952,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				continue
 			}
 			runErr := runTurnWith(ctx, ladder, func(turnCtx context.Context) error {
+				if granter.promptStale.Swap(false) {
+					// A grant since the last turn (ADR-0099 §12 step 7).
+					ag.SetSystem(composeSystem())
+				}
 				_, err := ag.Run(turnCtx, turn, func(s string) { fmt.Fprint(cmd.OutOrStdout(), s) })
 				return err
 			})
@@ -1956,6 +2006,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 
 		// SIGINT cancels the in-flight turn, not the process.
 		runErr := runTurnWith(ctx, ladder, func(turnCtx context.Context) error {
+			if granter.promptStale.Swap(false) {
+				// A grant since the last turn (ADR-0099 §12 step 7).
+				ag.SetSystem(composeSystem())
+			}
 			_, err := ag.Run(turnCtx, input, func(s string) { fmt.Fprint(cmd.OutOrStdout(), s) })
 			return err
 		})
@@ -2564,8 +2618,8 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 // call: /skills reload swaps the list mid-session (ADR-0039).
 func slashCompletions(getSkills func() []skills.Skill) func(string) []string {
 	commands := []string{
-		"/auto", "/clear", "/compact", "/exit", "/help", "/mcp", "/memory",
-		"/quit", "/readonly", "/riskbook", "/settings", "/skill", "/skills",
+		"/add-dir", "/auto", "/clear", "/compact", "/dirs", "/exit", "/help", "/mcp", "/memory",
+		"/quit", "/read-dir", "/readonly", "/riskbook", "/settings", "/skill", "/skills",
 		"/thinking", "/tools", "/usage", "/version",
 	}
 	return func(prefix string) []string {
@@ -2691,6 +2745,10 @@ type slashReloads struct {
 	// thinking is /thinking (ADR-0098): the args after the command, the
 	// output, and whether it is an error. nil reads as unknown.
 	thinking func(args []string) (string, bool)
+	// addDir is /add-dir and /read-dir (ADR-0099 §11): the rest of the
+	// line is the path. dirs is /dirs (§8). nil reads as unknown.
+	addDir func(rest string, write bool) (string, bool)
+	dirs   func() string
 }
 
 func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSummary []string, skillsList []skills.Skill, reload slashReloads, usage func() string, memoryInfo func() string, riskbookCmd func(args []string) (string, bool), version string, msgs *uitext.Messages, onClear func() string) (output string, isErr bool, quit bool) {
@@ -2857,6 +2915,19 @@ func slashOutput(input string, ag *agent.Agent, registry *tools.Registry, mcpSum
 				b.WriteString(msgs.ReadOnlyAuto)
 			}
 		}
+	case "/add-dir", "/read-dir", "/dirs":
+		if reload.addDir == nil || reload.dirs == nil {
+			fmt.Fprintf(&b, msgs.UnknownCommandFmt, input)
+			return b.String(), true, false
+		}
+		// The rest of the line is the path, so a path with spaces needs
+		// no quoting; bare, each lists the roots (§11's grammar).
+		rest := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(input), fields[0]))
+		if fields[0] == "/dirs" || rest == "" {
+			return reload.dirs(), false, false
+		}
+		out, isErr := reload.addDir(rest, fields[0] == "/add-dir")
+		return out, isErr, false
 	case "/thinking":
 		if reload.thinking == nil {
 			fmt.Fprintf(&b, msgs.UnknownCommandFmt, input)

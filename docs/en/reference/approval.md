@@ -700,6 +700,20 @@ grants are recorded in the transcript (`added_directories`, see
 session, so ejecting the volume it lies on can report it busy until
 gem-agent exits (not measured).
 
+**During a session** you add one with `/add-dir` or `/read-dir` (no
+prompt — you typed it), and the model may ask with `request_directory`,
+which you always answer (operator-only in every mode; deny and type
+`/read-dir` to give read-only). Both go through one grant (ADR-0099
+§12): the rule above, the real path read back from the open directory,
+the probes against the rebuilt profiles, and the swap — under a lock
+that `/clear` shares, so a late grant from an abandoned call cannot
+undo a rotation. A grant never changes the sandbox's verified state (the
+read lane stays as it was, an unconfined session stays unconfined and
+the grant then reaches the file tools only); if verification fails,
+nothing changes. A write root around read roots absorbs them; a path
+that resolves through a link adds nothing and names its real path.
+Granted roots stay across `/clear` and are never written to a file.
+
 **Persistent files in a write root are watched** (ADR-0099 §10). The
 name denials stop a write onto `AGENTS.md`, but not a command that
 builds a directory holding one elsewhere and moves it in — and a project

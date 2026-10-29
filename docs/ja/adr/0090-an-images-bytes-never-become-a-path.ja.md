@@ -15,7 +15,7 @@ ADR-0089 はレーンを作り、供給源を開いたまま残した。その �
 3 稿すべてに対して成立した制約 1 つを記録している。**view 層はファイルを開かない。**
 view 層が行う読み取りはツールコールではないので、`Agent.decide` にも ADR-0086 の sandbox 子
 にも届かず、組み込みツール名で引かれる資格情報一覧 — `credentialReadTools` マップ
-（[risk.go:187](../../../internal/risk/risk.go)）— からは見えない。
+（[risk.go:200](../../../internal/risk/risk.go)）— からは見えない。
 
 その制約が、いちばん素直な設計を排除する。MCP intake は既に画像をセッションの work dir へ
 書き出し、モデルには `[image saved at <path> … use view_image on that path]` を渡している
@@ -38,7 +38,7 @@ work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:610](../..
 `Run` が返れば blocks は消えている。
 
 しかしランタイムに経路が無いわけではない。エージェントループはツールコールの**最中に**既に
-UI へ話しかけている — `prog.Send(tui.ToolCall{…})`（[root.go:976](../../../cmd/root.go)）—
+UI へ話しかけている — `prog.Send(tui.ToolCall{…})`（[root.go:1001](../../../cmd/root.go)）—
 ので、ツール結果から画面への帯域外経路は新しい機構ではなく既存の働いている型である。文字列
 契約は 1 ミリも動かさなくてよい。
 

@@ -275,6 +275,40 @@ func (r *Registry) AddDirs(roots []sandbox.AddedRoot) error {
 	return nil
 }
 
+// GrantAddedDir installs one root granted during the session (ADR-0099
+// §12), through the os.Root the grant already opened and read back:
+// the entries in absorbed (an upgrade of the same directory, or roots a
+// new write root contains) are removed and their handles retired, as a
+// rotated work directory's is, and the new root is appended.
+func (r *Registry) GrantAddedDir(root sandbox.AddedRoot, opened *os.Root, absorbed []string) {
+	if r.parent != nil {
+		r.parent.GrantAddedDir(root, opened, absorbed)
+		return
+	}
+	drop := map[string]bool{}
+	for _, d := range absorbed {
+		drop[d] = true
+	}
+	r.rootsMu.Lock()
+	next := make([]addedHandle, 0, len(r.added)+1)
+	for _, a := range r.added {
+		if drop[a.root.Dir] {
+			a.h.retire()
+			continue
+		}
+		next = append(next, a)
+	}
+	r.added = append(next, addedHandle{root: root, h: &rootHandle{root: opened}})
+	r.rootsMu.Unlock()
+}
+
+// Enforcement returns what the runtime established about the sandbox.
+// A mid-session grant must leave it unchanged (ADR-0099 §12).
+func (r *Registry) Enforcement() sandbox.Enforcement {
+	_, enf := r.laneState()
+	return enf
+}
+
 // AddedDirs returns the added roots with their levels, in the order
 // they were added.
 func (r *Registry) AddedDirs() []sandbox.AddedRoot {
