@@ -9,6 +9,11 @@
 | Triggered by | Operator: "the model is clearly still working, but around an edit_file / write_file call the status line says the connection may be stalled" |
 | Amends | ADR-0033 §1 (the single 20s threshold), ADR-0041 §5 |
 
+*Amended by ADR-0100: §1–§2 are superseded — the warning and its 90s
+threshold are removed. The function-call measurement stands; "no
+client-side signal" holds for the content only: the connection's HTTP/2
+health check names a dead one.*
+
 ## Context
 
 ADR-0033 §1 gave the running status a heartbeat and ONE threshold: 20

@@ -144,10 +144,6 @@ type Messages struct {
 	StatusShellFmt     string // %s = command (clipped)
 	// HeartbeatFmt: elapsed, chunk count, seconds since last chunk.
 	HeartbeatFmt string
-	// StallFmt: seconds with no data — the connection may be dead. It
-	// does NOT name Ctrl+C: CtrlCHint renders right after it, and the
-	// duplicate pushed the real hint off an 80-column terminal.
-	StallFmt string
 	// RetryFmt: attempt, max, cause token (429/503/error), wait seconds.
 	RetryFmt string
 	// ThoughtPrefix marks a live thought-summary line.
@@ -485,7 +481,6 @@ var en = Messages{
 	StatusRunningFmt:        "running %s",
 	StatusShellFmt:          "shell: %s",
 	HeartbeatFmt:            "%s · %d chunks · last %ds",
-	StallFmt:                "no data for %ds — the stream may be stalled",
 	RetryFmt:                "retry %d/%d (%s) — waiting %ds",
 	ThoughtPrefix:           "✦ ",
 	InterruptStuckWarn:      "⚠ tool ignores cancel — one more Ctrl+C quits gem-agent (the session is saved)",
@@ -711,7 +706,6 @@ var ja = Messages{
 	StatusRunningFmt:        "実行中 %s",
 	StatusShellFmt:          "shell: %s",
 	HeartbeatFmt:            "%s · %d チャンク · 最終 %d 秒前",
-	StallFmt:                "%d 秒間データなし — 接続が失速している可能性",
 	RetryFmt:                "リトライ %d/%d (%s) — %d 秒待機",
 	ThoughtPrefix:           "✦ ",
 	InterruptStuckWarn:      "⚠ ツールがキャンセルに応答しません — もう一度 Ctrl+C で gem-agent を終了します（セッションは保存済み）",

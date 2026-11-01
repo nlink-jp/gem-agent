@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **No more "connection may be stalled" warning** (ADR-0100). The
+  status line no longer turns into a warning after 90s without data.
+  Long silences are normal — the server reading a long context or the
+  model writing a large file — and the warning appeared on connections
+  that were alive. The heartbeat keeps counting the seconds since the
+  last data.
+- **A dropped connection says so.** When the connection to Vertex AI
+  dies, the turn ends with "the connection to Vertex AI was lost — send
+  the message again" (in your language) about 46s after the last data,
+  instead of a raw transport error. The raw error is in the session log.
+  The TUI no longer lets the SDK's own error line draw over the screen.
+- gem-agent now builds its Vertex AI HTTP client itself, keeping the
+  same HTTP/2 liveness check the SDK used (a ping after 31s without
+  data, 15s to answer), so a dependency update cannot drop it.
+
 ## [0.94.0] - 2026-10-29
 
 ### Added

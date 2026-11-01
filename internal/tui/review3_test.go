@@ -43,7 +43,7 @@ func TestSideCallThoughtsIgnoredDuringTool(t *testing.T) {
 }
 
 // toolRunning never leaks across turns: an interrupted tool must not
-// disarm the next turn's stall detector.
+// hide the next turn's thoughts.
 func TestToolRunningResetsOnTurnBoundary(t *testing.T) {
 	m, _ := runningModel(t)
 	next, _ := m.Update(ToolCall{Name: "shell_exec", Detail: "make"})
@@ -55,32 +55,14 @@ func TestToolRunningResetsOnTurnBoundary(t *testing.T) {
 	}
 	m.ta.SetValue("again")
 	m = press(m, enter())
-	m.lastChunk = time.Now().Add(-(stallSeconds + 5) * time.Second)
-	if !strings.Contains(m.View(), "stalled") {
-		t.Error("next turn's stall detector disarmed by the previous turn's tool")
+	if m.toolRunning {
+		t.Error("the next turn started in the previous turn's tool state")
 	}
 }
 
-// A `!command` has no model stream: elapsed time yes, stall warning no.
-func TestShellCommandNeverStallWarns(t *testing.T) {
-	c := &capture{}
-	m := newTestModel(c)
-	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	m = next.(Model)
-	m.shell = func(context.Context, string) {}
-	m.ta.SetValue("!sleep 60")
-	m = press(m, enter())
-	m.lastChunk = time.Now().Add(-(stallSeconds + 5) * time.Second)
-	if strings.Contains(m.View(), "stalled") {
-		t.Errorf("stall warning for a shell command with no connection:\n%s", m.View())
-	}
-}
-
-// `/riskbook learn` drives dialogs on this event loop and produces no
-// model stream while it waits for the human. The suppression flag used
-// to be set BEFORE beginTurnStats, which resets it — so the pass
-// warned about a connection it was not using (ADR-0056).
-func TestRiskbookLearnNeverStallWarns(t *testing.T) {
+// `/riskbook learn` drives dialogs on this event loop. Its tool state
+// used to be set BEFORE beginTurnStats, which resets it (ADR-0056 §3).
+func TestRiskbookLearnSetsToolStateAfterTheReset(t *testing.T) {
 	c := &capture{}
 	m := newTestModel(c)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
@@ -89,11 +71,7 @@ func TestRiskbookLearnNeverStallWarns(t *testing.T) {
 	m.ta.SetValue("/riskbook learn")
 	m = press(m, enter())
 	if !m.toolRunning {
-		t.Fatal("the learning pass did not suppress the stall detector")
-	}
-	m.lastChunk = time.Now().Add(-(stallSeconds + 5) * time.Second)
-	if strings.Contains(m.View(), "stalled") {
-		t.Errorf("stall warning while the learning pass waits on a human:\n%s", m.View())
+		t.Fatal("the learning pass's tool state was reset by beginTurnStats")
 	}
 }
 

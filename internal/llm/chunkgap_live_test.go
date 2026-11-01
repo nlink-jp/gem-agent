@@ -80,6 +80,6 @@ func TestChunkGapDuringLargeToolCallLive(t *testing.T) {
 		total.Seconds(), chunks, maxGap.Seconds(), gapBeforeEnd.Seconds(),
 		len(resp.ToolCalls), argLen, resp.OutputTokens, resp.ThoughtTokens)
 	if maxGap >= 20*time.Second {
-		t.Logf("REPRODUCED: a %.1fs silence exceeds stallSeconds=20 — the TUI would warn while the model works", maxGap.Seconds())
+		t.Logf("REPRODUCED: a %.1fs silence exceeds the 20s threshold of the time — the TUI warned while the model worked (ADR-0056; the warning is gone since ADR-0100)", maxGap.Seconds())
 	}
 }

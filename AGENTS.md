@@ -839,10 +839,10 @@ a new hook) is an architecture change and takes the same rows as a
   managed view. `liveView` runs `expandTabs` before `clipLines`; keep it.
 - **`toolRunning` is bounded by ToolCall…ToolDone, never by chunks** — during
   a tool the only streams are side-calls (risk/progress review); clearing
-  on a chunk produced false stall warnings and mis-attributed thoughts.
-  The agent emits OnToolDone after every call; the TUI re-arms on that.
+  on a chunk mis-attributed their thoughts to the main model.
+  The agent emits OnToolDone after every call; the TUI clears it on that.
   Set the flag AFTER `beginTurnStats()`, which resets it — the
-  `/riskbook learn` path set it before and silently lost the suppression.
+  `/riskbook learn` path set it before and silently lost it.
 - **The model tier has its own backend and model name** (ADR-0082) —
   `a.tierBackend()` / `a.tierModel()` answer the risk evaluation, the
   progress review and the read-only watcher, and their `usage` records
@@ -924,19 +924,23 @@ a new hook) is an architecture change and takes the same rows as a
   because the main loop never enables a provider tool. `tool_prompt` is
   written always, zero included — a missing key is how an aggregator
   tells a pre-0066 record from a measured zero; do not add `omitempty`.
-- **A silent stream is not a dead stream** (ADR-0056) — Gemini emits a
-  function call as ONE part, so while the model composes a large
-  `write_file` / `edit_file` argument nothing arrives at all: measured 40s
-  with not one byte read from the HTTP body (`internal/llm/*_live_test.go`
-  keep the measurement). Hence `stallSeconds = 90`. There is no
-  client-side signal that separates composing from stalled; do not go
-  looking for one — and do not put the reason on screen: the operator
-  cannot act on how the provider frames a part (that attempt was
-  rejected on review; supplier constraints go in ADRs, not the UI).
+- **A silent stream is not a dead stream** (ADR-0056, ADR-0100) — the wire
+  carries nothing while the model composes a function call (one whole
+  part: 40s for 21KB) or the server reads a long context (79–205s
+  measured on live connections). Nothing in the content tells these from
+  a dead connection, but the connection itself does: `llm/transport.go`
+  owns an HTTP/2 health check (ping after 31s without a frame, 15s to
+  answer) that fails the stream as `ErrConnectionLost`, which the agent
+  says in the operator's words. So the TUI never warns about silence —
+  do not bring back a seconds threshold, and do not put the supplier's
+  reasons on screen (rejected on review; they go in ADRs). Keep the
+  client construction in `NewVertex`: left to genai, the health check is
+  a dependency's undocumented default. The SDK prints a failed stream
+  with `log.Printf`; the TUI discards the standard logger
+  (`quietStdLog`) so that line cannot draw over the screen.
 - **The running status line must keep `(Ctrl+C interrupts)` at 80 columns**
-  — it is clipped per line, so anything appended to it eats the way out.
-  That is why `StallFmt` no longer repeats the hint; a test pins it in
-  both languages.
+  — it is clipped per line, so anything appended to it eats the way out;
+  a test pins it in both languages.
 - **A model-authored agent input must set `NoMentions`** — the @ grammar's
   out-of-project grants assume operator-typed input; the file-search child
   is the one such input today, and any future delegate must opt out too.

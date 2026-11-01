@@ -8,6 +8,11 @@
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Operator: the agent sometimes sits on "thinking…" with no response for a very long time, and nothing on screen says what is happening |
 
+*Amended by ADR-0100: the stall warning of §1 is removed. The HTTP/2
+health check fails a dead connection's stream within 46s of its last
+frame and the turn ends with an error; the heartbeat keeps counting the
+silence, neutral, and never calls it a problem.*
+
 ## Context
 
 During a turn the status line showed a spinner and the static word

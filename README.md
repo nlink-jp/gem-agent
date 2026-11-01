@@ -76,7 +76,7 @@ Each line below is expanded in a focused document under
 **[Interface](docs/en/reference/interface.md)** — an inline Bubble Tea
 TUI with native scrollback, a bottom-pinned input box that stays live
 during a running turn (Enter queues the next message), a live turn
-status — stream heartbeat, stall warning, visible retries, and the
+status — stream heartbeat, visible retries, and the
 model's thought summaries streaming as it thinks — a Ctrl+C that
 always comes back (file walks stop within one syscall, anything else
 is abandoned after a bounded grace — ADR-0065), IME-friendly

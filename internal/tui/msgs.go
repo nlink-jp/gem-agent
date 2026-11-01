@@ -46,8 +46,9 @@ type ToolCall struct {
 }
 
 // ToolDone signals that a tool call finished (executed, denied, or
-// skipped) — the stall detector re-arms on this, never on stream
-// chunks, which a side-call (risk/progress review) also produces.
+// skipped) — the main model's thoughts show again on this, never on
+// stream chunks, which a side-call (risk/progress review) also
+// produces.
 type ToolDone struct {
 	Name string
 }

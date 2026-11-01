@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -42,54 +43,35 @@ func TestHeartbeatShowsElapsedAndChunks(t *testing.T) {
 	}
 }
 
-func TestStallWarningAfterSilence(t *testing.T) {
-	m, _ := runningModel(t)
-	// No chunk for stallSeconds: rewind the clock instead of sleeping.
-	m.turnStart = time.Now().Add(-(stallSeconds + 5) * time.Second)
-	v := m.View()
-	if !strings.Contains(v, "stalled") {
-		t.Errorf("no stall warning after %ds silence:\n%s", stallSeconds, v)
-	}
-	// A chunk arriving clears the stall reading.
-	next, _ := m.Update(StreamUpdate{Kind: "chunk"})
-	m = next.(Model)
-	if strings.Contains(m.View(), "stalled") {
-		t.Error("stall warning survived fresh data")
-	}
-}
-
-// ADR-0056: a Gemini function call arrives as one whole part, so a
-// large write_file / edit_file argument is minutes of legitimate
-// silence on the wire. The heartbeat keeps counting; it does not
-// accuse the connection until stallSeconds.
-func TestLongToolArgumentSilenceIsNotWarned(t *testing.T) {
-	m, _ := runningModel(t)
-	next, _ := m.Update(StreamUpdate{Kind: "chunk"})
-	m = next.(Model)
-	// 40s of silence — measured benign for a 21KB write_file argument.
-	m.lastChunk = time.Now().Add(-40 * time.Second)
-	v := m.View()
-	if strings.Contains(v, "stalled") {
-		t.Errorf("40s of tool-argument silence warned as a stalled connection:\n%s", v)
-	}
-	if !strings.Contains(v, "last 40s") {
-		t.Errorf("the heartbeat dropped the silence age:\n%s", v)
-	}
-}
-
-// The warning still exists — it just waits for silence a working
-// model does not produce.
-func TestStallWarningStillFiresPastTheThreshold(t *testing.T) {
-	m, _ := runningModel(t)
-	m.lastChunk = time.Now().Add(-(stallSeconds + 5) * time.Second)
-	if !strings.Contains(m.View(), "stalled") {
-		t.Errorf("no warning after %ds of silence:\n%s", stallSeconds+5, m.View())
+// Silence is never an accusation (ADR-0100): the wire is silent while
+// the model composes a function call or the server reads a long
+// context, measured up to 205s on live connections, and a dead one is
+// named by the transport's health check as a turn error. The heartbeat
+// keeps counting the age, neutral, in both languages and at any length.
+func TestSilenceIsNeverAnAccusation(t *testing.T) {
+	for _, lang := range []uitext.Lang{uitext.EN, uitext.JA} {
+		m, _ := runningModel(t)
+		m.msgs = uitext.For(lang)
+		next, _ := m.Update(StreamUpdate{Kind: "chunk"})
+		m = next.(Model)
+		for _, age := range []int{40, 95, 210, 600} {
+			m.lastChunk = time.Now().Add(-time.Duration(age) * time.Second)
+			v := m.View()
+			for _, word := range []string{"stalled", "stall", "失速", "データなし"} {
+				if strings.Contains(v, word) {
+					t.Errorf("%s, silent %ds: the heartbeat accuses the connection (%q):\n%s", lang, age, word, v)
+				}
+			}
+			want := map[uitext.Lang]string{uitext.EN: "last " + strconv.Itoa(age) + "s", uitext.JA: "最終 " + strconv.Itoa(age) + " 秒前"}[lang]
+			if !strings.Contains(v, want) {
+				t.Errorf("%s, silent %ds: the heartbeat dropped the age (want %q):\n%s", lang, age, want, v)
+			}
+		}
 	}
 }
 
 // The status line must leave the Ctrl+C hint on screen at 80 columns —
-// the warning is useless if the way out is what gets truncated. This
-// is why StallFmt no longer repeats the hint inside itself (ADR-0056).
+// it is the way out of a slow turn, and truncation cuts it first.
 func TestStatusLineKeepsTheCtrlCHintAt80Columns(t *testing.T) {
 	for _, lang := range []uitext.Lang{uitext.EN, uitext.JA} {
 		c := &capture{}
@@ -101,11 +83,10 @@ func TestStatusLineKeepsTheCtrlCHintAt80Columns(t *testing.T) {
 		m = press(m, enter())
 		next, _ = m.Update(StreamUpdate{Kind: "chunk"})
 		m = next.(Model)
-		for _, age := range []time.Duration{40 * time.Second, (stallSeconds + 5) * time.Second} {
+		for _, age := range []time.Duration{40 * time.Second, 600 * time.Second} {
 			m.lastChunk = time.Now().Add(-age)
 			for _, line := range strings.Split(m.View(), "\n") {
-				if !strings.Contains(line, "chunks") && !strings.Contains(line, "stalled") &&
-					!strings.Contains(line, "失速") {
+				if !strings.Contains(line, "chunks") && !strings.Contains(line, "チャンク") {
 					continue
 				}
 				// The WHOLE hint, not a prefix of it: truncation cuts
@@ -215,35 +196,24 @@ func TestTripleCtrlCEscapesAWedgedTool(t *testing.T) {
 	}
 }
 
-// A long tool execution receives no stream chunks BY DESIGN — the
-// stall warning must not cry wolf there (operator question follow-up:
-// "is the silent tool the same cause?" — during the tool, silence is
-// normal; the warning is for the model stream).
-func TestNoStallWarningWhileAToolRuns(t *testing.T) {
+// During a tool the only streams are side-calls (risk/progress
+// review): their chunks must not end the tool state, so their thoughts
+// stay out of the main tail. ToolDone ends it (review round 3).
+func TestToolStateEndsOnToolDoneNotOnSideCallChunks(t *testing.T) {
 	m, _ := runningModel(t)
 	next, _ := m.Update(StreamUpdate{Kind: "chunk"})
 	m = next.(Model)
 	next, _ = m.Update(ToolCall{Name: "shell_exec", Detail: "make build"})
 	m = next.(Model)
-	m.lastChunk = time.Now().Add(-(stallSeconds + 5) * time.Second) // long tool, no stream
-	if strings.Contains(m.View(), "stalled") {
-		t.Errorf("false stall warning during tool execution:\n%s", m.View())
-	}
-	// A chunk during the tool is a SIDE-CALL stream (risk/progress
-	// review) and must not re-arm the detector (review round 3).
 	next, _ = m.Update(StreamUpdate{Kind: "chunk"})
 	m = next.(Model)
-	m.lastChunk = time.Now().Add(-(stallSeconds + 5) * time.Second)
-	if strings.Contains(m.View(), "stalled") {
-		t.Errorf("side-call chunk re-armed the stall detector:\n%s", m.View())
+	if !m.toolRunning {
+		t.Error("a side-call chunk ended the tool state")
 	}
-	// The tool returning (ToolDone) re-arms it: a real stall on the
-	// next model round is warned.
 	next, _ = m.Update(ToolDone{Name: "shell_exec"})
 	m = next.(Model)
-	m.lastChunk = time.Now().Add(-(stallSeconds + 5) * time.Second)
-	if !strings.Contains(m.View(), "stalled") {
-		t.Errorf("real stall after the tool returned not warned:\n%s", m.View())
+	if m.toolRunning {
+		t.Error("ToolDone did not end the tool state")
 	}
 }
 

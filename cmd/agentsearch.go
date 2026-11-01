@@ -92,7 +92,7 @@ type agenticSearchOptions struct {
 	tally       *usageTally
 	sink        *telemetry.Sink
 	onToolCall  func(tc llm.ToolCall) // child tool activity, for live display
-	onToolDone  func(tc llm.ToolCall) // child tool finished (TUI stall detector)
+	onToolDone  func(tc llm.ToolCall) // child tool finished (TUI tool state)
 }
 
 // registerAgenticSearch adds agentic_file_search (ADR-0037): a child

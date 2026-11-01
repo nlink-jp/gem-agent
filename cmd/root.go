@@ -1124,10 +1124,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(stderr, "[tool] ↪ %s\n", purpose)
 			}
 		},
-		// The tool-finished signal (review round 3): the TUI's stall
-		// detector re-arms on this, never on stream chunks — a risk or
+		// The tool-finished signal (review round 3): the TUI leaves its
+		// tool state on this, never on stream chunks — a risk or
 		// progress review's side-stream used to look like "the tool
-		// returned" and produced false stall warnings.
+		// returned".
 		OnToolDone: func(tc llm.ToolCall) {
 			if prog != nil {
 				prog.Send(tui.ToolDone{Name: tc.Name})

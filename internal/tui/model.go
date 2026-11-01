@@ -361,9 +361,10 @@ type Model struct {
 	lastChunk   time.Time
 	retryLine   string
 	thoughtTail string
-	// toolRunning: a tool call is executing, so the stream is silent
-	// BY DESIGN — the stall warning must not cry wolf (ADR-0034
-	// follow-up). Cleared when the stream speaks again.
+	// toolRunning: a tool call is executing, so any stream in the
+	// meantime is a side-call's (risk, progress review), and its
+	// thoughts are not the main model's (ADR-0041 §5). Cleared by
+	// ToolDone and at the turn boundary.
 	toolRunning bool
 
 	width  int
@@ -753,8 +754,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.retryLine = "" // data is flowing again
 			// toolRunning is NOT cleared here: during a tool the only
 			// streams are side-calls (the risk evaluation, a progress
-			// review), and mistaking them for "the tool returned"
-			// produced false stall warnings (review round 3). ToolDone
+			// review), and mistaking them for "the tool returned" let
+			// their thoughts into the tail (review round 3). ToolDone
 			// is the signal.
 		case "thought":
 			if m.toolRunning {
@@ -798,11 +799,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.emitAfterLive(m.takeLive(), line)
 
 	case ToolDone:
-		// The tool returned: stall detection re-arms, and the status
-		// stops claiming the tool is running (it used to stick at
-		// "waiting for the tool…" for the rest of the round).
+		// The tool returned: the main model's thoughts show again, and
+		// the status stops claiming the tool is running (it used to
+		// stick at "waiting for the tool…" for the rest of the round).
 		m.toolRunning = false
-		m.lastChunk = time.Now() // the silence clock restarts at the return
+		m.lastChunk = time.Now() // the silence age restarts at the return
 		if m.phase == phaseRunning {
 			m.status = m.msgs.StatusThinking
 		}
@@ -1138,18 +1139,15 @@ func (m *Model) beginTurnStats() {
 	m.toolRunning = false // never inherited from an interrupted turn
 }
 
-// stallSeconds is how long with no data before the heartbeat switches
-// to the warning style (ADR-0033 §1, threshold moved by ADR-0056).
-// It was 20s, which accused a working model: a Gemini function call
-// arrives as ONE whole part, so while the model composes a large
-// write_file / edit_file argument the wire carries nothing at all —
-// measured 40s without a single byte read for a 21KB file, and it
-// scales with the file.
-const stallSeconds = 90
-
 // heartbeatLine renders the live stream stats for the running status
-// bar: a scheduled retry wins, then a stall warning, then the normal
-// elapsed/chunks/age line.
+// bar: a scheduled retry wins, then the elapsed/chunks/age line.
+//
+// Silence is never an accusation (ADR-0100, which removed the stall
+// warning of ADR-0033 §1 / ADR-0056). The wire is silent while the
+// model composes a function call or the server reads a long context —
+// measured 79–205s on live connections — and a dead connection is not
+// this line's to name: the transport's health check fails the stream
+// within 46s of its last frame, and the turn ends with an error.
 func (m Model) heartbeatLine() string {
 	if m.turnStart.IsZero() {
 		return ""
@@ -1162,9 +1160,6 @@ func (m Model) heartbeatLine() string {
 		last = m.turnStart
 	}
 	age := int(time.Since(last).Seconds())
-	if age >= stallSeconds && !m.toolRunning {
-		return m.st.warn.Render("  " + fmt.Sprintf(m.msgs.StallFmt, age))
-	}
 	return m.st.hint.Render("  " + fmt.Sprintf(m.msgs.HeartbeatFmt,
 		fmtElapsed(time.Since(m.turnStart)), m.chunkCount, age))
 }
@@ -1772,7 +1767,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf(m.msgs.StatusShellFmt, clip(command, 60))
 		m.beginTurnStats()
 		// A shell command has no model stream: the heartbeat shows the
-		// elapsed time, never a "connection stalled" warning.
+		// elapsed time; any side-call thoughts stay out of the tail.
 		m.toolRunning = true
 		ctx, cancel := context.WithCancel(m.baseCtx)
 		m.cancelTurn = cancel
@@ -1842,17 +1837,14 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	}
 
 	// /riskbook learn drives dialogs answered on this event loop, so it
-	// runs like a turn, not like a slash command. toolRunning suppresses
-	// the ADR-0033 stall warning: a pass waiting on a human produces no
-	// model stream, and silence there is the normal case.
+	// runs like a turn, not like a slash command. toolRunning keeps its
+	// side-calls' thoughts out of the main thought tail.
 	if input == "/riskbook learn" && m.riskbook != nil {
 		m.phase = phaseRunning
 		m.status = m.msgs.RiskbookStatusLearning
 		m.beginTurnStats()
 		// AFTER beginTurnStats, which resets the flag: in the old
-		// order this suppression was a no-op, and a pass sitting on a
-		// human's answer warned about a connection it was not using
-		// (ADR-0056 §3).
+		// order it was a no-op (ADR-0056 §3).
 		m.toolRunning = true
 		ctx, cancel := context.WithCancel(m.baseCtx)
 		m.cancelTurn = cancel

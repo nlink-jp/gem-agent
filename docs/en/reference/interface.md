@@ -131,14 +131,15 @@ While a turn runs, the status line is live, not a static spinner:
     ⠸ thinking… 1m07s · 34 chunks · last 0s  (Ctrl+C interrupts)
 
 — elapsed time, chunks received from the stream, and seconds since the
-last one. Three states that used to look identical are now
-distinguishable: a **thinking model** keeps receiving chunks (thought
-and metadata chunks count — liveness, not visibility); a **stalled
-connection** turns the line into a warning after 90s of silence,
-naming Ctrl+C; a **backoff retry** after a transient error (429/5xx)
-shows `retry 2/3 (429) — waiting 4s` instead of silence. There is no
-automatic timeout: long thinking is legitimate, and the operator
-decides.
+last one (thought and metadata chunks count — liveness, not
+visibility). A **backoff retry** after a transient error (429/5xx)
+shows `retry 2/3 (429) — waiting 4s` instead of silence. A long
+silence is normal — a long context or a large file write can keep the
+model quiet for minutes — and the line never calls it a problem. A
+connection that has really died ends the turn with an error saying
+so, about 46s after it last delivered anything; send the message
+again. There is no other timeout: a slow turn runs until it finishes
+or you press Ctrl+C.
 
 The warning waits 90 seconds, not 20 (ADR-0056): a long silence in the
 middle of a turn is usually the model writing a file, not a broken
