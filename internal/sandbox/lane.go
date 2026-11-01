@@ -601,10 +601,17 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 	}
 	// An added root is read even where it lies under a tree denied for
 	// reach (/Volumes, ~/Library): the operator named it (ADR-0099 §1).
-	// Before writeCredentialBlock, which re-denies the credential names
-	// inside it — the block is the last read rule (ADR-0099 §7).
-	if len(spec.Added) > 0 {
+	// So are the session's own roots (ADR-0102): a project in cloud
+	// storage (~/Library/CloudStorage) or on a share (/Volumes) is inside
+	// a denied tree, and without this the read lane cannot even learn
+	// its working directory. Before writeCredentialBlock, which re-denies
+	// the credential names inside them — the block is the last read rule
+	// (ADR-0099 §7).
+	if own := ownRootsUnderReach(spec); len(spec.Added) > 0 || len(own) > 0 {
 		b.WriteString("(allow file-read*\n")
+		for _, r := range own {
+			fmt.Fprintf(&b, "    (subpath %s)\n", sbplString(r))
+		}
 		for _, a := range spec.Added {
 			fmt.Fprintf(&b, "    (subpath %s)\n", sbplString(filepath.Clean(a.Dir)))
 		}
@@ -620,6 +627,38 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 	}
 	writeCredentialBlock(&b, spec.Home)
 	return b.String(), nil
+}
+
+// reachDenied is every tree the read lane denies for reach.
+func reachDenied(home string) []string {
+	trees := append([]string(nil), readLaneReadDenies...)
+	if home != "" {
+		trees = append(trees, filepath.Join(filepath.Clean(home), "Library"))
+	}
+	return trees
+}
+
+// ownRootsUnderReach are the session's roots — the project and the work
+// directory — that lie strictly inside a tree denied for reach, the
+// ones the read lane re-allows (ADR-0102). A root that is such a tree or
+// contains one is left out: last-match-wins, re-allowing it would
+// re-open the whole tree (a project at the home directory would hand
+// ~/Library to the auto-approved lane).
+func ownRootsUnderReach(spec Spec) []string {
+	var roots []string
+	for _, r := range []string{spec.ProjectDir, spec.WorkDir} {
+		if r == "" {
+			continue
+		}
+		r = filepath.Clean(r)
+		for _, d := range reachDenied(spec.Home) {
+			if pathid.Within(d, r) && !pathid.Same(d, r) {
+				roots = append(roots, r)
+				break
+			}
+		}
+	}
+	return roots
 }
 
 // writeCredentialBlock writes the credential denials. LaneProfile calls

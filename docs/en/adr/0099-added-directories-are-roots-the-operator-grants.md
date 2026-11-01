@@ -10,6 +10,10 @@
 | Amends | ADR-0001 (the write roots), ADR-0058 (the work directory as the second root) |
 | Relates to | ADR-0023 / ADR-0074 (trust of project content), ADR-0068 (the environment reaches the whole process), ADR-0070 §2 (one definition of where the shell may write), ADR-0072 §1.4 (persistent files are OperatorOnly), ADR-0073 (lanes, verified enforcement), ADR-0085 / ADR-0086 (the operator answers a credential read; the kernel reads the file) |
 
+
+*Amended by ADR-0102: the session's own roots — the project and the work
+directory — are read under a reach denial too, when they lie strictly
+inside the denied tree.*
 ## Context
 
 Today a session has two roots: the project and the session work directory

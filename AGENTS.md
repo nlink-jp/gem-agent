@@ -632,6 +632,13 @@ a new hook) is an architecture change and takes the same rows as a
   (`pathid.Within`, with `pathid.Rel` for the path inside). The grant
   link check `ResolveWriteDir(typed) != typed` stays exact on purpose.
   Fixed in lagent the same day (its ADR-0035).
+- **The session's roots are read under a reach denial** (ADR-0102,
+  `ownRootsUnderReach`, beside ADR-0099 §1's added roots in the same
+  allow block): a project or work directory strictly inside `~/Library`
+  (cloud storage lives in `~/Library/CloudStorage`), `/Volumes` or
+  `/Network` is re-allowed for reading in the read lane — without it the
+  lane could not even `getcwd`. Never a root that is or contains a denied
+  tree: a project at the home would re-open `~/Library` (last-match-wins).
 - **Two persistent-state residuals were weighed and kept** (pre-release
   review, 2026-10-29) — after a walk cut at `trustpin.WalkEntries`,
   `reportPersistent` makes the partial snapshot the new baseline, so

@@ -189,7 +189,8 @@ Operator-side attachment routes for both live in
 Runs a shell command wrapped in macOS sandbox-exec in the lane the
 model declares with `access` (ADR-0073): `read` (default — writes only
 its private scratch, no network, no IPC, no preference writes, no
-credential or `~/Library` reads; runs without a prompt where the lane
+credential or `~/Library` reads — the project and the work directory are
+read even when they lie there, as in cloud storage, ADR-0102; runs without a prompt where the lane
 was verified at startup; the Go build cache is pointed into that
 scratch in every lane, so `go build`, `go vet` and `go test` run here
 unasked — ADR-0084 — while a build that writes its binary into the
