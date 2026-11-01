@@ -117,6 +117,10 @@ type Messages struct {
 	Interrupted   string // "(interrupted)" marker
 	ErrorPrefix   string // prefix before a turn/shell error
 	Bye           string // parting word on quit
+	// ConnectionLost ends a turn whose connection the transport's
+	// health check gave up on (ADR-0100 §3): what happened and the
+	// next step, never how it was detected.
+	ConnectionLost string
 
 	// --- settings panel (TUI) ---
 	SettingsHint            string // key help in the /settings title row
@@ -453,13 +457,14 @@ var en = Messages{
 	AutoApprovedFmt:           "  ↳ auto-approved (%s): %s",
 	CtrlCHint:                 "  (Ctrl+C interrupts)",
 
-	Placeholder:   "message…  Enter send · Ctrl+J newline · /help · !shell",
-	QueueRefused:  "⚠ ! and / commands cannot run mid-turn — interrupt with Ctrl+C first (your input is preserved)",
-	QueuedPrefix:  "⏎ queued: ",
-	QueueHandback: "⚠ the queued message was not sent — the turn did not finish. It is back in the input box",
-	Interrupted:   "(interrupted)",
-	ErrorPrefix:   "✗ error: ",
-	Bye:           "bye",
+	Placeholder:    "message…  Enter send · Ctrl+J newline · /help · !shell",
+	QueueRefused:   "⚠ ! and / commands cannot run mid-turn — interrupt with Ctrl+C first (your input is preserved)",
+	QueuedPrefix:   "⏎ queued: ",
+	QueueHandback:  "⚠ the queued message was not sent — the turn did not finish. It is back in the input box",
+	Interrupted:    "(interrupted)",
+	ErrorPrefix:    "✗ error: ",
+	ConnectionLost: "the connection to Vertex AI was lost — send the message again",
+	Bye:            "bye",
 
 	SettingsHint:            "  ↑↓ select · ←→ change · Enter open/close a server · s scope · Esc close",
 	SettingsTitle:           "settings",
@@ -678,13 +683,14 @@ var ja = Messages{
 	AutoApprovedFmt:           "  ↳ 自動承認 (%s): %s",
 	CtrlCHint:                 "  (Ctrl+C で中断)",
 
-	Placeholder:   "メッセージ…  Enter 送信 · Ctrl+J 改行 · /help · !shell",
-	QueueRefused:  "⚠ ! と / のコマンドは実行中には送れません — Ctrl+C で中断してから実行してください（入力は残っています）",
-	QueuedPrefix:  "⏎ 予約: ",
-	QueueHandback: "⚠ 予約したメッセージは送信されませんでした — ターンが正常に終了しなかったため、入力欄に戻しています",
-	Interrupted:   "（中断）",
-	ErrorPrefix:   "✗ エラー: ",
-	Bye:           "bye",
+	Placeholder:    "メッセージ…  Enter 送信 · Ctrl+J 改行 · /help · !shell",
+	QueueRefused:   "⚠ ! と / のコマンドは実行中には送れません — Ctrl+C で中断してから実行してください（入力は残っています）",
+	QueuedPrefix:   "⏎ 予約: ",
+	QueueHandback:  "⚠ 予約したメッセージは送信されませんでした — ターンが正常に終了しなかったため、入力欄に戻しています",
+	Interrupted:    "（中断）",
+	ErrorPrefix:    "✗ エラー: ",
+	ConnectionLost: "Vertex AI との接続が切れました — メッセージをもう一度送ってください",
+	Bye:            "bye",
 
 	SettingsHint:            "  ↑↓ 選択 · ←→ 変更 · Enter サーバーを開閉 · s スコープ · Esc 閉じる",
 	SettingsTitle:           "設定",

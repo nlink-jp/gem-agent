@@ -911,6 +911,13 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			turnRounds++
 		}
 		if err != nil {
+			// The transport's health check gave up on the connection
+			// (ADR-0100 §3): the operator gets what happened and the
+			// next step; the transport's own text goes to the log.
+			if errors.Is(err, llm.ErrConnectionLost) {
+				a.logRecord("connection_lost", map[string]any{"round": round, "error": err.Error()})
+				return "", &connectionLostError{msg: a.msgs.ConnectionLost, err: err}
+			}
 			// Every round replays the full history, so a gs:// object
 			// deleted by the bucket's lifecycle rules fails EVERY turn
 			// with a raw 400 that names neither the attachment nor the
@@ -1108,6 +1115,17 @@ const roundStopFmt = "the %s (%d rounds) stopped this turn — progress so far i
 // the cause the API reported. "The model returned nothing" is not
 // actionable on its own: a thinking budget spent before any text was
 // emitted and a safety block look identical from the outside.
+// connectionLostError says a lost connection in the operator's words
+// (ADR-0100 §3). The transport's error stays reachable through Unwrap
+// and is in the session log as a connection_lost record.
+type connectionLostError struct {
+	msg string
+	err error
+}
+
+func (e *connectionLostError) Error() string { return e.msg }
+func (e *connectionLostError) Unwrap() error { return e.err }
+
 func emptyResponseError(resp *llm.Response) error {
 	switch {
 	case resp.BlockReason != "":

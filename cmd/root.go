@@ -1891,6 +1891,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		tuiGate.SetProgram(prog)
 		screen.SetProgram(prog)
 		go resolveWindow()
+		defer quietStdLog()()
 		_, err := prog.Run()
 		return err
 	}
