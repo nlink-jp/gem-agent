@@ -3,11 +3,9 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"os"
 	"sort"
 
 	"github.com/nlink-jp/gem-agent/internal/config"
-	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/trustpin"
 	"github.com/spf13/cobra"
 )
@@ -38,11 +36,7 @@ func init() {
 }
 
 func runTrust(cmd *cobra.Command, _ []string) error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	projectDir, err := sandbox.ResolveWriteDir(cwd)
+	projectDir, err := currentProject()
 	if err != nil {
 		return err
 	}
@@ -109,7 +103,7 @@ func trustReport(projectDir, cfgPath string, accept bool, out io.Writer) error {
 		changed[c.Name] = c.Kind
 	}
 	fmt.Fprintf(out, "trusted files: %d recorded", len(recorded))
-	if at := policyFile.Projects[projectDir].PinnedAt; at != "" {
+	if at := policyFile.Projects[policyFile.ProjectKey(projectDir)].PinnedAt; at != "" {
 		fmt.Fprintf(out, " (%s)", at)
 	}
 	fmt.Fprintln(out)

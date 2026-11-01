@@ -11,6 +11,8 @@ import (
 	"syscall"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/nlink-jp/gem-agent/internal/pathid"
 )
 
 // PolicyFileName is the machine-owned approval-policy file (ADR-0009).
@@ -194,6 +196,28 @@ func LoadPolicyFile(path string) (*PolicyFile, error) {
 	return pf, nil
 }
 
+// ProjectKey is the key projectDir's table is kept under (ADR-0101): the
+// table that already names this directory, whatever the spelling of its
+// path, or projectDir itself when none does — so a directory reached in
+// another Unicode form finds its trust, pins and allowlists, and a write
+// lands in the table it already has rather than starting a second one.
+// The exact string is tried first; the identity check runs only when it
+// is absent.
+func (pf *PolicyFile) ProjectKey(projectDir string) string {
+	if projectDir == "" {
+		return ""
+	}
+	if _, ok := pf.Projects[projectDir]; ok {
+		return projectDir
+	}
+	for _, k := range sortedProjects(pf.Projects) {
+		if pathid.Same(k, projectDir) {
+			return k
+		}
+	}
+	return projectDir
+}
+
 // ForProject returns the entries this file contributes in projectDir:
 // the global table, then the project's own table layered on top.
 func (pf *PolicyFile) ForProject(projectDir string) map[string]string {
@@ -201,7 +225,7 @@ func (pf *PolicyFile) ForProject(projectDir string) map[string]string {
 	for k, v := range pf.Tools {
 		out[k] = v
 	}
-	for k, v := range pf.Projects[projectDir].Tools {
+	for k, v := range pf.Projects[pf.ProjectKey(projectDir)].Tools {
 		out[k] = v
 	}
 	return out
@@ -215,7 +239,8 @@ func (pf *PolicyFile) Set(projectDir, tool, decision string) {
 		setOrDelete(pf.Tools, tool, decision)
 		return
 	}
-	entry := pf.Projects[projectDir]
+	key := pf.ProjectKey(projectDir)
+	entry := pf.Projects[key]
 	if entry.Tools == nil {
 		entry.Tools = map[string]string{}
 	}
@@ -225,10 +250,10 @@ func (pf *PolicyFile) Set(projectDir, tool, decision string) {
 	// pins (ADR-0074 — a project trusted through the operator's config
 	// has pins and no trust key; "back to default" must not drop them).
 	if entry.empty() {
-		delete(pf.Projects, projectDir)
+		delete(pf.Projects, key)
 		return
 	}
-	pf.Projects[projectDir] = entry
+	pf.Projects[key] = entry
 }
 
 // empty reports whether the entry records nothing worth keeping.
@@ -242,7 +267,7 @@ func (pf *PolicyFile) CommandsFor(projectDir string) map[string]string {
 	if projectDir == "" {
 		return nil
 	}
-	src := pf.Projects[projectDir].Commands
+	src := pf.Projects[pf.ProjectKey(projectDir)].Commands
 	if len(src) == 0 {
 		return nil
 	}
@@ -260,7 +285,8 @@ func (pf *PolicyFile) SetCommand(projectDir, key, decision string) {
 	if projectDir == "" {
 		return
 	}
-	entry := pf.Projects[projectDir]
+	pkey := pf.ProjectKey(projectDir)
+	entry := pf.Projects[pkey]
 	if entry.Commands == nil {
 		entry.Commands = map[string]string{}
 	}
@@ -268,22 +294,23 @@ func (pf *PolicyFile) SetCommand(projectDir, key, decision string) {
 	// The entry survives with nothing in it only while it carries a
 	// trust decision (ADR-0023) or content pins (ADR-0074).
 	if entry.empty() {
-		delete(pf.Projects, projectDir)
+		delete(pf.Projects, pkey)
 		return
 	}
-	pf.Projects[projectDir] = entry
+	pf.Projects[pkey] = entry
 }
 
 // TrustFor returns the recorded first-run trust decision for projectDir
 // ("" while unasked).
 func (pf *PolicyFile) TrustFor(projectDir string) string {
-	return pf.Projects[projectDir].Trust
+	return pf.Projects[pf.ProjectKey(projectDir)].Trust
 }
 
 // SetTrust records the first-run trust decision (ADR-0023). An empty
 // value removes it, which re-asks on the next start.
 func (pf *PolicyFile) SetTrust(projectDir, trust string) {
-	entry := pf.Projects[projectDir]
+	key := pf.ProjectKey(projectDir)
+	entry := pf.Projects[key]
 	entry.Trust = trust
 	if entry.Trust == "" {
 		// Trust withdrawn: the pins go with it — they were the content
@@ -292,32 +319,33 @@ func (pf *PolicyFile) SetTrust(projectDir, trust string) {
 		entry.PinnedAt = ""
 	}
 	if entry.Trust == "" && len(entry.Tools) == 0 {
-		delete(pf.Projects, projectDir)
+		delete(pf.Projects, key)
 		return
 	}
-	pf.Projects[projectDir] = entry
+	pf.Projects[key] = entry
 }
 
 // PinsFor returns the recorded pins for projectDir (nil when none).
 func (pf *PolicyFile) PinsFor(projectDir string) map[string]string {
-	return pf.Projects[projectDir].Pins
+	return pf.Projects[pf.ProjectKey(projectDir)].Pins
 }
 
 // SetPins replaces the recorded pins for projectDir and marks them
 // taken (PinnedAt), so an empty set stays distinguishable from none.
 func (pf *PolicyFile) SetPins(projectDir string, pins map[string]string) {
-	entry := pf.Projects[projectDir]
+	key := pf.ProjectKey(projectDir)
+	entry := pf.Projects[key]
 	entry.Pins = map[string]string{}
 	for k, v := range pins {
 		entry.Pins[k] = v
 	}
 	entry.PinnedAt = time.Now().UTC().Format(time.RFC3339)
-	pf.Projects[projectDir] = entry
+	pf.Projects[key] = entry
 }
 
 // HasPins reports whether pins were ever recorded for projectDir.
 func (pf *PolicyFile) HasPins(projectDir string) bool {
-	entry := pf.Projects[projectDir]
+	entry := pf.Projects[pf.ProjectKey(projectDir)]
 	return entry.PinnedAt != "" || len(entry.Pins) > 0
 }
 

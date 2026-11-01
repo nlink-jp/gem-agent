@@ -213,11 +213,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- project directory ---
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	projectDir, err := sandbox.ResolveWriteDir(cwd)
+	projectDir, err := currentProject()
 	if err != nil {
 		return err
 	}

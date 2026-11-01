@@ -10,6 +10,7 @@ import (
 	"errors"
 
 	"github.com/nlink-jp/gem-agent/internal/bounded"
+	"github.com/nlink-jp/gem-agent/internal/pathid"
 
 	"fmt"
 	"os"
@@ -63,7 +64,7 @@ func MarkerMatches(dir, projectDir string) (bool, string) {
 		return true, ""
 	}
 	recorded := strings.TrimSpace(string(data))
-	if recorded == "" || recorded == filepath.Clean(projectDir) {
+	if recorded == "" || pathid.Same(recorded, filepath.Clean(projectDir)) {
 		return true, ""
 	}
 	return false, fmt.Sprintf("state dir %s belongs to %s (path-escape collision)", dir, recorded)
@@ -96,7 +97,7 @@ func EnsureProjectDir(dir, projectDir string) error {
 			// can have renamed ITS marker in — "non-empty therefore
 			// ours" concluded ownership from a marker never compared
 			// (review round 2).
-			if recorded != filepath.Clean(projectDir) {
+			if !pathid.Same(recorded, filepath.Clean(projectDir)) {
 				return fmt.Errorf("state dir %s belongs to %s (path-escape collision)", dir, recorded)
 			}
 			return nil

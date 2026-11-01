@@ -385,3 +385,13 @@ func importers(t *testing.T, root string, dirs []string, path string) []string {
 	sort.Strings(out)
 	return out
 }
+
+// TestTheProjectComesFromTheKernel: the working directory is read from
+// the kernel, never from os.Getwd, whose answer is $PWD in whatever
+// Unicode spelling the shell was given (ADR-0101). The one reader is
+// cmd.currentProject; a second os.Getwd would bring back a project that
+// is two strings for one directory.
+func TestTheProjectComesFromTheKernel(t *testing.T) {
+	calls := collectCalls(t, repoRoot(t), []string{"cmd", "internal"}, []string{"os.Getwd"})
+	report(t, calls, nil)
+}

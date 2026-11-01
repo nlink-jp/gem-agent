@@ -10,7 +10,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/session"
 	"github.com/nlink-jp/gem-agent/internal/workdir"
 
@@ -60,11 +59,7 @@ func init() {
 // workdirsProject resolves the project the same way a session would, so
 // the listing shows exactly what the startup note counted.
 func workdirsProject() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	return sandbox.ResolveWriteDir(cwd)
+	return currentProject()
 }
 
 func runWorkdirsList(cmd *cobra.Command, _ []string) error {

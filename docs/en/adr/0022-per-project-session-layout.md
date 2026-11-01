@@ -17,6 +17,11 @@ as the last session left them (advisory change notes at startup).*
 digests for each write directory the project's sessions added, keyed by
 the directory.*
 
+*Amended by ADR-0101: the `.project` marker matches its directory by
+identity — the same string, or the same directory by `os.SameFile` — so
+a project reached under another Unicode spelling of its path is not a
+collision.*
+
 ## Context
 
 Session transcripts lived flat in `~/.local/state/gem-agent/sessions/`,

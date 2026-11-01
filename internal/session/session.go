@@ -10,6 +10,7 @@ package session
 
 import (
 	"github.com/nlink-jp/gem-agent/internal/bounded"
+	"github.com/nlink-jp/gem-agent/internal/pathid"
 
 	"bufio"
 	"bytes"
@@ -588,7 +589,7 @@ func listDir(dir, projectDir string) ([]Meta, bool) {
 		if err != nil {
 			continue
 		}
-		if projectDir != "" && meta.Header.Project != projectDir {
+		if projectDir != "" && !pathid.Same(meta.Header.Project, projectDir) {
 			continue
 		}
 		if !meta.HasConversation {

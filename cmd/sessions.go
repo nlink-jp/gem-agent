@@ -3,13 +3,12 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
-	"github.com/nlink-jp/gem-agent/internal/sandbox"
+	"github.com/nlink-jp/gem-agent/internal/pathid"
 	"github.com/nlink-jp/gem-agent/internal/session"
 
 	"github.com/spf13/cobra"
@@ -42,11 +41,8 @@ func runSessions(cmd *cobra.Command, args []string) error {
 	}
 	projectDir := ""
 	if !flagSessionsAll {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		if projectDir, err = sandbox.ResolveWriteDir(cwd); err != nil {
+		var err error
+		if projectDir, err = currentProject(); err != nil {
 			return err
 		}
 	}
@@ -121,7 +117,7 @@ func resolveResume(dir, projectDir, model, id string) (session.Meta, error) {
 		meta = found
 	}
 
-	if meta.Header.Project != "" && meta.Header.Project != projectDir {
+	if meta.Header.Project != "" && !pathid.Same(meta.Header.Project, projectDir) {
 		return meta, fmt.Errorf("session %s belongs to %s, not %s — cd there and run gem-agent --resume %s",
 			meta.ID, meta.Header.Project, projectDir, meta.ID)
 	}

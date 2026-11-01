@@ -189,7 +189,7 @@ a file.
 
 **[Sessions](docs/en/reference/sessions.md)** — full-fidelity JSONL
 transcripts, per-project state layout, `--continue`/`--resume` (UUID session ids, resumable by prefix) with
-deliberate refusals (wrong directory, wrong model), automatic context
+deliberate refusals (wrong directory — however its path is spelled — or wrong model), automatic context
 compaction with an honest notice, the `/usage` token statement, and
 approval-gated agent memory across sessions.
 

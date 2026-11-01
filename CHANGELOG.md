@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **A project is found however its path is spelled (ADR-0101).** In a
+  directory whose path has Japanese voiced kana, `--resume` refused a
+  session recorded there ("belongs to <path>, not <path>" — two paths
+  that print the same) when the shell's `$PWD` carried the typed
+  (precomposed) form and the record the on-disk (decomposed) one. The
+  state directory, trust, pins and allowlists split the same way. The
+  project path is now the kernel's name for the working directory, and
+  recorded paths are matched by directory identity, so records already
+  written in either spelling are found without being rewritten.
+
 ## [0.95.0] - 2026-11-01
 
 ### Changed

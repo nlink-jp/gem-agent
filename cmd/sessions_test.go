@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -194,4 +196,38 @@ func resolveAndLoad(dir, projectDir, model, id string) (session.Meta, []llm.Mess
 	defer func() { _ = lg.Close() }()
 	history, notes, err := loadResumedHistory(lg, meta.ID)
 	return meta, history, notes, err
+}
+
+// ADR-0101: --resume in the directory a session was recorded in works
+// however the path was spelled this time.
+func TestResumeAcceptsTheProjectUnderAnotherSpelling(t *testing.T) {
+	const nfc, nfd = "ドライブ", "ドライブ"
+	base := t.TempDir()
+	project := filepath.Join(base, nfd)
+	if err := os.Mkdir(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	typed := filepath.Join(base, nfc)
+	if _, err := os.Stat(typed); err != nil {
+		t.Skipf("this volume does not treat the two spellings as one name: %v", err)
+	}
+	dir := t.TempDir()
+	lg, err := session.Open(dir, project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = lg.Log(session.KindHeader, session.Header{Schema: session.SchemaVersion, Model: "m", Project: project})
+	_ = lg.Log(session.KindMessage, llm.Message{Role: llm.RoleUser, Content: "hello"})
+	id := lg.ID()
+	_ = lg.Close()
+	if _, history, _, err := resolveAndLoad(dir, typed, "m", id); err != nil || len(history) != 1 {
+		t.Errorf("resume under the other spelling: history %d, err %v", len(history), err)
+	}
+	other := filepath.Join(base, "other")
+	if err := os.Mkdir(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveResume(dir, other, "m", id); err == nil {
+		t.Error("a session resumed in a different directory")
+	}
 }

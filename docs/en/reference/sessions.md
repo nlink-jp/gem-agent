@@ -16,8 +16,8 @@ gem-agent --resume 2acb328c            # a full id, or any unambiguous prefix
 A resumed session continues its own transcript — one file is one
 conversation however many processes it took — and comes back exactly as
 it was, tool results included. Two refusals are deliberate: a session
-resumes only in the directory it was recorded in, and only under the
-model that produced it (the replayed reasoning tokens are model-bound).
+resumes only in the directory it was recorded in — however its path is
+spelled this time, ADR-0101 — and only under the model that produced it (the replayed reasoning tokens are model-bound).
 Each message names what to do instead. A session that was compacted
 resumes compacted, rather than re-inflating to the size it was shrunk
 from.

@@ -40,7 +40,8 @@ session — ADR-0077), `internal/mention` (`@`-references),
 (ignore-aware enumeration: builtin dir list + gitignore matcher —
 ADR-0052), `internal/session`
 (transcript: logger + resume loader), `internal/statedir` (per-project
-state layout), `internal/memory` (agent memory), `internal/skills`
+state layout), `internal/pathid` (two paths naming one directory, for
+every recorded-vs-current project comparison — ADR-0101), `internal/memory` (agent memory), `internal/skills`
 (skill discovery/loading), `internal/docext` (Office text extraction),
 `internal/mediastore` (GCS media uploads), `internal/uitext` (ja/en UI
 string catalogs), `internal/telemetry` (audit-event export), `internal/hooks` (operator
