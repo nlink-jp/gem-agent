@@ -52,6 +52,13 @@ import (
 //	    health-check failure line. Refuted by: no error by then, or an
 //	    error with no health-check failure before it (then something
 //	    else detected it, and the attribution is wrong).
+//	H4  (TestPingHealthMidStreamLive, added after H1–H3 ran, before its
+//	    own run) the same as H3 when the freeze lands after the
+//	    response has started: at least one chunk arrived before the
+//	    freeze, then an error within 61s of it, preceded by a
+//	    health-check failure. H3's runs froze before the response
+//	    headers; the silence the warning is about is mostly mid-stream.
+//	    A run with no chunk before the freeze is INCONCLUSIVE.
 //
 // Cost cap (estimated before launch, gemini-4-argon at $2/M input):
 // long-prefill ≤ 5 runs × ~300k uncached tokens ≈ $3.25; blackhole
@@ -263,8 +270,11 @@ func TestPingHealthLongPrefillLive(t *testing.T) {
 type relay struct {
 	target  string // freeze only connections to this host
 	trigger int64  // freeze 2s after this many bytes have gone upstream, so the request is fully out
-	frozeAt atomic.Int64
-	start   time.Time
+	// downstream, when set, replaces the 2s delay: once the trigger has
+	// fired, freeze as soon as this many bytes have come back.
+	downstream int64
+	frozeAt    atomic.Int64
+	start      time.Time
 }
 
 func (r *relay) dial(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -285,7 +295,8 @@ func (r *relay) dial(ctx context.Context, network, addr string) (net.Conn, error
 			close(frozen)
 		})
 	}
-	var sent atomic.Int64
+	var sent, back atomic.Int64
+	var requestOut atomic.Bool
 	pump := func(dst io.Writer, src io.Reader, upstream bool) {
 		buf := make([]byte, 32<<10)
 		for {
@@ -300,7 +311,14 @@ func (r *relay) dial(ctx context.Context, network, addr string) (net.Conn, error
 					return
 				}
 				if upstream && sent.Add(int64(n)) >= r.trigger {
-					armed.Do(func() { time.AfterFunc(2*time.Second, freeze) })
+					if r.downstream > 0 {
+						requestOut.Store(true)
+					} else {
+						armed.Do(func() { time.AfterFunc(2*time.Second, freeze) })
+					}
+				}
+				if !upstream && requestOut.Load() && back.Add(int64(n)) >= r.downstream {
+					freeze()
 				}
 			}
 			if err != nil {
@@ -313,14 +331,20 @@ func (r *relay) dial(ctx context.Context, network, addr string) (net.Conn, error
 	return client, nil
 }
 
-func TestPingHealthBlackholeLive(t *testing.T) {
+func TestPingHealthBlackholeLive(t *testing.T) { blackhole(t, 0) }
+
+func TestPingHealthMidStreamLive(t *testing.T) { blackhole(t, 4<<10) }
+
+// blackhole runs H3 (downstream 0: freeze 2s after the request is out)
+// or H4 (freeze once that many response bytes have come back).
+func blackhole(t *testing.T, downstream int64) {
 	project, model := liveEnv(t)
 	h2 := installH2Log(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
 	filler := corpus(t, 64<<10)
-	r := &relay{target: "aiplatform.googleapis.com", trigger: int64(len(filler)), start: time.Now()}
+	r := &relay{target: "aiplatform.googleapis.com", trigger: int64(len(filler)), downstream: downstream, start: time.Now()}
 	dt := http.DefaultTransport.(*http.Transport)
 	orig := dt.DialContext
 	dt.DialContext = func(dctx context.Context, network, addr string) (net.Conn, error) {
@@ -332,6 +356,12 @@ func TestPingHealthBlackholeLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var firstChunk atomic.Int64
+	backend.SetObserver(func(ev StreamEvent) {
+		if ev.Kind == "chunk" {
+			firstChunk.CompareAndSwap(0, int64(time.Since(r.start)))
+		}
+	})
 	r.start = h2.restart()
 	_, err = backend.ChatStream(ctx, "", []Message{{Role: RoleUser, Content: filler + "\n\nSummarize the corpus above in three paragraphs."}}, nil, nil)
 	end := time.Since(r.start)
@@ -341,6 +371,12 @@ func TestPingHealthBlackholeLive(t *testing.T) {
 	frozeAt := time.Duration(r.frozeAt.Load())
 	if frozeAt == 0 {
 		t.Fatalf("the relay never froze (err=%v) — the trigger did not fire, the run says nothing", err)
+	}
+	if fc := time.Duration(firstChunk.Load()); fc > 0 {
+		t.Logf("first chunk at %.1fs", fc.Seconds())
+	}
+	if downstream > 0 && (firstChunk.Load() == 0 || time.Duration(firstChunk.Load()) > frozeAt) {
+		t.Skipf("INCONCLUSIVE: no chunk arrived before the freeze at %.1fs (err=%v)", frozeAt.Seconds(), err)
 	}
 	t.Logf("RESULT: froze at %.1fs, ChatStream returned at %.1fs (%.1fs after the freeze): %v",
 		frozeAt.Seconds(), end.Seconds(), (end - frozeAt).Seconds(), err)
