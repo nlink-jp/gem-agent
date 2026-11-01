@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.95.0] - 2026-11-01
+
 ### Changed
 
 - **No more "connection may be stalled" warning** (ADR-0100). The
