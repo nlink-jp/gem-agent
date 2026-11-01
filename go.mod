@@ -3,6 +3,7 @@ module github.com/nlink-jp/gem-agent
 go 1.26.2
 
 require (
+	cloud.google.com/go/auth v0.20.0
 	cloud.google.com/go/logging v1.18.0
 	cloud.google.com/go/storage v1.65.0
 	github.com/BurntSushi/toml v1.6.0
@@ -37,7 +38,6 @@ require (
 require (
 	cel.dev/expr v0.25.2 // indirect
 	cloud.google.com/go v0.123.0 // indirect
-	cloud.google.com/go/auth v0.20.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.11.0 // indirect

@@ -51,16 +51,29 @@ func (v *Vertex) observe(ev StreamEvent) {
 // NewVertex creates the backend. The client is created once and reused.
 // safety selects the configurable content-filter thresholds — see
 // SafetySettings.
+// The HTTP client is built here, not by the SDK, so the connection's
+// health check is this package's setting (ADR-0100).
 func NewVertex(ctx context.Context, project, location, model, safety, thinking string, includeThoughts bool) (*Vertex, error) {
+	hc, err := vertexHTTPClient(ctx, vertexTransport(healthPingAfter, healthPingTimeout))
+	if err != nil {
+		return nil, fmt.Errorf("vertex AI client: %w", err)
+	}
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		Project:  project,
-		Location: location,
-		Backend:  genai.BackendVertexAI,
+		Project:    project,
+		Location:   location,
+		Backend:    genai.BackendVertexAI,
+		HTTPClient: hc,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("vertex AI client: %w", err)
 	}
-	return &Vertex{client: client, model: model, safety: SafetySettings(safety), thinking: newThinking(thinking, mainThinkingKey), includeThoughts: includeThoughts}, nil
+	return newVertex(client, model, safety, thinking, includeThoughts), nil
+}
+
+// newVertex wraps an existing client; tests hand it one aimed at a
+// local server.
+func newVertex(client *genai.Client, model, safety, thinking string, includeThoughts bool) *Vertex {
+	return &Vertex{client: client, model: model, safety: SafetySettings(safety), thinking: newThinking(thinking, mainThinkingKey), includeThoughts: includeThoughts}
 }
 
 // thinkingSetting is one backend's thinking level and what the operator
@@ -282,6 +295,11 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 			return resp, nil
 		}
 		if !shouldRetryStream(streamErr, chunks) || ctx.Err() != nil {
+			// The health check closed a connection that stopped
+			// answering (ADR-0100): the agent names it to the operator.
+			if ctx.Err() == nil && connectionLost(streamErr) {
+				return nil, fmt.Errorf("%w: %w", ErrConnectionLost, streamErr)
+			}
 			// A 400 with a configured thinking level is, in practice,
 			// often the level itself: supported levels are
 			// model-dependent (minimal → 400 on some models, measured

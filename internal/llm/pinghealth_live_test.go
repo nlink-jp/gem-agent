@@ -37,6 +37,14 @@ import (
 // transport already names a dead connection (~46s), and a "maybe
 // stalled" warning at 90s can only ever be shown for a live one.
 //
+// That was the client when H1–H4 ran (ADR-0100 records the results).
+// Since ADR-0100 §1 the client is built in transport.go with the same
+// 31s/15s, owned here and pinned offline by transport_test.go; this
+// probe remains the record, and the one check of what an offline test
+// cannot see: that the real endpoint answers pings through its long
+// silences. Its dialer hook still applies — vertexTransport clones
+// http.DefaultTransport too.
+//
 // Pre-registered (committed before any run):
 //
 //	H1  the production connection to Vertex is HTTP/2 — health-check
