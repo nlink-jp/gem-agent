@@ -137,15 +137,10 @@ shows `retry 2/3 (429) — waiting 4s` instead of silence. A long
 silence is normal — a long context or a large file write can keep the
 model quiet for minutes — and the line never calls it a problem. A
 connection that has really died ends the turn with an error saying
-so, about 46s after it last delivered anything; send the message
-again. There is no other timeout: a slow turn runs until it finishes
+so, about 46s after it last delivered anything; send a message to
+continue from there — what you sent and the work done so far are
+kept. There is no other timeout: a slow turn runs until it finishes
 or you press Ctrl+C.
-
-The warning waits 90 seconds, not 20 (ADR-0056): a long silence in the
-middle of a turn is usually the model writing a file, not a broken
-connection, and a warning that fires on healthy work is one the
-operator learns to ignore. The silence age (`last 40s`) is on the line
-from the first second either way.
 
 Ctrl+C cancels the running turn — and the whole process GROUP of a
 shell command dies with it, so a skill's python (or anything else the

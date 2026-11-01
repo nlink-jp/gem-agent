@@ -204,6 +204,16 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 				if errors.As(runErr, &rle) {
 					return "", fmt.Errorf("file-search agent hit its round limit (%d rounds) — ask a narrower question", rle.Rounds)
 				}
+				// A lost connection (ADR-0100) reaches the agent as the
+				// operator's words; the main model gets the transport's
+				// own text instead, which is also all the record there
+				// is — the child keeps no session log.
+				if errors.Is(runErr, llm.ErrConnectionLost) {
+					if inner := errors.Unwrap(runErr); inner != nil {
+						runErr = inner
+					}
+					return "", fmt.Errorf("file-search agent: %w — ask again, or search directly", runErr)
+				}
 				return "", fmt.Errorf("file-search agent: %w", runErr)
 			}
 			report = strings.TrimSpace(report)

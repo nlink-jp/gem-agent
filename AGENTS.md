@@ -936,8 +936,11 @@ a new hook) is an architecture change and takes the same rows as a
   reasons on screen (rejected on review; they go in ADRs). Keep the
   client construction in `NewVertex`: left to genai, the health check is
   a dependency's undocumented default. The SDK prints a failed stream
-  with `log.Printf`; the TUI discards the standard logger
-  (`quietStdLog`) so that line cannot draw over the screen.
+  with `log.Printf`; under the TUI `quietStdLog` sends the standard
+  logger to the session log (`library_log` records) so that line cannot
+  draw over the screen. The file-search child's lost connection goes to
+  the main model as the transport's text, never as the operator's
+  advice.
 - **The running status line must keep `(Ctrl+C interrupts)` at 80 columns**
   — it is clipped per line, so anything appended to it eats the way out;
   a test pins it in both languages.

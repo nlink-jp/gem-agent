@@ -12,9 +12,11 @@
   last data.
 - **A dropped connection says so.** When the connection to Vertex AI
   dies, the turn ends with "the connection to Vertex AI was lost — send
-  the message again" (in your language) about 46s after the last data,
-  instead of a raw transport error. The raw error is in the session log.
-  The TUI no longer lets the SDK's own error line draw over the screen.
+  a message to continue from here" (in your language) about 46s after
+  the last data, instead of a raw transport error. What you sent and the
+  work done so far stay in the conversation. The raw error is in the
+  session log. Under the TUI, the SDK's own log lines go to the session
+  log instead of drawing over the screen.
 - gem-agent now builds its Vertex AI HTTP client itself, keeping the
   same HTTP/2 liveness check the SDK used (a ping after 31s without
   data, 15s to answer), so a dependency update cannot drop it.

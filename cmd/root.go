@@ -1891,7 +1891,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		tuiGate.SetProgram(prog)
 		screen.SetProgram(prog)
 		go resolveWindow()
-		defer quietStdLog()()
+		defer quietStdLog(func(line string) {
+			_ = liveLog{get: func() agent.SessionLog { return sessionLog }}.Log("library_log", map[string]any{"line": line})
+		})()
 		_, err := prog.Run()
 		return err
 	}

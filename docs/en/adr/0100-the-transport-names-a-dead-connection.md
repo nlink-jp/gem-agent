@@ -159,19 +159,30 @@ a turn that is only slow, Ctrl+C is already on the line.
 
 When the stream fails with the transport's lost-connection error, the
 turn's error says what happened and what to do next: the connection
-to Vertex AI was lost, so send the message again. It does not explain
-how the loss was detected (ADR-0056: the supplier's mechanism is not
-something the operator can act on). The text lives in uitext (en/ja),
-and the raw error stays in the transcript. The match is on the error
-text, because the transport exports no sentinel for it. That is why
-§1's offline test pins it on both paths.
+to Vertex AI was lost, and sending a message continues from there. The
+operator's message and every completed round are already in the
+history, so "send it again" would repeat the instruction. The message
+does not explain how the loss was detected (ADR-0056: the supplier's
+mechanism is not something the operator can act on). The text lives
+in uitext (en/ja), and the raw error goes to the session log as a
+`connection_lost` record. The match is on the error text, because the
+transport exports no sentinel for it. That is why §1's offline test
+pins it on both paths.
+
+The file-search child (`agentic_file_search`) is the one other agent
+loop. Its error goes to the main model, not to the operator, so a lost
+connection there returns the transport's own text with a model-facing
+next step (ask again, or search directly). The child keeps no session
+log, so that text is the only record of the loss.
 
 genai also prints the stream error itself through the standard
 logger (`log.Printf("Error %v", …)` in its stream reader). gem-agent
 never redirects that logger, so under the TUI the raw line would be
-written over the screen. While the TUI runs, the standard logger is
-discarded. The same error reaches the operator through §3's message
-and the transcript. The plain REPL and `-p` keep it on stderr. The
+written over the screen. While the TUI runs, the standard logger
+writes to the session log instead, one `library_log` record per line
+(genai also logs hints there, such as a response too large to stream,
+which would otherwise be lost). The plain REPL and `-p` keep it on
+stderr. The
 implementation confirms the screen with tmux before and after
 (AGENTS.md: TUI rows are measured, not reasoned).
 

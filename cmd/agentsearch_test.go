@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -305,5 +307,33 @@ func TestSearchAgentRefusesACredentialRead(t *testing.T) {
 	}
 	if strings.Contains(out, "hunter2") {
 		t.Fatal("the secret reached the report")
+	}
+}
+
+// lostSearchBackend fails the child's stream the way the transport's
+// health check does (ADR-0100).
+type lostSearchBackend struct{}
+
+func (lostSearchBackend) ChatStream(context.Context, string, []llm.Message, []llm.ToolDef, func(string)) (*llm.Response, error) {
+	return nil, fmt.Errorf("%w: %w", llm.ErrConnectionLost, errors.New("http2: client connection lost"))
+}
+
+// The child's lost connection is said to the MAIN model, so it must
+// carry the transport's text and a model-facing next step — not the
+// operator's "send a message" advice.
+func TestSearchAgentLostConnectionSpeaksToTheModel(t *testing.T) {
+	reg, _, _, _ := searchSetup(t, lostSearchBackend{})
+	_, err := runSearch(t, reg, map[string]any{"question": "q"})
+	if err == nil {
+		t.Fatal("a lost connection returned no error")
+	}
+	msg := err.Error()
+	for _, want := range []string{"file-search agent", "http2: client connection lost", "search directly"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("err %q lacks %q", msg, want)
+		}
+	}
+	if strings.Contains(msg, "send a message") {
+		t.Errorf("the operator's advice reached the model: %q", msg)
 	}
 }

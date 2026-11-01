@@ -183,6 +183,11 @@ func TestHealthCheckNamesAFrozenConnection(t *testing.T) {
 			if !errors.Is(err, ErrConnectionLost) {
 				t.Fatalf("err = %v, want ErrConnectionLost", err)
 			}
+			select {
+			case <-f.frozen:
+			default:
+				t.Fatalf("named a live connection before the freeze (after %v): the ping timed out on its own", took)
+			}
 			if took > 3*time.Second {
 				t.Errorf("named after %v; the health check allows about 600ms", took)
 			}

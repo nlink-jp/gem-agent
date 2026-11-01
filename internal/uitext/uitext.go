@@ -459,7 +459,7 @@ var en = Messages{
 	QueueHandback:  "⚠ the queued message was not sent — the turn did not finish. It is back in the input box",
 	Interrupted:    "(interrupted)",
 	ErrorPrefix:    "✗ error: ",
-	ConnectionLost: "the connection to Vertex AI was lost — send the message again",
+	ConnectionLost: "the connection to Vertex AI was lost — send a message to continue from here",
 	Bye:            "bye",
 
 	SettingsHint:            "  ↑↓ select · ←→ change · Enter open/close a server · s scope · Esc close",
@@ -684,7 +684,7 @@ var ja = Messages{
 	QueueHandback:  "⚠ 予約したメッセージは送信されませんでした — ターンが正常に終了しなかったため、入力欄に戻しています",
 	Interrupted:    "（中断）",
 	ErrorPrefix:    "✗ エラー: ",
-	ConnectionLost: "Vertex AI との接続が切れました — メッセージをもう一度送ってください",
+	ConnectionLost: "Vertex AI との接続が切れました — メッセージを送ると、ここから続けます",
 	Bye:            "bye",
 
 	SettingsHint:            "  ↑↓ 選択 · ←→ 変更 · Enter サーバーを開閉 · s スコープ · Esc 閉じる",
