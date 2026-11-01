@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/nlink-jp/gem-agent/internal/pathid"
 )
 
 // Lane is the capability a shell command runs with (ADR-0073). The
@@ -657,9 +659,10 @@ func DeniedHint(output string) bool {
 }
 
 // within reports whether p is dir or under it.
+// within is pathid.Within (ADR-0101): one comparison for every
+// containment check, in the volume's sense of a name.
 func within(dir, p string) bool {
-	dir, p = filepath.Clean(dir), filepath.Clean(p)
-	return p == dir || strings.HasPrefix(p, dir+string(filepath.Separator))
+	return pathid.Within(dir, p)
 }
 
 // VerifyReadLane runs the read-lane profile against probes that must

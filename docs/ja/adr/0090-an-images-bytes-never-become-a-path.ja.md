@@ -15,7 +15,7 @@ ADR-0089 はレーンを作り、供給源を開いたまま残した。その �
 3 稿すべてに対して成立した制約 1 つを記録している。**view 層はファイルを開かない。**
 view 層が行う読み取りはツールコールではないので、`Agent.decide` にも ADR-0086 の sandbox 子
 にも届かず、組み込みツール名で引かれる資格情報一覧 — `credentialReadTools` マップ
-（[risk.go:200](../../../internal/risk/risk.go)）— からは見えない。
+（[risk.go:201](../../../internal/risk/risk.go)）— からは見えない。
 
 その制約が、いちばん素直な設計を排除する。MCP intake は既に画像をセッションの work dir へ
 書き出し、モデルには `[image saved at <path> … use view_image on that path]` を渡している
@@ -34,7 +34,7 @@ work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:610](../..
 `render` は `string` を返し（[mcpresult.go:53](../../../cmd/mcpresult.go)）、`mcpIntake` が
 持つのは work dir の getter とバイト上限とプレビュー長だけで
 （[mcpresult.go:46](../../../cmd/mcpresult.go)。本決定が足した sink は ADR-0091 が撤回した）、一度も持ったことが無いのがバイト列であり、ツール契約は
-`Run func(ctx, args) (string, error)` である（[tools.go:65](../../../internal/tools/tools.go)）。
+`Run func(ctx, args) (string, error)` である（[tools.go:66](../../../internal/tools/tools.go)）。
 `Run` が返れば blocks は消えている。
 
 しかしランタイムに経路が無いわけではない。エージェントループはツールコールの**最中に**既に

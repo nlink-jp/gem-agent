@@ -11,8 +11,11 @@
   (precomposed) form and the record the on-disk (decomposed) one. The
   state directory, trust, pins and allowlists split the same way. The
   project path is now the kernel's name for the working directory, and
-  recorded paths are matched by directory identity, so records already
-  written in either spelling are found without being rewritten.
+  every path comparison — recorded projects, `trusted_projects`, and
+  whether a path is inside the project or an added directory — is made
+  on Unicode-normalised strings, so records already written in either
+  spelling are found without being rewritten and an absolute path typed
+  in the other form is inside. Case is not folded.
 
 ## [0.95.0] - 2026-11-01
 

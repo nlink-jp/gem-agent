@@ -1,10 +1,6 @@
 package pathid
 
-import (
-	"os"
-	"path/filepath"
-	"testing"
-)
+import "testing"
 
 // The two spellings of "ドライブ": precomposed (NFC, what an input
 // method types) and decomposed (NFD, what some providers create).
@@ -13,32 +9,43 @@ const (
 	nfd = "ドライブ"
 )
 
-func TestSameMatchesOneDirectoryUnderBothSpellings(t *testing.T) {
-	base := t.TempDir()
-	if err := os.Mkdir(filepath.Join(base, nfd), 0o755); err != nil {
-		t.Fatal(err)
+func TestSameIgnoresTheUnicodeForm(t *testing.T) {
+	if !Same("/a/"+nfc+"/p", "/a/"+nfd+"/p") {
+		t.Error("the NFC and NFD spellings of one path do not match")
 	}
-	if _, err := os.Stat(filepath.Join(base, nfc)); err != nil {
-		t.Skipf("this volume does not treat the two spellings as one name: %v", err)
+	if !Same("/a/b/../c", "/a/c") {
+		t.Error("a path is not compared cleaned")
 	}
-	if !Same(filepath.Join(base, nfc), filepath.Join(base, nfd)) {
-		t.Error("the NFC and NFD spellings of one directory do not match")
+	if Same("/a/b", "/a/c") || Same("", "/a") || !Same("", "") {
+		t.Error("different paths matched, or empty matched a path")
 	}
 }
 
-func TestSameKeepsDifferentDirectoriesApart(t *testing.T) {
-	base := t.TempDir()
-	a, b := filepath.Join(base, "a-b", "c"), filepath.Join(base, "a", "b-c")
-	for _, d := range []string{a, b} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatal(err)
+// Case is not folded: on a case-sensitive volume these are two
+// directories, and one must not inherit the other's records.
+func TestSameDoesNotFoldCase(t *testing.T) {
+	if Same("/a/Proj", "/a/proj") {
+		t.Error("paths differing in case matched")
+	}
+}
+
+func TestWithinAcrossSpellings(t *testing.T) {
+	base := "/a/" + nfd
+	for _, p := range []string{"/a/" + nfc, "/a/" + nfc + "/x/y", base + "/x"} {
+		if !Within(base, p) {
+			t.Errorf("%q is not within %q", p, base)
 		}
 	}
-	if Same(a, b) {
-		t.Error("two directories whose paths escape alike matched")
+	for _, p := range []string{"/a/" + nfc + "x", "/a", "/b/" + nfc} {
+		if Within(base, p) {
+			t.Errorf("%q is within %q", p, base)
+		}
 	}
-	gone := filepath.Join(base, "gone")
-	if !Same(gone, gone) || Same(gone, a) || !Same("", "") || Same("", a) {
-		t.Error("a missing path matches only its own string; empty matches only empty")
+}
+
+func TestRelAcrossSpellings(t *testing.T) {
+	rel, err := Rel("/a/"+nfd, "/a/"+nfc+"/x/y")
+	if err != nil || rel != "x/y" {
+		t.Errorf("Rel = %q, %v; want x/y", rel, err)
 	}
 }

@@ -166,7 +166,7 @@ internal/banner/   the lines printed before the operator has typed (ADR-0078): a
                    and answers why nothing else says it — and Sample() is what
                    `make labels` renders, so the first screen is readable in one place
 internal/statedir/ shared per-project state convention (ADR-0022): root+env override, escape, .project marker
-internal/pathid/   Same: two paths name one directory (equal, or os.SameFile) — every recorded-vs-current project comparison (ADR-0101)
+internal/pathid/   Same/Within/Rel: every path comparison, Unicode-normalised (NFC), case not folded, no disk access (ADR-0101)
 internal/workdir/  per-session work directory (ADR-0058): layout under the state root,
                    sweep report, empty-dir removal; GEMAGENT_WORK_DIR is exported at startup.
                    List/Remove back the workdirs cleanup command (ADR-0059) —
@@ -623,10 +623,15 @@ a new hook) is an architecture change and takes the same rows as a
   project path comes from `cmd.currentProject` (`syscall.Getwd`, then
   `sandbox.CanonicalDir`) — `os.Getwd` returns `$PWD`, and an NFC-typed
   `cd` into an NFD directory made a second project string; an archtest
-  refuses `os.Getwd` in the module. A recorded path is compared with
-  `pathid.Same`, never `==`: transcripts, the state marker, and
-  `policy.toml` (`PolicyFile.ProjectKey` — setters resolve the key once,
-  deletes included). Fixed in lagent the same day (its ADR-0035).
+  refuses `os.Getwd` in the module. Paths are compared through
+  `internal/pathid` (NFC-normalised, case not folded, no stat), never
+  `==` or a raw `HasPrefix(p, base+separator)` — a second archtest
+  refuses the latter: recorded projects (transcripts, the state marker,
+  `policy.toml` via `PolicyFile.ProjectKey` — setters resolve the key
+  once, deletes included — and `trusted_projects`), and containment
+  (`pathid.Within`, with `pathid.Rel` for the path inside). The grant
+  link check `ResolveWriteDir(typed) != typed` stays exact on purpose.
+  Fixed in lagent the same day (its ADR-0035).
 - **Two persistent-state residuals were weighed and kept** (pre-release
   review, 2026-10-29) — after a walk cut at `trustpin.WalkEntries`,
   `reportPersistent` makes the partial snapshot the new baseline, so

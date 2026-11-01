@@ -17,10 +17,9 @@ as the last session left them (advisory change notes at startup).*
 digests for each write directory the project's sessions added, keyed by
 the directory.*
 
-*Amended by ADR-0101: the `.project` marker matches its directory by
-identity — the same string, or the same directory by `os.SameFile` — so
-a project reached under another Unicode spelling of its path is not a
-collision.*
+*Amended by ADR-0101: the `.project` marker is compared with
+`pathid.Same` — cleaned and Unicode-normalised — so a project reached
+under another Unicode spelling of its path is not a collision.*
 
 ## Context
 

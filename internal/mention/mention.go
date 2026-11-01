@@ -8,6 +8,7 @@ package mention
 
 import (
 	"github.com/nlink-jp/gem-agent/internal/bounded"
+	"github.com/nlink-jp/gem-agent/internal/pathid"
 
 	"bytes"
 	"context"
@@ -534,7 +535,7 @@ func openConfined(abs string, roots ...string) (*os.File, error) {
 			return nil, err
 		}
 		defer func() { _ = root.Close() }()
-		rel, err := filepath.Rel(dir, abs)
+		rel, err := pathid.Rel(dir, abs)
 		if err != nil {
 			return nil, err
 		}
@@ -668,9 +669,10 @@ func resolve(projectDir, workDir, ref string, added ...string) (string, error) {
 	return p, nil
 }
 
+// within is pathid.Within (ADR-0101): one comparison for every
+// containment check, in the volume's sense of a name.
 func within(base, p string) bool {
-	base = filepath.Clean(base)
-	return p == base || strings.HasPrefix(p, base+string(filepath.Separator))
+	return pathid.Within(base, p)
 }
 
 // Complete returns project-relative paths starting with prefix, for the

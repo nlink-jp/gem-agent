@@ -201,8 +201,8 @@ func LoadPolicyFile(path string) (*PolicyFile, error) {
 // path, or projectDir itself when none does — so a directory reached in
 // another Unicode form finds its trust, pins and allowlists, and a write
 // lands in the table it already has rather than starting a second one.
-// The exact string is tried first; the identity check runs only when it
-// is absent.
+// The exact string is tried first; the normalised comparison runs only
+// when it is absent.
 func (pf *PolicyFile) ProjectKey(projectDir string) string {
 	if projectDir == "" {
 		return ""

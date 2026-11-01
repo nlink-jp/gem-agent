@@ -10,6 +10,7 @@ package instructions
 
 import (
 	"github.com/nlink-jp/gem-agent/internal/bounded"
+	"github.com/nlink-jp/gem-agent/internal/pathid"
 
 	"fmt"
 	"os"
@@ -149,8 +150,10 @@ func ancestors(projectDir, home string) []string {
 	return dirs
 }
 
+// within is pathid.Within (ADR-0101): one comparison for every
+// containment check, in the volume's sense of a name.
 func within(base, p string) bool {
-	return p == base || strings.HasPrefix(p, base+string(filepath.Separator))
+	return pathid.Within(base, p)
 }
 
 // label renders a path for display: bare name in the project itself,

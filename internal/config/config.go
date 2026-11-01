@@ -5,6 +5,7 @@ package config
 
 import (
 	"github.com/nlink-jp/gem-agent/internal/bounded"
+	"github.com/nlink-jp/gem-agent/internal/pathid"
 	"regexp"
 
 	"fmt"
@@ -145,7 +146,10 @@ func LoadProject(dir string) (*ProjectConfig, error) {
 func (c *Config) TrustsProject(dir string) bool {
 	canon := canonicalPath(dir)
 	for _, p := range c.Approval.TrustedProjects {
-		if canonicalPath(expandHome(p)) == canon {
+		// By the volume's sense of a name, not spelling (ADR-0101): an
+		// entry typed in one Unicode form still names the directory the
+		// kernel spells in the other.
+		if pathid.Same(canonicalPath(expandHome(p)), canon) {
 			return true
 		}
 	}

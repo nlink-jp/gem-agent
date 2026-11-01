@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nlink-jp/gem-agent/internal/pathid"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 )
 
@@ -149,7 +150,7 @@ func Classify(toolName string, mutating bool, args map[string]any, projectDir, w
 		if a, ok := innermostAdded(p, added); ok {
 			// classifyPath refused a read root; a write root is judged
 			// like the project, relative to itself (ADR-0099 §6).
-			rel, _ := filepath.Rel(a.Dir, aliasOrClean(p, a.Dir))
+			rel, _ := pathid.Rel(a.Dir, aliasOrClean(p, a.Dir))
 			if v, ok := persistentTarget(rel); ok {
 				return v
 			}
@@ -356,7 +357,7 @@ func projectRelative(p, projectDir string) string {
 	// registry resolves its root; the model may type the alias).
 	for _, c := range []string{filepath.Clean(p), aliasResolve(filepath.Clean(p))} {
 		if withinDir(projectDir, c) {
-			if rel, err := filepath.Rel(projectDir, c); err == nil {
+			if rel, err := pathid.Rel(projectDir, c); err == nil {
 				return rel
 			}
 		}
@@ -667,9 +668,10 @@ func hasCredentialPath(s string) bool {
 	return false
 }
 
+// withinDir is pathid.Within (ADR-0101): one comparison for every
+// containment check, in the volume's sense of a name.
 func withinDir(base, p string) bool {
-	base = filepath.Clean(base)
-	return p == base || strings.HasPrefix(p, base+string(filepath.Separator))
+	return pathid.Within(base, p)
 }
 
 // Describe renders a verdict for display.

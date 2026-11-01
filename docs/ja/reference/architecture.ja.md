@@ -36,7 +36,7 @@ ADR-0078）、`internal/mcpfilter`（`[mcp] exclude`
 このセッションの一部か。ADR-0077）、`internal/mention`（`@` 参照）、
 `internal/instructions`（`AGENTS.md` 探索）、`internal/ignore`（ignore を理解する列挙: 組み込みディレクトリリスト + gitignore マッチャ — ADR-0052）、`internal/session`（トランスクリプト:
 ロガー + resume ローダ）、`internal/statedir`（プロジェクト別 state 配置）、
-`internal/pathid`（2 つのパスが 1 つのディレクトリを名指すか — 記録済みと現在のプロジェクトの照合すべて、ADR-0101）、
+`internal/pathid`（パスの比較すべて — 等しいか・含まれるか・相対パス — を Unicode 正規化して行う、ADR-0101）、
 `internal/memory`（エージェントメモリ）、`internal/skills`（skill 探索/読込）、
 `internal/docext`（Office テキスト抽出）、`internal/mediastore`（GCS メディア
 アップロード）、`internal/uitext`（ja/en UI 文字列カタログ）、

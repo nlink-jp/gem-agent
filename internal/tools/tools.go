@@ -5,6 +5,7 @@
 package tools
 
 import (
+	"github.com/nlink-jp/gem-agent/internal/pathid"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 
 	"github.com/nlink-jp/gem-agent/internal/bounded"
@@ -419,7 +420,7 @@ func (r *Registry) rootAndLevel(abs string) (*os.Root, string, func(), bool, err
 	if best == nil {
 		return nil, "", nil, false, fmt.Errorf("path escapes the project directory: %s", abs)
 	}
-	rel, err := filepath.Rel(best.dir, abs)
+	rel, err := pathid.Rel(best.dir, abs)
 	if err != nil {
 		return nil, "", nil, false, err
 	}
@@ -1248,8 +1249,10 @@ func readLineCapped(br *bufio.Reader, cap int) (line string, cut bool, err error
 
 // --- path confinement ---
 
+// within is pathid.Within (ADR-0101): one comparison for every
+// containment check, in the volume's sense of a name.
 func within(base, p string) bool {
-	return p == base || strings.HasPrefix(p, base+string(filepath.Separator))
+	return pathid.Within(base, p)
 }
 
 // withinAny reports whether p sits under any of the roots.

@@ -16,7 +16,7 @@ drafts and three refutations, and one constraint that survived all of them:
 **the view layer opens no file.** A read the view layer performs is not a
 tool call, so it reaches neither `Agent.decide` nor ADR-0086's sandboxed
 child, and the credential list — the `credentialReadTools` map, keyed on built-in tool
-name ([risk.go:200](../../../internal/risk/risk.go)) — cannot see it.
+name ([risk.go:201](../../../internal/risk/risk.go)) — cannot see it.
 
 That constraint rules out the obvious design. The MCP intake already writes
 an image into the session work directory and hands the model
@@ -42,7 +42,7 @@ work-directory getter, a byte cap and a preview length — the sink this
 decision added is withdrawn by ADR-0091, and what it has never kept is the
 bytes ([mcpresult.go:46](../../../cmd/mcpresult.go)), and the tool contract is
 `Run func(ctx, args) (string, error)`
-([tools.go:65](../../../internal/tools/tools.go)). After `Run` returns, the
+([tools.go:66](../../../internal/tools/tools.go)). After `Run` returns, the
 blocks are gone.
 
 But the runtime is not short of a channel. The agent loop already talks to

@@ -13,6 +13,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/bounded"
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/pathid"
 	"github.com/nlink-jp/gem-agent/internal/statedir"
 	"github.com/nlink-jp/gem-agent/internal/trustpin"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
@@ -162,7 +163,7 @@ func pinNameForWrite(projectDir string, tc llm.ToolCall) string {
 	if !filepath.IsAbs(p) {
 		p = filepath.Join(projectDir, p)
 	}
-	rel, err := filepath.Rel(projectDir, p)
+	rel, err := pathid.Rel(projectDir, p)
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
 		return ""
 	}
