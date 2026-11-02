@@ -129,12 +129,14 @@ read・write・operator のレーンをカーネルが
 
 **インライン画像** — モデルは `show_image` であなたに絵を見せ、あなたは
 `/show <path>` で見たい画像を出す（PNG か JPEG、2 MiB まで。パスは空白を含んでも、
-引用符付きでも、ウィンドウへドラッグしたファイルでもよい）。端末が描けるときに描く（`[tui].images`、
+引用符付きでも、ウィンドウへドラッグしたファイルでもよい）。端末が描けるときに、入力欄より上の画面に
+収まる最大の大きさで、ただし画像そのものより大きくはせずに描く（`[tui].images`、
 既定は `auto`。iTerm2 と kitty、tmux・screen の中では off）。`view_image` は
 逆向きで、**モデルが**画像を見るためのものである
 （[ADR-0089](docs/ja/adr/0089-inline-images-declare-their-height.ja.md) /
 [ADR-0090](docs/ja/adr/0090-an-images-bytes-never-become-a-path.ja.md) /
-[ADR-0091](docs/ja/adr/0091-showing-is-an-act-of-output.ja.md)）。
+[ADR-0091](docs/ja/adr/0091-showing-is-an-act-of-output.ja.md) /
+[ADR-0103](docs/ja/adr/0103-a-picture-is-as-large-as-the-screen-allows.ja.md)）。
 
 **[承認と安全](docs/ja/reference/approval.ja.md)** — モデル自身が申告した
 コールの目的を引数と並べて表示する都度 MITL ゲート（Block 段には

@@ -361,7 +361,7 @@ func TestEveryOptionsCallbackIsAccountedFor(t *testing.T) {
 	exempt := map[string]string{
 		"StartTurn": "returns nothing", "Shell": "returns nothing", "Compact": "returns nothing",
 		"Riskbook": "returns nothing", "ToggleAuto": "returns a bool", "AutoState": "returns a bool",
-		"ReadOnlyState": "returns a ceiling value", "CellAspect": "returns a number",
+		"ReadOnlyState": "returns a ceiling value", "CellSize": "returns numbers",
 		"Printer": "the terminal's side, not a source", "Picture": "returns pixels and a refusal reason that becomes a note, rendered through the held renderer",
 	}
 	typ := reflect.TypeOf(Options{})

@@ -142,12 +142,14 @@ configured, inline otherwise.
 **Inline images** — the model shows you a picture with `show_image`, and
 you ask for one with `/show <path>` — PNG or JPEG, up to 2 MiB; the path may
 hold spaces, be quoted, or be a file dragged into the window; it is drawn in the terminal when the
-terminal can draw (`[tui].images`, `auto` by default; iTerm2 and kitty, off
+terminal can draw, as large as the screen above the input allows and never
+larger than the picture itself (`[tui].images`, `auto` by default; iTerm2 and kitty, off
 inside tmux and screen). `view_image` is the other direction — that is the
 model looking at an image, not you
 ([ADR-0089](docs/en/adr/0089-inline-images-declare-their-height.md) /
 [ADR-0090](docs/en/adr/0090-an-images-bytes-never-become-a-path.md) /
-[ADR-0091](docs/en/adr/0091-showing-is-an-act-of-output.md)).
+[ADR-0091](docs/en/adr/0091-showing-is-an-act-of-output.md) /
+[ADR-0103](docs/en/adr/0103-a-picture-is-as-large-as-the-screen-allows.md)).
 
 **[Approval and safety](docs/en/reference/approval.md)** — per-call
 MITL gates that show the model's own declared purpose for the call

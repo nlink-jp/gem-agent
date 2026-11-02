@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **An inline image is drawn as large as the screen allows (ADR-0103).**
+  A picture shown with `show_image` or `/show` was drawn at most 40
+  columns wide and a third of the screen tall — a square photo took 36
+  columns of a 200-column window. It now takes the terminal's width less
+  one column, or the screen above the input, whichever binds first, and
+  keeps its shape. It is never drawn larger than the picture itself (one
+  picture pixel to one pixel the terminal reports for a cell), so an icon
+  stays its own size. The box is shaped by the cell the terminal reports
+  rather than the constant 2.25, which did not fit kitty's 1.86 cell.
+
 ## [0.95.2] - 2026-11-02
 
 ### Fixed

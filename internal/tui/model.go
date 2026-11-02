@@ -179,10 +179,10 @@ type Options struct {
 	// nil keeps every fence on the box-art lane (ADR-0063); so does a
 	// session that draws no images, whatever this holds.
 	Picture diagram.Picture
-	// CellAspect reads a cell's height over its width, at start and on
-	// every resize (ADR-0092 §4); false when the terminal reports no
-	// pixels. It must never write to the terminal.
-	CellAspect func() (float64, bool)
+	// CellSize reads a cell's size in pixels, at start and on every
+	// resize (ADR-0092 §4, ADR-0103 §3); false when the terminal reports
+	// no pixels. It must never write to the terminal.
+	CellSize func() (termimg.Cell, bool)
 	// Theme is "dark", "light", or "notty" (plain: no colors anywhere).
 	// It MUST be decided by the caller BEFORE the Bubble Tea program
 	// starts: background detection sends an OSC query, and once raw
@@ -331,11 +331,11 @@ type Model struct {
 	completeSlashFn func(prefix string) []string
 	// images is the protocol this session may draw inline images with
 	// (ADR-0089 §7); termimg.None draws nothing.
-	images     termimg.Protocol
-	picture    diagram.Picture
-	cellAspect func() (float64, bool)
-	aspect     float64 // cell height over width; 0 until read
-	sweep      *SweepWriter
+	images   termimg.Protocol
+	picture  diagram.Picture
+	cellSize func() (termimg.Cell, bool)
+	cell     termimg.Cell // zero until read; its Aspect is then NaN
+	sweep    *SweepWriter
 	// resizing is true from a report that changes the width until none
 	// has come for resizeSettle; resizeSeq tells the settling tick of the
 	// last such report from the earlier ones (ADR-0094).
@@ -434,7 +434,7 @@ func New(opts Options) Model {
 		expandInput:     inertExpand(opts.ExpandInput),
 		images:          opts.Images,
 		picture:         opts.Picture,
-		cellAspect:      opts.CellAspect,
+		cellSize:        opts.CellSize,
 		sweep:           opts.Sweep,
 		baseCtx:         opts.BaseCtx,
 		println:         opts.Printer,
@@ -578,7 +578,7 @@ func (m *Model) pictureSegments(seg diagram.Segment) []Segment {
 	if !ok {
 		return fail("the picture cannot be cut into bands")
 	}
-	box := termimg.DiagramBox(b.Dx(), b.Dy(), m.width, m.aspect)
+	box := termimg.DiagramBox(b.Dx(), b.Dy(), m.width, m.cell.Aspect())
 	var out []Segment
 	total := 0
 	maxRows := box.Rows
@@ -687,10 +687,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = height
 		m.ta.SetWidth(width - 2)
 		m.render = m.mkRender(width)
-		if m.cellAspect != nil {
+		if m.cellSize != nil {
 			// An ioctl, not a query: safe while Bubble Tea owns stdin.
-			if a, ok := m.cellAspect(); ok {
-				m.aspect = a
+			if c, ok := m.cellSize(); ok {
+				m.cell = c
 			}
 		}
 		switch {
@@ -1097,7 +1097,7 @@ func (m *Model) drawImage(msg Image) tea.Cmd {
 	if !ok {
 		return nil // not an image, or past the ceiling — MIME claimed, bytes decided
 	}
-	box := termimg.BoxFor(w, h, m.width, maxImageRows(m.height))
+	box := termimg.BoxFor(w, h, m.width, maxImageRows(m.height, m.frameRows()), m.cell)
 	payload, err := termimg.Payload(m.images, msg.Data, box)
 	if err != nil {
 		return nil
@@ -1105,28 +1105,28 @@ func (m *Model) drawImage(msg Image) tea.Cmd {
 	return m.emitSegments([]Segment{{Text: payload, Rows: box.Rows}})
 }
 
-// maxImageRows is how much of the screen one picture may take. Printing N
-// rows scrolls N rows of history away, so a picture that fills the screen
-// costs the operator the conversation around it; a third leaves the reply
-// it belongs to still visible. An unknown height falls back to a size that
-// is modest on any terminal.
+// maxImageRows is the tallest a picture may be: the screen above the
+// frame, less the row the pad keeps free, so a picture is wholly on screen
+// when it lands and the conversation before it scrolls away (ADR-0103 §1,
+// the operator's choice over half the screen). An unknown height falls
+// back to a size that is modest on any terminal.
 //
-// No floor beyond one row. A first version floored at four, which on a
-// three-row terminal was taller than the screen — the test that enumerates
-// heights caught it, and a minimum that exceeds the maximum is not a
-// minimum.
-func maxImageRows(height int) int {
+// No floor beyond one row: a minimum that exceeds the maximum is not a
+// minimum, and a frame that fills the screen leaves one row at most.
+func maxImageRows(height, frame int) int {
 	if height <= 0 {
 		return 10
 	}
-	r := height / 3
-	if r > height-1 {
-		r = height - 1
-	}
-	if r < 1 {
-		r = 1
-	}
-	return r
+	return max(1, min(height-1, height-frame-1))
+}
+
+// frameRows is how many rows the frame takes as view lays it out now. It
+// measures viewContent rather than calling view, which writes the hold
+// accounting. The frame grows while a turn runs (the live tail, the
+// thought view), so a picture shown mid-turn is the smaller for it: the
+// price of keeping it whole on screen (ADR-0103, Consequences).
+func (m *Model) frameRows() int {
+	return strings.Count(shortRows(clipLines(m.viewContent(), m.width)), "\n") + 1
 }
 
 // beginTurnStats arms the ADR-0033 heartbeat for a fresh turn.

@@ -3,6 +3,7 @@ package termimg
 import (
 	"bytes"
 	"image"
+	"math"
 
 	// The decoders this runtime will draw. Registering them here rather
 	// than wherever an image arrives keeps one answer to "is this an
@@ -32,11 +33,32 @@ const Formats = "PNG or JPEG"
 const MaxBytes = 2 << 20 // 2 MiB
 
 // cellAspect is how much wider than tall a terminal cell is NOT: a cell is
-// roughly 8x18 device pixels, so one row is worth about 2.25 columns of
-// picture. This chooses how a box is SHAPED and never how it is counted —
-// a wrong constant letterboxes the picture inside a box the terminal
-// reserves whole (ADR-0089), it does not move the row count.
+// roughly 8x18 pixels, so one row is worth about 2.25 columns of picture.
+// It is the shape assumed when the terminal reports no pixels; a box is
+// shaped by the cell that was read wherever there is one (ADR-0103 §2).
 const cellAspect = 2.25
+
+// Cell is one terminal cell's size in the pixels the terminal reports
+// with TIOCGWINSZ. On the operator's Retina screens iTerm2 reported 8x18
+// and kitty 7x13 — points, not device pixels (mermaid-render RFP, stage 0).
+type Cell struct{ W, H float64 }
+
+// Aspect is the cell's height over its width.
+func (c Cell) Aspect() float64 { return c.H / c.W }
+
+// usable is false for a cell no terminal has: nothing reported, or a shape
+// outside the 1-4 DiagramBox also refuses.
+func (c Cell) usable() bool {
+	if !(c.W > 0 && c.H > 0) {
+		return false
+	}
+	a := c.Aspect()
+	return a >= 1 && a <= 4
+}
+
+// fallbackCell is the cell assumed when the terminal reports none:
+// iTerm2's measured 8x18, the cellAspect a box was always shaped by.
+var fallbackCell = Cell{W: 8, H: 18}
 
 // Measure reports a picture's pixel size and whether this runtime will
 // draw it at all. A block whose MIME claims an image but whose bytes do
@@ -55,46 +77,39 @@ func Measure(data []byte) (w, h int, ok bool) {
 	return cfg.Width, cfg.Height, true
 }
 
-// BoxFor chooses the box to declare for a picture of pxW x pxH, given the
-// terminal's width and a ceiling on rows. The columns are clamped below
-// the terminal's width by Fit — a box at the full width invites the
+// BoxFor chooses the box to declare for a picture of pxW x pxH (ADR-0103):
+// as large as the terminal allows — its width less one column, maxRows
+// tall — and never larger than the picture itself, one picture pixel to
+// one pixel the terminal reports for cell. The picture keeps its shape;
+// an unusable cell is taken to be fallbackCell. The columns are clamped
+// below the terminal's width by Fit — a box at the full width invites the
 // terminal to wrap the picture and add rows the declaration never claimed.
 //
 // The box is always at least 1x1: a zero box would be counted as some
 // number and drawn as another, which is the failure the declaration
 // exists to prevent.
-func BoxFor(pxW, pxH, termCols, maxRows int) Box {
+func BoxFor(pxW, pxH, termCols, maxRows int, cell Cell) Box {
 	if pxW <= 0 || pxH <= 0 {
 		return Box{Rows: 1, Cols: 1}
 	}
-	if maxRows < 1 {
-		maxRows = 1
+	maxRows = max(1, maxRows)
+	if !cell.usable() {
+		cell = fallbackCell
 	}
-	cols := termCols - 1
-	if cols > defaultCols {
-		cols = defaultCols
+	cols := float64(pxW) / cell.W
+	rows := float64(pxH) / cell.H
+	limit := float64(unknownWidthCols)
+	if termCols > 1 {
+		limit = float64(termCols - 1)
 	}
-	if cols < 1 {
-		cols = defaultCols
+	scale := math.Min(1, math.Min(limit/cols, float64(maxRows)/rows))
+	b := Box{
+		Rows: min(maxRows, max(1, int(math.Round(rows*scale)))),
+		Cols: max(1, int(math.Round(cols*scale))),
 	}
-	rows := int(float64(cols)*float64(pxH)/(float64(pxW)*cellAspect) + 0.5)
-	if rows < 1 {
-		rows = 1
-	}
-	if rows > maxRows {
-		// Too tall for the ceiling: give back the columns the shorter box
-		// no longer needs, so the picture keeps its shape instead of
-		// being letterboxed inside a box it cannot fill.
-		rows = maxRows
-		cols = int(float64(rows)*float64(pxW)*cellAspect/float64(pxH) + 0.5)
-		if cols < 1 {
-			cols = 1
-		}
-	}
-	return Fit(Box{Rows: rows, Cols: cols}, termCols)
+	return Fit(b, termCols)
 }
 
-// defaultCols is the width a picture is drawn at when the terminal has
-// room: wide enough to read, narrow enough to leave the reply's text
-// beside it in the operator's memory of the screen.
-const defaultCols = 40
+// unknownWidthCols is the widest a picture is drawn when the terminal's
+// width is unknown: a guess would be worse than a modest number.
+const unknownWidthCols = 40

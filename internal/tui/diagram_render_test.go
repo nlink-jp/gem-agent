@@ -117,8 +117,8 @@ func fakePicture(src string) (image.Image, string, bool) {
 // paragraphs, and its rows told to the counter.
 func TestReplyDrawsPicture(t *testing.T) {
 	m := replyModel(Options{Images: termimg.ITerm2, Picture: fakePicture,
-		CellAspect: func() (float64, bool) { return 1.86, true }})
-	m.aspect = 1.86 // as the first size report reads it
+		CellSize: func() (termimg.Cell, bool) { return termimg.Cell{W: 50, H: 93}, true }})
+	m.cell = termimg.Cell{W: 50, H: 93} // as the first size report reads it: aspect 1.86
 	segs := m.renderReply("before\n\n```mermaid\nflowchart TD\n  A --> B\n```\n\nafter")
 	if len(segs) != 5 || segs[1].Text != "" || segs[3].Text != "" {
 		t.Fatalf("segments: %+v", segs)
@@ -214,21 +214,22 @@ func TestFlushedPictureIsCounted(t *testing.T) {
 	}
 }
 
-// The cell's aspect is read at every size report (ADR-0092 §4), and a
-// terminal that reports no pixels leaves the last reading.
-func TestSizeReportReadsCellAspect(t *testing.T) {
-	aspect, ok := 1.86, true
+// The cell is read at every size report (ADR-0092 §4, ADR-0103 §3), the
+// aspect follows from it, and a terminal that reports no pixels leaves
+// the last reading.
+func TestSizeReportReadsCellSize(t *testing.T) {
+	cell, ok := termimg.Cell{W: 50, H: 93}, true
 	m := New(Options{Theme: "notty", Printer: (&capture{}).printer,
-		CellAspect: func() (float64, bool) { return aspect, ok }})
+		CellSize: func() (termimg.Cell, bool) { return cell, ok }})
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m = next.(Model)
-	if m.aspect != 1.86 {
-		t.Fatalf("aspect after the first size report = %v", m.aspect)
+	if m.cell != cell || m.cell.Aspect() != 1.86 {
+		t.Fatalf("after the first size report: cell %+v", m.cell)
 	}
-	aspect, ok = 0, false
+	cell, ok = termimg.Cell{}, false
 	next, _ = m.Update(tea.WindowSizeMsg{Width: 90, Height: 40})
-	if got := next.(Model).aspect; got != 1.86 {
-		t.Errorf("a report without pixels changed the aspect to %v", got)
+	if got := next.(Model); got.cell != (termimg.Cell{W: 50, H: 93}) {
+		t.Errorf("a report without pixels changed the cell to %+v", got.cell)
 	}
 }
 

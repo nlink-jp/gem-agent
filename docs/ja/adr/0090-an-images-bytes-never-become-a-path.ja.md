@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted**（2026-09-17）— 実装済み。**§2 の供給源は [ADR-0091](0091-showing-is-an-act-of-output.ja.md) が撤回**（2026-09-17）、§1 の配管は残る |
+| Status | **Accepted**（2026-09-17）— 実装済み。**§2 の供給源は [ADR-0091](0091-showing-is-an-act-of-output.ja.md) が撤回**（2026-09-17）、§1 の配管は残る。**§3 の上限と幅は [ADR-0103](0103-a-picture-is-as-large-as-the-screen-allows.ja.md) が修正**（2026-11-02） |
 | Date | 2026-09-17 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp メンテナ |

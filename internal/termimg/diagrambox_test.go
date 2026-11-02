@@ -33,18 +33,16 @@ func TestDiagramBox(t *testing.T) {
 	}
 }
 
-func TestAspectOf(t *testing.T) {
+func TestCellOf(t *testing.T) {
 	// 50 rows x 200 cols over 1800 x 1600 px: cells 36 tall, 8 wide.
-	if a, ok := aspectOf(50, 200, 1800, 1600); !ok || a != 4.5 {
-		t.Errorf("aspectOf = %v, %v", a, ok)
+	if c, ok := cellOf(50, 200, 1800, 1600); !ok || c != (Cell{W: 8, H: 36}) || c.Aspect() != 4.5 {
+		t.Errorf("cellOf = %+v, %v", c, ok)
 	}
-	if _, ok := aspectOf(50, 200, 0, 0); ok {
-		t.Error("a terminal that reports no pixels gave an aspect")
+	if _, ok := cellOf(50, 200, 0, 0); ok {
+		t.Error("a terminal that reports no pixels gave a cell")
 	}
 }
 
-// Bands cover the picture exactly, top to bottom, none taller than the
-// limit, and their rows add up to the box's.
 func TestBands(t *testing.T) {
 	for _, c := range []struct{ pxH, rows, max int }{
 		{3360, 100, 20}, {3360, 100, 30}, {1000, 7, 7}, {1000, 7, 50}, {999, 13, 4}, {50, 1, 1},

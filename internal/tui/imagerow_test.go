@@ -193,6 +193,7 @@ func TestDrawImageAccountsForWhatItDraws(t *testing.T) {
 	m.images = termimg.ITerm2
 
 	before := m.hold.printed
+	frame := m.frameRows()
 	m.drawImage(Image{Data: realPNG(t, 320, 180), MIME: "image/png"})
 	if len(c.printed) != 1 {
 		t.Fatalf("printed %d times, want one write", len(c.printed))
@@ -201,7 +202,7 @@ func TestDrawImageAccountsForWhatItDraws(t *testing.T) {
 	accounted := m.hold.printed - before
 
 	// The box in the bytes and the box in the accounting are one box.
-	want := termimg.BoxFor(320, 180, 80, maxImageRows(30))
+	want := termimg.BoxFor(320, 180, 80, maxImageRows(30, frame), m.cell)
 	if !strings.Contains(drew, fmt.Sprintf("height=%d", want.Rows)) ||
 		!strings.Contains(drew, fmt.Sprintf("width=%d", want.Cols)) {
 		t.Errorf("payload does not declare the box %+v", want)
@@ -244,27 +245,66 @@ func TestDrawImageRefusesSilently(t *testing.T) {
 	}
 }
 
-// TestMaxImageRowsLeavesTheConversation: printing N rows scrolls N rows of
-// history away, so a picture that fills the screen costs the operator the
-// reply it belongs to.
-func TestMaxImageRowsLeavesTheConversation(t *testing.T) {
-	for _, tc := range []struct{ height, want int }{
-		{0, 10}, {1, 1}, {3, 1}, {12, 4}, {30, 10}, {60, 20},
+// TestDrawImageFillsTheScreen: a large picture is drawn as large as the
+// screen allows (ADR-0103 §1) — a wide one across the terminal's width
+// less one column, a tall one down to the row above the frame, so the
+// picture and the frame together fit the screen.
+func TestDrawImageFillsTheScreen(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		pxW, pxH int
+		wide     bool
+	}{
+		{"wide", 3200, 900, true},
+		{"tall", 900, 3200, false},
 	} {
-		if got := maxImageRows(tc.height); got != tc.want {
-			t.Errorf("maxImageRows(%d) = %d, want %d", tc.height, got, tc.want)
+		c := &capture{}
+		m := sized(t, c, 80, 30)
+		m.images = termimg.ITerm2
+		m.cell = termimg.Cell{W: 8, H: 18}
+		frame := m.frameRows()
+		before := m.hold.printed
+		m.drawImage(Image{Data: realPNG(t, tc.pxW, tc.pxH), MIME: "image/png"})
+		rows := m.hold.printed - before
+		if tc.wide && !strings.Contains(c.printed[0], "width=79;") {
+			t.Errorf("%s: not drawn across the width: %q", tc.name, c.printed[0][:60])
 		}
-		// Never more than the screen minus a row — except on a screen of
-		// one row, where one row is all there is and the question is
-		// moot.
-		if tc.height > 0 {
-			ceiling := tc.height - 1
-			if ceiling < 1 {
-				ceiling = 1
-			}
-			if got := maxImageRows(tc.height); got > ceiling {
-				t.Errorf("height %d: %d rows leaves no screen", tc.height, got)
-			}
+		if !tc.wide && rows != 30-frame-1 {
+			t.Errorf("%s: %d rows, want the %d above a %d-row frame", tc.name, rows, 30-frame-1, frame)
+		}
+		if rows+frame > 30-1 {
+			t.Errorf("%s: %d rows and a %d-row frame do not fit the screen", tc.name, rows, frame)
+		}
+	}
+}
+
+// TestDrawImageKeepsASmallPictureItsOwnSize: an icon is not blown up to
+// the screen (ADR-0103 §2) — 64x64 over an 8x18 cell is 8 columns, 4 rows.
+func TestDrawImageKeepsASmallPictureItsOwnSize(t *testing.T) {
+	c := &capture{}
+	m := sized(t, c, 200, 60)
+	m.images = termimg.ITerm2
+	m.cell = termimg.Cell{W: 8, H: 18}
+	m.drawImage(Image{Data: realPNG(t, 64, 64), MIME: "image/png"})
+	if !strings.Contains(c.printed[0], "width=8;height=4;") {
+		t.Errorf("icon box: %q", c.printed[0][:60])
+	}
+}
+
+// TestMaxImageRowsIsTheScreenAboveTheFrame: the screen less the frame and
+// the pad's free row, never less than one row nor more than the screen
+// less one.
+func TestMaxImageRowsIsTheScreenAboveTheFrame(t *testing.T) {
+	for _, tc := range []struct{ height, frame, want int }{
+		{0, 3, 10}, {1, 1, 1}, {3, 1, 1}, {12, 3, 8}, {30, 3, 26}, {60, 10, 49},
+		{30, 30, 1}, {30, 0, 29},
+	} {
+		got := maxImageRows(tc.height, tc.frame)
+		if got != tc.want {
+			t.Errorf("maxImageRows(%d, %d) = %d, want %d", tc.height, tc.frame, got, tc.want)
+		}
+		if tc.height > 1 && got > tc.height-1 {
+			t.Errorf("height %d: %d rows leaves no screen", tc.height, got)
 		}
 	}
 }

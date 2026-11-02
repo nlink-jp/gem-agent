@@ -2,6 +2,7 @@ package termimg
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -71,42 +72,78 @@ func TestMeasureRefusesOverTheCeiling(t *testing.T) {
 	}
 }
 
-// TestBoxForKeepsTheShapeAndTheCage: the box is chosen from the picture
-// and clamped by the terminal. What matters for the accounting is only
-// that it is never zero and never reaches the terminal's width; the shape
-// is a comfort, and a wrong cell-aspect constant letterboxes rather than
-// miscounts.
-func TestBoxForKeepsTheShapeAndTheCage(t *testing.T) {
+// TestBoxForFillsTheScreenNotMoreThanThePicture: the box is as large as
+// the terminal allows — its width less one, maxRows tall — and never
+// larger than the picture at one pixel per reported pixel (ADR-0103).
+func TestBoxForFillsTheScreenNotMoreThanThePicture(t *testing.T) {
+	iterm, kitty := Cell{W: 8, H: 18}, Cell{W: 7, H: 13}
 	for _, tc := range []struct {
 		name               string
 		pxW, pxH           int
 		termCols, maxRows  int
+		cell               Cell
 		wantRows, wantCols int
 	}{
-		// 16:9 at 40 columns: 40 * 9 / (16 * 2.25) = 10 rows.
-		{"landscape", 320, 180, 180, 20, 10, 40},
-		// Square: 40 / 2.25 = 17.8 -> 18 rows, inside the ceiling.
-		{"square", 200, 200, 180, 20, 18, 40},
-		// Portrait hits the ceiling, so the columns come back down.
-		{"portrait clipped by maxRows", 180, 320, 180, 12, 12, 15},
-		// A narrow terminal clamps the width below its own, and the
-		// picture gets shorter with it rather than being stretched:
-		// 19 * 180 / (320 * 2.25) = 4.75 -> 5.
-		{"narrow terminal", 320, 180, 20, 20, 5, 19},
+		// 400 x 100 cells natively; the width binds: 180/400 = 0.45.
+		{"wide photo fills the width", 3200, 1800, 181, 70, iterm, 45, 180},
+		// 225 x 177.8 cells; the height binds: 40/177.8 = 0.225.
+		{"tall photo fills the height", 1800, 3200, 181, 40, iterm, 40, 51},
+		// 8 x 3.6 cells natively: drawn at that, not at the screen.
+		{"an icon stays its own size", 64, 64, 181, 70, iterm, 4, 8},
+		// kitty's cell shapes the box: 200 x 100 cells, halved to fit.
+		{"kitty's cell", 1400, 1300, 101, 100, kitty, 50, 100},
+		// No pixels reported, or a cell no terminal has: 8x18.
+		{"no cell reported", 3200, 1800, 181, 70, Cell{}, 45, 180},
+		{"absurd cell", 3200, 1800, 181, 70, Cell{W: 2, H: 40}, 45, 180},
+		// An unknown width keeps the old 40 columns.
+		{"unknown width", 3200, 1800, 0, 70, iterm, 10, 40},
+		// A narrow terminal clamps the width below its own.
+		{"narrow terminal", 3200, 1800, 20, 70, iterm, 5, 19},
 	} {
-		got := BoxFor(tc.pxW, tc.pxH, tc.termCols, tc.maxRows)
+		got := BoxFor(tc.pxW, tc.pxH, tc.termCols, tc.maxRows, tc.cell)
 		if got.Rows != tc.wantRows || got.Cols != tc.wantCols {
-			t.Errorf("%s: BoxFor(%d, %d, %d, %d) = %+v, want {%d %d}",
-				tc.name, tc.pxW, tc.pxH, tc.termCols, tc.maxRows, got, tc.wantRows, tc.wantCols)
+			t.Errorf("%s: BoxFor(%d, %d, %d, %d, %+v) = %+v, want {%d %d}",
+				tc.name, tc.pxW, tc.pxH, tc.termCols, tc.maxRows, tc.cell, got, tc.wantRows, tc.wantCols)
 		}
-		if got.Rows < 1 || got.Cols < 1 {
-			t.Errorf("%s: a box that reserves nothing would be counted as one number and drawn as another", tc.name)
-		}
-		if tc.termCols > 1 && got.Cols >= tc.termCols {
-			t.Errorf("%s: box reaches the terminal width; the terminal would wrap the picture", tc.name)
-		}
-		if got.Rows > tc.maxRows {
-			t.Errorf("%s: %d rows exceeds the ceiling of %d", tc.name, got.Rows, tc.maxRows)
+	}
+}
+
+// TestBoxForHoldsItsBounds over a grid of pictures, terminals and cells:
+// never empty, never at the terminal's width, never past maxRows, never
+// more than half a cell past the picture's own size, and its shape within
+// a cell's rounding of the picture's.
+func TestBoxForHoldsItsBounds(t *testing.T) {
+	sizes := []int{1, 7, 13, 64, 100, 333, 1024, 1800, 3200, 9000}
+	for _, cell := range []Cell{{W: 8, H: 18}, {W: 7, H: 13}, {W: 16, H: 36}} {
+		for _, pxW := range sizes {
+			for _, pxH := range sizes {
+				for _, term := range [][2]int{{80, 23}, {181, 70}, {20, 3}, {300, 1}} {
+					cols, maxRows := term[0], term[1]
+					got := BoxFor(pxW, pxH, cols, maxRows, cell)
+					where := fmt.Sprintf("%dx%d px, %dx%d term, cell %+v: %+v", pxW, pxH, cols, maxRows, cell, got)
+					if got.Rows < 1 || got.Cols < 1 {
+						t.Fatalf("%s: a box that reserves nothing", where)
+					}
+					if got.Cols >= cols || got.Rows > maxRows {
+						t.Fatalf("%s: past the screen", where)
+					}
+					natW, natH := float64(pxW)/cell.W, float64(pxH)/cell.H
+					if float64(got.Cols) > max(1, natW+0.5) || float64(got.Rows) > max(1, natH+0.5) {
+						t.Fatalf("%s: larger than the picture (%.1f x %.1f cells)", where, natW, natH)
+					}
+					// Shape: where both sides are many cells, the box's
+					// width over height matches the picture's to within
+					// a cell of rounding on either side.
+					if got.Cols >= 10 && got.Rows >= 10 {
+						want := natW / natH
+						lo := (float64(got.Cols) - 1) / (float64(got.Rows) + 1)
+						hi := (float64(got.Cols) + 1) / (float64(got.Rows) - 1)
+						if want < lo || want > hi {
+							t.Fatalf("%s: shape %.3f, picture's %.3f", where, float64(got.Cols)/float64(got.Rows), want)
+						}
+					}
+				}
+			}
 		}
 	}
 }
@@ -115,7 +152,7 @@ func TestBoxForKeepsTheShapeAndTheCage(t *testing.T) {
 // caller has already decided to draw by the time it asks.
 func TestBoxForRefusesNothing(t *testing.T) {
 	for _, tc := range [][4]int{{0, 0, 80, 20}, {-1, 10, 80, 20}, {320, 180, 0, 20}, {320, 180, 80, 0}} {
-		got := BoxFor(tc[0], tc[1], tc[2], tc[3])
+		got := BoxFor(tc[0], tc[1], tc[2], tc[3], Cell{})
 		if got.Rows < 1 || got.Cols < 1 {
 			t.Errorf("BoxFor%v = %+v, want at least 1x1", tc, got)
 		}

@@ -18,7 +18,7 @@ const cellEm = 1.2
 // column shrinks, keeping its shape — smaller text is ugly, not wrong. A
 // tall one is never shrunk: its top scrolls into the scrollback, as a long
 // reply's does (the operator's decision). A missing or absurd aspect falls
-// back to the one BoxFor assumes.
+// back to the one a box is shaped by when no cell is reported.
 func DiagramBox(pxW, pxH, termCols int, aspect float64) Box {
 	if pxW <= 0 || pxH <= 0 {
 		return Box{Rows: 1, Cols: 1}
@@ -36,13 +36,13 @@ func DiagramBox(pxW, pxH, termCols int, aspect float64) Box {
 	return Box{Rows: max(1, int(math.Round(rows))), Cols: max(1, int(math.Round(cols)))}
 }
 
-// aspectOf is a cell's height over its width from a window size in cells
-// and pixels; false when the terminal reports no pixels (many do not).
-func aspectOf(rows, cols, ypx, xpx uint16) (float64, bool) {
+// cellOf is a cell's size in pixels from a window size in cells and
+// pixels; false when the terminal reports no pixels (many do not).
+func cellOf(rows, cols, ypx, xpx uint16) (Cell, bool) {
 	if rows == 0 || cols == 0 || ypx == 0 || xpx == 0 {
-		return 0, false
+		return Cell{}, false
 	}
-	return (float64(ypx) / float64(rows)) / (float64(xpx) / float64(cols)), true
+	return Cell{W: float64(xpx) / float64(cols), H: float64(ypx) / float64(rows)}, true
 }
 
 // Band is one horizontal strip of a picture: pixel rows [Y0, Y1), drawn

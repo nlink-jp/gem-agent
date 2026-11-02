@@ -838,7 +838,7 @@ a new hook) is an architecture change and takes the same rows as a
   carries its source, so `pictureSegments` shows source + note when the
   payload cannot be built (a silent `drawImage`-style refusal would lose
   both). The box is `termimg.DiagramBox` (1 em = 1 line, width from the
-  cell aspect read by `termimg.CellAspect`, an ioctl — never a query);
+  aspect of the cell read by `termimg.CellSize`, an ioctl — never a query);
   tall pictures are not shrunk (operator's decision); on kitty only they are
   drawn in bands of at most half the screen (`termimg.Bands`): kitty clips a
   picture taller than the screen, while bands on iTerm2 showed seams and a
@@ -1002,6 +1002,13 @@ a new hook) is an architecture change and takes the same rows as a
   `showslash_test.go` hands the slash handler a fake `show`, so it could
   only ever prove the layer above the defect; `showpath_test.go` runs the
   real `newShowPath`.
+- **An image's box is the screen, capped at the picture (ADR-0103)** —
+  `termimg.BoxFor` takes the terminal's width less one, `maxImageRows`
+  (the screen above the frame as `frameRows` measures it — `viewContent`,
+  never `view`, which writes the hold), and the cell `termimg.CellSize`
+  read; the box never exceeds the picture at one pixel per reported pixel.
+  Changing line counts in `internal/tui/model.go` above a line an ADR cites
+  fails `TestADRFileCitationsResolve` — ADR-0089 cites model.go by line.
 - **What `show_image` promises is what `termimg` decodes** — `termimg.Formats`
   sits beside the decoder imports, `tools.ShowImageFormats` repeats it
   (tools cannot import the drawing package) and
