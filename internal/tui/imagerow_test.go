@@ -308,3 +308,46 @@ func TestMaxImageRowsIsTheScreenAboveTheFrame(t *testing.T) {
 		}
 	}
 }
+
+// TestDrawImageDuringAResizeStaysNarrow: while the window is being
+// resized the terminal runs ahead of the width it reported, so a picture
+// drawn then is no wider than the narrowest width the view lays out.
+func TestDrawImageDuringAResizeStaysNarrow(t *testing.T) {
+	c := &capture{}
+	m := sized(t, c, 200, 60)
+	m.images = termimg.ITerm2
+	m.resizing = true
+	m.drawImage(Image{Data: realPNG(t, 3200, 900), MIME: "image/png"})
+	if want := fmt.Sprintf("width=%d;", minWidth-1); !strings.Contains(c.printed[0], want) {
+		t.Errorf("drawn mid-resize: %q, want %s", c.printed[0][:60], want)
+	}
+}
+
+// TestFrameRowsReadsWithoutWriting: frameRows measures the frame without
+// touching the hold accounting view writes, and it follows the frame as
+// a running turn grows it.
+func TestFrameRowsReadsWithoutWriting(t *testing.T) {
+	c := &capture{}
+	m := sized(t, c, 80, 30)
+	m.hold.printed, m.hold.lastTotal = 29, 7
+	idle := m.frameRows()
+	if m.hold.printed != 29 || m.hold.lastTotal != 7 {
+		t.Errorf("frameRows wrote the hold: printed %d, lastTotal %d", m.hold.printed, m.hold.lastTotal)
+	}
+	if want := strings.Count(m.viewContent(), "\n") + 1; idle != want {
+		t.Errorf("idle frame %d rows, view lays out %d", idle, want)
+	}
+	m.phase = phaseRunning
+	m.status = "line one\nline two\nline three"
+	running := m.frameRows()
+	if running <= idle {
+		t.Errorf("a running frame with a three-line status is %d rows, idle %d", running, idle)
+	}
+	// A tall picture drawn now fits above the running frame.
+	m.images = termimg.ITerm2
+	before := m.hold.printed
+	m.drawImage(Image{Data: realPNG(t, 900, 3200), MIME: "image/png"})
+	if rows := m.hold.printed - before; rows != 30-running-1 {
+		t.Errorf("drawn mid-turn: %d rows, want the %d above a %d-row frame", rows, 30-running-1, running)
+	}
+}

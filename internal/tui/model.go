@@ -1097,7 +1097,14 @@ func (m *Model) drawImage(msg Image) tea.Cmd {
 	if !ok {
 		return nil // not an image, or past the ceiling — MIME claimed, bytes decided
 	}
-	box := termimg.BoxFor(w, h, m.width, maxImageRows(m.height, m.frameRows()), m.cell)
+	width := m.width
+	if m.resizing {
+		// The terminal runs ahead of the width it reported while it is
+		// being resized; a box at that width could land wider than the
+		// screen and be wrapped (ADR-0103 §1, ADR-0094).
+		width = min(width, minWidth)
+	}
+	box := termimg.BoxFor(w, h, width, maxImageRows(m.height, m.frameRows()), m.cell)
 	payload, err := termimg.Payload(m.images, msg.Data, box)
 	if err != nil {
 		return nil

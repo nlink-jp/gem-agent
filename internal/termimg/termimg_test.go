@@ -1,6 +1,7 @@
 package termimg
 
 import (
+	"math/rand/v2"
 	"bytes"
 	"encoding/base64"
 	"image"
@@ -244,6 +245,54 @@ func TestKittyGetsPNGEvenFromAJPEG(t *testing.T) {
 	_, data = kittyImage(t, got)
 	if cfg, err := png.DecodeConfig(bytes.NewReader(data)); err != nil || cfg.Width != 64 || cfg.Height != 32 {
 		t.Errorf("small JPEG: %v, %dx%d, want a 64x32 PNG", err, cfg.Width, cfg.Height)
+	}
+}
+
+// TestKittyFitsAPhotoInAScreenSizedBox: a box the size of the screen
+// must still give kitty a payload for a photo (pre-release review of
+// ADR-0103: at 20x40 px a cell every photo measured re-encoded past MaxBytes
+// and drew nothing). Noise is the worst case for PNG — it does not compress
+// — so if it fits, a photo does.
+func TestKittyFitsAPhotoInAScreenSizedBox(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 2400, 1350))
+	r := rand.New(rand.NewPCG(1, 2))
+	for i := range img.Pix {
+		img.Pix[i] = byte(r.IntN(256))
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 95}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Payload(Kitty, buf.Bytes(), Box{Rows: 45, Cols: 149})
+	if err != nil {
+		t.Fatalf("a photo in a screen-sized box drew nothing: %v", err)
+	}
+	_, data := kittyImage(t, got)
+	if len(data) > MaxBytes {
+		t.Errorf("PNG is %d B, past MaxBytes", len(data))
+	}
+	if cfg, err := png.DecodeConfig(bytes.NewReader(data)); err != nil || cfg.Width < 149*4 {
+		t.Errorf("PNG %v, %dx%d: shrunk past what the box can show", err, cfg.Width, cfg.Height)
+	}
+
+	// A picture that compresses is scaled to 8x18 px a cell and no
+	// further: 149 columns are 1192 px.
+	smooth := image.NewRGBA(image.Rect(0, 0, 2400, 1350))
+	for y := range 1350 {
+		for x := range 2400 {
+			smooth.Set(x, y, color.RGBA{R: uint8(x / 10), G: uint8(y / 6), B: 128, A: 255})
+		}
+	}
+	buf.Reset()
+	if err := jpeg.Encode(&buf, smooth, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = Payload(Kitty, buf.Bytes(), Box{Rows: 45, Cols: 149}); err != nil {
+		t.Fatal(err)
+	}
+	_, data = kittyImage(t, got)
+	if cfg, err := png.DecodeConfig(bytes.NewReader(data)); err != nil || cfg.Width != 1192 {
+		t.Errorf("smooth photo: PNG %v, %dx%d, want 1192 px wide", err, cfg.Width, cfg.Height)
 	}
 }
 

@@ -13,6 +13,8 @@
   picture pixel to one pixel the terminal reports for a cell), so an icon
   stays its own size. The box is shaped by the cell the terminal reports
   rather than the constant 2.25, which did not fit kitty's 1.86 cell.
+  On kitty a JPEG is re-encoded as a PNG at 8×18 pixels a cell, so a photo
+  in a screen-sized box stays under the 2 MiB an inline image may be.
 
 ## [0.95.2] - 2026-11-02
 

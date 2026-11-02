@@ -79,9 +79,27 @@ pixels still leaves the last reading in place.
   live tail, the thought view). A picture shown mid-turn is smaller than the
   same picture shown with `/show` at an idle prompt. That is the price of
   keeping it whole on screen.
-- Kitty re-encodes a non-PNG picture scaled to the box (`kittyPNG`); the box
-  is larger now, so a JPEG photo re-encodes to a larger PNG. `MaxBytes` still
-  bounds it, and the picture is refused, not shrunk further, past it.
+- Kitty re-encodes a non-PNG picture as a PNG scaled to the box
+  (`kittyPNG`). It assumed 20×40 pixels a cell; with a screen-sized box the
+  pre-release review measured every photo it tried (1600–3200 px JPEGs) at
+  3–9 MB as PNG, past `MaxBytes`, so nothing was drawn. The scale is now
+  8×18 a cell — one picture pixel to one assumed pixel, as the box is sized
+  — which put a 3200 px photo in a 149×45 box at about 1 MB in about 0.1 s.
+  A PNG still past `MaxBytes` is shrunk once more by the square root of the
+  overshoot, and refused if it still does not fit. On a Retina screen kitty
+  shows it a little soft: ugly, not wrong.
+- While the window is being resized the terminal runs ahead of the width it
+  reported (ADR-0094), and a box at the reported width could land wider than the
+  screen. A picture drawn then is no wider than `minWidth`.
+- The frame is measured when the picture arrives; the renderer draws the
+  frame of its next tick. If an approval dialog opens or closes in between,
+  the picture is smaller than it could be, or its top scrolls off. The row
+  accounting stays right either way (the picture is shorter than the screen
+  and the self-healing counter follows); only "wholly on screen" is lost.
+  Accepted as a residual.
+- Not yet measured on a real terminal. The arithmetic and the payloads are
+  tested; how iTerm2 and kitty show a screen-sized picture is for the
+  operator's check before release.
 - ADR-0089 A2 rejected deriving the box from the cell's pixel size because it
   needed an `ESC[16t` query that can go unanswered. The size is now read with
   the ioctl ADR-0092 introduced, which needs no answer; A2's objection does

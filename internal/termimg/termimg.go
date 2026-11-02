@@ -122,12 +122,15 @@ func iterm(data []byte, b Box) string {
 var pngSignature = []byte("\x89PNG\r\n\x1a\n")
 
 // The pixels a cell is assumed to hold when a picture is scaled down for
-// kitty. Generous on purpose — a cell on a Retina screen is about 16x36
-// device pixels — so the terminal still scales the picture down into the
-// box and never up.
+// kitty: fallbackCell's 8x18, one picture pixel to one reported pixel, as
+// the box itself is sized (ADR-0103 §2). The box is now up to the whole screen,
+// and the 20x40 once assumed here made a photo's PNG 3-9 MB, past
+// MaxBytes on every photo measured (pre-release review, 2026-11-02); at
+// 8x18 a 3200 px photo in a 149x45 box was about 1 MB. A Retina screen
+// shows it a little soft, which is ugly, not wrong.
 const (
-	kittyPxPerCol = 20
-	kittyPxPerRow = 40
+	kittyPxPerCol = 8
+	kittyPxPerRow = 18
 )
 
 // kittyPNG returns the picture as PNG, the only thing kitty's f=100 means:
@@ -145,12 +148,33 @@ func kittyPNG(data []byte, b Box) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("termimg: kitty takes PNG only, and this does not decode: %w", err)
 	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, shrink(src, b.Cols*kittyPxPerCol, b.Rows*kittyPxPerRow)); err != nil {
-		return nil, fmt.Errorf("termimg: re-encoding as PNG: %w", err)
+	img := shrink(src, b.Cols*kittyPxPerCol, b.Rows*kittyPxPerRow)
+	out, err := encodePNG(img)
+	if err != nil {
+		return nil, err
 	}
-	if buf.Len() > MaxBytes {
-		return nil, fmt.Errorf("termimg: %d B as PNG is past MaxBytes", buf.Len())
+	if len(out) > MaxBytes {
+		// One more try, smaller by the square root of the overshoot with
+		// a margin: a PNG's size follows its pixel count. A picture that
+		// still does not fit is refused rather than shrunk without end on
+		// the TUI's update path.
+		f := 0.9 * math.Sqrt(float64(MaxBytes)/float64(len(out)))
+		r := img.Bounds()
+		if out, err = encodePNG(shrink(img, int(float64(r.Dx())*f), int(float64(r.Dy())*f))); err != nil {
+			return nil, err
+		}
+	}
+	if len(out) > MaxBytes {
+		return nil, fmt.Errorf("termimg: %d B as PNG is past MaxBytes", len(out))
+	}
+	return out, nil
+}
+
+// encodePNG is png.Encode into memory.
+func encodePNG(img image.Image) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, fmt.Errorf("termimg: re-encoding as PNG: %w", err)
 	}
 	return buf.Bytes(), nil
 }
