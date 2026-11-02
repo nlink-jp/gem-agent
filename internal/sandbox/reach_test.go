@@ -35,6 +35,25 @@ func TestOwnRootsUnderReach(t *testing.T) {
 			t.Errorf("%s: re-allowed %v, want %v", c.project, got, c.want)
 		}
 	}
+	// A home that itself lies under /Volumes or /Network: a root that is
+	// the home, or contains it, would re-open its ~/Library.
+	for _, h := range []string{"/Volumes/Ext/Users/someone", "/Network/Servers/srv/Users/someone"} {
+		for _, c := range []struct {
+			project string
+			want    bool
+		}{
+			{h + "/works/proj", true},
+			{h + "/Library/CloudStorage/d/p", true},
+			{h, false},
+			{filepath.Dir(h), false},
+			{filepath.Dir(filepath.Dir(h)), false},
+		} {
+			got := ownRootsUnderReach(Spec{ProjectDir: c.project, Home: h})
+			if (len(got) == 1) != c.want {
+				t.Errorf("home %s, project %s: re-allowed %v, want %v", h, c.project, got, c.want)
+			}
+		}
+	}
 	both := ownRootsUnderReach(Spec{ProjectDir: home + "/Library/CloudStorage/d/p", WorkDir: "/Volumes/s/work", Home: home})
 	if !slices.Equal(both, []string{home + "/Library/CloudStorage/d/p", "/Volumes/s/work"}) {
 		t.Errorf("project and work dir: %v", both)
@@ -96,7 +115,9 @@ func TestReadLaneRunsInAProjectUnderReach(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		argv := Wrap(prof, "/bin/bash", "cd "+shellQuote(projectDir)+" && "+command)
+		// RAN proves the cd succeeded, so a denial below is the rule's
+		// and not a lane that could not start.
+		argv := Wrap(prof, "/bin/bash", "cd "+shellQuote(projectDir)+" && echo RAN; "+command)
 		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 		cmd.Env = append(os.Environ(), "TMPDIR="+scratch)
 		out, _ := cmd.CombinedOutput()
@@ -105,13 +126,13 @@ func TestReadLaneRunsInAProjectUnderReach(t *testing.T) {
 	if out := run(proj, "/bin/pwd && /bin/cat data.txt"); !strings.Contains(out, "PROJECT-DATA") || strings.Contains(out, "not permitted") {
 		t.Errorf("the read lane in a project under ~/Library: %q", out)
 	}
-	if out := run(proj, "/bin/cat "+shellQuote(filepath.Join(mail, "msg.txt"))); strings.Contains(out, "MAIL-BODY") {
-		t.Error("the rest of ~/Library became readable")
+	if out := run(proj, "/bin/cat "+shellQuote(filepath.Join(mail, "msg.txt"))); !strings.Contains(out, "RAN") || strings.Contains(out, "MAIL-BODY") {
+		t.Errorf("the rest of ~/Library: %q", out)
 	}
-	if out := run(proj, "/bin/cat .env"); strings.Contains(out, "hunter2") {
-		t.Error("a credential inside the project became readable")
+	if out := run(proj, "/bin/cat .env"); !strings.Contains(out, "RAN") || strings.Contains(out, "hunter2") {
+		t.Errorf("a credential inside the project: %q", out)
 	}
-	if out := run(home, "/bin/cat "+shellQuote(filepath.Join(mail, "msg.txt"))); strings.Contains(out, "MAIL-BODY") {
-		t.Error("a project at the home re-opened ~/Library")
+	if out := run(home, "/bin/cat "+shellQuote(filepath.Join(mail, "msg.txt"))); !strings.Contains(out, "RAN") || strings.Contains(out, "MAIL-BODY") {
+		t.Errorf("a project at the home and ~/Library: %q", out)
 	}
 }

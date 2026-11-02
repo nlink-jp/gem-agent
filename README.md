@@ -47,7 +47,7 @@ gem-agent -p "summarize this repository"   # one-shot, pipe-friendly
 The current directory becomes the project: file tools cannot leave it,
 sandboxed shell commands cannot write outside it, and mutating tool
 calls ask for approval before running. A project in cloud storage
-(Google Drive, Dropbox, OneDrive, iCloud under `~/Library/CloudStorage`),
+(Google Drive, Dropbox, OneDrive, iCloud Drive),
 on an external disk or on a network share works the same way. Each session also gets a work
 directory of its own for anything that is not part of the project —
 intermediate data, an oversized tool result, a screenshot a server

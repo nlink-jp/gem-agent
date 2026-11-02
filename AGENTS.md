@@ -638,7 +638,10 @@ a new hook) is an architecture change and takes the same rows as a
   (cloud storage lives in `~/Library/CloudStorage`), `/Volumes` or
   `/Network` is re-allowed for reading in the read lane — without it the
   lane could not even `getcwd`. Never a root that is or contains a denied
-  tree: a project at the home would re-open `~/Library` (last-match-wins).
+  tree: a project at the home would re-open `~/Library` (last-match-wins),
+  and so would one at or above a home under `/Volumes`. `spec.Home` is
+  resolved (`ResolveWriteDir`) like the project, so the trees compare
+  like with like.
 - **Two persistent-state residuals were weighed and kept** (pre-release
   review, 2026-10-29) — after a walk cut at `trustpin.WalkEntries`,
   `reportPersistent` makes the partial snapshot the new baseline, so

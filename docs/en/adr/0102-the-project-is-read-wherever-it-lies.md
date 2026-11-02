@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-11-02) — implemented |
+| Status | **Accepted** (2026-11-02) — implemented; §2 revised before release (pre-release review: a root covering any denied tree, and the home's spelling) |
 | Date | 2026-11-02 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -19,8 +19,9 @@ messages, cookies, browser data, token stores), re-allowing four
 toolchain directories under it. The credential block, the last read
 rule, then denies credential material everywhere.
 
-macOS keeps cloud storage — Google Drive, Dropbox, OneDrive, iCloud
-through File Provider — under `~/Library/CloudStorage/`. A project there
+macOS keeps cloud storage under `~/Library`: Google Drive, Dropbox and
+OneDrive through File Provider in `~/Library/CloudStorage/`, iCloud
+Drive in `~/Library/Mobile Documents/`. A project there
 lies inside a tree the read lane denies, and so does a project on an
 external disk or a network share under `/Volumes`.
 
@@ -60,13 +61,20 @@ The project is the first root of all, and was left out.
    re-allowed: the rest of `~/Library/CloudStorage`, the rest of the
    share and the rest of `~/Library` stay denied.
 
-2. **Only a root strictly inside a denied tree.** A root that is a
-   denied tree (`~/Library` itself) or contains one (a project at the
-   home directory, which the broad-root confirmation allows) is not
-   re-allowed: Seatbelt is last-match-wins, and re-allowing such a root
-   would re-open the whole of `~/Library` to an auto-approved lane. There
-   the read lane stays as it is. The containment is judged with
-   `pathid.Within` (ADR-0101).
+2. **Only a root strictly inside a denied tree, covering none.** A root
+   that is a denied tree (`~/Library` itself) or contains any of them is
+   not re-allowed: Seatbelt is last-match-wins, and re-allowing such a
+   root would re-open that tree to an auto-approved lane. That is a
+   project at the home directory (which the broad-root confirmation
+   allows) and, where the home itself lies under `/Volumes` or `/Network`
+   — a network home, or a home moved to an external disk — a project at
+   the home or above it, which lies inside `/Volumes` yet contains
+   `~/Library`. There the read lane stays as it is. The home the denials
+   are anchored on is resolved to the kernel's spelling, as the project
+   is: Seatbelt matches the real path, so under a symlinked home the
+   `~/Library` denial and the credential filters would match nothing and
+   a project at the home's target would be re-allowed. The containment
+   is judged with `pathid.Within` (ADR-0101).
 
 3. **Credentials stay denied inside the root.** The re-allow comes before
    the credential block, which stays the profile's last read rule, so a
@@ -81,6 +89,12 @@ The project is the first root of all, and was left out.
 - The read lane's reach is unchanged outside the session's roots.
 - A read lane over a network share reads at the share's speed; a stale
   share stalls a command as it would stall the operator's own shell.
+- Not covered, and accepted: **a root strictly inside a denied tree can
+  still be broad.** A project at `~/Library/CloudStorage` itself
+  re-allows every synced account, and one at `~/Library/Application
+  Support` the browser profiles there. Making such a directory the
+  project is the operator's choice, as making the home the project is,
+  and the credential block still applies inside it.
 
 ## Alternatives considered
 

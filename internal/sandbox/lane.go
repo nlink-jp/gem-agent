@@ -641,21 +641,30 @@ func reachDenied(home string) []string {
 // ownRootsUnderReach are the session's roots — the project and the work
 // directory — that lie strictly inside a tree denied for reach, the
 // ones the read lane re-allows (ADR-0102). A root that is such a tree or
-// contains one is left out: last-match-wins, re-allowing it would
-// re-open the whole tree (a project at the home directory would hand
-// ~/Library to the auto-approved lane).
+// contains any of them is left out: last-match-wins, re-allowing it
+// would re-open that tree (a project at the home directory would hand
+// ~/Library to the auto-approved lane, and so would one at a home that
+// itself lies under /Volumes or /Network).
 func ownRootsUnderReach(spec Spec) []string {
+	denied := reachDenied(spec.Home)
 	var roots []string
 	for _, r := range []string{spec.ProjectDir, spec.WorkDir} {
 		if r == "" {
 			continue
 		}
 		r = filepath.Clean(r)
-		for _, d := range reachDenied(spec.Home) {
-			if pathid.Within(d, r) && !pathid.Same(d, r) {
-				roots = append(roots, r)
+		inside, covers := false, false
+		for _, d := range denied {
+			if pathid.Within(r, d) {
+				covers = true
 				break
 			}
+			if pathid.Within(d, r) {
+				inside = true
+			}
+		}
+		if inside && !covers {
+			roots = append(roots, r)
 		}
 	}
 	return roots

@@ -5,8 +5,9 @@
 ### Fixed
 
 - **The read lane works in a project in cloud storage or on a share
-  (ADR-0102).** Google Drive, Dropbox, OneDrive and iCloud keep their
-  files under `~/Library/CloudStorage`, and the read lane denies
+  (ADR-0102).** Google Drive, Dropbox and OneDrive keep their files
+  under `~/Library/CloudStorage` and iCloud Drive under `~/Library/Mobile
+  Documents`, and the read lane denies
   `~/Library` (and `/Volumes`, `/Network`) for reach — so in such a
   project every read-lane command failed with `getcwd: Operation not
   permitted`, as it did on an external disk or a network share. The
@@ -14,8 +15,11 @@
   when they lie inside a denied tree, as added roots already were
   (ADR-0099 §1); the rest of the tree and the credentials inside the
   project stay denied, and a project at the home directory does not
-  re-open `~/Library`. An online-only file is downloaded by its provider
-  when read.
+  re-open `~/Library` — nor does one at, or above, a home that itself
+  lies under `/Volumes` or `/Network`. The home the read lane's denials
+  are anchored on is now resolved to the kernel's spelling, so a
+  symlinked home is denied where it really is. An online-only file is
+  downloaded by its provider when read.
 
 ## [0.95.1] - 2026-11-02
 

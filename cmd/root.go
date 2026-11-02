@@ -2402,7 +2402,14 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, 
 		}
 	}
 	if home, err := os.UserHomeDir(); err == nil {
+		// The kernel's spelling, as the project and work directory above:
+		// Seatbelt matches the real path, so a ~/Library denial or a
+		// credential filter anchored on a symlinked home matches nothing,
+		// and the re-allow check would not see a root covering it (ADR-0102).
 		spec.Home = home
+		if real, err := sandbox.ResolveWriteDir(home); err == nil {
+			spec.Home = real
+		}
 	}
 	var notes []string
 	// The read lane's private scratch: under the work directory when
