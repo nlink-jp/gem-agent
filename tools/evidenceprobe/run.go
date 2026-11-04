@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
 )
 
 // prompts are fixed before the runs. The operator works in Japanese.
@@ -272,7 +274,9 @@ func oneRun(self, bin string, o runtimeOpts, scenario, dir, recDir string, attem
 	cmd := exec.CommandContext(ctx, bin, "-p", promptFor(scenario), "--auto",
 		"--allow", "mcp__"+serverName+"__*")
 	cmd.Dir = project
-	cmd.Env = childEnv(os.Environ(), home, state, o.runtime)
+	// The child-environment rule first (ADR-0087 §2), then the probe's
+	// own isolation: every runtime variable and HOME are replaced.
+	cmd.Env = childEnv(sandbox.ChildEnv(os.Environ()), home, state, o.runtime)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	start := time.Now()

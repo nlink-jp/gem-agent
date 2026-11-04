@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nlink-jp/gem-agent/internal/sandbox"
 )
 
 // The stub presents as the fleet's bigquery-mcp: the same tool names,
@@ -266,6 +268,7 @@ func runSQL(rows []event, wide bool, sql string) (sqlResult, error) {
 	}
 	script.WriteString("COMMIT;\n" + q + ";\n")
 	cmd := exec.Command("/usr/bin/sqlite3", "-bail", "-json", ":memory:")
+	cmd.Env = sandbox.ChildEnv(os.Environ())
 	cmd.Stdin = strings.NewReader(script.String())
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
