@@ -363,7 +363,7 @@ images = "auto"
 # passes it on. "osc9" also writes an OSC 9 desktop notification
 # ("gem-agent needs your answer"; iTerm2 and others show it, Terminal.app
 # and tmux drop it). "off" writes nothing. A keystroke puts the notice off
-# to the next six-second check, so an operator at the screen is not rung.
+# to the next six-second check; reading without a keystroke does not.
 # The TUI only: the plain REPL and -p never notify. Applies at the next start.
 notify = "bell"
 

@@ -170,3 +170,53 @@ func TestNoNotifierSchedulesNothing(t *testing.T) {
 		t.Fatal("no notifier: opening a dialog must schedule nothing")
 	}
 }
+
+// After one dialog was notified, the next one is notified too: the
+// once-per-dialog mark belongs to the dialog, not the session.
+func TestEachDialogGetsItsOwnNotice(t *testing.T) {
+	r := newNoticeRig(t)
+	first, resp := r.openApproval()
+	r.after(6)
+	r.check(first)
+	r.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	<-resp
+	second, _ := r.openApproval()
+	r.after(12)
+	r.check(second)
+	if r.calls != 2 {
+		t.Fatalf("two dialogs each left alone: notified %d times, want 2", r.calls)
+	}
+}
+
+// Every key the operator presses in a dialog counts — one the type-ahead
+// grace window drops, one typed into the deny-with-reason field, a paste.
+func TestEveryKeyInADialogDefersTheNotice(t *testing.T) {
+	cases := map[string]func(r *noticeRig){
+		"grace window": func(r *noticeRig) {
+			r.m.approvalAt = r.at // the key lands inside the grace window
+			r.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+		},
+		"reason field": func(r *noticeRig) {
+			r.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'N'}})
+			if !r.m.reasonMode {
+				r.t.Fatal("N should open the reason field")
+			}
+			r.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+		},
+		"paste": func(r *noticeRig) {
+			r.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("pasted"), Paste: true})
+		},
+	}
+	for name, press := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := newNoticeRig(t)
+			gen, _ := r.openApproval()
+			r.after(4)
+			press(r)
+			r.after(6)
+			if !r.check(gen) || r.calls != 0 {
+				t.Fatalf("a key 2 s before the check must defer it (calls=%d)", r.calls)
+			}
+		})
+	}
+}

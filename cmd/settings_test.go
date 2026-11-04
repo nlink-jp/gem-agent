@@ -359,3 +359,19 @@ func TestSettingsAnswersWhatTheImageProbeFound(t *testing.T) {
 		}
 	}
 }
+
+// The notice setting is on the panel with its value (ADR-0104): it is
+// read at start, so the row is read-only and says what is in force.
+func TestSettingsPanelShowsNotify(t *testing.T) {
+	for _, v := range []string{"bell", "osc9", "off"} {
+		s := newStore(t)
+		s.cfg.TUI.Notify = v
+		row, ok := rowFor(s.data(), "tui.notify")
+		if !ok {
+			t.Fatal("the panel does not list tui.notify at all")
+		}
+		if row.Value != v {
+			t.Errorf("configured %q: row shows %q", v, row.Value)
+		}
+	}
+}

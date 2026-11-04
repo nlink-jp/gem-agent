@@ -341,7 +341,8 @@ and tmux passes it on. `"osc9"` also writes an OSC 9 desktop notification,
 background and Terminal.app and tmux drop. `"off"` writes nothing. The
 dialog is looked at every six seconds from the moment it opens, and a
 keystroke in the six seconds before a look puts the notice off to the next
-one, so you are not rung while you are reading or choosing. A dialog gets
+one. Reading without pressing a key does not put it off, so a dialog you are
+still reading after six seconds rings, as Claude Code's does. A dialog gets
 one notice, never a second, and an answer cancels it. Nothing stops and
 nothing is recorded. The plain REPL and `-p` never notify.
 

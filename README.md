@@ -155,8 +155,8 @@ model looking at an image, not you
 has gone six seconds without a keystroke, the TUI rings the terminal bell
 once (`[tui].notify`: `bell` by default, `osc9` for a desktop notification
 in iTerm2 and others, or `off`). A keystroke puts it off to the next
-six-second check, so you are not rung while you are reading. It stops
-nothing; the plain REPL and `-p` never notify
+six-second check; reading without pressing a key does not, so a long
+dialog you are still reading can ring. It stops nothing; the plain REPL and `-p` never notify
 ([ADR-0104](docs/en/adr/0104-say-so-when-a-turn-waits-on-the-operator.md)).
 
 **[Approval and safety](docs/en/reference/approval.md)** — per-call

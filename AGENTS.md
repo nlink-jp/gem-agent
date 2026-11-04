@@ -1009,7 +1009,7 @@ a new hook) is an architecture change and takes the same rows as a
   `tea.KeyMsg` while a dialog is open moves `noticeKeyAt`, so the next check
   passes (it does not restart a timer — Claude Code was measured to work
   this way). The bytes come from `tui.Notice([tui].notify)` and are written
-  by `cmd/root.go` through `SweepWriter.Inject`, between two renderer
+  by `noticeWriter` (`cmd/notice.go`, nil for `"off"`) through `SweepWriter.Inject`, between two renderer
   flushes, from a `tea.Cmd` — never from `View()`, which repaints, and never
   through the plain REPL's inert streams, which strip BEL. `"off"` passes
   no notifier, and then nothing is scheduled. The model's `now` is the

@@ -38,7 +38,7 @@ The dialogs that notify, all in the TUI:
 - the question whether to lift the ceiling (`ApproveLift`);
 - the question dialog: `ask_user`, the round-limit intervention, and the `/riskbook learn` confirmation. The last follows a call to the summary model, long enough for the operator to step away, and it uses the same dialog, so it is treated the same.
 
-**Timing**, as measured in Claude Code's `permission_prompt`: from the moment a dialog opens it is checked every six seconds, and the notice goes out at the first check with no keystroke in the six seconds before it. A keystroke does not restart a timer; it makes the next check pass. An answer cancels it. A dialog left open gets one notice, never a second. An operator at the screen is therefore not pinged.
+**Timing**, as measured in Claude Code's `permission_prompt`: from the moment a dialog opens it is checked every six seconds, and the notice goes out at the first check with no keystroke in the six seconds before it. A keystroke does not restart a timer; it makes the next check pass. An answer cancels it. A dialog left open gets one notice, never a second. An operator working the dialog is not pinged; one reading it for six seconds without a key is, as in Claude Code.
 
 **Not notified:**
 
@@ -54,7 +54,7 @@ Notifying is the terminal application's job: the terminal holds the operating sy
 - `"osc9"` — write an OSC 9 desktop notification with a fixed body, `ESC ] 9 ; gem-agent needs your answer ESC \`, ended by ST, then a separate BEL. Where OSC 9 is not understood it is dropped without being shown (Terminal.app, and tmux, which does not pass it on), so the BEL is what still arrives.
 - `"off"` — do nothing.
 
-**The default is `"bell"`** (decided by the operator, 2026-11-04). An operator who configures nothing is reached. BEL is the control every terminal is built to take, and the one tmux was measured to pass on; iTerm2 marked it in the window title. The six-second check keeps it from an operator at the screen. This default is louder than Claude Code's: under tmux, Claude Code's `auto` wrote nothing (measured), and its documentation says it rings Terminal.app's bell only when that terminal's audible bell is off. In Terminal.app with its audible bell on, gem-agent's default may beep; that reaction was not observed. `"off"` restores the behaviour before this ADR.
+**The default is `"bell"`** (decided by the operator, 2026-11-04). An operator who configures nothing is reached. BEL is the control every terminal is built to take, and the one tmux was measured to pass on; iTerm2 marked it in the window title. The six-second check spares an operator who is pressing keys in the dialog. This default is louder than Claude Code's: under tmux, Claude Code's `auto` wrote nothing (measured), and its documentation says it rings Terminal.app's bell only when that terminal's audible bell is off. In Terminal.app with its audible bell on, gem-agent's default may beep; that reaction was not observed. `"off"` restores the behaviour before this ADR.
 
 The key lives with the other `[tui]` keys: global configuration only, as `[tui]` already is (a project's settings cannot set it), shown with its source in `/settings`, and listed in `config.example.toml`.
 

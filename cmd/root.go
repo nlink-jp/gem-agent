@@ -1800,10 +1800,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// A dialog left waiting is told to the terminal (ADR-0104): the
 		// runtime's own fixed bytes, written between two renderer
 		// flushes. "off" passes no notifier, so nothing is scheduled.
-		var notify func()
-		if seq := tui.Notice(cfg.TUI.Notify); seq != "" {
-			notify = func() { _ = sweep.Inject(seq) }
-		}
+		notify := noticeWriter(cfg.TUI.Notify, sweep.Inject)
 		model := tui.New(tui.Options{
 			Sweep:   sweep,
 			Notify:  notify,

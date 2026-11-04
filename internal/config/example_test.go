@@ -39,7 +39,8 @@ func TestExampleConfigLoads(t *testing.T) {
 		cfg.Agent.CompactAtPct != def.Agent.CompactAtPct ||
 		cfg.MCP.Enabled != def.MCP.Enabled ||
 		cfg.MCP.CallTimeoutSec != def.MCP.CallTimeoutSec ||
-		cfg.TUI.Theme != def.TUI.Theme {
+		cfg.TUI.Theme != def.TUI.Theme ||
+		cfg.TUI.Notify != def.TUI.Notify {
 		t.Errorf("template values drifted from the built-in defaults:\ntemplate %+v\ndefaults %+v", cfg, def)
 	}
 }
