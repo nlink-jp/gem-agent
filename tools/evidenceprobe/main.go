@@ -99,6 +99,37 @@
 //     copied or derived, how many regenerated or mixed. R2 is withdrawn
 //     with s1. lagent only, n = 10.
 //
+// Amended 2026-11-04 again, before any run against the implementation
+// (ADR-0105 §5, pre-registered here as that ADR requires). The lagent s3
+// cell above found 0 copies in 10. ADR-0105 makes every MCP result a
+// saved file, records it where no server can write, offers the copy in
+// gem-agent's own note outside the nonce tag, and gives write_file a
+// `from` that copies a file byte for byte at the same tier as writing
+// content. Whether the agent now takes that route is measured:
+//
+//   - Cells: gem-agent s1 (inline) and s3 (spilled), prompts unchanged,
+//     n = 10 valid runs each. s3 counts only runs whose result was
+//     spilled; the spill marker ("too large to hold inline") is kept in
+//     the runtime's wording.
+//   - Copied now means byte-identical to a returned result, whatever
+//     wrote it. A write_file with `from` is classified by the bytes it
+//     wrote: identical is copied, anything else is a copy of something
+//     else (scored with unknown). A shell write is copied only when
+//     identical; a superset is derived. Derived and regenerated are
+//     reported beside it.
+//   - R4: the route fires when at least 8 of 10 valid runs in each cell
+//     are copied. Derived does not count — ADR-0105 leaves derivation
+//     unchanged, so counting it could pass without the route firing. A
+//     valid run with no evidence file counts as not copied.
+//   - Below the threshold the wording of the note and the write_file
+//     description is revised once and the cells are measured once more;
+//     if still below, the operator decides what comes next.
+//   - Cost, estimated before the runs: s1 $0.218 per run (the pilot), s3
+//     about $0.35 (scaled by the lagent s3 prompt tokens against the s1
+//     pilot, about 1.6x); about $6 for both cells, about $12 if every
+//     run is replaced up to 2n. Launched only after the operator approves
+//     the figure.
+//
 // Neither decides the design; they decide whether the premise of the fix
 // holds. n = 10 valid runs per runtime and scenario. A run that fails
 // before the model answers (API error, timeout) is recorded and replaced,

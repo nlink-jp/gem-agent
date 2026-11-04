@@ -226,6 +226,10 @@ func TestClassifyMethod(t *testing.T) {
 		b, _ := json.Marshal(map[string]any{"path": path, "content": "..."})
 		return toolCall{"write_file", string(b)}
 	}
+	wfFrom := func(path, from string) toolCall {
+		b, _ := json.Marshal(map[string]any{"path": path, "from": from})
+		return toolCall{"write_file", string(b)}
+	}
 	spill := "/w/work/bigquery-nlink-dwh-query-0a1b2c3d.json"
 	cases := []struct {
 		name  string
@@ -238,6 +242,9 @@ func TestClassifyMethod(t *testing.T) {
 		{"heredoc", map[string][]byte{"evidence/a.csv": []byte(csvOf(rows))}, []toolCall{sh("write", "cat > evidence/a.csv <<'EOF'\n"+id+",...\nEOF")}, "regenerated"},
 		{"jq over the saved file", map[string][]byte{"evidence/rows.json": mustJSON(rows)}, []toolCall{sh("write", "jq '.rows' "+spill+" > evidence/rows.json")}, "derived"},
 		{"no writer seen", map[string][]byte{"evidence/a.json": []byte(text)}, nil, "unknown"},
+		{"write_file from the saved file", map[string][]byte{"evidence/a.json": []byte(text)}, []toolCall{wfFrom("evidence/a.json", spill)}, "copied"},
+		{"write_file from its own re-typing", map[string][]byte{"evidence/a.csv": []byte(csvOf(rows))}, []toolCall{wfFrom("evidence/a.csv", "draft.csv")}, "unknown"},
+		{"shell output holding more than the result", map[string][]byte{"evidence/a.json": []byte("header\n" + text)}, []toolCall{sh("write", "{ echo header; cat "+spill+"; } > evidence/a.json")}, "derived"},
 		{"one copied, one regenerated", map[string][]byte{"evidence/a.json": []byte(text), "evidence/b.csv": []byte(csvOf(rows))},
 			[]toolCall{sh("write", "cp "+spill+" evidence/a.json"), wf("evidence/b.csv")}, "mixed"},
 	}
