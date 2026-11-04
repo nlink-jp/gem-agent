@@ -124,9 +124,12 @@ byte]`. The transcript's tool-result entry records the same files in a
 `saved` field (path, bytes, sha256), written by gem-agent and never by
 the server, so whether an evidence file is a copy of what a server
 returned is a hash comparison against that record. A result the model
-re-types has no such match. Without a work directory (a session whose
-transcript is off) nothing is saved, and the line says there is no file
-to copy.
+re-types has no such match. A result saved as more than one file — the
+inline blocks, a spilled block, the rest past the budget, an image — is
+never called whole: each line says `part <i> of <n>` and that keeping the
+whole result means copying every part. Without a work directory (a
+session whose transcript is off) nothing is saved, and the line says
+there is no file to copy.
 
 ## Skills (ADR-0010, ADR-0011)
 

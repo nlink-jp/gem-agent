@@ -116,3 +116,47 @@ func TestCredentialRetryIsForCoveredReadsOnly(t *testing.T) {
 		t.Errorf("result = %+v, want a plain error", msgs)
 	}
 }
+
+// A result split across files is never announced as whole: each line
+// names its part, and the route says to copy every part (independent
+// review — a part called "whole" is the lost rows ADR-0105 exists to
+// stop).
+func TestSavedNoteNamesEachPartOfASplitResult(t *testing.T) {
+	note := savedNote([]llm.SavedFile{
+		{Path: "/w/a.json", Bytes: 10, SHA256: "aa"},
+		{Path: "/w/b.txt", Bytes: 20, SHA256: "bb"},
+		{Bytes: 5, Error: "disk full"},
+	})
+	lines := strings.Split(note, "\n")
+	if len(lines) != 3 {
+		t.Fatalf("lines = %q", lines)
+	}
+	if strings.Contains(note, "whole:") {
+		t.Errorf("a part was announced as the whole result: %q", note)
+	}
+	for i, want := range []string{"part 1 of 3", "part 2 of 3", "could not save part 3 of 3"} {
+		if !strings.Contains(lines[i], want) {
+			t.Errorf("line %d = %q, want %q", i, lines[i], want)
+		}
+	}
+	if !strings.Contains(lines[0], "copy every part") || !strings.Contains(lines[0], "/w/a.json") {
+		t.Errorf("the route is missing: %q", lines[0])
+	}
+	if one := savedNote([]llm.SavedFile{{Path: "/w/a.json", Bytes: 10, SHA256: "aa"}}); !strings.Contains(one, "saved this result whole: /w/a.json") {
+		t.Errorf("a single file lost its wording: %q", one)
+	}
+}
+
+// The notes appended at send time are counted by the token estimate —
+// the bytes the model receives (ADR-0105 §1).
+func TestTheSavedNoteIsCountedAsSent(t *testing.T) {
+	m := llm.Message{Role: llm.RoleTool, Content: "x", Saved: []llm.SavedFile{{Path: "/w/" + strings.Repeat("a", 400), Bytes: 1, SHA256: "ab"}}}
+	bare := m
+	bare.Saved = nil
+	if d := estimateTokens([]llm.Message{m}) - estimateTokens([]llm.Message{bare}); d*4 < 400 {
+		t.Errorf("the note added %d tokens to the estimate; it carries over 400 bytes", d)
+	}
+	if got := wrapToolMessages([]llm.Message{m}, guard.NewTag(), nil)[0].Content; !strings.HasSuffix(got, runtimeSuffix(m)) {
+		t.Errorf("the wrap and the count disagree: %q", got)
+	}
+}

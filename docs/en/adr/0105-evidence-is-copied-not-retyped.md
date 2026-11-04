@@ -177,6 +177,15 @@ Accepted residuals, by risk:
 - **Degraded mode has a check-then-open gap.** Without the child, the credential check and the open are two steps, so a concurrent writer could swap a link between them. It needs a writer racing the call inside the roots, and the kernel closes it whenever the child is installed.
 - **After a resume, a note may name a work directory that is gone or outside the roots.** The copy then fails with that reason.
 
+### 8.1 After release (2026-11-04)
+
+lagent's port (lagent ADR-0039) had its own independent review, and three of its confirmed findings hold here too. They are fixed in gem-agent as well:
+
+- **A result saved as more than one file was announced as whole in every line.** A response whose first block fits and whose next does not is two files, and the model could copy one as the whole result and lose the rows in the other. Each line now names its part (`part <i> of <n> of this result`) and says to copy every part; a single file keeps the wording of §1.
+- **The notes were not in the token estimate.** `estimateTokens`, used before the first measured prompt, counted the stored text only. The wrap and the estimate now share one function for what is appended at send time (`runtimeSuffix`).
+- **`Saved` was trusted outside the tag but not pinned** by the provenance architecture test. It is, counted only in an `llm.Message` literal (bounded's `HeadTailView` has a `Saved` field too).
+- An error printed `<nil>` when only the copy's hash differed.
+
 ## Consequences
 
 - Every MCP result is on disk, not only the large ones. DWH rows, which may hold personal data, now lie where only spilled results lay before: files created 0600 in the session work directory under the state root, removed by the cleanup command. Accepted: the operator already keeps evidence of the same data in the project.

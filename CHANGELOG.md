@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- **A result saved as several files is announced part by part (ADR-0105
+  §8.1).** Every line said "saved this result whole", so a model could
+  copy one part of a split result as the whole and lose the rest. Each
+  line now names its part and says to copy every part. The appended notes
+  also count in the token estimate, and an error no longer prints `<nil>`
+  when only a copy's hash differs.
 - **A multi-line skill description stays on one line of the system
   prompt (ADR-0106 §3).** A `|` block kept its line breaks, so its later
   lines became lines of the prompt.

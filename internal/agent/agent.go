@@ -530,6 +530,11 @@ func estimateTokens(history []llm.Message) int {
 	total := 0
 	for _, m := range history {
 		total += len(m.Content)
+		// The notes appended at send time are bytes the model receives
+		// (ADR-0105 §1): one per retained MCP result.
+		if m.Role == llm.RoleTool {
+			total += len(runtimeSuffix(m))
+		}
 		// Tool-call args carry entire write_file bodies, and inline
 		// attachment bytes are re-sent with every round — both were
 		// zero-weighted, so a resume dominated by writes or inline
@@ -1221,19 +1226,10 @@ func wrapToolMessages(history []llm.Message, tag guard.Tag, instructionTools map
 						att.Kind, att.Ref)
 				}
 			}
-			// The runtime's note rides outside the tag too (ADR-0075
-			// §3): gem-agent's words, at the system prompt's trust level,
-			// after the wrapped server text. Provenance is the field; a
-			// result whose text merely looks like the note stays wrapped.
-			if out[i].RuntimeNote != "" {
-				out[i].Content += "\n\n" + out[i].RuntimeNote
-			}
-			// So does the note of what was saved (ADR-0105 §1, §3): the
-			// route to copy a result is offered where it arrives, in
-			// words no server can forge.
-			if note := savedNote(out[i].Saved); note != "" {
-				out[i].Content += "\n\n" + note
-			}
+			// The runtime's notes ride outside the tag too: gem-agent's
+			// words, at the system prompt's trust level, after the
+			// wrapped server text (runtimeSuffix).
+			out[i].Content += runtimeSuffix(out[i])
 			continue
 		}
 		if len(out[i].Attachments) == 0 {

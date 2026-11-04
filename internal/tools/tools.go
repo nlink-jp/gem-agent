@@ -1652,8 +1652,10 @@ func (r *Registry) writeFile() *Tool {
 			}
 			// The copy is checked, not assumed: what landed is read back
 			// and must hash to what was read.
-			if got, err := r.hashFile(abs); err != nil || got != sum {
-				return "", fmt.Errorf("the copy to %s does not match its source (sha256 %s, wrote %s, %v); treat %s as unreliable", p, sum, got, err, p)
+			if got, err := r.hashFile(abs); err != nil {
+				return "", fmt.Errorf("the copy to %s could not be read back to check it (%v); treat %s as unreliable", p, err, p)
+			} else if got != sum {
+				return "", fmt.Errorf("the copy to %s does not match its source (sha256 %s, wrote %s); treat %s as unreliable", p, sum, got, p)
 			}
 			return fmt.Sprintf("copied %d bytes from %s to %s (sha256 %s)", len(content), from, p, sum), nil
 		},
