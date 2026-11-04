@@ -178,7 +178,16 @@ cmd/addedwatch.go  write roots' persistent files: snapshot at start, reported at
 cmd/grant.go       the one mid-session grant path: /add-dir, /read-dir, /dirs and request_directory (ADR-0099 §4, §11, §12)
 internal/telemetry/ opt-in audit events (ADR-0035): metadata only, Cloud Logging or OTLP, Sub(label) for child agents
 cmd/filechild.go   the sandboxed child the covered reads run in (ADR-0086):
-                   the hidden `__file-read` subcommand, the spawn, the startup probe
+                   the hidden `__file-read` subcommand, the spawn, the startup probe;
+                   also write_file's copy source (tools.CopySourceOp, ADR-0105 §2):
+                   raw bytes up to 32 MiB, refused above, never a marked cut
+cmd/mcpresult.go   the MCP intake: every text block saved under its full sha256
+                   (ADR-0105 §1), spill previews (ADR-0096 §1); what it saved is
+                   reported as tools.Saved, recorded through the context
+                   (tools.RecordSaved) and kept as Message.Saved — the note the
+                   model reads is the executor's, outside the nonce tag
+tools/evidenceprobe/ the probe behind ADR-0105: a bigquery-mcp-shaped stub over
+                   sqlite3 × the real binary in -p; pre-registration in main.go
 cmd/settings.go    /settings panel content + edits (ADR-0009)
 internal/mention/  @-reference parsing, project-confined resolution, completion
 internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery
@@ -245,6 +254,22 @@ a new hook) is an architecture change and takes the same rows as a
 `feat:` — the ADR-0072 review rounds updated the ADR and this file only.
 
 ## Gotchas
+
+- **A record a server can write is not a record.** ADR-0105's first
+  draft put the "saved: path, sha256" line into the result text; an
+  independent review pointed out that a server can print the same line,
+  and the transcript could not tell the two apart. Provenance goes in a
+  field the executor sets (`Message.Saved`, like `Denial` and
+  `RuntimeNote`) and reaches the model outside the nonce tag. Any new
+  runtime fact about a tool result follows the same route.
+
+- **`credentialRetry` is for the covered reads only.** It re-runs a
+  call in process after the operator approves a kernel-refused read.
+  A tool that reads AND writes (write_file `from`) must never reach it:
+  the approval looks like a read and lands as a credential copied under
+  an ordinary name. The gate is `risk.CredentialReadTool(tc.Name)` —
+  not the child's tool list, which leaves out `summarize_file` — and the
+  copy source maps the kernel's refusal to its own error as well.
 
 - **A tool with no path argument is invisible to the rule layer.**
   `risk.credentialRead` judges a `path` (or `file_info`'s `paths`), so

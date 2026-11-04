@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,6 +31,12 @@ import (
 // path the model can hand to view_image, which is the deliberate look
 // ADR-0012 designed and keeps media out of the replayed history that
 // ADR-0027 was written to protect.
+//
+// Every text block is saved, not only the oversized ones (ADR-0105 §1):
+// a result that exists only in the model's context can be kept as
+// evidence only by re-typing it, and a re-typed file has no provenance.
+// What was saved is reported beside the text, as tools.Saved, for the
+// executor to record where no server can write.
 type mcpIntake struct {
 	// workDir is where oversized and binary blocks land. Empty means
 	// there is nowhere to write, and the fallback is a truncation that
@@ -50,12 +57,21 @@ func newMCPIntake(workDir func() string) mcpIntake {
 	return mcpIntake{workDir: workDir, cap: tools.OutputCap, headRunes: 600, tailRunes: 200}
 }
 
-// render assembles the text the model receives for one call. A result
-// the server marked isError renders the same way; the adapter wraps it
-// in a tools.RemoteError and the executor says whose words it is
-// (ADR-0075 §1) — the intake stops prefixing `error:` itself.
-func (in mcpIntake) render(server, tool string, blocks []mcp.Content) string {
+// render assembles the text the model receives for one call, and
+// reports every file it wrote (ADR-0105 §1). A result the server marked
+// isError renders the same way; the adapter wraps it in a
+// tools.RemoteError and the executor says whose words it is (ADR-0075
+// §1) — the intake stops prefixing `error:` itself.
+func (in mcpIntake) render(server, tool string, blocks []mcp.Content) (string, []tools.Saved) {
 	parts := make([]string, 0, len(blocks))
+	var saved []tools.Saved
+	// The inline text blocks are saved together, after the loop, as one
+	// file: what the model received inline, one record and one note
+	// however many blocks there are (independent review: a note per
+	// block bypassed the one budget — twenty thousand empty blocks
+	// were twenty thousand notes). A single block is saved as its own
+	// exact bytes.
+	var inline []string
 	// One budget for the whole response (ADR-0072 §4.5): many blocks
 	// each under the cap used to add up without limit. A block that no
 	// longer fits the remaining budget is spilled like an oversized
@@ -63,6 +79,13 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content) string {
 	budget := in.cap
 	var rest []string // text blocks past the budget, saved together
 	leftBinary, savedUnlisted := 0, 0
+	fits := func(piece string) bool {
+		sep := 0
+		if len(parts) > 0 {
+			sep = 1
+		}
+		return len(piece)+sep <= budget
+	}
 	spend := func(piece string) bool {
 		// Every rendered piece — inline text, a spill preview and its
 		// path, a binary note — is paid from the one budget, plus the
@@ -87,14 +110,25 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content) string {
 				rest = append(rest, b.Text)
 				continue
 			}
-			if len(b.Text) <= budget && spend(b.Text) {
+			if spend(b.Text) {
+				// Inline, and saved all the same (ADR-0105 §1). The note
+				// that says so is the executor's, outside the nonce tag,
+				// so the inline text stays exactly the server's.
+				inline = append(inline, b.Text)
 				continue
 			}
 			if len(b.Text) > in.cap || len(parts) == 0 {
 				// Oversized, or the first block that does not fit: the
-				// preview path, so the reader sees its head.
-				if piece := in.spillText(server, tool, b.Text); spend(piece) {
-					continue
+				// preview path, so the reader sees its head. Its note is
+				// sized before anything is written — the path is known
+				// from the content — so a preview that will not fit
+				// leaves no file behind that nothing records.
+				if fits(in.spillNote(server, tool, b.Text)) {
+					piece, rec := in.spillText(server, tool, b.Text)
+					if spend(piece) {
+						saved = append(saved, rec)
+						continue
+					}
 				}
 			}
 			rest = append(rest, b.Text)
@@ -110,16 +144,21 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content) string {
 			leftBinary++
 			continue
 		}
-		piece, saved := in.binary(server, tool, b)
+		piece, rec := in.binary(server, tool, b)
+		if rec.Path != "" {
+			// On disk whether or not its note fits: the record says
+			// what exists, the note what the model was told.
+			saved = append(saved, rec)
+		}
 		if !spend(piece) {
 			leftBinary++
 			// Only a block that really reached disk is counted as
 			// saved-but-unlisted. The guard above sizes the exact
 			// success note, so today this cannot happen at all; before
-			// the count was conditioned on `saved` it fired on the one
+			// the count was conditioned on the write it fired on the one
 			// case that IS possible here — a failed write whose note
 			// happens to be longer — and reported the block as saved.
-			if saved {
+			if rec.Path != "" {
 				savedUnlisted++
 			}
 			continue
@@ -128,10 +167,15 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content) string {
 		// tool result carries an image into the MODEL's context; what
 		// the operator sees is the model's to decide, through
 		// show_image, or the operator's own through /show.
-		_ = saved
+	}
+	if len(inline) > 0 {
+		joined := strings.Join(inline, "\n")
+		saved = append([]tools.Saved{in.save(server, tool, textExt(joined), []byte(joined))}, saved...)
 	}
 	if len(rest) > 0 {
-		parts = append(parts, in.spillRest(server, tool, rest))
+		piece, rec := in.spillRest(server, tool, rest)
+		parts = append(parts, piece)
+		saved = append(saved, rec)
 	}
 	if leftBinary > 0 {
 		note := fmt.Sprintf("[%d more non-text block(s) past the response budget — not saved; narrow the call and ask again]", leftBinary)
@@ -144,35 +188,51 @@ func (in mcpIntake) render(server, tool string, blocks []mcp.Content) string {
 	if out == "" {
 		out = "(no content)"
 	}
-	return out
+	return out, saved
 }
 
 // spillRest saves the text blocks past the response budget as one file
 // and tells the model where, with no preview.
-func (in mcpIntake) spillRest(server, tool string, texts []string) string {
+func (in mcpIntake) spillRest(server, tool string, texts []string) (string, tools.Saved) {
 	joined := strings.Join(texts, "\n")
-	path, err := in.write(server, tool, ".txt", []byte(joined))
-	if err != nil {
-		return fmt.Sprintf("[%d more text block(s), %d bytes, past the response budget and not saved (%v) — narrow the call and ask again]",
-			len(texts), len(joined), err)
+	rec := in.save(server, tool, ".txt", []byte(joined))
+	if rec.Err != "" {
+		return fmt.Sprintf("[%d more text block(s), %d bytes, past the response budget and not saved (%s) — narrow the call and ask again]",
+			len(texts), len(joined), rec.Err), rec
 	}
 	return fmt.Sprintf("[%d more text block(s), %d bytes — past the response budget, saved whole. Read them with read_file (offset/length reach any byte), or narrow the call and ask again: read_file %s]",
-		len(texts), len(joined), path)
+		len(texts), len(joined), rec.Path), rec
+}
+
+// textExt names a text block's file: .json when it reads as JSON, so the
+// operator (and any shell command the model writes) can tell.
+func textExt(s string) string {
+	if t := strings.TrimSpace(s); strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[") {
+		return ".json"
+	}
+	return ".txt"
 }
 
 // spillText saves a block to the work directory and returns a preview
 // of its head and tail with the path.
-func (in mcpIntake) spillText(server, tool, s string) string {
-	ext := ".txt"
-	if t := strings.TrimSpace(s); strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[") {
-		ext = ".json"
+func (in mcpIntake) spillText(server, tool, s string) (string, tools.Saved) {
+	rec := in.save(server, tool, textExt(s), []byte(s))
+	if rec.Err != "" {
+		preview, shown := headAndTail(s, in.headRunes, in.tailRunes)
+		return fmt.Sprintf("%s\n\n[%d bytes: only %s are shown above and the rest could not be saved (%s), so it is lost — narrow the call and ask again]",
+			preview, len(s), shown, rec.Err), rec
 	}
+	return in.spillPiece(s, rec.Path), rec
+}
+
+// spillNote is the success piece spillText would render, built before
+// any write from the content-addressed path, for the budget to judge.
+func (in mcpIntake) spillNote(server, tool, s string) string {
+	return in.spillPiece(s, in.pathFor(server, tool, textExt(s), []byte(s)))
+}
+
+func (in mcpIntake) spillPiece(s, path string) string {
 	preview, shown := headAndTail(s, in.headRunes, in.tailRunes)
-	path, err := in.write(server, tool, ext, []byte(s))
-	if err != nil {
-		return fmt.Sprintf("%s\n\n[%d bytes: only %s are shown above and the rest could not be saved (%v), so it is lost — narrow the call and ask again]",
-			preview, len(s), shown, err)
-	}
 	// The spans are bytes, the unit read_file's offset takes: a rune
 	// count subtracted from a byte count gives the wrong offset for any
 	// non-ASCII text (ADR-0096 §1).
@@ -210,22 +270,22 @@ func headAndTail(s string, head, tail int) (preview, shown string) {
 // The bytes never ride back inline: an attachment is replayed with the
 // conversation every round (ADR-0027), so it belongs in history only
 // when the model deliberately asks for it.
-// saved reports whether the bytes actually reached the work directory. It
-// is returned rather than inferred, because the only other evidence is the
-// note's length and the two notes are not ordered: a failure note can be
-// SHORTER than a success note (which carries a full path), so a caller
-// reading the budget verdict concluded "saved" for a write that failed —
-// and drew a picture with no file behind it, which is the one thing
-// ADR-0090 §2 forbids.
-func (in mcpIntake) binary(server, tool string, b mcp.Content) (note string, saved bool) {
+// The record's Path is set only when the bytes actually reached the work
+// directory. It is returned rather than inferred, because the only other
+// evidence is the note's length and the two notes are not ordered: a
+// failure note can be SHORTER than a success note (which carries a full
+// path), so a caller reading the budget verdict concluded "saved" for a
+// write that failed — and drew a picture with no file behind it, which
+// is the one thing ADR-0090 §2 forbids.
+func (in mcpIntake) binary(server, tool string, b mcp.Content) (string, tools.Saved) {
 	if len(b.Data) == 0 {
-		return fmt.Sprintf("[%s content with no data]", b.Type), false
+		return fmt.Sprintf("[%s content with no data]", b.Type), tools.Saved{}
 	}
-	path, err := in.write(server, tool, extForMIME(b.MIME, b.Type), b.Data)
-	if err != nil {
-		return fmt.Sprintf("[%s content (%d bytes, %s) could not be saved: %v]", b.Type, len(b.Data), b.MIME, err), false
+	rec := in.save(server, tool, extForMIME(b.MIME, b.Type), b.Data)
+	if rec.Err != "" {
+		return fmt.Sprintf("[%s content (%d bytes, %s) could not be saved: %s]", b.Type, len(b.Data), b.MIME, rec.Err), rec
 	}
-	return in.binaryNote(server, tool, b, path), true
+	return in.binaryNote(server, tool, b, rec.Path), rec
 }
 
 // isImageBlock is the ONE predicate. The note calls a block an image, and
@@ -246,17 +306,41 @@ func (in mcpIntake) binaryNote(_, _ string, b mcp.Content, path string) string {
 	return fmt.Sprintf("[%s content saved at %s (%d bytes, %s)]", b.Type, path, len(b.Data), b.MIME)
 }
 
-// pathFor is the content-addressed path a block would be saved at.
+// pathFor is the content-addressed path a block would be saved at. The
+// name carries the whole sha256 (ADR-0105 §1): the path is then known
+// exactly before the write — the binary pre-sizing above relies on it —
+// and two different results can never be given one name, which with a
+// 4-byte prefix the evidence route could not rule out.
 func (in mcpIntake) pathFor(server, tool, ext string, data []byte) string {
 	sum := sha256.Sum256(data)
-	name := fmt.Sprintf("%s-%s-%s%s", sanitizeToolName(server), sanitizeToolName(tool), hex.EncodeToString(sum[:4]), ext)
+	name := fmt.Sprintf("%s-%s-%s%s", sanitizeToolName(server), sanitizeToolName(tool), hex.EncodeToString(sum[:]), ext)
 	return filepath.Join(in.workDir(), name)
+}
+
+// save writes data to the work directory and reports the result as the
+// record the executor keeps. A failure is a record too: the model is
+// told there is no file to copy rather than left to assume one.
+func (in mcpIntake) save(server, tool, ext string, data []byte) tools.Saved {
+	sum := sha256.Sum256(data)
+	rec := tools.Saved{Bytes: int64(len(data)), SHA256: hex.EncodeToString(sum[:])}
+	path, err := in.write(server, tool, ext, data)
+	if err != nil {
+		rec.Err = err.Error()
+		return rec
+	}
+	rec.Path = path
+	return rec
 }
 
 // write puts data in the session work directory under a name derived
 // from the server, the tool and the content itself. Content addressing
 // means the same answer fetched twice occupies one file rather than
 // two, and it needs no clock and no counter to stay unique.
+//
+// A file already at that name is reused only when its own bytes hash to
+// the name. MCP servers and write-lane commands can write the work
+// directory (ADR-0058 §4), so a name proves nothing about its content;
+// a mismatching file is replaced (ADR-0105 §1).
 func (in mcpIntake) write(server, tool, ext string, data []byte) (string, error) {
 	dir := in.workDir()
 	if dir == "" {
@@ -264,7 +348,7 @@ func (in mcpIntake) write(server, tool, ext string, data []byte) (string, error)
 	}
 	path := in.pathFor(server, tool, ext, data)
 	name := filepath.Base(path)
-	if _, err := os.Stat(path); err == nil {
+	if sum, err := fileSHA256(path, int64(len(data))); err == nil && sum == sha256.Sum256(data) {
 		return path, nil
 	}
 	// Temp + rename, so a reader never sees a half-written file and a
@@ -293,6 +377,33 @@ func (in mcpIntake) write(server, tool, ext string, data []byte) (string, error)
 		return "", err
 	}
 	return path, nil
+}
+
+// fileSHA256 hashes the file at path as a stream, when it is a regular
+// file of the expected size. What sits at a name in the work directory
+// may be anything — a FIFO would block the open, a link to /dev/zero
+// would hash for ever — so the name is lstat'd first and anything else
+// is simply not reused (independent review).
+func fileSHA256(path string, size int64) ([sha256.Size]byte, error) {
+	var sum [sha256.Size]byte
+	st, err := os.Lstat(path)
+	if err != nil {
+		return sum, err
+	}
+	if !st.Mode().IsRegular() || st.Size() != size {
+		return sum, fmt.Errorf("%s is not the saved result", path)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return sum, err
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return sum, err
+	}
+	copy(sum[:], h.Sum(nil))
+	return sum, nil
 }
 
 // extForMIME maps a content type to a file extension. An unknown type

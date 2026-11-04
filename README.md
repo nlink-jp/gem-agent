@@ -125,7 +125,9 @@ saved single-line result included — and
 summaries (`read_file`/`summarize_file`), delegated project search in
 an isolated child context (`agentic_file_search`), atomic batched edits with
 diagnosed misses (`edit_file`/`write_file`, with a shrink guard so a
-whole-file rewrite cannot silently summarize a document away), file identification with
+whole-file rewrite cannot silently summarize a document away, and a
+byte-for-byte copy — `from` — so a saved tool result is kept as evidence
+without re-typing it), file identification with
 hashes (`file_info`), images and documents for the model
 (`view_image`/`read_document`), an image drawn on YOUR screen
 (`show_image`), a sandboxed shell whose read, write and
@@ -221,7 +223,10 @@ model through `find_tools`, a librarian side call that reads the whole
 catalogue and names the tools for the task, or `mcp_load`; or by you
 through `preload`, `--allow`, or `/mcp load` — and withholds tools whose
 descriptions address the assistant instead of describing a tool
-(ADR-0083).
+(ADR-0083). Every MCP result is saved in the session work directory,
+small ones too, and recorded in the transcript with its sha256, so
+evidence can be a copy of what the server returned (`write_file` with
+`from`) and checked as one (ADR-0105).
 
 **[Configuration](docs/en/reference/configuration.md)** — the full
 config reference, precedence, CLI flags, content-filter behaviour,

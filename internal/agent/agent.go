@@ -1043,13 +1043,16 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 			var result string
 			var denied, ran bool
 			var remote *tools.RemoteError
+			// What the call saves is reported here, beside its text
+			// (ADR-0105 §1), and becomes the transcript's record.
+			saves := &tools.SaveRecorder{}
 			if stopAfterRound != "" {
 				result = "error: the turn was stopped by the loop guard; not executed"
 				// Shown as proposed, never executed: the audit trail says
 				// so instead of going silent (review round 3).
 				a.telemetry.ToolCall(tc.Name, a.decide(tc).Mutating, callDetail, callPurpose, 0, "skipped", a.laneOf(tc))
 			} else {
-				result, denied, ran, remote = a.execCall(ctx, tc)
+				result, denied, ran, remote = a.execCall(tools.WithSaveRecorder(ctx, saves), tc)
 			}
 			if a.onToolDone != nil {
 				a.onToolDone(tc)
@@ -1068,6 +1071,10 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 				// here from the typed error the executor returned, never
 				// from the result text. Empty for every other call.
 				RuntimeNote: a.remoteFault(tc.Name, remote, ran, round),
+				// The files the runtime saved for this result (ADR-0105
+				// §1): provenance from the intake through the context,
+				// never read out of the text a server wrote.
+				Saved: savedFiles(saves.Files()),
 			}
 			// view_image's pixels ride INSIDE the function response as a
 			// multimodal response part (ADR-0012 §5). The alternative — a
@@ -1220,6 +1227,12 @@ func wrapToolMessages(history []llm.Message, tag guard.Tag, instructionTools map
 			// result whose text merely looks like the note stays wrapped.
 			if out[i].RuntimeNote != "" {
 				out[i].Content += "\n\n" + out[i].RuntimeNote
+			}
+			// So does the note of what was saved (ADR-0105 §1, §3): the
+			// route to copy a result is offered where it arrives, in
+			// words no server can forge.
+			if note := savedNote(out[i].Saved); note != "" {
+				out[i].Content += "\n\n" + note
 			}
 			continue
 		}
@@ -1697,7 +1710,10 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 	}
 	out, state, err := a.runWithFloor(runCtx, tool, tc)
 	credentialDenied := false
-	if errors.Is(err, tools.ErrCredentialRead) {
+	if errors.Is(err, tools.ErrCredentialRead) && risk.CredentialReadTool(tc.Name) {
+		// Only the reads that ask about credentials are retried: an
+		// approval that looks like a read must never let write_file copy credential
+		// material under an ordinary project name (ADR-0105 §2).
 		// The kernel refused a path the rule tier did not recognise.
 		// The read has produced no bytes, so nothing has reached the
 		// model; the operator gets the same question they would have

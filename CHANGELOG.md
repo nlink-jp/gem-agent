@@ -1,5 +1,37 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Every MCP result is saved, and evidence can be a copy of it
+  (ADR-0105).** Small results used to reach the model only inline, so an
+  agent asked to keep a query result as evidence re-typed it, and values
+  went missing or were invented on the way. Now every text block an MCP
+  server returns is saved in the session work directory under its full
+  sha256, and the model reads gem-agent's own line about it — outside the
+  nonce tag, where no server can forge it — naming the path, size and
+  hash and offering the copy. The transcript's tool-result entry records
+  the same files in a new `saved` field, so whether an evidence file is a
+  copy of what a server returned is a hash comparison.
+- **`write_file` copies with `from`.** Instead of `content`, `from` names
+  an existing file whose bytes become the new file — whole, byte for
+  byte, read back and checked, with the sha256 in the result. The
+  destination is judged exactly as a write of content (no approval inside
+  the project), so copying is never more work than re-typing. The source
+  is read through the sandboxed child, up to 32 MiB; above that, and for
+  credential material, the copy is refused. The call's detail names the
+  source and its size, never its bytes.
+
+### Changed
+
+- Saved MCP result files are named with the whole sha256 instead of its
+  first 4 bytes, and a file already at that name is reused only when its
+  bytes match.
+- A kernel-refused credential read is offered to the operator only for
+  the credential-asking reads (`read_file`, `summarize_file`, `file_info`
+  and the like); no other tool is re-run in process on a yes.
+
 ## [0.97.1] - 2026-11-04
 
 ### Changed

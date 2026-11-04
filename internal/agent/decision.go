@@ -128,7 +128,7 @@ func (a *Agent) decide(tc llm.ToolCall) Decision {
 	return d
 }
 
-// withRealPaths returns args with `path` and every entry of `paths`
+// withRealPaths returns args with `path`, `from` and every entry of `paths`
 // resolved through the registry where they resolve; the map is copied
 // only when something changed, and a path that does not resolve keeps
 // its spelling.
@@ -145,9 +145,14 @@ func (a *Agent) withRealPaths(in map[string]any) map[string]any {
 		}
 		out[k] = v
 	}
-	if p, ok := in["path"].(string); ok {
-		if real, err := a.registry.RealPath(p); err == nil && real != "" && real != p {
-			set("path", real)
+	// `from` is write_file's copy source (ADR-0105 §2): a link named
+	// `notes.txt` that points at a credential is judged as the
+	// credential.
+	for _, k := range []string{"path", "from"} {
+		if p, ok := in[k].(string); ok && p != "" {
+			if real, err := a.registry.RealPath(p); err == nil && real != "" && real != p {
+				set(k, real)
+			}
 		}
 	}
 	if raw, ok := in["paths"].([]any); ok {

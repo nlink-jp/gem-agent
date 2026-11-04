@@ -111,6 +111,23 @@ saved and pointed at (`use view_image on that path`), never inlined;
 those past the budget are neither saved nor listed one by one — one
 line names how many. Without a work directory the loss is stated.
 
+### Every result is saved (ADR-0105)
+
+Every text block an MCP server returns is saved in the session work
+directory, whatever its size, under a name that carries its whole
+sha256; the blocks a response hands over inline are saved together as
+one file (one block: its exact bytes). The model reads gem-agent's own line about it,
+outside the nonce tag where no server can forge it: `[gem-agent saved
+this result whole: <path> (<n> bytes, sha256 <hex>) — to keep it as
+evidence, write_file with from set to that path copies it byte for
+byte]`. The transcript's tool-result entry records the same files in a
+`saved` field (path, bytes, sha256), written by gem-agent and never by
+the server, so whether an evidence file is a copy of what a server
+returned is a hash comparison against that record. A result the model
+re-types has no such match. Without a work directory (a session whose
+transcript is off) nothing is saved, and the line says there is no file
+to copy.
+
 ## Skills (ADR-0010, ADR-0011)
 
 gem-agent reads **Claude Code's skill format, as-is** — from its own

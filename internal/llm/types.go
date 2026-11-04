@@ -87,6 +87,23 @@ type Message struct {
 	// old build resuming a transcript that carries it drops the note
 	// from the replay and nothing else.
 	RuntimeNote string `json:"runtime_note,omitempty"`
+	// Saved lists the files the runtime wrote for this result — every
+	// MCP text block, whatever its size (ADR-0105 §1). It is the record
+	// evidence is checked against: set by the executor from what the
+	// intake reported, never parsed out of the result text, which a
+	// server writes. The model reads it as gem-agent's own note outside
+	// the nonce tag. Additive: an old build resuming a transcript that
+	// carries it ignores it.
+	Saved []SavedFile `json:"saved,omitempty"`
+}
+
+// SavedFile is one entry of Message.Saved.
+type SavedFile struct {
+	Path   string `json:"path,omitempty"`
+	Bytes  int64  `json:"bytes"`
+	SHA256 string `json:"sha256,omitempty"`
+	// Error says why the block was not saved; Path is empty then.
+	Error string `json:"error,omitempty"`
 }
 
 // ToolDef describes one tool to the model.

@@ -136,6 +136,21 @@ func TestFileChildUnderTheRealProfile(t *testing.T) {
 	if out, code := run("list_files", map[string]any{}); code == 0 {
 		t.Errorf("the child ran a tool outside its set: %q", out)
 	}
+
+	// write_file's copy source (ADR-0105 §2) under the real profile: the
+	// raw bytes, past read_file's window and with no note of any kind.
+	// Credential material is refused — by the child's own matcher first,
+	// with the kernel's profile behind it — and no byte of it comes back.
+	raw := strings.Repeat("0123456789", 30*1024) + "\x00\xff end"
+	if err := os.WriteFile(filepath.Join(proj, "result.json"), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, code := run(tools.CopySourceOp, map[string]any{"path": "result.json"}); code != 0 || out != raw {
+		t.Errorf("copy source exited %d with %d bytes, want the %d raw bytes", code, len(out), len(raw))
+	}
+	if out, code := run(tools.CopySourceOp, map[string]any{"path": ".env"}); code == 0 || strings.Contains(out, "hunter2") {
+		t.Errorf("copy source read the credential file: exit %d, %q", code, out)
+	}
 }
 
 // TestInstallFileChildSucceedsOnThisMachine is the test whose absence

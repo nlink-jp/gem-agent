@@ -349,3 +349,44 @@ func TestCredentialReadsAreOperatorOnly(t *testing.T) {
 		t.Errorf("shell floor lost the word split: %v", v.Tier)
 	}
 }
+
+// ADR-0105 §2: the executor's in-process retry after a kernel refusal is
+// for the reads that ask about credentials — summarize_file among them —
+// and never for write_file, which writes what it read.
+func TestCredentialReadToolIsTheRetryList(t *testing.T) {
+	for _, n := range []string{"read_file", "summarize_file", "file_info", "read_document"} {
+		if !CredentialReadTool(n) {
+			t.Errorf("%s is not retried", n)
+		}
+	}
+	for _, n := range []string{"write_file", "edit_file", "shell_exec", "mcp__x__y"} {
+		if CredentialReadTool(n) {
+			t.Errorf("%s would be retried in process", n)
+		}
+	}
+}
+
+// ADR-0105 §2: a copy is judged by its destination exactly as a write
+// of content is — so copying is never costlier than re-typing — and a
+// copy source that is credential material is Block, never a
+// CredentialRead the operator could wave through as a read.
+func TestWriteFileFromIsJudgedLikeAWrite(t *testing.T) {
+	work := "/tmp/work"
+	for _, c := range []struct {
+		path, from string
+		want       Tier
+		opOnly     bool
+	}{
+		{"evidence/rows.json", work + "/bq-query-ab.json", Safe, false},
+		{"evidence/rows.json", "notes/source.txt", Safe, false},
+		{"AGENTS.md", "notes/source.txt", Review, true},
+		{".git/config", "notes/source.txt", Block, false},
+		{"evidence/env.txt", ".env", Block, false},
+		{"evidence/key.txt", "~/.ssh/id_ed25519", Block, false},
+	} {
+		v := Classify("write_file", true, map[string]any{"path": c.path, "from": c.from}, proj, work)
+		if v.Tier != c.want || v.OperatorOnly != c.opOnly || v.CredentialRead {
+			t.Errorf("write_file(%q from %q) = %+v, want %v (operator only %v)", c.path, c.from, v, c.want, c.opOnly)
+		}
+	}
+}

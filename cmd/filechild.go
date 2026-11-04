@@ -112,6 +112,22 @@ func newFileChildCmd() *cobra.Command {
 			for _, a := range req.Added {
 				_ = reg.AddDirs([]sandbox.AddedRoot{a})
 			}
+			if req.Tool == tools.CopySourceOp {
+				// write_file's copy source (ADR-0105 §2): raw bytes, the
+				// whole file or a refusal. It is not a tool and runs
+				// nothing else.
+				path, _ := req.Args["path"].(string)
+				data, err := reg.ReadCopySource(path)
+				if err != nil {
+					fmt.Fprint(cmd.ErrOrStderr(), err.Error())
+					if errors.Is(err, fs.ErrPermission) {
+						os.Exit(credentialExit)
+					}
+					os.Exit(1)
+				}
+				_, err = cmd.OutOrStdout().Write(data)
+				return err
+			}
 			if !tools.ChildTool(req.Tool) {
 				// The hidden subcommand runs the covered reads and
 				// nothing else: it is not a general tool runner
@@ -162,11 +178,32 @@ func fileChildRunner(self, profileHome string, projectDir func() string, workDir
 		// already sized. It is a ceiling on a runaway child, not a
 		// second cap on the content (independent review: the first cut
 		// sat at 85 KB and silently halved a 200 KB read).
-		stdout, stderr := bounded.NewWriter(childOutputCap), bounded.NewWriter(1<<16)
+		outCap := childOutputCap
+		if tool == tools.CopySourceOp {
+			// A copy source is the whole file or nothing (ADR-0105 §2):
+			// the child refuses above the cap itself, and one byte more
+			// here is a refusal, never a marked cut.
+			outCap = tools.CopySourceCap
+		}
+		stdout, stderr := bounded.NewWriter(outCap), bounded.NewWriter(1<<16)
 		cmd.Stdout, cmd.Stderr = stdout, stderr
 		runErr := cmd.Run()
 		outBytes, more := stdout.Bytes()
 		errBytes, _ := stderr.Bytes()
+		if tool == tools.CopySourceOp {
+			// Whole or nothing, interrupted included: the partial-result
+			// label the reads use below would be written into the copy
+			// as if it were the source (independent review).
+			if runErr == nil && !more {
+				return string(outBytes), nil
+			}
+			if more {
+				return "", fmt.Errorf("the copy source is larger than %d bytes; nothing was written", tools.CopySourceCap)
+			}
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+		}
 		if runErr == nil {
 			out := string(outBytes)
 			if more {

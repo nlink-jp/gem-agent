@@ -138,3 +138,31 @@ func TestAdapterTypesRemoteFailuresByProvenance(t *testing.T) {
 		}
 	}
 }
+
+// ADR-0105 §1: the adapter hands what the intake saved to the call's
+// recorder — for a server-marked error too — so the executor can keep it
+// where no server writes.
+func TestMCPAdapterRecordsWhatItSaved(t *testing.T) {
+	reg, err := tools.New(t.TempDir(), func(ctx context.Context, c string) *exec.Cmd {
+		return exec.CommandContext(ctx, "/bin/true")
+	}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.UseWorkDir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	for i, isErr := range []bool{false, true} {
+		stub := &stubCaller{name: fmt.Sprintf("bq%d", i), blocks: []mcp.Content{{Type: "text", Text: `{"rows":[1]}`}}, isErr: isErr}
+		if _, errs := registerMCPTools(reg, stub, []mcp.Tool{{Name: "query", Description: "q"}}); len(errs) != 0 {
+			t.Fatal(errs)
+		}
+		tool, _ := reg.Get(fmt.Sprintf("mcp__bq%d__query", i))
+		rec := &tools.SaveRecorder{}
+		_, _ = tool.Run(tools.WithSaveRecorder(context.Background(), rec), map[string]any{})
+		files := rec.Files()
+		if len(files) != 1 || files[0].Path == "" || files[0].Bytes != int64(len(`{"rows":[1]}`)) {
+			t.Errorf("isError=%v: recorded %+v, want the saved result", isErr, files)
+		}
+	}
+}

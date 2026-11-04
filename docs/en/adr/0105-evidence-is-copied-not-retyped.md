@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-11-04) — draft for the operator's review; nothing implemented. Revised once against an independent review (9 findings; see §7) |
+| Status | **Proposed** (2026-11-04) — implemented 2026-11-04; acceptance waits on the §5 measurement. Revised once against an independent review (9 findings; see §7) and once in implementation (§8) |
 | Date | 2026-11-04 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -58,16 +58,16 @@ What it does not show: these runs are lagent's. lagent sends a write-lane shell 
 
 The intake writes every text block to the work directory, including a result the server marked `isError`.
 
-- **What the model reads.** A block that fits is still handed over inline, followed by one line from the runtime:
+- **What the model reads.** A block that fits is still handed over inline, exactly as the server sent it. After the wrapped result comes one line per saved file; the blocks a response hands over inline are saved together as one file (§8). The line is gem-agent's own and sits outside the nonce tag, as ADR-0075 §3's runtime note does (§8):
 
   ```
-  [saved whole: <path> — <n> bytes, sha256 <64 hex>; write_file from=<this path> copies it byte for byte]
+  [gem-agent saved this result whole: <path> (<n> bytes, sha256 <64 hex>) — to keep it as evidence, write_file with from set to that path copies it byte for byte]
   ```
 
-  The path appears once. With the state-root path the note is about 350–400 bytes. It is paid from the response's one budget (ADR-0072 §4.5), so the effective inline size drops by that much.
+  With the state-root path the line is about 300–400 bytes. It is not part of the server's text, so it is not paid from the response budget, and the inline size is unchanged.
 - **What does not fit takes today's routes.** The first block that does not fit is previewed by head and tail (`spillText`); later blocks past the budget are saved joined as one file (`spillRest`), as today. Both notes carry the full sha256. A result of several text blocks is therefore several saved files; keeping all of it as evidence is several copies.
 - **Names carry the full hash.** The content-addressed name uses the whole sha256, not its first 4 bytes, so the path of a block is known exactly before the write (the binary pre-sizing in `render` relies on that) and two results never share a name. An existing file at that name is reused only when its own sha256 matches; otherwise it is replaced by temp plus rename. MCP servers and write-lane commands can write the work directory (ADR-0058 §4), so a file found there is not trusted by its name.
-- **A record the server cannot write.** The text the transcript stores is the server's text with the runtime's note appended. A server can print a line shaped like the note, and in the transcript the two are indistinguishable. The runtime therefore records each saved block in a structured field of the tool-result entry in the transcript — path, byte count, sha256 — written by the runtime and outside the text. Verification (§4) reads that field, never the note.
+- **A record the server cannot write.** A server can print a line shaped like the note, so neither the note nor anything in the result text can be the record. The runtime records each saved block in a structured field of the tool-result entry in the transcript (`saved`: path, byte count, sha256), set by the executor from what the intake reported and never parsed from the text. The note is rendered from that field when the history is sent. Verification (§4) reads the field.
 - **No work directory.** There is none exactly when the session's transcript is disabled (ADR-0058). The text is inline only, as today, and the note says it was not saved, so the model knows there is nothing to copy. Such a session has no record to verify against either.
 
 ### 2. `write_file` copies: `from` instead of `content`
@@ -76,9 +76,9 @@ The intake writes every text block to the work directory, including a result the
 
 - **The source is read raw, whole and bounded.** The read goes through the sandboxed child (ADR-0086), by a dedicated raw-bytes operation, not through `read_file`. `read_file` stops at 200 KiB and appends its own notes, and the child's stdout is capped at 1 MiB with a truncation note; reusing either would silently cut a large result. The operation has a stated ceiling (32 MiB, the shell spool's cap, ADR-0096 §3), refuses above it instead of truncating, and the written file's sha256 is checked against the bytes read. A directory, device or link that does not resolve to a regular file is refused.
 - **A credential source is Block, not a read to approve.** `from` naming credential material (ADR-0085) is Block, and it never carries `CredentialRead`. A `write_file` refused by the kernel is not retried in process (`credentialRetry` excludes it): an approval that looks like a read must never become a credential written under an ordinary project name. ADR-0086 §4 names this copy as a limit of path-based caging, and ADR-0096 §3 keeps operator-lane output out of the spool for the same reason.
-- **Both paths are judged by their real names.** `from` joins `path` in `JudgesPath`, `withRealPaths` and `Classify`. A source may lie in the project, the work directory or an added directory (read or write). Another session's work directory is outside every root. After `/clear` the previous work directory is outside too, and the refusal says so.
+- **Both paths are judged by their real names.** `from` joins `path` in `JudgesPath`, `withRealPaths` and `Classify`. A source may lie in the project, the work directory or an added directory (read or write). Another session's work directory is outside every root. After `/clear` the previous work directory is outside too, and a copy from it is refused as a path outside the roots.
 - **The destination is judged exactly as today's.** The same path rules, the same persistent-file rules (ADR-0072 §1.4). In the project it is therefore Safe, the same tier as re-typing: **copying is never costlier than re-typing.** The shrink guard compares the source's size, not `content`'s.
-- **The operator sees what is copied.** Where a copy needs approval (an instruction file, say), the approval detail shows the source's size, sha256 and first lines (`Annotate`), not an empty line.
+- **The operator sees what is copied.** The call's detail (`Annotate`) names the source and its size, so a copy that needs approval (into an instruction file, say) is not approved blind. It shows no bytes of the source (§8).
 - **The result line reports the copy:** `copied <n> bytes from <from> to <path> (sha256 <hex>)`.
 - **Whole file only.** A subset of rows or a format conversion is a derivation. Derivations stay where they are today: a shell command in the write lane whose command line the transcript records. This ADR does not make derivation cheaper.
 
@@ -86,7 +86,7 @@ Why `write_file` and not a new tool: the measured agent reached for `write_file`
 
 ### 3. The route is offered at the moment it is needed
 
-Two places carry it, both phrased as a route and not as a prohibition. One is the per-result note of §1, read at the moment a result arrives. The note sits inside the guard-wrapped tool result, like the spill note whose `read_file` path the measured agent did follow. The other is the `write_file` description, read when the model reaches for the tool. That description names `from` as the way to keep a saved tool result. The system prompt is not changed unless §5 shows that the route does not fire.
+Two places carry it, both phrased as a route and not as a prohibition. One is the per-result note of §1, read at the moment a result arrives. It is gem-agent's own line outside the nonce tag, so the model can tell it from anything a server prints. The other is the `write_file` description, read when the model reaches for the tool. That description names `from` as the way to keep a saved tool result. The system prompt is not changed unless §5 shows that the route does not fire.
 
 ### 4. Verifying evidence stays outside the runtime
 
@@ -125,12 +125,40 @@ A sub-agent read the first draft against the code and the cited ADRs. All nine f
 8. The measurement was under-specified: the scorer read `from` as regenerated, *derived* could pass the threshold without the route, the denominator and cost were unclear, and the failure branch had no end. Corrected (§5).
 9. Citations: ADR-0072 §1.4, not §4; the charter's wording; ADR-0096 §3's scope; no work directory means no transcript. Corrected.
 
-Two suggestions were not taken. An optional `sha256` argument on `from` would bind the copy within the runtime, but it asks the model to re-type 64 hex characters, and the structured record already serves verification. The remark that the note sits inside untrusted data is noted in §3, with the measured spill route as precedent.
+One suggestion was not taken: an optional `sha256` argument on `from` would bind the copy within the runtime, but it asks the model to re-type 64 hex characters, and the structured record already serves verification. The remark that the note would sit inside untrusted data was resolved in implementation by moving the note outside the tag (§8).
+
+## 8. Implementation (2026-11-04)
+
+Implemented as decided, with these differences and additions:
+
+- **The note is rendered outside the nonce tag** from the record, not appended to the server's text. Once the record existed as a field the executor sets, putting the runtime's line next to `RuntimeNote` (ADR-0075 §3) cost nothing. It answers review finding 3 for the model as well as for verification, and the response budget no longer pays for the note.
+- **The record travels through the context.** The intake returns what it saved beside the text. The MCP adapter hands it to a recorder the executor puts in the call's context (`tools.RecordSaved`), and the executor copies it into `Message.Saved`. A tool that saves nothing is untouched.
+- **`credentialRetry` is gated by tool:** only the covered reads (`tools.ChildTool`) are retried in process. The copy source also maps the kernel's refusal to its own error, so the gate holds twice.
+- **The copy source is a child operation, not a tool** (`copy_source`): the child runs it by name beside the covered reads, and nothing declares it to the model. In process — without a child — the credential matcher checks both the spelling and the real path.
+- **A file at the content-addressed name is hashed as a stream** before reuse. Reading it whole would be an unbounded read of a file anything may have written (the bounded-reads architecture test caught it).
+- **The probe's pre-registration** for §5 is in `tools/evidenceprobe/main.go`, dated before any run. The scorer classifies a `write_file` `from` by the bytes it wrote. *Copied* now requires byte identity for a shell copy too: a superset is *derived*.
+- Moved line citations in ADR-0089, ADR-0090 and ADR-0091 were updated (the citation test caught them).
+
+A second independent review read the implementation before it was committed. Its confirmed findings were taken:
+
+- **Inline blocks are saved together** as one file with one record and one note: what the model received inline, the blocks joined by a newline, a single block as its own exact bytes. A note per block was paid from no budget, so twenty thousand empty blocks would have been twenty thousand notes.
+- **A spill preview is sized before anything is written**, from the content-addressed path, as binary notes already were. A preview that does not fit leaves no unrecorded file behind.
+- **An interrupted copy is an error.** The child's partial-output label for reads was written into the copy and reported as success.
+- **The retry gate is the credential-read list** (`risk.CredentialReadTool`), not `tools.ChildTool`: `summarize_file` reads through `read_file` and asks the operator too, and the first gate had taken that away.
+- **`Annotate` stats; it does not read.** Describe calls it for every call, and its text reaches the activity trace and the audit telemetry. A first line of DWH data must not travel there, nor a 32 MiB read run outside the floor. The detail is the source's name and size.
+- **A file at the content-addressed name is reused only when it is a regular file of the result's size** and hash. A planted FIFO would otherwise block the open.
+- Empty `content` beside `from` is treated as absent. R4 decides nothing on fewer than 10 valid runs.
+
+Accepted residuals, by risk:
+
+- **A copy has the operator's default mode**, not the saved file's 0600, the same as a file written with `content`.
+- **Degraded mode has a check-then-open gap.** Without the child, the credential check and the open are two steps, so a concurrent writer could swap a link between them. It needs a writer racing the call inside the roots, and the kernel closes it whenever the child is installed.
+- **After a resume, a note may name a work directory that is gone or outside the roots.** The copy then fails with that reason.
 
 ## Consequences
 
 - Every MCP result is on disk, not only the large ones. DWH rows, which may hold personal data, now lie where only spilled results lay before: files created 0600 in the session work directory under the state root, removed by the cleanup command. Accepted: the operator already keeps evidence of the same data in the project.
-- About 350–400 bytes of note per inline result enter the context, and the effective inline size drops by the same. Saved file names grow by 56 hex characters.
+- About 300–400 bytes of note per saved file enter the context, outside the response budget. The inline size is unchanged. Saved file names grow by 56 hex characters.
 - `write_file`'s schema grows one property. The child gains a raw-bytes read, and the transcript's tool-result entry gains a structured field. The probe gains the copy method.
 - The copied bytes are the server's raw text, never the guard-wrapped form the model sees. They go to a file, not into the prompt.
 

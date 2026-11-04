@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"unicode/utf8"
 
@@ -19,7 +22,7 @@ func textBlock(s string) []mcp.Content { return []mcp.Content{{Type: "text", Tex
 // not gain a preview, a path, or any other ceremony.
 func TestSmallTextIsUntouched(t *testing.T) {
 	in := newMCPIntake(fixedDir(t.TempDir()))
-	out := in.render("srv", "tool", textBlock(`{"is_exit": false}`))
+	out := textOf(in.render("srv", "tool", textBlock(`{"is_exit": false}`)))
 	if out != `{"is_exit": false}` {
 		t.Errorf("out = %q", out)
 	}
@@ -33,7 +36,7 @@ func TestOversizedTextIsSavedWhole(t *testing.T) {
 	in := newMCPIntake(fixedDir(work))
 	big := strings.Repeat("A", tools.OutputCap+1)
 
-	out := in.render("rdns-lookup", "lookup_rdns", textBlock(big))
+	out := textOf(in.render("rdns-lookup", "lookup_rdns", textBlock(big)))
 	if len(out) > 4000 {
 		t.Fatalf("the rendered result is %d bytes — the point was to keep it out of context", len(out))
 	}
@@ -59,7 +62,7 @@ func TestOversizedJSONGetsAJSONName(t *testing.T) {
 	work := t.TempDir()
 	in := newMCPIntake(fixedDir(work))
 	big := "[" + strings.Repeat(`"x",`, tools.OutputCap/4) + `"x"]`
-	out := in.render("srv", "tool", textBlock(big))
+	out := textOf(in.render("srv", "tool", textBlock(big)))
 	if !strings.HasSuffix(extractPath(t, out, work), ".json") {
 		t.Errorf("a JSON body should be saved as .json: %q", out)
 	}
@@ -72,8 +75,8 @@ func TestSavedFilesAreContentAddressed(t *testing.T) {
 	in := newMCPIntake(fixedDir(work))
 	big := strings.Repeat("B", tools.OutputCap+1)
 
-	first := extractPath(t, in.render("srv", "tool", textBlock(big)), work)
-	second := extractPath(t, in.render("srv", "tool", textBlock(big)), work)
+	first := extractPath(t, textOf(in.render("srv", "tool", textBlock(big))), work)
+	second := extractPath(t, textOf(in.render("srv", "tool", textBlock(big))), work)
 	if first != second {
 		t.Errorf("the same content produced two files: %q and %q", first, second)
 	}
@@ -92,10 +95,10 @@ func TestImageIsSavedAndPointedAtViewImage(t *testing.T) {
 	in := newMCPIntake(fixedDir(work))
 	png := []byte("\x89PNG\r\n\x1a\npixels")
 
-	out := in.render("chrome-pilot", "take_screenshot", []mcp.Content{
+	out := textOf(in.render("chrome-pilot", "take_screenshot", []mcp.Content{
 		{Type: "text", Text: `{"page":"example.test"}`},
 		{Type: "image", Data: png, MIME: "image/png"},
-	})
+	}))
 
 	if !strings.Contains(out, `{"page":"example.test"}`) {
 		t.Errorf("the text block was lost: %q", out)
@@ -120,7 +123,7 @@ func TestImageIsSavedAndPointedAtViewImage(t *testing.T) {
 // the answer is gone rather than handed a quiet truncation.
 func TestWithoutAWorkDirTheLossIsStated(t *testing.T) {
 	in := newMCPIntake(fixedDir(""))
-	out := in.render("srv", "tool", textBlock(strings.Repeat("C", tools.OutputCap+1)))
+	out := textOf(in.render("srv", "tool", textBlock(strings.Repeat("C", tools.OutputCap+1))))
 	if !strings.Contains(out, "lost") {
 		t.Errorf("a lossy fallback must say so: %q", out)
 	}
@@ -134,14 +137,14 @@ func TestWithoutAWorkDirTheLossIsStated(t *testing.T) {
 // the executor's job, by provenance — the intake no longer marks it.
 func TestServerErrorsRenderUnmarked(t *testing.T) {
 	in := newMCPIntake(fixedDir(t.TempDir()))
-	if out := in.render("srv", "tool", textBlock("quota exceeded")); out != "quota exceeded" {
+	if out := textOf(in.render("srv", "tool", textBlock("quota exceeded"))); out != "quota exceeded" {
 		t.Errorf("out = %q", out)
 	}
 }
 
 func TestEmptyResultIsStillAnAnswer(t *testing.T) {
 	in := newMCPIntake(fixedDir(t.TempDir()))
-	if out := in.render("srv", "tool", nil); out != "(no content)" {
+	if out := textOf(in.render("srv", "tool", nil)); out != "(no content)" {
 		t.Errorf("out = %q", out)
 	}
 }
@@ -182,6 +185,10 @@ func extractPath(t *testing.T, out, work string) string {
 // for the test's lifetime.
 func fixedDir(dir string) func() string { return func() string { return dir } }
 
+// textOf keeps the text of a render and drops its save records, for the
+// tests that are about what the model reads.
+func textOf(s string, _ []tools.Saved) string { return s }
+
 // ADR-0072 §4.5: many blocks each under the cap share one budget per
 // response — the inline text never exceeds one cap.
 func TestManySmallBlocksShareOneBudget(t *testing.T) {
@@ -192,7 +199,7 @@ func TestManySmallBlocksShareOneBudget(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		blocks = append(blocks, mcp.Content{Type: "text", Text: strings.Repeat("x", 300)})
 	}
-	out := in.render("srv", "tool", blocks)
+	out := textOf(in.render("srv", "tool", blocks))
 	if len(out) > in.cap+400 {
 		t.Fatalf("rendered result is %d bytes; the cap is %d", len(out), in.cap)
 	}
@@ -210,7 +217,7 @@ func TestOversizedBlockPreviewsShareTheBudget(t *testing.T) {
 	for i := range blocks {
 		blocks[i] = mcp.Content{Type: "text", Text: strings.Repeat("x", in.cap+1)}
 	}
-	out := in.render("srv", "tool", blocks)
+	out := textOf(in.render("srv", "tool", blocks))
 	if len(out) > in.cap+1000 {
 		t.Fatalf("rendered %d bytes for cap %d", len(out), in.cap)
 	}
@@ -228,7 +235,7 @@ func TestBinaryLeftoversAreOneLine(t *testing.T) {
 	for i := range blocks {
 		blocks[i] = mcp.Content{Type: "image", MIME: "image/png", Data: []byte("TEST-DATA")}
 	}
-	out := in.render("srv", "tool", blocks)
+	out := textOf(in.render("srv", "tool", blocks))
 	if len(out) > in.cap+1000 {
 		t.Fatalf("rendered %d bytes for cap %d", len(out), in.cap)
 	}
@@ -248,7 +255,7 @@ func TestExactCapBlockAndUnsavedBinaries(t *testing.T) {
 	work := t.TempDir()
 	in := newMCPIntake(fixedDir(work))
 	exact := strings.Repeat("x", in.cap)
-	out := in.render("srv", "tool", []mcp.Content{{Type: "text", Text: exact}})
+	out := textOf(in.render("srv", "tool", []mcp.Content{{Type: "text", Text: exact}}))
 	if out != exact {
 		t.Errorf("exact-cap block not inline: %d bytes rendered", len(out))
 	}
@@ -257,7 +264,7 @@ func TestExactCapBlockAndUnsavedBinaries(t *testing.T) {
 	for i := range blocks {
 		blocks[i] = mcp.Content{Type: "image", MIME: "image/png", Data: []byte("TEST-DATA")}
 	}
-	out = in.render("srv", "tool", blocks)
+	out = textOf(in.render("srv", "tool", blocks))
 	entries, _ := os.ReadDir(work)
 	if len(entries) > 1 {
 		t.Errorf("%d files written for blocks whose note could not be listed", len(entries))
@@ -275,7 +282,7 @@ func TestSpillPreviewShowsHeadAndTailWithByteSpans(t *testing.T) {
 	in := newMCPIntake(fixedDir(work))
 	tail := `], "truncated": true, "total_rows": 200}`
 	big := `{"results":[` + strings.Repeat(`{"_raw":"x"},`, tools.OutputCap/10) + `{"_raw":"y"}` + tail
-	out := in.render("splunk", "run_query", textBlock(big))
+	out := textOf(in.render("splunk", "run_query", textBlock(big)))
 	if !strings.Contains(out, tail) {
 		t.Fatalf("the tail metadata is not in the preview:\n%s", out)
 	}
@@ -301,7 +308,7 @@ func TestSpillPreviewShowsHeadAndTailWithByteSpans(t *testing.T) {
 func TestSpillPreviewSpansAreBytesOnRuneBoundaries(t *testing.T) {
 	in := newMCPIntake(fixedDir(t.TempDir()))
 	big := strings.Repeat("あ", tools.OutputCap) // 3 bytes each
-	out := in.render("obsidian", "get_vault_file", textBlock(big))
+	out := textOf(in.render("obsidian", "get_vault_file", textBlock(big)))
 	n := len(big)
 	if !strings.Contains(out, "bytes 0–1800 and "+strconv.Itoa(n-600)+"–"+strconv.Itoa(n)) {
 		t.Errorf("spans are not in bytes:\n%s", out[len(out)-300:])
@@ -314,5 +321,177 @@ func TestSpillPreviewSpansAreBytesOnRuneBoundaries(t *testing.T) {
 func TestHeadAndTailOfAShortStringIsWhole(t *testing.T) {
 	if p, shown := headAndTail("abc", 600, 200); p != "abc" || shown != "bytes 0–3" {
 		t.Errorf("got %q %q", p, shown)
+	}
+}
+
+// ADR-0105 §1: a result small enough to ride inline is saved all the
+// same, and the record carries its path, size and full sha256. The
+// inline text is still exactly the server's: the note that says so is
+// the executor's, outside the nonce tag.
+func TestSmallTextIsSavedAndRecorded(t *testing.T) {
+	work := t.TempDir()
+	in := newMCPIntake(fixedDir(work))
+	body := `{"rows":[{"event_id":"evt-1"}]}`
+	out, saved := in.render("bigquery", "query", textBlock(body))
+	if out != body {
+		t.Fatalf("inline text changed: %q", out)
+	}
+	if len(saved) != 1 {
+		t.Fatalf("saved = %+v, want one record", saved)
+	}
+	rec := saved[0]
+	sum := sha256.Sum256([]byte(body))
+	if rec.SHA256 != hex.EncodeToString(sum[:]) || rec.Bytes != int64(len(body)) || rec.Err != "" {
+		t.Errorf("record = %+v", rec)
+	}
+	if !strings.Contains(filepath.Base(rec.Path), rec.SHA256) || filepath.Ext(rec.Path) != ".json" {
+		t.Errorf("name %q does not carry the full hash and a JSON extension", rec.Path)
+	}
+	got, err := os.ReadFile(rec.Path)
+	if err != nil || string(got) != body {
+		t.Errorf("saved bytes = %q, %v", got, err)
+	}
+}
+
+// Every block that reaches disk is recorded: an oversized block's spill
+// and the joined remainder past the budget alike.
+func TestSpilledAndLeftoverBlocksAreRecorded(t *testing.T) {
+	work := t.TempDir()
+	in := newMCPIntake(fixedDir(work))
+	in.cap = 2000
+	blocks := []mcp.Content{
+		{Type: "text", Text: strings.Repeat("a", 2500)},
+		{Type: "text", Text: strings.Repeat("b", 900)},
+		{Type: "text", Text: strings.Repeat("c", 900)},
+	}
+	_, saved := in.render("srv", "tool", blocks)
+	if len(saved) != 2 {
+		t.Fatalf("saved = %+v, want the spill and the joined remainder", saved)
+	}
+	for _, rec := range saved {
+		got, err := os.ReadFile(rec.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(got)
+		if hex.EncodeToString(sum[:]) != rec.SHA256 || int64(len(got)) != rec.Bytes {
+			t.Errorf("record %+v does not describe the file on disk", rec)
+		}
+	}
+	if want := strings.Repeat("b", 900) + "\n" + strings.Repeat("c", 900); saved[1].Bytes != int64(len(want)) {
+		t.Errorf("remainder record = %+v, want the two blocks joined", saved[1])
+	}
+}
+
+// With no work directory nothing is saved, and the record says why, so
+// the model is told there is no file to copy.
+func TestWithoutAWorkDirTheRecordSaysNotSaved(t *testing.T) {
+	in := newMCPIntake(fixedDir(""))
+	out, saved := in.render("srv", "tool", textBlock("small"))
+	if out != "small" {
+		t.Errorf("out = %q", out)
+	}
+	if len(saved) != 1 || saved[0].Path != "" || saved[0].Err == "" {
+		t.Errorf("saved = %+v, want one record with an error and no path", saved)
+	}
+}
+
+// A file already at the content-addressed name is reused only when its
+// bytes hash to the name: anything can write the work directory, and a
+// planted file must not be presented as this result.
+func TestAPlantedFileAtTheNameIsReplaced(t *testing.T) {
+	work := t.TempDir()
+	in := newMCPIntake(fixedDir(work))
+	body := "the server's answer"
+	path := in.pathFor("srv", "tool", ".txt", []byte(body))
+	if err := os.WriteFile(path, []byte("planted"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, saved := in.render("srv", "tool", textBlock(body))
+	if len(saved) != 1 || saved[0].Path != path {
+		t.Fatalf("saved = %+v", saved)
+	}
+	if got, _ := os.ReadFile(path); string(got) != body {
+		t.Errorf("file holds %q, want the result", got)
+	}
+}
+
+// Independent review: however many inline blocks a server returns, they
+// are one saved file and one record — a note per block would have been
+// paid from no budget at all.
+func TestManyInlineBlocksAreOneRecord(t *testing.T) {
+	work := t.TempDir()
+	in := newMCPIntake(fixedDir(work))
+	blocks := make([]mcp.Content, 5000)
+	for i := range blocks {
+		blocks[i] = mcp.Content{Type: "text", Text: "x"}
+	}
+	_, saved := in.render("srv", "tool", blocks)
+	if len(saved) > 3 {
+		t.Fatalf("%d records for one response", len(saved))
+	}
+	entries, _ := os.ReadDir(work)
+	if len(entries) != len(saved) {
+		t.Errorf("%d files on disk, %d recorded", len(entries), len(saved))
+	}
+}
+
+// Independent review: a spill whose preview does not fit the remaining
+// budget is not written, so no file lies in the work directory that no
+// record names — every file on disk is recorded.
+func TestEveryFileOnDiskIsRecorded(t *testing.T) {
+	work := t.TempDir()
+	in := newMCPIntake(fixedDir(work))
+	big := "[" + strings.Repeat(`"y",`, 6000) + `"y"]`
+	png := []byte("\x89PNG\r\n\x1a\npixels")
+	_, saved := in.render("srv", "tool", []mcp.Content{
+		{Type: "text", Text: strings.Repeat("a", in.cap-500)},
+		{Type: "text", Text: big},
+		{Type: "image", Data: png, MIME: "image/png"},
+	})
+	recorded := map[string]bool{}
+	for _, r := range saved {
+		if r.Path != "" {
+			recorded[filepath.Base(r.Path)] = true
+		}
+	}
+	entries, _ := os.ReadDir(work)
+	for _, e := range entries {
+		if !recorded[e.Name()] {
+			t.Errorf("%s is on disk and in no record (%+v)", e.Name(), saved)
+		}
+	}
+	if len(entries) == 0 {
+		t.Fatal("nothing was saved")
+	}
+}
+
+// A saved binary block is recorded like a text one.
+func TestBinaryBlocksAreRecorded(t *testing.T) {
+	work := t.TempDir()
+	in := newMCPIntake(fixedDir(work))
+	png := []byte("\x89PNG\r\n\x1a\npixels")
+	_, saved := in.render("srv", "shot", []mcp.Content{{Type: "image", Data: png, MIME: "image/png"}})
+	if len(saved) != 1 || filepath.Ext(saved[0].Path) != ".png" || saved[0].Bytes != int64(len(png)) {
+		t.Errorf("saved = %+v", saved)
+	}
+}
+
+// What sits at the name is reused only when it is a regular file of the
+// result's size and hash: a FIFO planted there must not hang the call.
+func TestAFIFOAtTheNameDoesNotHang(t *testing.T) {
+	work := t.TempDir()
+	in := newMCPIntake(fixedDir(work))
+	body := "answer"
+	path := in.pathFor("srv", "tool", ".txt", []byte(body))
+	if err := syscall.Mkfifo(path, 0o600); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	_, saved := in.render("srv", "tool", textBlock(body))
+	if len(saved) != 1 || saved[0].Err != "" {
+		t.Fatalf("saved = %+v", saved)
+	}
+	if got, _ := os.ReadFile(path); string(got) != body {
+		t.Errorf("file holds %q", got)
 	}
 }

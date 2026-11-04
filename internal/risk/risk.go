@@ -136,6 +136,14 @@ func Classify(toolName string, mutating bool, args map[string]any, projectDir, w
 
 	switch toolName {
 	case "write_file", "edit_file":
+		// A copy source that is credential material is Block, and never
+		// a CredentialRead the operator could approve (ADR-0105 §2): the
+		// approval would look like a read and land as a credential
+		// written under an ordinary project name — the copy ADR-0086 §4
+		// names as the limit of caging paths.
+		if from, _ := args["from"].(string); from != "" && sandbox.CredentialPath(from) {
+			return Verdict{Tier: Block, Reason: "copies credential material (" + from + ")"}
+		}
 		p, _ := args["path"].(string)
 		if v, blocked := classifyPath(p, projectDir, workDir, added); blocked {
 			return v
@@ -202,6 +210,13 @@ var credentialReadTools = map[string]bool{
 	"read_file": true, "view_image": true, "show_image": true, "read_document": true,
 	"file_info": true, "summarize_file": true,
 }
+
+// CredentialReadTool reports the built-in reads whose refusal of
+// credential material is the operator's question (ADR-0085, ADR-0086
+// §2). The executor retries only these in process on a yes: a tool that
+// also writes — write_file's copy — must never be one approval away
+// from writing a credential under an ordinary name (ADR-0105 §2).
+func CredentialReadTool(name string) bool { return credentialReadTools[name] }
 
 // JudgesPath reports the built-in tools whose verdict depends on what
 // the file at `path` — or at each entry of file_info's `paths` — IS:

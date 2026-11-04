@@ -164,6 +164,22 @@ transcript — a shrinking rewrite is possible, just never silent. The
 dialog also annotates any overwrite with what it replaces
 (`replaces existing file: 42KB → 8KB`).
 
+`write_file` also copies: `from` instead of `content` names an existing
+file whose bytes become the new file (ADR-0105). It is how a saved tool
+result — every MCP result is saved in the work directory — is kept as
+evidence without re-typing it: the copy is byte for byte, read back and
+checked, and its result reports the sha256 (`copied <n> bytes from <from>
+to <path> (sha256 <hex>)`). The destination is judged exactly as a write
+of content (in the project it needs no approval), the shrink guard
+compares the source's size, and the source must be one regular file in
+the project, the work directory or an added directory, at most 32 MiB —
+above that the copy is refused, never cut. Credential material is never
+copied and never asked about. The call's detail names the source and
+its size (`copies <from> (31KB)`), so a copy that needs approval (into
+`AGENTS.md`, say) is not approved blind; no bytes of the source are
+shown. A subset of rows or another format is a derivation: a shell
+command, whose command line the transcript keeps.
+
 ## `file_info` (ADR-0016)
 
 What a file *is* without reading it into context — content-judged type

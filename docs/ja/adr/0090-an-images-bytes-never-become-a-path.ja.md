@@ -15,12 +15,12 @@ ADR-0089 はレーンを作り、供給源を開いたまま残した。その �
 3 稿すべてに対して成立した制約 1 つを記録している。**view 層はファイルを開かない。**
 view 層が行う読み取りはツールコールではないので、`Agent.decide` にも ADR-0086 の sandbox 子
 にも届かず、組み込みツール名で引かれる資格情報一覧 — `credentialReadTools` マップ
-（[risk.go:201](../../../internal/risk/risk.go)）— からは見えない。
+（[risk.go:209](../../../internal/risk/risk.go)）— からは見えない。
 
 その制約が、いちばん素直な設計を排除する。MCP intake は既に画像をセッションの work dir へ
 書き出し、モデルには `[image saved at <path> … use view_image on that path]` を渡している
-（[mcpresult.go:242](../../../cmd/mcpresult.go)）。つまりパスはそこにある。しかし `write` は
-`os.Stat` で短絡し（[mcpresult.go:265](../../../cmd/mcpresult.go)）、毎回の呼び出しがサーバに
+（[mcpresult.go:302](../../../cmd/mcpresult.go)）。つまりパスはそこにある。しかし `write` は
+`os.Stat` で短絡し（[mcpresult.go:349](../../../cmd/mcpresult.go)）、毎回の呼び出しがサーバに
 work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:610](../../../internal/mcp/client.go)）。
 ローカルのサーバ子プロセスは自分の名前・ツール名・返すバイト列・ディレクトリを知るので、
 応答の前に content-addressed の名前へ symlink を置ける。するとランタイムは何も書かず、パスは
@@ -31,10 +31,10 @@ work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:610](../..
 ### 配管は実際にどうなっているか
 
 反証された第 3 稿は、view 層に「intake が既に保持しているバイト列」を渡すと書いた。渡せない。
-`render` は `string` を返し（[mcpresult.go:53](../../../cmd/mcpresult.go)）、`mcpIntake` が
+`render` は `string` を返し（[mcpresult.go:60](../../../cmd/mcpresult.go)）、`mcpIntake` が
 持つのは work dir の getter とバイト上限とプレビュー長だけで
-（[mcpresult.go:46](../../../cmd/mcpresult.go)。本決定が足した sink は ADR-0091 が撤回した）、一度も持ったことが無いのがバイト列であり、ツール契約は
-`Run func(ctx, args) (string, error)` である（[tools.go:66](../../../internal/tools/tools.go)）。
+（[mcpresult.go:53](../../../cmd/mcpresult.go)。本決定が足した sink は ADR-0091 が撤回した）、一度も持ったことが無いのがバイト列であり、ツール契約は
+`Run func(ctx, args) (string, error)` である（[tools.go:68](../../../internal/tools/tools.go)）。
 `Run` が返れば blocks は消えている。
 
 しかしランタイムに経路が無いわけではない。エージェントループはツールコールの**最中に**既に
@@ -87,7 +87,7 @@ sink は対話的 TUI でない入口すべてで**不活性**である。そこ
 
 条件は 1 つであって 2 つではない。注記が response budget に収まらないブロックは、既に保存も
 個別記述もされない — ガードは何かを書く前に `binaryNote` の大きさを測る
-（[mcpresult.go:109](../../../cmd/mcpresult.go)）— そして leftovers 行に数えられる。そうした
+（[mcpresult.go:143](../../../cmd/mcpresult.go)）— そして leftovers 行に数えられる。そうした
 ブロックは**描かない**。
 
 代案（モデルが知らされていない絵を、結果が切り詰められた呼び出しから描く）は、セッションの

@@ -13,6 +13,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -1536,7 +1538,10 @@ func (r *Registry) writeFile() *Tool {
 			"an existing one whole. Parent directories are created as needed. For changes to an existing " +
 			"file — even large revisions — prefer edit_file: write_file replaces the WHOLE file, and " +
 			"everything not reproduced verbatim in content is destroyed. An overwrite that shrinks an " +
-			"existing file substantially is refused unless allow_shrink is true.",
+			"existing file substantially is refused unless allow_shrink is true. " +
+			"To keep a saved tool result — an MCP result gem-agent saved in the work directory — or any " +
+			"other existing file, give from instead of content: the file is copied byte for byte and its " +
+			"sha256 reported, so the copy is the result itself, not a rewrite of it.",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -1546,7 +1551,12 @@ func (r *Registry) writeFile() *Tool {
 				},
 				"content": map[string]any{
 					"type":        "string",
-					"description": "The complete new file content (NOT a diff, NOT the user's request text).",
+					"description": "The complete new file content (NOT a diff, NOT the user's request text). Omit when from is given.",
+				},
+				"from": map[string]any{
+					"type": "string",
+					"description": "Path of an existing file to copy byte for byte instead of content — a saved " +
+						"tool result in the work directory, or a file in the project. The whole file is copied.",
 				},
 				"allow_shrink": map[string]any{
 					"type": "boolean",
@@ -1555,7 +1565,7 @@ func (r *Registry) writeFile() *Tool {
 						"cannot silently destroy the rest of the file.",
 				},
 			},
-			"required": []string{"path", "content"},
+			"required": []string{"path"},
 		},
 		Mutating: true,
 		Annotate: func(args map[string]any) string {
@@ -1563,34 +1573,65 @@ func (r *Registry) writeFile() *Tool {
 			if !ok {
 				return ""
 			}
-			content, ok := strArg(args, "content")
-			if !ok {
+			var lines []string
+			var size int
+			if from, ok := strArg(args, "from"); ok && from != "" {
+				// The operator approving a copy sees what is copied
+				// (ADR-0105 §2): a copy carries no content argument, and
+				// an empty detail would be an approval given blind.
+				line, n := r.describeCopySource(from)
+				if line == "" {
+					return ""
+				}
+				lines, size = append(lines, line), n
+			} else if content, ok := strArg(args, "content"); ok {
+				size = len(content)
+			} else {
 				return ""
 			}
-			abs, err := r.resolvePath(p)
-			if err != nil {
-				return ""
+			if abs, err := r.resolvePath(p); err == nil {
+				if info, err := r.statIn(abs); err == nil && !info.IsDir() {
+					lines = append(lines, fmt.Sprintf("replaces existing file: %s → %s", sizeLabel(info.Size()), sizeLabel(int64(size))))
+				}
 			}
-			info, err := r.statIn(abs)
-			if err != nil || info.IsDir() {
-				return ""
-			}
-			return fmt.Sprintf("replaces existing file: %s → %s", sizeLabel(info.Size()), sizeLabel(int64(len(content))))
+			return strings.Join(lines, "\n")
 		},
 		Run: func(ctx context.Context, args map[string]any) (string, error) {
 			p, ok := strArg(args, "path")
 			if !ok {
 				return "", errors.New("path is required")
 			}
-			content, ok := strArg(args, "content")
-			if !ok {
-				return "", errors.New("content is required")
+			content, hasContent := strArg(args, "content")
+			from, hasFrom := strArg(args, "from")
+			hasFrom = hasFrom && from != ""
+			if hasFrom && content == "" {
+				// An empty content beside from is a model filling every
+				// field, not a request for an empty file.
+				hasContent = false
+			}
+			switch {
+			case hasContent && hasFrom:
+				return "", errors.New("give content or from, not both: from copies an existing file, content writes new text")
+			case !hasContent && !hasFrom:
+				return "", errors.New("content is required (or from, to copy an existing file)")
 			}
 			abs, err := r.resolvePath(p)
 			if err != nil {
 				return "", err
 			}
+			var sum string
+			if hasFrom {
+				data, err := r.readCopySource(ctx, from)
+				if err != nil {
+					return "", err
+				}
+				content = string(data)
+				h := sha256.Sum256(data)
+				sum = hex.EncodeToString(h[:])
+			}
 			allowShrink, _ := args["allow_shrink"].(bool)
+			// With from, content is the source's bytes, so the guard
+			// compares the source's size (ADR-0105 §2).
 			if info, err := r.statIn(abs); err == nil && !info.IsDir() &&
 				info.Size() >= shrinkGuardMinBytes && !allowShrink &&
 				int64(len(content))*100 < info.Size()*shrinkGuardPct {
@@ -1606,9 +1647,54 @@ func (r *Registry) writeFile() *Tool {
 			if err := r.replaceFile(abs, []byte(content)); err != nil {
 				return "", err
 			}
-			return fmt.Sprintf("wrote %d bytes to %s", len(content), p), nil
+			if !hasFrom {
+				return fmt.Sprintf("wrote %d bytes to %s", len(content), p), nil
+			}
+			// The copy is checked, not assumed: what landed is read back
+			// and must hash to what was read.
+			if got, err := r.hashFile(abs); err != nil || got != sum {
+				return "", fmt.Errorf("the copy to %s does not match its source (sha256 %s, wrote %s, %v); treat %s as unreliable", p, sum, got, err, p)
+			}
+			return fmt.Sprintf("copied %d bytes from %s to %s (sha256 %s)", len(content), from, p, sum), nil
 		},
 	}
+}
+
+// describeCopySource is the detail line for a copy: which file, and how
+// large, so a copy is never an approval given blind. It stats and reads
+// nothing: Describe calls Annotate for every call, its text reaches the
+// activity trace and the audit telemetry, and a source's bytes — a DWH
+// row — must not travel there, nor a 32 MiB read run outside the floor
+// (independent review). It returns "" when the source is not one regular
+// file — the call will fail with the reason — and for credential
+// material, which the rule tier blocks.
+func (r *Registry) describeCopySource(from string) (string, int) {
+	if sandbox.CredentialPath(from) {
+		return "", 0
+	}
+	abs, err := r.resolvePath(from)
+	if err != nil {
+		return "", 0
+	}
+	info, err := r.statIn(abs)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", 0
+	}
+	return fmt.Sprintf("copies %s (%s)", from, sizeLabel(info.Size())), int(info.Size())
+}
+
+// hashFile returns the hex sha256 of abs, read through its root.
+func (r *Registry) hashFile(abs string) (string, error) {
+	f, err := r.openRead(abs)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // sizeLabel renders a byte count for guard errors and annotations.
