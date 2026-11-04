@@ -8,12 +8,13 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/pathid"
 	"regexp"
 
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	"github.com/nlink-jp/toml"
 )
 
 // Config is the gem-agent configuration.
@@ -122,11 +123,13 @@ func LoadProject(dir string) (*ProjectConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	md, err := toml.Decode(string(raw), &cfg)
-	if err != nil {
+	_, err = toml.Decode(string(raw), &cfg)
+	var unknown *toml.UnknownKeysError
+	if err != nil && !errors.As(err, &unknown) {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if undecoded := md.Undecoded(); len(undecoded) > 0 {
+	if unknown != nil {
+		undecoded := unknown.Keys
 		keys := make([]string, len(undecoded))
 		for i, k := range undecoded {
 			keys[i] = k.String()
@@ -586,7 +589,8 @@ func LoadWithOverrides(path string, ov Overrides) (*Config, error) {
 
 	if _, err := os.Stat(path); err == nil {
 		md, err := toml.DecodeFile(path, &cfg)
-		if err != nil {
+		var unknown *toml.UnknownKeysError
+		if err != nil && !errors.As(err, &unknown) {
 			return nil, fmt.Errorf("parse %s: %w", path, err)
 		}
 		// IsDefined tells us exactly which keys the file set, which is
@@ -597,7 +601,8 @@ func LoadWithOverrides(path string, ov Overrides) (*Config, error) {
 				cfg.note(key, FromFile)
 			}
 		}
-		if undecoded := md.Undecoded(); len(undecoded) > 0 {
+		if unknown != nil {
+			undecoded := unknown.Keys
 			keys := make([]string, len(undecoded))
 			for i, k := range undecoded {
 				keys[i] = k.String()

@@ -3,6 +3,7 @@ package config
 import (
 	"time"
 
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/BurntSushi/toml"
+	"github.com/nlink-jp/toml"
 
 	"github.com/nlink-jp/gem-agent/internal/pathid"
 )
@@ -176,11 +177,13 @@ func LoadPolicyFile(path string) (*PolicyFile, error) {
 		}
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	md, err := toml.DecodeFile(path, pf)
-	if err != nil {
+	_, err := toml.DecodeFile(path, pf)
+	var unknown *toml.UnknownKeysError
+	if err != nil && !errors.As(err, &unknown) {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if undecoded := md.Undecoded(); len(undecoded) > 0 {
+	if unknown != nil {
+		undecoded := unknown.Keys
 		keys := make([]string, len(undecoded))
 		for i, k := range undecoded {
 			keys[i] = k.String()

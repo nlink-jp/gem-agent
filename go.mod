@@ -6,7 +6,6 @@ require (
 	cloud.google.com/go/auth v0.20.0
 	cloud.google.com/go/logging v1.18.0
 	cloud.google.com/go/storage v1.65.0
-	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v1.0.0
@@ -16,6 +15,7 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/nlink-jp/mermaid-render v0.6.0
 	github.com/nlink-jp/nlk v0.5.2
+	github.com/nlink-jp/toml v0.1.1
 	github.com/rivo/uniseg v0.4.7
 	github.com/spf13/cobra v1.10.2
 	go.opentelemetry.io/otel v1.45.0
