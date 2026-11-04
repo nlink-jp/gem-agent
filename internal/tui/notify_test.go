@@ -193,7 +193,8 @@ func TestEachDialogGetsItsOwnNotice(t *testing.T) {
 func TestEveryKeyInADialogDefersTheNotice(t *testing.T) {
 	cases := map[string]func(r *noticeRig){
 		"grace window": func(r *noticeRig) {
-			r.m.approvalAt = r.at // the key lands inside the grace window
+			// The grace check reads the real clock, not the rig's.
+			r.m.approvalAt = time.Now()
 			r.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 		},
 		"reason field": func(r *noticeRig) {
@@ -218,5 +219,25 @@ func TestEveryKeyInADialogDefersTheNotice(t *testing.T) {
 				t.Fatalf("a key 2 s before the check must defer it (calls=%d)", r.calls)
 			}
 		})
+	}
+}
+
+// The quiet and the interval are the measured six seconds: a key 5.9 s
+// before a check still defers it, one 6.0 s before no longer does.
+func TestNoticeQuietIsSixSeconds(t *testing.T) {
+	if NoticeQuiet != 6*time.Second {
+		t.Fatalf("NoticeQuiet = %v, want the measured 6s", NoticeQuiet)
+	}
+	r := newNoticeRig(t)
+	gen, _ := r.openApproval()
+	r.after(1)
+	r.update(tea.KeyMsg{Type: tea.KeyRight})
+	r.after(6.9)
+	if !r.check(gen) || r.calls != 0 {
+		t.Fatalf("a key 5.9 s before the check must defer it (calls=%d)", r.calls)
+	}
+	r.after(7)
+	if r.check(gen) || r.calls != 1 {
+		t.Fatalf("a key 6.0 s before the check must not defer it (calls=%d)", r.calls)
 	}
 }

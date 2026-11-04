@@ -466,3 +466,32 @@ func widest(view string) int {
 	}
 	return w
 }
+
+// Inject writes exactly its bytes, and never while a renderer write holds
+// the writer: the waiting-dialog notice must land between two flushes.
+func TestInjectWritesBetweenRendererWrites(t *testing.T) {
+	term := &fakeTerm{}
+	w := NewSweepWriter(term)
+	if err := w.Inject("\a"); err != nil {
+		t.Fatal(err)
+	}
+	if got := term.all(); len(got) != 1 || got[0] != "\a" {
+		t.Fatalf("wrote %q, want one write of BEL", got)
+	}
+	w.mu.Lock() // a renderer write in progress
+	done := make(chan struct{})
+	go func() {
+		_ = w.Inject("\a")
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Fatal("Inject wrote while a renderer write held the writer")
+	case <-time.After(50 * time.Millisecond):
+	}
+	w.mu.Unlock()
+	<-done
+	if got := term.all(); len(got) != 2 {
+		t.Fatalf("after the write ended, Inject should have written: %q", got)
+	}
+}
