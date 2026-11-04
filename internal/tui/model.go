@@ -252,6 +252,10 @@ type Options struct {
 	// re-wrapped rows through (ADR-0094); the program must be built with
 	// tea.WithOutput(Sweep). nil erases nothing.
 	Sweep *SweepWriter
+	// Notify tells the operator a dialog is waiting (ADR-0104): it is
+	// called once per dialog left with no keystroke for NoticeQuiet,
+	// off the update loop. nil notifies nothing and schedules nothing.
+	Notify func()
 }
 
 // Model is the Bubble Tea model for the interactive session.
@@ -348,6 +352,16 @@ type Model struct {
 	askChoice int
 	askAt     time.Time
 
+	// The waiting-dialog notice (ADR-0104): which dialog opening the
+	// scheduled checks belong to, the last keystroke while it is open,
+	// and whether it was already notified.
+	notify      func()
+	noticeGen   int
+	noticeKeyAt time.Time
+	noticeDone  bool
+	// now is time.Now; tests set their own clock.
+	now func() time.Time
+
 	// interruptSent: Ctrl+C fired for the running turn; gate requests
 	// arriving before TurnDone are auto-denied (review round 2).
 	interruptSent bool
@@ -436,6 +450,8 @@ func New(opts Options) Model {
 		picture:         opts.Picture,
 		cellSize:        opts.CellSize,
 		sweep:           opts.Sweep,
+		notify:          opts.Notify,
+		now:             time.Now,
 		baseCtx:         opts.BaseCtx,
 		println:         opts.Printer,
 		mkRender:        opts.RenderFactory,
@@ -821,7 +837,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.askChoice = 0
 		m.askAt = time.Now()
 		m.phase = phaseAsk
-		return m, nil
+		return m, m.armNotice()
 
 	case ApprovalRequest:
 		if m.interruptSent {
@@ -843,7 +859,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if req.Reason != "" {
 			m.choice = choiceDeny
 		}
-		return m, nil
+		return m, m.armNotice()
 
 	case AutoApproved:
 		return m, m.emit(m.st.tool.Render(fmt.Sprintf(m.msgs.AutoApprovedFmt, msg.Tier, msg.Reason)))
@@ -939,7 +955,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ta.Focus()
 		return m.resumeAfterTurn(cmds, msg.Err == nil)
 
+	case noticeCheck:
+		return m, m.checkNotice(msg)
+
 	case tea.KeyMsg:
+		m.noticeKey()
 		switch m.phase {
 		case phaseSettings:
 			return m.updateSettings(msg)

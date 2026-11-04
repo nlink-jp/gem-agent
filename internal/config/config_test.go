@@ -92,6 +92,43 @@ func TestImagesSettingIsValidated(t *testing.T) {
 	}
 }
 
+// TestNotifySettingIsValidated: [tui].notify decides which bytes reach the
+// operator's terminal when a dialog waits (ADR-0104). The default is
+// "bell", and the source of the value is tracked for /settings.
+func TestNotifySettingIsValidated(t *testing.T) {
+	for _, v := range []string{"bell", "osc9", "off"} {
+		clearEnv(t)
+		path := writeConfig(t, "\n[gcp]\nproject = \"p\"\n\n[model]\nname = \"m\"\n\n[tui]\nnotify = \""+v+"\"\n")
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("%q should be accepted: %v", v, err)
+		}
+		if cfg.TUI.Notify != v {
+			t.Errorf("%q loaded as %q", v, cfg.TUI.Notify)
+		}
+		if cfg.Source("tui.notify") == FromDefault {
+			t.Errorf("%q set in the file must not be reported as the default", v)
+		}
+	}
+	clearEnv(t)
+	path := writeConfig(t, "\n[gcp]\nproject = \"p\"\n\n[model]\nname = \"m\"\n\n[tui]\nnotify = \"osc777\"\n")
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "[tui].notify") {
+		t.Fatalf("an unsupported value should be rejected by name, got %v", err)
+	}
+	clearEnv(t)
+	path = writeConfig(t, "\n[gcp]\nproject = \"p\"\n\n[model]\nname = \"m\"\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TUI.Notify != "bell" {
+		t.Errorf("default notify = %q, want bell", cfg.TUI.Notify)
+	}
+	if cfg.Source("tui.notify") != FromDefault {
+		t.Errorf("default notify source = %q, want %q", cfg.Source("tui.notify"), FromDefault)
+	}
+}
+
 func TestInvalidThemeRejected(t *testing.T) {
 	clearEnv(t)
 	path := writeConfig(t, `

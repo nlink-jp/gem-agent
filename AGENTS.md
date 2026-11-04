@@ -58,7 +58,8 @@ The resize sweep is shared too (ADR-0094, lagent ADR-0026): `sweep.go`,
 `shortrows.go` and the narrow-while-resizing tick. lagent deliberately does
 not carry the writer's measurement surface — the trace, the arm record,
 `Inject`, `DrawnCells` — because only `tools/resizeprobe` reads it and lagent
-has no probes; the rest differs only in comments, ADR numbers and the
+has no probes (`Inject` has since gained a session caller in gem-agent, the
+waiting-dialog notice of ADR-0104, which lagent does not adopt); the rest differs only in comments, ADR numbers and the
 provenance header (`diff`, 2026-09-29).
 
 **This is not a rule to port features.** A feature this runtime gains
@@ -1002,6 +1003,17 @@ a new hook) is an architecture change and takes the same rows as a
   `showslash_test.go` hands the slash handler a fake `show`, so it could
   only ever prove the layer above the defect; `showpath_test.go` runs the
   real `newShowPath`.
+- **A waiting dialog's notice (ADR-0104) lives in `internal/tui/notify.go`**
+  — every dialog opening (`ApprovalRequest`, `AskRequest`) bumps
+  `noticeGen` and schedules a `noticeCheck` every `NoticeQuiet`; a
+  `tea.KeyMsg` while a dialog is open moves `noticeKeyAt`, so the next check
+  passes (it does not restart a timer — Claude Code was measured to work
+  this way). The bytes come from `tui.Notice([tui].notify)` and are written
+  by `cmd/root.go` through `SweepWriter.Inject`, between two renderer
+  flushes, from a `tea.Cmd` — never from `View()`, which repaints, and never
+  through the plain REPL's inert streams, which strip BEL. `"off"` passes
+  no notifier, and then nothing is scheduled. The model's `now` is the
+  test clock (`notify_test.go`).
 - **An image's box is the screen, capped at the picture (ADR-0103)** —
   `termimg.BoxFor` takes the terminal's width less one, `maxImageRows`
   (the screen above the frame as `frameRows` measures it — `viewContent`,

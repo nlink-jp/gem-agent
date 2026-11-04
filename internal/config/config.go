@@ -222,6 +222,11 @@ type TUIConfig struct {
 	// is someone else's configuration, which is the reason that ADR
 	// refuses.
 	Images string `toml:"images"`
+	// Notify: how a dialog left waiting on the operator is told to the
+	// terminal (ADR-0104) — "bell" (one BEL, the default), "osc9" (an
+	// OSC 9 desktop notification with a fixed body, then a BEL), or
+	// "off". Read once at start; the TUI only.
+	Notify string `toml:"notify"`
 	// Diagram picks the font mermaid diagrams are drawn in where Images
 	// draws (ADR-0092 §6). User config only: the project config has no
 	// [tui] table. Deliberately not validated here — a display font is
@@ -531,7 +536,7 @@ func defaults() Config {
 		Approval:  ApprovalConfig{PinTrustedFiles: true},
 		Agent:     AgentConfig{MaxTurns: 50, ShellTimeoutSec: 120, AutoCompact: true, CompactAtPct: 80},
 		MCP:       MCPConfig{Enabled: true, CallTimeoutSec: 60, StartupTimeoutSec: 30, Advertise: "all"},
-		TUI:       TUIConfig{Theme: "auto", Language: "auto", ShowThoughts: true, Images: "auto"},
+		TUI:       TUIConfig{Theme: "auto", Language: "auto", ShowThoughts: true, Images: "auto", Notify: "bell"},
 		Telemetry: TelemetryConfig{Backend: "gcp", Endpoint: "localhost:4317"},
 	}
 }
@@ -685,7 +690,7 @@ var trackedKeys = []string{
 	"agent.auto_compact", "agent.compact_at_pct",
 	"agent.read_only", "agent.read_only_auto",
 	"mcp.enabled", "mcp.call_timeout_sec", "mcp.startup_timeout_sec", "mcp.advertise", "mcp.preload",
-	"tui.theme", "tui.language", "tui.show_thoughts",
+	"tui.theme", "tui.language", "tui.show_thoughts", "tui.notify",
 	"tui.diagram.font", "tui.diagram.font_name", "tui.diagram.bold_font", "tui.diagram.bold_font_name",
 	"telemetry.enabled", "telemetry.backend", "telemetry.endpoint", "telemetry.insecure",
 	"telemetry.headers_file",
@@ -797,6 +802,11 @@ func (c *Config) validate() error {
 	case "auto", "off", "iterm", "kitty":
 	default:
 		return fmt.Errorf("[tui].images must be auto, off, iterm, or kitty (got %q)", c.TUI.Images)
+	}
+	switch c.TUI.Notify {
+	case "bell", "osc9", "off":
+	default:
+		return fmt.Errorf("[tui].notify must be bell, osc9, or off (got %q)", c.TUI.Notify)
 	}
 	// An explicit `location = ""` in the file overwrites the default
 	// and used to surface as a backend-shaped error far from its cause

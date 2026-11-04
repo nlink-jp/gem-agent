@@ -329,6 +329,22 @@ the question becomes a numbered stderr prompt; in one-shot `-p` mode
 the tool refuses informatively — there is nobody to ask, and a
 pipeline must not hang.
 
+## A waiting dialog rings the terminal (ADR-0104)
+
+Any of these dialogs — an approval, the read-only ceiling's approval or
+question, `ask_user`, the round-limit intervention, the `/riskbook learn`
+confirmation — that has gone six seconds without a keystroke is told to
+the terminal once. `[tui].notify = "bell"` (the default) writes a BEL: a
+terminal in the background marks it (iTerm2 puts 🔔 in the window title),
+and tmux passes it on. `"osc9"` also writes an OSC 9 desktop notification,
+"gem-agent needs your answer", which iTerm2 shows from a window in the
+background and Terminal.app and tmux drop. `"off"` writes nothing. The
+dialog is looked at every six seconds from the moment it opens, and a
+keystroke in the six seconds before a look puts the notice off to the next
+one, so you are not rung while you are reading or choosing. A dialog gets
+one notice, never a second, and an answer cancels it. Nothing stops and
+nothing is recorded. The plain REPL and `-p` never notify.
+
 ## `/settings`
 
 `/settings` opens a panel showing every setting **with where its value

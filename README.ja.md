@@ -138,6 +138,13 @@ read・write・operator のレーンをカーネルが
 [ADR-0091](docs/ja/adr/0091-showing-is-an-act-of-output.ja.md) /
 [ADR-0103](docs/ja/adr/0103-a-picture-is-as-large-as-the-screen-allows.ja.md)）。
 
+**待っている対話は端末を鳴らす** — 承認や質問が 6 秒キー入力無しのままだと、
+TUI は端末のベルを 1 回鳴らす（`[tui].notify`: 既定は `bell`、iTerm2 などで
+デスクトップ通知を出す `osc9`、または `off`）。キーを押すと次の 6 秒ごとの
+確認まで先送りされるので、読んでいる間は鳴らない。何も止めない。plain REPL と
+`-p` では知らせない
+（[ADR-0104](docs/ja/adr/0104-say-so-when-a-turn-waits-on-the-operator.ja.md)）。
+
 **[承認と安全](docs/ja/reference/approval.ja.md)** — モデル自身が申告した
 コールの目的を引数と並べて表示する都度 MITL ゲート（Block 段には
 決して届かないセッション allowlist 付き）、1 行の「代わりにこうして」を

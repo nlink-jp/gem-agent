@@ -151,6 +151,14 @@ model looking at an image, not you
 [ADR-0091](docs/en/adr/0091-showing-is-an-act-of-output.md) /
 [ADR-0103](docs/en/adr/0103-a-picture-is-as-large-as-the-screen-allows.md)).
 
+**A waiting dialog rings the terminal** — when an approval or a question
+has gone six seconds without a keystroke, the TUI rings the terminal bell
+once (`[tui].notify`: `bell` by default, `osc9` for a desktop notification
+in iTerm2 and others, or `off`). A keystroke puts it off to the next
+six-second check, so you are not rung while you are reading. It stops
+nothing; the plain REPL and `-p` never notify
+([ADR-0104](docs/en/adr/0104-say-so-when-a-turn-waits-on-the-operator.md)).
+
 **[Approval and safety](docs/en/reference/approval.md)** — per-call
 MITL gates that show the model's own declared purpose for the call
 alongside its arguments, a deny-with-reason answer (`N`) that carries

@@ -158,8 +158,9 @@ func (w *SweepWriter) Stats() (flushes, sweeps int) {
 }
 
 // Inject writes a sequence of the caller's own between two renderer writes
-// — never inside a flush. For probes: resizeprobe asks the terminal to
-// resize itself (CSI 8 t) this way, to reach a width a drag cannot aim at.
+// — never inside a flush. The session's waiting-dialog notice (BEL or
+// OSC 9, ADR-0104) goes this way; so does resizeprobe's request that the
+// terminal resize itself (CSI 8 t), to reach a width a drag cannot aim at.
 func (w *SweepWriter) Inject(seq string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()

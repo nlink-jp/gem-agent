@@ -96,6 +96,7 @@ theme = "auto"             # auto | dark | light | plain
 language = "auto"          # auto | ja | en (ADR-0029 — see interface.md)
 show_thoughts = true       # live thought summaries in the TUI (ADR-0033)
 images = "auto"            # inline images: auto | off | iterm | kitty (ADR-0089)
+notify = "bell"            # a dialog waiting 6 s without a key: bell | osc9 | off (ADR-0104)
 
 [tui.diagram]              # the font mermaid pictures are drawn in (ADR-0092); read at start,
                            # only where images draw. A setting that does not load is one

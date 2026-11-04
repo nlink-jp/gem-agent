@@ -1797,8 +1797,16 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// The renderer writes through the sweep writer, which erases the
 		// rows a narrowing re-wrapped (ADR-0094); the model arms it.
 		sweep := tui.NewSweepWriter(os.Stdout)
+		// A dialog left waiting is told to the terminal (ADR-0104): the
+		// runtime's own fixed bytes, written between two renderer
+		// flushes. "off" passes no notifier, so nothing is scheduled.
+		var notify func()
+		if seq := tui.Notice(cfg.TUI.Notify); seq != "" {
+			notify = func() { _ = sweep.Inject(seq) }
+		}
 		model := tui.New(tui.Options{
 			Sweep:   sweep,
+			Notify:  notify,
 			BaseCtx: ctx,
 			// Msgs is the wiring ADR-0029 shipped without: the catalog
 			// was resolved here but never handed to the TUI, so the

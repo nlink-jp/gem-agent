@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-11-04) |
+| Status | **Accepted** (2026-11-04) |
 | Date | 2026-11-04 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -88,6 +88,8 @@ The hook payload is recorded here for a later ADR that may add a notification ho
 | kitty 0.50.0 | not observed | the first one made macOS register kitty for notifications (its first-use notice appeared); the notification itself was not seen | no |
 
 No terminal printed the body of an OSC it did not act on. So `"osc9"` is safe to write everywhere, reaches a desktop notification only in some terminals, and under tmux comes down to its BEL.
+
+**The implementation, in a real terminal** (tmux 3.8, the bytes the pane received recorded, a real approval prompt from a real turn): with the default `"bell"`, one BEL arrived about six seconds after the prompt appeared, written on its own right after a renderer flush. With `"osc9"` and a key pressed 4.4 s after the prompt appeared, the notice came at the 12-second check, as `ESC ] 9 ; gem-agent needs your answer ESC \` followed by BEL.
 
 ## Consequences
 

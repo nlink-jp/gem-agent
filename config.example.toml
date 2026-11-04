@@ -356,6 +356,17 @@ show_thoughts = true
 # the model, and is not drawn.
 images = "auto"
 
+# When a dialog — an approval, the read-only ceiling's questions, ask_user,
+# the round-limit intervention, the /riskbook learn confirmation — has gone
+# six seconds without a keystroke, tell the terminal once (ADR-0104).
+# "bell" writes a BEL: a terminal in the background marks it, and tmux
+# passes it on. "osc9" also writes an OSC 9 desktop notification
+# ("gem-agent needs your answer"; iTerm2 and others show it, Terminal.app
+# and tmux drop it). "off" writes nothing. A keystroke puts the notice off
+# to the next six-second check, so an operator at the screen is not rung.
+# The TUI only: the plain REPL and -p never notify. Applies at the next start.
+notify = "bell"
+
 # [tui.diagram]
 # The font mermaid diagrams are drawn in where images draw (ADR-0092): a
 # fence in a reply becomes a picture on iTerm2 and kitty. Read once at start,

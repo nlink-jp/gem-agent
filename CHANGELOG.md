@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **A dialog left waiting rings the terminal (ADR-0104).** When an
+  approval, the read-only ceiling's approval or question, `ask_user`, the
+  round-limit intervention or the `/riskbook learn` confirmation has gone
+  six seconds without a keystroke, the TUI tells the terminal once:
+  `[tui].notify = "bell"` (the default) writes a BEL, `"osc9"` also writes
+  an OSC 9 desktop notification ("gem-agent needs your answer", shown by
+  iTerm2 and others), `"off"` writes nothing. A keystroke puts it off to the
+  next six-second check, as Claude Code's permission prompt does (measured),
+  so an operator at the screen is not rung. It stops nothing and records
+  nothing. **This changes the default behaviour:** a dialog left for six
+  seconds now rings the bell; set `[tui].notify = "off"` for the previous
+  behaviour. The plain REPL and `-p` never notify.
+
 ## [0.96.0] - 2026-11-02
 
 ### Changed

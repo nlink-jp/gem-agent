@@ -94,6 +94,7 @@ theme = "auto"             # auto | dark | light | plain
 language = "auto"          # auto | ja | en（ADR-0029 — interface.ja.md 参照）
 show_thoughts = true       # TUI に思考サマリをライブ表示（ADR-0033）
 images = "auto"            # インライン画像: auto | off | iterm | kitty（ADR-0089）
+notify = "bell"            # 6 秒キー入力の無い対話を知らせる: bell | osc9 | off（ADR-0104）
 
 [tui.diagram]              # mermaid の絵を描くフォント（ADR-0092）。画像を描ける端末でだけ起動時に
                            # 読む。読めない設定はバナーの警告 1 行と既定のフォントになり、

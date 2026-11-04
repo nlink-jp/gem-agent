@@ -274,6 +274,8 @@ func (s *settingsStore) data() tui.SettingsData {
 	}
 	ro("session", "tui.images", imagesValue, "tui.images",
 		"inline images (show_image, /show): auto, off, iterm, or kitty; asked once before the UI starts, so it applies at next start")
+	ro("session", "tui.notify", s.cfg.TUI.Notify, "tui.notify",
+		"how a dialog left six seconds without a keystroke is told to the terminal: bell, osc9, or off; applies at next start")
 	// The diagram font is read once at start, where images draw
 	// (ADR-0092 §6); a setting that did not load said so in the banner.
 	dg := s.cfg.TUI.Diagram
