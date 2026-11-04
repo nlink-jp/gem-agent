@@ -23,6 +23,17 @@
   credential material, the copy is refused. The call's detail names the
   source and its size, never its bytes.
 
+### Fixed
+
+- **Skill descriptions are read whole (ADR-0106, #3).** A description
+  was cut at 400 characters with nothing said, so a skill written to the
+  1,024-character limit Claude Code uses lost the triggers past the cut
+  — six of the nine skills in skills-series. Descriptions are now listed
+  up to 1,024 characters; a longer one is cut and the startup notes name
+  the skill. A description written over several lines (`description: >`,
+  `|`, or a value continued on indented lines) was read as its first
+  line — `>` — and is now read whole.
+
 ### Changed
 
 - Saved MCP result files are named with the whole sha256 instead of its

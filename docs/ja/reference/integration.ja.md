@@ -156,7 +156,11 @@ cp -R ~/.claude/skills/meeting-notes ~/.config/gem-agent/skills/meeting-notes
 frontmatter は最小限（`name` / `description` / `argument-hint`）だけ
 読み、`allowed-tools` は無視します — gem-agent には自前の承認モデルが
 あり、他所の権限付与を黙って尊重するとそれをバイパスするからです。
-名前衝突は MCP と同じくプロジェクト側が勝ち、そう告げます。
+名前衝突は MCP と同じくプロジェクト側が勝ち、そう告げます。説明は
+Claude Code がスキルに課す上限の 1,024 文字まで一覧に載り、それより長い
+説明は切られ、切ったことをスキル名とともに告げます。複数行で書いた値
+（YAML のブロックスカラー `description: >` や `|`、字下げした行に続く
+プレーンな値）は丸ごと読みます（ADR-0106）。
 
 skill は progressive disclosure です: 各 skill はシステムプロンプトに
 説明 1 行を載せるだけで、本文は使うときに読み込まれます —

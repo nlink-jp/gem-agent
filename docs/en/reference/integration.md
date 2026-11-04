@@ -157,7 +157,12 @@ can read.
 Frontmatter is read minimally (`name`, `description`, `argument-hint`);
 `allowed-tools` is ignored — gem-agent has its own approval model, and
 honouring a foreign permission grant would bypass it. The project wins
-a name collision, announced like an MCP one.
+a name collision, announced like an MCP one. A description is listed up
+to 1,024 characters, the limit Claude Code holds skills to; a longer
+one is cut and the cut is announced with the skill's name. A value
+written over several lines — a YAML block scalar (`description: >` or
+`|`) or a plain value continued on indented lines — is read whole
+(ADR-0106).
 
 Skills are progressive disclosure: each contributes one description
 line to the system prompt, and the body loads only when used —

@@ -30,6 +30,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // ToolName is the read-only tool the model uses to load a skill's body
@@ -53,14 +54,14 @@ func BaseDirLine(s Skill) string { return BaseDirPrefix + s.Dir }
 // Limits bound what discovery and loading will read.
 type Limits struct {
 	MaxSkills      int // listed skills; extras are dropped with a note
-	MaxDescription int // runes shown in the system prompt line
+	MaxDescription int // runes shown in the system prompt line (ADR-0106: the platform's 1,024)
 	MaxBody        int // bytes of SKILL.md body
 	MaxFile        int // bytes of a supporting file
 }
 
 // DefaultLimits returns the production limits.
 func DefaultLimits() Limits {
-	return Limits{MaxSkills: 100, MaxDescription: 400, MaxBody: 64 * 1024, MaxFile: 96 * 1024}
+	return Limits{MaxSkills: 100, MaxDescription: 1024, MaxBody: 64 * 1024, MaxFile: 96 * 1024}
 }
 
 // Skill is one discovered skill.
@@ -77,6 +78,9 @@ type Skill struct {
 	// Scope is "global" (~/.config/gem-agent/skills) or "project" —
 	// MCP's vocabulary (ADR-0011).
 	Scope string
+	// descRunes is the description's length before the cut, so
+	// discovery can say a skill's triggers were hidden (ADR-0106).
+	descRunes int
 	// root is Dir held open as an os.Root: every read of the skill goes
 	// through it, so a file or directory swapped for a link that leads
 	// out between a check and a read is refused at the open (review
@@ -199,6 +203,12 @@ func Discover(globalDir, projectDir string, lim Limits) ([]Skill, []string) {
 			if s == nil {
 				continue // no SKILL.md: just a directory
 			}
+			if s.descRunes > lim.MaxDescription {
+				// A cut hides triggers: the operator is told which
+				// skill, rather than finding out that it never loads
+				// (ADR-0106).
+				notes = append(notes, fmt.Sprintf("skill %q: description is %d characters; only the first %d are listed", s.Name, s.descRunes, lim.MaxDescription))
+			}
 			if prev, exists := byName[s.Name]; exists {
 				notes = append(notes, fmt.Sprintf("skill %q: %s overrides %s", s.Name, s.Scope, prev.Scope))
 				prev.Close() // the overridden skill's root (review after v0.68.2)
@@ -274,10 +284,12 @@ func readSkill(dir, scope string, lim Limits) (*Skill, error) {
 		_ = root.Close()
 		return nil, fmt.Errorf("SKILL.md has no description in its frontmatter")
 	}
+	descRunes := utf8.RuneCountInString(desc)
 	if r := []rune(desc); len(r) > lim.MaxDescription {
 		desc = string(r[:lim.MaxDescription]) + "…"
 	}
 	return &Skill{
+		descRunes:    descRunes,
 		Name:         name,
 		Entry:        filepath.Base(dir),
 		Description:  desc,
@@ -309,11 +321,16 @@ func splitFrontmatter(content string) (frontmatter, body string) {
 // "key: value" per line, quotes stripped. Unknown keys are kept (and
 // ignored by callers) — the file is another tool's schema, and refusing
 // its extensions would break the point of reading it (ADR-0010 §1).
-// Multi-line YAML values are out of scope; a skill using them for its
-// description will be reported as missing one, which is honest enough.
+// A value continued on more-indented lines — a block scalar or a folded
+// plain scalar — is read whole (ADR-0106): the old reading turned
+// `description: >` into the description ">", which is not "missing"
+// but wrong. Quoted values spanning lines, anchors and flow collections
+// are still not read; this is not a YAML parser.
 func parseFrontmatter(fm string) map[string]string {
 	out := map[string]string{}
-	for _, line := range strings.Split(fm, "\n") {
+	lines := strings.Split(strings.ReplaceAll(fm, "\r\n", "\n"), "\n")
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
 		if line == "" || line[0] == ' ' || line[0] == '\t' || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -322,6 +339,22 @@ func parseFrontmatter(fm string) map[string]string {
 			continue
 		}
 		value = strings.TrimSpace(value)
+		// A value may continue on the more-indented lines that follow
+		// (ADR-0106): a block scalar (`>` folds, `|` keeps line breaks)
+		// or a plain scalar folded across lines. Read as one value
+		// rather than dropped — `description: >` was a one-character
+		// description.
+		var cont []string
+		for i+1 < len(lines) && (strings.TrimSpace(lines[i+1]) == "" || lines[i+1][0] == ' ' || lines[i+1][0] == '\t') {
+			i++
+			cont = append(cont, lines[i])
+		}
+		switch {
+		case isBlockIndicator(value):
+			value = blockScalar(value[0] == '|', cont)
+		case len(cont) > 0:
+			value = foldLines(append([]string{value}, dedent(cont)...))
+		}
 		if len(value) >= 2 {
 			if (value[0] == '"' && value[len(value)-1] == '"') ||
 				(value[0] == '\'' && value[len(value)-1] == '\'') {
@@ -329,6 +362,78 @@ func parseFrontmatter(fm string) map[string]string {
 			}
 		}
 		out[strings.TrimSpace(key)] = value
+	}
+	return out
+}
+
+// isBlockIndicator reports a YAML block scalar header: `>` or `|`, with
+// an optional chomping indicator (`-`, `+`) and indentation digit in
+// either order. A trailing comment is allowed.
+func isBlockIndicator(v string) bool {
+	if v == "" || (v[0] != '>' && v[0] != '|') {
+		return false
+	}
+	rest := v[1:]
+	if j := strings.Index(rest, "#"); j >= 0 {
+		rest = rest[:j]
+	}
+	rest = strings.TrimSpace(rest)
+	if len(rest) > 2 {
+		return false
+	}
+	for _, c := range rest {
+		if c != '-' && c != '+' && (c < '1' || c > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// blockScalar renders a block scalar's lines: literal keeps the line
+// breaks, folded joins lines with a space and turns a blank line into a
+// break. Chomping does not matter here: every value is trimmed.
+func blockScalar(literal bool, lines []string) string {
+	lines = dedent(lines)
+	if literal {
+		return strings.TrimSpace(strings.Join(lines, "\n"))
+	}
+	return foldLines(lines)
+}
+
+// foldLines joins lines the way YAML folds them: a space between lines,
+// a line break for each blank line.
+func foldLines(lines []string) string {
+	var b strings.Builder
+	pendingBreak := false
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			b.WriteString("\n")
+			pendingBreak = true
+			continue
+		}
+		if b.Len() > 0 && !pendingBreak {
+			b.WriteString(" ")
+		}
+		b.WriteString(l)
+		pendingBreak = false
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// dedent removes the indentation of the first non-blank line from every
+// line that carries it.
+func dedent(lines []string) []string {
+	indent := ""
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			indent = l[:len(l)-len(strings.TrimLeft(l, " \t"))]
+			break
+		}
+	}
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = strings.TrimPrefix(l, indent)
 	}
 	return out
 }
