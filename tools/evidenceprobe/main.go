@@ -78,6 +78,27 @@
 // The pilot spent 132,911 prompt tokens (105,533 cached) and 10,021
 // output+thought tokens in 156 s.
 //
+// Amended 2026-11-04, before any s3 run (the operator's direction): the
+// question was the wrong one. A re-typed file has no provenance however
+// accurate it is, and how often re-typing errs is not a number evidence
+// can rest on — ten clean runs bound the rate only to about 26% (95%).
+// What the pilots showed is the structure: with no saved file, all four
+// s1 runs so far (gem 1 and lagent 1 pilot, lagent 2 counted) regenerated
+// the evidence through write_file, one of them scored "exact" only
+// because its JSON parses equal. So:
+//
+//   - s1 and s2 are dropped. The two counted lagent s1 runs are kept on
+//     disk and reported, not scored; R1 is withdrawn. No gem runs.
+//   - The scorer gains the method axis (classifyMethod: copied /
+//     derived / regenerated / mixed / unknown), the one that matters for
+//     evidence. The categories stay, beside it.
+//   - The one premise left to measure is the fix's own: when the
+//     runtime HAS saved the result (s3, spilled), does the agent copy or
+//     transform the saved file, or still regenerate the evidence?
+//     R3, reported, not decided on: of the spilled s3 runs, how many are
+//     copied or derived, how many regenerated or mixed. R2 is withdrawn
+//     with s1. lagent only, n = 10.
+//
 // Neither decides the design; they decide whether the premise of the fix
 // holds. n = 10 valid runs per runtime and scenario. A run that fails
 // before the model answers (API error, timeout) is recorded and replaced,
@@ -99,6 +120,7 @@
 //	evidenceprobe serve        (spawned by the runtime via mcp.json; BQ_LOG, BQ_WIDE)
 //	evidenceprobe run -runtime gem|lagent -bin B -scenario s1|s2|s3 -model M [-risk-model R -summary-model S] -n 10 -out DIR -work DIR -fence DIR [-jobs N]
 //	evidenceprobe score -out DIR
+//	evidenceprobe rescore -out DIR   (re-apply the scorer to records on disk)
 package main
 
 import (
@@ -119,6 +141,8 @@ func main() {
 		err = runCmd(os.Args[2:])
 	case "score":
 		err = scoreCmd(os.Args[2:])
+	case "rescore":
+		err = rescoreCmd(os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}

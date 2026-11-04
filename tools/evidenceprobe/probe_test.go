@@ -211,3 +211,41 @@ func TestContamination(t *testing.T) {
 		}
 	}
 }
+
+func TestClassifyMethod(t *testing.T) {
+	needSQLite(t)
+	text := queryText(t, true, fullQuery)
+	rows := rowsOf(t, text)
+	id := rows[0]["event_id"].(string)
+	calls := []stubCall{{Tool: "query", Text: text}}
+	sh := func(access, cmd string) toolCall {
+		b, _ := json.Marshal(map[string]any{"access": access, "command": cmd})
+		return toolCall{"shell_exec", string(b)}
+	}
+	wf := func(path string) toolCall {
+		b, _ := json.Marshal(map[string]any{"path": path, "content": "..."})
+		return toolCall{"write_file", string(b)}
+	}
+	spill := "/w/work/bigquery-nlink-dwh-query-0a1b2c3d.json"
+	cases := []struct {
+		name  string
+		files map[string][]byte
+		tcs   []toolCall
+		want  string
+	}{
+		{"write_file", map[string][]byte{"evidence/a.csv": []byte(csvOf(rows))}, []toolCall{wf("evidence/a.csv")}, "regenerated"},
+		{"cp of the saved file", map[string][]byte{"evidence/a.json": []byte(text)}, []toolCall{sh("read", "head -c 300 "+spill), sh("write", "mkdir -p evidence && cp "+spill+" evidence/a.json")}, "copied"},
+		{"heredoc", map[string][]byte{"evidence/a.csv": []byte(csvOf(rows))}, []toolCall{sh("write", "cat > evidence/a.csv <<'EOF'\n"+id+",...\nEOF")}, "regenerated"},
+		{"jq over the saved file", map[string][]byte{"evidence/rows.json": mustJSON(rows)}, []toolCall{sh("write", "jq '.rows' "+spill+" > evidence/rows.json")}, "derived"},
+		{"no writer seen", map[string][]byte{"evidence/a.json": []byte(text)}, nil, "unknown"},
+		{"one copied, one regenerated", map[string][]byte{"evidence/a.json": []byte(text), "evidence/b.csv": []byte(csvOf(rows))},
+			[]toolCall{sh("write", "cp "+spill+" evidence/a.json"), wf("evidence/b.csv")}, "mixed"},
+	}
+	for _, c := range cases {
+		v := score(calls, c.files)
+		classifyMethod(&v, c.files, calls, c.tcs)
+		if v.Method != c.want {
+			t.Errorf("%s: method %s, want %s (%v)", c.name, v.Method, c.want, v.Methods)
+		}
+	}
+}

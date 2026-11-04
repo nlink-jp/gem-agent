@@ -309,6 +309,7 @@ func oneRun(self, bin string, o runtimeOpts, scenario, dir, recDir string, attem
 	rec.Valid = rec.Final != "" && ctx.Err() == nil
 	if calls, err := readStubLog(stubLog); err == nil || os.IsNotExist(err) {
 		v := score(calls, files)
+		classifyMethod(&v, files, calls, rec.ToolCalls)
 		rec.Verdict = &v
 	}
 	return rec
