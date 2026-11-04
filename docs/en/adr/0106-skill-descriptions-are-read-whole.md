@@ -46,6 +46,10 @@ The idle cost grows by at most about 624 characters for each skill longer than 4
 
 The common indentation is removed. The block ends at the first line that is not indented and not blank. This is still not a YAML parser: quoted values spanning lines, anchors and flow collections stay unread. They are not used in skill frontmatter, and a full parser is a dependency the organization does not take for this (supply-chain rule).
 
+### 3. The prompt line stays one line
+
+Added after release (2026-11-04, from lagent's independent review of the port): a description that keeps line breaks (`|`, or a blank line inside `>`) is joined with spaces before it is listed. A break left in started a new line of the system prompt in the skill author's words.
+
 ## Consequences
 
 - Skills written to the platform's limit trigger in gem-agent on everything they declare.

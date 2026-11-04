@@ -284,6 +284,12 @@ func readSkill(dir, scope string, lim Limits) (*Skill, error) {
 		_ = root.Close()
 		return nil, fmt.Errorf("SKILL.md has no description in its frontmatter")
 	}
+	// The prompt gives each skill one line (ADR-0106): a `|` block keeps
+	// its line breaks, and a `>` block turns a blank line into one, so
+	// they are joined with spaces here — a break left in would start a
+	// new line of the system prompt in the skill author's words (lagent's
+	// independent review of the port).
+	desc = oneLine(desc)
 	descRunes := utf8.RuneCountInString(desc)
 	if r := []rune(desc); len(r) > lim.MaxDescription {
 		desc = string(r[:lim.MaxDescription]) + "…"
@@ -568,4 +574,19 @@ func PromptSection(list []Skill) string {
 // sequence (internal/bounded is the one implementation).
 func cutRunes(s string, n int) string {
 	return string(bounded.CutRunes([]byte(s), n))
+}
+
+// oneLine joins a multi-line value into one line: each line trimmed, the
+// empty ones dropped, the rest joined by a space.
+func oneLine(s string) string {
+	if !strings.ContainsAny(s, "\r\n") {
+		return s
+	}
+	var parts []string
+	for _, l := range strings.FieldsFunc(s, func(r rune) bool { return r == '\n' || r == '\r' }) {
+		if l = strings.TrimSpace(l); l != "" {
+			parts = append(parts, l)
+		}
+	}
+	return strings.Join(parts, " ")
 }

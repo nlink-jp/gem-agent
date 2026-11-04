@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **A multi-line skill description stays on one line of the system
+  prompt (ADR-0106 §3).** A `|` block kept its line breaks, so its later
+  lines became lines of the prompt.
+
 ## [0.98.0] - 2026-11-04
 
 ### Added
