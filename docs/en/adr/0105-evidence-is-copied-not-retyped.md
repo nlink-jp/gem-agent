@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-11-04) — implemented 2026-11-04; acceptance waits on the §5 measurement. Revised once against an independent review (9 findings; see §7) and once in implementation (§8) |
+| Status | **Accepted** (2026-11-04) — implemented; the §5 measurement found the route firing in 20 of 20 runs (§5.1). Revised once against an independent review (9 findings; see §7) and once in implementation (§8) |
 | Date | 2026-11-04 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -103,6 +103,28 @@ The probe is re-run against the implementation. Before any run, a dated amendmen
 - **Cost.** gem-agent runs call the paid model, and the probe's isolation keeps them out of gem-usage-lens. The s1 pilot spent $0.218. An s3 run is estimated at about $0.35, scaled by the prompt tokens the lagent s3 runs used against the s1 pilot (about 1.6×). Ten valid runs per cell come to about $6. Failed or contaminated runs are replaced up to 2n, so the worst case is about $12. The cells are launched only after the operator approves the figure.
 
 Whether to measure gem-agent's s3 before implementation (about $3.5) as a baseline is the operator's choice. The decision does not depend on it.
+
+### 5.1 Result (2026-11-04)
+
+Run against `edd8e60` with the pre-registration of `a43d611`, model `google/gemini-4-argon` (thinking medium), two runs at a time:
+
+| Cell | Valid | Copied | Derived | Regenerated | R4 |
+|---|---|---|---|---|---|
+| s1 (inline) | 10/10 | **10** | 0 | 0 | fires |
+| s3 (spilled, 10 of 10) | 10/10 | **10** | 0 | 0 | fires |
+
+- No run was contaminated or failed, so none was replaced.
+- Every run wrote its evidence with one `write_file` call carrying `from` and the saved result's path, approved as Safe ("edits a file inside the project").
+- The §4 check was run independently of the scorer. Each evidence file's sha256 was compared with the `saved` records in the run's transcript, and all 20 matched the record of a `query` result.
+- Spend: 84 model calls, 1,128,147 prompt tokens (525,318 cached) and 33,701 output and thought tokens. That is at most about $1.6 even if every call is priced at the main model's rate, against the $6 estimate.
+
+What this does not show:
+
+- **A before-and-after on gem-agent.** No baseline was run (the operator's choice). Before the change, gem-agent's only s1 run, the pilot, re-typed. lagent's s3 found 0 copies in 10 with the file present but no route.
+- **The report scenario (s2)** was not measured. There, a model writes prose and evidence in one task.
+- **Other models and longer sessions.** One task shape, one model, a fresh session each time.
+
+Accepted on this result. The R1 and R2 lines the scorer still prints belong to the withdrawn readings and are not read.
 
 ## 6. Not decided here
 
