@@ -10,6 +10,10 @@
   line now names its part and says to copy every part. The appended notes
   also count in the token estimate, and an error no longer prints `<nil>`
   when only a copy's hash differs.
+- **The work-directory section says every MCP result is saved (ADR-0105
+  §8.1).** It still said only results too large to return inline were
+  saved, which told the model a small result had no file; it now says
+  every result is saved and names the copy route.
 - **A multi-line skill description stays on one line of the system
   prompt (ADR-0106 §3).** A `|` block kept its line breaks, so its later
   lines became lines of the prompt.

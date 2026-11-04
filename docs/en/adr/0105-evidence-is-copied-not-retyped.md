@@ -179,12 +179,13 @@ Accepted residuals, by risk:
 
 ### 8.1 After release (2026-11-04)
 
-lagent's port (lagent ADR-0039) had its own independent review, and three of its confirmed findings hold here too. They are fixed in gem-agent as well:
+lagent's port (lagent ADR-0039) had its own independent review, and three of its confirmed findings hold here too; its measurement found one more. They are fixed in gem-agent as well:
 
 - **A result saved as more than one file was announced as whole in every line.** A response whose first block fits and whose next does not is two files, and the model could copy one as the whole result and lose the rows in the other. Each line now names its part (`part <i> of <n> of this result`) and says to copy every part; a single file keeps the wording of §1.
 - **The notes were not in the token estimate.** `estimateTokens`, used before the first measured prompt, counted the stored text only. The wrap and the estimate now share one function for what is appended at send time (`runtimeSuffix`).
 - **`Saved` was trusted outside the tag but not pinned** by the provenance architecture test. It is, counted only in an `llm.Message` literal (bounded's `HeadTailView` has a `Saved` field too).
 - An error printed `<nil>` when only the copy's hash differed.
+- **The work-directory section still said only large results were saved** ("Results too large to return inline are saved here for you"), true before §1 and false after it: for a small result the model was told there was no file before any note named one. Found while measuring lagent (lagent ADR-0039 §8). It now reads: "Every MCP result is saved here whole, and the reply says where — to keep one as evidence, copy it with write_file from rather than re-typing it."
 
 ## Consequences
 

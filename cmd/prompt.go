@@ -106,7 +106,7 @@ func workDirSection(workDir string) string {
 	}
 	return `
 Session work directory: ` + workDir + `
-Use it for anything that is not part of the project: intermediate data, a report you are assembling, a file you only need for the next step. It is outside the project, so writing there does not dirty the user's working copy; the file tools can read and write it, and shell commands see it as $GEMAGENT_WORK_DIR (a shell command that writes there needs access: "write"). An MCP tool that takes a workspace or output directory should be given this path — write it out in full, since nothing expands variables inside a tool argument. Results too large to return inline are saved here for you, and the reply says where.
+Use it for anything that is not part of the project: intermediate data, a report you are assembling, a file you only need for the next step. It is outside the project, so writing there does not dirty the user's working copy; the file tools can read and write it, and shell commands see it as $GEMAGENT_WORK_DIR (a shell command that writes there needs access: "write"). An MCP tool that takes a workspace or output directory should be given this path — write it out in full, since nothing expands variables inside a tool argument. Every MCP result is saved here whole, and the reply says where — to keep one as evidence, copy it with write_file from rather than re-typing it.
 `
 }
 

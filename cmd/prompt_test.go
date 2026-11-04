@@ -95,6 +95,15 @@ func TestSystemPromptNamesTheWorkDirectory(t *testing.T) {
 	if i, j := strings.Index(got, work), strings.Index(got, "$GEMAGENT_WORK_DIR"); i < 0 || j < 0 || i > j {
 		t.Error("the literal path should be given before the variable is mentioned")
 	}
+	// Every MCP result is saved (ADR-0105 §1), and the prompt says so: a
+	// line that said only the large ones were told the model a small
+	// result had no file before any note named it (ADR-0105 §8.1).
+	if !strings.Contains(got, "Every MCP result is saved here whole") || strings.Contains(got, "too large to return inline") {
+		t.Error("the prompt misstates which results are saved")
+	}
+	if !strings.Contains(got, "copy it with write_file from") {
+		t.Error("the prompt does not name the copy route")
+	}
 }
 
 func TestSystemPromptOmitsTheSectionWithoutAWorkDirectory(t *testing.T) {

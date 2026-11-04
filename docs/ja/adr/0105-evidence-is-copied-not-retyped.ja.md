@@ -179,12 +179,13 @@ MCP の結果をすべて保存することは要件として確定した。
 
 ### 8.1 リリースの後（2026-11-04）
 
-lagent への移植（lagent ADR-0039）で独自に独立検証を行い、確かめた指摘のうち 3 件はここにも当てはまる。gem-agent でも直した:
+lagent への移植（lagent ADR-0039）で独自に独立検証を行い、確かめた指摘のうち 3 件はここにも当てはまる。その測定でさらに 1 件見つかった。gem-agent でも直した:
 
 - **複数のファイルに分けて保存した結果を、どの行も丸ごとだと告げていた。** 最初のブロックが収まり次が収まらない応答は 2 ファイルになり、モデルが片方を結果全体として写して、もう片方の行を失いうる。各行が自分の部分（`part <i> of <n> of this result`）を名指し、すべての部分を写すよう告げる。ファイルが 1 つなら §1 の文面のまま。
 - **注記がトークンの見積もりに入っていなかった。** 最初の実測より前に使う `estimateTokens` は、保存したテキストしか数えていなかった。送るときに足すものを、ラップと見積もりが一つの関数（`runtimeSuffix`）で共有する。
 - **`Saved` はタグの外で信頼されるのに、出所の構造テストで固定されていなかった。** 固定した。`llm.Message` のリテラルの中だけで数える（bounded の `HeadTailView` にも `Saved` という欄がある）。
 - コピーのハッシュだけが違うとき、エラーが `<nil>` を出していた。
+- **作業ディレクトリの節が、大きな結果だけを保存すると言ったままだった**（「Results too large to return inline are saved here for you」）。§1 より前は正しく、§1 の後は偽りである。小さな結果について、モデルはどの注記よりも前に、ファイルは無いと告げられていた。lagent の測定中に見つけた（lagent ADR-0039 §8）。いまは「Every MCP result is saved here whole, and the reply says where — to keep one as evidence, copy it with write_file from rather than re-typing it.」と言う。
 
 ## 結果
 
