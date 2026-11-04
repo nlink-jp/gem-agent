@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.98.0] - 2026-11-04
+
 ### Added
 
 - **Every MCP result is saved, and evidence can be a copy of it
