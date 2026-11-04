@@ -133,7 +133,16 @@
 // Neither decides the design; they decide whether the premise of the fix
 // holds. n = 10 valid runs per runtime and scenario. A run that fails
 // before the model answers (API error, timeout) is recorded and replaced,
-// up to 2n attempts. A run is also replaced when CONTAMINATED: a tool
+// up to 2n attempts. Which runs those are is read from how the turn
+// ended in the transcript, a closed set of record kinds (run.go,
+// turnEnd): a completion the server ended with finish reason "error", a
+// lost connection, a request with no model turn recorded after it, or
+// the timeout. An answer, a turn the runtime stopped on the model's own
+// behaviour (the loop guard, a full window) and a model that kept
+// returning nothing are the model's outcomes and are scored. Until
+// 2026-11-05 a run counted as answered when any model text existed, so a
+// server failing after the model's first words was scored as a run with
+// no evidence. A run is also replaced when CONTAMINATED: a tool
 // call names a path under -fence other than the run's own directory,
 // names the probe or its records, or climbs out by "..". The
 // contamination rate and a sensitivity line scoring contaminated runs by

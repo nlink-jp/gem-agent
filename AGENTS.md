@@ -187,7 +187,9 @@ cmd/mcpresult.go   the MCP intake: every text block saved under its full sha256
                    (tools.RecordSaved) and kept as Message.Saved — the note the
                    model reads is the executor's, outside the nonce tag
 tools/evidenceprobe/ the probe behind ADR-0105: a bigquery-mcp-shaped stub over
-                   sqlite3 × the real binary in -p; pre-registration in main.go
+                   sqlite3 × the real binary in -p; pre-registration in main.go;
+                   a run's validity comes from how the transcript says the turn
+                   ended (turnEnd), never from stderr text
 cmd/settings.go    /settings panel content + edits (ADR-0009)
 internal/mention/  @-reference parsing, project-confined resolution, completion
 internal/instructions/ AGENTS.md / AGENT.md / CLAUDE.md / GEMINI.md discovery

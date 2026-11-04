@@ -399,6 +399,7 @@ type summary struct {
 	Attempts     int            `json:"attempts"`
 	Contaminated int            `json:"contaminated"`
 	Failed       int            `json:"failed_before_answer"`
+	FailedBy     map[string]int `json:"failed_by,omitempty"`
 	Categories   map[string]int `json:"categories"`
 	Spilled      int            `json:"spilled"`
 	Methods      map[string]int `json:"methods"`
@@ -465,6 +466,14 @@ func scoreCmd(args []string) error {
 			sens[key][cat]++
 		case !r.Valid:
 			s.Failed++
+			why := r.Failure
+			if why == "" {
+				why = "unrecorded" // a record from before the probe named the reason
+			}
+			if s.FailedBy == nil {
+				s.FailedBy = map[string]int{}
+			}
+			s.FailedBy[why]++
 		default:
 			s.Valid++
 			s.Categories[cat]++
@@ -480,6 +489,9 @@ func scoreCmd(args []string) error {
 	for _, k := range order {
 		fmt.Println(fmtCell(k, *cells[k]))
 		fmt.Printf("%-14s   method: %v\n", "", cells[k].Methods)
+		if len(cells[k].FailedBy) > 0 {
+			fmt.Printf("%-14s   failed (replaced, not scored): %v\n", "", cells[k].FailedBy)
+		}
 		if len(sens[k]) > 0 {
 			fmt.Printf("%-14s   sensitivity (contaminated runs by their evidence): %v\n", "", sens[k])
 		}

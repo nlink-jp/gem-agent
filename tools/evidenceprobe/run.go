@@ -107,7 +107,12 @@ type record struct {
 	// Contaminated: a tool call reached outside the run's own directory
 	// into the probe's area, or named the probe.
 	Contaminated string `json:"contaminated,omitempty"`
-	Stderr       string `json:"stderr_tail"`
+	// End is how the turn ended, read from the records the runtime
+	// writes (see turnEnd); Failure names why an invalid run is
+	// replaced.
+	End     string `json:"end"`
+	Failure string `json:"failure,omitempty"`
+	Stderr  string `json:"stderr_tail"`
 }
 
 type toolCall struct {
@@ -230,8 +235,8 @@ func runCmd(args []string) error {
 			if rec.Verdict != nil {
 				cat = rec.Verdict.Category
 			}
-			fmt.Fprintf(os.Stderr, "%s/%s attempt %d: valid=%v category=%s exit=%d %.0fs prompt=%d (cell so far: prompt=%d cached=%d out+thoughts=%d)\n",
-				o.runtime, *scenario, a, rec.Valid, cat, rec.ExitCode, rec.Seconds, rec.Tokens.Prompt, total.Prompt, total.Cached, total.Output+total.Thoughts)
+			fmt.Fprintf(os.Stderr, "%s/%s attempt %d: valid=%v end=%s category=%s exit=%d %.0fs prompt=%d (cell so far: prompt=%d cached=%d out+thoughts=%d)\n",
+				o.runtime, *scenario, a, rec.Valid, rec.End, cat, rec.ExitCode, rec.Seconds, rec.Tokens.Prompt, total.Prompt, total.Cached, total.Output+total.Thoughts)
 		}()
 	}
 	wg.Wait()
@@ -310,7 +315,7 @@ func oneRun(self, bin string, o runtimeOpts, scenario, dir, recDir string, attem
 		}
 		readTranscript(t, &rec)
 	}
-	rec.Valid = rec.Final != "" && ctx.Err() == nil
+	rec.Valid, rec.Failure = judgeRun(rec.End, ctx.Err() != nil)
 	if calls, err := readStubLog(stubLog); err == nil || os.IsNotExist(err) {
 		v := score(calls, files)
 		classifyMethod(&v, files, calls, rec.ToolCalls)
@@ -388,17 +393,21 @@ func readTranscript(path string, rec *record) {
 	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 1<<20), 64<<20)
+	var ends turnEnd
+	defer func() { rec.End = ends.end }()
 	for sc.Scan() {
 		var r struct {
 			Kind string `json:"kind"`
 			Data struct {
-				Prompt    int64  `json:"prompt"`
-				Cached    int64  `json:"cached"`
-				Output    int64  `json:"output"`
-				Thoughts  int64  `json:"thoughts"`
-				Role      string `json:"role"`
-				Content   string `json:"content"`
-				ToolCalls []struct {
+				FinishReason string `json:"finish_reason"`
+				Decision     *bool  `json:"decision"`
+				Prompt       int64  `json:"prompt"`
+				Cached       int64  `json:"cached"`
+				Output       int64  `json:"output"`
+				Thoughts     int64  `json:"thoughts"`
+				Role         string `json:"role"`
+				Content      string `json:"content"`
+				ToolCalls    []struct {
 					Name string         `json:"name"`
 					Args map[string]any `json:"args"`
 				} `json:"tool_calls"`
@@ -407,6 +416,7 @@ func readTranscript(path string, rec *record) {
 		if json.Unmarshal(sc.Bytes(), &r) != nil {
 			continue
 		}
+		ends.see(r.Kind, r.Data.Role, r.Data.Content != "", len(r.Data.ToolCalls) > 0, r.Data.FinishReason, r.Data.Decision)
 		switch {
 		case r.Kind == "usage":
 			rec.Tokens.add(tokens{Prompt: r.Data.Prompt, Cached: r.Data.Cached, Output: r.Data.Output, Thoughts: r.Data.Thoughts, Calls: 1})
@@ -423,5 +433,59 @@ func readTranscript(path string, rec *record) {
 				rec.Spilled = true
 			}
 		}
+	}
+}
+
+// How a one-shot turn ended, from the record kinds both runtimes write
+// to the transcript — a closed set, never the stderr text or the model's
+// words. Each model turn resets the ending; a record after it that stops
+// the turn (round_intervention refused, window_full) or reports the
+// transport (connection_lost) overrides it.
+const (
+	endAnswer      = "answer"       // an assistant message with text and no tool calls
+	endGuard       = "runtime_stop" // the runtime stopped the turn on the model's own behaviour
+	endEmpty       = "empty"        // the model's completions carried nothing, finish reason not "error"
+	endModelError  = "model_error"  // the server ended a completion with finish reason "error"
+	endConnection  = "connection_lost"
+	endAfterTools  = "no_turn_after_tools" // results went back and no model turn was recorded: the request failed
+	endNoModelTurn = "no_model_turn"       // not one model turn was recorded: the first request failed
+)
+
+type turnEnd struct{ end string }
+
+func (t *turnEnd) see(kind, role string, hasText, hasCalls bool, finish string, decision *bool) {
+	switch {
+	case kind == "message" && role == "user":
+		t.end = endNoModelTurn
+	case kind == "message" && role == "assistant" && hasCalls:
+		t.end = endAfterTools
+	case kind == "message" && role == "assistant" && hasText:
+		t.end = endAnswer
+	case kind == "assistant_empty" && finish == "error":
+		t.end = endModelError
+	case kind == "assistant_empty":
+		t.end = endEmpty
+	case kind == "round_intervention" && decision != nil && !*decision, kind == "window_full":
+		t.end = endGuard
+	case kind == "connection_lost":
+		t.end = endConnection
+	}
+}
+
+// judgeRun applies the pre-registration (main.go): a run that fails
+// before the model answers — an API error or a timeout — is replaced.
+// An answer, a turn the runtime stopped on the model's behaviour and a
+// model that kept returning nothing are the model's outcomes and count.
+// A run with no transcript at all never reached the model.
+func judgeRun(end string, timedOut bool) (bool, string) {
+	switch {
+	case timedOut:
+		return false, "timeout"
+	case end == endAnswer || end == endGuard || end == endEmpty:
+		return true, ""
+	case end == "":
+		return false, "no transcript"
+	default:
+		return false, end
 	}
 }

@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **The evidence probe replaces a run the model's server failed.** A run
+  counted as answered when the model had written any text, so a server
+  that failed after the model's first words — a local server out of GPU
+  memory failed 27 of 29 runs in one measurement — was scored as a run with no
+  evidence. The probe now reads how the turn ended from the transcript's
+  record kinds: a completion ended with finish reason `error`, a lost
+  connection or a request with no model turn after it is replaced like a
+  timeout, and the score names each cell's reasons. The published
+  measurements do not change.
+
 ## [0.98.1] - 2026-11-05
 
 ### Fixed
