@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** — 個人スコープの設置場所は [ADR-0011](0011-skill-scope-separation.ja.md) が supersede |
+| Status | **Accepted** — 個人スコープの設置場所は [ADR-0011](0011-skill-scope-separation.ja.md) が supersede。説明の行の長さと複数行の値は [ADR-0106](0106-skill-descriptions-are-read-whole.ja.md) が定める |
 | Date | 2026-08-19 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

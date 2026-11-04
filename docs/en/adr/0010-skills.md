@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** — personal-scope location superseded by [ADR-0011](0011-skill-scope-separation.md) |
+| Status | **Accepted** — personal-scope location superseded by [ADR-0011](0011-skill-scope-separation.md); the description line's length and multi-line values set by [ADR-0106](0106-skill-descriptions-are-read-whole.md) |
 | Date | 2026-08-19 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
