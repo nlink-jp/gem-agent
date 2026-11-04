@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.98.1] - 2026-11-05
+
 ### Fixed
 
 - **A result saved as several files is announced part by part (ADR-0105
