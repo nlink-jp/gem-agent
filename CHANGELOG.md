@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.98.2] - 2026-11-05
+
 ### Fixed
 
 - **The evidence probe replaces a run the model's server failed.** A run
