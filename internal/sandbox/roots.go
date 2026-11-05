@@ -97,7 +97,7 @@ func RefuseRoot(path string, write bool, c RootContext) (string, error) {
 			}
 		}
 		if write && within(filepath.Join(h, "Library"), real) && !SyncedFolder(h, real) {
-			return refuse("a write root may not lie inside ~/Library: programs there run outside the sandbox (a synced folder in ~/Library/CloudStorage or iCloud Drive may)")
+			return refuse("a write root may not lie inside ~/Library, where programs run outside the sandbox — except a synced folder: one inside a provider's folder in ~/Library/CloudStorage, or in iCloud Drive")
 		}
 	}
 	if write && c.ConfigFile != "" && within(real, c.ConfigFile) {
