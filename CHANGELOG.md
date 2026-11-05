@@ -21,8 +21,9 @@
   added directory and removed them ignoring a failure; in a shared drive
   that lets you create but not delete, a probe directory holding `.env`
   would stay and sync to everyone sharing the drive, unannounced. Each
-  leftover is now named in a note (on a request, to you, not the model),
-  and in the error when the directory is refused.
+  leftover is now named for you — in the note or the error of a typed
+  command and at startup, and in your notices on the model's request,
+  never in what the model reads — whether the check passed or not.
 
 ## [0.98.2] - 2026-11-05
 

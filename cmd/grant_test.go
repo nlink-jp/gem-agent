@@ -350,10 +350,10 @@ func TestGrantCancelledMidVerificationAndClearRace(t *testing.T) {
 	// The call is cancelled while the profiles are built and probed —
 	// after the first check passed (review of v0.94.0, #9).
 	probed := false
-	g.build = func(on bool, p, w string, d []string, c map[string]string, pp []string, a []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
+	g.build = func(on bool, p, w string, d []string, c map[string]string, pp []string, a []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, []string, error) {
 		probed = true
 		cancel()
-		return buildExecFn(on, p, w, d, c, pp, a)
+		return buildLanes(on, p, w, d, c, pp, a)
 	}
 	if _, err := g.grant(ctx, notes, true, "request", g.currentEpoch(), nil); !errors.Is(err, errDropped) || !probed {
 		t.Errorf("a grant cancelled mid-verification: %v (probed %v)", err, probed)
@@ -490,9 +490,9 @@ func TestGrantInAnUnconfinedSessionKeepsTheRunner(t *testing.T) {
 	}
 	g.shellExec.set(unconfined)
 	g.registry.SetLaneExec(g.shellExec.run, sandbox.Enforcement{})
-	g.build = func(bool, string, string, []string, map[string]string, []string, []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
+	g.build = func(bool, string, string, []string, map[string]string, []string, []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, []string, error) {
 		t.Error("an unconfined session built and probed a profile")
-		return nil, sandbox.Enforcement{}, nil, errors.New("unexpected")
+		return nil, sandbox.Enforcement{}, nil, nil, errors.New("unexpected")
 	}
 	notes := underHome(t, "notes")
 	note, err := g.grant(context.Background(), notes, true, "slash", g.currentEpoch(), nil)
@@ -600,28 +600,46 @@ func TestGrantRequestSpeaksToEachReader(t *testing.T) {
 	}
 }
 
-// The probes' notes reach the operator, not the model (ADR-0107 §4): a
-// probe file left in a synced folder is copied to everyone who shares
-// it. A typed command carries them in its note; a request's result goes
-// to the model, so they go to the operator's notices.
-func TestGrantReportsTheProbesNotes(t *testing.T) {
+// The probes' leftovers reach the operator, never the model (ADR-0107
+// §4): a probe file left in a synced folder is copied to everyone who
+// shares it. A typed command carries them in its note or its error; a
+// request's result and error go to the model, so they go to the
+// operator's notices. The build's other notes are startup's and are not
+// repeated (review of the first cut).
+func TestGrantReportsTheProbesLeftovers(t *testing.T) {
 	g, _, _ := newTestGranter(t, nil, false)
-	leftover := sandbox.LeftoverNote([]string{"/x/.gem-agent-root-probe-1/.env"})
-	g.build = func(on bool, p, w string, d []string, c map[string]string, pp []string, a []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
-		fn, enf, notes, err := buildExecFn(on, p, w, d, c, pp, a)
-		return fn, enf, append(notes, leftover), err
-	}
-	note, err := g.grant(context.Background(), underHome(t, "typed"), true, "slash", g.currentEpoch(), nil)
-	if err != nil || !strings.Contains(note, leftover) {
-		t.Errorf("a typed grant's note = %q (%v), want the leftover", note, err)
+	stuck := []string{"/x/.gem-agent-root-probe-1"}
+	leftover := sandbox.LeftoverNote(stuck)
+	fail := false
+	g.build = func(on bool, p, w string, d []string, c map[string]string, pp []string, a []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, []string, error) {
+		fn, enf, _, _, err := buildLanes(on, p, w, d, c, pp, a)
+		if fail {
+			return nil, sandbox.Enforcement{}, nil, stuck, errors.New("probe failed")
+		}
+		return fn, enf, []string{"read lane disabled: startup said so"}, stuck, err
 	}
 	var notices []string
 	g.notice = func(s string) { notices = append(notices, s) }
+	note, err := g.grant(context.Background(), underHome(t, "typed"), true, "slash", g.currentEpoch(), nil)
+	if err != nil || !strings.Contains(note, leftover) || strings.Contains(note, "startup said so") {
+		t.Errorf("a typed grant's note = %q (%v), want the leftover and nothing else from the build", note, err)
+	}
 	note, err = g.grant(context.Background(), underHome(t, "requested"), true, "request", g.currentEpoch(), nil)
 	if err != nil || strings.Contains(note, leftover) {
 		t.Errorf("a request's result carries the leftover to the model: %q (%v)", note, err)
 	}
 	if len(notices) != 1 || notices[0] != leftover {
-		t.Errorf("notices = %v, want the leftover", notices)
+		t.Errorf("notices = %v, want the leftover once", notices)
+	}
+	fail, notices = true, nil
+	if _, err := g.grant(context.Background(), underHome(t, "refused-typed"), true, "slash", g.currentEpoch(), nil); err == nil || !strings.Contains(err.Error(), leftover) {
+		t.Errorf("a refused typed grant's error = %v, want the leftover", err)
+	}
+	_, err = g.grant(context.Background(), underHome(t, "refused-request"), true, "request", g.currentEpoch(), nil)
+	if err == nil || strings.Contains(err.Error(), leftover) {
+		t.Errorf("a refused request's error carries the leftover to the model: %v", err)
+	}
+	if len(notices) != 1 || notices[0] != leftover {
+		t.Errorf("notices after a refused request = %v, want the leftover", notices)
 	}
 }

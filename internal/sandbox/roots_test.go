@@ -148,7 +148,7 @@ func TestRefuseRoot(t *testing.T) {
 		{filepath.Join(home, "Library/Mobile Documents"), true, "~/Library"},
 		{filepath.Join(home, "Library/Mobile Documents/com~apple~CloudDocsX"), true, "~/Library"},
 		{filepath.Join(home, "Library/Mobile Documents/com~apple~Automator"), true, "~/Library"},
-		{filepath.Join(home, "Library/CloudStorage/Dropbox/../../LaunchAgents"), true, "~/Library"},
+		{home + "/Library/CloudStorage/Dropbox/../../LaunchAgents", true, "~/Library"},       // `..` reaches the resolver unjoined
 		{filepath.Join(home, "Dropbox/work"), true, ""},                                      // a link into a synced folder: judged on the real path
 		{filepath.Join(home, "Library/CloudStorage/Dropbox/agents-link"), true, "~/Library"}, // a link out of one: judged on the real path
 		{proj, true, "already covered"},
@@ -315,8 +315,8 @@ func TestAddedRootEnforcement(t *testing.T) {
 			t.Errorf("%s: %q succeeded", c.what, c.command)
 		}
 	}
-	notes, err := VerifyAddedRoots(profiles, spec, true)
-	if err != nil || len(notes) != 0 {
+	notes, left, err := VerifyAddedRoots(profiles, spec, true)
+	if err != nil || len(notes) != 0 || len(left) != 0 {
 		t.Errorf("VerifyAddedRoots on correct profiles: notes %v, err %v", notes, err)
 	}
 	// The probe must catch a profile that forgets the read root's
@@ -326,16 +326,16 @@ func TestAddedRootEnforcement(t *testing.T) {
 	wrong.Added = []AddedRoot{{Dir: rroot, Write: true}}
 	op, _ := LaneProfile(LaneOperator, wrong)
 	bad := map[Lane]string{LaneRead: profiles[LaneRead], LaneWrite: profiles[LaneWrite], LaneOperator: op}
-	if _, err := VerifyAddedRoots(bad, Spec{Added: []AddedRoot{{Dir: rroot, Write: false}}}, true); err == nil || !strings.Contains(err.Error(), "operator lane") {
+	if _, _, err := VerifyAddedRoots(bad, Spec{Added: []AddedRoot{{Dir: rroot, Write: false}}}, true); err == nil || !strings.Contains(err.Error(), "operator lane") {
 		t.Errorf("VerifyAddedRoots missed an operator lane that writes a read root: %v", err)
 	}
 	// With the read lane unverified, a read-lane profile that would fail
 	// is not blamed on the root: its probes are skipped with a note.
 	broken := map[Lane]string{LaneRead: "(version 1)(allow default)", LaneWrite: profiles[LaneWrite], LaneOperator: profiles[LaneOperator]}
-	if notes, err := VerifyAddedRoots(broken, spec, false); err != nil || len(notes) != 1 {
+	if notes, _, err := VerifyAddedRoots(broken, spec, false); err != nil || len(notes) != 1 {
 		t.Errorf("unverified read lane: notes %v, err %v", notes, err)
 	}
-	if _, err := VerifyAddedRoots(broken, spec, true); err == nil {
+	if _, _, err := VerifyAddedRoots(broken, spec, true); err == nil {
 		t.Error("a read lane that writes an added root passed its probes")
 	}
 	if entries, _ := os.ReadDir(rroot); len(entries) != 2 {
@@ -378,5 +378,94 @@ func TestRemoveProbesReportsLeftovers(t *testing.T) {
 	}
 	if left := removeProbes(gone); len(left) != 0 {
 		t.Errorf("a path already gone was reported: %v", left)
+	}
+}
+
+// stuckProbes makes removeFile fail for any path under dir whose base
+// starts with prefix — a probe directory the operator's role may create
+// but not delete — and returns a cleanup that restores removeFile and
+// removes what was left.
+func stuckProbes(t *testing.T, dir, prefix string) func() []string {
+	t.Helper()
+	var stuck []string
+	removeFile = func(p string) error {
+		if within(dir, p) && strings.HasPrefix(filepath.Base(p), prefix) {
+			stuck = append(stuck, p)
+			return os.ErrPermission
+		}
+		return os.Remove(p)
+	}
+	return func() []string {
+		removeFile = os.Remove
+		for _, p := range stuck {
+			_ = os.Remove(p)
+		}
+		return stuck
+	}
+}
+
+// TestProbesReturnLeftoversWhateverTheResult: both probes hand back the
+// probe directory they could not remove, on success and on failure
+// alike, apart from their notes (ADR-0107 §4; review of the first cut:
+// a failing root's error dropped the project probe's leftovers).
+func TestProbesReturnLeftoversWhateverTheResult(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-only")
+	}
+	if err := Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory")
+	}
+	base, err := os.MkdirTemp(home, ".gem-agent-leftover-test-")
+	if err != nil {
+		t.Skip("cannot create a directory under home")
+	}
+	defer func() { _ = os.RemoveAll(base) }()
+	base, _ = ResolveWriteDir(base)
+	proj := filepath.Join(base, "proj")
+	wroot := filepath.Join(base, "notes")
+	for _, d := range []string{proj, wroot} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	spec := Spec{ProjectDir: proj, Home: home, Added: []AddedRoot{{Dir: wroot, Write: true}}}
+	profiles := map[Lane]string{}
+	for _, l := range []Lane{LaneRead, LaneWrite, LaneOperator} {
+		p, err := LaneProfile(l, spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		profiles[l] = p
+	}
+	for _, c := range []struct {
+		name    string
+		profile string
+		fails   bool
+	}{{"passing", profiles[LaneWrite], false}, {"failing", "(version 1)(allow default)", true}} {
+		done := stuckProbes(t, proj, ".gem-agent-lane-probe-")
+		left, err := VerifyWriteLane(c.profile, spec)
+		stuck := done()
+		if (err != nil) != c.fails || len(left) != 1 || len(stuck) != 1 || left[0] != stuck[0] {
+			t.Errorf("VerifyWriteLane %s: left %v, stuck %v, err %v", c.name, left, stuck, err)
+		}
+	}
+	for _, c := range []struct {
+		name     string
+		profiles map[Lane]string
+		fails    bool
+	}{
+		{"passing", profiles, false},
+		{"failing", map[Lane]string{LaneRead: profiles[LaneRead], LaneWrite: "(version 1)(deny default)", LaneOperator: profiles[LaneOperator]}, true},
+	} {
+		done := stuckProbes(t, wroot, ".gem-agent-root-probe-")
+		notes, left, err := VerifyAddedRoots(c.profiles, spec, true)
+		stuck := done()
+		if (err != nil) != c.fails || len(left) != 1 || len(stuck) != 1 || left[0] != stuck[0] || len(notes) != 0 {
+			t.Errorf("VerifyAddedRoots %s: notes %v, left %v, stuck %v, err %v", c.name, notes, left, stuck, err)
+		}
 	}
 }

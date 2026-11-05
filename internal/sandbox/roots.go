@@ -132,6 +132,10 @@ func RefuseRoot(path string, write bool, c RootContext) (string, error) {
 	return real, nil
 }
 
+// removeFile is os.Remove; a test makes it fail to reach the leftover
+// paths, which a real volume only takes with a sharing role.
+var removeFile = os.Remove
+
 // removeProbes removes a probe's files and then its directory, in the
 // order given, and names each it could not remove (ADR-0107 §4). In a
 // synced folder a leftover does not stay local: it is copied to the
@@ -140,7 +144,7 @@ func RefuseRoot(path string, write bool, c RootContext) (string, error) {
 func removeProbes(paths ...string) []string {
 	var left []string
 	for _, p := range paths {
-		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := removeFile(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			left = append(left, p)
 		}
 	}
@@ -217,41 +221,41 @@ func Absorbed(real string, write bool, roots []AddedRoot) []AddedRoot {
 // they did not, every read-lane call already asks, and a read-lane probe
 // failing for the same unrelated reason must not be blamed on the root —
 // the read-lane probes are skipped with a note, the others still run.
-func VerifyAddedRoots(profiles map[Lane]string, spec Spec, readLane bool) (notes []string, err error) {
+//
+// leftovers are the probe files it could not remove (ADR-0107 §4), kept
+// apart from notes and returned whatever the result: a note may be the
+// model's to read, a leftover is the operator's alone.
+func VerifyAddedRoots(profiles map[Lane]string, spec Spec, readLane bool) (notes, leftovers []string, err error) {
 	if !readLane && len(spec.Added) > 0 {
 		notes = append(notes, "added directories: the read lane was not verified, so their read-lane probes were skipped")
 	}
 	for _, a := range spec.Added {
-		n, err := verifyAddedRoot(profiles, a, readLane)
-		// A leftover is reported even when the probe failed.
+		n, left, err := verifyAddedRoot(profiles, a, readLane)
 		notes = append(notes, n...)
+		leftovers = append(leftovers, left...)
 		if err != nil {
-			return notes, fmt.Errorf("added directory %s (%s): %w", a.Dir, a.Access(), err)
+			return notes, leftovers, fmt.Errorf("added directory %s (%s): %w", a.Dir, a.Access(), err)
 		}
 	}
-	return notes, nil
+	return notes, leftovers, nil
 }
 
-func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (notes []string, err error) {
+func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (notes, leftovers []string, err error) {
 	probeDir, err := os.MkdirTemp(a.Dir, ".gem-agent-root-probe-*")
 	if err != nil {
 		if a.Write {
-			return nil, fmt.Errorf("cannot create a probe in it: %w", err)
+			return nil, nil, fmt.Errorf("cannot create a probe in it: %w", err)
 		}
-		return []string{fmt.Sprintf("added directory %s is not writable here, so its probes were skipped", a.Dir)}, nil
+		return []string{fmt.Sprintf("added directory %s is not writable here, so its probes were skipped", a.Dir)}, nil, nil
 	}
 	cred := filepath.Join(probeDir, ".env")
 	plain := filepath.Join(probeDir, "plain")
 	created := filepath.Join(probeDir, "created")
 	persistent := filepath.Join(probeDir, "AGENTS.md")
-	defer func() {
-		if left := removeProbes(cred, plain, created, persistent, probeDir); len(left) > 0 {
-			notes = append(notes, LeftoverNote(left))
-		}
-	}()
+	defer func() { leftovers = removeProbes(cred, plain, created, persistent, probeDir) }()
 	for _, f := range []string{cred, plain} {
 		if err := os.WriteFile(f, []byte("probe\n"), 0o600); err != nil {
-			return nil, fmt.Errorf("cannot create a probe file in it: %w", err)
+			return nil, nil, fmt.Errorf("cannot create a probe file in it: %w", err)
 		}
 	}
 	run := func(lane Lane, command string) error {
@@ -284,29 +288,29 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (note
 	write := "echo x > " + shellQuote(created)
 	if readLane {
 		if err := mustFail(LaneRead, write, created, "created a file in it"); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := mustFail(LaneRead, "cat "+shellQuote(cred)+" > /dev/null", "", "read a credential name in it"); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := run(LaneRead, "cat "+shellQuote(plain)+" > /dev/null"); err != nil {
-			return nil, fmt.Errorf("the read lane cannot read an ordinary file in it: %w", err)
+			return nil, nil, fmt.Errorf("the read lane cannot read an ordinary file in it: %w", err)
 		}
 	}
 	if a.Write {
 		if err := run(LaneWrite, write); err != nil {
-			return nil, fmt.Errorf("the write lane cannot write it: %w", err)
+			return nil, nil, fmt.Errorf("the write lane cannot write it: %w", err)
 		}
 		_ = os.Remove(created)
 		if err := mustFail(LaneWrite, "echo x > "+shellQuote(persistent), persistent, "wrote an instruction file's name in it"); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return nil, nil
+		return nil, nil, nil
 	}
 	for _, lane := range []Lane{LaneWrite, LaneOperator} {
 		if err := mustFail(lane, write, created, "wrote a read-only added directory"); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return nil, nil
+	return nil, nil, nil
 }

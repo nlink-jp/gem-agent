@@ -827,8 +827,9 @@ func VerifyReadLane(profile string, spec Spec) error {
 // §7): a machine, or a build, where sandbox-exec is present but applies
 // no cage is unconfined, and every shell command asks the operator. The
 // probe files are created exclusively under random names and removed;
-// notes names any it could not remove (ADR-0107 §4), whatever the result.
-func VerifyWriteLane(profile string, spec Spec) (notes []string, err error) {
+// leftovers names any it could not remove (ADR-0107 §4), whatever the
+// result.
+func VerifyWriteLane(profile string, spec Spec) (leftovers []string, err error) {
 	if err := Available(); err != nil {
 		return nil, fmt.Errorf("sandbox-exec cannot apply a profile here: %w", err)
 	}
@@ -845,11 +846,7 @@ func VerifyWriteLane(profile string, spec Spec) (notes []string, err error) {
 		}
 		outsideProbe = f.Name()
 		_ = f.Close()
-		defer func() {
-			if left := removeProbes(outsideProbe); len(left) > 0 {
-				notes = append(notes, LeftoverNote(left))
-			}
-		}()
+		defer func() { leftovers = append(leftovers, removeProbes(outsideProbe)...) }()
 	}
 	probeDir, err := os.MkdirTemp(spec.ProjectDir, ".gem-agent-lane-probe-*")
 	if err != nil {
@@ -857,11 +854,7 @@ func VerifyWriteLane(profile string, spec Spec) (notes []string, err error) {
 	}
 	persistent := filepath.Join(probeDir, "AGENTS.md")
 	plain := filepath.Join(probeDir, "plain")
-	defer func() {
-		if left := removeProbes(persistent, plain, probeDir); len(left) > 0 {
-			notes = append(notes, LeftoverNote(left))
-		}
-	}()
+	defer func() { leftovers = append(leftovers, removeProbes(persistent, plain, probeDir)...) }()
 	run := func(sandboxed bool, command string) error {
 		var cmd *exec.Cmd
 		if sandboxed {

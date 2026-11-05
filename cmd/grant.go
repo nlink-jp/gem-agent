@@ -52,9 +52,9 @@ type dirGranter struct {
 	// path): a request's result goes to the model, so what the operator
 	// must read about it goes here.
 	notice func(string)
-	// build is buildExecFn; a test replaces it to act while the probes
+	// build is buildLanes; a test replaces it to act while the probes
 	// run.
-	build func(sandboxOn bool, projectDir, workDir string, denyExec []string, caches map[string]string, persistentParents []string, added []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error)
+	build func(sandboxOn bool, projectDir, workDir string, denyExec []string, caches map[string]string, persistentParents []string, added []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, []string, error)
 }
 
 func (g *dirGranter) text() *uitext.Messages {
@@ -236,16 +236,28 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 	// file tools only (§12 step 4).
 	cur := g.registry.Enforcement()
 	var fn tools.LaneExecFunc
-	var buildNotes []string
+	var leftovers []string
 	enf := cur
 	if cur.Confined {
 		build := g.build
 		if build == nil {
-			build = buildExecFn
+			build = buildLanes
 		}
-		fn, enf, buildNotes, err = build(g.sandboxOn, g.projectDir, g.workDir(), g.denyExec, g.caches, g.parents(), next)
+		// The build's notes repeat what startup already said; only the
+		// probes' leftovers are news (ADR-0107 §4).
+		fn, enf, _, leftovers, err = build(g.sandboxOn, g.projectDir, g.workDir(), g.denyExec, g.caches, g.parents(), next)
 		if err != nil {
 			_ = root.Close()
+			// A refused request's error is the model's to read; the
+			// leftovers are the operator's (ADR-0107 §4).
+			if len(leftovers) > 0 {
+				left := sandbox.LeftoverNote(leftovers)
+				if source == "request" && g.notice != nil {
+					g.notice(left)
+				} else {
+					err = fmt.Errorf("%w; %s", err, left)
+				}
+			}
 			return "", fmt.Errorf(m.GrantNotAddedFmt, canonical, err)
 		}
 		if g.readLanePrompts {
@@ -308,9 +320,12 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 	// request's result goes to the model — which may have made the
 	// changes — so they go to the operator's notices (review of v0.94.0,
 	// #4 and re-review #2).
-	// The probes' notes — a probe file they could not remove, a root
-	// they could not probe — are the operator's too (ADR-0107 §4).
-	for _, n := range append(watchNotes, buildNotes...) {
+	// A probe file the probes could not remove is the operator's too
+	// (ADR-0107 §4).
+	if len(leftovers) > 0 {
+		watchNotes = append(watchNotes, sandbox.LeftoverNote(leftovers))
+	}
+	for _, n := range watchNotes {
 		if source == "request" && g.notice != nil {
 			g.notice(n)
 			continue

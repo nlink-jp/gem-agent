@@ -2374,8 +2374,25 @@ func runTurnWith(parent context.Context, ladder *interruptLadder, fn func(ctx co
 // per lane and a read lane enabled only when VerifyReadLane passed on
 // this machine (notes say why when it did not); with the sandbox off,
 // direct bash and Confined=false — the unconfined mode the agent gates
-// as the operator's alone.
+// as the operator's alone. A probe file the probes could not remove is
+// a note on success and part of the error otherwise: every caller of
+// this form reports to the operator. The grant path, whose error may be
+// the model's to read, takes buildLanes and routes leftovers itself.
 func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, caches map[string]string, persistentParents []string, added []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
+	fn, enf, notes, left, err := buildLanes(sandboxOn, projectDir, workDir, denyExec, caches, persistentParents, added)
+	if len(left) > 0 {
+		if err != nil {
+			err = fmt.Errorf("%w; %s", err, sandbox.LeftoverNote(left))
+		} else {
+			notes = append(notes, sandbox.LeftoverNote(left))
+		}
+	}
+	return fn, enf, notes, err
+}
+
+// buildLanes is buildExecFn with the probes' leftovers (ADR-0107 §4)
+// apart from its notes, returned whatever the result.
+func buildLanes(sandboxOn bool, projectDir, workDir string, denyExec []string, caches map[string]string, persistentParents []string, added []sandbox.AddedRoot) (_ tools.LaneExecFunc, _ sandbox.Enforcement, _ []string, leftovers []string, _ error) {
 	if !sandboxOn {
 		return func(ctx context.Context, command string, lane sandbox.Lane) *exec.Cmd {
 			cmd := exec.CommandContext(ctx, shell, "-c", command)
@@ -2386,10 +2403,10 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, 
 			// directory and no toolchain cache to point into one.
 			cmd.Env = laneEnv(lane, "", nil, os.Environ())
 			return cmd
-		}, sandbox.Enforcement{}, nil, nil
+		}, sandbox.Enforcement{}, nil, nil, nil
 	}
 	if _, err := os.Stat(sandbox.Executable); err != nil {
-		return nil, sandbox.Enforcement{}, nil, fmt.Errorf("%s not found (gem-agent is macOS-only); use --no-sandbox to bypass at your own risk", sandbox.Executable)
+		return nil, sandbox.Enforcement{}, nil, nil, fmt.Errorf("%s not found (gem-agent is macOS-only); use --no-sandbox to bypass at your own risk", sandbox.Executable)
 	}
 	// The profile's anchors must be the path the kernel reports —
 	// symlinks resolved (/var → /private/var): a regex anchored on the
@@ -2430,7 +2447,7 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, 
 	for _, lane := range []sandbox.Lane{sandbox.LaneRead, sandbox.LaneWrite, sandbox.LaneOperator} {
 		p, err := sandbox.LaneProfile(lane, spec)
 		if err != nil {
-			return nil, sandbox.Enforcement{}, nil, err
+			return nil, sandbox.Enforcement{}, nil, nil, err
 		}
 		profiles[lane] = p
 	}
@@ -2450,8 +2467,8 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, 
 	// unconfined, and every shell command is the operator's to answer.
 	// The commands stay wrapped: a cage that half-works is still in
 	// the way.
-	writeNotes, err := sandbox.VerifyWriteLane(profiles[sandbox.LaneWrite], spec)
-	notes = append(notes, writeNotes...)
+	writeLeft, err := sandbox.VerifyWriteLane(profiles[sandbox.LaneWrite], spec)
+	leftovers = append(leftovers, writeLeft...)
 	if err != nil {
 		enf = sandbox.Enforcement{}
 		notes = append(notes, fmt.Sprintf("sandbox unverified: %v — shell commands run as unconfined: every one asks you", err))
@@ -2460,14 +2477,10 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, 
 		// The startup probes prove the cage, not where an added root
 		// sits in it (ADR-0099 §7). A root that fails its probes is an
 		// error, not a degraded mode: the operator named it.
-		rootNotes, err := sandbox.VerifyAddedRoots(profiles, spec, enf.ReadLane)
+		rootNotes, rootLeft, err := sandbox.VerifyAddedRoots(profiles, spec, enf.ReadLane)
+		leftovers = append(leftovers, rootLeft...)
 		if err != nil {
-			// A leftover is the operator's to delete even when the
-			// root is refused: name it with the error.
-			if len(rootNotes) > 0 {
-				err = fmt.Errorf("%w; %s", err, strings.Join(rootNotes, "; "))
-			}
-			return nil, sandbox.Enforcement{}, nil, err
+			return nil, sandbox.Enforcement{}, nil, leftovers, err
 		}
 		notes = append(notes, rootNotes...)
 	}
@@ -2477,7 +2490,7 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, 
 		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 		cmd.Env = laneEnv(lane, scratch, caches, os.Environ())
 		return cmd
-	}, enf, notes, nil
+	}, enf, notes, leftovers, nil
 }
 
 // laneEnv is the environment a shell command runs with. Every lane

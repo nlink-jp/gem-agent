@@ -176,6 +176,23 @@ the deleted items in its own trash or history, which was not checked.
   in cloud storage. Whether a provider uploads it in between is the
   provider's behaviour and was not measured; nothing in it is the
   operator's data, and a leftover is reported (§4).
+- **Accepted residual: every grant probes every root.** A grant during
+  the session rebuilds the profiles and re-runs the probes in the
+  project and in every added root, not only the changed one as
+  ADR-0099 §12 step 4 says (a gap older than this ADR). Where the
+  operator's role cannot delete, each grant leaves one more probe
+  directory there; each is reported, and a session started without that
+  root, or a role that can delete, stops it.
+- **Accepted residual: the provider's own files at the account folder.**
+  Adding the account folder itself (`~/Library/CloudStorage/Dropbox`)
+  also hands the write lane what the provider keeps at its top, such as
+  Dropbox's `.dropbox`. Adding the subfolder that is worked in avoids
+  it.
+- **Implementation review (2026-11-06).** The first cut carried the
+  leftovers in the probes' notes: a refused request put them in the
+  error the model reads, a refused root lost the project probe's, and a
+  grant repeated startup's notes. Leftovers now travel apart from the
+  notes (`buildLanes`) and the grant path routes them to the operator.
 - A folder the provider has made read-only (the Google Drive account
   folder itself is `r-x`) is refused by the probe, not by this rule, with
   the probe's "cannot create a probe" message.

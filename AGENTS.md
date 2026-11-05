@@ -622,7 +622,11 @@ a new hook) is an architecture change and takes the same rows as a
   root is `sandbox.RefuseRoot` alone (under `~/Library` only
   `SyncedFolder` may be written — strictly inside `CloudStorage`, or
   iCloud Drive; ADR-0107. The rest of `Mobile Documents` is app
-  containers that hold what the apps run: do not widen it); nothing in an added directory is
+  containers that hold what the apps run: do not widen it. The probes'
+  leftovers travel apart from their notes — `buildLanes` returns them
+  whatever the result, and the grant path routes them to the operator
+  because its error is the model's to read: do not fold them into the
+  notes or the error there); nothing in an added directory is
   loaded (no instructions, `.mcp.json`, policy, skills — the operator's
   decision). `.gem-agent.toml` cannot add one because `LoadProject`
   refuses unknown keys: keep it that way. Startup probes failing on an
