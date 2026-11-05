@@ -526,13 +526,13 @@ func TestVerifyWriteLane(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := VerifyWriteLane(profile, spec); err != nil {
-		t.Errorf("the real write lane failed verification: %v", err)
+	if notes, err := VerifyWriteLane(profile, spec); err != nil || len(notes) != 0 {
+		t.Errorf("the real write lane failed verification: notes %v, err %v", notes, err)
 	}
-	if err := VerifyWriteLane("(version 1)(allow default)", spec); err == nil {
+	if _, err := VerifyWriteLane("(version 1)(allow default)", spec); err == nil {
 		t.Error("an allow-everything profile passed verification")
 	}
-	if err := VerifyWriteLane("(version 1)(deny default)", spec); err == nil {
+	if _, err := VerifyWriteLane("(version 1)(deny default)", spec); err == nil {
 		t.Error("a deny-everything profile passed verification")
 	}
 	entries, _ := os.ReadDir(proj)

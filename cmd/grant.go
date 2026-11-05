@@ -236,13 +236,14 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 	// file tools only (§12 step 4).
 	cur := g.registry.Enforcement()
 	var fn tools.LaneExecFunc
+	var buildNotes []string
 	enf := cur
 	if cur.Confined {
 		build := g.build
 		if build == nil {
 			build = buildExecFn
 		}
-		fn, enf, _, err = build(g.sandboxOn, g.projectDir, g.workDir(), g.denyExec, g.caches, g.parents(), next)
+		fn, enf, buildNotes, err = build(g.sandboxOn, g.projectDir, g.workDir(), g.denyExec, g.caches, g.parents(), next)
 		if err != nil {
 			_ = root.Close()
 			return "", fmt.Errorf(m.GrantNotAddedFmt, canonical, err)
@@ -307,7 +308,9 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 	// request's result goes to the model — which may have made the
 	// changes — so they go to the operator's notices (review of v0.94.0,
 	// #4 and re-review #2).
-	for _, n := range watchNotes {
+	// The probes' notes — a probe file they could not remove, a root
+	// they could not probe — are the operator's too (ADR-0107 §4).
+	for _, n := range append(watchNotes, buildNotes...) {
 		if source == "request" && g.notice != nil {
 			g.notice(n)
 			continue

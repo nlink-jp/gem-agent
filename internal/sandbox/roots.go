@@ -1,10 +1,13 @@
 package sandbox
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/nlink-jp/gem-agent/internal/pathid"
 )
@@ -129,6 +132,27 @@ func RefuseRoot(path string, write bool, c RootContext) (string, error) {
 	return real, nil
 }
 
+// removeProbes removes a probe's files and then its directory, in the
+// order given, and names each it could not remove (ADR-0107 §4). In a
+// synced folder a leftover does not stay local: it is copied to the
+// operator's other devices and to everyone who shares the folder, so it
+// is reported, never left in silence. A path already gone is not one.
+func removeProbes(paths ...string) []string {
+	var left []string
+	for _, p := range paths {
+		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			left = append(left, p)
+		}
+	}
+	return left
+}
+
+// LeftoverNote is the operator's note for probe files that could not be
+// removed: what is left, and that it is theirs to delete.
+func LeftoverNote(left []string) string {
+	return fmt.Sprintf("the sandbox check could not remove its test files: %s — delete them yourself", strings.Join(left, ", "))
+}
+
 // SyncedFolder reports whether real — a real path, judged against the
 // resolved home — is one of the two places macOS keeps synced documents
 // under ~/Library (ADR-0107 §1): strictly inside ~/Library/CloudStorage
@@ -199,15 +223,16 @@ func VerifyAddedRoots(profiles map[Lane]string, spec Spec, readLane bool) (notes
 	}
 	for _, a := range spec.Added {
 		n, err := verifyAddedRoot(profiles, a, readLane)
+		// A leftover is reported even when the probe failed.
+		notes = append(notes, n...)
 		if err != nil {
 			return notes, fmt.Errorf("added directory %s (%s): %w", a.Dir, a.Access(), err)
 		}
-		notes = append(notes, n...)
 	}
 	return notes, nil
 }
 
-func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) ([]string, error) {
+func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (notes []string, err error) {
 	probeDir, err := os.MkdirTemp(a.Dir, ".gem-agent-root-probe-*")
 	if err != nil {
 		if a.Write {
@@ -220,10 +245,9 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) ([]st
 	created := filepath.Join(probeDir, "created")
 	persistent := filepath.Join(probeDir, "AGENTS.md")
 	defer func() {
-		for _, f := range []string{cred, plain, created, persistent} {
-			_ = os.Remove(f)
+		if left := removeProbes(cred, plain, created, persistent, probeDir); len(left) > 0 {
+			notes = append(notes, LeftoverNote(left))
 		}
-		_ = os.Remove(probeDir)
 	}()
 	for _, f := range []string{cred, plain} {
 		if err := os.WriteFile(f, []byte("probe\n"), 0o600); err != nil {

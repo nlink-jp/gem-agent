@@ -599,3 +599,29 @@ func TestGrantRequestSpeaksToEachReader(t *testing.T) {
 		t.Errorf("the operator's notices = %q", notices)
 	}
 }
+
+// The probes' notes reach the operator, not the model (ADR-0107 §4): a
+// probe file left in a synced folder is copied to everyone who shares
+// it. A typed command carries them in its note; a request's result goes
+// to the model, so they go to the operator's notices.
+func TestGrantReportsTheProbesNotes(t *testing.T) {
+	g, _, _ := newTestGranter(t, nil, false)
+	leftover := sandbox.LeftoverNote([]string{"/x/.gem-agent-root-probe-1/.env"})
+	g.build = func(on bool, p, w string, d []string, c map[string]string, pp []string, a []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
+		fn, enf, notes, err := buildExecFn(on, p, w, d, c, pp, a)
+		return fn, enf, append(notes, leftover), err
+	}
+	note, err := g.grant(context.Background(), underHome(t, "typed"), true, "slash", g.currentEpoch(), nil)
+	if err != nil || !strings.Contains(note, leftover) {
+		t.Errorf("a typed grant's note = %q (%v), want the leftover", note, err)
+	}
+	var notices []string
+	g.notice = func(s string) { notices = append(notices, s) }
+	note, err = g.grant(context.Background(), underHome(t, "requested"), true, "request", g.currentEpoch(), nil)
+	if err != nil || strings.Contains(note, leftover) {
+		t.Errorf("a request's result carries the leftover to the model: %q (%v)", note, err)
+	}
+	if len(notices) != 1 || notices[0] != leftover {
+		t.Errorf("notices = %v, want the leftover", notices)
+	}
+}

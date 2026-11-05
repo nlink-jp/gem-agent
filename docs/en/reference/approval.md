@@ -696,7 +696,10 @@ file there or read a `.env` there, and can read an ordinary file; a
 write root is written by the write lane with `AGENTS.md` denied; a read
 root is written by neither the write nor the operator lane). A root that
 fails them stops the start; a read root this process cannot write at
-all (a read-only volume) skips the probes with a note. `/clear` keeps
+all (a read-only volume) skips the probes with a note. A probe file the
+probes cannot remove afterwards — in a shared folder that lets you
+create but not delete, say — is named in a note for you to delete,
+since a synced folder would copy it to everyone who shares it. `/clear` keeps
 the added directories, and its new transcript records them again. The
 grants are recorded in the transcript (`added_directories`, see
 [sessions](sessions.md)). Each added directory is held open for the

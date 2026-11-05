@@ -16,6 +16,13 @@
   `~/Library` stay refused. Measured on Dropbox, Google Drive and iCloud
   Drive: the lanes write there, and the credential and persistent-name
   denials hold inside.
+- **A sandbox probe file that cannot be removed is reported.** The
+  start-up and grant checks create test files in the project and in each
+  added directory and removed them ignoring a failure; in a shared drive
+  that lets you create but not delete, a probe directory holding `.env`
+  would stay and sync to everyone sharing the drive, unannounced. Each
+  leftover is now named in a note (on a request, to you, not the model),
+  and in the error when the directory is refused.
 
 ## [0.98.2] - 2026-11-05
 

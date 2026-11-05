@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-11-06) — independent design review applied (§4, §5, the residual in Consequences); §5 measured on Dropbox, Google Drive and iCloud Drive; not implemented |
+| Status | **Accepted** (2026-11-06) — implemented; independent design review applied (§4, §5, the residual in Consequences); §5 measured on Dropbox, Google Drive and iCloud Drive |
 | Date | 2026-11-06 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

@@ -2450,7 +2450,9 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, 
 	// unconfined, and every shell command is the operator's to answer.
 	// The commands stay wrapped: a cage that half-works is still in
 	// the way.
-	if err := sandbox.VerifyWriteLane(profiles[sandbox.LaneWrite], spec); err != nil {
+	writeNotes, err := sandbox.VerifyWriteLane(profiles[sandbox.LaneWrite], spec)
+	notes = append(notes, writeNotes...)
+	if err != nil {
 		enf = sandbox.Enforcement{}
 		notes = append(notes, fmt.Sprintf("sandbox unverified: %v — shell commands run as unconfined: every one asks you", err))
 	}
@@ -2460,6 +2462,11 @@ func buildExecFn(sandboxOn bool, projectDir, workDir string, denyExec []string, 
 		// error, not a degraded mode: the operator named it.
 		rootNotes, err := sandbox.VerifyAddedRoots(profiles, spec, enf.ReadLane)
 		if err != nil {
+			// A leftover is the operator's to delete even when the
+			// root is refused: name it with the error.
+			if len(rootNotes) > 0 {
+				err = fmt.Errorf("%w; %s", err, strings.Join(rootNotes, "; "))
+			}
 			return nil, sandbox.Enforcement{}, nil, err
 		}
 		notes = append(notes, rootNotes...)

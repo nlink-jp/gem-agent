@@ -2,7 +2,7 @@
 
 | 項目 | 値 |
 |-------|-----|
-| Status | **Proposed**（2026-11-06）— 独立した設計レビューを反映済み（§4・§5・Consequences の残余）。§5 を Dropbox・Google Drive・iCloud Drive で測定済み。未実装 |
+| Status | **Accepted**（2026-11-06）— 実装済み。独立した設計レビューを反映済み（§4・§5・Consequences の残余）。§5 を Dropbox・Google Drive・iCloud Drive で測定済み |
 | Date | 2026-11-06 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
