@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-11-06) — independent design review applied (§4, §5, the residual in Consequences); awaiting the §5 measurement |
+| Status | **Proposed** (2026-11-06) — independent design review applied (§4, §5, the residual in Consequences); §5 measured on Dropbox, Google Drive and iCloud Drive; not implemented |
 | Date | 2026-11-06 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -105,12 +105,32 @@ report.
 
 ### 5. Measured before acceptance
 
-The premise was measured only for a project in Google Drive. Before this
-ADR is accepted, a write root is added in a folder the operator names in
-Dropbox, in Google Drive and in iCloud Drive, and the write lane writes,
-renames and removes a file there. OneDrive is not on this machine; it is
-the same File Provider path and is not measured separately. The result
-is recorded here.
+The premise had been measured only for a project in Google Drive. On
+2026-11-06 an empty folder made for the purpose (`gem-agent-probe-20261106`,
+chosen by the operator) at the top of Dropbox, of Google Drive's My Drive
+and of iCloud Drive was given to `LaneProfile` as a write root, with the
+real home and a project elsewhere, and real `sandbox-exec` ran each case
+with the root as the working directory. `RefuseRoot` was not in the path
+— it refuses all three today, as the run also recorded — so this
+measures what the lanes and the providers do once §1 lets the root in.
+
+| Case (the same in all three) | Dropbox | Google Drive | iCloud Drive |
+|---|---|---|---|
+| `RefuseRoot` for write, today | refused (`~/Library`) | refused | refused |
+| write lane: `pwd`, `ls`; create, append, rename a file; make a directory, write in it, rename it; remove both | allowed | allowed | allowed |
+| write lane: `AGENTS.md`; `.git/hooks/pre-commit` | denied | denied | denied |
+| write and read lanes: read `.env` | denied | denied | denied |
+| read lane: `pwd` and read a plain file under `~/Library` | allowed | allowed | allowed |
+| read lane: write | denied | denied | denied |
+| operator lane: write and remove | allowed | allowed | allowed |
+| `VerifyAddedRoots` (the per-root probe) | passed, no notes | passed | passed |
+| left in the folder after cleanup | nothing | nothing | nothing |
+
+The provider did not get in the way of any sandboxed write, and every
+denial ADR-0099 places inside a write root held. OneDrive is not on this
+machine; it is the same File Provider path and was not measured
+separately. The folders were removed afterwards. Each provider may keep
+the deleted items in its own trash or history, which was not checked.
 
 ### 6. Tests and documents
 
