@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/nlink-jp/gem-agent/internal/pathid"
 )
 
 // RootContext is what RefuseRoot judges an added directory against
@@ -91,8 +93,8 @@ func RefuseRoot(path string, write bool, c RootContext) (string, error) {
 				return refuse("it is, lies inside or contains a credential location (" + cr + ")")
 			}
 		}
-		if write && within(filepath.Join(h, "Library"), real) {
-			return refuse("a write root may not lie inside ~/Library: programs there run outside the sandbox")
+		if write && within(filepath.Join(h, "Library"), real) && !SyncedFolder(h, real) {
+			return refuse("a write root may not lie inside ~/Library: programs there run outside the sandbox (a synced folder in ~/Library/CloudStorage or iCloud Drive may)")
 		}
 	}
 	if write && c.ConfigFile != "" && within(real, c.ConfigFile) {
@@ -125,6 +127,23 @@ func RefuseRoot(path string, write bool, c RootContext) (string, error) {
 		}
 	}
 	return real, nil
+}
+
+// SyncedFolder reports whether real — a real path, judged against the
+// resolved home — is one of the two places macOS keeps synced documents
+// under ~/Library (ADR-0107 §1): strictly inside ~/Library/CloudStorage
+// (a File Provider account folder or below; CloudStorage itself covers
+// every account and is not one), or iCloud Drive itself or below. The
+// rest of Mobile Documents is app containers, which hold what the apps
+// run, and stays out.
+func SyncedFolder(home, real string) bool {
+	lib := filepath.Join(filepath.Clean(home), "Library")
+	cloud := filepath.Join(lib, "CloudStorage")
+	icloud := filepath.Join(lib, "Mobile Documents", "com~apple~CloudDocs")
+	if within(cloud, real) && !pathid.Same(cloud, real) {
+		return true
+	}
+	return within(icloud, real)
 }
 
 // CoveredError is RefuseRoot's "already covered": the path lies inside a

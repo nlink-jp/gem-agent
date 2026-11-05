@@ -97,6 +97,20 @@ func TestRefuseRoot(t *testing.T) {
 	mk("home/.ssh")
 	mk("home/Library/LaunchAgents")
 	mk("home/Library/Mobile Documents/x")
+	// ADR-0107: the synced folders under ~/Library, their neighbours,
+	// and a link into one.
+	mk("home/Library/CloudStorage/Dropbox/work")
+	mk("home/Library/CloudStorage/GoogleDrive-a@example.com/マイドライブ/team")
+	mk("home/Library/CloudStorageX/acct")
+	mk("home/Library/Mobile Documents/com~apple~CloudDocs/docs")
+	mk("home/Library/Mobile Documents/com~apple~CloudDocsX")
+	mk("home/Library/Mobile Documents/com~apple~Automator")
+	if err := os.Symlink(filepath.Join(home, "Library/CloudStorage/Dropbox"), filepath.Join(home, "Dropbox")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(home, "Library/LaunchAgents"), filepath.Join(home, "Library/CloudStorage/Dropbox/agents-link")); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(base, "home/file"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -123,6 +137,20 @@ func TestRefuseRoot(t *testing.T) {
 		{filepath.Join(home, ".ssh"), false, "credential location"},
 		{filepath.Join(home, "Library/LaunchAgents"), true, "~/Library"},
 		{filepath.Join(home, "Library/Mobile Documents/x"), true, "~/Library"},
+		// ADR-0107 §1: synced folders are carved out for writing.
+		{filepath.Join(home, "Library/CloudStorage/Dropbox"), true, ""},
+		{filepath.Join(home, "Library/CloudStorage/Dropbox/work"), true, ""},
+		{filepath.Join(home, "Library/CloudStorage/GoogleDrive-a@example.com/マイドライブ/team"), true, ""},
+		{filepath.Join(home, "Library/CloudStorage"), true, "~/Library"},
+		{filepath.Join(home, "Library/CloudStorageX/acct"), true, "~/Library"},
+		{filepath.Join(home, "Library/Mobile Documents/com~apple~CloudDocs"), true, ""},
+		{filepath.Join(home, "Library/Mobile Documents/com~apple~CloudDocs/docs"), true, ""},
+		{filepath.Join(home, "Library/Mobile Documents"), true, "~/Library"},
+		{filepath.Join(home, "Library/Mobile Documents/com~apple~CloudDocsX"), true, "~/Library"},
+		{filepath.Join(home, "Library/Mobile Documents/com~apple~Automator"), true, "~/Library"},
+		{filepath.Join(home, "Library/CloudStorage/Dropbox/../../LaunchAgents"), true, "~/Library"},
+		{filepath.Join(home, "Dropbox/work"), true, ""},                                   // a link into a synced folder: judged on the real path
+		{filepath.Join(home, "Library/CloudStorage/Dropbox/agents-link"), true, "~/Library"}, // a link out of one: judged on the real path
 		{proj, true, "already covered"},
 		{filepath.Join(home, "ref"), false, "already covered"},
 		{filepath.Join(home, "notes"), false, "already covered"},
@@ -157,6 +185,15 @@ func TestRefuseRoot(t *testing.T) {
 		}
 		if got, err := RefuseRoot(strings.ToUpper(filepath.Join(home, "vault")), true, c); err != nil || got != filepath.Join(home, "vault") {
 			t.Errorf("a case variant resolves to %q (%v), want the volume's name", got, err)
+		}
+		// ADR-0107 §2: a typed case variant of a synced folder is the
+		// synced folder, and one of an app container is still refused.
+		synced := filepath.Join(home, "Library/CloudStorage/Dropbox/work")
+		if got, err := RefuseRoot(strings.ToLower(synced), true, c); err != nil || got != synced {
+			t.Errorf("a case variant of a synced folder resolves to %q (%v), want %q", got, err, synced)
+		}
+		if _, err := RefuseRoot(strings.ToLower(filepath.Join(home, "Library/Mobile Documents/com~apple~Automator")), true, c); err == nil || !strings.Contains(err.Error(), "~/Library") {
+			t.Errorf("a case variant of an app container: want ~/Library, got %v", err)
 		}
 	}
 	// A write request inside a read root is an upgrade, not covered.

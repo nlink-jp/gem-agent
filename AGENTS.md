@@ -619,7 +619,10 @@ a new hook) is an architecture change and takes the same rows as a
   project and the work directory" takes it too, or the feature fails
   there. A write goes through `rootForWrite`, which refuses a read root
   whatever the verdict said — never `rootFor`. Whether a path may be a
-  root is `sandbox.RefuseRoot` alone; nothing in an added directory is
+  root is `sandbox.RefuseRoot` alone (under `~/Library` only
+  `SyncedFolder` may be written — strictly inside `CloudStorage`, or
+  iCloud Drive; ADR-0107. The rest of `Mobile Documents` is app
+  containers that hold what the apps run: do not widen it); nothing in an added directory is
   loaded (no instructions, `.mcp.json`, policy, skills — the operator's
   decision). `.gem-agent.toml` cannot add one because `LoadProject`
   refuses unknown keys: keep it that way. Startup probes failing on an

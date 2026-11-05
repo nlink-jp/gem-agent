@@ -14,6 +14,10 @@
 *Amended by ADR-0102: the session's own roots — the project and the work
 directory — are read under a reach denial too, when they lie strictly
 inside the denied tree.*
+
+*Amended by ADR-0107: §5's `~/Library` refusal for write roots carves
+out the synced folders — strictly inside `~/Library/CloudStorage`, and
+iCloud Drive.*
 ## Context
 
 Today a session has two roots: the project and the session work directory

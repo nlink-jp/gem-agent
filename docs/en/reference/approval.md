@@ -686,7 +686,10 @@ rule (`sandbox.RefuseRoot`): `/`, your home, anything holding the
 project, the work directory, `~/.config/gem-agent`, the state
 directory or a home credential location, anything inside or holding a
 shared temporary directory or `/dev`, and — for `write` — anything under
-`~/Library` or holding the configuration file in use (`--config`) is
+`~/Library` (except a synced folder: a provider's account folder inside
+`~/Library/CloudStorage` or below it, or iCloud Drive,
+`~/Library/Mobile Documents/com~apple~CloudDocs`, or below it — ADR-0107)
+or holding the configuration file in use (`--config`) is
 refused, and the start stops with the reason. Each added root then gets
 its own probes under the real profiles (the read lane cannot create a
 file there or read a `.env` there, and can read an ordinary file; a

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **A synced folder can be a write directory** (ADR-0107). Every folder
+  that Google Drive, Dropbox, OneDrive or iCloud Drive syncs lies under
+  `~/Library`, which `--add-dir`, `[directories].write`, `/add-dir` and a
+  granted request refused for writing — while the same folder opened as
+  the project was written. A folder inside a provider's account folder in
+  `~/Library/CloudStorage`, and iCloud Drive
+  (`~/Library/Mobile Documents/com~apple~CloudDocs`), are now accepted.
+  `CloudStorage` itself, the apps' containers in `Mobile Documents`
+  (Automator, Script Editor, Shortcuts, an Obsidian vault) and the rest of
+  `~/Library` stay refused. Measured on Dropbox, Google Drive and iCloud
+  Drive: the lanes write there, and the credential and persistent-name
+  denials hold inside.
+
 ## [0.98.2] - 2026-11-05
 
 ### Fixed
