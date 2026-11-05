@@ -266,21 +266,29 @@ func (a *Agent) laneOf(tc llm.ToolCall) string {
 	return lane.String()
 }
 
+// pathArgTools are the built-in tools whose `path` (and file_info's
+// `paths`) name a file or a directory the file tools confine; write_file
+// alone has a `from` that is one too (datetime's `from` is a time zone).
+// A tool missing here is left as typed and refused as before, which
+// fails safe.
+var pathArgTools = map[string]bool{
+	"read_file": true, "write_file": true, "edit_file": true,
+	"view_image": true, "show_image": true, "read_document": true,
+	"file_info": true, "summarize_file": true,
+	"list_files": true, "list_tree": true, "search_files": true,
+}
+
 // intoRoots rewrites a built-in file tool's path arguments — `path`,
-// `from` and every entry of `paths` — that were typed through a link
+// write_file's `from` and every entry of `paths` — that were typed through a link
 // outside every root into the real path inside the root they lead to
 // (ADR-0108 §1). It runs once, where the call comes in, and the
 // rewritten call is the one shown, judged, run and recorded: the
 // verdict and the run read one string, so no link is consulted between
-// them. shell_exec (the kernel resolves its paths), request_directory
-// (RefuseRoot judges its own) and MCP tools (their arguments are not
-// this runtime's paths) are left alone. The map is copied only when
-// something changed.
+// them. Every other tool — shell_exec (the kernel resolves its paths),
+// request_directory (RefuseRoot judges its own), MCP tools — is left
+// alone. The map is copied only when something changed.
 func (a *Agent) intoRoots(tc llm.ToolCall) llm.ToolCall {
-	if tc.Name == tools.ShellExecName || tc.Name == "request_directory" || strings.HasPrefix(tc.Name, mcpPrefix) {
-		return tc
-	}
-	if _, ok := a.registry.Get(tc.Name); !ok {
+	if !pathArgTools[tc.Name] {
 		return tc
 	}
 	roots := append([]string{a.registry.ProjectDir(), a.registry.WorkDir()}, addedDirNames(a.registry.AddedDirs())...)
@@ -294,7 +302,11 @@ func (a *Agent) intoRoots(tc llm.ToolCall) llm.ToolCall {
 		}
 		out[k] = v
 	}
-	for _, k := range []string{"path", "from"} {
+	keys := []string{"path"}
+	if tc.Name == "write_file" {
+		keys = append(keys, "from")
+	}
+	for _, k := range keys {
 		if p, ok := tc.Args[k].(string); ok {
 			if real, ok := sandbox.IntoRoot(p, roots); ok {
 				set(k, real)

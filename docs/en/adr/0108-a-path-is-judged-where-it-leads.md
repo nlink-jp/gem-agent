@@ -55,24 +55,35 @@ decision point; it receives the typed one only because `RealPath` refused.
 ### 1. The call is rewritten once, where it comes in
 
 When a tool call from the model comes in — before it is shown, judged,
-run or recorded — each path argument of a built-in file tool (`path`,
-`from` and every entry of `paths`; not `shell_exec`, `request_directory`
-or an MCP tool) is looked at once. An argument that is
+run or audited — each path argument of a built-in file tool is looked at
+once: `path` of `read_file`, `write_file`, `edit_file`, `view_image`,
+`show_image`, `read_document`, `file_info`, `summarize_file`,
+`list_files`, `list_tree` and `search_files`, `write_file`'s `from`, and
+every entry of `file_info`'s `paths`. No other tool is touched —
+`shell_exec`, `request_directory`, MCP tools, and `datetime`, whose
+`from` is a time zone. An argument that is
 
 - an absolute path,
 - lexically outside every root,
 - not credential material by its spelling (`sandbox.CredentialPath`),
-- and not under `/Volumes`, `/Network` or `/net`
+- not under `/Volumes`, `/Network`, `/net` or `/home`, and reached
+  through no link that leads into one of them
 
 has its **parent directory** resolved. When that real parent joined with
 the typed last element lies inside a root, the argument is replaced by
 it. Otherwise the argument is left as typed, and the file tools refuse it
 later exactly as today, with today's message.
 
+A root named by its own link — `list_files ~/Dropbox` when the folder
+behind `~/Dropbox` is the root — becomes that root: the whole path,
+last element included, resolves to a directory that is a root, and
+naming a directory writes through nothing.
+
 The rewritten call is the call from then on: the approval prompt shows
-it, the decision point judges it, the tool runs it, the transcript, the
-audit and telemetry record it. The model's own message in the history
-keeps what the model sent.
+it, the decision point judges it, a pre-tool hook receives it, the tool
+runs it, and the audit and telemetry record it. The model's own message
+in the history keeps what the model sent, so the transcript pairs the
+typed call with the result of the real one.
 
 Each condition has a reason:
 
@@ -92,8 +103,11 @@ Each condition has a reason:
   keeps seeing it. A credential name reached through a link into a root
   is still denied by the kernel in every lane but the operator's.
 - **No mounts** — resolving a path the model names under `/Volumes`,
-  `/Network` or the automounter's `/net` would touch a share, or wait on
-  a stale one, before anyone approved anything.
+  `/Network` or the automounter's `/net` and `/home` would touch a
+  share, or wait on a stale one, before anyone approved anything. A
+  link that leads into one (`~/nas` → `/Volumes/nas`) is read without
+  being followed, so it stops the resolution too (implementation
+  review).
 - **A failure says nothing new** — a parent that does not resolve, or
   resolves outside every root, leaves the argument as typed, so the
   refusal is today's and does not tell whether a link exists there or
@@ -122,8 +136,9 @@ are unchanged.
 - End to end through the agent loop with a fake model: a `write_file`
   through an outside link to a write root is approved as an edit inside
   the added directory and lands; one to the project's `AGENTS.md` through
-  a link is the operator's alone; the approval detail and the recorded
-  call carry the real path; the refusal for a link leading out does not
+  a link is the operator's alone; the approval detail and the call
+  shown carry the real path, and the verdict is taken on the string the
+  tool runs; the refusal for a link leading out does not
   name its target.
 - Swapping the outside link after the rewrite does not change where the
   write lands.
@@ -146,6 +161,12 @@ are unchanged.
   swapped for a link by a write-lane command between the verdict and the
   open; ADR-0072 §4's `os.Root` keeps the open inside the root, as it
   does today.
+- **Accepted residual:** the resolution runs synchronously where the
+  call comes in, before approval and without the turn's cancellation; a
+  directory that blocks outside the mount trees would hold the turn
+  there.
+- **Not covered:** a path typed with `~` is not expanded, by the file
+  tools or here; the full path is what reaches the root.
 - **Not in scope:** document and media attachments opened by `@` through
   `openConfined` are confined to the project only, not the added roots —
   an existing gap this ADR does not touch.
@@ -168,7 +189,8 @@ are unchanged.
 ## References
 
 - `internal/agent/agent.go` (the tool-call loop, where §1 runs),
-  `internal/agent/decision.go` (`withRealPaths`), `internal/tools/tools.go`
+  `internal/agent/decision.go` (`intoRoots`, `pathArgTools`, `withRealPaths`),
+  `internal/sandbox/intoroot.go` (`IntoRoot`, `linksIntoMount`), `internal/tools/tools.go`
   (`resolvePath`, `RealPath`, `resolveExisting`), `internal/tools/copysource.go`,
   `internal/tools/fileinfo.go`, `internal/mention/mention.go` (`resolve`)
 - ADR-0099, ADR-0101, ADR-0107

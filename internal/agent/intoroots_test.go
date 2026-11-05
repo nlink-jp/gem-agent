@@ -150,3 +150,70 @@ func TestALinkLeadingOutIsRefusedWithoutItsTarget(t *testing.T) {
 		}
 	}
 }
+
+// Only the path arguments of the file tools are rewritten: write_file's
+// `from` and file_info's `paths` as well as `path`; datetime's `from` is
+// a time zone, and request_directory judges its own path (review of the
+// first cut).
+func TestIntoRootsRewritesOnlyFileToolPaths(t *testing.T) {
+	wroot, outside := realDir(t), realDir(t)
+	link := filepath.Join(outside, "Dropbox")
+	if err := os.Symlink(wroot, link); err != nil {
+		t.Fatal(err)
+	}
+	a, reg, _ := newAutoAgent(t, &autoBackend{}, &recordingGate{})
+	if err := reg.AddDirs([]sandbox.AddedRoot{{Dir: wroot, Write: true}}); err != nil {
+		t.Fatal(err)
+	}
+	typed, real := filepath.Join(link, "a.txt"), filepath.Join(wroot, "a.txt")
+	got := a.intoRoots(llm.ToolCall{Name: "write_file", Args: map[string]any{"path": typed, "from": typed}})
+	if got.Args["path"] != real || got.Args["from"] != real {
+		t.Errorf("write_file = %v", got.Args)
+	}
+	got = a.intoRoots(llm.ToolCall{Name: "file_info", Args: map[string]any{"paths": []any{typed, "rel.txt", 3}}})
+	if ps := got.Args["paths"].([]any); ps[0] != real || ps[1] != "rel.txt" || ps[2] != 3 {
+		t.Errorf("file_info paths = %v", ps)
+	}
+	got = a.intoRoots(llm.ToolCall{Name: "list_files", Args: map[string]any{"path": link}})
+	if got.Args["path"] != wroot {
+		t.Errorf("the root by its link = %v, want %s", got.Args["path"], wroot)
+	}
+	for _, c := range []llm.ToolCall{
+		{Name: "datetime", Args: map[string]any{"from": typed}},
+		{Name: "request_directory", Args: map[string]any{"path": typed}},
+		{Name: "read_file", Args: map[string]any{"from": typed}},
+	} {
+		if got := a.intoRoots(c); got.Args["path"] != c.Args["path"] || got.Args["from"] != c.Args["from"] {
+			t.Errorf("%s was rewritten: %v", c.Name, got.Args)
+		}
+	}
+}
+
+// The verdict and the run read one string: the decision taken on the
+// rewritten call names the root, and a swap of the outside link after it
+// does not move the run.
+func TestTheVerdictAndTheRunShareThePath(t *testing.T) {
+	wroot, outside, other := realDir(t), realDir(t), realDir(t)
+	link := filepath.Join(outside, "Dropbox")
+	if err := os.Symlink(wroot, link); err != nil {
+		t.Fatal(err)
+	}
+	a, reg, _ := newAutoAgent(t, &autoBackend{}, &recordingGate{})
+	if err := reg.AddDirs([]sandbox.AddedRoot{{Dir: wroot, Write: true}, {Dir: other, Write: true}}); err != nil {
+		t.Fatal(err)
+	}
+	tc := a.intoRoots(writeCall(filepath.Join(link, "AGENTS.md")))
+	d := a.decide(tc)
+	if !d.Verdict.OperatorOnly {
+		t.Fatalf("an AGENTS.md through a link was judged %+v", d.Verdict)
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(other, link); err != nil {
+		t.Fatal(err)
+	}
+	if tc.Args["path"] != filepath.Join(wroot, "AGENTS.md") {
+		t.Errorf("the judged call names %v", tc.Args["path"])
+	}
+}

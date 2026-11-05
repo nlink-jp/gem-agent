@@ -11,11 +11,13 @@
   a read was refused — while the same file by its real path worked. Such a
   path is now replaced by the real one where the call comes in, when it
   leads into the project, the work directory or an added directory; the
-  approval, the verdict, the run and the transcript all see that one path.
-  A link leading anywhere else is refused as before, without saying where
-  it leads. The last element, a credential-looking name and paths under
-  `/Volumes`, `/Network` and `/net` are left as typed. `@` references
-  follow the same rule.
+  approval, the verdict, pre-tool hooks, the run and the audit all see
+  that one path (the model's own message keeps what it typed). A root
+  named by its own link (`list_files ~/Dropbox`) is that root. A link
+  leading anywhere else is refused as before, without saying where it
+  leads. The last element, a credential-looking name, paths under
+  `/Volumes`, `/Network`, `/net` and `/home`, and links that lead into
+  them are left as typed. `@` references follow the same rule.
 
 ### Changed
 

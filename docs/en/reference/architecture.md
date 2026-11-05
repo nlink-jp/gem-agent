@@ -100,8 +100,8 @@ purpose:
   through a link outside every root (`~/Dropbox` → `~/Library/CloudStorage/Dropbox`)
   has its parent resolved once and is replaced by the real path when that
   lies in a root (`sandbox.IntoRoot`, ADR-0108); the rewritten call is the
-  one shown, judged, run and recorded, so no link is consulted between the
-  verdict and the run.
+  one shown, judged, run and audited (the model's own message keeps what
+  it sent), so no link is consulted between the verdict and the run.
 - **Process-level containment** (`internal/sandbox`). `shell_exec` takes
   no path — it takes a command — so it is wrapped in `sandbox-exec` with
   a generated SBPL profile. Since ADR-0073 the profile is the lane the

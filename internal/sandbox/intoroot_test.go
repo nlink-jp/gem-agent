@@ -3,6 +3,7 @@ package sandbox
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -44,7 +45,9 @@ func TestIntoRoot(t *testing.T) {
 		{"link to a write root, new directories", filepath.Join(wlink, "a/b/new.txt"), filepath.Join(wroot, "a/b/new.txt"), true},
 		{"link to a read root", filepath.Join(rlink, "x.txt"), filepath.Join(rroot, "x.txt"), true},
 		{"link to the project", filepath.Join(plink, "AGENTS.md"), filepath.Join(proj, "AGENTS.md"), true},
-		{"the link names the root itself", wlink, "", false},
+		{"the link names the root itself", wlink, wroot, true},
+		{"a link into a mount tree", filepath.Join(link("/Volumes/gem-agent-no-such-share", "nas"), "x.txt"), "", false},
+		{"under the automounted /home", "/home/someone/x.txt", "", false},
 		{"the last element is a link inside the root", filepath.Join(wlink, "notes.md"), filepath.Join(wroot, "notes.md"), true},
 		{"link leading out of every root", filepath.Join(elink, "x.txt"), "", false},
 		{"broken link", filepath.Join(broken, "x.txt"), "", false},
@@ -69,5 +72,32 @@ func TestIntoRoot(t *testing.T) {
 	}
 	if fi, err := os.Lstat(filepath.Join(wroot, "notes.md")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		t.Error("the last element was resolved through")
+	}
+}
+
+// linksIntoMount reads links without following them: one whose target —
+// absolute or relative to where it sits — lies in a mount tree stops the
+// resolution before anything is read through it (ADR-0108 §1; review of
+// the first cut: the mount trees were judged on the typed spelling only).
+// IntoRoot's result does not show this — a link into /Volumes leads out
+// of every root either way — so the walk is tested on its own.
+func TestLinksIntoMount(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	up := strings.Repeat("../", strings.Count(dir, string(filepath.Separator)))
+	for name, target := range map[string]string{"abs": "/Volumes/share", "rel": up + "Volumes/share", "net": "/net/host", "plain": dir} {
+		if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, want := range map[string]bool{"abs": true, "rel": true, "net": true, "plain": false} {
+		if got := linksIntoMount(filepath.Join(dir, name, "x.txt")); got != want {
+			t.Errorf("%s: linksIntoMount = %v, want %v", name, got, want)
+		}
+	}
+	if linksIntoMount(filepath.Join(dir, "no", "such")) {
+		t.Error("a path with no links was judged a mount")
 	}
 }
