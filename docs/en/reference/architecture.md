@@ -96,6 +96,12 @@ purpose:
   out of it. For a path that does not exist yet, symlinks are resolved on
   the deepest existing ancestor before the remaining tail is re-attached.
   Every path-taking built-in routes through it (the navigation tools' tree walks additionally refuse to follow symlinks — a walk that follows links can leave the project through a link the per-path checks never see).
+  Before that, where a tool call comes in, an absolute path argument typed
+  through a link outside every root (`~/Dropbox` → `~/Library/CloudStorage/Dropbox`)
+  has its parent resolved once and is replaced by the real path when that
+  lies in a root (`sandbox.IntoRoot`, ADR-0108); the rewritten call is the
+  one shown, judged, run and recorded, so no link is consulted between the
+  verdict and the run.
 - **Process-level containment** (`internal/sandbox`). `shell_exec` takes
   no path — it takes a command — so it is wrapped in `sandbox-exec` with
   a generated SBPL profile. Since ADR-0073 the profile is the lane the

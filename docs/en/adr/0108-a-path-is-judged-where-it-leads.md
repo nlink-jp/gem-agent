@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-11-06) — §1 redesigned after the independent design review |
+| Status | **Accepted** (2026-11-06) — implemented; §1 redesigned after the independent design review |
 | Date | 2026-11-06 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

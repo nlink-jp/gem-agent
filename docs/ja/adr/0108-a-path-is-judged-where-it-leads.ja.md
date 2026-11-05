@@ -2,7 +2,7 @@
 
 | 項目 | 値 |
 |-------|-----|
-| Status | **Proposed**（2026-11-06）— 独立した設計レビューを受けて §1 を設計し直した |
+| Status | **Accepted**（2026-11-06）— 実装済み。独立した設計レビューを受けて §1 を設計し直した |
 | Date | 2026-11-06 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

@@ -1008,6 +1008,10 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 
 		stopAfterRound := ""
 		for _, tc := range resp.ToolCalls {
+			// A path typed through a link outside every root becomes the
+			// real path it leads to, once, before anything shows, judges,
+			// runs or records the call (ADR-0108 §1).
+			tc = a.intoRoots(tc)
 			if a.onToolCall != nil {
 				a.onToolCall(tc)
 			}

@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **A path through a link outside the project reaches the directory it
+  leads to** (ADR-0108). `~/Dropbox/notes/x.txt`, with `~/Dropbox` a link
+  into `~/Library/CloudStorage`, was refused by every file tool — even a
+  write you approved failed with "path escapes the project directory", and
+  a read was refused — while the same file by its real path worked. Such a
+  path is now replaced by the real one where the call comes in, when it
+  leads into the project, the work directory or an added directory; the
+  approval, the verdict, the run and the transcript all see that one path.
+  A link leading anywhere else is refused as before, without saying where
+  it leads. The last element, a credential-looking name and paths under
+  `/Volumes`, `/Network` and `/net` are left as typed. `@` references
+  follow the same rule.
+
 ### Changed
 
 - **A synced folder can be a write directory** (ADR-0107). Every folder

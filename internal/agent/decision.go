@@ -265,3 +265,62 @@ func (a *Agent) laneOf(tc llm.ToolCall) string {
 	}
 	return lane.String()
 }
+
+// intoRoots rewrites a built-in file tool's path arguments — `path`,
+// `from` and every entry of `paths` — that were typed through a link
+// outside every root into the real path inside the root they lead to
+// (ADR-0108 §1). It runs once, where the call comes in, and the
+// rewritten call is the one shown, judged, run and recorded: the
+// verdict and the run read one string, so no link is consulted between
+// them. shell_exec (the kernel resolves its paths), request_directory
+// (RefuseRoot judges its own) and MCP tools (their arguments are not
+// this runtime's paths) are left alone. The map is copied only when
+// something changed.
+func (a *Agent) intoRoots(tc llm.ToolCall) llm.ToolCall {
+	if tc.Name == tools.ShellExecName || tc.Name == "request_directory" || strings.HasPrefix(tc.Name, mcpPrefix) {
+		return tc
+	}
+	if _, ok := a.registry.Get(tc.Name); !ok {
+		return tc
+	}
+	roots := append([]string{a.registry.ProjectDir(), a.registry.WorkDir()}, addedDirNames(a.registry.AddedDirs())...)
+	var out map[string]any
+	set := func(k string, v any) {
+		if out == nil {
+			out = make(map[string]any, len(tc.Args))
+			for k, v := range tc.Args {
+				out[k] = v
+			}
+		}
+		out[k] = v
+	}
+	for _, k := range []string{"path", "from"} {
+		if p, ok := tc.Args[k].(string); ok {
+			if real, ok := sandbox.IntoRoot(p, roots); ok {
+				set(k, real)
+			}
+		}
+	}
+	if raw, ok := tc.Args["paths"].([]any); ok {
+		var resolved []any
+		for i, v := range raw {
+			p, ok := v.(string)
+			if !ok {
+				continue
+			}
+			if real, ok := sandbox.IntoRoot(p, roots); ok {
+				if resolved == nil {
+					resolved = append([]any(nil), raw...)
+				}
+				resolved[i] = real
+			}
+		}
+		if resolved != nil {
+			set("paths", resolved)
+		}
+	}
+	if out != nil {
+		tc.Args = out
+	}
+	return tc
+}

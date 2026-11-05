@@ -1,0 +1,73 @@
+package sandbox
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// TestIntoRoot covers ADR-0108 §1: a path typed through a link outside
+// every root becomes the real path inside the root it leads to, with
+// its last element kept as typed; everything else is left alone.
+func TestIntoRoot(t *testing.T) {
+	real := func(p string) string {
+		r, err := filepath.EvalSymlinks(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	proj, wroot, rroot := real(t.TempDir()), real(t.TempDir()), real(t.TempDir())
+	outside, escape := real(t.TempDir()), real(t.TempDir())
+	roots := []string{proj, wroot, rroot}
+	link := func(target, name string) string {
+		l := filepath.Join(outside, name)
+		if err := os.Symlink(target, l); err != nil {
+			t.Fatal(err)
+		}
+		return l
+	}
+	wlink, rlink, plink, elink := link(wroot, "wlink"), link(rroot, "rlink"), link(proj, "plink"), link(escape, "elink")
+	broken := link(filepath.Join(outside, "gone"), "broken")
+	// A link at the last element, inside the root, stays a link.
+	if err := os.WriteFile(filepath.Join(wroot, "AGENTS.md"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(wroot, "AGENTS.md"), filepath.Join(wroot, "notes.md")); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name, in, want string
+		ok             bool
+	}{
+		{"link to a write root, new file", filepath.Join(wlink, "new.txt"), filepath.Join(wroot, "new.txt"), true},
+		{"link to a write root, new directories", filepath.Join(wlink, "a/b/new.txt"), filepath.Join(wroot, "a/b/new.txt"), true},
+		{"link to a read root", filepath.Join(rlink, "x.txt"), filepath.Join(rroot, "x.txt"), true},
+		{"link to the project", filepath.Join(plink, "AGENTS.md"), filepath.Join(proj, "AGENTS.md"), true},
+		{"the link names the root itself", wlink, "", false},
+		{"the last element is a link inside the root", filepath.Join(wlink, "notes.md"), filepath.Join(wroot, "notes.md"), true},
+		{"link leading out of every root", filepath.Join(elink, "x.txt"), "", false},
+		{"broken link", filepath.Join(broken, "x.txt"), "", false},
+		{"credential spelling", filepath.Join(wlink, ".env"), "", false},
+		{"under a mount tree", "/Volumes/share/x.txt", "", false},
+		{"relative", "wlink/x.txt", "", false},
+		{"already inside a root", filepath.Join(wroot, "x.txt"), "", false},
+	} {
+		got, ok := IntoRoot(c.in, roots)
+		want := c.want
+		if !c.ok {
+			want = c.in // left as typed
+		}
+		if ok != c.ok || got != want {
+			t.Errorf("%s: IntoRoot(%q) = %q, %v; want %q, %v", c.name, c.in, got, ok, want, c.ok)
+		}
+	}
+	// The root itself, reached through the link to its parent.
+	parentLink := link(filepath.Dir(wroot), "parent")
+	if got, ok := IntoRoot(filepath.Join(parentLink, filepath.Base(wroot)), roots); !ok || got != wroot {
+		t.Errorf("the root through a link to its parent: %q, %v", got, ok)
+	}
+	if fi, err := os.Lstat(filepath.Join(wroot, "notes.md")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Error("the last element was resolved through")
+	}
+}

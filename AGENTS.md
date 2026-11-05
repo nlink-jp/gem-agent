@@ -626,7 +626,11 @@ a new hook) is an architecture change and takes the same rows as a
   leftovers travel apart from their notes — `buildLanes` returns them
   whatever the result, and the grant path routes them to the operator
   because its error is the model's to read: do not fold them into the
-  notes or the error there); nothing in an added directory is
+  notes or the error there). A path argument typed through a link outside
+  every root is rewritten once, in the tool-call loop (`Agent.intoRoots`
+  → `sandbox.IntoRoot`, ADR-0108), so the approval, verdict, run and
+  record share one string: do not resolve it again later, or the verdict
+  and the run part (the swap window the design review found); nothing in an added directory is
   loaded (no instructions, `.mcp.json`, policy, skills — the operator's
   decision). `.gem-agent.toml` cannot add one because `LoadProject`
   refuses unknown keys: keep it that way. Startup probes failing on an
