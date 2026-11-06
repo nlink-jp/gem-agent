@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.99.0] - 2026-11-06
+
 ### Fixed
 
 - **A path through a link outside the project reaches the directory it
