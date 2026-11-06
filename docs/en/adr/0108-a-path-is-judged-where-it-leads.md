@@ -74,8 +74,8 @@ the typed last element lies inside a root, the argument is replaced by
 it. Otherwise the argument is left as typed, and the file tools refuse it
 later exactly as today, with today's message.
 
-A root named by its own link — `list_files ~/Dropbox` when the folder
-behind `~/Dropbox` is the root — becomes that root: the whole path,
+A root named by its own link — `list_files /Users/<you>/Dropbox` when
+the folder behind `~/Dropbox` is the root — becomes that root: the whole path,
 last element included, resolves to a directory that is a root, and
 naming a directory writes through nothing.
 

@@ -60,8 +60,9 @@ gem-agent -p "このリポジトリを要約して"      # 単発実行、パイ
 ファイルの `[directories]` に並べます。セッションの途中なら `/add-dir` / `/read-dir` で
 足せ、モデルが要請することもあります（答えるのはいつもあなたです）。同じサンドボックスのレーンの下に入り、
 中のもの（その `AGENTS.md`・`.mcp.json`・skill）は何も読み込みません。Google Drive・
-Dropbox・OneDrive・iCloud Drive のフォルダも write のディレクトリにでき、`~/Dropbox`
-のようなリンクを通した完全なパスも実パスと同じに届きます。write の
+Dropbox・OneDrive・iCloud Drive のフォルダも write のディレクトリにでき、`~/Dropbox` が
+`~/Library/CloudStorage` へのリンクなら、`/Users/<名前>/Dropbox/notes/x.txt` のように
+リンクを通した完全なパスも実パスと同じに届きます（`~` そのものは展開しません）。write の
 ディレクトリに指示ファイルや git の hooks が現れたら、次の `/clear` か終了時に
 知らせます — その下で開くプロジェクトはそれを読み込むか実行し、そのプロジェクト
 には知らされないので、開くプロジェクトの上位を write で足さないでください。動作要件は macOS

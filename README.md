@@ -63,7 +63,9 @@ model may ask for one, which you always answer; it comes under the same
 sandbox lanes, and nothing in it
 (its `AGENTS.md`, `.mcp.json`, skills) is loaded. A folder in Google Drive,
 Dropbox, OneDrive or iCloud Drive can be a write directory too, and a full
-path through a link such as `~/Dropbox` reaches it like its real path. Instruction files and git
+path through a link, such as `/Users/<you>/Dropbox/notes/x.txt` with
+`~/Dropbox` a link into `~/Library/CloudStorage`, reaches it like its
+real path (`~` itself is not expanded). Instruction files and git
 hooks that appear in a write directory are reported at the next `/clear`
 or exit — a project you open under it would load or run them, and that
 project is not told — so do not add as a write directory one above
