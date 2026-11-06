@@ -453,6 +453,14 @@ func TestProbesReturnLeftoversWhateverTheResult(t *testing.T) {
 			t.Errorf("VerifyWriteLane %s: left %v, stuck %v, err %v", c.name, left, stuck, err)
 		}
 	}
+	// The read-lane probe's project file too (pre-release review): the
+	// project itself may be a synced folder. Whether the profile passes
+	// here does not matter — the leftover is returned either way.
+	done := stuckProbes(t, proj, ".gem-agent-lane-probe-")
+	left, _ := VerifyReadLane(profiles[LaneRead], spec)
+	if stuck := done(); len(left) != 1 || len(stuck) != 1 || left[0] != stuck[0] {
+		t.Errorf("VerifyReadLane: left %v, stuck %v", left, stuck)
+	}
 	for _, c := range []struct {
 		name     string
 		profiles map[Lane]string

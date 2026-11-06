@@ -642,4 +642,26 @@ func TestGrantReportsTheProbesLeftovers(t *testing.T) {
 	if len(notices) != 1 || notices[0] != leftover {
 		t.Errorf("notices after a refused request = %v, want the leftover", notices)
 	}
+	// The two other exits that do not commit (pre-release review): a
+	// build whose enforcement changed, and a grant dropped mid-probe.
+	fail, notices = false, nil
+	g.build = func(on bool, p, w string, d []string, c map[string]string, pp []string, a []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, []string, error) {
+		fn, _, _, _, err := buildLanes(on, p, w, d, c, pp, a)
+		return fn, sandbox.Enforcement{}, nil, stuck, err
+	}
+	if _, err := g.grant(context.Background(), underHome(t, "changed"), true, "slash", g.currentEpoch(), nil); err == nil || !strings.Contains(err.Error(), leftover) {
+		t.Errorf("a grant whose enforcement changed: err %v, want the leftover", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	g.build = func(on bool, p, w string, d []string, c map[string]string, pp []string, a []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, []string, error) {
+		fn, enf, _, _, err := buildLanes(on, p, w, d, c, pp, a)
+		cancel()
+		return fn, enf, nil, stuck, err
+	}
+	if _, err := g.grant(ctx, underHome(t, "dropped"), true, "slash", g.currentEpoch(), nil); !errors.Is(err, errDropped) {
+		t.Errorf("a dropped grant: %v", err)
+	}
+	if len(notices) != 1 || notices[0] != leftover {
+		t.Errorf("notices after a dropped grant = %v, want the leftover", notices)
+	}
 }

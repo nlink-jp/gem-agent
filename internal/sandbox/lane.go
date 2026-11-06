@@ -724,13 +724,13 @@ func within(dir, p string) bool {
 // `kill -0 1` and a connect to a closed port fail for any user). A
 // read-lane call runs unasked only where this passed at startup. The
 // returned error names the first expectation that failed.
-func VerifyReadLane(profile string, spec Spec) error {
+func VerifyReadLane(profile string, spec Spec) (leftovers []string, err error) {
 	if err := Available(); err != nil {
-		return fmt.Errorf("sandbox-exec cannot apply a profile here: %w", err)
+		return nil, fmt.Errorf("sandbox-exec cannot apply a profile here: %w", err)
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return fmt.Errorf("cannot open a loopback listener for the network probe: %w", err)
+		return nil, fmt.Errorf("cannot open a loopback listener for the network probe: %w", err)
 	}
 	defer func() { _ = ln.Close() }()
 	go func() {
@@ -749,22 +749,19 @@ func VerifyReadLane(profile string, spec Spec) error {
 	// (final review R1 — the control run overwrote a link's target).
 	projectFile, err := os.CreateTemp(spec.ProjectDir, ".gem-agent-lane-probe-*")
 	if err != nil {
-		return fmt.Errorf("cannot create a probe file in the project: %w", err)
+		return nil, fmt.Errorf("cannot create a probe file in the project: %w", err)
 	}
 	projectProbe := projectFile.Name()
 	_ = projectFile.Close()
 	sharedFile, err := os.CreateTemp("/private/tmp", ".gem-agent-lane-probe-*")
 	if err != nil {
-		_ = os.Remove(projectProbe)
-		return fmt.Errorf("cannot create a probe file in /private/tmp: %w", err)
+		return removeProbes(projectProbe), fmt.Errorf("cannot create a probe file in /private/tmp: %w", err)
 	}
 	sharedProbe := sharedFile.Name()
 	_ = sharedFile.Close()
-	cleanup := func() {
-		_ = os.Remove(projectProbe)
-		_ = os.Remove(sharedProbe)
-	}
-	defer cleanup()
+	// A leftover is reported, never dropped (ADR-0107 §4): the project
+	// may be a synced folder.
+	defer func() { leftovers = removeProbes(projectProbe, sharedProbe) }()
 	run := func(sandboxed bool, command string) error {
 		var cmd *exec.Cmd
 		if sandboxed {
@@ -794,27 +791,27 @@ func VerifyReadLane(profile string, spec Spec) error {
 		// failure inside is the sandbox's doing. The write probes write
 		// into the files created above, never anywhere else.
 		if err := run(false, m.command); err != nil {
-			return fmt.Errorf("the control run of %s failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", m.what, err)
+			return nil, fmt.Errorf("the control run of %s failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", m.what, err)
 		}
 		if err := run(true, m.command); err == nil {
-			return fmt.Errorf("the read lane allowed %s", m.what)
+			return nil, fmt.Errorf("the read lane allowed %s", m.what)
 		}
 	}
 	// The terminal: no control — the runner detaches the command from
 	// the operator's terminal, so the open must fail whatever the
 	// environment (review F-01).
 	if err := run(true, "exec 3</dev/tty"); err == nil {
-		return fmt.Errorf("the read lane allowed opening the terminal")
+		return nil, fmt.Errorf("the read lane allowed opening the terminal")
 	}
 	if spec.ReadScratch != "" {
 		if err := run(true, `echo x > "$TMPDIR/.gem-agent-lane-probe" && rm "$TMPDIR/.gem-agent-lane-probe"`); err != nil {
-			return fmt.Errorf("the read lane cannot write its own scratch directory: %w", err)
+			return nil, fmt.Errorf("the read lane cannot write its own scratch directory: %w", err)
 		}
 	}
 	if err := run(true, "/usr/bin/true"); err != nil {
-		return fmt.Errorf("the read lane cannot run a program: %w", err)
+		return nil, fmt.Errorf("the read lane cannot run a program: %w", err)
 	}
-	return nil
+	return nil, nil
 }
 
 // VerifyWriteLane runs the write-lane profile against probes that must

@@ -99,9 +99,10 @@ shared drive where the operator's role may create but not delete, a
 `.gem-agent-root-probe-*` directory holding `.env` and `plain` would stay
 and be synced to everyone who shares the drive, and nothing would say so.
 The probe reports any probe file or directory it could not remove, by
-path, in the startup or grant notes. The project probe
-(`VerifyWriteLane`) removes its files the same way and gets the same
-report.
+path, in the startup or grant notes. The project's probes
+(`VerifyWriteLane`, and `VerifyReadLane` — found by the pre-release
+review) remove their files the same way and get the same report, and
+every way a grant ends without committing says them too.
 
 ### 5. Measured before acceptance
 

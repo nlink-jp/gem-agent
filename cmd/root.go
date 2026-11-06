@@ -2456,7 +2456,9 @@ func buildLanes(sandboxOn bool, projectDir, workDir string, denyExec []string, c
 		// The claim is checked, not assumed: a read-lane call runs
 		// unasked only where the kernel demonstrably denies what the
 		// lane says it denies.
-		if err := sandbox.VerifyReadLane(profiles[sandbox.LaneRead], spec); err != nil {
+		readLeft, err := sandbox.VerifyReadLane(profiles[sandbox.LaneRead], spec)
+		leftovers = append(leftovers, readLeft...)
+		if err != nil {
 			enf.ReadLane = false
 			notes = append(notes, fmt.Sprintf("read lane disabled: %v; every shell_exec asks", err))
 		}

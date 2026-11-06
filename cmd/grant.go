@@ -84,6 +84,23 @@ func (g *dirGranter) source(s string) string {
 	return m.SourceFlag
 }
 
+// tellLeftovers hands a grant that ends without committing the probes'
+// leftovers (ADR-0107 §4): every exit says them, never one in silence. A
+// request's error is the model's to read and a dropped grant's is read
+// by nobody, so those go to the operator's notices; a typed command's
+// error is the operator's own and carries them.
+func (g *dirGranter) tellLeftovers(source string, leftovers []string, err error) error {
+	if len(leftovers) == 0 {
+		return err
+	}
+	left := sandbox.LeftoverNote(leftovers)
+	if (source == "request" || errors.Is(err, errDropped)) && g.notice != nil {
+		g.notice(left)
+		return err
+	}
+	return fmt.Errorf("%w; %s", err, left)
+}
+
 // errDropped is a grant whose call was cancelled or whose session moved
 // on before it could commit.
 var errDropped = errors.New("dropped: the session moved on before the grant could apply")
@@ -248,31 +265,21 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 		fn, enf, _, leftovers, err = build(g.sandboxOn, g.projectDir, g.workDir(), g.denyExec, g.caches, g.parents(), next)
 		if err != nil {
 			_ = root.Close()
-			// A refused request's error is the model's to read; the
-			// leftovers are the operator's (ADR-0107 §4).
-			if len(leftovers) > 0 {
-				left := sandbox.LeftoverNote(leftovers)
-				if source == "request" && g.notice != nil {
-					g.notice(left)
-				} else {
-					err = fmt.Errorf("%w; %s", err, left)
-				}
-			}
-			return "", fmt.Errorf(m.GrantNotAddedFmt, canonical, err)
+			return "", g.tellLeftovers(source, leftovers, fmt.Errorf(m.GrantNotAddedFmt, canonical, err))
 		}
 		if g.readLanePrompts {
 			enf.ReadLane = false
 		}
 		if enf != cur {
 			_ = root.Close()
-			return "", fmt.Errorf(m.GrantStateFmt, canonical)
+			return "", g.tellLeftovers(source, leftovers, fmt.Errorf(m.GrantStateFmt, canonical))
 		}
 	}
 	// The probes take time; a call cancelled meanwhile, or a session
 	// that moved on, does not commit (review of step 2, #3).
 	if ctx.Err() != nil || epoch != g.epoch {
 		_ = root.Close()
-		return "", errDropped
+		return "", g.tellLeftovers(source, leftovers, errDropped)
 	}
 
 	var watchNotes []string

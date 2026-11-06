@@ -105,9 +105,15 @@ Each condition has a reason:
 - **No mounts** — resolving a path the model names under `/Volumes`,
   `/Network` or the automounter's `/net` and `/home` would touch a
   share, or wait on a stale one, before anyone approved anything. A
-  link that leads into one (`~/nas` → `/Volumes/nas`) is read without
-  being followed, so it stops the resolution too (implementation
-  review).
+  link that leads into one (`~/nas` → `/Volumes/nas`) stops the
+  resolution too. The resolution walks the path one element at a time,
+  each joined to a prefix that is already real, and judges that real
+  prefix against the trees before reading into it — so a chain of
+  links, a relative link taken from the real directory it sits in, the
+  data volume's spelling (`/System/Volumes/Data/home`) and a case
+  variant (`/VOLUMES`) all stop there (implementation review; then the
+  pre-release review, which found the first cut judged only the typed
+  spelling and one link's own target).
 - **A failure says nothing new** — a parent that does not resolve, or
   resolves outside every root, leaves the argument as typed, so the
   refusal is today's and does not tell whether a link exists there or

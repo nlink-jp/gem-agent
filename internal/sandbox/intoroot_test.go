@@ -75,29 +75,71 @@ func TestIntoRoot(t *testing.T) {
 	}
 }
 
-// linksIntoMount reads links without following them: one whose target —
-// absolute or relative to where it sits — lies in a mount tree stops the
-// resolution before anything is read through it (ADR-0108 §1; review of
-// the first cut: the mount trees were judged on the typed spelling only).
-// IntoRoot's result does not show this — a link into /Volumes leads out
-// of every root either way — so the walk is tested on its own.
-func TestLinksIntoMount(t *testing.T) {
+// walkReal judges each real prefix against the mount trees before it
+// reads into it, so no spelling reaches a share: a chain of links, a
+// relative link behind another link, the data volume's spelling and a
+// case variant (pre-release review of the first cut, which judged the
+// typed spelling and one link's own target). IntoRoot's result does not
+// show this — a path into /Volumes leads out of every root either way —
+// so the walk is tested on its own.
+func TestWalkRealStopsAtEveryMountSpelling(t *testing.T) {
 	dir, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	up := strings.Repeat("../", strings.Count(dir, string(filepath.Separator)))
-	for name, target := range map[string]string{"abs": "/Volumes/share", "rel": up + "Volumes/share", "net": "/net/host", "plain": dir} {
+	sub := filepath.Join(dir, "sub")
+	if err := os.Mkdir(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	links := map[string]string{
+		"abs":     "/Volumes/share",
+		"rel":     up + "Volumes/share",
+		"net":     "/net/host",
+		"upper":   "/VOLUMES/share",
+		"data":    dataVolume + "/home/someone",
+		"chain2":  "/Volumes/share",
+		"chain1":  filepath.Join(dir, "chain2"),
+		"subrel":  "sub",
+		"plain":   dir,
+		"selfish": "selfish",
+	}
+	for name, target := range links {
 		if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for name, want := range map[string]bool{"abs": true, "rel": true, "net": true, "plain": false} {
-		if got := linksIntoMount(filepath.Join(dir, name, "x.txt")); got != want {
-			t.Errorf("%s: linksIntoMount = %v, want %v", name, got, want)
+	// A relative link inside sub, reached through the link subrel: its
+	// target is taken from sub's real directory, one level deeper than
+	// the spelling subrel/ suggests.
+	if err := os.Symlink("../"+up+"Volumes/share", filepath.Join(sub, "deep")); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		path string
+		ok   bool
+	}{
+		{filepath.Join(dir, "abs", "x"), false},
+		{filepath.Join(dir, "rel", "x"), false},
+		{filepath.Join(dir, "net", "x"), false},
+		{filepath.Join(dir, "upper", "x"), false},
+		{filepath.Join(dir, "data", "x"), false},
+		{filepath.Join(dir, "chain1", "x"), false},
+		{filepath.Join(dir, "subrel", "deep", "x"), false},
+		{filepath.Join(dir, "selfish", "x"), false}, // a loop does not resolve
+		{"/volumes/share/x", false},
+		{dataVolume + "/home/x", false},
+		{filepath.Join(dir, "plain", "new", "x"), true},
+	} {
+		got, ok := walkReal(c.path)
+		if ok != c.ok {
+			t.Errorf("walkReal(%s) = %q, %v; want ok %v", c.path, got, ok, c.ok)
 		}
 	}
-	if linksIntoMount(filepath.Join(dir, "no", "such")) {
-		t.Error("a path with no links was judged a mount")
+	if got, ok := walkReal(filepath.Join(dir, "plain", "new", "x")); got != filepath.Join(dir, "new", "x") || !ok {
+		t.Errorf("walkReal through a plain link = %q, %v", got, ok)
+	}
+	if got, ok := walkReal(filepath.Join(dir, "subrel", "..", "sub")); got != sub || !ok {
+		t.Errorf("`..` after a link is taken from the real directory: %q, %v", got, ok)
 	}
 }
