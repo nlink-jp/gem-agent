@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.100.0] - 2026-11-09
+
 ### Documentation
 
 - **What a pipe without `-p` means is now stated where you read it**
