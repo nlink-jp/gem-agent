@@ -648,7 +648,9 @@ a new hook) is an architecture change and takes the same rows as a
   ungated are why — report, never block. A mid-session grant goes
   through `dirGranter.grant` (cmd/grant.go, §12) and nothing else: it
   holds the same lock as `/clear`'s swap (`granter.beginClear` /
-  `endClear`, from the hooks through `rotateWorkDir`), drops a
+  `endClear`, from the hooks through `rotateWorkDir`, which leaves out a
+  root that no longer passes its probes and tells `dirGranter.forget`,
+  ADR-0114 §2, because the file tools have already moved), drops a
   grant whose epoch or context moved on, refuses one that would change
   `Registry.Enforcement()`, replaces an entry in place
   (`Registry.GrantAddedDir`) rather than appending a duplicate, and

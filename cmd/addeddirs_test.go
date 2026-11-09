@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -191,13 +194,116 @@ func TestAddedRootsReachTheLanesAndSurviveClear(t *testing.T) {
 	}
 	shellExec := &liveExec{fn: execFn}
 	work := t.TempDir()
-	notesOut := rotateWorkDir(registry, shellExec, true, project, work, nil, nil, false, nil, registry.AddedDirs(), nil)
+	notesOut := rotateWorkDir(registry, shellExec, true, project, work, nil, nil, false, nil, registry.AddedDirs(), nil, nil)
 	for _, n := range notesOut {
 		if strings.Contains(n, "keep the previous") {
 			t.Errorf("rotation failed: %s", n)
 		}
 	}
 	check(shellExec.run, "after /clear")
+}
+
+// /clear with a root that no longer passes its probes: the lanes follow
+// the file tools to the new work directory, the root that failed goes
+// and the others stay (ADR-0114 §2).
+func TestClearDropsOnlyTheRootThatFailsItsProbes(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-only")
+	}
+	if err := sandbox.Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
+	}
+	project := t.TempDir()
+	stale := underHome(t, "stale")
+	notes := underHome(t, "notes")
+	added := []sandbox.AddedRoot{{Dir: stale, Write: true}, {Dir: notes, Write: true}}
+	execFn, enf, _, err := buildExecFn(true, project, "", nil, nil, nil, added)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !enf.Confined {
+		t.Skip("sandbox unverified here")
+	}
+	registry, err := tools.New(project, nil, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.AddDirs(added); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(stale, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(stale, 0o755) })
+	shellExec := &liveExec{fn: execFn}
+	work := underHome(t, "work")
+	var heard []string
+	got := rotateWorkDir(registry, shellExec, true, project, work, nil, nil, false, nil, registry.AddedDirs(), nil, func(d []string) { heard = d })
+	if len(got) != 1 || !strings.Contains(got[0], stale) || !strings.Contains(got[0], "/add-dir") || strings.Contains(got[0], "keep the previous") {
+		t.Errorf("notes = %q", got)
+	}
+	if len(heard) != 1 || heard[0] != stale {
+		t.Errorf("onDropped heard %v", heard)
+	}
+	if left := registry.AddedDirs(); len(left) != 1 || left[0].Dir != notes {
+		t.Errorf("roots in force = %v", left)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	for _, dir := range []string{work, notes} {
+		if err := shellExec.run(ctx, "echo ok > "+filepath.Join(dir, "w.txt"), sandbox.LaneWrite).Run(); err != nil {
+			t.Errorf("after /clear the write lane cannot write %s: %v", dir, err)
+		}
+	}
+}
+
+// A failure that names no root drops nothing, even after a root was
+// left out: the previous profile stays and it names every root; and the
+// probe's leftovers ride the note (ADR-0114 §2).
+func TestBuildWithoutFailedRoots(t *testing.T) {
+	a, b := sandbox.AddedRoot{Dir: "/a", Write: true}, sandbox.AddedRoot{Dir: "/b"}
+	ok := func(context.Context, string, sandbox.Lane) *exec.Cmd { return nil }
+	fail := func(r sandbox.AddedRoot) error {
+		return fmt.Errorf("%w; left /a/x", &sandbox.AddedRootError{Root: r, Err: errors.New("gone")})
+	}
+	var built [][]sandbox.AddedRoot
+	failing := map[string]bool{"/a": true}
+	build := func(roots []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
+		built = append(built, roots)
+		for _, r := range roots {
+			if failing[r.Dir] {
+				return nil, sandbox.Enforcement{}, nil, fail(r)
+			}
+		}
+		return ok, sandbox.Enforcement{Confined: true}, []string{"lane note"}, nil
+	}
+	fn, enf, notes, dropped, err := buildWithoutFailedRoots([]sandbox.AddedRoot{a, b}, build)
+	if err != nil || fn == nil || !enf.Confined || len(dropped) != 1 || dropped[0] != "/a" {
+		t.Fatalf("one failing root: %v %v %v", dropped, enf, err)
+	}
+	if len(built) != 2 || len(built[1]) != 1 || built[1][0] != b {
+		t.Errorf("builds = %v", built)
+	}
+	if len(notes) != 2 || !strings.Contains(notes[0], "left /a/x") || notes[1] != "lane note" {
+		t.Errorf("notes = %q", notes)
+	}
+	failing["/b"] = true
+	if _, _, _, dropped, err := buildWithoutFailedRoots([]sandbox.AddedRoot{a, b}, build); err != nil || len(dropped) != 2 {
+		t.Errorf("every root failing leaves the lanes with none: %v %v", dropped, err)
+	}
+	failing = map[string]bool{"/a": true}
+	other := errors.New("no sandbox")
+	second := false
+	_, _, _, dropped, err = buildWithoutFailedRoots([]sandbox.AddedRoot{a, b}, func(roots []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
+		if second {
+			return nil, sandbox.Enforcement{}, nil, other
+		}
+		second = true
+		return nil, sandbox.Enforcement{}, nil, fail(a)
+	})
+	if !errors.Is(err, other) || dropped != nil {
+		t.Errorf("a later failure naming no root: %v %v", dropped, err)
+	}
 }
 
 // A root that fails its probes stops the start rather than degrading

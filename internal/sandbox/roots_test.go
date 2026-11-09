@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -236,6 +237,21 @@ func TestRefuseRoot(t *testing.T) {
 // and that VerifyAddedRoots passes on the same profiles. The read root
 // sits under the fake home's Library, a tree the read lane denies for
 // reach, so the re-allow is what lets it be read.
+// A probe failure names the root it failed on, in a form a rebuild can
+// read (ADR-0114 §2), with the words it has always had.
+func TestVerifyAddedRootsNamesTheRootThatFailed(t *testing.T) {
+	base := t.TempDir()
+	missing := AddedRoot{Dir: filepath.Join(base, "gone"), Write: true}
+	_, _, err := VerifyAddedRoots(nil, Spec{Added: []AddedRoot{missing}}, false)
+	var bad *AddedRootError
+	if !errors.As(err, &bad) || bad.Root != missing {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(err.Error(), "added directory "+missing.Dir+" (write): cannot create a probe") {
+		t.Errorf("text = %q", err)
+	}
+}
+
 func TestAddedRootEnforcement(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("sandbox-exec is macOS-only")

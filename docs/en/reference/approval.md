@@ -711,7 +711,11 @@ all (a read-only volume) skips the probes with a note. A probe file the
 probes cannot remove afterwards — in a shared folder that lets you
 create but not delete, say — is named in a note for you to delete,
 since a synced folder would copy it to everyone who shares it. `/clear` keeps
-the added directories, and its new transcript records them again. The
+the added directories, and its new transcript records them again. One that
+no longer passes its probes at `/clear` (an ejected volume) is removed from
+the session with a note, so the shell can still write the new work
+directory; the others stay, and `/add-dir` or `/read-dir` adds it again
+(ADR-0114). The
 grants are recorded in the transcript (`added_directories`, see
 [sessions](sessions.md)). Each added directory is held open for the
 session, so ejecting the volume it lies on can report it busy until

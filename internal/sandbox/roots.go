@@ -180,6 +180,20 @@ func SyncedFolder(home, real string) bool {
 	return within(icloud, real)
 }
 
+// AddedRootError is a probe failure on one added root. A rebuild that
+// must not stop for it (/clear, ADR-0114 §2) reads which root failed
+// from here, never from the text.
+type AddedRootError struct {
+	Root AddedRoot
+	Err  error
+}
+
+func (e *AddedRootError) Error() string {
+	return fmt.Sprintf("added directory %s (%s): %v", e.Root.Dir, e.Root.Access(), e.Err)
+}
+
+func (e *AddedRootError) Unwrap() error { return e.Err }
+
 // situationalError is a refusal that depends on where this session
 // started or on what is mounted now, not on the path being wrong.
 type situationalError struct{ msg string }
@@ -258,7 +272,7 @@ func VerifyAddedRoots(profiles map[Lane]string, spec Spec, readLane bool) (notes
 		notes = append(notes, n...)
 		leftovers = append(leftovers, left...)
 		if err != nil {
-			return notes, leftovers, fmt.Errorf("added directory %s (%s): %w", a.Dir, a.Access(), err)
+			return notes, leftovers, &AddedRootError{Root: a, Err: err}
 		}
 	}
 	return notes, leftovers, nil

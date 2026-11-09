@@ -370,6 +370,19 @@ func (g *dirGranter) record() map[string]any {
 	return map[string]any{"roots": roots}
 }
 
+// forget takes in the roots /clear had to drop (ADR-0114 §2): the watch
+// and the sources let them go and the new transcript says what is in
+// force. rotateWorkDir calls it, so the grant lock is already held.
+func (g *dirGranter) forget(dirs []string) {
+	for _, d := range dirs {
+		delete(g.sources, d)
+	}
+	g.watch.drop(dirs)
+	if g.log != nil {
+		_ = g.log("added_directories", g.record())
+	}
+}
+
 // listing is /dirs: the roots in force with their level and source.
 func (g *dirGranter) listing() string {
 	g.mu.Lock()

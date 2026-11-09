@@ -9,6 +9,11 @@
   or the work directory, is already covered, or is not there now (a volume
   not mounted) is skipped with a note. The same path given as `--add-dir`
   or `--read-dir` still stops the start.
+- **`/clear` keeps the shell able to write the new work directory when an
+  added directory has gone away** (ADR-0114). The directory that no longer
+  passes the sandbox check is removed from the session with a note and the
+  others stay. Before this, the write lane lost the new work directory for
+  the rest of the session.
 
 ## [0.100.1] - 2026-11-09
 

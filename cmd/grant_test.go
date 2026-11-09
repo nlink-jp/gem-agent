@@ -665,3 +665,38 @@ func TestGrantReportsTheProbesLeftovers(t *testing.T) {
 		t.Errorf("notices after a dropped grant = %v, want the leftover", notices)
 	}
 }
+
+// A root /clear dropped leaves the sources and the watch, and the
+// transcript in use says what is in force (ADR-0114 §2).
+func TestForgetDroppedRoots(t *testing.T) {
+	lost, kept := underHome(t, "lost"), underHome(t, "kept")
+	registry, err := tools.New(t.TempDir(), nil, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.AddDirs([]sandbox.AddedRoot{{Dir: kept, Write: true}}); err != nil {
+		t.Fatal(err)
+	}
+	var records []map[string]any
+	g := &dirGranter{
+		registry: registry,
+		sources:  map[string]string{lost: "config", kept: "slash"},
+		log: func(kind string, data any) error {
+			if kind == "added_directories" {
+				records = append(records, data.(map[string]any))
+			}
+			return nil
+		},
+	}
+	g.forget([]string{lost})
+	if _, ok := g.sources[lost]; ok || g.sources[kept] != "slash" {
+		t.Errorf("sources = %v", g.sources)
+	}
+	if len(records) != 1 {
+		t.Fatalf("records = %v", records)
+	}
+	roots := records[0]["roots"].([]map[string]string)
+	if len(roots) != 1 || roots[0]["dir"] != kept || roots[0]["source"] != "slash" {
+		t.Errorf("recorded roots = %v", roots)
+	}
+}

@@ -94,6 +94,38 @@ func TestInnermostAddedRootDecidesTheLevel(t *testing.T) {
 
 // A link inside an added root that leads out of every root is refused
 // like one in the project; a delegated child sees the added roots.
+// Dropping one root leaves the others usable, through a Subset too
+// (ADR-0114 §2).
+func TestDropAddedDirs(t *testing.T) {
+	a, b := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(b, "x.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := New(t.TempDir(), nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.AddDirs([]sandbox.AddedRoot{{Dir: a, Write: true}, {Dir: b}}); err != nil {
+		t.Fatal(err)
+	}
+	sub, err := r.Subset()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub.DropAddedDirs([]string{a})
+	if got := r.AddedDirs(); len(got) != 1 || got[0].Dir != b {
+		t.Errorf("roots = %v", got)
+	}
+	if _, err := r.resolvePath(filepath.Join(a, "y")); err == nil {
+		t.Error("a dropped root still resolves")
+	}
+	if f, err := r.openRead(filepath.Join(b, "x.txt")); err != nil {
+		t.Errorf("the kept root: %v", err)
+	} else {
+		_ = f.Close()
+	}
+}
+
 func TestAddedRootSymlinkOutAndSubset(t *testing.T) {
 	r, wroot, _ := newRegistryWithAdded(t)
 	outside := filepath.Join(t.TempDir(), "secret.txt")

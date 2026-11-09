@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -1668,7 +1669,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		ag.RefreshTools()
 		// Still under the grant lock taken above: a late grant cannot
 		// swap in a runner built against the old work directory.
-		notes = append(notes, rotateWorkDir(registry, shellExec, sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec, cfg.Sandbox.Caches(), cfg.Sandbox.ReadLanePrompts, trustpin.Parents(projectDir, persistentSnap), registry.AddedDirs(), func() { ag.SetSystem(composeSystem()) })...)
+		notes = append(notes, rotateWorkDir(registry, shellExec, sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec, cfg.Sandbox.Caches(), cfg.Sandbox.ReadLanePrompts, trustpin.Parents(projectDir, persistentSnap), registry.AddedDirs(), func() { ag.SetSystem(composeSystem()) }, granter.forget)...)
 		granter.endClear()
 		// A cleared session restarts what carries its identity (ADR-0071
 		// addendum): telemetry is re-resourced with the new id, and the
@@ -3112,12 +3113,17 @@ func (l liveLog) Log(kind string, data any) error {
 // dir ("" for none): the file tools' second root, the sandbox profile,
 // and the system prompt. The MCP intake reads the registry, so it
 // follows on its own. Returns operator notes for what could not follow.
-func rotateWorkDir(registry *tools.Registry, shellExec *liveExec, sandboxOn bool, projectDir, dir string, denyExec []string, caches map[string]string, readLanePrompts bool, persistentParents []string, added []sandbox.AddedRoot, setSystem func()) []string {
+// onDropped hears the added roots the rebuild had to leave out, after
+// the registry has dropped them (ADR-0114 §2).
+func rotateWorkDir(registry *tools.Registry, shellExec *liveExec, sandboxOn bool, projectDir, dir string, denyExec []string, caches map[string]string, readLanePrompts bool, persistentParents []string, added []sandbox.AddedRoot, setSystem func(), onDropped func(dirs []string)) []string {
 	var notes []string
 	if err := registry.UseWorkDir(dir); err != nil {
 		notes = append(notes, fmt.Sprintf("file tools keep the previous work directory: %v", err))
 	}
-	if fn, enf, laneNotes, err := buildExecFn(sandboxOn, projectDir, dir, denyExec, caches, persistentParents, added); err != nil {
+	fn, enf, laneNotes, dropped, err := buildWithoutFailedRoots(added, func(roots []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
+		return buildExecFn(sandboxOn, projectDir, dir, denyExec, caches, persistentParents, roots)
+	})
+	if err != nil {
 		notes = append(notes, fmt.Sprintf("shell commands keep the previous sandbox profile: %v", err))
 	} else {
 		shellExec.set(fn)
@@ -3126,9 +3132,42 @@ func rotateWorkDir(registry *tools.Registry, shellExec *liveExec, sandboxOn bool
 		}
 		registry.SetLaneExec(shellExec.run, enf)
 		notes = append(notes, laneNotes...)
+		if len(dropped) > 0 {
+			registry.DropAddedDirs(dropped)
+			if onDropped != nil {
+				onDropped(dropped)
+			}
+		}
 	}
 	if setSystem != nil {
 		setSystem()
 	}
 	return notes
+}
+
+// buildWithoutFailedRoots builds the lanes over added, leaving out each
+// root that fails its probes: the file tools have already moved to the
+// new work directory, so the lanes must follow it, and one ejected
+// volume must not take the other roots with it (ADR-0114 §2). Each
+// failure removes a root, so this builds at most once per root and once
+// more. A failure that names no root is returned, and then nothing is
+// dropped: the previous profile, which still names every root, stays.
+func buildWithoutFailedRoots(added []sandbox.AddedRoot, build func([]sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error)) (tools.LaneExecFunc, sandbox.Enforcement, []string, []string, error) {
+	kept := append([]sandbox.AddedRoot(nil), added...)
+	var dropped, dropNotes []string
+	fn, enf, notes, err := build(kept)
+	for range added {
+		var bad *sandbox.AddedRootError
+		if !errors.As(err, &bad) {
+			break
+		}
+		dropped = append(dropped, bad.Root.Dir)
+		dropNotes = append(dropNotes, fmt.Sprintf("removed from this session, because it no longer passes the sandbox check: %v — /add-dir or /read-dir adds it again", err))
+		kept = slices.DeleteFunc(kept, func(r sandbox.AddedRoot) bool { return r.Dir == bad.Root.Dir })
+		fn, enf, notes, err = build(kept)
+	}
+	if err != nil {
+		return nil, sandbox.Enforcement{}, nil, nil, err
+	}
+	return fn, enf, append(dropNotes, notes...), dropped, nil
 }

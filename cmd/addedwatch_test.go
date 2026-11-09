@@ -106,6 +106,33 @@ func TestAddedWatchReportsPersistentFilesInWriteRoots(t *testing.T) {
 // past the cut as removed; with no state directory only the session's
 // own changes are reported; a torn state file is no previous state
 // (review of §10, #2/#3/#9).
+// A root the session lost is not walked again, and the others are
+// (ADR-0114 §2): an ejected volume would read as everything removed.
+func TestAddedWatchDropsALostRoot(t *testing.T) {
+	t.Setenv(statedir.EnvRoot, t.TempDir())
+	lost, kept := underHome(t, "lost"), underHome(t, "kept")
+	var walked []string
+	snapshot := func(dir string) (map[string]string, bool) {
+		walked = append(walked, dir)
+		return map[string]string{}, false
+	}
+	var out bytes.Buffer
+	w := newAddedWatchWith([]addedDir{
+		{AddedRoot: sandbox.AddedRoot{Dir: lost, Write: true}, Source: "flag"},
+		{AddedRoot: sandbox.AddedRoot{Dir: kept, Write: true}, Source: "flag"},
+	}, t.TempDir(), &out, uitext.For(uitext.EN), snapshot)
+	w.drop([]string{lost})
+	walked = nil
+	w.report("exit", nil)
+	if len(walked) != 1 || walked[0] != kept {
+		t.Errorf("walked %v after the drop", walked)
+	}
+	if _, ok := w.base[lost]; ok {
+		t.Error("the lost root's baseline stayed")
+	}
+	(*addedWatch)(nil).drop([]string{lost}) // a session with no watch
+}
+
 func TestAddedWatchCutAndStateFile(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv(statedir.EnvRoot, state)

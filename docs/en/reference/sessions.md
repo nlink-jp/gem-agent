@@ -215,7 +215,8 @@ force plus `granted` (`dir`, `access`, `source`), `absorbed` when a write
 root took in roots inside it, and for a request the model's `reason` and
 `answer`; an absorbed write root's changes not yet reported are written
 as `persistent_changes` with `"reason":"absorbed"`. `/clear` writes the
-full list into the new transcript. A session with none writes no record.
+full list into the new transcript, and writes it again without any root
+that no longer passes its probes there. A session with none writes no record.
 An older build resuming such a transcript skips the record. Resuming
 reads none of it back: `--resume` starts from the flags and
 `[directories]`, so a directory added during the earlier session is added

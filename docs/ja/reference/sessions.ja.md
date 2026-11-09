@@ -202,7 +202,7 @@ transcript を resume するとフィールドを無視し、注記なしで結�
 ルートに `granted`（`dir`・`access`・`source`）、write ルートがその中のルートを取り込んだ
 ときは `absorbed`、要請ならモデルの `reason` と `answer` を加えて、記録を書き直します。
 取り込まれた write ルートの、まだ知らせていない変化は `"reason":"absorbed"` の
-`persistent_changes` として書きます。`/clear` は新しい transcript に全体の一覧を書きます。
+`persistent_changes` として書きます。`/clear` は新しい transcript に全体の一覧を書き、プローブに通らなくなったルートがあれば、それを除いてもう一度書きます。
 追加ディレクトリの無いセッションは記録を書きません。古い版がこのような transcript を
 再開すると、この記録は飛ばされます。再開はこの記録を読み戻しません: `--resume` は
 フラグと `[directories]` から始めるので、前のセッションの途中で足したディレクトリは

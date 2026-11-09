@@ -180,6 +180,31 @@ func (w *addedWatch) add(root string, absorbed []string, log func(kind string, d
 	return notes
 }
 
+// drop stops watching roots the session lost (ADR-0114 §2), with no
+// report: /clear reported them a moment ago, and walking an ejected
+// volume again would call everything in it removed.
+func (w *addedWatch) drop(dirs []string) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	gone := map[string]bool{}
+	for _, d := range dirs {
+		gone[d] = true
+	}
+	kept := w.roots[:0]
+	for _, r := range w.roots {
+		if gone[r] {
+			delete(w.base, r)
+			continue
+		}
+		kept = append(kept, r)
+	}
+	w.roots = kept
+	w.save()
+}
+
 func (w *addedWatch) save() {
 	if w.path == "" {
 		return
