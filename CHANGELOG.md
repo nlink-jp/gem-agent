@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **A configured directory that does not fit this project no longer stops
+  the start** (ADR-0114). A path in `[directories]` that holds the project
+  or the work directory, is already covered, or is not there now (a volume
+  not mounted) is skipped with a note. The same path given as `--add-dir`
+  or `--read-dir` still stops the start.
+
 ## [0.100.1] - 2026-11-09
 
 ### Security

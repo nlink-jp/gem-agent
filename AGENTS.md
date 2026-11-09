@@ -639,7 +639,9 @@ a new hook) is an architecture change and takes the same rows as a
   loaded (no instructions, `.mcp.json`, policy, skills — the operator's
   decision). `.gem-agent.toml` cannot add one because `LoadProject`
   refuses unknown keys: keep it that way. Startup probes failing on an
-  added root are a startup error, not the unconfined fallback. A write
+  added root are a startup error, not the unconfined fallback.
+  `resolveAddedDirs` skips a configured path only for a refusal
+  `sandbox.Situational` accepts (ADR-0114 §1); a flag still stops the start. A write
   root's persistent files are watched by `addedWatch` (cmd/addedwatch.go,
   ADR-0099 §10) with the project's own `trustpin.Snapshot`: the
   ancestor instruction files a later project under the root loads

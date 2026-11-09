@@ -61,7 +61,10 @@ it with `--add-dir <path>` (written like the project) or `--read-dir
 config file — or during a session with `/add-dir` / `/read-dir`, and the
 model may ask for one, which you always answer; it comes under the same
 sandbox lanes, and nothing in it
-(its `AGENTS.md`, `.mcp.json`, skills) is loaded. A folder in Google Drive,
+(its `AGENTS.md`, `.mcp.json`, skills) is loaded. A directory listed in the
+config file that does not fit this session — it holds the project, is
+already covered, or is not mounted now — is skipped with a note; the same
+path given as a flag stops the start. A folder in Google Drive,
 Dropbox, OneDrive or iCloud Drive can be a write directory too, and a full
 path through a link, such as `/Users/<you>/Dropbox/notes/x.txt` with
 `~/Dropbox` a link into `~/Library/CloudStorage`, reaches it like its

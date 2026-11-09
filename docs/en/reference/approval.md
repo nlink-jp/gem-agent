@@ -698,7 +698,10 @@ shared temporary directory or `/dev`, and — for `write` — anything under
 `~/Library/CloudStorage` or below it, or iCloud Drive,
 `~/Library/Mobile Documents/com~apple~CloudDocs`, or below it — ADR-0107)
 or holding the configuration file in use (`--config`) is
-refused, and the start stops with the reason. Each added root then gets
+refused, and the start stops with the reason. A path in `[directories]`
+that holds the project or the work directory, is already covered or is not
+there now is skipped with a note instead, because that file serves every
+project; the same path as a flag stops the start (ADR-0114). Each added root then gets
 its own probes under the real profiles (the read lane cannot create a
 file there or read a `.env` there, and can read an ordinary file; a
 write root is written by the write lane with `AGENTS.md` denied; a read

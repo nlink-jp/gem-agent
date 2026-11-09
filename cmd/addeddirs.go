@@ -25,7 +25,12 @@ type addedDir struct {
 // read ones, the configuration before the flags — so a read root that
 // lies inside a write root is "already covered" whichever way it was
 // given. A refusal is an error naming where the path came from.
-func resolveAddedDirs(cfg *config.Config, projectDir, workDir, cfgPath string) ([]addedDir, error) {
+//
+// skipped names the configured paths that do not apply to this session
+// (sandbox.Situational, ADR-0114 §1): the global file serves every
+// project, so one that holds this project, or sits on a volume not
+// mounted now, is told and passed over instead of stopping the start.
+func resolveAddedDirs(cfg *config.Config, projectDir, workDir, cfgPath string) (added []addedDir, skipped []string, err error) {
 	ctx := rootBaseContext(cfgPath)
 	ctx.ProjectDir, ctx.WorkDir = realOrSelf(projectDir), realOrSelf(workDir)
 	cfgWrite, cfgRead := cfg.Directories.Paths()
@@ -58,13 +63,17 @@ func resolveAddedDirs(cfg *config.Config, projectDir, workDir, cfgPath string) (
 		}
 		real, err := sandbox.RefuseRoot(g.path, g.write, ctx)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", g.label, err)
+			if g.source == "config" && sandbox.Situational(err) {
+				skipped = append(skipped, g.label+": "+err.Error())
+				continue
+			}
+			return nil, nil, fmt.Errorf("%s: %w", g.label, err)
 		}
 		r := sandbox.AddedRoot{Dir: real, Write: g.write}
 		ctx.Roots = append(ctx.Roots, r)
 		out = append(out, addedDir{AddedRoot: r, Source: g.source})
 	}
-	return out, nil
+	return out, skipped, nil
 }
 
 func indexOfRoot(roots []addedDir, dir string) int {

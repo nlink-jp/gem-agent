@@ -384,6 +384,7 @@ type Messages struct {
 	AddedPersistentSinceLastFmt string
 	AddedPersistentSessionFmt   string
 	AddedPersistentCutFmt       string // %d = the walk's cap, %s = the directory
+	AddedSkippedFmt             string // %s = the configured list, the path and why it does not apply
 	// A directory added during the session (ADR-0099 §11, §12): the
 	// operator's /add-dir, /read-dir and /dirs, and the model's approved
 	// request. Each says what changed, or why nothing did and what to type.
@@ -632,6 +633,7 @@ keys:
 	AddedPersistentSinceLastFmt: "note: in the added directory %s, changed since your previous session: %s — a project opened under it would load or run these",
 	AddedPersistentSessionFmt:   "note: in the added directory %s, this session added, changed or removed: %s — a project opened under it would load or run these",
 	AddedPersistentCutFmt:       "note: change detection covers the first %d entries under the added directory %s only",
+	AddedSkippedFmt:             "note: skipped a configured directory: %s",
 	GrantNotFoundFmt:            "%s: not found",
 	GrantCannotOpenFmt:          "%s: cannot be opened as a directory: %v",
 	GrantLinkFmt:                "%s resolves to %s — to add that directory, type: %s %s",
@@ -859,6 +861,7 @@ var ja = Messages{
 	AddedPersistentSinceLastFmt: "note: 追加ディレクトリ %s で、前回のセッション以降に変更: %s — その下で開くプロジェクトはこれらを読み込むか実行します",
 	AddedPersistentSessionFmt:   "note: 追加ディレクトリ %s で、このセッションが追加・変更・削除: %s — その下で開くプロジェクトはこれらを読み込むか実行します",
 	AddedPersistentCutFmt:       "note: 変化の検出は最初の %d 項目だけが対象です（追加ディレクトリ %s）",
+	AddedSkippedFmt:             "note: 設定のディレクトリを飛ばしました: %s",
 	GrantNotFoundFmt:            "%s: 見つかりません",
 	GrantCannotOpenFmt:          "%s: ディレクトリとして開けません: %v",
 	GrantLinkFmt:                "%s の実体は %s です — そのディレクトリを足すには次のように打ってください: %s %s",

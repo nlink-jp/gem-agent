@@ -490,10 +490,15 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 	// The operator's added directories (ADR-0099 §3): judged by the one
 	// rule before anything uses them, and a refusal stops the start —
-	// the operator typed the path and must hear it did not apply.
-	added, err := resolveAddedDirs(cfg, projectDir, workDir, cfgPath)
+	// the operator typed the path and must hear it did not apply. A
+	// configured one that does not fit this session is told and skipped
+	// (ADR-0114 §1).
+	added, skippedDirs, err := resolveAddedDirs(cfg, projectDir, workDir, cfgPath)
 	if err != nil {
 		return err
+	}
+	for _, s := range skippedDirs {
+		_, _ = fmt.Fprintf(stderr, msgs.AddedSkippedFmt+"\n", s)
 	}
 	if len(added) > 0 && sessionLog != nil {
 		_ = sessionLog.Log("added_directories", addedDirsRecord(added))

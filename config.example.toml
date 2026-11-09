@@ -139,6 +139,8 @@ enabled = true
 # shared temporary directory or /dev, and for write ~/Library (except a
 # synced folder: a provider's account folder in ~/Library/CloudStorage
 # or below it, or iCloud Drive) or the config file in use. The same path given twice is one root.
+# A path here that does not fit this session (it holds the project, is
+# already covered, or is not mounted now) is skipped with a note (ADR-0114).
 # --add-dir / --read-dir add more.
 #write = ["~/notes"]
 #read = ["/Volumes/Archive/reference"]
