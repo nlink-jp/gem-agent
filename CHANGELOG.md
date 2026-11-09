@@ -10,6 +10,12 @@
 
 ### Security
 
+- **The startup file-read probe no longer writes through planted links.** On
+  a resumed session it used fixed names in the work directory, which the
+  write lane can write, so a link left there redirected the probe's write
+  and delete outside the sandbox. It now uses a new randomly named
+  directory and exclusive creates.
+
 - **A control character in a skill directory's name no longer breaks every
   start.** The name reached the global policy file unescaped, and the file
   could not be read afterwards. Such names are now escaped, and a file that

@@ -1069,10 +1069,20 @@ func VerifyFileReadLane(dir, home string, run func(profile, path string) error) 
 	secret := filepath.Join(dir, ".env")
 	plain := filepath.Join(dir, "probe-ordinary.txt")
 	for _, f := range []struct{ path, data string }{{secret, "PROBE=1\n"}, {plain, "ordinary\n"}} {
-		if err := os.WriteFile(f.path, []byte(f.data), 0o600); err != nil {
-			return fmt.Errorf("the file-read probe cannot write %s: %w", filepath.Base(f.path), err)
+		// Exclusive: a link planted under this name is not followed, and
+		// only what this probe created is removed.
+		file, err := os.OpenFile(f.path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			return fmt.Errorf("the file-read probe cannot create %s: %w", filepath.Base(f.path), err)
 		}
 		defer func(p string) { _ = os.Remove(p) }(f.path)
+		_, err = file.WriteString(f.data)
+		if cerr := file.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			return fmt.Errorf("the file-read probe cannot write %s: %w", filepath.Base(f.path), err)
+		}
 	}
 	// The profile the runner will actually install, not one built from
 	// the probe's own parent: a home-anchored deny that never fires

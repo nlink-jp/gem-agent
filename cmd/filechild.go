@@ -312,12 +312,13 @@ func installFileChildWith(reg *tools.Registry, self, home, probeDir string) stri
 
 // fileProbeDir is where VerifyFileReadLane writes its two probe files:
 // the session work directory when there is one, a temporary directory
-// otherwise. Empty means there is nowhere to probe, and the caller
-// leaves the reads in process.
+// otherwise. The directory is new and randomly named: the work directory
+// survives a resume and the write lane can write it, so a fixed name
+// could be a link it planted. Empty means there is nowhere to probe, and
+// the caller leaves the reads in process.
 func fileProbeDir(workDir string) (dir string, done func()) {
 	if workDir != "" {
-		d := filepath.Join(workDir, "probe")
-		if err := os.MkdirAll(d, 0o700); err == nil {
+		if d, err := os.MkdirTemp(workDir, "probe-"); err == nil {
 			return d, func() { _ = os.Remove(d) }
 		}
 	}
