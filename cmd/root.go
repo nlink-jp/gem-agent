@@ -2567,6 +2567,16 @@ func readScratchDir(workDir string) (string, error) {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return "", err
 		}
+		// The write lane can write the work directory and a resume
+		// reuses it: a link here would become the read lane's writable
+		// directory, wherever it leads.
+		fi, err := os.Lstat(dir)
+		if err != nil {
+			return "", err
+		}
+		if !fi.IsDir() {
+			return "", fmt.Errorf("%s is not a directory", dir)
+		}
 		return sandbox.ResolveWriteDir(dir)
 	}
 	// One fallback per process, reused across /clear and removed at

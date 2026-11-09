@@ -22,6 +22,11 @@
 
 ### Security
 
+- **A link left at the session scratch no longer becomes the read lane's
+  writable directory.** On a resumed session a link at `<work>/scratch`,
+  which the write lane can create, widened what the unasked read lane may
+  write to wherever it led. Such a session now runs with the read lane off,
+  and says so.
 - **The startup file-read probe no longer writes through planted links.** On
   a resumed session it used fixed names in the work directory, which the
   write lane can write, so a link left there redirected the probe's write
