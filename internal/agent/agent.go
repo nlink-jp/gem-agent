@@ -1970,8 +1970,8 @@ func ClipDetail(detail string) string {
 	return clip(strings.Join(strings.Fields(detail), " "), 300)
 }
 
-// approvalDetailCap bounds the values one approval carries: a model can
-// pass any size of write_file.
+// approvalDetailCap bounds what one approval carries, names and values
+// together: a model can pass any size of write_file and choose any name.
 const approvalDetailCap = 64 << 10
 
 // FullCallDetail renders every argument of a call for the question the
@@ -1995,7 +1995,7 @@ func FullCallDetail(tc llm.ToolCall) (detail string, omitted int) {
 	total := 0
 	for k, v := range tc.Args {
 		text := argText(v)
-		total += len(text)
+		total += len(k) + len(text)
 		rank := 1
 		switch {
 		case k == "path":
@@ -2021,7 +2021,8 @@ func FullCallDetail(tc llm.ToolCall) (detail string, omitted int) {
 	for _, a := range args {
 		v, cut := capValue(a.text, limit)
 		omitted += cut
-		name := a.name
+		name, nameCut := capValue(a.name, limit)
+		omitted += nameCut
 		if strings.ContainsAny(name, "\r\n") {
 			name = strconv.Quote(name)
 		}

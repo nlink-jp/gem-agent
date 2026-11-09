@@ -291,7 +291,7 @@ with the path first and long values indented under their names. Each
 row of the call starts with `┊`. When it is longer than the box, a
 marker gives the position and ↑↓, PgUp, PgDn, Home and End scroll it
 (ADR-0112); in macOS Terminal all but ↑↓ may need Shift. Short arguments
-come before long ones. A call whose values exceed 64 KiB keeps the start
+come before long ones. A call over 64 KiB keeps the start
 and end of what it cuts and says at the top how much is left out.
 
 - `y` — allow this call

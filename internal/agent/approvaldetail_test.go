@@ -66,6 +66,18 @@ func TestTheCutKeepsEveryArgumentAndTheEnd(t *testing.T) {
 	}
 }
 
+// A name counts toward the limit, and its cut is stated.
+func TestTheLimitCoversArgumentNames(t *testing.T) {
+	name := strings.Repeat("n", 200<<10)
+	got, omitted := FullCallDetail(llm.ToolCall{Name: "x", Args: map[string]any{name: "v", "to": "evil@x"}})
+	if len(got) > 2*approvalDetailCap || omitted == 0 {
+		t.Errorf("a long name escaped the limit: %d bytes, omitted %d", len(got), omitted)
+	}
+	if !strings.Contains(got, "to=evil@x") {
+		t.Errorf("the other argument was lost")
+	}
+}
+
 // Other values keep their boundaries and form.
 func TestFullCallDetailRendersValuesExactly(t *testing.T) {
 	render := func(v any) string {
