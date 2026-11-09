@@ -20,13 +20,13 @@ screen; the payload builder remains the only author of an image escape.*
 
 ### What the counter can and cannot see
 
-`emit` ([model.go:1020](../../../internal/tui/model.go)) prints one line into
+`emit` ([model.go:1023](../../../internal/tui/model.go)) prints one line into
 scrollback and counts its physical rows; the bottom pinning rests on that
 count. Measured against `charmbracelet/x/ansi` v0.11.6, the version
 `go.mod:14` pins: `ansi.StringWidth` returns **0** and `ansi.Strip` returns
 the empty string for an iTerm2 `OSC 1337 File=`, a kitty `APC _G` and a
 sixel `DCS q` alike. `ansi.Hardwrap` leaves all three **byte-identical**, so
-`wrapForScrollback` ([model.go:1279](../../../internal/tui/model.go)) does
+`wrapForScrollback` ([model.go:1282](../../../internal/tui/model.go)) does
 not shear a base64 run. An independent pass re-measured it with a
 real PNG and a real sixel — the repository's own test had covered two of the
 three families, and `tools/imgpayload` now carries all three. A draft then over-corrected the
@@ -260,7 +260,7 @@ what was intended.
 
 This does **not** close the existing surface: tool output is printed without
 ANSI stripping — `ansi.Strip` is called at exactly one site in non-test code
-([model.go:1297](../../../internal/tui/model.go)), inside `physicalRows`, to
+([model.go:1300](../../../internal/tui/model.go)), inside `physicalRows`, to
 *measure* — so raw escapes from shell output already reach the terminal.
 Pre-existing, not widened here, not repaired here.
 
@@ -277,7 +277,7 @@ reason is raw-mode stdin ownership, not protocol decoding: once Bubble Tea
 owns stdin, a terminal's reply to a query arrives in the input box as
 phantom keystrokes — the recorded instance is `newGlamourRenderer`'s note on
 why `WithAutoStyle` is deliberately absent
-([model.go:508](../../../internal/tui/model.go); the rule itself is in
+([model.go:510](../../../internal/tui/model.go); the rule itself is in
 `AGENTS.md`'s "Never query the terminal after Bubble Tea starts", which was
 the right citation all along). An earlier draft cited
 `AGENTS.md:296`, which is off by one and, more to the point, is about

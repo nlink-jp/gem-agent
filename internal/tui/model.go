@@ -294,6 +294,8 @@ type Model struct {
 	// land one message behind the dialog and answer it — 'a' would even
 	// session-allowlist the tool (ADR-0021).
 	approvalAt time.Time
+	// approvalScroll is the first detail line shown (ADR-0112).
+	approvalScroll int
 	// reasonMode: the operator chose 'N' (ADR-0060) and the dialog's
 	// options row is replaced by the one-line reason field below.
 	// textinput is value-copy safe (no noCopy fields), like textarea.
@@ -850,6 +852,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		req := msg
 		m.approval = &req
 		m.approvalAt = time.Now()
+		m.approvalScroll = 0
 		m.phase = phaseApproval
 		m.reasonMode = false
 		// An escalated call starts on 拒否 so a reflexive Enter cannot
@@ -1419,13 +1422,25 @@ func (m Model) updateApproval(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	answer := byte(0)
 	switch msg.Type {
-	case tea.KeyLeft, tea.KeyUp, tea.KeyShiftTab:
+	case tea.KeyLeft, tea.KeyShiftTab:
 		n := m.approvalAnswerCount()
 		m.choice = (m.choice - 1 + n) % n
 		return m, nil
-	case tea.KeyRight, tea.KeyDown, tea.KeyTab:
+	case tea.KeyRight, tea.KeyTab:
 		m.choice = (m.choice + 1) % m.approvalAnswerCount()
 		return m, nil
+	case tea.KeyUp:
+		return m.scrollApproval(-1), nil
+	case tea.KeyDown:
+		return m.scrollApproval(1), nil
+	case tea.KeyPgUp:
+		return m.scrollApproval(-m.approvalPage()), nil
+	case tea.KeyPgDown:
+		return m.scrollApproval(m.approvalPage()), nil
+	case tea.KeyHome:
+		return m.scrollApproval(-maxApprovalScroll), nil
+	case tea.KeyEnd:
+		return m.scrollApproval(maxApprovalScroll), nil
 	case tea.KeyEnter:
 		answer = approvalAnswers[m.choice]
 	case tea.KeyEsc, tea.KeyCtrlC:
@@ -2108,27 +2123,91 @@ func (m Model) settingsFrame() string {
 	return body
 }
 
-// maxApprovalDetailLines bounds the approval box's detail body; hidden
-// lines are counted on a marker line, never dropped silently.
-const maxApprovalDetailLines = 8
+// maxApprovalDetailLines bounds the approval box's detail window; the
+// rest is reached by scrolling and counted on a marker line (ADR-0112).
+const maxApprovalDetailLines = 20
 
-// clipDetail clips a call detail for the approval box: at most maxLines
-// lines, each rune-safely shortened. hidden reports what was cut.
-func clipDetail(detail string, maxLines int) (string, int) {
-	// Count lines BEFORE the rune clip: clipping a 200-line heredoc to
-	// 600 runes first left only the surviving lines to count, so the
-	// disclosure whose whole job is honesty under-reported the hidden
-	// count (review round 2).
-	lines := strings.Split(detail, "\n")
-	hidden := 0
-	if len(lines) > maxLines {
-		hidden = len(lines) - maxLines
-		lines = lines[:maxLines]
+// maxApprovalScroll moves past either end; clampScroll brings it back.
+const maxApprovalScroll = 1 << 30
+
+// approvalLayout is the dialog's text, wrapped to the box, and how many
+// rows of it fit.
+type approvalLayout struct {
+	purpose, reason, consequence string
+	lines                        []string
+	budget                       int
+}
+
+// approvalLayout is shared by the View and the scroll keys, so a key
+// clamps against what is drawn. The detail budget adapts to the terminal:
+// on a short screen a fixed budget overflowed the frame, and the View
+// clamp then cut rows from the top with no disclosure (review round 2).
+// ~13 rows of fixed chrome: box borders, title, purpose, marker, reason,
+// options, hint, live line, footer, clamp margin. The reason field
+// (ADR-0060) swaps the options row for a prompt + input + hint, one row
+// taller. Every line wraps to the box before the budget is applied
+// (review round 4): cutting at the terminal edge hid what the operator
+// was approving.
+func (m Model) approvalLayout(req *ApprovalRequest) approvalLayout {
+	chrome := 13
+	if m.reasonMode {
+		chrome = 14
 	}
-	// The rune clip is a backstop: the caller wraps the detail to the
-	// box and the line budget bounds it, so a working clip here would
-	// cut visible rows silently (review round 4 raised it from 600).
-	return clip(strings.Join(lines, "\n"), 4000), hidden
+	budget := maxApprovalDetailLines
+	if m.height > 0 { // 0 = size not yet reported; keep the full budget
+		if avail := m.height - chrome; avail < budget {
+			budget = max(avail, 0)
+		}
+	}
+	purposeText := m.msgs.PurposePrefix + m.purposeText(req.Purpose)
+	reasonText := ""
+	if req.Reason != "" {
+		reasonText = "⚠ " + clip(req.Reason, 200)
+	}
+	detailText := req.Detail
+	// The mode change says what yes means, and it is a line of the box
+	// like any other: it has to wrap with them, or it sets the box's
+	// width and pushes the border off the screen (operator report).
+	consequenceText := ""
+	if req.ModeChange {
+		consequenceText = m.msgs.CeilingLiftConsequence
+	}
+	if inner := m.width - 6; m.width > 0 && inner >= 20 {
+		purposeText = ansi.Hardwrap(purposeText, inner, true)
+		reasonText = ansi.Hardwrap(reasonText, inner, true)
+		detailText = ansi.Hardwrap(detailText, inner, true)
+		consequenceText = ansi.Hardwrap(consequenceText, inner, true)
+	}
+	budget -= strings.Count(purposeText, "\n") + strings.Count(reasonText, "\n") +
+		strings.Count(consequenceText, "\n")
+	return approvalLayout{
+		purpose: purposeText, reason: reasonText, consequence: consequenceText,
+		lines: strings.Split(detailText, "\n"), budget: max(budget, 0),
+	}
+}
+
+// clampScroll keeps the window on the text.
+func clampScroll(offset, total, budget int) int {
+	return max(min(offset, max(total-budget, 0)), 0)
+}
+
+// scrollApproval moves the detail window by delta lines.
+func (m Model) scrollApproval(delta int) Model {
+	if m.approval == nil {
+		return m
+	}
+	l := m.approvalLayout(m.approval)
+	base := clampScroll(m.approvalScroll, len(l.lines), l.budget)
+	m.approvalScroll = clampScroll(base+delta, len(l.lines), l.budget)
+	return m
+}
+
+// approvalPage is a page of the detail, keeping one line of context.
+func (m Model) approvalPage() int {
+	if m.approval == nil {
+		return 1
+	}
+	return max(m.approvalLayout(m.approval).budget-1, 1)
 }
 
 // clipLines truncates each line to width-1 display cells (ANSI-aware).
@@ -2168,66 +2247,12 @@ func (m Model) viewContent() string {
 		if req == nil {
 			return ""
 		}
-		// A multi-line shell command (heredoc, script) must not blow the
-		// box past the view budget — but hiding lines silently would let
-		// the operator approve a command they have not seen, so the
-		// count of hidden lines is shown (ADR-0021).
-		// The detail budget adapts to the terminal: on a short screen
-		// the fixed 8-line budget overflowed the frame, and the View
-		// clamp then cut rows FROM THE TOP with no disclosure — the
-		// title (the tool being approved!) vanished first, the exact
-		// silent hiding clipDetail exists to prevent (review round 2).
-		// ~13 rows of fixed chrome: box borders, title, purpose, hidden
-		// marker, reason, options, hint, live line, footer, clamp margin.
-		// The reason field (ADR-0060) swaps the options row for a
-		// prompt + input + hint — one row taller.
-		chrome := 13
-		if m.reasonMode {
-			chrome = 14
-		}
-		budget := maxApprovalDetailLines
-		if m.height > 0 { // 0 = size not yet reported; keep the full budget
-			if avail := m.height - chrome; avail < budget {
-				budget = avail
-				if budget < 0 {
-					budget = 0
-				}
-			}
-		}
-		// Every line of the box wraps to its inner width before the
-		// budget is applied (review round 4): clipLines cut an over-wide
-		// detail at the terminal edge with no marker, and edit_file's
-		// one-line detail put `path=` past column 80 — the operator
-		// approved an edit whose target they could not see. Same
-		// treatment the ask dialog got in round 3; the extra rows the
-		// purpose and reason take come out of the detail budget so the
-		// box stays inside the frame.
-		purposeText := m.msgs.PurposePrefix + m.purposeText(req.Purpose)
-		reasonText := ""
-		if req.Reason != "" {
-			reasonText = "⚠ " + clip(req.Reason, 200)
-		}
-		detailText := req.Detail
-		// The mode change says what yes means, and it is a line of the
-		// box like any other: it has to wrap with them, or it sets the
-		// box's width and pushes the border off the screen (operator
-		// report — this line was rendered straight from the catalog).
-		consequenceText := ""
-		if req.ModeChange {
-			consequenceText = m.msgs.CeilingLiftConsequence
-		}
-		if inner := m.width - 6; m.width > 0 && inner >= 20 {
-			purposeText = ansi.Hardwrap(purposeText, inner, true)
-			reasonText = ansi.Hardwrap(reasonText, inner, true)
-			detailText = ansi.Hardwrap(detailText, inner, true)
-			consequenceText = ansi.Hardwrap(consequenceText, inner, true)
-		}
-		budget -= strings.Count(purposeText, "\n") + strings.Count(reasonText, "\n") +
-			strings.Count(consequenceText, "\n")
-		if budget < 0 {
-			budget = 0
-		}
-		detail, hidden := clipDetail(detailText, budget)
+		l := m.approvalLayout(req)
+		purposeText, reasonText, consequenceText := l.purpose, l.reason, l.consequence
+		from := clampScroll(m.approvalScroll, len(l.lines), l.budget)
+		to := min(from+l.budget, len(l.lines))
+		detail := strings.Join(l.lines[from:to], "\n")
+		hidden := len(l.lines) - (to - from)
 		body := fmt.Sprintf(m.msgs.ApprovalTitleFmt, req.Tool)
 		if req.ModeChange {
 			// A different question: not "approve this call" but "turn
@@ -2247,7 +2272,11 @@ func (m Model) viewContent() string {
 			body += "\n" + m.st.hint.Render(detail)
 		}
 		if hidden > 0 {
-			body += "\n" + m.st.warn.Render(fmt.Sprintf(m.msgs.ApprovalHiddenFmt, hidden))
+			if l.budget > 0 {
+				body += "\n" + m.st.warn.Render(fmt.Sprintf(m.msgs.ApprovalScrollFmt, from+1, to, len(l.lines), hidden))
+			} else {
+				body += "\n" + m.st.warn.Render(fmt.Sprintf(m.msgs.ApprovalHiddenFmt, hidden))
+			}
 		}
 		if reasonText != "" {
 			// The escalation cause gets its own accented line: in auto

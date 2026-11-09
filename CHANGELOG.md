@@ -10,6 +10,11 @@
 
 ### Changed
 
+- **The approval dialog shows the whole call and scrolls** (ADR-0112). Long
+  commands and edits were cut to about 300 characters and 8 lines, with no
+  way to read the rest. The dialog now carries every argument, and ↑↓, PgUp,
+  PgDn, Home and End scroll it. ↑↓ no longer move the selected answer; ←→
+  and Tab still do.
 - **The output of a `!` command reaches the model as data** (ADR-0111). It
   used to join the conversation as your own words. The command still does;
   what it printed is now marked like a file you attach.

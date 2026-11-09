@@ -250,6 +250,7 @@ excepted).
 - [`ADR-0109`](adr/0109-the-approved-cache-is-out-of-the-unasked-lanes-reach.md) — the approved lanes' toolchain cache lies outside everything that runs unasked (**Accepted**, implemented): the `<name>-approved` cache sat inside the read lane's scratch, separated only by an environment variable; it is now the session's own directory beside the work directory, which the file tools write as Safe and other sessions' lanes cannot reach, denied to the read lane by the kernel and probed at startup
 - [`ADR-0110`](adr/0110-a-pipe-without-p-is-the-operators-own-input.md) — a pipe without `-p` is the operator's own input (**Accepted**): an audit rated it high that a pipe without `-p` is dispatched as typed input, `!` included; that is the specification (ADR-0055 §3) and no boundary is crossed, so it stays ungated and the README and interface reference now say so
 - [`ADR-0111`](adr/0111-the-output-of-a-bang-command-is-data.md) — the output of a `!` command is data (**Accepted**, implemented): it joined the history as the operator's own words, unwrapped; the command stays their text and the output is a text attachment, wrapped at send
+- [`ADR-0112`](adr/0112-the-approval-dialog-carries-the-whole-call.md) — the approval dialog carries the whole call, and scrolls (**Accepted**, implemented): the gates received a one-line summary clipped to 300 characters and showed 8 rows of it; they now get every argument up to 64 KiB, and ↑↓ PgUp PgDn Home End scroll the dialog
 
 ## History
 

@@ -244,6 +244,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0109`](adr/0109-the-approved-cache-is-out-of-the-unasked-lanes-reach.ja.md) — 承認済みレーンのツールチェーンキャッシュは、聞かずに走るものすべての外に置く（**Accepted**、実装済み）: `<name>-approved` のキャッシュは read レーンの scratch の中にあり、環境変数でしか分かれていなかった。ファイルツールが Safe で書ける作業ディレクトリの隣の、他のセッションのレーンが届かないセッション専用ディレクトリへ移し、read レーンにはカーネルで拒否して起動時に確かめる
 - [`ADR-0110`](adr/0110-a-pipe-without-p-is-the-operators-own-input.ja.md) — `-p` なしのパイプは操作者自身の入力である（**Accepted**）: 監査は `-p` なしのパイプが `!` を含めて打鍵として処理されることを high としたが、これは仕様（ADR-0055 §3）で越えられる境界はない。ゲートせず、README とインターフェースのリファレンスにそう明記する
 - [`ADR-0111`](adr/0111-the-output-of-a-bang-command-is-data.ja.md) — `!` コマンドの出力はデータである（**Accepted**、実装済み）: 出力が操作者の言葉として包まれずに履歴に入っていた。コマンドはテキストのまま、出力はテキスト添付にして送信時に包む
+- [`ADR-0112`](adr/0112-the-approval-dialog-carries-the-whole-call.ja.md) — 承認ダイアログは呼び出しの全体を運び、スクロールできる（**Accepted**、実装済み）: ゲートが受け取るのは 300 文字に切った 1 行の要約で、そのうち 8 行しか出なかった。64 KiB まで全引数を渡し、↑↓ PgUp PgDn Home End でスクロールできるようにする
 
 ## History（履歴）
 

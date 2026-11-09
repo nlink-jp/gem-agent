@@ -172,13 +172,3 @@ func TestShortTerminalApprovalKeepsTitleAndDiscloses(t *testing.T) {
 		t.Errorf("options line missing:\n%s", v)
 	}
 }
-
-// clipDetail counted lines AFTER the 600-rune clip, under-reporting
-// the hidden count for long details.
-func TestClipDetailCountsBeforeRuneClip(t *testing.T) {
-	detail := strings.TrimRight(strings.Repeat("0123456789\n", 200), "\n") // 200 lines
-	_, hidden := clipDetail(detail, 8)
-	if hidden != 192 {
-		t.Errorf("hidden = %d, want 192", hidden)
-	}
-}

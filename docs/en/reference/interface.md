@@ -286,6 +286,12 @@ selection — ←→ or Tab to move, Enter to confirm — or with the
 exists because those letters cannot be typed with a Japanese IME
 switched on.
 
+The dialog shows the whole call: the full command, or every argument
+with the path first and long values on their own lines. When it is
+longer than the box, a marker gives the position and ↑↓, PgUp, PgDn,
+Home and End scroll it (ADR-0112). One call shows up to 64 KiB, and says
+how much it left out.
+
 - `y` — allow this call
 - `n` — deny (fails closed; the model is told to ask you, not retry)
 - `N` — deny with a typed reason (ADR-0060): a one-line field opens,

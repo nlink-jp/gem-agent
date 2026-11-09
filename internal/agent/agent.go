@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/mention"
@@ -1499,8 +1500,8 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 			a.notify(fmt.Sprintf(a.msgs.CeilingRefusedAgainFmt, tc.Name))
 			return refused, false, false, floorRan, nil
 		}
-		detail, purpose := a.Describe(tc)
-		ok, denyReason := a.gate.ApproveLift(tc.Name, detail, purpose, a.ceilingPrompt(d, tc))
+		_, purpose := a.Describe(tc)
+		ok, denyReason := a.gate.ApproveLift(tc.Name, a.approvalDetail(tc), purpose, a.ceilingPrompt(d, tc))
 		if !ok {
 			a.liftDeclined = true
 			record("refused")
@@ -1647,7 +1648,7 @@ func (a *Agent) execCallInner(ctx context.Context, tc llm.ToolCall) (result stri
 					reason += " · " + a.msgs.CeilingUnboundedReason
 				}
 			}
-			ok, fromAllowlist, denyReason := a.askGate(tc, detail, purpose, reason, mustPrompt, d)
+			ok, fromAllowlist, denyReason := a.askGate(tc, a.approvalDetail(tc), purpose, reason, mustPrompt, d)
 			decision := "denied"
 			if ok {
 				decision = "approved"
@@ -1962,6 +1963,55 @@ func CallDetail(tc llm.ToolCall) string {
 	return clip(strings.Join(parts, " "), 300)
 }
 
+// ClipDetail is the one-line form of an approval detail, for a place
+// that reports a call rather than asking about it.
+func ClipDetail(detail string) string { return clip(detail, 300) }
+
+// approvalDetailCap bounds what one approval carries: past it the text
+// says how much it left out. A model can pass any size of write_file.
+const approvalDetailCap = 64 << 10
+
+// FullCallDetail renders every argument of a call in full, for the
+// question the operator answers (ADR-0112): one line for a short value,
+// the value on its own lines otherwise, the path first because it says
+// what the rest applies to.
+func FullCallDetail(tc llm.ToolCall) string {
+	if cmd, ok := tc.Args["command"].(string); ok && tc.Name == "shell_exec" {
+		return capDetail(cmd)
+	}
+	keys := make([]string, 0, len(tc.Args))
+	for k := range tc.Args {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if pi, pj := keys[i] == "path", keys[j] == "path"; pi != pj {
+			return pi
+		}
+		return keys[i] < keys[j]
+	})
+	if len(keys) == 0 {
+		return "(no arguments)"
+	}
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		v := fmt.Sprintf("%v", tc.Args[k])
+		if strings.Contains(v, "\n") || utf8.RuneCountInString(v) > 120 {
+			parts = append(parts, k+":\n"+v)
+			continue
+		}
+		parts = append(parts, k+"="+v)
+	}
+	return capDetail(strings.Join(parts, "\n"))
+}
+
+func capDetail(s string) string {
+	if len(s) <= approvalDetailCap {
+		return s
+	}
+	return strings.ToValidUTF8(s[:approvalDetailCap], "") +
+		fmt.Sprintf("\n… [%d more bytes not shown]", len(s)-approvalDetailCap)
+}
+
 // maxFilterRetries bounds automatic retries of a content-filter block.
 // One is enough for an intermittent filter; more would look like an
 // attempt to wear the filter down.
@@ -2060,7 +2110,7 @@ func clip(s string, limit int) string {
 func (a *Agent) credentialRetry(ctx context.Context, tool *tools.Tool, tc llm.ToolCall) (string, floorState, error, bool) {
 	detail, purpose := a.Describe(tc)
 	reason := tools.ErrCredentialRead.Error()
-	ok, _, denyReason := a.askGate(tc, detail, purpose, reason, true, Decision{
+	ok, _, denyReason := a.askGate(tc, a.approvalDetail(tc), purpose, reason, true, Decision{
 		Tool: tool, Verdict: risk.Verdict{Tier: risk.Review, OperatorOnly: true, CredentialRead: true, Reason: reason},
 	})
 	a.telemetry.Approval(tc.Name, approvalDecision(ok), "gate", true, reason, a.laneOf(tc))

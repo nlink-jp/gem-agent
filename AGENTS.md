@@ -1141,6 +1141,10 @@ a new hook) is an architecture change and takes the same rows as a
   the turn finished cleanly; on error or interrupt it is handed back
   unsent. Ctrl+C stays the unconditional interrupt while running, and the
   approval dialog still owns every key while it is open.
+- **Two renderings of a call, on purpose** (ADR-0112): `Describe` /
+  `CallDetail` are clipped one-liners for events and records;
+  `approvalDetail` / `FullCallDetail` are the whole call, for the gates.
+  Never pass a clipped detail to a question the operator answers.
 - **`session.ShellContextPrefix` is shared on purpose** — the `!` shell
   context message is injected as a user-role message (the command as text,
   its output as a data attachment, ADR-0111), and the session

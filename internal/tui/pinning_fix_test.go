@@ -87,7 +87,7 @@ func TestApprovalDetailBudgeted(t *testing.T) {
 	view := m.View()
 	// Language-independent probes (ADR-0029): the hidden-line count and
 	// the first answer label from the model's own catalog.
-	if !strings.Contains(view, "+14") {
+	if !strings.Contains(view, "+2") {
 		t.Errorf("hidden detail lines not disclosed:\n%s", view)
 	}
 	if !strings.Contains(view, m.approvalLabels()[0]) {

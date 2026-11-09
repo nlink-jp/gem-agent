@@ -212,6 +212,24 @@ func (a *Agent) Describe(tc llm.ToolCall) (detail, purpose string) {
 	return detail, a.declaredPurpose(tc)
 }
 
+// approvalDetail is what the operator is asked about (ADR-0112): every
+// argument in full, where Describe's summary is built for one-line
+// events and records. A tool's annotation leads, because under a long
+// body it would be the part nobody reaches.
+func (a *Agent) approvalDetail(tc llm.ToolCall) string {
+	stripped := llm.ToolCall{Name: tc.Name, Args: a.stripPurpose(tc.Name, tc.Args)}
+	detail := FullCallDetail(stripped)
+	if lane := a.laneOf(tc); lane != "" {
+		detail = "[" + lane + "] " + detail
+	}
+	if t, ok := a.registry.Get(tc.Name); ok && t.Annotate != nil {
+		if note := t.Annotate(stripped.Args); note != "" {
+			detail = note + "\n" + detail
+		}
+	}
+	return detail
+}
+
 // callSig is the loop-detector signature with the purpose removed: the
 // guard compares repeated calls, and a model that re-words its
 // justification every round while repeating the identical call would
