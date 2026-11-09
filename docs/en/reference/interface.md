@@ -274,7 +274,9 @@ output cap) without an approval prompt, since you typed it yourself. It
 re-pins nothing: if the command changed a pinned file (`AGENTS.md`,
 `.mcp.json`, a project skill), the output ends with a note and the next
 interactive start asks (ADR-0074). The command and its output are added to the model's
-context, so `!git status` followed by "fix that" just works.
+context, so `!git status` followed by "fix that" just works. The command
+is your words; the output is marked as data, like a file you attach, so
+text in it is not taken as instructions (ADR-0111).
 
 ## The approval dialog
 

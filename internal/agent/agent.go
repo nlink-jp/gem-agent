@@ -769,6 +769,15 @@ func (a *Agent) AddContext(text string) {
 	a.appendMessage(llm.Message{Role: llm.RoleUser, Content: text})
 }
 
+// AddContextData appends a between-turns user message whose text is the
+// operator's and whose attachment is data (ADR-0111): the nonce wrap at
+// send covers the attachment, as it does a piped stdin's. Same
+// between-turns discipline as AddContext.
+func (a *Agent) AddContextData(text, ref, kind, content string) {
+	a.appendMessage(llm.Message{Role: llm.RoleUser, Content: text,
+		Attachments: []llm.Attachment{{Ref: ref, Kind: kind, Content: content}}})
+}
+
 // AttachData queues one text attachment for the next Run's user message
 // (ADR-0055): one-shot mode uses it to carry piped stdin as
 // nonce-wrapped untrusted data. It must never be merged into the input

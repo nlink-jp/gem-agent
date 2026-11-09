@@ -8,6 +8,12 @@
   (ADR-0110). It is your own input, as if typed: `!` commands and slash
   commands in it run. To hand a pipe to the model as data, use `-p`.
 
+### Changed
+
+- **The output of a `!` command reaches the model as data** (ADR-0111). It
+  used to join the conversation as your own words. The command still does;
+  what it printed is now marked like a file you attach.
+
 ### Security
 
 - **The startup file-read probe no longer writes through planted links.** On

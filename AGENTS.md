@@ -1142,7 +1142,8 @@ a new hook) is an architecture change and takes the same rows as a
   unsent. Ctrl+C stays the unconditional interrupt while running, and the
   approval dialog still owns every key while it is open.
 - **`session.ShellContextPrefix` is shared on purpose** — the `!` shell
-  context message is injected as a user-role message, and the session
+  context message is injected as a user-role message (the command as text,
+  its output as a data attachment, ADR-0111), and the session
   listing needs to tell it from something the operator typed. Sniffing
   for the sentence in two places would drift.
 - **A project file may tighten the gate, never loosen it unless trusted**

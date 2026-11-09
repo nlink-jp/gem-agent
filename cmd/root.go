@@ -2662,8 +2662,9 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 		}
 	}
 	// The prefix is a shared constant: the session listing uses it to
-	// tell an injected message from one the operator typed.
-	ag.AddContext(session.ShellContextPrefix + "\n$ " + command + "\n\nOutput:\n" + out)
+	// tell an injected message from one the operator typed. The command
+	// is the operator's; what it printed is data (ADR-0111).
+	ag.AddContextData(session.ShellContextPrefix+"\n$ "+command, "!", "shell output", out)
 	return out
 }
 
