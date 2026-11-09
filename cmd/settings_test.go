@@ -211,6 +211,7 @@ func TestSettingsMarksAnIgnoredProjectEntry(t *testing.T) {
 
 	// Trusted, the same entry decides — and is credited.
 	s.cfg.Approval.TrustedProjects = []string{s.projectDir}
+	s.mayLoosen = true
 	if _, err := s.Rebuild(); err != nil {
 		t.Fatal(err)
 	}
@@ -373,5 +374,33 @@ func TestSettingsPanelShowsNotify(t *testing.T) {
 		if row.Value != v {
 			t.Errorf("configured %q: row shows %q", v, row.Value)
 		}
+	}
+}
+
+// ADR-0074 §1: a project file changed since it was pinned may tighten,
+// never loosen, and a settings edit in the same session does not change
+// that. Being listed in trusted_projects is only half of the condition.
+func TestRebuildKeepsTheStartupDecisionOnLoosening(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		mayLoosen bool
+		wantNever bool
+	}{
+		{"declined at startup", false, false},
+		{"allowed at startup", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newStore(t)
+			s.cfg.Approval.TrustedProjects = []string{s.projectDir}
+			s.projectCfg.Approval.Tools = map[string]string{"shell_exec": "never"}
+			s.mayLoosen = tc.mayLoosen
+			if _, err := s.Rebuild(); err != nil {
+				t.Fatal(err)
+			}
+			row, _ := rowFor(s.data(), "shell_exec")
+			if (row.Value == "never") != tc.wantNever {
+				t.Errorf("row = %+v, want never = %v", row, tc.wantNever)
+			}
+		})
 	}
 }

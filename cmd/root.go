@@ -1277,7 +1277,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	showPath := newShowPath(projectDir, showImage)
 
 	settings := &settingsStore{
-		cfg: cfg, projectCfg: projectCfg, policyFile: policyFile,
+		cfg: cfg, projectCfg: projectCfg, mayLoosen: projectMayLoosen, policyFile: policyFile,
 		policyPath: policyPath, projectDir: projectDir,
 		registry: registry, ag: ag, current: approvalPolicy,
 		filter: mcpFilter, inv: mcpInv, images: images,

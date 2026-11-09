@@ -27,6 +27,10 @@ import (
 type settingsStore struct {
 	cfg        *config.Config
 	projectCfg *config.ProjectConfig
+	// mayLoosen is the startup decision on whether the project file may
+	// loosen the policy (ADR-0074 §1): it depends on the pins, which only
+	// startup checks, so every rebuild reuses it.
+	mayLoosen  bool
 	policyFile *config.PolicyFile
 	policyPath string
 	projectDir string
@@ -112,7 +116,7 @@ func (s *settingsStore) Rebuild() (tui.SettingsData, error) {
 	}
 	// Learned command rules are parsed but not applied (ADR-0049 §3).
 	p, _, err := policy.Build(merged, s.projectCfg.Approval.Tools,
-		nil, s.cfg.TrustsProject(s.projectDir))
+		nil, s.mayLoosen)
 	if err != nil {
 		return tui.SettingsData{}, err
 	}
