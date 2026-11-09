@@ -291,7 +291,9 @@ func VerifyAddedRoots(profiles map[Lane]string, spec Spec, readLane bool) (notes
 func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (notes, leftovers []string, err error) {
 	probeDir, err := os.MkdirTemp(a.Dir, ".gem-agent-root-probe-*")
 	if err != nil {
-		if a.Write {
+		// Gone is not read-only: an ejected volume fails like a write root,
+		// so a rebuild drops it (ADR-0114 §2).
+		if a.Write || errors.Is(err, fs.ErrNotExist) {
 			return nil, nil, fmt.Errorf("cannot create a probe in it: %w", err)
 		}
 		return []string{fmt.Sprintf("added directory %s is not writable here, so its probes were skipped", a.Dir)}, nil, nil

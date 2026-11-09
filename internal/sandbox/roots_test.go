@@ -516,3 +516,23 @@ func TestProbesReturnLeftoversWhateverTheResult(t *testing.T) {
 		}
 	}
 }
+
+// A read root that is gone fails, so a rebuild drops it; one this process
+// merely cannot write is skipped with a note (ADR-0114 §2).
+func TestVerifyAddedRootsFailsAReadRootThatIsGone(t *testing.T) {
+	gone := AddedRoot{Dir: filepath.Join(t.TempDir(), "ejected")}
+	_, _, err := VerifyAddedRoots(nil, Spec{Added: []AddedRoot{gone}}, false)
+	var bad *AddedRootError
+	if !errors.As(err, &bad) || bad.Root != gone {
+		t.Fatalf("err = %v", err)
+	}
+	locked := t.TempDir()
+	if err := os.Chmod(locked, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	notes, _, err := VerifyAddedRoots(nil, Spec{Added: []AddedRoot{{Dir: locked}}}, false)
+	if err != nil || len(notes) == 0 || !strings.Contains(strings.Join(notes, " "), "not writable here") {
+		t.Errorf("a read root this process cannot write: %v %v", notes, err)
+	}
+}
