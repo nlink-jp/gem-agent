@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.100.1] - 2026-11-09
+
+### Security
+
+- **A session directory that has become a link is refused on resume.** The
+  write lane can replace the work directory or the approved cache with a
+  link, and following it would widen what that lane may write.
+
+### Fixed
+
+- **The approval dialog's order and limit hold for long names and many
+  arguments.** A long argument name sorts as long, and every argument
+  keeps a share of the limit however many there are.
+
 ### Documentation
 
 - **Accepted limits are stated where you read them** (ADR-0113): the
