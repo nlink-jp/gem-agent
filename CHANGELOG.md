@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.101.0] - 2026-11-09
+
 ### Security
 
 - **`/Volumes` and `/Network` themselves can no longer be added as
