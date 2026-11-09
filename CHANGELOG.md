@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Documentation
+
+- **What a pipe without `-p` means is now stated where you read it**
+  (ADR-0110). It is your own input, as if typed: `!` commands and slash
+  commands in it run. To hand a pipe to the model as data, use `-p`.
+
 ### Security
 
 - **What an approved build trusts is out of reach of what runs unasked**

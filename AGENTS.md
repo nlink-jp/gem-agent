@@ -476,6 +476,9 @@ a new hook) is an architecture change and takes the same rows as a
   `internal/tui` (`pinWidthModel`, honours an explicit RUNEWIDTH_EASTASIAN).
   Any new dependency that measures width must agree with x/ansi — test it
   with `runewidth.DefaultCondition.EastAsianWidth = true` first.
+- **A pipe without `-p` is the operator's own input, by design** (ADR-0055
+  §3, ADR-0110): `!` and slash commands in it run. It is not a privilege
+  boundary, so do not gate it; data goes through `-p`.
 - **`make check` compares identifiers across en/ja pairs, not just filenames**
   — `scripts/docs-mirror-check.sh` fails when a tool name, config key, flag
   or slash command is backticked in one language only, and it covers the root

@@ -99,7 +99,8 @@ drawn right stays source — nineteen slash commands (`/help`
 panel, theme control, and a fully bilingual chrome
 (`[tui].language = auto|ja|en`). A positional argument is the first
 interactive turn — `gem-agent "…"` runs it and hands you the keyboard
-(ADR-0064). Pipes fall back to a plain REPL;
+(ADR-0064). A pipe without `-p` is a plain REPL fed by your own input
+(`!` commands in it run; give third-party text to `-p`);
 `-p` runs one-shot (mutating tools denied, and the denial tells the
 model what still runs rather than to ask you; `--allow` grants named
 tools per run, `--auto` arms the risk ladder — ADR-0053), and

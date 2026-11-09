@@ -69,7 +69,15 @@ input history — then the session is ordinary interactive gem-agent.
 It composes with `--continue`/`--resume`/`--auto` unchanged; combining
 it with `-p` is an error, since the two select different session
 shapes. In the piped fallback the argument runs before the first
-stdin line; piped stdin itself is never prompt text (ADR-0055).
+stdin line.
+
+A pipe on stdin without `-p` is **your own input**, as if you had typed
+it (ADR-0055 §3, ADR-0110): `!` commands and slash commands in it run,
+and its text is your instruction. Do not pipe third-party content this
+way. To hand a pipe to the model as data, use `-p`:
+`data | gem-agent -p "…"` attaches it and never treats it as prompt text
+(ADR-0055). Input is read with the paste-safe reader, so lines already
+buffered together become one input.
 
 Piped/scripted use falls back to a plain line REPL automatically; the
 plain REPL answers the same slash commands, `/mcp reload`,

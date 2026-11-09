@@ -3,6 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **Accepted** |
+| Amended by | ADR-0110 (§4: "never prompt text" is the `-p` form's rule; without `-p` a pipe is the operator's own input) |
 | Date | 2026-09-02 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
