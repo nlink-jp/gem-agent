@@ -24,6 +24,7 @@ The command stays text in the operator's voice. The output is a text attachment 
 - `!git status` followed by "fix that" still works: the model reads the output through the wrap.
 - Session listings still show the command; the message keeps its prefix and `$ ` line.
 - Sessions recorded before this keep their old messages, unwrapped, on resume.
+- Compaction summarises an attachment within a smaller budget than a user line, so a long output contributes less to the summary than it did.
 
 ## Alternatives considered
 

@@ -93,6 +93,9 @@ type Messages struct {
 	// ApprovalScrollFmt marks a detail longer than the box: first line,
 	// last line, total, hidden lines (ADR-0112).
 	ApprovalScrollFmt string
+	// ApprovalCutFmt leads a detail the size limit shortened: bytes left
+	// out (ADR-0112).
+	ApprovalCutFmt string
 	// PurposePrefix marks the model's declared purpose (ADR-0047), and
 	// PurposeNone stands in its place when the model declared none —
 	// "it did not say" and "there is nothing to say" must not look the
@@ -440,7 +443,8 @@ var en = Messages{
 	ApproveDenyReason:         "deny with reason (N)",
 	ApproveAlways:             "allow this session (a)",
 	ApprovePersist:            "allow permanently (p)",
-	ApprovalScrollFmt:         "⚠ lines %d–%d of %d (+%d hidden) — ↑↓ PgUp PgDn Home End to read it all",
+	ApprovalScrollFmt:         "⚠ lines %d–%d of %d (+%d hidden) · ↑↓ PgUp PgDn Home End",
+	ApprovalCutFmt:            "⚠ too long to show in full: %d bytes are left out, marked in the text",
 	ApprovalHint:              "←→/Tab select · Enter confirm · y/n/N/a/p direct · Esc denies",
 	ApprovalHintNoStanding:    "←→/Tab select · Enter confirm · y/n/N direct · Esc denies",
 	ApprovalReasonPrompt:      "deny reason:",
@@ -666,7 +670,8 @@ var ja = Messages{
 	ApproveDenyReason:         "理由を添えて拒否 (N)",
 	ApproveAlways:             "このセッション中は許可 (a)",
 	ApprovePersist:            "今後も許可 (p)",
-	ApprovalScrollFmt:         "⚠ %d〜%d 行目 / 全 %d 行（+%d 行は非表示）— ↑↓ PgUp PgDn Home End で全体を確認",
+	ApprovalScrollFmt:         "⚠ %d〜%d 行目 / 全 %d 行（+%d 行は非表示）· ↑↓ PgUp PgDn Home End",
+	ApprovalCutFmt:            "⚠ 長すぎるため全文を表示できません: %d バイトを省略しています（本文中に印あり）",
 	ApprovalHint:              "←→/Tab 選択 · Enter 決定 · y/n/N/a/p 直接指定 · Esc 拒否",
 	ApprovalHintNoStanding:    "←→/Tab 選択 · Enter 決定 · y/n/N 直接指定 · Esc 拒否",
 	ApprovalReasonPrompt:      "拒否理由:",

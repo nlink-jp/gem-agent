@@ -405,7 +405,8 @@ a new hook) is an architecture change and takes the same rows as a
   fixtures that legitimately shrink such files must declare it; the
   thresholds are constants on purpose (revisit needs an ADR, not a
   config key). The companion `Annotate` hook on `tools.Tool` is
-  display-only — it feeds the approval detail via `Describe` and must
+  display-only — it feeds the event detail via `Describe` and the
+  approval detail via `approvalDetail`, and must
   never mutate anything or gate anything.
 - **skillsList/mcpSummary/mcpClients are LIVE variables** (ADR-0039) —
   /skills reload and /mcp reload reassign them mid-session, and every

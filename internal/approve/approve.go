@@ -122,9 +122,8 @@ func (g *Gate) ApproveOnce(toolName, detail, purpose, reason string) (bool, stri
 	}
 }
 
-// Approve asks the user whether the named tool may run. detail is a short
-// human-readable summary of what the call will do (command line, file
-// path); purpose is the model's own one-sentence declaration of why it
+// Approve asks the user whether the named tool may run. detail is the
+// whole call as the operator should read it (ADR-0112); purpose is the model's own one-sentence declaration of why it
 // wants the call (ADR-0047 — context for the human, never a gate input);
 // reason, when non-empty, says why auto-approve escalated instead
 // of running it. mustPrompt says the session allowlist may not answer

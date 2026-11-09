@@ -2136,7 +2136,15 @@ type approvalLayout struct {
 	purpose, reason, consequence string
 	lines                        []string
 	budget                       int
+	inner                        int // the box's text width; 0 = not wrapped
 }
+
+// approvalGutter leads every row of the call's text, so a row the
+// call's own content draws cannot pass for one of the dialog's.
+const approvalGutter = "┊ "
+
+// minApprovalWrap is the narrowest box the text is wrapped to.
+const minApprovalWrap = 10
 
 // approvalLayout is shared by the View and the scroll keys, so a key
 // clamps against what is drawn. The detail budget adapts to the terminal:
@@ -2164,7 +2172,9 @@ func (m Model) approvalLayout(req *ApprovalRequest) approvalLayout {
 	if req.Reason != "" {
 		reasonText = "⚠ " + clip(req.Reason, 200)
 	}
-	detailText := req.Detail
+	// Tabs first: the wrap counts one as no cells and the renderer as
+	// several, so a row would outgrow the box and lose its end.
+	detailText := expandTabs(req.Detail)
 	// The mode change says what yes means, and it is a line of the box
 	// like any other: it has to wrap with them, or it sets the box's
 	// width and pushes the border off the screen (operator report).
@@ -2172,18 +2182,33 @@ func (m Model) approvalLayout(req *ApprovalRequest) approvalLayout {
 	if req.ModeChange {
 		consequenceText = m.msgs.CeilingLiftConsequence
 	}
-	if inner := m.width - 6; m.width > 0 && inner >= 20 {
+	wrapped := 0
+	if inner := m.width - 6; m.width > 0 && inner >= minApprovalWrap {
+		wrapped = inner
 		purposeText = ansi.Hardwrap(purposeText, inner, true)
 		reasonText = ansi.Hardwrap(reasonText, inner, true)
-		detailText = ansi.Hardwrap(detailText, inner, true)
+		detailText = ansi.Hardwrap(detailText, inner-ansi.StringWidth(approvalGutter), true)
 		consequenceText = ansi.Hardwrap(consequenceText, inner, true)
 	}
+	lines := strings.Split(detailText, "\n")
 	budget -= strings.Count(purposeText, "\n") + strings.Count(reasonText, "\n") +
 		strings.Count(consequenceText, "\n")
+	// A narrow box wraps the position line too, and that row comes out
+	// of the text's.
+	budget -= strings.Count(m.scrollMarker(len(lines), len(lines), len(lines), len(lines), wrapped), "\n")
 	return approvalLayout{
 		purpose: purposeText, reason: reasonText, consequence: consequenceText,
-		lines: strings.Split(detailText, "\n"), budget: max(budget, 0),
+		lines: lines, budget: max(budget, 0), inner: wrapped,
 	}
+}
+
+// scrollMarker is the position line for a detail that does not fit.
+func (m Model) scrollMarker(first, last, total, hidden, inner int) string {
+	text := fmt.Sprintf(m.msgs.ApprovalScrollFmt, first, last, total, hidden)
+	if inner > 0 {
+		text = ansi.Hardwrap(text, inner, true)
+	}
+	return text
 }
 
 // clampScroll keeps the window on the text.
@@ -2251,7 +2276,10 @@ func (m Model) viewContent() string {
 		purposeText, reasonText, consequenceText := l.purpose, l.reason, l.consequence
 		from := clampScroll(m.approvalScroll, len(l.lines), l.budget)
 		to := min(from+l.budget, len(l.lines))
-		detail := strings.Join(l.lines[from:to], "\n")
+		detail := ""
+		if to > from {
+			detail = approvalGutter + strings.Join(l.lines[from:to], "\n"+approvalGutter)
+		}
 		hidden := len(l.lines) - (to - from)
 		body := fmt.Sprintf(m.msgs.ApprovalTitleFmt, req.Tool)
 		if req.ModeChange {
@@ -2273,7 +2301,7 @@ func (m Model) viewContent() string {
 		}
 		if hidden > 0 {
 			if l.budget > 0 {
-				body += "\n" + m.st.warn.Render(fmt.Sprintf(m.msgs.ApprovalScrollFmt, from+1, to, len(l.lines), hidden))
+				body += "\n" + m.st.warn.Render(m.scrollMarker(from+1, to, len(l.lines), hidden, l.inner))
 			} else {
 				body += "\n" + m.st.warn.Render(fmt.Sprintf(m.msgs.ApprovalHiddenFmt, hidden))
 			}

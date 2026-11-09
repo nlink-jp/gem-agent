@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1936,8 +1937,8 @@ func (a *Agent) gated(d Decision, tc llm.ToolCall) bool {
 	}
 }
 
-// CallDetail renders a one-line human-readable summary of a tool call for
-// the approval prompt and event display.
+// CallDetail renders a one-line human-readable summary of a tool call
+// for events and records. A question to the operator uses FullCallDetail.
 func CallDetail(tc llm.ToolCall) string {
 	// The interesting argument first, whole-line, for the common tools.
 	if cmd, ok := tc.Args["command"].(string); ok && tc.Name == "shell_exec" {
@@ -1965,19 +1966,23 @@ func CallDetail(tc llm.ToolCall) string {
 
 // ClipDetail is the one-line form of an approval detail, for a place
 // that reports a call rather than asking about it.
-func ClipDetail(detail string) string { return clip(detail, 300) }
+func ClipDetail(detail string) string {
+	return clip(strings.Join(strings.Fields(detail), " "), 300)
+}
 
-// approvalDetailCap bounds what one approval carries: past it the text
-// says how much it left out. A model can pass any size of write_file.
+// approvalDetailCap bounds what one approval carries: a model can pass
+// any size of write_file. It is shared across the arguments, so a long
+// one cannot push the others out of the question.
 const approvalDetailCap = 64 << 10
 
-// FullCallDetail renders every argument of a call in full, for the
-// question the operator answers (ADR-0112): one line for a short value,
-// the value on its own lines otherwise, the path first because it says
-// what the rest applies to.
-func FullCallDetail(tc llm.ToolCall) string {
+// FullCallDetail renders every argument of a call for the question the
+// operator answers (ADR-0112), and how many bytes it left out. A short
+// value sits beside its name; any other is indented under it, so a line
+// at the margin is always a name and a value cannot pose as an argument.
+// The path comes first because it says what the rest applies to.
+func FullCallDetail(tc llm.ToolCall) (detail string, omitted int) {
 	if cmd, ok := tc.Args["command"].(string); ok && tc.Name == "shell_exec" {
-		return capDetail(cmd)
+		return capValue(cmd, approvalDetailCap)
 	}
 	keys := make([]string, 0, len(tc.Args))
 	for k := range tc.Args {
@@ -1990,26 +1995,52 @@ func FullCallDetail(tc llm.ToolCall) string {
 		return keys[i] < keys[j]
 	})
 	if len(keys) == 0 {
-		return "(no arguments)"
+		return "(no arguments)", 0
 	}
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
-		v := fmt.Sprintf("%v", tc.Args[k])
+		v, cut := capValue(argText(tc.Args[k]), approvalDetailCap/len(keys))
+		omitted += cut
+		name := k
+		if strings.ContainsAny(name, "\r\n") {
+			name = strconv.Quote(name)
+		}
 		if strings.Contains(v, "\n") || utf8.RuneCountInString(v) > 120 {
-			parts = append(parts, k+":\n"+v)
+			parts = append(parts, name+":\n  "+strings.ReplaceAll(v, "\n", "\n  "))
 			continue
 		}
-		parts = append(parts, k+"="+v)
+		parts = append(parts, name+"="+v)
 	}
-	return capDetail(strings.Join(parts, "\n"))
+	// Names are not capped above, and a model chooses them.
+	joined, cut := capValue(strings.Join(parts, "\n"), 2*approvalDetailCap)
+	return joined, omitted + cut
 }
 
-func capDetail(s string) string {
-	if len(s) <= approvalDetailCap {
+// argText is an argument's exact text: a string as it is, anything else
+// as JSON, which keeps a list's boundaries and a number's form.
+func argText(v any) string {
+	if s, ok := v.(string); ok {
 		return s
 	}
-	return strings.ToValidUTF8(s[:approvalDetailCap], "") +
-		fmt.Sprintf("\n… [%d more bytes not shown]", len(s)-approvalDetailCap)
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return fmt.Sprintf("%v", v)
+	}
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
+// capValue keeps the head and the tail of an over-long value, since the
+// end of a command is where its effect can be, and says what is between.
+func capValue(s string, limit int) (string, int) {
+	if len(s) <= limit {
+		return s, 0
+	}
+	head := strings.ToValidUTF8(s[:limit*3/4], "")
+	tail := strings.ToValidUTF8(s[len(s)-limit/4:], "")
+	omitted := len(s) - len(head) - len(tail)
+	return head + fmt.Sprintf("\n… [%d bytes not shown] …\n", omitted) + tail, omitted
 }
 
 // maxFilterRetries bounds automatic retries of a content-filter block.

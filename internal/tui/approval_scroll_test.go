@@ -109,13 +109,61 @@ func TestApprovalScrollReachesTheEndOfAWrappedLine(t *testing.T) {
 	}
 }
 
-// The box never outgrows the terminal, however long the detail.
-func TestApprovalDialogFitsTheTerminal(t *testing.T) {
+// However long the detail, the question and its answers stay on screen
+// and the count is right.
+func TestApprovalDialogKeepsTheQuestionOnScreen(t *testing.T) {
 	for _, height := range []int{14, 24, 50} {
 		m := scrollModel(t, numbered(500), 100, height)
 		m = press(m, tea.KeyMsg{Type: tea.KeyPgDown})
-		if rows := strings.Count(m.View(), "\n"); rows >= height {
-			t.Errorf("height %d: the frame took %d rows", height, rows)
+		view := ansi.Strip(m.View())
+		if !strings.Contains(view, "shell_exec") || !strings.Contains(view, m.approvalLabels()[0]) {
+			t.Errorf("height %d: the question or its answers are gone:\n%s", height, view)
+		}
+		l := m.approvalLayout(m.approval)
+		if want := fmt.Sprintf("+%d", 500-l.budget); !strings.Contains(view, want) {
+			t.Errorf("height %d: want %s hidden:\n%s", height, want, view)
+		}
+	}
+}
+
+// A tab does not push the end of a line out of the box.
+func TestApprovalShowsTheEndOfALineWithTabs(t *testing.T) {
+	m := scrollModel(t, "echo ok"+strings.Repeat("\t", 40)+"; TAIL-MARK", 100, 30)
+	m = press(m, tea.KeyMsg{Type: tea.KeyEnd})
+	if !strings.Contains(ansi.Strip(m.View()), "TAIL-MARK") {
+		t.Errorf("the end of the line is hidden:\n%s", ansi.Strip(m.View()))
+	}
+}
+
+// Every row of the call is marked as the call's, and the dialog's own
+// rows are not.
+func TestApprovalGutterMarksTheCallsRows(t *testing.T) {
+	m := scrollModel(t, "ls\n▶ allow (y)", 100, 30)
+	var marked, forged int
+	for _, row := range strings.Split(ansi.Strip(m.View()), "\n") {
+		if strings.Contains(row, approvalGutter) {
+			marked++
+			if strings.Contains(row, "▶ allow (y)") {
+				forged++
+			}
+		}
+	}
+	if marked != 2 || forged != 1 {
+		t.Errorf("marked %d rows, %d of them the forged one", marked, forged)
+	}
+}
+
+// The text wraps in the narrowest box and every row stays inside it.
+func TestApprovalWrapsWhenNarrow(t *testing.T) {
+	m := scrollModel(t, strings.Repeat("x", 300)+"TAIL-MARK", 22, 30)
+	m = press(m, tea.KeyMsg{Type: tea.KeyEnd})
+	if !strings.Contains(boxText(m.View()), "TAIL-MARK") {
+		t.Errorf("the end was not reachable at width 22:\n%s", ansi.Strip(m.View()))
+	}
+	m = scrollModel(t, numbered(50), 60, 30)
+	for _, row := range strings.Split(ansi.Strip(m.View()), "\n") {
+		if w := ansi.StringWidth(row); w > 60 {
+			t.Errorf("a row is %d wide at width 60: %q", w, row)
 		}
 	}
 }

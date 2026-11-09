@@ -275,8 +275,8 @@ re-pins nothing: if the command changed a pinned file (`AGENTS.md`,
 `.mcp.json`, a project skill), the output ends with a note and the next
 interactive start asks (ADR-0074). The command and its output are added to the model's
 context, so `!git status` followed by "fix that" just works. The command
-is your words; the output is marked as data, like a file you attach, so
-text in it is not taken as instructions (ADR-0111).
+is your words; the output is marked as data, like a file you attach
+(ADR-0111).
 
 ## The approval dialog
 
@@ -287,10 +287,12 @@ exists because those letters cannot be typed with a Japanese IME
 switched on.
 
 The dialog shows the whole call: the full command, or every argument
-with the path first and long values on their own lines. When it is
-longer than the box, a marker gives the position and ↑↓, PgUp, PgDn,
-Home and End scroll it (ADR-0112). One call shows up to 64 KiB, and says
-how much it left out.
+with the path first and long values indented under their names. Each
+row of the call starts with `┊`. When it is longer than the box, a
+marker gives the position and ↑↓, PgUp, PgDn, Home and End scroll it
+(ADR-0112); in macOS Terminal the page keys need Shift. A call over
+64 KiB keeps the start and end of each value and says at the top how
+much is left out.
 
 - `y` — allow this call
 - `n` — deny (fails closed; the model is told to ask you, not retry)
@@ -322,9 +324,7 @@ The `⚠` line says so, and the key help drops the two letters.
 
 The highlight starts on *allow*, except for a call auto-approve
 escalated, where it starts on *deny* so a reflexive Enter cannot approve
-it. Long call details are budgeted to the terminal height with the
-hidden-line count disclosed — you are never asked to approve something
-you have not seen. A `write_file` that overwrites an existing file
+it. A `write_file` that overwrites an existing file
 says what it replaces — `replaces existing file: 42KB → 8KB` — so a
 shrinking rewrite is visible at the moment of consent (ADR-0051). A dialog arriving after you pressed Ctrl+C is denied
 automatically: the turn is already dead.

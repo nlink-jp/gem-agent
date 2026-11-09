@@ -53,3 +53,34 @@ func TestApprovedCachePathNeedsTheLayout(t *testing.T) {
 		t.Errorf("got %q, %v", got, ok)
 	}
 }
+
+// A clean that fails on the cache leaves the work directory, the only
+// thing listed, for a retry to find.
+func TestRemoveDeletesTheCacheFirst(t *testing.T) {
+	t.Setenv("GEMAGENT_STATE_DIR", t.TempDir())
+	work, err := Ensure("/some/project", "sid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache, err := EnsureApprovedCache(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked := filepath.Join(cache, "locked")
+	if err := os.Mkdir(locked, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(locked, "f"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
+	if err := Remove("/some/project", "sid"); err == nil {
+		t.Fatal("Remove reported success on a cache it could not delete")
+	}
+	if _, err := os.Stat(work); err != nil {
+		t.Errorf("the work directory is gone, so nothing lists the cache: %v", err)
+	}
+}

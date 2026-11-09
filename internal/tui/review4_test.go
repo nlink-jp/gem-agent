@@ -16,7 +16,7 @@ import (
 // rows still reads as one string.
 func boxText(view string) string {
 	return strings.Map(func(r rune) rune {
-		if r == '\n' || r == ' ' || strings.ContainsRune("│─┃╭╮╰╯┌┐└┘", r) {
+		if r == '\n' || r == ' ' || strings.ContainsRune("┊│─┃╭╮╰╯┌┐└┘", r) {
 			return -1
 		}
 		return r

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
@@ -202,7 +203,7 @@ func (a *Agent) Describe(tc llm.ToolCall) (detail, purpose string) {
 		detail = "[" + lane + "] " + detail
 	}
 	// A tool's display annotation (ADR-0051) rides the detail so the
-	// approval dialog and the gate_decision record both carry it —
+	// tool event and the gate_decision record both carry it —
 	// e.g. write_file's "replaces existing file: 42KB → 8KB".
 	if t, ok := a.registry.Get(tc.Name); ok && t.Annotate != nil {
 		if note := t.Annotate(stripped.Args); note != "" {
@@ -218,7 +219,7 @@ func (a *Agent) Describe(tc llm.ToolCall) (detail, purpose string) {
 // body it would be the part nobody reaches.
 func (a *Agent) approvalDetail(tc llm.ToolCall) string {
 	stripped := llm.ToolCall{Name: tc.Name, Args: a.stripPurpose(tc.Name, tc.Args)}
-	detail := FullCallDetail(stripped)
+	detail, omitted := FullCallDetail(stripped)
 	if lane := a.laneOf(tc); lane != "" {
 		detail = "[" + lane + "] " + detail
 	}
@@ -226,6 +227,11 @@ func (a *Agent) approvalDetail(tc llm.ToolCall) string {
 		if note := t.Annotate(stripped.Args); note != "" {
 			detail = note + "\n" + detail
 		}
+	}
+	// The first thing read: a marker at the bottom cannot warn about
+	// what the operator would approve without scrolling there.
+	if omitted > 0 {
+		detail = fmt.Sprintf(a.msgs.ApprovalCutFmt, omitted) + "\n" + detail
 	}
 	return detail
 }
