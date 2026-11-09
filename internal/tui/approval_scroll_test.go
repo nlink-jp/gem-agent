@@ -160,10 +160,14 @@ func TestApprovalWrapsWhenNarrow(t *testing.T) {
 	if !strings.Contains(boxText(m.View()), "TAIL-MARK") {
 		t.Errorf("the end was not reachable at width 22:\n%s", ansi.Strip(m.View()))
 	}
-	m = scrollModel(t, numbered(50), 60, 30)
-	for _, row := range strings.Split(ansi.Strip(m.View()), "\n") {
-		if w := ansi.StringWidth(row); w > 60 {
-			t.Errorf("a row is %d wide at width 60: %q", w, row)
+}
+
+// A call that fits is drawn, even where the position line would wrap.
+func TestApprovalShowsAShortCallOnASmallTerminal(t *testing.T) {
+	for _, size := range [][2]int{{40, 14}, {30, 15}, {20, 16}} {
+		m := scrollModel(t, "ls", size[0], size[1])
+		if view := ansi.Strip(m.View()); !strings.Contains(view, approvalGutter+"ls") {
+			t.Errorf("%dx%d: the call is not drawn:\n%s", size[0], size[1], view)
 		}
 	}
 }

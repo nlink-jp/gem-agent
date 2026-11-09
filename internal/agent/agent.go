@@ -1970,50 +1970,72 @@ func ClipDetail(detail string) string {
 	return clip(strings.Join(strings.Fields(detail), " "), 300)
 }
 
-// approvalDetailCap bounds what one approval carries: a model can pass
-// any size of write_file. It is shared across the arguments, so a long
-// one cannot push the others out of the question.
+// approvalDetailCap bounds the values one approval carries: a model can
+// pass any size of write_file.
 const approvalDetailCap = 64 << 10
 
 // FullCallDetail renders every argument of a call for the question the
-// operator answers (ADR-0112), and how many bytes it left out. A short
-// value sits beside its name; any other is indented under it, so a line
-// at the margin is always a name and a value cannot pose as an argument.
-// The path comes first because it says what the rest applies to.
+// operator answers (ADR-0112), and how many bytes it left out. The path
+// comes first, then the other short values, then the long ones, so a long
+// body cannot push a short argument out of the first screen. A long value
+// is indented under its name. That is for reading: the text is the
+// model's, and no layout can prove which row is which.
 func FullCallDetail(tc llm.ToolCall) (detail string, omitted int) {
 	if cmd, ok := tc.Args["command"].(string); ok && tc.Name == "shell_exec" {
 		return capValue(cmd, approvalDetailCap)
 	}
-	keys := make([]string, 0, len(tc.Args))
-	for k := range tc.Args {
-		keys = append(keys, k)
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		if pi, pj := keys[i] == "path", keys[j] == "path"; pi != pj {
-			return pi
-		}
-		return keys[i] < keys[j]
-	})
-	if len(keys) == 0 {
+	if len(tc.Args) == 0 {
 		return "(no arguments)", 0
 	}
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		v, cut := capValue(argText(tc.Args[k]), approvalDetailCap/len(keys))
+	type arg struct {
+		name, text string
+		rank       int
+	}
+	args := make([]arg, 0, len(tc.Args))
+	total := 0
+	for k, v := range tc.Args {
+		text := argText(v)
+		total += len(text)
+		rank := 1
+		switch {
+		case k == "path":
+			rank = 0
+		case isLongValue(text):
+			rank = 2
+		}
+		args = append(args, arg{k, text, rank})
+	}
+	sort.Slice(args, func(i, j int) bool {
+		if args[i].rank != args[j].rank {
+			return args[i].rank < args[j].rank
+		}
+		return args[i].name < args[j].name
+	})
+	// Only a call over the limit is cut, and then only what is over its
+	// share, so the short arguments are untouched.
+	limit := approvalDetailCap
+	if total > approvalDetailCap {
+		limit = approvalDetailCap / len(args)
+	}
+	parts := make([]string, 0, len(args))
+	for _, a := range args {
+		v, cut := capValue(a.text, limit)
 		omitted += cut
-		name := k
+		name := a.name
 		if strings.ContainsAny(name, "\r\n") {
 			name = strconv.Quote(name)
 		}
-		if strings.Contains(v, "\n") || utf8.RuneCountInString(v) > 120 {
+		if isLongValue(v) {
 			parts = append(parts, name+":\n  "+strings.ReplaceAll(v, "\n", "\n  "))
 			continue
 		}
 		parts = append(parts, name+"="+v)
 	}
-	// Names are not capped above, and a model chooses them.
-	joined, cut := capValue(strings.Join(parts, "\n"), 2*approvalDetailCap)
-	return joined, omitted + cut
+	return strings.Join(parts, "\n"), omitted
+}
+
+func isLongValue(v string) bool {
+	return strings.Contains(v, "\n") || utf8.RuneCountInString(v) > 120
 }
 
 // argText is an argument's exact text: a string as it is, anything else

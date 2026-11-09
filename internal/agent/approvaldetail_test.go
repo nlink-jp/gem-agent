@@ -20,7 +20,7 @@ func TestFullCallDetailKeepsEveryArgument(t *testing.T) {
 	edit, _ := FullCallDetail(llm.ToolCall{Name: "edit_file", Args: map[string]any{
 		"new_string": "first\nsecond", "old_string": "OLD", "path": "a/b.go",
 	}})
-	want := "path=a/b.go\nnew_string:\n  first\n  second\nold_string=OLD"
+	want := "path=a/b.go\nold_string=OLD\nnew_string:\n  first\n  second"
 	if edit != want {
 		t.Errorf("edit detail = %q, want %q", edit, want)
 	}
@@ -47,6 +47,14 @@ func TestFullCallDetailSaysWhatItLeftOut(t *testing.T) {
 // A long argument cannot cost the others their place, and the end of a
 // long command stays visible.
 func TestTheCutKeepsEveryArgumentAndTheEnd(t *testing.T) {
+	under := strings.Repeat("x", 40<<10)
+	if _, cut := FullCallDetail(llm.ToolCall{Name: "write_file", Args: map[string]any{"path": "a", "content": under}}); cut != 0 {
+		t.Errorf("a call under the limit was cut by %d", cut)
+	}
+	small, cut := FullCallDetail(llm.ToolCall{Name: "mcp__s__send", Args: map[string]any{"a": strings.Repeat("y", 40<<10), "b": strings.Repeat("z", 40<<10), "to": "evil@x"}})
+	if cut == 0 || !strings.Contains(small, "to=evil@x") {
+		t.Errorf("sharing: cut %d", cut)
+	}
 	big := strings.Repeat("x", 70<<10)
 	got, _ := FullCallDetail(llm.ToolCall{Name: "mcp__s__send", Args: map[string]any{"a_note": big, "to": "evil@x"}})
 	if !strings.Contains(got, "to=evil@x") {
@@ -78,8 +86,19 @@ func TestFullCallDetailRendersValuesExactly(t *testing.T) {
 	}
 }
 
-// A value's lines cannot pose as another argument.
-func TestAValueCannotForgeAnArgument(t *testing.T) {
+// A short argument is above every long one, so a long body cannot push
+// it off the first screen.
+func TestShortArgumentsComeBeforeLongOnes(t *testing.T) {
+	got, _ := FullCallDetail(llm.ToolCall{Name: "mcp__mail__send", Args: map[string]any{
+		"body": strings.Repeat("x\n", 40), "to": "attacker@example",
+	}})
+	if !strings.HasPrefix(got, "to=attacker@example\n") {
+		t.Errorf("the short argument is not first: %q", got[:40])
+	}
+}
+
+// A long value's lines are indented under its name.
+func TestAValueIsIndentedUnderItsName(t *testing.T) {
 	forged, _ := FullCallDetail(llm.ToolCall{Name: "edit_file", Args: map[string]any{"new_string": "p\nQ\nold_string:\nr\ns"}})
 	real, _ := FullCallDetail(llm.ToolCall{Name: "edit_file", Args: map[string]any{"new_string": "p\nQ", "old_string": "r\ns"}})
 	if forged == real {
@@ -97,8 +116,8 @@ func TestApprovalDetailLeadsWithTheCut(t *testing.T) {
 	b := &autoBackend{responses: []*llm.Response{{Content: "x"}}, verdict: okVerdict}
 	a, _, _ := newAutoAgent(t, b, &recordingGate{})
 	got := a.approvalDetail(shellCall(strings.Repeat("y", 70<<10)))
-	if !strings.HasPrefix(got, fmt.Sprintf(a.msgs.ApprovalCutFmt, 70<<10-approvalDetailCap)[:6]) {
-		t.Errorf("the cut does not lead: %q", got[:40])
+	if want := fmt.Sprintf(a.msgs.ApprovalCutFmt, 70<<10-approvalDetailCap) + "\n"; !strings.HasPrefix(got, want) {
+		t.Errorf("the cut does not lead with its size: %q", got[:60])
 	}
 }
 

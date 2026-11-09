@@ -2139,8 +2139,9 @@ type approvalLayout struct {
 	inner                        int // the box's text width; 0 = not wrapped
 }
 
-// approvalGutter leads every row of the call's text, so a row the
-// call's own content draws cannot pass for one of the dialog's.
+// approvalGutter leads every row of the call's text, so the eye can tell
+// where the call begins and ends. It is for reading, not proof: the
+// purpose and the reason are model text too, and sit outside it.
 const approvalGutter = "┊ "
 
 // minApprovalWrap is the narrowest box the text is wrapped to.
@@ -2167,10 +2168,10 @@ func (m Model) approvalLayout(req *ApprovalRequest) approvalLayout {
 			budget = max(avail, 0)
 		}
 	}
-	purposeText := m.msgs.PurposePrefix + m.purposeText(req.Purpose)
+	purposeText := expandTabs(m.msgs.PurposePrefix + m.purposeText(req.Purpose))
 	reasonText := ""
 	if req.Reason != "" {
-		reasonText = "⚠ " + clip(req.Reason, 200)
+		reasonText = expandTabs("⚠ " + clip(req.Reason, 200))
 	}
 	// Tabs first: the wrap counts one as no cells and the renderer as
 	// several, so a row would outgrow the box and lose its end.
@@ -2193,9 +2194,11 @@ func (m Model) approvalLayout(req *ApprovalRequest) approvalLayout {
 	lines := strings.Split(detailText, "\n")
 	budget -= strings.Count(purposeText, "\n") + strings.Count(reasonText, "\n") +
 		strings.Count(consequenceText, "\n")
-	// A narrow box wraps the position line too, and that row comes out
-	// of the text's.
-	budget -= strings.Count(m.scrollMarker(len(lines), len(lines), len(lines), len(lines), wrapped), "\n")
+	// A narrow box wraps the position line too, and when it is drawn
+	// that row comes out of the text's.
+	if len(lines) > budget {
+		budget -= strings.Count(m.scrollMarker(len(lines), len(lines), len(lines), len(lines), wrapped), "\n")
+	}
 	return approvalLayout{
 		purpose: purposeText, reason: reasonText, consequence: consequenceText,
 		lines: lines, budget: max(budget, 0), inner: wrapped,
@@ -2303,7 +2306,11 @@ func (m Model) viewContent() string {
 			if l.budget > 0 {
 				body += "\n" + m.st.warn.Render(m.scrollMarker(from+1, to, len(l.lines), hidden, l.inner))
 			} else {
-				body += "\n" + m.st.warn.Render(fmt.Sprintf(m.msgs.ApprovalHiddenFmt, hidden))
+				text := fmt.Sprintf(m.msgs.ApprovalHiddenFmt, hidden)
+				if l.inner > 0 {
+					text = ansi.Hardwrap(text, l.inner, true)
+				}
+				body += "\n" + m.st.warn.Render(text)
 			}
 		}
 		if reasonText != "" {
