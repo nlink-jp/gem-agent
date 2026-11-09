@@ -133,6 +133,38 @@ func TestAddedWatchDropsALostRoot(t *testing.T) {
 	(*addedWatch)(nil).drop([]string{lost}) // a session with no watch
 }
 
+// A root that is not there now says nothing: an empty walk would call
+// everything in it removed, and /clear reports before it learns the root
+// has gone. Its baseline stays for when it comes back (ADR-0114 §2).
+func TestAddedWatchReportsNothingForARootThatIsNotThere(t *testing.T) {
+	t.Setenv(statedir.EnvRoot, t.TempDir())
+	root := underHome(t, "volume")
+	file := filepath.Join(root, "AGENTS.md")
+	if err := os.WriteFile(file, []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	w := newAddedWatch([]addedDir{{AddedRoot: sandbox.AddedRoot{Dir: root, Write: true}, Source: "flag"}}, t.TempDir(), &out, uitext.For(uitext.EN))
+	aside := root + ".ejected"
+	if err := os.Rename(root, aside); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(aside) })
+	var records int
+	log := func(string, any) error { records++; return nil }
+	w.report("clear", log)
+	if out.Len() != 0 || records != 0 {
+		t.Errorf("an ejected root reported: %q (%d records)", out.String(), records)
+	}
+	if err := os.Rename(aside, root); err != nil {
+		t.Fatal(err)
+	}
+	w.report("clear", log)
+	if out.Len() != 0 || records != 0 {
+		t.Errorf("the root coming back unchanged reported: %q (%d records)", out.String(), records)
+	}
+}
+
 func TestAddedWatchCutAndStateFile(t *testing.T) {
 	state := t.TempDir()
 	t.Setenv(statedir.EnvRoot, state)

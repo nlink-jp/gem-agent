@@ -748,7 +748,8 @@ git command there. So each write root is walked the way the project is
 against what the previous session of this project recorded, and at
 `/clear` and exit against this session's start. A change is a note
 naming the root and the files, and a `persistent_changes` record with
-`root`. Nothing is blocked, and only this project's sessions are told —
+`root`. A root that is not there at that moment reports nothing. Nothing
+is blocked, and only this project's sessions are told —
 a different project opened under the root is not. Do not add as a write
 root a directory above projects you open with gem-agent or Claude Code,
 and read the note when it appears.

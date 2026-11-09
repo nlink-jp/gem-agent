@@ -100,6 +100,12 @@ func (w *addedWatch) report(reason string, log func(kind string, data any) error
 		return
 	}
 	for _, root := range w.roots {
+		// A root that is not there now (an ejected volume) tells nothing:
+		// an empty walk would call everything in it removed. Its baseline
+		// stays for when it comes back (ADR-0114 §2).
+		if _, err := os.Stat(root); err != nil {
+			continue
+		}
 		now, cut := w.snapshot(root)
 		a, c, r := trustpin.SnapshotDiff(w.base[root], now)
 		if cut {

@@ -284,12 +284,17 @@ func TestBuildWithoutFailedRoots(t *testing.T) {
 	if len(built) != 2 || len(built[1]) != 1 || built[1][0] != b {
 		t.Errorf("builds = %v", built)
 	}
-	if len(notes) != 2 || !strings.Contains(notes[0], "left /a/x") || notes[1] != "lane note" {
+	if len(notes) != 2 || !strings.Contains(notes[0], "left /a/x") || !strings.Contains(notes[0], "/add-dir /a adds it again") || notes[1] != "lane note" {
 		t.Errorf("notes = %q", notes)
 	}
 	failing["/b"] = true
-	if _, _, _, dropped, err := buildWithoutFailedRoots([]sandbox.AddedRoot{a, b}, build); err != nil || len(dropped) != 2 {
+	_, _, notes, dropped, err = buildWithoutFailedRoots([]sandbox.AddedRoot{a, b}, build)
+	if err != nil || len(dropped) != 2 {
 		t.Errorf("every root failing leaves the lanes with none: %v %v", dropped, err)
+	}
+	// A read root is named with the command that keeps it read-only.
+	if len(notes) != 3 || !strings.Contains(notes[1], "/read-dir /b adds it again") {
+		t.Errorf("notes = %q", notes)
 	}
 	failing = map[string]bool{"/a": true}
 	other := errors.New("no sandbox")

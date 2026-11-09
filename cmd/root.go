@@ -3162,7 +3162,13 @@ func buildWithoutFailedRoots(added []sandbox.AddedRoot, build func([]sandbox.Add
 			break
 		}
 		dropped = append(dropped, bad.Root.Dir)
-		dropNotes = append(dropNotes, fmt.Sprintf("removed from this session, because it no longer passes the sandbox check: %v — /add-dir or /read-dir adds it again", err))
+		// The command that restores its level: a read root brought back
+		// with /add-dir would become writable.
+		again := "/read-dir"
+		if bad.Root.Write {
+			again = "/add-dir"
+		}
+		dropNotes = append(dropNotes, fmt.Sprintf("removed from this session, because it no longer passes the sandbox check: %v — %s %s adds it again", err, again, bad.Root.Dir))
 		kept = slices.DeleteFunc(kept, func(r sandbox.AddedRoot) bool { return r.Dir == bad.Root.Dir })
 		fn, enf, notes, err = build(kept)
 	}

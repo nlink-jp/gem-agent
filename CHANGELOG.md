@@ -20,8 +20,12 @@
 - **`/clear` keeps the shell able to write the new work directory when an
   added directory has gone away** (ADR-0114). The directory that no longer
   passes the sandbox check is removed from the session with a note and the
-  others stay. Before this, the write lane lost the new work directory for
-  the rest of the session.
+  others stay; the note names the command that restores its level. Before
+  this, the write lane lost the new work directory for the rest of the
+  session.
+- **An added directory that is not there no longer reads as emptied**
+  (ADR-0114). At `/clear` and exit a write directory on an ejected volume
+  reports nothing, where it used to report every persistent file as removed.
 - **A share that has stopped answering no longer stalls unrelated file
   reads** (ADR-0114). Each read opens only the added directories its path
   arguments name.
