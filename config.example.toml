@@ -136,7 +136,8 @@ enabled = true
 # volume. Nothing in them is loaded: their instruction files, MCP
 # servers and skills are not read. Refused: /, your home, anything
 # holding the project or a credential location, anything in or around a
-# shared temporary directory or /dev, and for write ~/Library (except a
+# shared temporary directory or /dev, /Volumes or /Network themselves (a
+# directory inside them is fine), and for write ~/Library (except a
 # synced folder: a provider's account folder in ~/Library/CloudStorage
 # or below it, or iCloud Drive) or the config file in use. The same path given twice is one root.
 # A path here that does not fit this session (it holds the project, is

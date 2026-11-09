@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Security
+
+- **`/Volumes` and `/Network` themselves can no longer be added as
+  directories** (ADR-0114). As a read root, `/Volumes` opened every mounted
+  volume to the read lane, which runs without asking. A session that passes
+  either one, by flag or in `[directories]`, now stops at startup with the
+  reason; add a directory inside it instead.
+
 ### Fixed
 
 - **A configured directory that does not fit this project no longer stops

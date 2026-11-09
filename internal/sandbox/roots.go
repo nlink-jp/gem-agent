@@ -126,6 +126,16 @@ func RefuseRoot(path string, write bool, c RootContext) (string, error) {
 			return refuse("it contains a shared temporary directory or the devices (" + s + ")")
 		}
 	}
+	// A root that is, or holds, a tree the read lane keeps out would hand
+	// that whole tree to the unasked lane: last-match-wins, its re-allow
+	// reopens it, the rule ownRootsUnderReach keeps for the session's own
+	// roots (ADR-0102, ADR-0114 §3). One inside such a tree is the point
+	// of a root.
+	for _, d := range reachDenied(c.Home) {
+		if within(real, d) {
+			return refuse("it is or contains " + d + ", which the read lane keeps out; add a directory inside it")
+		}
+	}
 	// Already covered: the project and the work directory are write
 	// roots; an added root covers what lies under it at its level.
 	covers := []AddedRoot{{Dir: c.ProjectDir, Write: true}, {Dir: c.WorkDir, Write: true}}

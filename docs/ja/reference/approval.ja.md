@@ -643,7 +643,7 @@ write ルートの永続ファイルの名前は、プロジェクトと同じ�
 起動時に、各パスを実パスに解決し、1 つの規則（`sandbox.RefuseRoot`）で
 判定します: `/`・ホーム・プロジェクトや作業ディレクトリ・`~/.config/gem-agent`・
 状態ディレクトリ・ホームの資格情報の置き場所を含むもの・共有の一時ディレクトリや
-`/dev` の中またはそれを含むもの・（`write` なら）`~/Library` の下（ただし同期
+`/dev` の中またはそれを含むもの・`/Volumes` や `/Network` そのもの（その内側は足せます。ADR-0114）・（`write` なら）`~/Library` の下（ただし同期
 フォルダ — `~/Library/CloudStorage` の中のプロバイダのアカウントのフォルダと
 その下、iCloud Drive（`~/Library/Mobile Documents/com~apple~CloudDocs`）とその下
 — は除く。ADR-0107）や使っている

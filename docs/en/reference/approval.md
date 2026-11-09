@@ -693,7 +693,8 @@ At startup each path is resolved to its real path and judged by one
 rule (`sandbox.RefuseRoot`): `/`, your home, anything holding the
 project, the work directory, `~/.config/gem-agent`, the state
 directory or a home credential location, anything inside or holding a
-shared temporary directory or `/dev`, and — for `write` — anything under
+shared temporary directory or `/dev`, `/Volumes` or `/Network` themselves
+(a directory inside them is fine; ADR-0114), and — for `write` — anything under
 `~/Library` (except a synced folder: a provider's account folder inside
 `~/Library/CloudStorage` or below it, or iCloud Drive,
 `~/Library/Mobile Documents/com~apple~CloudDocs`, or below it — ADR-0107)

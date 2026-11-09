@@ -66,7 +66,8 @@ config file that does not fit this session — it holds the project, is
 already covered, or is not mounted now — is skipped with a note; the same
 path given as a flag stops the start. One that stops passing the sandbox
 check at `/clear` (an ejected volume) is removed from the session with a
-note and the others stay; `/add-dir` adds it again. A folder in Google Drive,
+note and the others stay; `/add-dir` adds it again. `/Volumes` and
+`/Network` themselves cannot be added; add a directory inside them. A folder in Google Drive,
 Dropbox, OneDrive or iCloud Drive can be a write directory too, and a full
 path through a link, such as `/Users/<you>/Dropbox/notes/x.txt` with
 `~/Dropbox` a link into `~/Library/CloudStorage`, reaches it like its

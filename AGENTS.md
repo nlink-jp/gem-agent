@@ -641,7 +641,9 @@ a new hook) is an architecture change and takes the same rows as a
   refuses unknown keys: keep it that way. Startup probes failing on an
   added root are a startup error, not the unconfined fallback.
   `resolveAddedDirs` skips a configured path only for a refusal
-  `sandbox.Situational` accepts (ADR-0114 §1); a flag still stops the start. A write
+  `sandbox.Situational` accepts (ADR-0114 §1); a flag still stops the start.
+  `RefuseRoot` keeps the `reachDenied` trees themselves out (ADR-0114 §3):
+  a root's re-allow comes after the deny and would reopen them. A write
   root's persistent files are watched by `addedWatch` (cmd/addedwatch.go,
   ADR-0099 §10) with the project's own `trustpin.Snapshot`: the
   ancestor instruction files a later project under the root loads

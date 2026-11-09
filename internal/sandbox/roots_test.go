@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -237,6 +238,28 @@ func TestRefuseRoot(t *testing.T) {
 // and that VerifyAddedRoots passes on the same profiles. The read root
 // sits under the fake home's Library, a tree the read lane denies for
 // reach, so the re-allow is what lets it be read.
+// A root that is or holds a tree the read lane keeps out would reopen
+// the whole tree to the unasked lane, whatever its level and wherever
+// it came from; one inside is what a root is for, and the refusal is not
+// the kind a configured path may skip (ADR-0114 §3).
+func TestRefuseRootKeepsReachDeniedTreesClosed(t *testing.T) {
+	if st, err := os.Stat("/Volumes"); err != nil || !st.IsDir() {
+		t.Skip("no /Volumes here")
+	}
+	for _, write := range []bool{false, true} {
+		_, err := RefuseRoot("/Volumes", write, RootContext{})
+		if err == nil || !strings.Contains(err.Error(), "keeps out") {
+			t.Errorf("/Volumes write=%v: %v", write, err)
+		}
+		if err != nil && Situational(err) {
+			t.Errorf("/Volumes write=%v is wrong from every project, not situational", write)
+		}
+	}
+	if !slices.Contains(reachDenied(""), "/Network") {
+		t.Error("/Network is no longer judged")
+	}
+}
+
 // A probe failure names the root it failed on, in a form a rebuild can
 // read (ADR-0114 §2), with the words it has always had.
 func TestVerifyAddedRootsNamesTheRootThatFailed(t *testing.T) {
