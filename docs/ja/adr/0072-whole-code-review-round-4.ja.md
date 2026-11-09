@@ -3,6 +3,7 @@
 | 項目 | 値 |
 |------|-----|
 | Status | **Accepted** |
+| Amended by | ADR-0113（ファイル検索の子: ツールごとのポリシーもフックと同じ例外で、操作者向けのリファレンスにもそう書く） |
 | Date | 2026-09-05 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

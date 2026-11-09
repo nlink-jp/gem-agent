@@ -3,6 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **Accepted** |
+| Amended by | ADR-0113 (the file-search child: per-tool policy has the same exception as hooks, and the operator's reference says so) |
 | Date | 2026-09-05 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

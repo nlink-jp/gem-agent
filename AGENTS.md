@@ -832,10 +832,10 @@ a new hook) is an architecture change and takes the same rows as a
   (the two share projects, and lagent protects `.gem-agent.toml` in
   turn) but not in `trustpin.ConfigNames`: gem-agent never reads it,
   so there is nothing for a pin to guard.
-- **The file-search child runs no pre-tool hook** (ADR-0072 §3) — its
-  subset is read-only and `searchDenyGate` refuses mutation; an org
-  guard keyed on reads does not see the child's. The one place hooks
-  do not run; a change needs an ADR.
+- **The file-search child runs no pre-tool hook and no per-tool policy**
+  (ADR-0072 §3, ADR-0113) — its subset is read-only and `searchDenyGate`
+  refuses mutation; an org guard or an `always` keyed on reads does not see
+  the child's. The one place these do not apply; a change needs an ADR.
 - **The approval and ask dialogs wrap to the box** (ADR-0072 §2.7) —
   detail, purpose and reason go through `ansi.Hardwrap` at
   `width-6` before the line budget, and the extra rows the purpose and

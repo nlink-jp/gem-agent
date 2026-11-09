@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Documentation
+
+- **Accepted limits are stated where you read them** (ADR-0113): the
+  reads inside `agentic_file_search` bypass pre-tool hooks and `always`,
+  and starting in a subdirectory of an untrusted repository loads that
+  repository's root `AGENTS.md` without the trust question.
+
 ## [0.100.0] - 2026-11-09
 
 ### Documentation

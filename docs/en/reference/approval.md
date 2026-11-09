@@ -50,6 +50,13 @@ attachment beside the typed input — never the system prompt, never
 the instruction channel the auto-mode reviewer trusts. See
 [configuration](configuration.md).
 
+**One exception (ADR-0113).** The child that runs `agentic_file_search`
+is read-only and has no hook and no per-tool policy: a hook matching
+`read_file` or an `always` on it does not see the child's reads. Credential
+reads are still refused there. A guard that must see every read has to
+name `agentic_file_search` itself: a hook or an `always` on that tool does
+apply to the call.
+
 ## What the call is for (ADR-0047)
 
 Every approval-gated tool carries a required `gem_agent_purpose`
@@ -478,7 +485,8 @@ server's tool does. You do — so you can say so:
 ```
 
 `"never"` skips the gate in every mode, `"always"` gates in every mode
-(auto-approve cannot lift it, and neither can a session `a`), and an
+(auto-approve cannot lift it, and neither can a session `a`; the reads
+inside `agentic_file_search` are the one exception, ADR-0113), and an
 unset tool keeps the default. A trailing `*` matches a whole MCP
 server. Resolution is **scope first, then specificity** (ADR-0021): a
 project rule beats any global rule for the tools it matches; within one
@@ -760,8 +768,11 @@ Two gates run before anything loads:
   (`trust = "granted" | "declined"`; delete the key to be asked
   again). Declining still starts the session: the project's own files
   are simply not loaded, and the banner says so. Ancestor instruction
-  files and all global configuration are outside the gate — a clone
-  cannot plant files in directories you own above it. Projects listed
+  files and all global configuration are outside the gate. That rests on
+  those directories being yours, so start gem-agent at the root of a
+  repository you do not trust: started in one of its subdirectories, the
+  repository's own root `AGENTS.md` loads as an ancestor without the
+  question (ADR-0113). Projects listed
   in `[approval].trusted_projects` are trusted without asking.
   Non-interactive runs in an undecided project run bare (nothing of
   the project's loaded, note on stderr, nothing recorded) so

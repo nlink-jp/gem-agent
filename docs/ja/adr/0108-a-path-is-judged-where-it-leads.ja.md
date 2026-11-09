@@ -3,6 +3,7 @@
 | 項目 | 値 |
 |-------|-----|
 | Status | **Accepted**（2026-11-06）— 実装済み。独立した設計レビューを受けて §1 を設計し直した |
+| Amended by | ADR-0113（ディレクトリをリンクに差し替える残余: 何に届くか、なぜ受け入れるか） |
 | Date | 2026-11-06 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

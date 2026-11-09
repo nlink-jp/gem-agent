@@ -251,6 +251,7 @@ excepted).
 - [`ADR-0110`](adr/0110-a-pipe-without-p-is-the-operators-own-input.md) — a pipe without `-p` is the operator's own input (**Accepted**): an audit rated it high that a pipe without `-p` is dispatched as typed input, `!` included; that is the specification (ADR-0055 §3) and no boundary is crossed, so it stays ungated and the README and interface reference now say so
 - [`ADR-0111`](adr/0111-the-output-of-a-bang-command-is-data.md) — the output of a `!` command is data (**Accepted**, implemented): it joined the history as the operator's own words, unwrapped; the command stays their text and the output is a text attachment, wrapped at send
 - [`ADR-0112`](adr/0112-the-approval-dialog-carries-the-whole-call.md) — the approval dialog carries the whole call, and scrolls (**Accepted**, implemented): the gates received a one-line summary clipped to 300 characters and showed 8 rows of it; they now get every argument up to 64 KiB, and ↑↓ PgUp PgDn Home End scroll the dialog
+- [`ADR-0113`](adr/0113-three-audit-limits-are-accepted.md) — three limits an audit found are accepted, with their reasons (**Accepted**): the reads inside `agentic_file_search` have no hook or per-tool policy; ancestor instruction files stay outside the trust gate, including a repository's root seen from its subdirectory; a file tool's verdict and write can see different links
 
 ## History
 

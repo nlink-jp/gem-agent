@@ -3,6 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **Accepted** (2026-11-06) — implemented; §1 redesigned after the independent design review |
+| Amended by | ADR-0113 (the residual on a directory swapped for a link: what it can reach, and why it is accepted) |
 | Date | 2026-11-06 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

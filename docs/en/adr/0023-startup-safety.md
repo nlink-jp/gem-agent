@@ -3,6 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **Accepted** |
+| Amended by | ADR-0113 (a clone can sit above a project opened in its subdirectory: the ancestor exclusion is an accepted residual there) |
 | Date | 2026-08-20 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

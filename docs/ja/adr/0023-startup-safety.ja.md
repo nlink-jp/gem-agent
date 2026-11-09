@@ -3,6 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **Accepted** |
+| Amended by | ADR-0113（クローンのサブディレクトリで開いたプロジェクトでは、クローンが上位にある。祖先の除外はそこでは受け入れた残余である） |
 | Date | 2026-08-20 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
