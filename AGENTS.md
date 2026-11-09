@@ -659,7 +659,9 @@ a new hook) is an architecture change and takes the same rows as a
   `Registry.Enforcement()`, replaces an entry in place
   (`Registry.GrantAddedDir`) rather than appending a duplicate, and
   marks the system prompt stale for the next turn boundary — never
-  `SetSystem` from inside a tool call. Its link check is
+  `SetSystem` from inside a tool call, and never `g.notice` with `g.mu`
+  held (ADR-0114 §5: `prog.Send` waits on the loop that takes that
+  lock). Its link check is
   `ResolveWriteDir(typed) != typed`, byte for byte: resolving keeps each
   non-link component as typed, so the volume's case and Unicode folding
   never read as a link (an `EqualFold` against the kernel's name refused

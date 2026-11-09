@@ -25,6 +25,9 @@
 - **A share that has stopped answering no longer stalls unrelated file
   reads** (ADR-0114). Each read opens only the added directories its path
   arguments name.
+- **A late `request_directory` can no longer hang the TUI** (ADR-0114). Its
+  notices are sent after the grant lock is released, because `/clear`,
+  `/dirs` and `/add-dir` take that lock inside the TUI's event loop.
 
 ## [0.100.1] - 2026-11-09
 

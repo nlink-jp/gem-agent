@@ -658,7 +658,7 @@ func TestGrantReportsTheProbesLeftovers(t *testing.T) {
 		cancel()
 		return fn, enf, nil, stuck, err
 	}
-	if _, err := g.grant(ctx, underHome(t, "dropped"), true, "slash", g.currentEpoch(), nil); !errors.Is(err, errDropped) {
+	if _, err := g.grant(ctx, underHome(t, "dropped"), true, "request", g.currentEpoch(), nil); !errors.Is(err, errDropped) {
 		t.Errorf("a dropped grant: %v", err)
 	}
 	if len(notices) != 1 || notices[0] != leftover {
@@ -698,5 +698,53 @@ func TestForgetDroppedRoots(t *testing.T) {
 	roots := records[0]["roots"].([]map[string]string)
 	if len(roots) != 1 || roots[0]["dir"] != kept || roots[0]["source"] != "slash" {
 		t.Errorf("recorded roots = %v", roots)
+	}
+}
+
+// A notice waits on the TUI's event loop, and that loop may be waiting
+// on the grant lock (/clear, /dirs, /add-dir run in its Update), so one
+// sent with the lock held hangs the TUI: a request abandoned by the
+// floor can overlap any of them (ADR-0114 §5).
+func TestGrantSendsNoticesAfterReleasingTheLock(t *testing.T) {
+	g, _, _ := newTestGranter(t, nil, false)
+	stuck := []string{"/x/probe"}
+	fail := false
+	g.build = func(on bool, p, w string, d []string, c map[string]string, pp []string, a []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, []string, error) {
+		if fail {
+			return nil, sandbox.Enforcement{}, nil, stuck, errors.New("refused")
+		}
+		fn, enf, notes, left, err := buildLanes(on, p, w, d, c, pp, a)
+		return fn, enf, notes, append(left, stuck...), err
+	}
+	sends := 0
+	g.notice = func(string) {
+		sends++
+		// What prog.Send waits for: the event loop getting past the lock.
+		done := make(chan struct{})
+		go func() { g.listing(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("a notice was sent with the grant lock held")
+		}
+	}
+	_, _ = g.grant(context.Background(), underHome(t, "committed"), true, "request", g.currentEpoch(), nil)
+	fail = true
+	_, _ = g.grant(context.Background(), underHome(t, "refused"), true, "request", g.currentEpoch(), nil)
+	if sends != 2 {
+		t.Errorf("sent %d notices, want one for each grant", sends)
+	}
+	// A typed grant runs inside Update itself, where any notice would
+	// wait on the loop it is running on: its error carries the leftover.
+	g.notice = func(string) { t.Error("a typed grant sent a notice") }
+	cancelled, cancel := context.WithCancel(context.Background())
+	calls := 0
+	g.build = func(bool, string, string, []string, map[string]string, []string, []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, []string, error) {
+		calls++
+		cancel()
+		return nil, g.registry.Enforcement(), nil, stuck, nil
+	}
+	if _, err := g.grant(cancelled, underHome(t, "typed"), true, "slash", g.currentEpoch(), nil); !errors.Is(err, errDropped) || !strings.Contains(err.Error(), stuck[0]) || calls != 1 {
+		t.Errorf("a dropped typed grant: %v (%d builds)", err, calls)
 	}
 }

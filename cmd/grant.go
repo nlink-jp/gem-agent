@@ -89,13 +89,18 @@ func (g *dirGranter) source(s string) string {
 // request's error is the model's to read and a dropped grant's is read
 // by nobody, so those go to the operator's notices; a typed command's
 // error is the operator's own and carries them.
-func (g *dirGranter) tellLeftovers(source string, leftovers []string, err error) error {
+//
+// A notice is only queued here and sent once the grant lock is released
+// (ADR-0114 §5): prog.Send waits on the TUI's event loop, and that loop
+// may be waiting on the lock. Never for a typed command, which runs
+// inside the loop's Update and would wait on itself.
+func (g *dirGranter) tellLeftovers(source string, leftovers []string, err error, notices *[]string) error {
 	if len(leftovers) == 0 {
 		return err
 	}
 	left := sandbox.LeftoverNote(leftovers)
-	if (source == "request" || errors.Is(err, errDropped)) && g.notice != nil {
-		g.notice(left)
+	if source != "slash" && g.notice != nil {
+		*notices = append(*notices, left)
 		return err
 	}
 	return fmt.Errorf("%w; %s", err, left)
@@ -184,6 +189,13 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 		return "", fmt.Errorf(m.GrantLinkFmt, typed, real, map[bool]string{true: "/add-dir", false: "/read-dir"}[write], real)
 	}
 
+	// Registered before the unlock, so it runs after it.
+	var notices []string
+	defer func() {
+		for _, n := range notices {
+			g.notice(n)
+		}
+	}()
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if ctx.Err() != nil || epoch != g.epoch {
@@ -265,21 +277,21 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 		fn, enf, _, leftovers, err = build(g.sandboxOn, g.projectDir, g.workDir(), g.denyExec, g.caches, g.parents(), next)
 		if err != nil {
 			_ = root.Close()
-			return "", g.tellLeftovers(source, leftovers, fmt.Errorf(m.GrantNotAddedFmt, canonical, err))
+			return "", g.tellLeftovers(source, leftovers, fmt.Errorf(m.GrantNotAddedFmt, canonical, err), &notices)
 		}
 		if g.readLanePrompts {
 			enf.ReadLane = false
 		}
 		if enf != cur {
 			_ = root.Close()
-			return "", g.tellLeftovers(source, leftovers, fmt.Errorf(m.GrantStateFmt, canonical))
+			return "", g.tellLeftovers(source, leftovers, fmt.Errorf(m.GrantStateFmt, canonical), &notices)
 		}
 	}
 	// The probes take time; a call cancelled meanwhile, or a session
 	// that moved on, does not commit (review of step 2, #3).
 	if ctx.Err() != nil || epoch != g.epoch {
 		_ = root.Close()
-		return "", g.tellLeftovers(source, leftovers, errDropped)
+		return "", g.tellLeftovers(source, leftovers, errDropped, &notices)
 	}
 
 	var watchNotes []string
@@ -334,7 +346,7 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 	}
 	for _, n := range watchNotes {
 		if source == "request" && g.notice != nil {
-			g.notice(n)
+			notices = append(notices, n)
 			continue
 		}
 		note += "\n" + n
