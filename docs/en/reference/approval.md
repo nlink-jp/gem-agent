@@ -720,7 +720,9 @@ directory; the others stay, and `/add-dir` or `/read-dir` adds it again
 grants are recorded in the transcript (`added_directories`, see
 [sessions](sessions.md)). Each added directory is held open for the
 session, so ejecting the volume it lies on can report it busy until
-gem-agent exits (not measured).
+gem-agent exits (not measured). A file read opens only the added
+directories its path arguments name, so a share that has stopped answering
+holds up only the reads of that share (ADR-0114).
 
 **During a session** you add one with `/add-dir` or `/read-dir` (no
 prompt — you typed it), and the model may ask with `request_directory`,

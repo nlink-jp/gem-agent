@@ -617,7 +617,9 @@ a new hook) is an architecture change and takes the same rows as a
 - **Added directories are one list with levels, read by every root
   consumer** (ADR-0099) — `Registry.AddedDirs()` is the list; the
   profiles (`Spec.Added`), the file-read child (`fileChildRequest.Added`
-  — a read in an added root must never fall back to in-process), the
+  — a read in an added root must never fall back to in-process, and the
+  child opens only `rootsNamedBy`'s, ADR-0114 §4, which joins a relative
+  argument to the project as `resolvePath` does), the
   verdict (`risk.Classify(..., added...)`), the reviewer's payload, `@`
   mentions and the system prompt take it. A new consumer of "the
   project and the work directory" takes it too, or the feature fails

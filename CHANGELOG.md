@@ -22,6 +22,9 @@
   passes the sandbox check is removed from the session with a note and the
   others stay. Before this, the write lane lost the new work directory for
   the rest of the session.
+- **A share that has stopped answering no longer stalls unrelated file
+  reads** (ADR-0114). Each read opens only the added directories its path
+  arguments name.
 
 ## [0.100.1] - 2026-11-09
 

@@ -10,11 +10,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/nlink-jp/gem-agent/internal/bounded"
+	"github.com/nlink-jp/gem-agent/internal/pathid"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
@@ -67,12 +69,52 @@ type fileChildRequest struct {
 	ProjectDir string `json:"project_dir"`
 	WorkDir    string `json:"work_dir"`
 	// Added carries the operator's added roots with their levels
-	// (ADR-0099 §6): the child rebuilds the parent's root set, so a read
-	// in an added root is kernel-confined like a project read and never
-	// falls back to the parent.
+	// (ADR-0099 §6): a read in an added root is kernel-confined like a
+	// project read and never falls back to the parent. The child opens
+	// only the ones this call names (rootsNamedBy, ADR-0114 §4).
 	Added []sandbox.AddedRoot `json:"added,omitempty"`
 	Tool  string              `json:"tool"`
 	Args  map[string]any      `json:"args"`
+}
+
+// rootsNamedBy keeps the added roots a call's arguments lie in. The child
+// opens only those: one share that has stopped answering must not stall
+// a read that has nothing to do with it (ADR-0114 §4). A relative
+// argument is the project's, as in resolvePath, so ../ref/x reaches a
+// root beside the project. Every string argument counts, not only path:
+// opening one root too many costs nothing, and missing one fails the read.
+func rootsNamedBy(added []sandbox.AddedRoot, projectDir string, args map[string]any) []sandbox.AddedRoot {
+	var out []sandbox.AddedRoot
+	for _, a := range added {
+		if argsLieIn(a.Dir, projectDir, args) {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+func argsLieIn(dir, projectDir string, args map[string]any) bool {
+	names := func(v any) bool {
+		s, ok := v.(string)
+		if !ok {
+			return false
+		}
+		if !filepath.IsAbs(s) {
+			s = filepath.Join(projectDir, s)
+		}
+		return pathid.Within(dir, filepath.Clean(s))
+	}
+	for _, v := range args {
+		if names(v) {
+			return true
+		}
+		if list, ok := v.([]any); ok {
+			if slices.ContainsFunc(list, names) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func newFileChildCmd() *cobra.Command {
@@ -109,7 +151,7 @@ func newFileChildCmd() *cobra.Command {
 			// take every project read down with it — a path under it then
 			// fails on its own, as a work directory's does above (review
 			// of the step 1 implementation, #3).
-			for _, a := range req.Added {
+			for _, a := range rootsNamedBy(req.Added, req.ProjectDir, req.Args) {
 				_ = reg.AddDirs([]sandbox.AddedRoot{a})
 			}
 			if req.Tool == tools.CopySourceOp {
