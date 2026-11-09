@@ -18,6 +18,12 @@ inside the denied tree.*
 *Amended by ADR-0107: §5's `~/Library` refusal for write roots carves
 out the synced folders — strictly inside `~/Library/CloudStorage`, and
 iCloud Drive.*
+
+*Amended by ADR-0114: a path in `[directories]` that does not apply
+to this project is skipped with a note (§3); a root may not be or hold
+a tree denied for reach (§5); the file-read child opens only the roots
+a call names (§6); `/clear` drops a root that no longer passes its
+probes (§12).*
 ## Context
 
 Today a session has two roots: the project and the session work directory
