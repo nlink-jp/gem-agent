@@ -7,7 +7,7 @@
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
 | Triggered by | Porting ADR-0099 to lagent (its ADR-0046): an independent design review found four defects in the code the two share, and lagent fixed them. Each was reproduced here on v0.100.1 before this record was written |
-| Amends | ADR-0099 §3, §5, §6, §12 |
+| Amends | ADR-0099 §3, §5, §6, §10, §12 |
 | Relates to | ADR-0102 (`ownRootsUnderReach`, the rule §3 below applies to added roots), ADR-0086 (the file-read child), ADR-0107 §4 (probe leftovers) |
 
 ## Context
@@ -18,13 +18,16 @@ ADR-0099 treats an added directory as something the operator typed for this run,
 2. **`/clear` leaves the write lane behind.** With a write root that no longer passes its probes, `rotateWorkDir` moved the file tools to the new work directory, then kept the previous sandbox profile. The write lane exited 1 writing the new work directory, for the rest of the session.
 3. **A read root could reopen a tree the read lane keeps out.** `RefuseRoot("/Volumes", false, …)` accepted it, and the re-allow of an added root, coming after the deny, handed the unasked read lane every mounted volume. `ownRootsUnderReach` refuses exactly this for the project and the work directory (ADR-0102).
 4. **Every file read opened every added root.** The file-read child calls `os.OpenRoot` on all of them for each tool call. With one root that would not open (measured with a FIFO at the root's path, which blocks an open the way a dead share does), reading an ordinary project file never returned.
+5. **A notice could hang the TUI.** `dirGranter.grant` called `g.notice`, which is `prog.Send`, with the grant lock held. `prog.Send` waits on the TUI's event loop, and `/clear`, `/dirs` and `/add-dir` take that lock inside the loop's `Update`. A `request_directory` the floor has abandoned (ADR-0065) can overlap any of them. Found by lagent's release review, and reproduced here.
 
 ## Decision
 
 1. **A configured path that does not apply is passed over, and the operator is told why.** A refusal that depends on where this session started or on what is mounted now (`sandbox.Situational`: not found or not openable now, holding the project or the work directory, already covered) skips an entry from `[directories]` with a note at startup. The same path given as `--add-dir` or `--read-dir` still stops the start: it was typed for this run. A configured path refused for any other reason (the home, a credential location) also still stops the start, because it is wrong from every project.
-2. **`/clear` drops the root that no longer passes its probes and keeps the others.** `VerifyAddedRoots` names the failing root in a typed error (`sandbox.AddedRootError`). `rotateWorkDir` rebuilds without that root, at most once per root, and removes it from the registry (`Registry.DropAddedDirs`), the watch and the transcript's record, and the operator is told; `/add-dir` adds it again. The watch goes too, because the next walk of an ejected volume would report everything in it as removed. A failure that does not name a root keeps the previous profile, as before.
+2. **`/clear` drops the root that no longer passes its probes and keeps the others.** `VerifyAddedRoots` names the failing root in a typed error (`sandbox.AddedRootError`). `rotateWorkDir` rebuilds without that root, at most once per root, and removes it from the registry (`Registry.DropAddedDirs`), the watch and the transcript's record, and the operator is told which root, at which level, and whether `/add-dir` or `/read-dir` adds it again, so a read root is not brought back as a write root. The watch reports nothing for a root that is not there now, and keeps its baseline, because `/clear` reports before it learns the root has gone and an empty walk would call everything in it removed; a dropped root then leaves the watch. A failure that does not name a root keeps the previous profile, as before.
 3. **A root may not be, or contain, a tree the read lane denies for reach.** `RefuseRoot` applies `ownRootsUnderReach`'s rule to added roots, at both levels and on every route: flags, the configuration, `/add-dir` and `request_directory`. `/Volumes` and `/Network` are refused; a directory inside them is what a root is for. `~/Library` was already refused, since it holds a credential location. This refusal is not situational: such a path is wrong from every project.
 4. **The file-read child opens only the roots a call's path arguments lie in** (`rootsNamedBy`). A relative argument is joined to the project first, as `resolvePath` does, because `../ref/x` reaches an added root beside the project. Every string argument is examined, not only `path`: opening one root too many costs nothing, and missing one fails the read.
+
+5. **A notice is sent after the grant lock is released.** `grant` collects its notices and sends them once it has let go. A typed `/add-dir` or `/read-dir` sends none, since it runs inside `Update` and would wait on its own loop; its error or note carries them.
 
 ## Consequences
 
