@@ -84,3 +84,37 @@ func TestRemoveDeletesTheCacheFirst(t *testing.T) {
 		t.Errorf("the work directory is gone, so nothing lists the cache: %v", err)
 	}
 }
+
+// A link left where a session directory belongs is refused, not followed:
+// the write lane can make one, and a resume would then write through it.
+func TestSessionDirectoriesRefuseAPlantedLink(t *testing.T) {
+	t.Setenv("GEMAGENT_STATE_DIR", t.TempDir())
+	project := "/some/project"
+	victim := t.TempDir()
+	work, err := Ensure(project, "sid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache, ok := ApprovedCachePath(work)
+	if !ok {
+		t.Fatal("no cache path")
+	}
+	if err := os.MkdirAll(filepath.Dir(cache), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, cache); err != nil {
+		t.Fatal(err)
+	}
+	if dir, err := EnsureApprovedCache(work); err == nil {
+		t.Errorf("the planted approved-cache link was accepted: %q", dir)
+	}
+	if err := os.Remove(work); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, work); err != nil {
+		t.Fatal(err)
+	}
+	if dir, err := Ensure(project, "sid"); err == nil {
+		t.Errorf("the planted work-directory link was accepted: %q", dir)
+	}
+}

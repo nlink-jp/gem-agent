@@ -109,6 +109,22 @@ func TestShortArgumentsComeBeforeLongOnes(t *testing.T) {
 	}
 }
 
+// A long name counts as long, and many arguments each keep something.
+func TestLongNamesSortLastAndEveryArgumentKeepsItsName(t *testing.T) {
+	got, _ := FullCallDetail(llm.ToolCall{Name: "x", Args: map[string]any{strings.Repeat("a", 5000): "v", "to": "evil@x"}})
+	if !strings.HasPrefix(got, "to=evil@x\n") {
+		t.Errorf("a long name came first: %q", got[:30])
+	}
+	args := map[string]any{}
+	for i := 0; i < 70000; i++ {
+		args[fmt.Sprintf("k%05d", i)] = strings.Repeat("v", 200)
+	}
+	got, _ = FullCallDetail(llm.ToolCall{Name: "x", Args: args})
+	if !strings.Contains(got, "k69999") {
+		t.Errorf("an argument lost its name")
+	}
+}
+
 // A long value's lines are indented under its name.
 func TestAValueIsIndentedUnderItsName(t *testing.T) {
 	forged, _ := FullCallDetail(llm.ToolCall{Name: "edit_file", Args: map[string]any{"new_string": "p\nQ\nold_string:\nr\ns"}})

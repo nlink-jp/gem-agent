@@ -75,10 +75,28 @@ func Ensure(projectDir, sessionID string) (string, error) {
 	if err := statedir.EnsureProjectDir(filepath.Dir(filepath.Dir(dir)), projectDir); err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := ensureOwnDir(dir, 0o755); err != nil {
 		return "", fmt.Errorf("create work directory: %w", err)
 	}
 	return dir, nil
+}
+
+// ensureOwnDir creates a session directory and refuses a link standing in
+// its place. The write lane can write these directories and a resume
+// reuses them: a link followed here would become what the lane may write
+// next time, wherever it leads.
+func ensureOwnDir(dir string, mode os.FileMode) error {
+	if err := os.MkdirAll(dir, mode); err != nil {
+		return err
+	}
+	fi, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("%s is not a directory", dir)
+	}
+	return nil
 }
 
 // Path returns where a session's work directory belongs, without
@@ -122,7 +140,7 @@ func EnsureApprovedCache(workDir string) (string, error) {
 	if !ok {
 		return "", nil
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := ensureOwnDir(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create the approved cache directory: %w", err)
 	}
 	return dir, nil
