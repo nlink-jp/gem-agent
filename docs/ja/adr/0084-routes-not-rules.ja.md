@@ -3,6 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **Accepted**（2026-09-12） — 実装済み・未リリース |
+| Amended by | ADR-0109（承認済みレーンのキャッシュは scratch の外へ移った。以下の `<name>-approved` はもう存在しない） |
 | Date | 2026-09-12 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

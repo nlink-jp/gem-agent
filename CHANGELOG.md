@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Security
+
+- **What an approved build trusts is out of reach of what runs unasked**
+  (ADR-0109). The write and operator lanes' toolchain cache sat inside the
+  read lane's scratch, separated only by an environment variable, so a
+  read-lane command could plant an object a later approved build would
+  link. It now lives beside the session's work directory, where the file
+  tools do not reach and, under the default state directory, other
+  sessions' lanes may not write; the read
+  lane is denied it by the kernel and proved so at startup. It is kept
+  across `--continue`, counted by `gem-agent workdirs`, and removed by
+  `workdirs clean`.
+
 ## [0.99.0] - 2026-11-06
 
 ### Fixed

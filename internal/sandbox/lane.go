@@ -107,6 +107,11 @@ type Spec struct {
 	// write; the runner points TMPDIR at it. Empty means the read lane
 	// may write nothing but the device sinks.
 	ReadScratch string
+	// ApprovedCacheRoot is the directory the approved lanes' toolchain
+	// caches live under (ADR-0109): writable in the write and operator
+	// lanes, denied to the read lane by name. Empty means no such
+	// directory exists.
+	ApprovedCacheRoot string
 	// PersistentParents are the directories that contain a persistent
 	// file (and their ancestors below the project root): the write lane
 	// denies operations on those directory entries themselves — rename,
@@ -492,6 +497,11 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 		if spec.WorkDir != "" {
 			writeDirs = append(writeDirs, spec.WorkDir)
 		}
+		// Each session's own; no other session's profile names it
+		// (ADR-0109).
+		if spec.ApprovedCacheRoot != "" {
+			writeDirs = append(writeDirs, spec.ApprovedCacheRoot)
+		}
 		// Write roots are written like the project (ADR-0099 §1); a read
 		// root appears in no write allow, the operator lane's included.
 		for _, a := range spec.Added {
@@ -576,6 +586,13 @@ func LaneProfile(lane Lane, spec Spec) (string, error) {
 	b.WriteString(")\n")
 	if spec.ReadScratch != "" {
 		fmt.Fprintf(&b, "(allow file-write* (subpath %s))\n", sbplString(filepath.Clean(spec.ReadScratch)))
+	}
+	// What an approved build trusts is denied to this lane by name
+	// (ADR-0109), after every write allow above. A denial by name cannot
+	// stop the rename of a writable ancestor; the default state root has
+	// none.
+	if spec.ApprovedCacheRoot != "" {
+		fmt.Fprintf(&b, "(deny file-write* (subpath %s))\n", sbplString(filepath.Clean(spec.ApprovedCacheRoot)))
 	}
 	// Reach: external/network mounts and the user's Library are not
 	// the project (design review V2). The system shells (bash 3.2, zsh,
@@ -759,9 +776,22 @@ func VerifyReadLane(profile string, spec Spec) (leftovers []string, err error) {
 	}
 	sharedProbe := sharedFile.Name()
 	_ = sharedFile.Close()
+	probes := []string{projectProbe, sharedProbe}
+	// The approved lanes' cache is the read lane's to leave alone
+	// (ADR-0109); the claim is measured like the others.
+	approvedProbe := ""
+	if spec.ApprovedCacheRoot != "" {
+		approvedFile, err := os.CreateTemp(spec.ApprovedCacheRoot, ".gem-agent-lane-probe-*")
+		if err != nil {
+			return removeProbes(probes...), fmt.Errorf("cannot create a probe file in the approved cache: %w", err)
+		}
+		approvedProbe = approvedFile.Name()
+		_ = approvedFile.Close()
+		probes = append(probes, approvedProbe)
+	}
 	// A leftover is reported, never dropped (ADR-0107 §4): the project
 	// may be a synced folder.
-	defer func() { leftovers = removeProbes(projectProbe, sharedProbe) }()
+	defer func() { leftovers = removeProbes(probes...) }()
 	run := func(sandboxed bool, command string) error {
 		var cmd *exec.Cmd
 		if sandboxed {
@@ -782,6 +812,9 @@ func VerifyReadLane(profile string, spec Spec) (leftovers []string, err error) {
 		{"a write into the shared temporary directory", "echo x > " + shellQuote(sharedProbe)},
 		{"a socket connect", fmt.Sprintf("exec 3<>/dev/tcp/127.0.0.1/%d", port)},
 		{"a signal to its parent process", "kill -0 $PPID"},
+	}
+	if approvedProbe != "" {
+		mustFail = append(mustFail, struct{ what, command string }{"a write into the approved lanes' cache", "echo x > " + shellQuote(approvedProbe)})
 	}
 	if len(spec.DenyExec) > 0 {
 		mustFail = append(mustFail, struct{ what, command string }{"launching a denied program", "/usr/bin/osascript -e 'return 1'"})

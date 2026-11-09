@@ -419,10 +419,10 @@ type SandboxConfig struct {
 	// still applies, the operator is asked as for any other call.
 	ReadLanePrompts bool `toml:"read_lane_prompts"`
 	// ScratchCaches is the table of toolchain caches redirected into
-	// the session scratch (ADR-0084 §1): environment variable → the
-	// directory name under the scratch. Every shell_exec runs with each
-	// variable pointing there — the read lane at the name itself, the
-	// approved lanes at "<name>-approved" — so a build cache no lane
+	// session directories (ADR-0084 §1): environment variable → a
+	// directory name. Every shell_exec runs with each variable pointing
+	// at that name — in the scratch for the read lane, in the session's
+	// separate approved cache for the others (ADR-0109) — so a build cache no lane
 	// may write under ~/Library stops sending inspection to the write
 	// lane. Only regenerable caches belong here; the default row is
 	// Go's. An empty value removes a row (the default one included).

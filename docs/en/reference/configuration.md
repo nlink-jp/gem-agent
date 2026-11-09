@@ -59,7 +59,7 @@ name = "<gemini model id>"
 enabled = true             # default; off = no read lane, every shell_exec asks (ADR-0073)
 # read_lane_deny_exec = ["docker"]   # programs the read lane may not launch, added to the built-in list
 # read_lane_prompts = false  # true keeps the approval prompt for read-lane commands (the cage still applies)
-# [sandbox.scratch_caches]   # toolchain caches pointed into the session scratch (ADR-0084); default GOCACHE = "go-build"
+# [sandbox.scratch_caches]   # toolchain caches pointed at session directories (ADR-0084, ADR-0109); default GOCACHE = "go-build"
 # PIP_CACHE_DIR = "pip"      # variable = one directory name; "" removes a row; loader variables are refused
 
 [directories]              # directories outside the project to work in (ADR-0099); global file only

@@ -112,9 +112,11 @@ enabled = true
 # Keep the approval prompt for read-lane commands too (the kernel cage
 # still applies; only "runs unasked" is given up).
 #read_lane_prompts = false
-# Toolchain caches every shell_exec points into the session scratch
-# (ADR-0084): environment variable = directory name under it. The read
-# lane gets the name, the approved lanes "<name>-approved". Go's build
+# Toolchain caches every shell_exec points at session directories
+# (ADR-0084): environment variable = directory name. The read lane's
+# caches are in the session scratch; the approved lanes' are the same
+# names in a separate directory beside the work directory, removed by
+# `gem-agent workdirs clean` (ADR-0109). Go's build
 # cache is the shipped row, which is why go vet / go test run in the
 # read lane; add your toolchain's cache variable, or set a row to ""
 # to remove it. Regenerable caches only — never a module or registry

@@ -196,7 +196,7 @@ func (s *settingsStore) data() tui.SettingsData {
 		Detail: "established by a probe at startup; credential files are refused either way",
 	})
 	ro("safety", "sandbox.scratch_caches", scratchCachesLabel(s.cfg.Sandbox.Caches()), "sandbox.scratch_caches",
-		"toolchain caches every shell_exec points into the session scratch (the read lane's directory is separate from the approved lanes'); restart to change")
+		"toolchain caches every shell_exec points at session directories (the read lane's are separate from the approved lanes'); restart to change")
 	ro("limits", "agent.max_turns", strconv.Itoa(s.cfg.Agent.MaxTurns), "agent.max_turns", "")
 	ro("limits", "agent.shell_timeout_sec", strconv.Itoa(s.cfg.Agent.ShellTimeoutSec), "agent.shell_timeout_sec", "")
 	ro("limits", "agent.compact_at_pct", strconv.Itoa(s.cfg.Agent.CompactAtPct)+"%", "agent.compact_at_pct", "")

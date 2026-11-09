@@ -60,7 +60,7 @@ the intake route never fires for it, and never could.
 Asked to show such a file, the model has no route to the screen at all, so it
 reaches for the one thing that looks like a display: `shell_exec` with `open`.
 The read lane denies that at the kernel — `open` is on `DefaultDenyExec`
-([lane.go:147](../../../internal/sandbox/lane.go)) with the other IPC-capable
+([lane.go:152](../../../internal/sandbox/lane.go)) with the other IPC-capable
 programs — so the request fails; lifted into a lane where it succeeds, it opens
 a window outside the terminal, asks the operator to approve launching a GUI
 program rather than to look at a picture, and does nothing at all over ssh.

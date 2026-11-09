@@ -97,8 +97,40 @@ func Path(projectDir, sessionID string) (string, error) {
 	return filepath.Join(root, statedir.EscapeProject(projectDir), "work", sessionID), nil
 }
 
+// approvedCacheDirName is the sibling of work/ that holds each session's
+// approved-lane toolchain caches (ADR-0109).
+const approvedCacheDirName = "approved-cache"
+
+// ApprovedCachePath returns where the approved lanes' toolchain caches
+// of the session owning workDir belong, without creating it: beside
+// work/, keyed by the same session id, so it lies outside the work
+// directory the file tools write as Safe, and outside what any other
+// session's lanes may write. ok is false for a path that is not a
+// work directory of this layout; such a session has no such directory.
+func ApprovedCachePath(workDir string) (path string, ok bool) {
+	parent := filepath.Dir(workDir)
+	if workDir == "" || filepath.Base(parent) != "work" {
+		return "", false
+	}
+	return filepath.Join(filepath.Dir(parent), approvedCacheDirName, filepath.Base(workDir)), true
+}
+
+// EnsureApprovedCache creates the directory ApprovedCachePath names and
+// returns it, or "" when workDir has none.
+func EnsureApprovedCache(workDir string) (string, error) {
+	dir, ok := ApprovedCachePath(workDir)
+	if !ok {
+		return "", nil
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create the approved cache directory: %w", err)
+	}
+	return dir, nil
+}
+
 // Info describes one session's work directory for the listing and the
-// startup report.
+// startup report. The session's approved cache counts toward it: the
+// two are retained and removed together.
 type Info struct {
 	ID       string
 	Path     string
@@ -166,23 +198,29 @@ func describe(base string, e os.DirEntry) Info {
 	if fi, err := e.Info(); err == nil {
 		in.LastUsed = fi.ModTime()
 	}
-	_ = filepath.WalkDir(in.Path, func(_ string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil //nolint:nilerr // an unreadable entry is skipped, not fatal
-		}
-		if in.Files >= WalkCap {
-			in.Partial = true
-			return filepath.SkipAll
-		}
-		if info, err := d.Info(); err == nil {
-			in.Files++
-			in.Bytes += info.Size()
-			if info.ModTime().After(in.LastUsed) {
-				in.LastUsed = info.ModTime()
+	walk := func(root string) {
+		_ = filepath.WalkDir(root, func(_ string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil //nolint:nilerr // an unreadable entry is skipped, not fatal
 			}
-		}
-		return nil
-	})
+			if in.Files >= WalkCap {
+				in.Partial = true
+				return filepath.SkipAll
+			}
+			if info, err := d.Info(); err == nil {
+				in.Files++
+				in.Bytes += info.Size()
+				if info.ModTime().After(in.LastUsed) {
+					in.LastUsed = info.ModTime()
+				}
+			}
+			return nil
+		})
+	}
+	walk(in.Path)
+	if cache, ok := ApprovedCachePath(in.Path); ok {
+		walk(cache)
+	}
 	return in
 }
 
@@ -246,6 +284,14 @@ func Remove(projectDir, sessionID string) error {
 	dir, err := Path(projectDir, sessionID)
 	if err != nil {
 		return err
+	}
+	// The cache goes first: only the work directory is enumerated, so a
+	// failure here must leave it for a retry to find.
+	if cache, ok := ApprovedCachePath(dir); ok {
+		if err := os.RemoveAll(cache); err != nil {
+			return err
+		}
+		RemoveIfEmpty(filepath.Dir(cache))
 	}
 	if err := os.RemoveAll(dir); err != nil {
 		return err

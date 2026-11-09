@@ -58,7 +58,7 @@ name = "<gemini model id>"
 enabled = true             # デフォルト。無効なら read レーンが無く全 shell_exec が確認（ADR-0073）
 # read_lane_deny_exec = ["docker"]   # read レーンが起動できないプログラムを組み込み一覧に追加
 # read_lane_prompts = false  # true で read レーンのコマンドも確認する（檻はそのまま）
-# [sandbox.scratch_caches]   # セッション scratch に向けるツールチェインのキャッシュ（ADR-0084）。既定は GOCACHE = "go-build"
+# [sandbox.scratch_caches]   # セッションのディレクトリに向けるツールチェインのキャッシュ（ADR-0084、ADR-0109）。既定は GOCACHE = "go-build"
 # PIP_CACHE_DIR = "pip"      # 変数 = ディレクトリ名 1 つ。"" で行を削除。ローダー変数は拒否
 
 [directories]              # プロジェクト外で作業するディレクトリ（ADR-0099）。グローバルのファイルだけ

@@ -3,6 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Status | **Accepted** (2026-09-12) — implemented and unreleased |
+| Amended by | ADR-0109 (the approved lanes' caches left the scratch: the `<name>-approved` directory below no longer exists) |
 | Date | 2026-09-12 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

@@ -947,11 +947,14 @@ a new hook) is an architecture change and takes the same rows as a
   `[sandbox].scratch_caches` (`config.SandboxConfig.Caches()`; shipped row
   `GOCACHE = "go-build"`) as variables pointed under the read lane's
   scratch. Do not add a toolchain in code: it is a row in the table. The
-  read lane's directory (the row's name) and the approved lanes'
-  (`<name>-approved`) are separate, and neither is the operator's
+  read lane's directory (the row's name, in the scratch) and the approved
+  lanes' (the same name in `sandbox.Spec.ApprovedCacheRoot`, the session's
+  `approved-cache/<id>` beside `work/`) are separate, and neither is the operator's
   `~/Library/Caches`: the read lane runs unasked and a shared
   content-addressed cache is a poisoning route into whatever consumes it
-  next. `validateScratchCaches` refuses the loader variables and the ones
+  next. The approved root must stay outside the work directory (the file
+  tools write there as Safe) and outside any shared temporary root (every
+  session's approved lanes write those) (ADR-0109). `validateScratchCaches` refuses the loader variables and the ones
   `laneEnv` decides; the table is global config only (the project file's
   struct has no `[sandbox]`). **The operator's environment is not
   filtered** (ADR-0087) — no lane, no MCP server, no hook gets a
