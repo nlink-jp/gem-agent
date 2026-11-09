@@ -178,3 +178,23 @@ func TestMutatePolicyFileParallel(t *testing.T) {
 		t.Errorf("tools = %d, want 8 (lost updates)", len(pf.Tools))
 	}
 }
+
+// A repository chooses its skill directory names, and they reach this
+// file as pin keys: no name may make the machine-wide file unreadable.
+func TestPolicyFileStoresControlCharactersInKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PolicyFileName)
+	key := "skill\x01a\rb\x1f\x7f\"c\\d\te\nf"
+	pf := &PolicyFile{Tools: map[string]string{}, Projects: map[string]ProjectPolicy{
+		"/p": {Pins: map[string]string{key: "digest"}},
+	}}
+	if err := pf.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadPolicyFile(path)
+	if err != nil {
+		t.Fatalf("the saved file does not load: %v", err)
+	}
+	if got.Projects["/p"].Pins[key] != "digest" {
+		t.Errorf("the key did not round-trip: %q", got.Projects["/p"].Pins)
+	}
+}

@@ -440,6 +440,11 @@ func (pf *PolicyFile) Save(path string) error {
 		}
 	}
 
+	// The file gates every start in every project: what cannot be read
+	// back must not replace what can.
+	if _, err := toml.Decode(b.String(), &PolicyFile{}); err != nil {
+		return fmt.Errorf("refusing to write an unreadable policy file: %w", err)
+	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
 		return err
@@ -484,6 +489,27 @@ func quoteList(items []string) string {
 // quoteKey renders a TOML basic string. Tool patterns contain "*" and
 // project paths contain "/", so everything here is quoted.
 func quoteKey(s string) string {
-	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\t", `\t`)
-	return `"` + r.Replace(s) + `"`
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch {
+		case r == '\\':
+			b.WriteString(`\\`)
+		case r == '"':
+			b.WriteString(`\"`)
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\t':
+			b.WriteString(`\t`)
+		case r < 0x20 || r == 0x7f:
+			// The rest of TOML's forbidden range. A skill directory's
+			// name reaches this file as a pin key, and a raw control
+			// character would make the file unreadable.
+			fmt.Fprintf(&b, `\u%04X`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }

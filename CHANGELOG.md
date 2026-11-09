@@ -10,6 +10,11 @@
 
 ### Security
 
+- **A control character in a skill directory's name no longer breaks every
+  start.** The name reached the global policy file unescaped, and the file
+  could not be read afterwards. Such names are now escaped, and a file that
+  cannot be read back never replaces the existing one.
+
 - **A settings edit no longer re-enables what you declined at startup.** A
   `never` entry from a project file you declined to re-trust was dropped at
   startup and came back on the next `/settings` change or `p` answer in the
