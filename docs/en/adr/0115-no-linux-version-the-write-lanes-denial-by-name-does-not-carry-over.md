@@ -16,7 +16,7 @@ ADR-0001 made gem-agent macOS-only because the isolation is built on `sandbox-ex
 What has to carry over is not "a sandbox" but the lanes of ADR-0073, and one property of the write lane in particular:
 
 - A write to a persistent file — `AGENTS.md`, `CLAUDE.md`, `.mcp.json`, `.gem-agent.toml`, `.claude/`, `.git/hooks`, `.git/config` and the rest of `sandbox.PersistentFiles` — through `write_file` or `edit_file` always asks the operator. The model tier may not answer.
-- A `shell_exec` call in the write lane is not judged by its text at all (ADR-0073: text is an unbounded domain). What keeps it from writing those files is the kernel: the write-lane profile denies them **by name, at any depth, whether or not the file exists yet**. An operator who approves a write-lane command has not approved a new instruction file; that needs the operator lane, whose approval says so.
+- A `shell_exec` call in the write lane is not judged by its text at all (ADR-0073: text is an unbounded domain). What keeps it from writing those files is the kernel: the write-lane profile denies them **by name, at any depth, whether or not the file exists yet**. Whoever approves a write-lane command — the operator, or under auto-approve the model tier — has not approved a new instruction file; that needs the operator lane, which only the operator answers and whose approval says so.
 
 A model that is refused by `write_file` tries `shell_exec` next. On macOS that attempt fails in the kernel whatever the command's spelling. This is the property the product rests on: the difference between "may change the project" and "may change what later sessions trust" is enforced below the operator's ability to read a command line.
 
@@ -50,7 +50,7 @@ So: what exists can be protected, and what does not exist yet cannot. Neither me
 
 ## Decision
 
-1. **There is no Linux version.** gem-agent stays macOS-only. ADR-0001's consequence stands, and its reason is now measured rather than inherited from the mechanism: on Linux a write-lane command creates a new `.mcp.json`, a new `AGENTS.md` in a subdirectory, or a `.claude/` that was not there, and the only thing between the model and that file is the operator reading a command line — the boundary ADR-0001 was written to not depend on.
+1. **There is no Linux version.** gem-agent stays macOS-only. ADR-0001's consequence stands, and its reason is now measured rather than inherited from the mechanism: on Linux a write-lane command creates a new `.mcp.json`, a new `AGENTS.md` in a subdirectory, or a `.claude/` that was not there, and the only thing between the model and that file is a reading of the command line — the operator's, or under auto-approve the model tier's — the boundary ADR-0001 was written to not depend on.
 2. **WSL2 is not offered as the Windows route**, for the same reason: it is the Linux version.
 3. **The sandbox control is not put behind an abstraction.** An interface over one implementation, kept for a second one that is decided against, is cost without a caller. `internal/sandbox` stays as it is.
 4. **This is reopened by a mechanism, not by demand.** The condition is an unprivileged kernel facility that refuses creation and rename by name pattern inside a writable tree, present on the distributions people run, and shown by the probes above — each with its control — to refuse a new persistent file. A weaker guarantee on one platform is not a version of this product.
