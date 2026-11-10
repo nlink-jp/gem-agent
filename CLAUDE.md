@@ -19,7 +19,8 @@ Project-specific rules for AI agents. Org rules: nlink-jp/.github CONVENTIONS.md
   writes to the CLI's own streams, so an error you mean to ignore has to be
   written as `_ =` — an unchecked `Close` on a file this tool wrote is a real
   defect class, not noise.
-- macOS-only by design (sandbox-exec). Do not add linux/windows build targets.
+- macOS-only by design (sandbox-exec). Do not add linux/windows build targets;
+  a Linux version was measured and declined (ADR-0115).
 
 ## Implementation rules
 

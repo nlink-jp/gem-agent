@@ -270,6 +270,12 @@ README describes — treat it as unverified whatever it prints. Such builds
 are not supported here; the tests under `internal/sandbox` are the bar
 any port has to meet.
 
+A Linux version was evaluated and is not planned
+([ADR-0115](docs/en/adr/0115-no-linux-version-the-write-lanes-denial-by-name-does-not-carry-over.md)). Linux's unprivileged sandboxing can
+protect an instruction file that exists, but cannot refuse the creation
+of a new one by its name, and the write lane depends on exactly that.
+Running under WSL2 is the same case.
+
 ## Build
 
 ```sh

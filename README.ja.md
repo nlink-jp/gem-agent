@@ -238,6 +238,11 @@ gem-agent は Apple Silicon の macOS だけを対象にビルド・署名・テ
 未確認として扱ってください。そうしたビルドはここではサポートしません。`internal/sandbox`
 配下のテストが、あらゆる移植が満たすべき基準です。
 
+Linux 版は検討のうえ、出さないと決めています
+（[ADR-0115](docs/ja/adr/0115-no-linux-version-the-write-lanes-denial-by-name-does-not-carry-over.ja.md)）。Linux の非特権サンドボックスは、既にある
+指示ファイルは守れますが、新しいものの作成を名前で断ることができず、write レーンは
+まさにそれに頼っています。WSL2 で動かす場合も同じです。
+
 ## ビルド
 
 ```sh

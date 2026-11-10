@@ -247,6 +247,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0112`](adr/0112-the-approval-dialog-carries-the-whole-call.ja.md) — 承認ダイアログは呼び出しの全体を運び、スクロールできる（**Accepted**、実装済み）: ゲートが受け取るのは 300 文字に切った 1 行の要約で、そのうち 8 行しか出なかった。64 KiB まで全引数を渡し、↑↓ PgUp PgDn Home End でスクロールできるようにする
 - [`ADR-0113`](adr/0113-three-audit-limits-are-accepted.ja.md) — 監査が見つけた 3 つの限界を、理由を付けて受け入れる（**Accepted**）: `agentic_file_search` の中の読み取りにはフックもツールごとのポリシーもない。祖先の指示ファイルは、サブディレクトリから見たリポジトリの最上位を含めて信頼の確認の外のまま。ファイルツールの判定と書き込みは違うリンクを見ることがある
 - [`ADR-0114`](adr/0114-a-stale-added-directory-costs-only-itself.ja.md) — 使えなくなった追加ディレクトリは、それ自身だけを失う（**Accepted**、実装済み）: 今のプロジェクトに当てはまらない `[directories]` のパスは起動を止めず注記して飛ばす。`/clear` はプローブに通らないルートを外し、新しい作業ディレクトリを書ける状態に保つ。`/Volumes` と `/Network` はルートにできない。ファイル読み取りの子プロセスは呼び出しが指すルートだけを開く
+- [`ADR-0115`](adr/0115-no-linux-version-the-write-lanes-denial-by-name-does-not-carry-over.ja.md) — Linux 版は出さない: write レーンの名前による拒否を持ち込めない（**Accepted**）: Linux の 2 台で測ったところ、Landlock と名前空間は既にある永続ファイルは守れるが、新しいものの作成を名前で断ることはどちらにもできず、write レーンのコマンドが指示ファイルを仕込むのを止めるものが、コマンド行を読む操作者だけになる。gem-agent は macOS 専用のままとし、WSL2 は案内せず、サンドボックスの制御も抽象化しない
 
 ## History（履歴）
 

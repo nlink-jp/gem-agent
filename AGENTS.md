@@ -293,7 +293,12 @@ a new hook) is an architecture change and takes the same rows as a
   not documentation" (session facts in output, explanations in docs).
 
 - **macOS-only by design** — isolation is built on sandbox-exec (ADR-0001).
-  Do not add linux/windows targets to the Makefile.
+  Do not add linux/windows targets to the Makefile. A Linux version was
+  measured and declined (ADR-0115): Landlock and namespaces protect a
+  persistent file that exists, and neither refuses the creation of a new
+  one by name, so a write-lane `shell_exec` could plant an `AGENTS.md` or
+  `.mcp.json`. Do not put `internal/sandbox` behind an interface for a
+  second mechanism either; the ADR names what would reopen this.
 - **Gemini 3 thought signatures** — a function-call response's Parts
   carry an opaque `ThoughtSignature` that must be echoed back on the
   next request; dropping it fails the second tool-call round with 400

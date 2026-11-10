@@ -19,6 +19,10 @@ and the directories the operator added for `write`; an added `read`
 directory is written by no lane, and the read lane reads every added
 directory even under a tree it denies for reach.*
 
+*See ADR-0115: "macOS-only" was measured against Linux (Landlock and
+namespaces) and kept — neither refuses the creation of a persistent file
+by name, which the write lane depends on.*
+
 ## Context
 
 gem-agent executes LLM-proposed shell commands on the operator's machine. An
