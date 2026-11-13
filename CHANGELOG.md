@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.102.0] - 2026-11-14
+
 ### Added
 
 - **Retries of a model call are recorded in the session transcript**
