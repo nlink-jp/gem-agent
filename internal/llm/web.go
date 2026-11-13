@@ -166,7 +166,7 @@ func (v *Vertex) generateWithRetry(ctx context.Context, contents []*genai.Conten
 			return resp, nil
 		}
 		lastErr = err
-		if retryCause(err) == "error" {
+		if transientStatus(err) == 0 {
 			return nil, err // not transient
 		}
 	}

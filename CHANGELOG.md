@@ -13,6 +13,16 @@
   until now a retry was shown in the TUI's status line and kept nowhere.
   The retry policy itself is unchanged.
 
+### Fixed
+
+- **The web tools no longer retry an error because its text contains a
+  status number.** `web_search` and `web_fetch` decided whether to retry by
+  looking for "429", "502" and the like in the error's text, so a refusal
+  or a transport error that merely quoted such digits — a port, a project
+  id — was sent again up to four times. They now read the status from the
+  API error, as the main loop already did, and the cause a retry reports
+  is that status.
+
 ### Documentation
 
 - **There is no Linux version, and the reason is recorded** (ADR-0115).

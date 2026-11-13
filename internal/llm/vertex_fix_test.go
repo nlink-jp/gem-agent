@@ -88,18 +88,25 @@ func TestThoughtTextRoutedToSinkNotStored(t *testing.T) {
 	accumulateChunk(chunk, resp, &text, nil, nil)
 }
 
-func TestRetryCauseTokens(t *testing.T) {
-	cases := map[string]string{
-		"googleapi: Error 429: quota": "429",
-		"Error 503: unavailable":      "503",
-		"connection reset":            "error",
-	}
-	for msg, want := range cases {
-		if got := retryCause(fmt.Errorf("%s", msg)); got != want {
-			t.Errorf("retryCause(%q) = %q, want %q", msg, got, want)
+// The cause is the status the endpoint answered with, read from the
+// error value. Text is not evidence: a transport error quotes ports and
+// project ids, and a 503 can mention a 429 in its message.
+func TestRetryCauseIsTheStatusNotTheText(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		want string
+	}{
+		{genai.APIError{Code: 429, Message: "quota"}, "429"},
+		{genai.APIError{Code: 503, Message: "unavailable"}, "503"},
+		{fmt.Errorf("stream: %w", genai.APIError{Code: 502}), "502"},
+		{genai.APIError{Code: 503, Message: "upstream answered 429"}, "503"},
+		{genai.APIError{Code: 400, Message: "see error 429"}, "error"},
+		{fmt.Errorf("googleapi: Error 429: quota"), "error"},
+		{fmt.Errorf(`Post "https://example.invalid/v1/projects/p-425003": read tcp 10.0.0.5:50234->10.0.0.9:443: connection reset`), "error"},
+		{nil, "error"},
+	} {
+		if got := retryCause(c.err); got != c.want {
+			t.Errorf("retryCause(%v) = %q, want %q", c.err, got, c.want)
 		}
-	}
-	if retryCause(nil) != "error" {
-		t.Error("nil error")
 	}
 }

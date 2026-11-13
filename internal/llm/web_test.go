@@ -1,8 +1,14 @@
 package llm
 
 import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"google.golang.org/genai"
 )
@@ -40,5 +46,29 @@ func TestRetrievalStatusRendering(t *testing.T) {
 	}
 	if retrievalStatus(nil) != "no retrieval metadata" {
 		t.Error("nil response status")
+	}
+}
+
+// The one-shot loop decides to retry from the status, as the stream
+// does. It used to look for the digits in the error text, so a refusal
+// that merely mentioned "502" — a port, a project id — was sent again.
+func TestOneShotRetryReadsTheStatusNotTheText(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":{"code":400,"message":"bad request from 10.0.0.5:50234 (was 429 earlier)","status":"INVALID_ARGUMENT"}}`)
+	}))
+	defer srv.Close()
+	v := localVertex(t, srv, "m")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	_, err := v.generateWithRetry(ctx, []*genai.Content{genai.NewContentFromText("hi", genai.RoleUser)}, &genai.GenerateContentConfig{})
+	if err == nil {
+		t.Fatal("a 400 came back as success")
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("server saw %d requests for a 400 — the text's digits were read as a transient status", n)
 	}
 }

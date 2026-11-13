@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -364,18 +365,24 @@ const maxStreamAttempts = 5
 // transient HTTP status AND no chunk consumed yet (otherwise a retry
 // duplicates already-delivered output or captured calls).
 func shouldRetryStream(err error, chunksSeen int) bool {
-	if chunksSeen > 0 {
-		return false
-	}
+	return chunksSeen == 0 && transientStatus(err) != 0
+}
+
+// transientStatus is the HTTP status of an API error worth retrying
+// (429 or a 5xx the endpoint answers under load), or 0 for anything
+// else. The status is read from the error value, never from its text:
+// a transport error quotes addresses and ports, and "read tcp
+// 10.0.0.5:50234" is not a 502.
+func transientStatus(err error) int {
 	var apiErr genai.APIError
 	if !errors.As(err, &apiErr) {
-		return false
+		return 0
 	}
 	switch apiErr.Code {
 	case 429, 500, 502, 503, 504:
-		return true
+		return apiErr.Code
 	}
-	return false
+	return 0
 }
 
 // accumulateChunk folds one stream chunk into the response accumulator.
@@ -383,16 +390,12 @@ func shouldRetryStream(err error, chunksSeen int) bool {
 // drive it with fabricated chunks. It reports whether the chunk carried
 // content (text or a function call) — metadata-only chunks must not
 // disarm the transient-error retry.
-// retryCause reduces a stream error to the short token the status
-// line shows ("429", "503", or "error").
+// retryCause reduces an error to the short token the status line and
+// the retry record show: the transient status ("429", "503", …), or
+// "error" for anything that is not one.
 func retryCause(err error) string {
-	if err == nil {
-		return "error"
-	}
-	for _, code := range []string{"429", "500", "502", "503", "504"} {
-		if strings.Contains(err.Error(), code) {
-			return code
-		}
+	if code := transientStatus(err); code != 0 {
+		return strconv.Itoa(code)
 	}
 	return "error"
 }
