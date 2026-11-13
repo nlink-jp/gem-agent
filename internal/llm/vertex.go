@@ -287,8 +287,9 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 		// attaches thought signatures, which we capture regardless.
 		// ThinkingLevel "" leaves the model at its own default
 		// (ADR-0025).
-		ThinkingConfig: &genai.ThinkingConfig{IncludeThoughts: v.includeThoughts, ThinkingLevel: ThinkingLevel(thinking.level)},
-		SafetySettings: v.safety,
+		ThinkingConfig:        &genai.ThinkingConfig{IncludeThoughts: v.includeThoughts, ThinkingLevel: ThinkingLevel(thinking.level)},
+		SafetySettings:        v.safety,
+		AutomaticContinuation: oneRequest(),
 	}
 	if system != "" {
 		cfg.SystemInstruction = genai.NewContentFromText(system, genai.RoleUser)
@@ -379,6 +380,19 @@ const (
 	retryMax    = 15 * time.Second
 	retryJitter = retryBase / 2
 )
+
+// oneRequest turns off the SDK's automatic continuation (ADR-0117): a
+// model call here is exactly one request. Left at its default, the SDK
+// sends the same request again when a response ends with a continuation
+// token, adds the usage of every such request together, and tells the
+// caller nothing — a re-send this runtime would neither record as a
+// retry (ADR-0116) nor account as a call (ADR-0057), and a prompt count
+// that is no longer the size of the conversation. Every
+// GenerateContentConfig in this package sets it; a test holds that.
+func oneRequest() *bool {
+	off := false
+	return &off
+}
 
 // retryBackoff is the one backoff both retry loops use.
 func retryBackoff() backoff.Backoff {

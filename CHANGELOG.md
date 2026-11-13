@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **The Vertex AI SDK is updated from v1.71.0 to v1.77.0** (ADR-0117).
+  Nothing observable changes. The newer SDK would, by default, send a
+  request again when a response ends with a continuation token and report
+  the usage of every such request added together; gem-agent turns that
+  off, so one model call stays one request, with one usage record.
+
 ### Security
 
 - **`golang.org/x/net` is updated from v0.58.0 to v0.62.0.** Five advisories

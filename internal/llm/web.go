@@ -47,8 +47,9 @@ type WebSource struct {
 // rather than believed.
 func (v *Vertex) SearchWeb(ctx context.Context, query string) (string, []WebSource, Usage, error) {
 	cfg := &genai.GenerateContentConfig{
-		Tools:          []*genai.Tool{{GoogleSearch: &genai.GoogleSearch{}}},
-		SafetySettings: v.safety,
+		Tools:                 []*genai.Tool{{GoogleSearch: &genai.GoogleSearch{}}},
+		SafetySettings:        v.safety,
+		AutomaticContinuation: oneRequest(),
 	}
 	resp, err := v.generateWithRetry(WithSource(ctx, SourceWebSearch),
 		[]*genai.Content{genai.NewContentFromText(query, genai.RoleUser)}, cfg)
@@ -68,8 +69,9 @@ func (v *Vertex) SearchWeb(ctx context.Context, query string) (string, []WebSour
 // the model's digest plus the retrieval status.
 func (v *Vertex) FetchURL(ctx context.Context, prompt string) (string, string, Usage, error) {
 	cfg := &genai.GenerateContentConfig{
-		Tools:          []*genai.Tool{{URLContext: &genai.URLContext{}}},
-		SafetySettings: v.safety,
+		Tools:                 []*genai.Tool{{URLContext: &genai.URLContext{}}},
+		SafetySettings:        v.safety,
+		AutomaticContinuation: oneRequest(),
 	}
 	resp, err := v.generateWithRetry(WithSource(ctx, SourceWebFetch),
 		[]*genai.Content{genai.NewContentFromText(prompt, genai.RoleUser)}, cfg)

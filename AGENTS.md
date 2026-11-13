@@ -995,6 +995,15 @@ a new hook) is an architecture change and takes the same rows as a
   not add a refusal string that tells an unattended model to "ask the
   user", and do not route it to the write tools, which are exactly what
   a plain `-p` run denies (`unattendedRoute` is the one closing line).
+- **One model call is one request** (ADR-0117) — every
+  `genai.GenerateContentConfig` in `internal/llm` sets
+  `AutomaticContinuation: oneRequest()`; a source test fails one that does
+  not. The SDK's default (v1.74.0 on) re-sends a request on a continuation
+  token and sums the usage, which would break the usage record, the retry
+  record and the compaction trigger at once. When updating the SDK, read
+  its changelog for defaults that are *on*: this one compiled and passed
+  every test unchanged. `make vuln` (govulncheck) is run before a release
+  and is not part of `make check`.
 - **Every model call names its source, and every retry loop reports**
   (ADR-0116) — a `model_retry` record carries `source` from the call
   site's `llm.WithSource(ctx, session.UsageX)`; `archtest` fails a

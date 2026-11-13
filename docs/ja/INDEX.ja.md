@@ -249,6 +249,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0114`](adr/0114-a-stale-added-directory-costs-only-itself.ja.md) — 使えなくなった追加ディレクトリは、それ自身だけを失う（**Accepted**、実装済み）: 今のプロジェクトに当てはまらない `[directories]` のパスは起動を止めず注記して飛ばす。`/clear` はプローブに通らないルートを外し、新しい作業ディレクトリを書ける状態に保つ。`/Volumes` と `/Network` はルートにできない。ファイル読み取りの子プロセスは呼び出しが指すルートだけを開く
 - [`ADR-0115`](adr/0115-no-linux-version-the-write-lanes-denial-by-name-does-not-carry-over.ja.md) — Linux 版は出さない: write レーンの名前による拒否を持ち込めない（**Accepted**）: Linux の 2 台で測ったところ、Landlock と名前空間は既にある永続ファイルは守れるが、新しいものの作成を名前で断ることはどちらにもできず、write レーンのコマンドが指示ファイルを仕込むのを止めるものが、コマンド行を読む操作者だけになる。gem-agent は macOS 専用のままとし、WSL2 は案内せず、サンドボックスの制御も抽象化しない
 - [`ADR-0116`](adr/0116-a-retry-is-recorded.ja.md) — 再試行を記録する: transcript が「待ち」と「遅い応答」を分ける（**Accepted**、実装済み）: モデル呼び出しのバックオフ再試行は、主ループでもどの枠でも、モデル・呼び出しの種類・試行番号・直前の試行を失敗させたステータス・待ち時間を持つ `model_retry` レコードを書く。エンドポイントのメッセージ文は残さず、再試行そのものにあった欠陥を 2 つ直す
+- [`ADR-0117`](adr/0117-one-model-call-is-one-request.ja.md) — モデル呼び出し 1 回はリクエスト 1 回: SDK の自動継続は切る（**Accepted**、実装済み）: Vertex AI の SDK を v1.77.0 に上げる。その既定は、応答が継続トークンつきで終わるとリクエストを送り直し、usage を合算する。すべてのリクエストでこれを切り、usage レコード・再試行のレコード・圧縮の発火が言葉どおりの意味を保つようにする
 
 ## History（履歴）
 
