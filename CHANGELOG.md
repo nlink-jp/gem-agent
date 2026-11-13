@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.102.1] - 2026-11-14
+
 ### Changed
 
 - **The Vertex AI SDK is updated from v1.71.0 to v1.77.0** (ADR-0117). Two
