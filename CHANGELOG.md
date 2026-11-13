@@ -22,6 +22,11 @@
   id — was sent again up to four times. They now read the status from the
   API error, as the main loop already did, and the cause a retry reports
   is that status.
+- **A retry of a model call always waits first.** The backoff's jitter was
+  a full second either way on a half-second base, so one first retry in
+  four was sent with no wait at all. The jitter is now half the base: the
+  first retry waits 0.25–0.75 s, and the later steps (1 s, 2 s, 4 s) keep
+  the same quarter second either way.
 
 ### Documentation
 

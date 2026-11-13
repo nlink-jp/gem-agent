@@ -9,7 +9,6 @@ package llm
 import (
 	"context"
 	"fmt"
-	"github.com/nlink-jp/nlk/backoff"
 	"time"
 
 	"google.golang.org/genai"
@@ -149,7 +148,7 @@ func emptyReason(resp *genai.GenerateContentResponse) string {
 // consumed to duplicate, so every attempt is safe to repeat (review
 // after v0.68.2: the web tools failed on the first rate limit).
 func (v *Vertex) generateWithRetry(ctx context.Context, contents []*genai.Content, cfg *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error) {
-	bo := backoff.New(backoff.WithBase(500*time.Millisecond), backoff.WithMax(15*time.Second))
+	bo := retryBackoff()
 	var lastErr error
 	for attempt := 0; attempt < maxStreamAttempts; attempt++ {
 		if attempt > 0 {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/genai"
 )
@@ -108,5 +109,23 @@ func TestRetryCauseIsTheStatusNotTheText(t *testing.T) {
 		if got := retryCause(c.err); got != c.want {
 			t.Errorf("retryCause(%v) = %q, want %q", c.err, got, c.want)
 		}
+	}
+}
+
+// A retry always waits. Each wait stays within the jitter of its step,
+// so the first is at least a quarter second and the steps still double.
+func TestRetryBackoffNeverFiresAtOnce(t *testing.T) {
+	bo := retryBackoff()
+	for step := 0; step < maxStreamAttempts-1; step++ {
+		want := retryBase << step
+		for range 500 {
+			d := bo.Duration(step)
+			if d < want-retryJitter || d > want+retryJitter {
+				t.Fatalf("step %d waited %v, want %v give or take %v", step, d, want, retryJitter)
+			}
+		}
+	}
+	if lowest := retryBase - retryJitter; lowest < 250*time.Millisecond {
+		t.Errorf("the shortest first wait is %v — a retry that fires at once is no backoff", lowest)
 	}
 }

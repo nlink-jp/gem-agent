@@ -297,7 +297,7 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 	// only when nothing has been consumed from the stream yet: a retry
 	// after emitted text would duplicate output, and after a captured
 	// function call would duplicate the call.
-	bo := backoff.New(backoff.WithBase(500*time.Millisecond), backoff.WithMax(15*time.Second))
+	bo := retryBackoff()
 	var lastErr error
 	for attempt := 0; attempt < maxStreamAttempts; attempt++ {
 		if attempt > 0 {
@@ -360,6 +360,23 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 }
 
 const maxStreamAttempts = 5
+
+// The wait before retry n (0-based) is retryBase doubled n times, up to
+// retryMax, give or take retryJitter. The jitter is half the base, so
+// the first wait is never under a quarter second: the library's default
+// of a whole second either way, against a half-second base, made one
+// first retry in four fire with no wait at all — the opposite of what a
+// 429 asks for.
+const (
+	retryBase   = 500 * time.Millisecond
+	retryMax    = 15 * time.Second
+	retryJitter = retryBase / 2
+)
+
+// retryBackoff is the one backoff both retry loops use.
+func retryBackoff() backoff.Backoff {
+	return backoff.New(backoff.WithBase(retryBase), backoff.WithMax(retryMax), backoff.WithJitter(retryJitter))
+}
 
 // shouldRetryStream reports whether a failed stream may be retried:
 // transient HTTP status AND no chunk consumed yet (otherwise a retry
