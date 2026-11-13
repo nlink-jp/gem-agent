@@ -153,8 +153,10 @@ func (v *Vertex) generateWithRetry(ctx context.Context, contents []*genai.Conten
 	var lastErr error
 	for attempt := 0; attempt < maxStreamAttempts; attempt++ {
 		if attempt > 0 {
+			delay := bo.Duration(attempt - 1)
+			v.retried(attempt+1, lastErr, delay)
 			select {
-			case <-time.After(bo.Duration(attempt - 1)):
+			case <-time.After(delay):
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}

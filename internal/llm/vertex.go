@@ -36,11 +36,52 @@ type Vertex struct {
 	// observer receives StreamEvents (ADR-0033); nil = nobody watching.
 	// Set once at startup, before any turn — deliberately immutable.
 	observer func(StreamEvent)
+	// retries receives every backoff retry this backend schedules, for
+	// the session log (ADR-0116). A pointer, and shared by the
+	// copies WithModel and WithThinking make — the opposite of the
+	// observer and the dial: a side call's stream has no audience, but
+	// its retry is the same wait on the same quota, and a record that
+	// held the main model's alone would read as "no retries" for the
+	// rest. Atomic because the slots exist before the recorder is set.
+	retries *atomic.Pointer[func(RetryEvent)]
 }
 
 // SetObserver installs the turn-observability sink (ADR-0033). Call
 // before the first turn; events fire from the streaming goroutine.
 func (v *Vertex) SetObserver(fn func(StreamEvent)) { v.observer = fn }
+
+// SetRetryRecorder installs the sink for retries, on this backend and
+// on every copy of it, made before or after. fn runs on whichever
+// goroutine made the call, so it must be safe to call concurrently.
+func (v *Vertex) SetRetryRecorder(fn func(RetryEvent)) {
+	if v.retries != nil {
+		v.retries.Store(&fn)
+	}
+}
+
+// retried reports that attempt (1-based, the one about to start) was
+// scheduled after delay because the attempt before it failed with err.
+func (v *Vertex) retried(attempt int, err error, delay time.Duration) {
+	if v.retries == nil {
+		return
+	}
+	if fn := v.retries.Load(); fn != nil && *fn != nil {
+		(*fn)(RetryEvent{Model: v.model, Attempt: attempt, Max: maxStreamAttempts,
+			Cause: retryCause(err), Error: retryErrorText(err), DelayMS: int(delay.Milliseconds())})
+	}
+}
+
+// retryErrorText is err's text within retryErrorRunes, cut on a rune.
+func retryErrorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	r := []rune(err.Error())
+	if len(r) > retryErrorRunes {
+		return string(r[:retryErrorRunes]) + "…"
+	}
+	return string(r)
+}
 
 func (v *Vertex) observe(ev StreamEvent) {
 	if v.observer != nil {
@@ -73,7 +114,8 @@ func NewVertex(ctx context.Context, project, location, model, safety, thinking s
 // newVertex wraps an existing client; tests hand it one aimed at a
 // local server.
 func newVertex(client *genai.Client, model, safety, thinking string, includeThoughts bool) *Vertex {
-	return &Vertex{client: client, model: model, safety: SafetySettings(safety), thinking: newThinking(thinking, mainThinkingKey), includeThoughts: includeThoughts}
+	return &Vertex{client: client, model: model, safety: SafetySettings(safety), thinking: newThinking(thinking, mainThinkingKey), includeThoughts: includeThoughts,
+		retries: &atomic.Pointer[func(RetryEvent)]{}}
 }
 
 // thinkingSetting is one backend's thinking level and what the operator
@@ -263,6 +305,7 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 			// §2): the observer shows the retry and its cause.
 			v.observe(StreamEvent{Kind: "retry", Attempt: attempt + 1, Max: maxStreamAttempts,
 				Cause: retryCause(lastErr), DelayMS: int(delay.Milliseconds())})
+			v.retried(attempt+1, lastErr, delay)
 			select {
 			case <-time.After(delay):
 			case <-ctx.Done():

@@ -690,6 +690,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Retries reach the transcript in use, whichever /clear made it
+	// (ADR-0071 §2), from the main loop and from every slot below.
+	recordRetries(backend, liveLog{get: func() agent.SessionLog { return sessionLog }})
 
 	// Per-category token accounting for /usage (ADR-0019).
 	tally := newUsageTally()

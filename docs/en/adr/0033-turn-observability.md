@@ -13,6 +13,10 @@ health check fails a dead connection's stream within 46s of its last
 frame and the turn ends with an error; the heartbeat keeps counting the
 silence, neutral, and never calls it a problem.*
 
+*Amended by ADR-0116: a retry is no longer display-only. Each one writes
+a `model_retry` record to the session log, from the main loop and from
+every side call; the heartbeat and thought text stay display-only.*
+
 ## Context
 
 During a turn the status line showed a spinner and the static word

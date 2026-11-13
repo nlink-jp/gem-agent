@@ -197,6 +197,31 @@ because its author is gem-agent (the same trust as `denial`). An older
 build resuming such a transcript ignores the field and replays the
 result without the note.
 
+## Retries in the transcript (ADR-0116)
+
+A model call that meets a 429 or a 5xx waits and tries again. Each such
+retry writes a `model_retry` record, whichever model made the call — the
+main loop, the risk, summary and librarian slots, the web tools:
+
+    {"kind":"model_retry","data":{"model":"gemini-4-carbon","attempt":2,
+     "max":5,"cause":"429","error":"Error 429, Message: Resource exhausted. …",
+     "delay_ms":500}}
+
+`attempt` is the attempt about to start (2 is the first retry) out of
+`max`; `cause` is the status that failed the attempt before it, or
+`error`; `error` is that attempt's text from the endpoint, cut at 300
+characters; `delay_ms` is the backoff before the next attempt. The
+record's time is when the failed attempt came back. So the gap from the
+message before the call to the first `model_retry` is how long the
+refused attempt took, and the sum of `delay_ms` is how much of the call
+was waiting — what separates a call that waited on a rate limit from one
+the endpoint was slow to answer. A call that fails on its last attempt
+leaves its retries here and no `usage` record.
+
+The record is diagnostic: resume skips it and nothing in it reaches the
+model. A transcript from a build before this record has none, which
+there means "not recorded", not "no retries".
+
 ## Added directories in the transcript (ADR-0099)
 
 A session started with added directories (`--add-dir`, `--read-dir`,

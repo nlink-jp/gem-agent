@@ -179,10 +179,36 @@ type Backend interface {
 	ChatStream(ctx context.Context, system string, messages []Message, tools []ToolDef, onText func(string)) (*Response, error)
 }
 
+// RetryEvent is one backoff retry a model call scheduled: a wait the
+// model did not cause. Unlike a StreamEvent it is meant to be kept
+// (ADR-0116): from the outside a wait on a 429 and a slow answer are
+// the same silence, and afterwards only a record tells which it was.
+type RetryEvent struct {
+	// Model is the model the failed attempt addressed.
+	Model string
+	// Attempt is the attempt about to start (2 is the first retry),
+	// out of Max.
+	Attempt int
+	Max     int
+	// Cause is the status that failed the attempt before it ("429",
+	// "503", …), or "error".
+	Cause string
+	// Error is that attempt's error text, cut to retryErrorRunes: the
+	// endpoint's own words for why, which the token above drops.
+	Error string
+	// DelayMS is the backoff wait before Attempt starts.
+	DelayMS int
+}
+
+// retryErrorRunes bounds RetryEvent.Error. An endpoint's refusal is a
+// sentence or two; the bound is for the one that is not.
+const retryErrorRunes = 300
+
 // StreamEvent is turn observability (ADR-0033): the backend reports
 // stream liveness, retries, and thought summaries to whoever is
 // watching (the TUI). Events are display-only — nothing here enters
-// the history or the transcript.
+// the history or the transcript; a retry is also reported as a
+// RetryEvent, which is kept (ADR-0116).
 type StreamEvent struct {
 	// Kind: "chunk" (any chunk arrived — liveness), "thought" (a
 	// thought-summary delta; Thought carries the text), or "retry"
