@@ -28,7 +28,7 @@ build-all:
 ## package: Archive the darwin build with the canonical binary name +
 ## README.md + LICENSE, then notarize. Asset naming follows the org
 ## Release Archive Standard (gem-agent-vX.Y.Z-darwin-arm64.zip).
-package: build-all
+package: vuln build-all
 	@cd $(DIST_DIR) && \
 		stage=_pkg; rm -rf $$stage; mkdir -p $$stage; \
 		cp "$(BINARY)-darwin-arm64" "$$stage/$(BINARY)"; \
@@ -171,9 +171,11 @@ escprobe:
 	@go run ./tools/escprobe -drive
 
 ## vuln: known vulnerabilities this build can reach, in the modules it
-## requires and the standard library of the toolchain. Not part of `check`
-## (it needs the network and the database moves under a fixed tree); run it
-## before a release.
+## requires and in the standard library of the toolchain that builds it.
+## `package` runs it first, so a release cannot be built past a finding:
+## v0.102.0 shipped with advisories in a module because the check was a
+## step someone had to remember. It is not part of `check` — it needs the
+## network, and its database changes under an unchanged tree.
 vuln:
 	govulncheck ./...
 

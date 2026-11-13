@@ -1,6 +1,6 @@
 module github.com/nlink-jp/gem-agent
 
-go 1.26.2
+go 1.27.2
 
 require (
 	cloud.google.com/go/auth v0.20.0

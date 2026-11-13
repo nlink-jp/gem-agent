@@ -324,24 +324,35 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 		resp := &Response{}
 		var text strings.Builder
 		chunks := 0
-		var streamErr error
-		for chunk, err := range v.client.Models.GenerateContentStream(ctx, v.model, contents, cfg) {
-			if err != nil {
-				streamErr = err
-				break
+		streamErr := func() (serr error) {
+			// The SDK's stream reader runs inside this loop. A panic in
+			// it — v1.77.0 dereferences a null candidate before this
+			// package's own guard can see the chunk — would take the
+			// terminal down with it; it ends the call as an error
+			// instead (ADR-0117).
+			defer func() {
+				if r := recover(); r != nil {
+					serr = fmt.Errorf("the SDK failed reading the stream: %v", r)
+				}
+			}()
+			for chunk, err := range v.client.Models.GenerateContentStream(ctx, v.model, contents, cfg) {
+				if err != nil {
+					return err
+				}
+				// Every chunk is a heartbeat (ADR-0033 §1): thought-only
+				// and metadata-only chunks prove liveness even though
+				// they display nothing.
+				v.observe(StreamEvent{Kind: "chunk"})
+				// Only content-bearing chunks disarm the retry: a chunk
+				// carrying nothing but usage metadata consumed nothing
+				// the operator saw, and refusing to retry after one
+				// needlessly fails the turn (ADR-0021).
+				if accumulateChunk(chunk, resp, &text, onText, v.onThought()) {
+					chunks++
+				}
 			}
-			// Every chunk is a heartbeat (ADR-0033 §1): thought-only
-			// and metadata-only chunks prove liveness even though they
-			// display nothing.
-			v.observe(StreamEvent{Kind: "chunk"})
-			// Only content-bearing chunks disarm the retry: a chunk
-			// carrying nothing but usage metadata consumed nothing the
-			// operator saw, and refusing to retry after one needlessly
-			// fails the turn (ADR-0021).
-			if accumulateChunk(chunk, resp, &text, onText, v.onThought()) {
-				chunks++
-			}
-		}
+			return nil
+		}()
 		if streamErr == nil {
 			resp.Content = text.String()
 			return resp, nil

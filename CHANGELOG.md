@@ -4,50 +4,45 @@
 
 ### Changed
 
-- **The Vertex AI SDK is updated from v1.71.0 to v1.77.0** (ADR-0117).
-  Nothing observable changes. The newer SDK would, by default, send a
-  request again when a response ends with a continuation token and report
-  the usage of every such request added together; gem-agent turns that
-  off, so one model call stays one request, with one usage record.
-
-### Security
-
-- **`golang.org/x/net` is updated from v0.58.0 to v0.62.0.** Five advisories
-  against its HTTP/2 code (GO-2026-6603, -6610, -6611, -6612, -6617) were
-  reachable from the connection to Vertex AI. Three concern HTTP/2 servers
-  and two a client facing a hostile server; gem-agent is a client of
-  Google's endpoint, so the exposure was small, and it is closed. `grpc`
-  moves to v1.83.2 for an advisory in code this build imports and does not
-  call. `make vuln` runs the check; it was not part of a release until now.
-
-## [0.102.0] - 2026-11-14
-
-### Added
-
-- **Retries of a model call are recorded in the session transcript**
-  (ADR-0116). A call that meets a 429 or a 5xx and waits writes a
-  `model_retry` record for each retry — the model, the kind of call, the
-  attempt, the status that failed the one before, and the wait — from the
-  main loop and from every side call. A transcript can now tell a call
-  that waited on a rate limit from one the endpoint was slow to answer;
-  until now a retry was shown in the TUI's status line and kept nowhere.
-  The endpoint's error message is not recorded, only its status.
+- **The Vertex AI SDK is updated from v1.71.0 to v1.77.0** (ADR-0117). Two
+  things in it change what a call does:
+  - The newer SDK would, by default, send a request again when a response
+    ends with a continuation token, and report the usage of every such
+    request added together. gem-agent turns that off: one model call stays
+    one request, with one usage record.
+  - **An error the endpoint sends inside a stream now ends the call as an
+    error.** The older SDK handed such an event over as an empty chunk, so
+    the call "succeeded" with nothing, or with half an answer shown as a
+    whole one. Now a transient status (429, 5xx) that arrives before any
+    output is retried and leaves a `model_retry` record; after output has
+    been shown the turn ends with the error instead of keeping the half.
+- **Building from source needs Go 1.27.2 or later** (`go.mod`). The
+  standard library's HTTP/2, which carries the connection to Vertex AI, has
+  the advisories listed below fixed from that version.
+- **`make package` runs the vulnerability check first** (`make vuln`), so a
+  release cannot be built past a finding.
 
 ### Fixed
 
-- **The web tools no longer retry an error because its text contains a
-  status number.** `web_search` and `web_fetch` decided whether to retry by
-  looking for "429", "502" and the like in the error's text, so a refusal
-  or a transport error that merely quoted such digits — a port, a project
-  id — was sent again up to four times. They now read the status from the
-  API error, as the main loop already did, and the cause a retry reports
-  is that status.
-- **A retry of a model call always waits first.** The backoff's jitter was
-  a full second either way on a half-second base, so one first retry in
-  four was sent with no wait at all, and one second retry in eight within
-  a quarter second. The jitter is now half the base at every step: the
-  first retry waits 0.25–0.75 s (it was 0–1.5 s), and the later ones 1 s,
-  2 s and 4 s give or take a quarter second (it was a second).
+- **A stream chunk the SDK cannot read ends the call, not the process.**
+  SDK v1.77.0 dereferences a null candidate in a chunk before gem-agent's
+  own check sees it; that panic is now caught at the call and reported as
+  an error, where it would have taken the terminal down.
+
+### Security
+
+- **`golang.org/x/net` is updated from v0.58.0 to v0.62.0**, and the Go
+  floor is raised (above). `govulncheck` reported five HTTP/2 advisories
+  (GO-2026-6603, -6610, -6611, -6612, -6617) as reachable through that
+  module. Measured, the connection to Vertex AI does not run on it:
+  gem-agent supplies its own transport, which uses the standard library's
+  HTTP/2. The same advisories apply there and are fixed in Go 1.26.9 and
+  1.27.2; released binaries were built with Go 1.27.4, so no released
+  build was exposed. The update removes the affected code from the build,
+  and with it two advisories in `x/net/html` and two in `x/crypto/ssh`
+  that this build does not call. `grpc` moves to v1.83.2 for one more of
+  that kind. One advisory remains, against a package this build does not
+  import (`x/crypto/openpgp`, unmaintained, no fixed release).
 
 ### Documentation
 

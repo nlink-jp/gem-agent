@@ -32,6 +32,14 @@ in the operator's recorded sessions is under 20,000 tokens, so with the
 default left on nothing would differ today. It would differ on the first
 long answer, silently.
 
+The same span holds a second change, filed in the SDK's changelog as a
+bug fix (v1.76.0): an error the endpoint sends *as a stream event* is now
+raised as an error. v1.71.0 decoded such an event as an empty chunk, so
+the call came back as a success holding nothing — or holding the half of
+an answer that arrived before it, with no sign of the cut. Compiling and
+passing the tests showed neither change; a reviewer's probe of the same
+endpoint against both SDK versions showed this one.
+
 Three things in this runtime assume a call is one request:
 
 - **The usage record** (ADR-0057) is one per call, and its prompt count is
@@ -64,11 +72,33 @@ Three things in this runtime assume a call is one request:
    they are ever wanted, the continuation belongs in this runtime's own
    loop, with a usage record per request and a record of each re-send —
    a decision of its own.
+5. **Take the stream-error change, and hold it.** An error event is now
+   an error of the call, and this runtime's existing rules apply to it: a
+   transient status before any output is retried and recorded (ADR-0116),
+   one after output ends the call rather than passing the half as a
+   whole, and a refusal is not retried. Because the SDK, not this
+   package, makes it so, offline tests serve such events and pin each
+   case — a later SDK that swallowed them again would fail them.
+6. **A panic in the SDK's stream reader ends the call, not the process.**
+   v1.77.0 dereferences a null first candidate in a chunk before this
+   package's own guard sees it. The call recovers and reports an error;
+   a terminal UI must not die on a malformed chunk.
+7. **The vulnerability check gates the package.** `make package` runs
+   `govulncheck` first, and `go.mod` requires a Go release whose standard
+   library has the HTTP/2 advisories of the day fixed. The check found
+   advisories in a module this update did not touch, in a release already
+   shipped: it had been a step to remember.
 
 ## Consequences
 
-- Nothing observable changes with this release: the SDK is newer and its
-  one new default that would have changed behaviour is declined.
+- With the continuation declined, one thing a user can see changes: a
+  call whose stream carries an error event now fails or is retried,
+  where it used to return empty or cut short as if complete. A retry of
+  that kind appears in the transcript as a `model_retry`; the usage of the
+  attempt it replaced is not recorded, as for any failed attempt.
+- Reading an SDK's changelog for new defaults is not enough. This update
+  had one behaviour change under Features and one under Bug Fixes, and
+  only a probe of the two versions against one endpoint found the second.
 - The accounting contract (one usage record, one request) and the retry
   record's promise (every re-send is written) keep holding without
   depending on how long an answer is.
@@ -92,7 +122,8 @@ Three things in this runtime assume a call is one request:
 
 ## References
 
-- `internal/llm/vertex.go` (`oneRequest`), `internal/llm/web.go`,
-  `internal/llm/onerequest_test.go`
+- `internal/llm/vertex.go` (`oneRequest`, the recover in `ChatStream`),
+  `internal/llm/web.go`, `internal/llm/onerequest_test.go`, `Makefile`
+  (`vuln`, `package`)
 - `google.golang.org/genai` v1.77.0: `GenerateContentConfig.AutomaticContinuation`,
   `continuation.go`

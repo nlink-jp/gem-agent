@@ -93,6 +93,7 @@ reads as an oversight to the next person, and gets "fixed" wrongly.
 | Docs mirror only | `make docs-check` |
 | Release gate's own test | `make gate-check` — runs `verify-release` against synthetic bad zips |
 | Release binaries | `make build-all` (darwin/arm64 only — signed and notarised by `make package`) |
+| Known vulnerabilities this build can reach | `make vuln` (govulncheck; `make package` runs it first, `make check` does not) |
 | Release archive | `make package` → `dist/gem-agent-vX.Y.Z-darwin-arm64.zip` |
 | Release gate | `make verify-release` — refuses a zip with no notarisation marker, one rebuilt after its marker, one that does not unpack, or one whose binary does not run or reports another tag's version. Run it from the repo, then `gh` from here |
 | Operator text, collected | `make labels` → `dist/labels.md` (UI catalog ja/en, cmd notes/errors/help, `--help` pages) |
@@ -1000,10 +1001,23 @@ a new hook) is an architecture change and takes the same rows as a
   `AutomaticContinuation: oneRequest()`; a source test fails one that does
   not. The SDK's default (v1.74.0 on) re-sends a request on a continuation
   token and sums the usage, which would break the usage record, the retry
-  record and the compaction trigger at once. When updating the SDK, read
-  its changelog for defaults that are *on*: this one compiled and passed
-  every test unchanged. `make vuln` (govulncheck) is run before a release
-  and is not part of `make check`.
+  record and the compaction trigger at once.
+- **Updating the SDK: probe both versions, do not read for defaults.** The
+  v1.71.0 → v1.77.0 update compiled and passed every test unchanged and
+  carried two behaviour changes — one a new default under Features, one
+  under Bug Fixes (an error sent as a stream event is now raised). Run the
+  same local endpoint against the old and the new tree for every shape of
+  response the runtime handles (`internal/llm/onerequest_test.go` holds
+  the cases found so far), and pin what the SDK now does with an offline
+  test: it is the dependency's behaviour, and nothing else will notice it
+  change back. The SDK's stream reader runs inside `ChatStream`'s loop;
+  the recover there is what stands between its panics and the terminal.
+- **`make package` runs `make vuln` first** (govulncheck). It is not in
+  `make check` — it needs the network and its database moves under an
+  unchanged tree. `go.mod`'s `go` line is the floor for the standard
+  library that carries the Vertex connection (this runtime's own
+  transport, ADR-0100, uses the standard library's HTTP/2, not
+  `x/net`'s): raise it when an advisory there is fixed in a newer Go.
 - **Every model call names its source, and every retry loop reports**
   (ADR-0116) — a `model_retry` record carries `source` from the call
   site's `llm.WithSource(ctx, session.UsageX)`; `archtest` fails a
