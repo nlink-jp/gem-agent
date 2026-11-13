@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Security
+
+- **`golang.org/x/net` is updated from v0.58.0 to v0.62.0.** Five advisories
+  against its HTTP/2 code (GO-2026-6603, -6610, -6611, -6612, -6617) were
+  reachable from the connection to Vertex AI. Three concern HTTP/2 servers
+  and two a client facing a hostile server; gem-agent is a client of
+  Google's endpoint, so the exposure was small, and it is closed. `grpc`
+  moves to v1.83.2 for an advisory in code this build imports and does not
+  call. `make vuln` runs the check; it was not part of a release until now.
+
 ## [0.102.0] - 2026-11-14
 
 ### Added

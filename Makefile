@@ -11,7 +11,7 @@ DIST_DIR := dist
 CODESIGN_IDENTITY ?= Developer ID Application
 NOTARY_PROFILE    ?= nlink-jp-notary
 
-.PHONY: build build-all package verify-release test vet lint docs-check gate-check check rowprobe pinprobe resizeprobe escprobe clean
+.PHONY: build build-all package verify-release test vet lint docs-check gate-check check rowprobe pinprobe resizeprobe escprobe vuln clean
 
 build:
 	@mkdir -p $(DIST_DIR)
@@ -169,6 +169,13 @@ resizeprobe:
 ## ./tools/escprobe -ui -case OSC0 -channel reply` runs one to watch.
 escprobe:
 	@go run ./tools/escprobe -drive
+
+## vuln: known vulnerabilities this build can reach, in the modules it
+## requires and the standard library of the toolchain. Not part of `check`
+## (it needs the network and the database moves under a fixed tree); run it
+## before a release.
+vuln:
+	govulncheck ./...
 
 clean:
 	rm -rf $(DIST_DIR)
