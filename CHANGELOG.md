@@ -46,6 +46,35 @@
   that kind. One advisory remains, against a package this build does not
   import (`x/crypto/openpgp`, unmaintained, no fixed release).
 
+## [0.102.0] - 2026-11-14
+
+### Added
+
+- **Retries of a model call are recorded in the session transcript**
+  (ADR-0116). A call that meets a 429 or a 5xx and waits writes a
+  `model_retry` record for each retry — the model, the kind of call, the
+  attempt, the status that failed the one before, and the wait — from the
+  main loop and from every side call. A transcript can now tell a call
+  that waited on a rate limit from one the endpoint was slow to answer;
+  until now a retry was shown in the TUI's status line and kept nowhere.
+  The endpoint's error message is not recorded, only its status.
+
+### Fixed
+
+- **The web tools no longer retry an error because its text contains a
+  status number.** `web_search` and `web_fetch` decided whether to retry by
+  looking for "429", "502" and the like in the error's text, so a refusal
+  or a transport error that merely quoted such digits — a port, a project
+  id — was sent again up to four times. They now read the status from the
+  API error, as the main loop already did, and the cause a retry reports
+  is that status.
+- **A retry of a model call always waits first.** The backoff's jitter was
+  a full second either way on a half-second base, so one first retry in
+  four was sent with no wait at all, and one second retry in eight within
+  a quarter second. The jitter is now half the base at every step: the
+  first retry waits 0.25–0.75 s (it was 0–1.5 s), and the later ones 1 s,
+  2 s and 4 s give or take a quarter second (it was a second).
+
 ### Documentation
 
 - **There is no Linux version, and the reason is recorded** (ADR-0115).
