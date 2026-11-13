@@ -2,6 +2,10 @@ package llm
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -117,7 +121,7 @@ func TestRetryCauseIsTheStatusNotTheText(t *testing.T) {
 func TestRetryBackoffNeverFiresAtOnce(t *testing.T) {
 	bo := retryBackoff()
 	for step := 0; step < maxStreamAttempts-1; step++ {
-		want := retryBase << step
+		want := min(retryBase<<step, retryMax)
 		for range 500 {
 			d := bo.Duration(step)
 			if d < want-retryJitter || d > want+retryJitter {
@@ -127,5 +131,59 @@ func TestRetryBackoffNeverFiresAtOnce(t *testing.T) {
 	}
 	if lowest := retryBase - retryJitter; lowest < 250*time.Millisecond {
 		t.Errorf("the shortest first wait is %v — a retry that fires at once is no backoff", lowest)
+	}
+}
+
+// Both retry loops take their backoff from retryBackoff and nowhere
+// else. A timing assertion meets the old, wider jitter only by chance —
+// a first wait drawn from it lands inside the new bounds one time in
+// four — so the call sites are pinned in the source: retryBackoff is
+// the one place in this package that builds a backoff, and both loops
+// call it.
+func TestTheOnlyBackoffIsRetryBackoff(t *testing.T) {
+	fset := token.NewFileSet()
+	names, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	built := 0
+	users := map[string]bool{}
+	for _, name := range names {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				switch f := call.Fun.(type) {
+				case *ast.SelectorExpr:
+					if x, ok := f.X.(*ast.Ident); ok && x.Name == "backoff" && f.Sel.Name == "New" {
+						built++
+						if fn.Name.Name != "retryBackoff" {
+							t.Errorf("%s builds a backoff of its own at %s — use retryBackoff()", fn.Name.Name, fset.Position(call.Pos()))
+						}
+					}
+				case *ast.Ident:
+					if f.Name == "retryBackoff" {
+						users[fn.Name.Name] = true
+					}
+				}
+				return true
+			})
+		}
+	}
+	if built != 1 || !users["ChatStream"] || !users["generateWithRetry"] {
+		t.Fatalf("backoff.New is called %d time(s); retryBackoff is used by %v — want one constructor, used by ChatStream and generateWithRetry", built, users)
 	}
 }
