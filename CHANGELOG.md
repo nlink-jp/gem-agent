@@ -26,9 +26,10 @@
   is that status.
 - **A retry of a model call always waits first.** The backoff's jitter was
   a full second either way on a half-second base, so one first retry in
-  four was sent with no wait at all. The jitter is now half the base: the
-  first retry waits 0.25–0.75 s, and the later steps (1 s, 2 s, 4 s) keep
-  the same quarter second either way.
+  four was sent with no wait at all, and one second retry in eight within
+  a quarter second. The jitter is now half the base at every step: the
+  first retry waits 0.25–0.75 s (it was 0–1.5 s), and the later ones 1 s,
+  2 s and 4 s give or take a quarter second (it was a second).
 
 ### Documentation
 
