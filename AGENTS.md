@@ -995,6 +995,16 @@ a new hook) is an architecture change and takes the same rows as a
   not add a refusal string that tells an unattended model to "ask the
   user", and do not route it to the write tools, which are exactly what
   a plain `-p` run denies (`unattendedRoute` is the one closing line).
+- **Every model call names its source, and every retry loop reports**
+  (ADR-0116) — a `model_retry` record carries `source` from the call
+  site's `llm.WithSource(ctx, session.UsageX)`; `archtest` fails a
+  `ChatStream` call without it. A new retry loop in `internal/llm` must
+  call `retried` before it waits, and a new way of copying a `Vertex`
+  must keep `retries` (the copies share one recorder on purpose, unlike
+  the observer and the thinking dial). Nothing of the endpoint's message
+  goes into the record: status code and status token only. The recorder
+  is installed by one line of `cmd/root.go`, pinned by
+  `TestRetryRecorderIsWired`.
 - **Every model call must leave a `usage` record** (ADR-0057) — the API
   reports tokens and never money, so cost is reconstructed from the
   transcript; a new backend call site that skips `logUsage` (agent side)

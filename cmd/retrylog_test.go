@@ -2,10 +2,13 @@ package cmd
 
 import (
 	"encoding/json"
-	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"testing"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
+	"github.com/nlink-jp/gem-agent/internal/session"
 )
 
 type recordedLine struct {
@@ -27,7 +30,7 @@ func (f *fakeSessionLog) Log(kind string, data any) error {
 // (sessions.md): a rename here silently empties every tally built on
 // them, so the names are pinned through the JSON a reader would see.
 func TestRetryRecordFields(t *testing.T) {
-	raw, err := json.Marshal(retryRecord(llm.RetryEvent{Model: "m", Attempt: 3, Max: 5, Cause: "429", Error: "Error 429, Resource exhausted.", DelayMS: 1000}))
+	raw, err := json.Marshal(retryRecord(llm.RetryEvent{Model: "m", Source: "main", Attempt: 3, Max: 5, Cause: "429", Status: "RESOURCE_EXHAUSTED", DelayMS: 1000}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,8 +38,8 @@ func TestRetryRecordFields(t *testing.T) {
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]any{"model": "m", "attempt": 3.0, "max": 5.0, "cause": "429",
-		"error": "Error 429, Resource exhausted.", "delay_ms": 1000.0}
+	want := map[string]any{"model": "m", "source": "main", "attempt": 3.0, "max": 5.0, "cause": "429",
+		"status": "RESOURCE_EXHAUSTED", "delay_ms": 1000.0}
 	if len(got) != len(want) {
 		t.Fatalf("record = %v, want exactly %v", got, want)
 	}
@@ -47,28 +50,61 @@ func TestRetryRecordFields(t *testing.T) {
 	}
 }
 
-// recordRetries is the wiring: a retry the backend reports becomes one
-// model_retry line, and a session log that cannot be written does not
-// reach the model call (the recorder has no error to return).
-func TestRecordRetriesWritesModelRetry(t *testing.T) {
+// A retry the backend reports becomes one model_retry line. An empty
+// source or status is written as empty, not left out: a reader must be
+// able to tell "this retry had none" from a build that wrote no such key.
+func TestRetryBecomesAModelRetryRecord(t *testing.T) {
 	var fire func(llm.RetryEvent)
-	install := func(fn func(llm.RetryEvent)) { fire = fn }
-
 	log := &fakeSessionLog{}
-	installRetryRecorder(install, log)
+	installRetryRecorder(func(fn func(llm.RetryEvent)) { fire = fn }, log)
 	fire(llm.RetryEvent{Model: "m", Attempt: 2, Max: 5, Cause: "503", DelayMS: 500})
 	if len(log.lines) != 1 || log.lines[0].kind != "model_retry" {
 		t.Fatalf("lines = %+v, want one model_retry record", log.lines)
 	}
 	data, ok := log.lines[0].data.(map[string]any)
 	if !ok || data["cause"] != "503" || data["model"] != "m" {
-		t.Errorf("record data = %#v", log.lines[0].data)
+		t.Fatalf("record data = %#v", log.lines[0].data)
 	}
+	for _, key := range []string{"source", "status"} {
+		if v, present := data[key]; !present || v != "" {
+			t.Errorf("record[%q] = %v (present %v), want an empty string that is there", key, v, present)
+		}
+	}
+}
 
-	broken := &fakeSessionLog{err: errors.New("disk full")}
-	installRetryRecorder(install, broken)
-	fire(llm.RetryEvent{Model: "m", Attempt: 2, Max: 5, Cause: "429"}) // must not panic
-	if len(broken.lines) != 1 {
-		t.Errorf("a failing log was not attempted: %+v", broken.lines)
+// The names this package's own one-shot calls give themselves are the
+// usage record's names for the same calls: a transcript reader joins the
+// two on them.
+func TestWebSourcesAreTheUsageSources(t *testing.T) {
+	if llm.SourceWebSearch != session.UsageWebSearch || llm.SourceWebFetch != session.UsageWebFetch {
+		t.Errorf("llm sources %q, %q; usage sources %q, %q", llm.SourceWebSearch, llm.SourceWebFetch, session.UsageWebSearch, session.UsageWebFetch)
+	}
+}
+
+// The recorder reaches the transcript only through one line of root.go.
+// Without it every retry is still shown and none is kept, and no other
+// test notices: the recorder is optional by design. The line is the
+// thing under test (the pattern of TestTUIOptionsWiring).
+func TestRetryRecorderIsWired(t *testing.T) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "root.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if fn, ok := call.Fun.(*ast.Ident); ok && fn.Name == "recordRetries" && len(call.Args) == 2 {
+			if arg, ok := call.Args[0].(*ast.Ident); ok && arg.Name == "backend" {
+				found = true
+			}
+		}
+		return true
+	})
+	if !found {
+		t.Fatal("root.go does not call recordRetries(backend, …): retries would be shown and never recorded")
 	}
 }

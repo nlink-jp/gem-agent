@@ -141,7 +141,7 @@ While a turn runs, the status line is live, not a static spinner:
 — elapsed time, chunks received from the stream, and seconds since the
 last one (thought and metadata chunks count — liveness, not
 visibility). A **backoff retry** after a transient error (429/5xx)
-shows `retry 2/3 (429) — waiting 4s` instead of silence. A long
+shows `retry 2/5 (429) — waiting 1s` instead of silence. A long
 silence is normal — a long context or a large file write can keep the
 model quiet for minutes — and the line never calls it a problem. A
 connection that has really died ends the turn with an error saying

@@ -64,7 +64,7 @@ func registerSummarizeTool(registry *tools.Registry, backend llm.Backend, modelN
 			if focus, _ := args["focus"].(string); strings.TrimSpace(focus) != "" {
 				ask += " Focus: " + strings.TrimSpace(focus)
 			}
-			resp, err := backend.ChatStream(ctx, tag.Expand(summarizePrompt),
+			resp, err := backend.ChatStream(llm.WithSource(ctx, session.UsageSummarizeFile), tag.Expand(summarizePrompt),
 				[]llm.Message{{Role: llm.RoleUser, Content: ask + "\n\n" + wrapped}}, nil, nil)
 			if err != nil {
 				return "", fmt.Errorf("summary model (%s): %w", modelName, err)

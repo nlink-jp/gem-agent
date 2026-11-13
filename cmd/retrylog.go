@@ -10,18 +10,21 @@ import (
 const kindModelRetry = "model_retry"
 
 // retryRecord is what a model_retry record carries: which model was
-// asked, which attempt is about to start out of how many, the status
-// that failed the one before with the endpoint's words for it, and how
-// long the backoff waits. The record's own time is when that earlier
-// attempt came back, so the time spent on a failed attempt and the wait
-// after it can both be read off the transcript.
+// asked and by which kind of call, which attempt is about to start out
+// of how many, the HTTP status that failed the one before with the
+// endpoint's status token, and how long the backoff waits. The record's
+// own time is when that earlier attempt came back, so the time spent on
+// a failed attempt and the wait after it can both be read off the
+// transcript. Every field is always written: an empty source or status
+// is a fact about that retry, not a record from an older build.
 func retryRecord(ev llm.RetryEvent) map[string]any {
 	return map[string]any{
 		"model":    ev.Model,
+		"source":   ev.Source,
 		"attempt":  ev.Attempt,
 		"max":      ev.Max,
 		"cause":    ev.Cause,
-		"error":    ev.Error,
+		"status":   ev.Status,
 		"delay_ms": ev.DelayMS,
 	}
 }

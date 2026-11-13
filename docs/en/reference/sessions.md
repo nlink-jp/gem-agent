@@ -126,7 +126,7 @@ Every model call therefore writes one `usage` record:
 
 `source` is one of `main`, `risk`, `progress_review`, `compact`,
 `summarize_file`, `web_search`, `web_fetch`, `agentic_file_search`,
-`riskbook_learn` — sum by source, price by `model`, check against
+`riskbook_learn`, `librarian` — sum by source, price by `model`, check against
 `total`. The session
 header records the region alongside the model, because prices are
 resolved per SKU per region.
@@ -199,28 +199,39 @@ result without the note.
 
 ## Retries in the transcript (ADR-0116)
 
-A model call that meets a 429 or a 5xx waits and tries again. Each such
-retry writes a `model_retry` record, whichever model made the call — the
-main loop, the risk, summary and librarian slots, the web tools:
+A model call that the endpoint answers with a 429 or a 5xx waits and
+tries again, up to five attempts. Each such retry writes a `model_retry`
+record, whichever model call made it — the main loop, the risk, summary
+and librarian slots, compaction, the web tools:
 
-    {"kind":"model_retry","data":{"model":"gemini-4-carbon","attempt":2,
-     "max":5,"cause":"429","error":"Error 429, Message: Resource exhausted. …",
-     "delay_ms":500}}
+    {"kind":"model_retry","data":{"model":"gemini-4-carbon","source":"main",
+     "attempt":2,"max":5,"cause":"429","status":"RESOURCE_EXHAUSTED",
+     "delay_ms":613}}
 
+`source` is the kind of call, in the words of the `usage` record above;
+a call made inside `agentic_file_search` carries that tool's name.
 `attempt` is the attempt about to start (2 is the first retry) out of
-`max`; `cause` is the status that failed the attempt before it, or
-`error`; `error` is that attempt's text from the endpoint, cut at 300
-characters; `delay_ms` is the backoff before the next attempt. The
-record's time is when the failed attempt came back. So the gap from the
-message before the call to the first `model_retry` is how long the
-refused attempt took, and the sum of `delay_ms` is how much of the call
-was waiting — what separates a call that waited on a rate limit from one
-the endpoint was slow to answer. A call that fails on its last attempt
-leaves its retries here and no `usage` record.
+`max`. `cause` is the HTTP status that failed the attempt before it, and
+`status` is the endpoint's own status token for it, empty when it sent
+none. The endpoint's message is not kept. `delay_ms` is the backoff
+before the next attempt: 500 ms doubled at each step, give or take
+250 ms. Every field is always written.
+
+The record's time is when the failed attempt came back, and the sum of a
+call's `delay_ms` is how much of it was waiting between attempts — what
+separates a call that waited on a rate limit from one the endpoint was
+slow to answer. How long the refused attempt itself took is the time
+since the call started, and the transcript does not mark that moment:
+for a main-loop call it is the last `message` record before it unless a
+compaction or a round-limit review came between, and for the other
+sources it is not recorded. A call that fails on its last attempt leaves
+its retries here and no `usage` record.
 
 The record is diagnostic: resume skips it and nothing in it reaches the
-model. A transcript from a build before this record has none, which
-there means "not recorded", not "no retries".
+model. Builds before v0.102.0 wrote none, so in a transcript from one of
+them an absence means "not recorded", not "no retries". A resumed session
+keeps the header of the build that started it; the build that wrote what
+follows a `resumed` record is the `version` in that record.
 
 ## Added directories in the transcript (ADR-0099)
 

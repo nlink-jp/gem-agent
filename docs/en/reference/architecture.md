@@ -181,8 +181,10 @@ Per-round details that matter:
 - **The stream reports itself** (ADR-0033): the backend feeds an
   observer with chunk liveness, backoff retries, and thought summaries;
   the TUI renders them as the heartbeat, the retry line, and the
-  thought stream. Display-only — none of it enters history or the
-  transcript.
+  thought stream. Display-only — none of it enters the history, and of
+  the three only a retry is also written down: each one leaves a
+  `model_retry` record in the transcript, from every model call
+  (ADR-0116).
 - **One tool runs a nested turn loop**: `agentic_file_search`
   (ADR-0037) builds a fresh child agent per call — own history and
   nonce tag, a read-only tool subset, a deny-all approver, no

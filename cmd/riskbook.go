@@ -128,7 +128,7 @@ func (r *riskbookRunner) draft(ctx context.Context, rep riskbook.Report) (string
 		return "", fmt.Errorf("the decision records contain text that looks like a prompt tag — write the rules by hand (%w)", err)
 	}
 	prompt := fmt.Sprintf(riskbookLearnPrompt, r.langName, 3000)
-	resp, err := r.backend.ChatStream(ctx, tag.Expand(prompt),
+	resp, err := r.backend.ChatStream(llm.WithSource(ctx, session.UsageRiskbookLearn), tag.Expand(prompt),
 		[]llm.Message{{Role: llm.RoleUser, Content: wrapped}}, nil, nil)
 	if err != nil {
 		return "", err

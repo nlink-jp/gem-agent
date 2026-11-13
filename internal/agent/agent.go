@@ -922,7 +922,7 @@ func (a *Agent) Run(ctx context.Context, input string, onText func(string)) (out
 		// caching can hit. Reuse is sound because guard.Wrap refuses
 		// content containing the tag name — a leaked tag cannot escape
 		// the wrapper, only get its carrier withheld.
-		resp, err := a.backend.ChatStream(ctx, a.tag.Expand(a.system), wrapToolMessages(a.history, a.tag, a.instructionTools), a.toolDefs, onText)
+		resp, err := a.backend.ChatStream(llm.WithSource(ctx, session.UsageMain), a.tag.Expand(a.system), wrapToolMessages(a.history, a.tag, a.instructionTools), a.toolDefs, onText)
 		if err == nil {
 			turnRounds++
 		}

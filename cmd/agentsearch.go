@@ -178,7 +178,7 @@ func registerAgenticSearch(registry *tools.Registry, opts agenticSearchOptions) 
 					subSink.Usage(u.Prompt, u.Output, u.Thoughts, u.Cached, u.ToolPrompt, u.Total)
 				},
 			})
-			report, runErr := sub.Run(ctx, question, nil)
+			report, runErr := sub.Run(llm.WithSource(ctx, session.UsageFileSearch), question, nil)
 
 			// The spend happened whether or not the run succeeded.
 			if opts.tally != nil {

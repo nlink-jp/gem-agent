@@ -113,7 +113,7 @@ func askLibrarian(ctx context.Context, backend llm.Backend, registry *tools.Regi
 		return librarianAnswer{}, fmt.Errorf("a tool description contains text that looks like a prompt tag; the catalogue cannot be read safely: %w", err)
 	}
 	system := tag.Expand(fmt.Sprintf(librarianPrompt, language)) + "\n\n" + wrapped
-	resp, err := backend.ChatStream(ctx, system,
+	resp, err := backend.ChatStream(llm.WithSource(ctx, session.UsageLibrarian), system,
 		[]llm.Message{{Role: llm.RoleUser, Content: "Task from the agent: " + strings.TrimSpace(task)}}, nil, nil)
 	if err != nil {
 		return librarianAnswer{}, err

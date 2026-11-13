@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -62,26 +63,32 @@ func (v *Vertex) SetRetryRecorder(fn func(RetryEvent)) {
 
 // retried reports that attempt (1-based, the one about to start) was
 // scheduled after delay because the attempt before it failed with err.
-func (v *Vertex) retried(attempt int, err error, delay time.Duration) {
+// It is called before the wait, so the record's time is when that
+// attempt came back.
+func (v *Vertex) retried(ctx context.Context, attempt int, err error, delay time.Duration) {
 	if v.retries == nil {
 		return
 	}
 	if fn := v.retries.Load(); fn != nil && *fn != nil {
-		(*fn)(RetryEvent{Model: v.model, Attempt: attempt, Max: maxStreamAttempts,
-			Cause: retryCause(err), Error: retryErrorText(err), DelayMS: int(delay.Milliseconds())})
+		(*fn)(RetryEvent{Model: v.model, Source: sourceOf(ctx), Attempt: attempt, Max: maxStreamAttempts,
+			Cause: retryCause(err), Status: retryStatus(err), DelayMS: int(delay.Milliseconds())})
 	}
 }
 
-// retryErrorText is err's text within retryErrorRunes, cut on a rune.
-func retryErrorText(err error) string {
-	if err == nil {
-		return ""
+// statusToken is what a machine-readable status looks like: the gRPC
+// code names the endpoint answers with ("RESOURCE_EXHAUSTED").
+var statusToken = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,39}$`)
+
+// retryStatus is the endpoint's status for a failed attempt when it is
+// such a token, and "" otherwise. Nothing else of the error is kept: an
+// upstream's message is free text that can quote back what was sent to
+// it, and a transport error quotes the request's address.
+func retryStatus(err error) string {
+	var apiErr genai.APIError
+	if errors.As(err, &apiErr) && statusToken.MatchString(apiErr.Status) {
+		return apiErr.Status
 	}
-	r := []rune(err.Error())
-	if len(r) > retryErrorRunes {
-		return string(r[:retryErrorRunes]) + "…"
-	}
-	return string(r)
+	return ""
 }
 
 func (v *Vertex) observe(ev StreamEvent) {
@@ -306,7 +313,7 @@ func (v *Vertex) ChatStream(ctx context.Context, system string, messages []Messa
 			// §2): the observer shows the retry and its cause.
 			v.observe(StreamEvent{Kind: "retry", Attempt: attempt + 1, Max: maxStreamAttempts,
 				Cause: retryCause(lastErr), DelayMS: int(delay.Milliseconds())})
-			v.retried(attempt+1, lastErr, delay)
+			v.retried(ctx, attempt+1, lastErr, delay)
 			select {
 			case <-time.After(delay):
 			case <-ctx.Done():

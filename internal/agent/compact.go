@@ -151,7 +151,7 @@ func (a *Agent) summarize(ctx context.Context, msgs []llm.Message) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("isolation failed: %w", err)
 	}
-	resp, err := a.backend.ChatStream(ctx, tag.Expand(compactPrompt),
+	resp, err := a.backend.ChatStream(llm.WithSource(ctx, session.UsageCompact), tag.Expand(compactPrompt),
 		[]llm.Message{{Role: llm.RoleUser, Content: wrapped}}, nil, nil)
 	if err != nil {
 		return "", err

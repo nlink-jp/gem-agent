@@ -76,7 +76,7 @@ func (a *Agent) evaluateCeiling(ctx context.Context, input string) (ceilingVerdi
 	if err != nil {
 		return ceilingVerdict{}, fmt.Errorf("isolation failed: %w", err)
 	}
-	resp, err := a.tierBackend().ChatStream(ctx, tag.Expand(ceilingEvalPrompt),
+	resp, err := a.tierBackend().ChatStream(llm.WithSource(ctx, session.UsageRisk), tag.Expand(ceilingEvalPrompt),
 		[]llm.Message{{Role: llm.RoleUser, Content: wrapped}}, nil, nil)
 	if err != nil {
 		return ceilingVerdict{}, err

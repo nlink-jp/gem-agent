@@ -6,12 +6,12 @@
 
 - **Retries of a model call are recorded in the session transcript**
   (ADR-0116). A call that meets a 429 or a 5xx and waits writes a
-  `model_retry` record for each retry — the model, the attempt, the
-  status and text that failed the one before, and the wait — from the
+  `model_retry` record for each retry — the model, the kind of call, the
+  attempt, the status that failed the one before, and the wait — from the
   main loop and from every side call. A transcript can now tell a call
   that waited on a rate limit from one the endpoint was slow to answer;
   until now a retry was shown in the TUI's status line and kept nowhere.
-  The retry policy itself is unchanged.
+  The endpoint's error message is not recorded, only its status.
 
 ### Fixed
 

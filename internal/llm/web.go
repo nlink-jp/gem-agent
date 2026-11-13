@@ -50,7 +50,7 @@ func (v *Vertex) SearchWeb(ctx context.Context, query string) (string, []WebSour
 		Tools:          []*genai.Tool{{GoogleSearch: &genai.GoogleSearch{}}},
 		SafetySettings: v.safety,
 	}
-	resp, err := v.generateWithRetry(ctx,
+	resp, err := v.generateWithRetry(WithSource(ctx, SourceWebSearch),
 		[]*genai.Content{genai.NewContentFromText(query, genai.RoleUser)}, cfg)
 	if err != nil {
 		return "", nil, Usage{}, fmt.Errorf("grounded search: %w", err)
@@ -71,7 +71,7 @@ func (v *Vertex) FetchURL(ctx context.Context, prompt string) (string, string, U
 		Tools:          []*genai.Tool{{URLContext: &genai.URLContext{}}},
 		SafetySettings: v.safety,
 	}
-	resp, err := v.generateWithRetry(ctx,
+	resp, err := v.generateWithRetry(WithSource(ctx, SourceWebFetch),
 		[]*genai.Content{genai.NewContentFromText(prompt, genai.RoleUser)}, cfg)
 	if err != nil {
 		return "", "", Usage{}, fmt.Errorf("url fetch: %w", err)
@@ -153,7 +153,7 @@ func (v *Vertex) generateWithRetry(ctx context.Context, contents []*genai.Conten
 	for attempt := 0; attempt < maxStreamAttempts; attempt++ {
 		if attempt > 0 {
 			delay := bo.Duration(attempt - 1)
-			v.retried(attempt+1, lastErr, delay)
+			v.retried(ctx, attempt+1, lastErr, delay)
 			select {
 			case <-time.After(delay):
 			case <-ctx.Done():

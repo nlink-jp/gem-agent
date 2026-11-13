@@ -336,7 +336,7 @@ func (a *Agent) evaluateRisk(ctx context.Context, tc llm.ToolCall, withContext b
 		return riskVerdict{}, fmt.Errorf("isolation failed: %w", err)
 	}
 
-	resp, err := a.tierBackend().ChatStream(ctx, tag.Expand(prompt),
+	resp, err := a.tierBackend().ChatStream(llm.WithSource(ctx, session.UsageRisk), tag.Expand(prompt),
 		[]llm.Message{{Role: llm.RoleUser, Content: wrapped}}, nil, nil)
 	if err != nil {
 		return riskVerdict{}, err

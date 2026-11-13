@@ -186,23 +186,50 @@ type Backend interface {
 type RetryEvent struct {
 	// Model is the model the failed attempt addressed.
 	Model string
+	// Source is which kind of call it was, in the words the usage
+	// record uses ("main", "risk", "compact", …): the caller's WithSource.
+	// "" when the caller did not say.
+	Source string
 	// Attempt is the attempt about to start (2 is the first retry),
 	// out of Max.
 	Attempt int
 	Max     int
-	// Cause is the status that failed the attempt before it ("429",
-	// "503", …), or "error".
+	// Cause is the HTTP status that failed the attempt before it
+	// ("429", "503", …).
 	Cause string
-	// Error is that attempt's error text, cut to retryErrorRunes: the
-	// endpoint's own words for why, which the token above drops.
-	Error string
+	// Status is the endpoint's machine-readable status for that attempt
+	// ("RESOURCE_EXHAUSTED", "UNAVAILABLE", …), or "" when it sent none
+	// that is a plain token. The endpoint's message is not kept: it is
+	// free text this runtime does not control.
+	Status string
 	// DelayMS is the backoff wait before Attempt starts.
 	DelayMS int
 }
 
-// retryErrorRunes bounds RetryEvent.Error. An endpoint's refusal is a
-// sentence or two; the bound is for the one that is not.
-const retryErrorRunes = 300
+// The sources of the one-shot calls this package makes itself; they are
+// the usage record's names for the same calls.
+const (
+	SourceWebSearch = "web_search"
+	SourceWebFetch  = "web_fetch"
+)
+
+type sourceKey struct{}
+
+// WithSource names the kind of model call made under ctx, for the retry
+// record. The outermost name stands: a call made on behalf of another —
+// the agentic search child's own loop — keeps the name of the tool that
+// started it, as its usage record does.
+func WithSource(ctx context.Context, source string) context.Context {
+	if _, ok := ctx.Value(sourceKey{}).(string); ok {
+		return ctx
+	}
+	return context.WithValue(ctx, sourceKey{}, source)
+}
+
+func sourceOf(ctx context.Context) string {
+	s, _ := ctx.Value(sourceKey{}).(string)
+	return s
+}
 
 // StreamEvent is turn observability (ADR-0033): the backend reports
 // stream liveness, retries, and thought summaries to whoever is

@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"google.golang.org/genai"
 )
@@ -77,18 +76,24 @@ func (l *retryLog) events() []RetryEvent {
 }
 
 // A stream that waited out a rate limit hands the recorder one event
-// per wait: the model asked, the attempt about to start, the status
-// that failed the one before, and the backoff. Without the record the
-// transcript shows only a call that took longer.
+// per wait: the model asked and the kind of call, the attempt about to
+// start, the status that failed the one before, and the backoff. Without
+// the record the transcript shows only a call that took longer.
 func TestStreamRetryReachesTheRecorder(t *testing.T) {
 	srv, calls := rateLimited(t, 1)
 	v := localVertex(t, srv, "main-model")
 	var log retryLog
-	v.SetRetryRecorder(log.record)
+	// The record is written before the wait, so its time is when the
+	// refused attempt came back: the second request has not been sent.
+	var sentWhenRecorded int32
+	v.SetRetryRecorder(func(ev RetryEvent) {
+		sentWhenRecorded = calls.Load()
+		log.record(ev)
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	resp, err := v.ChatStream(ctx, "", []Message{{Role: RoleUser, Content: "hi"}}, nil, nil)
+	resp, err := v.ChatStream(WithSource(ctx, "main"), "", []Message{{Role: RoleUser, Content: "hi"}}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatStream: %v", err)
 	}
@@ -102,35 +107,53 @@ func TestStreamRetryReachesTheRecorder(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("recorder got %d events, want 1: %+v", len(got), got)
 	}
-	ev := got[0]
-	if ev.Model != "main-model" || ev.Attempt != 2 || ev.Max != maxStreamAttempts || ev.Cause != "429" {
-		t.Errorf("event = %+v, want model main-model, attempt 2 of %d, cause 429", ev, maxStreamAttempts)
+	want := RetryEvent{Model: "main-model", Source: "main", Attempt: 2, Max: maxStreamAttempts,
+		Cause: "429", Status: "RESOURCE_EXHAUSTED", DelayMS: got[0].DelayMS}
+	if got[0] != want {
+		t.Errorf("event = %+v, want %+v", got[0], want)
 	}
-	if ev.DelayMS <= 0 {
-		t.Errorf("delay_ms = %d — the record must carry the wait", ev.DelayMS)
+	if min := int((retryBase - retryJitter).Milliseconds()); got[0].DelayMS < min {
+		t.Errorf("delay_ms = %d, want at least %d — the record must carry the wait", got[0].DelayMS, min)
 	}
-	if !strings.Contains(ev.Error, "Resource exhausted") {
-		t.Errorf("error = %q, want the endpoint's own words", ev.Error)
+	if sentWhenRecorded != 1 {
+		t.Errorf("%d requests had been sent when the retry was recorded, want 1 — the record must precede the wait", sentWhenRecorded)
 	}
 }
 
-// The endpoint's text is kept within a bound and cut on a rune: a
-// refusal that quotes a page back must not put it in the transcript.
-func TestRetryErrorTextIsBounded(t *testing.T) {
-	if got := retryErrorText(nil); got != "" {
-		t.Errorf("nil error = %q", got)
+// The source is the outermost name a caller gave: a call made on behalf
+// of another keeps the name of what started it, and a caller that gave
+// none leaves it empty rather than guessed.
+func TestRetrySourceIsTheOutermostName(t *testing.T) {
+	ctx := context.Background()
+	if got := sourceOf(ctx); got != "" {
+		t.Errorf("no source = %q", got)
 	}
-	short := errors.New("quota exceeded")
-	if got := retryErrorText(short); got != "quota exceeded" {
-		t.Errorf("short error = %q", got)
+	outer := WithSource(ctx, "agentic_file_search")
+	if got := sourceOf(WithSource(outer, "main")); got != "agentic_file_search" {
+		t.Errorf("nested source = %q, want the outer one", got)
 	}
-	long := errors.New(strings.Repeat("語", retryErrorRunes+50))
-	got := retryErrorText(long)
-	if n := len([]rune(got)); n != retryErrorRunes+1 {
-		t.Errorf("long error kept %d runes, want %d and the ellipsis", n, retryErrorRunes)
-	}
-	if !utf8.ValidString(got) || !strings.HasSuffix(got, "…") {
-		t.Errorf("long error was not cut on a rune with an ellipsis: %q", got[len(got)-8:])
+}
+
+// Only a machine-readable status token is kept from the endpoint's
+// answer. Its message, and the text of an error that is not an API
+// error at all, can quote back what was sent and never reach the record.
+func TestRetryStatusKeepsOnlyAToken(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		want string
+	}{
+		{genai.APIError{Code: 429, Status: "RESOURCE_EXHAUSTED", Message: "quota for projects/123 exceeded"}, "RESOURCE_EXHAUSTED"},
+		{genai.APIError{Code: 503, Status: "UNAVAILABLE"}, "UNAVAILABLE"},
+		{genai.APIError{Code: 503, Status: "the key AIza… is not recognised"}, ""},
+		{genai.APIError{Code: 503, Status: "lower_case"}, ""},
+		{genai.APIError{Code: 503, Status: strings.Repeat("A", 41)}, ""},
+		{genai.APIError{Code: 503}, ""},
+		{errors.New(`Post "https://example.invalid/v1/projects/p": connection reset`), ""},
+		{nil, ""},
+	} {
+		if got := retryStatus(c.err); got != c.want {
+			t.Errorf("retryStatus(%v) = %q, want %q", c.err, got, c.want)
+		}
 	}
 }
 
@@ -173,15 +196,15 @@ func TestOneShotRetryReachesTheRecorder(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	contents := []*genai.Content{genai.NewContentFromText("hi", genai.RoleUser)}
-	if _, err := v.generateWithRetry(ctx, contents, &genai.GenerateContentConfig{}); err != nil {
+	if _, err := v.generateWithRetry(WithSource(ctx, SourceWebFetch), contents, &genai.GenerateContentConfig{}); err != nil {
 		t.Fatalf("generateWithRetry: %v", err)
 	}
 	if n := calls.Load(); n != 2 {
 		t.Fatalf("server saw %d requests, want 2", n)
 	}
 	got := log.events()
-	if len(got) != 1 || got[0].Model != "web-model" || got[0].Attempt != 2 || got[0].Cause != "429" || got[0].DelayMS <= 0 {
-		t.Fatalf("recorder got %+v, want one event: web-model, attempt 2, cause 429, a delay", got)
+	if len(got) != 1 || got[0].Model != "web-model" || got[0].Source != "web_fetch" || got[0].Attempt != 2 || got[0].Cause != "429" || got[0].Status != "RESOURCE_EXHAUSTED" || got[0].DelayMS <= 0 {
+		t.Fatalf("recorder got %+v, want one event: web-model, web_fetch, attempt 2, cause 429, a delay", got)
 	}
 }
 
@@ -203,7 +226,7 @@ func TestNoRetryNoRecordAndNoRecorderIsHarmless(t *testing.T) {
 
 	bare := &Vertex{model: "bare"} // no recorder holder at all
 	bare.SetRetryRecorder(log.record)
-	bare.retried(2, errors.New("429"), time.Second)
+	bare.retried(ctx, 2, genai.APIError{Code: 429}, time.Second)
 	if got := log.events(); len(got) != 0 {
 		t.Errorf("a backend with no holder recorded %+v", got)
 	}
