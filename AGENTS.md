@@ -18,8 +18,9 @@ on-demand [health check](docs/en/reference/drill.md).
   stability contract applies: breaking changes go through the org's
   breaking-change process.
 - **Spec:** `docs/en/gem-agent-rfp.md` / `docs/ja/gem-agent-rfp.ja.md` (canonical)
-- **Docs entry point:** `docs/en/INDEX.md` / `docs/ja/INDEX.ja.md` — three
-  tiers (reference / adr / history). Add a doc to the INDEX, not to a
+- **Docs entry point:** `docs/en/INDEX.md` / `docs/ja/INDEX.ja.md` — the
+  user manual (`manual.md` / `manual.ja.md`, the one document written for
+  operators) and three maintainer tiers (reference / adr / history). Add a doc to the INDEX, not to a
   parallel list in this file or the README.
 
 ## The sibling runtime
@@ -228,7 +229,7 @@ internal/termimg/  inline images in a DECLARED box (ADR-0089): capability
                    which withdrew the MCP intake as the source)
 scripts/           codesign-darwin.sh / notarize-darwin.sh (org templates, verbatim),
                    docs-mirror-check.sh, verify-release-selftest.sh (make check)
-docs/en/, docs/ja/ INDEX + reference/ + adr/ (en: no suffix; ja: .ja.md)
+docs/en/, docs/ja/ INDEX + manual + reference/ + adr/ (en: no suffix; ja: .ja.md)
 ```
 
 ## Docs routing (change kind → documents)
@@ -250,6 +251,7 @@ the rows marked *checked* fail `make check` when missed.
 | `/clear`, reload or startup-order behaviour | integration.md (reloads), sessions.md §Session ids, architecture.md §Configuration |
 | `!`, slash commands, keys, dialogs | interface.md |
 | anything an earlier ADR states differently | an *Amended by* line under that ADR's table (see ADR-0001/0004/0022/0023) |
+| anything an operator sees or does — a flag, key, default, limit, command, key binding, dialog, notice, file location | manual.md: the chapter that explains it **and** the appendix table that lists it (A flags, B slash commands, C tools, D files, E environment variables, F troubleshooting) |
 | every behaviour change | CHANGELOG, README.md/README.ja.md, this file's Structure and Gotchas when non-obvious |
 
 A `fix:` that changes structure (a new package, a single decision point,

@@ -13,6 +13,10 @@ Vertex AI Gemini 3.x をバックエンドとする CLI エージェントラン
 
 [English README](README.md)
 
+使い方は **[取扱説明書](docs/ja/manual.ja.md)** にまとめてあります — 導入から
+日々の操作、設定、安全の仕組みまでを順に読める 1 冊です。この README は
+概要と、各機能の要点です。
+
 ## Why
 
 gem-agent は独立したエージェントランタイムです: Vertex AI Gemini 上の
@@ -252,7 +256,9 @@ make test
 
 ## ドキュメント
 
-入口は [**docs/ja/INDEX.ja.md**](docs/ja/INDEX.ja.md)
+使う人のための文書は [**取扱説明書**](docs/ja/manual.ja.md)
+（[English](docs/en/manual.md)）です。文書全体の入口は
+[**docs/ja/INDEX.ja.md**](docs/ja/INDEX.ja.md)
 （[English](docs/en/INDEX.md)）— 複数箇所で並列維持する一覧ではなく、
 カタログ 1 箇所を正とする構成です。[RFP](docs/ja/gem-agent-rfp.ja.md)
 （仕様の正本）、上でリンクした機能分冊 7 本、

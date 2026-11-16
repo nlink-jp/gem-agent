@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- **A user manual** (`docs/en/manual.md`, `docs/ja/manual.ja.md`). The
+  documentation so far was the README and ten maintainer references, each
+  written beside the feature it describes; nothing read from the start for
+  someone who only wants to use the tool. The manual is that one book:
+  installing, a first session, the screen and keys, attachments, approval
+  and how to trade its friction against safety, sessions, directories
+  outside the project, one-shot runs, instruction files and trust, MCP,
+  skills, hooks, a configuration reference, audit logging, what the safety
+  model does and does not cover, and appendices for looking a name up. The
+  references stay as the maintainer-facing detail. No behaviour changes.
+
 ## [0.103.0] - 2026-11-16
 
 ### Added

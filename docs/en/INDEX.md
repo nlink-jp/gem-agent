@@ -1,12 +1,24 @@
 # Documentation Index
 
-Entry point for gem-agent's maintainer-facing documentation. For
-user-facing material see [`README.md`](../../README.md).
+Entry point for gem-agent's documentation. The user manual is the
+document for people who use the tool; everything under Reference and below
+is maintainer-facing detail and the reasons behind it.
 
 Japanese mirror: [`INDEX.ja.md`](../ja/INDEX.ja.md). `scripts/docs-mirror-check.sh`
 enforces the structural half in `make check` — every `docs/en` file has its
 `docs/ja` counterpart and back, the ADR catalogue is complete and ordered in
 both, and the code spans of each pair agree. Prose parity is the author's job.
+
+## User manual
+
+- [`manual.md`](manual.md) — one book an operator reads from the start:
+  installing, the first session, the screen and keys, attachments, approval,
+  balancing approval against safety, sessions, directories outside the
+  project, one-shot runs, instruction files and trust, MCP, skills and
+  hooks, the configuration reference, audit logging, the safety model and
+  its limits, and appendices (commands, tools, files, environment
+  variables, troubleshooting, glossary). Updated in the same commit as any
+  change an operator can see.
 
 ## Specification
 

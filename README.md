@@ -13,6 +13,11 @@ minimal, sandboxed, and usable both interactively and headlessly.
 
 [日本語版 README](README.ja.md)
 
+**[The user manual](docs/en/manual.md)** is the place to learn the tool — one
+book in reading order, from installation through daily use, configuration
+and the safety model. This README is the overview and the gist of each
+feature.
+
 ## Why
 
 gem-agent is an independent agent runtime: a minimal, auditable agent loop
@@ -285,7 +290,9 @@ make test
 
 ## Documentation
 
-[**docs/en/INDEX.md**](docs/en/INDEX.md) is the entry point
+The document for people who use the tool is the
+[**user manual**](docs/en/manual.md) ([日本語](docs/ja/manual.ja.md)).
+[**docs/en/INDEX.md**](docs/en/INDEX.md) is the entry point to the whole set
 ([日本語](docs/ja/INDEX.ja.md)) — one catalog rather than a list
 maintained in several places. It covers the
 [RFP](docs/en/gem-agent-rfp.md) (the canonical spec), the seven
