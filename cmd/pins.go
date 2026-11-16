@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -73,8 +74,15 @@ func checkPins(cfg *config.Config, policyFile *config.PolicyFile, policyPath, pr
 	current, capNotes := trustpin.Compute(projectDir)
 	notes = append(notes, capNotes...)
 	rec, recErr := recordedPolicy(policyPath, projectDir, policyFile)
-	if recErr != nil {
-		notes = append(notes, fmt.Sprintf("could not re-read the trust record (%v); comparing with what this session last read", recErr))
+	switch {
+	case errors.Is(recErr, errRecordLost):
+		// The file was read; it is the record that is missing. Each file's
+		// own note still names `trust --accept`, which cannot help when the
+		// project's trust went with the pins: a restart is what records
+		// them again.
+		notes = append(notes, "project trust: the policy file no longer records this project's trusted files — comparing with what this session last read; restart to record them again")
+	case recErr != nil:
+		notes = append(notes, fmt.Sprintf("project trust: could not read the policy file (%v) — comparing with what this session last read", recErr))
 	}
 	if !rec.HasPins(projectDir) {
 		if !interactive {
@@ -320,6 +328,8 @@ func savePins(policyPath, projectDir string, pins trustpin.Pins, policyFile *con
 // reads as "nothing pinned yet", which loads everything, and a policy
 // file deleted and then rewritten by a session in another project is
 // exactly that. The error is for a caller that can say so.
+var errRecordLost = errors.New("the policy file no longer records this project's trusted files")
+
 func recordedPolicy(policyPath, projectDir string, session *config.PolicyFile) (*config.PolicyFile, error) {
 	if policyPath == "" {
 		return session, nil
@@ -335,9 +345,40 @@ func recordedPolicy(policyPath, projectDir string, session *config.PolicyFile) (
 		return session, err
 	}
 	if session != nil && session.HasPins(projectDir) && !fresh.HasPins(projectDir) {
-		return session, fmt.Errorf("the policy file no longer records this project's trusted files")
+		return session, errRecordLost
 	}
 	return fresh, nil
+}
+
+// adoptPolicy makes the session's copy follow the file after a write,
+// with one exception: pins the session holds for the project stay when
+// the file has none. "The file can re-trust; it cannot un-pin"
+// (recordedPolicy) holds only while the session's copy remembers the
+// pins, and every write replaced that copy with the file. A /settings
+// change made after the policy file was deleted recreated it empty, the
+// copy followed, and the next re-check read "nothing pinned yet" and
+// loaded what had changed. Every `= *fresh` in this package goes through
+// here (TestTheSessionsCopyIsReplacedInOnePlace).
+func adoptPolicy(session, fresh *config.PolicyFile, projectDir string) {
+	if session == nil || fresh == nil {
+		return
+	}
+	var kept config.ProjectPolicy
+	had := session.HasPins(projectDir)
+	if had {
+		kept = session.Projects[session.ProjectKey(projectDir)]
+	}
+	*session = *fresh
+	if !had || session.HasPins(projectDir) {
+		return
+	}
+	if session.Projects == nil {
+		session.Projects = map[string]config.ProjectPolicy{}
+	}
+	key := session.ProjectKey(projectDir)
+	entry := session.Projects[key]
+	entry.Pins, entry.PinnedAt = kept.Pins, kept.PinnedAt
+	session.Projects[key] = entry
 }
 
 // mutatePins edits the recorded pins under the policy file's lock: fn
@@ -357,9 +398,7 @@ func mutatePins(policyPath, projectDir string, policyFile *config.PolicyFile, fn
 	if err != nil {
 		return err
 	}
-	if policyFile != nil {
-		*policyFile = *fresh
-	}
+	adoptPolicy(policyFile, fresh, projectDir)
 	return nil
 }
 

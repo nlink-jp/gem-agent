@@ -267,6 +267,19 @@ this amendment: "no pins" reads as "nothing pinned yet", which loads
 everything, and a policy file deleted and then rewritten by a session
 in another project is exactly that state.
 
+That guard rests on the session's copy remembering the pins, and every
+write the session made replaced the copy with the file. The copy is now
+replaced in one place, `adoptPolicy`, which keeps pins the file lost: a
+`/settings` change after the file was deleted no longer makes the
+session forget them. The second round of the same review found this;
+it predates the amendment.
+
+Accepted residue, fail-closed: with the record lost, an approved write
+records a set holding only the written name, so the other trusted files
+read as added and stay out until a restart re-trusts them. Seeding the
+file from the session's memory would have the session re-create a
+record the operator removed.
+
 A write into a name this session left out is still never re-pinned
 (§1). `repinnable` answers false for it as the write begins, so the
 write says so even when the record on disk matches the file again.

@@ -30,7 +30,15 @@
   record this session has for the project, the session keeps comparing
   with what it last read, so a changed file is still left out rather
   than loaded, and the last two cases are reported. `.gem-agent.toml` is the
-  exception to the reload: it is read once, at startup. Checked on a real
+  exception to the reload: it is read once, at startup.
+- **A `/settings` change no longer makes a session forget the project's
+  trusted files.** Every policy write replaced the session's copy of the
+  trust record with the file. If the policy file had been deleted while
+  the session ran, the first `/settings` change recreated it empty, the
+  copy followed, and from then on `/clear` and the reloads treated the
+  project as never pinned and loaded files that had changed. The
+  session now keeps the record it holds when the file has none. Found
+  by the review of this release; earlier versions had it. Checked on a real
   session, without a model call: after `trust --accept` elsewhere, the
   notice after a `!` command and the one at `/clear` stopped.
 
