@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.103.0] - 2026-11-16
+
 ### Added
 
 - **`xhigh` is a thinking level** (ADR-0118). Gemini 4 Hydrogen has a
