@@ -34,6 +34,11 @@ func TestThinkingLevelSwitchMidConversation(t *testing.T) {
 		if first, second, ok = strings.Cut(s, ","); !ok {
 			t.Fatalf("GEM_TEST_SWITCH = %q, want \"first,second\"", s)
 		}
+		// A word with no wire value would run at the model's own default
+		// and pass as a switch that never happened.
+		if ThinkingLevel(first) == "" || ThinkingLevel(second) == "" {
+			t.Fatalf("GEM_TEST_SWITCH = %q: both must be level words", s)
+		}
 	}
 	at := func(level string) *Vertex {
 		v, err := NewVertex(ctx, project, "global", model, "off", level, false)

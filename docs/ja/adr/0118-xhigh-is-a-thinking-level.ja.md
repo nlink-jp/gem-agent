@@ -69,7 +69,9 @@ SDK（`google.golang.org/genai` v1.77.0、最新版）にこの値の定数は�
    `[model].librarian_thinking`、`--thinking`、`/thinking`、/settings の
    `model.thinking` 行。行は `default, minimal, low, medium, high, xhigh` を
    巡回する。これらが使う判定は、引き続き `config.ValidThinking` の 1 つ
-   だけである。
+   だけである。語はそこにある 1 つの一覧に置く: 判定・起動時のエラー・行の
+   巡回はこの一覧を読み、語を足すと、通信の値、両言語の使い方とヘルプの行、
+   フラグの説明がその語を書くまでテストが落ちる。
 2. **通信には文字列 `XHIGH` で載せる。** SDK に定数が無いので gem-agent が
    定数を定義する。値はテストで固定する。
 3. **どのモデルが受け付けるかは、引き続き API が決める**（ADR-0025 §4）。

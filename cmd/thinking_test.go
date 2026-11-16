@@ -1,8 +1,12 @@
 package cmd
 
 import (
+	"slices"
 	"strings"
 	"testing"
+	"unicode"
+
+	"google.golang.org/genai"
 
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/llm"
@@ -162,21 +166,38 @@ func TestXHighTurnsTheDial(t *testing.T) {
 // the wire value, the usage and help lines in both languages, and the
 // flag's help say it too (ADR-0118).
 func TestEveryLevelIsSpelledWhereverItIsRead(t *testing.T) {
-	flagHelp := rootCmd.Flags().Lookup("thinking").Usage
-	for _, level := range config.ThinkingLevels() {
-		if llm.ThinkingLevel(level) == "" {
-			t.Errorf("%q has no wire value", level)
+	// Whole words only: "high" inside "xhigh" must not count as "high".
+	words := func(s string) []string {
+		return strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) })
+	}
+	helpLine := func(help string) string {
+		for _, line := range strings.Split(help, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "/thinking") {
+				return line
+			}
 		}
-		if !strings.Contains(flagHelp, level) {
-			t.Errorf("--thinking help does not list %q: %s", level, flagHelp)
+		return ""
+	}
+	flagHelp := words(rootCmd.Flags().Lookup("thinking").Usage)
+	wire := map[genai.ThinkingLevel]string{}
+	for _, level := range config.ThinkingLevels() {
+		w := llm.ThinkingLevel(level)
+		if w == "" {
+			t.Errorf("%q has no wire value", level)
+		} else if other, dup := wire[w]; dup {
+			t.Errorf("%q and %q share the wire value %q", level, other, w)
+		}
+		wire[w] = level
+		if !slices.Contains(flagHelp, level) {
+			t.Errorf("--thinking help does not list %q: %v", level, flagHelp)
 		}
 		for _, lang := range []uitext.Lang{uitext.EN, uitext.JA} {
 			msgs := uitext.For(lang)
-			if !strings.Contains(msgs.ThinkingUsage, level) {
+			if !slices.Contains(words(msgs.ThinkingUsage), level) {
 				t.Errorf("%v usage line does not list %q", lang, level)
 			}
-			if !strings.Contains(msgs.Help, level+"|") {
-				t.Errorf("%v /help does not list %q", lang, level)
+			if !slices.Contains(words(helpLine(msgs.Help)), level) {
+				t.Errorf("%v /help line for /thinking does not list %q: %q", lang, level, helpLine(msgs.Help))
 			}
 		}
 	}

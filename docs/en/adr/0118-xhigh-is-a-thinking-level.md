@@ -70,7 +70,10 @@ measured for `high` and `low`, now for the new level.
    `[model].librarian_thinking`, `--thinking`, `/thinking`, and the
    `model.thinking` row in /settings, which now cycles `default, minimal,
    low, medium, high, xhigh`. `config.ValidThinking` stays the single
-   predicate all of them use.
+   predicate all of them use, and the words now live in one list there:
+   the predicate, the startup errors and the row's cycle read it, and a
+   test fails until the wire value, the usage and help lines in both
+   languages, and the flag's help spell a word added to it.
 2. **It is sent as the wire string `XHIGH`**, through a constant
    gem-agent defines because the SDK has none. A test holds the value.
 3. **Which model takes it stays the API's call** (ADR-0025 §4). `xhigh`

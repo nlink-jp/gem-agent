@@ -37,6 +37,10 @@ func TestThinkingLevelsAccepted(t *testing.T) {
 		level := word
 		if level == "default" {
 			level = ""
+		} else if ThinkingLevel(level) == "" {
+			// A word with no wire value would be sent as the model's own
+			// default and logged as accepted.
+			t.Fatalf("GEM_TEST_LEVELS: %q is not a level word", word)
 		}
 		v, err := NewVertex(ctx, project, "global", model, "off", level, false)
 		if err != nil {

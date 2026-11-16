@@ -957,7 +957,10 @@ a new hook) is an architecture change and takes the same rows as a
   read it. Three places still spell the word by hand: `llm.ThinkingLevel`
   (the wire value), the usage and /help lines in `uitext` (en and ja),
   and the `--thinking` flag's help in `cmd/root.go`;
-  `TestEveryLevelIsSpelledWhereverItIsRead` fails until they do. `xhigh`
+  `TestEveryLevelIsSpelledWhereverItIsRead` fails until they do. No test
+  holds the documents that list the words — `config.example.toml`,
+  configuration.md and interface.md (en and ja) — or the live test's
+  default list; grep for the last word in the list when adding one. `xhigh`
   has no SDK constant: `thinkingLevelXHigh` spells the wire string, and
   `TestXHighReachesTheWire` holds it. Which model takes a level is never
   decided here — no table of models; the API refuses and the 400 hint
