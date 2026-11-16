@@ -256,10 +256,23 @@ Every comparison — `checkPins`, the note after an operator command, the
 check before an approved write, and "are there pins yet" before a
 re-pin — now reads the policy file as it is at that moment
 (`recordedPolicy`). A read does not replace the session's own copy:
-other goroutines read it, and a mutation is what refreshes it. A file
-that is gone or does not parse leaves the session's copy as the record,
-so a comparison errs toward leaving a changed file out, never toward
-loading one; `checkPins` says so when the file could not be read.
+other goroutines read it, and a mutation is what refreshes it.
+
+The file can re-trust; it cannot un-pin. A file that is gone, that does
+not parse, or that no longer holds pins the session has for the project
+leaves the session's copy as the record, so a comparison errs toward
+leaving a changed file out, never toward loading one; `checkPins` says
+so in the last two cases. The third was found by the release review of
+this amendment: "no pins" reads as "nothing pinned yet", which loads
+everything, and a policy file deleted and then rewritten by a session
+in another project is exactly that state.
+
+A write into a name this session left out is still never re-pinned
+(§1). `repinnable` answers false for it as the write begins, so the
+write says so even when the record on disk matches the file again.
+
+`.gem-agent.toml` is read once, at startup; re-trusting it takes effect
+at the next start.
 
 Not changed: nothing mid-session asks, and granting or withdrawing trust
 itself still takes a restart.

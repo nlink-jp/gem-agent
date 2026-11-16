@@ -72,7 +72,7 @@ func checkPins(cfg *config.Config, policyFile *config.PolicyFile, policyPath, pr
 	}
 	current, capNotes := trustpin.Compute(projectDir)
 	notes = append(notes, capNotes...)
-	rec, recErr := recordedPolicy(policyPath, policyFile)
+	rec, recErr := recordedPolicy(policyPath, projectDir, policyFile)
 	if recErr != nil {
 		notes = append(notes, fmt.Sprintf("could not re-read the trust record (%v); comparing with what this session last read", recErr))
 	}
@@ -184,7 +184,7 @@ func repinName(policyPath, projectDir, name string, policyFile *config.PolicyFil
 	if name == "" || excluded[name] {
 		return nil
 	}
-	if rec, _ := recordedPolicy(policyPath, policyFile); !rec.HasPins(projectDir) {
+	if rec, _ := recordedPolicy(policyPath, projectDir, policyFile); !rec.HasPins(projectDir) {
 		return nil
 	}
 	current, _ := trustpin.Compute(projectDir)
@@ -205,8 +205,19 @@ func repinName(policyPath, projectDir, name string, policyFile *config.PolicyFil
 // is current: the write creates it, and the operator sees all of it.
 func pinIsCurrent(policyFile *config.PolicyFile, policyPath, projectDir, name string) bool {
 	current, _ := trustpin.Compute(projectDir)
-	rec, _ := recordedPolicy(policyPath, policyFile)
+	rec, _ := recordedPolicy(policyPath, projectDir, policyFile)
 	return current[name] == rec.PinsFor(projectDir)[name]
+}
+
+// repinnable reports, as an operator-approved write begins, whether it
+// may re-pin name when it succeeds: the file is what its pin records,
+// and this session loaded it. A name the session left out is not
+// re-pinned by a write into it even when the record now matches the
+// file (a `trust --accept` elsewhere, with no /clear since): repinName
+// refuses it, and answering false here is what makes the write say so
+// instead of passing as recorded.
+func repinnable(policyFile *config.PolicyFile, policyPath, projectDir, name string, excluded map[string]bool) bool {
+	return !excluded[name] && pinIsCurrent(policyFile, policyPath, projectDir, name)
 }
 
 // writeGuard carries the pre-write answer of pinIsCurrent from the
@@ -250,7 +261,7 @@ func pinChangesNote(cfg *config.Config, policyFile *config.PolicyFile, policyPat
 	if !trusted || !cfg.Approval.PinTrustedFiles {
 		return ""
 	}
-	rec, _ := recordedPolicy(policyPath, policyFile)
+	rec, _ := recordedPolicy(policyPath, projectDir, policyFile)
 	if !rec.HasPins(projectDir) {
 		return ""
 	}
@@ -301,22 +312,30 @@ func savePins(policyPath, projectDir string, pins trustpin.Pins, policyFile *con
 // The session's own copy is not replaced here. Other goroutines read it
 // (the settings panel), and a mutation is what refreshes it.
 //
-// A file that is gone or cannot be read leaves the session's copy as
-// the record, so the comparison errs toward leaving a changed file out,
-// never toward loading one. The error is for a caller that can say so.
-func recordedPolicy(policyPath string, policyFile *config.PolicyFile) (*config.PolicyFile, error) {
+// The file can re-trust; it cannot un-pin. A file that is gone, that
+// cannot be read, or that no longer holds pins this session has for the
+// project leaves the session's copy as the record, so the comparison
+// errs toward leaving a changed file out, never toward loading one.
+// The last case is the one that would otherwise fail open: "no pins"
+// reads as "nothing pinned yet", which loads everything, and a policy
+// file deleted and then rewritten by a session in another project is
+// exactly that. The error is for a caller that can say so.
+func recordedPolicy(policyPath, projectDir string, session *config.PolicyFile) (*config.PolicyFile, error) {
 	if policyPath == "" {
-		return policyFile, nil
+		return session, nil
 	}
 	if _, err := os.Stat(policyPath); err != nil {
 		if os.IsNotExist(err) {
-			return policyFile, nil
+			return session, nil
 		}
-		return policyFile, err
+		return session, err
 	}
 	fresh, err := config.LoadPolicyFile(policyPath)
 	if err != nil {
-		return policyFile, err
+		return session, err
+	}
+	if session != nil && session.HasPins(projectDir) && !fresh.HasPins(projectDir) {
+		return session, fmt.Errorf("the policy file no longer records this project's trusted files")
 	}
 	return fresh, nil
 }

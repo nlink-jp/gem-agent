@@ -1966,8 +1966,9 @@ this command to make trusted a project for which you have not yet answered the
 trust question.
 
 When a session is running, run `gem-agent trust --accept` in another terminal and
-then type `/clear` in that session. The new content is loaded without a
-restart.
+then type `/clear` in that session. The new content of instruction files,
+skills and `.mcp.json` is loaded without a restart. `.gem-agent.toml` alone is
+read only at startup, so for that file, restart.
 
 When you approve the model editing an instruction file inside gem-agent, the
 record for that one file is updated automatically.

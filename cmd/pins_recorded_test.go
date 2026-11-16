@@ -152,6 +152,87 @@ func TestAnUnreadableRecordLeavesTheSessionsCopy(t *testing.T) {
 	}
 }
 
+// The record on disk can re-trust a file; it cannot un-pin the project.
+// "No pins" reads as "nothing pinned yet", which loads everything, so a
+// policy file that parses but has lost this project's pins must not
+// become the record: deleted and then rewritten by a session in another
+// project, emptied, or restored from an older copy.
+func TestARecordWithoutThisProjectsPinsIsNotTheRecord(t *testing.T) {
+	msgs := uitext.For(uitext.EN)
+	for name, lose := range map[string]func(t *testing.T, policyPath, proj string){
+		"rewritten by a session in another project": func(t *testing.T, policyPath, proj string) {
+			if err := os.Remove(policyPath); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := config.MutatePolicyFile(policyPath, func(pf *config.PolicyFile) {
+				pf.SetTrust(t.TempDir(), config.TrustGranted)
+			}); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"emptied": func(t *testing.T, policyPath, proj string) {
+			if err := os.WriteFile(policyPath, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"trust kept, pins gone": func(t *testing.T, policyPath, proj string) {
+			bare := &config.PolicyFile{Tools: map[string]string{}, Projects: map[string]config.ProjectPolicy{}}
+			bare.SetTrust(proj, config.TrustGranted)
+			if err := bare.Save(policyPath); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg, pf, policyPath, proj := staleSession(t)
+			if err := os.WriteFile(filepath.Join(proj, ".mcp.json"), []byte("{\"changed\":1}\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			lose(t, policyPath, proj)
+			if disk, err := config.LoadPolicyFile(policyPath); err != nil || disk.HasPins(proj) {
+				t.Fatalf("fixture: the file should parse and hold no pins for the project: %v", err)
+			}
+			var out bytes.Buffer
+			ex, notes := checkPins(cfg, pf, policyPath, proj, true, false, nil, &out, msgs)
+			if !ex["AGENTS.md"] || !ex[".mcp.json"] {
+				t.Errorf("changed files were loaded: excluded=%v notes=%v", ex, notes)
+			}
+			if joined := strings.Join(notes, "\n"); !strings.Contains(joined, "no longer records this project's trusted files") {
+				t.Errorf("the operator is not told the record lost the project: %v", notes)
+			}
+			if note := pinChangesNote(cfg, pf, policyPath, proj, true, msgs); !strings.Contains(note, "AGENTS.md changed") {
+				t.Errorf("the note after a command went silent: %q", note)
+			}
+			if pinIsCurrent(pf, policyPath, proj, "AGENTS.md") {
+				t.Error("the changed file reads as current")
+			}
+		})
+	}
+}
+
+// A file this session left out is not re-pinned by an approved write
+// into it, and the write has to say so. After a `trust --accept`
+// elsewhere the file matches the record again; with no /clear since,
+// the session still has it excluded, and the write passed as recorded
+// while repinName skipped it without a word.
+func TestAWriteIntoAFileTheSessionLeftOutSaysSo(t *testing.T) {
+	_, pf, policyPath, proj := staleSession(t)
+	excluded := map[string]bool{"AGENTS.md": true}
+	acceptElsewhere(t, policyPath, proj)
+	if !pinIsCurrent(pf, policyPath, proj, "AGENTS.md") {
+		t.Fatal("fixture: after the re-trust the file should match the record")
+	}
+	if repinnable(pf, policyPath, proj, "AGENTS.md", excluded) {
+		t.Error("a write into a file the session left out reads as one that will be recorded")
+	}
+	if !repinnable(pf, policyPath, proj, "AGENTS.md", nil) {
+		t.Error("a write into a loaded, current file should be recorded")
+	}
+	if !repinnable(pf, policyPath, proj, ".mcp.json", excluded) {
+		t.Error("the exclusion of one name spread to another")
+	}
+}
+
 // Every comparison in pins.go goes through recordedPolicy. A reader
 // added later that compares with the session's copy directly brings the
 // stale answer back, and no behavioural test would know to look for it.
@@ -164,7 +245,9 @@ func TestNoPinIsComparedWithTheStartupCopy(t *testing.T) {
 		if strings.HasPrefix(strings.TrimSpace(l), "//") {
 			continue
 		}
-		for _, direct := range []string{"policyFile.PinsFor(", "policyFile.HasPins("} {
+		// recordedPolicy names the session's copy `session`, and is the one
+		// place that may ask it whether pins exist.
+		for _, direct := range []string{"policyFile.PinsFor(", "policyFile.HasPins(", "session.PinsFor("} {
 			if strings.Contains(l, direct) {
 				t.Errorf("pins.go:%d reads the session's copy of the pins: %s", i+1, strings.TrimSpace(l))
 			}
@@ -173,6 +256,9 @@ func TestNoPinIsComparedWithTheStartupCopy(t *testing.T) {
 	root, err := os.ReadFile("root.go")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(string(root), "writes.begin(tc, name, repinnable(") {
+		t.Error("root.go: an approved write does not ask repinnable whether it will be recorded")
 	}
 	for _, direct := range []string{".PinsFor(", ".HasPins("} {
 		if strings.Contains(string(root), direct) {

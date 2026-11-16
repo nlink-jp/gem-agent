@@ -804,7 +804,8 @@ Two gates run before anything loads:
   `gem-agent trust --accept` records the current content after an
   intended edit. Each comparison reads that record from the policy file
   as it is at that moment, so an `--accept` made in another terminal
-  takes effect at a running session's next `/clear` or reload. A `write_file`/`edit_file` you approved as
+  takes effect at a running session's next `/clear` or reload
+  (`.gem-agent.toml` is read once, at startup, so it takes a restart). A `write_file`/`edit_file` you approved as
   operator-only re-pins that one file, provided it was unchanged when
   the write began; an operator-lane or `!` command re-pins nothing — a
   note names the pinned files that now differ, and the next start

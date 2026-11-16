@@ -269,9 +269,16 @@ a new hook) is an architecture change and takes the same rows as a
   --accept` in another terminal — the very thing the notice tells them
   to run. It is the read side of what `MutatePolicyFile` closed for
   writes. The read does not replace the session's copy (other
-  goroutines read it), and a file that is gone or does not parse leaves
-  that copy as the record: the comparison may leave a changed file out,
-  never load one. `TestNoPinIsComparedWithTheStartupCopy` keeps a new
+  goroutines read it). The file can re-trust; it cannot un-pin: one
+  that is gone, does not parse, or no longer holds pins the session has
+  for the project leaves the session's copy as the record, so the
+  comparison may leave a changed file out, never load one. The third
+  case was found by the release review — "no pins" reads as "nothing
+  pinned yet" and loads everything, and a policy file deleted and
+  rewritten by a session in another project is exactly that. A write
+  into a name the session left out is never re-pinned; `repinnable`
+  answers false for it so the write says so, even when the record
+  matches the file again. `TestNoPinIsComparedWithTheStartupCopy` keeps a new
   reader from going back to `policyFile.PinsFor`. lagent has the same
   fix.
 - **A record a server can write is not a record.** ADR-0105's first
