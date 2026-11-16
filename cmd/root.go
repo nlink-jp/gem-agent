@@ -343,7 +343,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 	}
 	afterDirectShell = func() string {
-		return pinChangesNote(cfg, policyFile, projectDir, projectTrusted, msgs)
+		return pinChangesNote(cfg, policyFile, policyPath, projectDir, projectTrusted, msgs)
 	}
 	defer func() { afterDirectShell = nil }()
 
@@ -1084,7 +1084,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		MediaUpload:      mediaUpload,
 		BeforeOperatorWrite: func(tc llm.ToolCall) {
 			if name := pinNameForWrite(projectDir, tc); name != "" {
-				writes.begin(tc, name, pinIsCurrent(policyFile, projectDir, name))
+				writes.begin(tc, name, pinIsCurrent(policyFile, policyPath, projectDir, name))
 			}
 		},
 		OnOperatorWrite: func(tc llm.ToolCall) {
@@ -1107,7 +1107,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				}
 				return
 			}
-			if n := pinChangesNote(cfg, policyFile, projectDir, projectTrusted, msgs); n != "" {
+			if n := pinChangesNote(cfg, policyFile, policyPath, projectDir, projectTrusted, msgs); n != "" {
 				notice(n)
 			}
 		},

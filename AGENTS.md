@@ -260,6 +260,20 @@ a new hook) is an architecture change and takes the same rows as a
 
 ## Gotchas
 
+- **A pin is compared with the policy file as it is at that moment,
+  never with the copy read at startup** (`recordedPolicy`, cmd/pins.go;
+  ADR-0074's amendment). The session's copy follows the file only when
+  this process writes it, so `/clear`, the reloads, the note after a
+  `!` command and the check before an approved write all answered
+  "changed" for a file the operator had re-trusted with `gem-agent trust
+  --accept` in another terminal — the very thing the notice tells them
+  to run. It is the read side of what `MutatePolicyFile` closed for
+  writes. The read does not replace the session's copy (other
+  goroutines read it), and a file that is gone or does not parse leaves
+  that copy as the record: the comparison may leave a changed file out,
+  never load one. `TestNoPinIsComparedWithTheStartupCopy` keeps a new
+  reader from going back to `policyFile.PinsFor`. lagent has the same
+  fix.
 - **A record a server can write is not a record.** ADR-0105's first
   draft put the "saved: path, sha256" line into the result text; an
   independent review pointed out that a server can print the same line,

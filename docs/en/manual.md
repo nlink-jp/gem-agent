@@ -1965,6 +1965,10 @@ trusted files: 1 recorded (2026-11-16T15:08:19Z)
 this command to make trusted a project for which you have not yet answered the
 trust question.
 
+When a session is running, run `gem-agent trust --accept` in another terminal and
+then type `/clear` in that session. The new content is loaded without a
+restart.
+
 When you approve the model editing an instruction file inside gem-agent, the
 record for that one file is updated automatically.
 

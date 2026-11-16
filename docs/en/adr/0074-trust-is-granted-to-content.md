@@ -240,6 +240,30 @@ entry as listed for a skill); a real-Seatbelt test with controls and
 unit tests over the variants pin it. On a case-sensitive volume the fold
 over-protects a handful of names, which costs nothing.
 
+## Amendment (2026-11-17): the comparison reads the record on disk
+
+The pins were compared with the copy of the policy file the process read
+at startup. That copy follows the file only when the process itself
+writes it, so a `gem-agent trust --accept` run in another terminal — what
+the "not loaded" notice tells the operator to do — changed nothing for
+the running session: `/clear` and the reloads reported the file as
+changed until the next start, the note after a `!` command kept naming
+it, and an approved write to it was not re-pinned. This is the read side
+of what `MutatePolicyFile` closed for writes: a snapshot taken at startup
+is not the record.
+
+Every comparison — `checkPins`, the note after an operator command, the
+check before an approved write, and "are there pins yet" before a
+re-pin — now reads the policy file as it is at that moment
+(`recordedPolicy`). A read does not replace the session's own copy:
+other goroutines read it, and a mutation is what refreshes it. A file
+that is gone or does not parse leaves the session's copy as the record,
+so a comparison errs toward leaving a changed file out, never toward
+loading one; `checkPins` says so when the file could not be read.
+
+Not changed: nothing mid-session asks, and granting or withdrawing trust
+itself still takes a restart.
+
 ## Survey of other agents (2026-09-05)
 
 No mainstream coding agent keys trust on content today: Claude Code,

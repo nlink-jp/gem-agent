@@ -132,7 +132,7 @@ func TestRepinIsScopedToTheApprovedWrite(t *testing.T) {
 		t.Error("an excluded file was re-pinned")
 	}
 	// After a command: nothing moves, the difference is named.
-	note := pinChangesNote(cfg, pf, proj, true, msgs)
+	note := pinChangesNote(cfg, pf, policyPath, proj, true, msgs)
 	if !strings.Contains(note, ".mcp.json changed") || strings.Contains(note, "AGENTS.md") {
 		t.Errorf("pending note = %q", note)
 	}

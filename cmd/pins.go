@@ -72,7 +72,11 @@ func checkPins(cfg *config.Config, policyFile *config.PolicyFile, policyPath, pr
 	}
 	current, capNotes := trustpin.Compute(projectDir)
 	notes = append(notes, capNotes...)
-	if !policyFile.HasPins(projectDir) {
+	rec, recErr := recordedPolicy(policyPath, policyFile)
+	if recErr != nil {
+		notes = append(notes, fmt.Sprintf("could not re-read the trust record (%v); comparing with what this session last read", recErr))
+	}
+	if !rec.HasPins(projectDir) {
 		if !interactive {
 			return nil, append(notes, msgs.PinNonePending)
 		}
@@ -81,7 +85,7 @@ func checkPins(cfg *config.Config, policyFile *config.PolicyFile, policyPath, pr
 		}
 		return nil, append(notes, fmt.Sprintf(msgs.PinRecordedFmt, len(current), pinNames(current)))
 	}
-	recorded := policyFile.PinsFor(projectDir)
+	recorded := rec.PinsFor(projectDir)
 	changes := trustpin.Diff(recorded, current)
 	if len(changes) == 0 {
 		return nil, notes
@@ -177,7 +181,10 @@ func pinNameForWrite(projectDir string, tc llm.ToolCall) string {
 // excluded: the operator has not seen the content it replaced. No
 // pins recorded yet means nothing to update.
 func repinName(policyPath, projectDir, name string, policyFile *config.PolicyFile, excluded map[string]bool) error {
-	if name == "" || excluded[name] || !policyFile.HasPins(projectDir) {
+	if name == "" || excluded[name] {
+		return nil
+	}
+	if rec, _ := recordedPolicy(policyPath, policyFile); !rec.HasPins(projectDir) {
 		return nil
 	}
 	current, _ := trustpin.Compute(projectDir)
@@ -196,9 +203,10 @@ func repinName(policyPath, projectDir, name string, policyFile *config.PolicyFil
 // re-pinned by a later approved edit, because the operator saw the edit
 // and not the drift (verification B). A name with no pin and no file
 // is current: the write creates it, and the operator sees all of it.
-func pinIsCurrent(policyFile *config.PolicyFile, projectDir, name string) bool {
+func pinIsCurrent(policyFile *config.PolicyFile, policyPath, projectDir, name string) bool {
 	current, _ := trustpin.Compute(projectDir)
-	return current[name] == policyFile.PinsFor(projectDir)[name]
+	rec, _ := recordedPolicy(policyPath, policyFile)
+	return current[name] == rec.PinsFor(projectDir)[name]
 }
 
 // writeGuard carries the pre-write answer of pinIsCurrent from the
@@ -238,12 +246,16 @@ func (g *writeGuard) end(tc llm.ToolCall, name string) bool {
 // was approved; its effect on the trusted files was not shown, so the
 // pins are not refreshed — the difference is named and the next start
 // asks (review of ADR-0074, F7).
-func pinChangesNote(cfg *config.Config, policyFile *config.PolicyFile, projectDir string, trusted bool, msgs *uitext.Messages) string {
-	if !trusted || !cfg.Approval.PinTrustedFiles || !policyFile.HasPins(projectDir) {
+func pinChangesNote(cfg *config.Config, policyFile *config.PolicyFile, policyPath, projectDir string, trusted bool, msgs *uitext.Messages) string {
+	if !trusted || !cfg.Approval.PinTrustedFiles {
+		return ""
+	}
+	rec, _ := recordedPolicy(policyPath, policyFile)
+	if !rec.HasPins(projectDir) {
 		return ""
 	}
 	current, _ := trustpin.Compute(projectDir)
-	changes := trustpin.Diff(policyFile.PinsFor(projectDir), current)
+	changes := trustpin.Diff(rec.PinsFor(projectDir), current)
 	if len(changes) == 0 {
 		return ""
 	}
@@ -274,6 +286,39 @@ func savePins(policyPath, projectDir string, pins trustpin.Pins, policyFile *con
 			recorded[k] = v
 		}
 	})
+}
+
+// recordedPolicy returns the trust record a pin is compared against: the
+// policy file as it is on disk now, not the copy this process read when
+// it started. The file is shared — another session, or `gem-agent trust
+// --accept` in another terminal, records trust there while this one
+// runs — and a comparison against the startup copy reported a file the
+// operator had just re-trusted as changed: the notice named `trust
+// --accept`, and running it changed nothing until the next start.
+// MutatePolicyFile closed this class for writes (a stale snapshot
+// overwriting another instance's decisions); this is the read side.
+//
+// The session's own copy is not replaced here. Other goroutines read it
+// (the settings panel), and a mutation is what refreshes it.
+//
+// A file that is gone or cannot be read leaves the session's copy as
+// the record, so the comparison errs toward leaving a changed file out,
+// never toward loading one. The error is for a caller that can say so.
+func recordedPolicy(policyPath string, policyFile *config.PolicyFile) (*config.PolicyFile, error) {
+	if policyPath == "" {
+		return policyFile, nil
+	}
+	if _, err := os.Stat(policyPath); err != nil {
+		if os.IsNotExist(err) {
+			return policyFile, nil
+		}
+		return policyFile, err
+	}
+	fresh, err := config.LoadPolicyFile(policyPath)
+	if err != nil {
+		return policyFile, err
+	}
+	return fresh, nil
 }
 
 // mutatePins edits the recorded pins under the policy file's lock: fn

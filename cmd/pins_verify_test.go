@@ -18,11 +18,11 @@ func TestApprovedWriteDoesNotRepinADriftedFile(t *testing.T) {
 	if err := repin(policyPath, proj, pf); err != nil {
 		t.Fatal(err)
 	}
-	if !pinIsCurrent(pf, proj, "AGENTS.md") {
+	if !pinIsCurrent(pf, policyPath, proj, "AGENTS.md") {
 		t.Fatal("freshly pinned file reported as drifted")
 	}
 	// A name with neither pin nor file is current: the write creates it.
-	if !pinIsCurrent(pf, proj, "CLAUDE.md") {
+	if !pinIsCurrent(pf, policyPath, proj, "CLAUDE.md") {
 		t.Fatal("absent file with no pin reported as drifted")
 	}
 	// `! git pull` rewrites AGENTS.md; then the model edits it and the
@@ -32,7 +32,7 @@ func TestApprovedWriteDoesNotRepinADriftedFile(t *testing.T) {
 	}
 	tc := llm.ToolCall{ID: "c1", Name: "edit_file", Args: map[string]any{"path": "AGENTS.md"}}
 	g := &writeGuard{}
-	g.begin(tc, "AGENTS.md", pinIsCurrent(pf, proj, "AGENTS.md"))
+	g.begin(tc, "AGENTS.md", pinIsCurrent(pf, policyPath, proj, "AGENTS.md"))
 	if err := os.WriteFile(filepath.Join(proj, "AGENTS.md"), []byte("pulled and edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

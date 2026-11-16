@@ -15,6 +15,23 @@
   model does and does not cover, and appendices for looking a name up. The
   references stay as the maintainer-facing detail. No behaviour changes.
 
+### Fixed
+
+- **`gem-agent trust --accept` in another terminal now reaches a running
+  session.** When a project file changes outside gem-agent, `/clear` leaves
+  it out and says to re-trust it with `gem-agent trust --accept`. Doing that
+  changed nothing for the session that said it: it compared the file with
+  the copy of the trust record it had read at startup, so the next
+  `/clear` printed the same notice, and only a restart loaded the file.
+  Every comparison now reads the record from the policy file as it is at
+  that moment — at `/clear`, at the `/mcp` and `/skills` reloads, in the note after a `!`
+  command, and before an approved edit of a trusted file is recorded. If
+  the policy file is missing or cannot be read, the session keeps
+  comparing with what it last read, so a changed file is still left out
+  rather than loaded; an unreadable file is reported. Checked on a real
+  session, without a model call: after `trust --accept` elsewhere, the
+  notice after a `!` command and the one at `/clear` stopped.
+
 ## [0.103.0] - 2026-11-16
 
 ### Added
