@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// ADR-0025: [model].thinking accepts the four Gemini 3 levels or empty;
+// ADR-0025, ADR-0118: [model].thinking accepts the five levels or empty;
 // an unknown value is a startup error, never a silent fallback.
 func TestThinkingValidation(t *testing.T) {
-	for _, ok := range []string{"", "minimal", "low", "medium", "high"} {
+	for _, ok := range []string{"", "minimal", "low", "medium", "high", "xhigh"} {
 		if !ValidThinking(ok) {
 			t.Errorf("ValidThinking(%q) = false", ok)
 		}
@@ -65,5 +65,33 @@ func TestThinkingFlagOverride(t *testing.T) {
 	cfg, err = LoadWithOverrides(path, Overrides{})
 	if err != nil || cfg.Model.Thinking != "low" {
 		t.Errorf("no flag: thinking=%q err=%v", cfg.Model.Thinking, err)
+	}
+}
+
+// ADR-0118 §1: xhigh is one vocabulary — every key that names a level
+// and the flag take it, and the error for an unknown word lists it.
+func TestXHighIsAcceptedWhereverALevelIsNamed(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	_ = os.WriteFile(path, []byte("[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\nthinking = \"xhigh\"\nrisk_thinking = \"xhigh\"\nlibrarian_thinking = \"xhigh\"\n"), 0o644)
+	cfg, err := LoadWithOverrides(path, Overrides{})
+	if err != nil {
+		t.Fatalf("xhigh in the file: %v", err)
+	}
+	if cfg.Model.Thinking != "xhigh" || cfg.Model.RiskThinking != "xhigh" || cfg.Model.LibrarianThinking != "xhigh" {
+		t.Errorf("loaded thinking=%q risk_thinking=%q librarian_thinking=%q", cfg.Model.Thinking, cfg.Model.RiskThinking, cfg.Model.LibrarianThinking)
+	}
+
+	_ = os.WriteFile(path, []byte("[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\n"), 0o644)
+	cfg, err = LoadWithOverrides(path, Overrides{Thinking: "xhigh"})
+	if err != nil || cfg.Model.Thinking != "xhigh" {
+		t.Errorf("--thinking xhigh: thinking=%q err=%v", cfg.Model.Thinking, err)
+	}
+
+	for _, key := range []string{"thinking", "risk_thinking", "librarian_thinking"} {
+		_ = os.WriteFile(path, []byte("[gcp]\nproject = \"p\"\n[model]\nname = \"m\"\n"+key+" = \"turbo\"\n"), 0o644)
+		if _, err := LoadWithOverrides(path, Overrides{}); err == nil || !strings.Contains(err.Error(), "xhigh") {
+			t.Errorf("%s = turbo: the error does not list xhigh: %v", key, err)
+		}
 	}
 }

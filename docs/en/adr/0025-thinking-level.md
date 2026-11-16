@@ -17,6 +17,10 @@ level. Compaction still rides the main backend at this level.*
 *Amended by ADR-0098: §3 no longer holds — `/thinking` and the
 `model.thinking` row in /settings change the level for the session.*
 
+*Amended by ADR-0118: the four values of §1 and §4 are five — `xhigh`
+is accepted too, and it is not one the SDK names. The rest of §4 holds:
+which levels a model takes is the API's call.*
+
 ## Context
 
 Gemini 3 exposes a per-request thinking level (MINIMAL / LOW / MEDIUM /

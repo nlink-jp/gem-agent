@@ -250,6 +250,7 @@ supersede する（typo とリンク修正は例外）。
 - [`ADR-0115`](adr/0115-no-linux-version-the-write-lanes-denial-by-name-does-not-carry-over.ja.md) — Linux 版は出さない: write レーンの名前による拒否を持ち込めない（**Accepted**）: Linux の 2 台で測ったところ、Landlock と名前空間は既にある永続ファイルは守れるが、新しいものの作成を名前で断ることはどちらにもできず、write レーンのコマンドが指示ファイルを仕込むのを止めるものが、コマンド行を読む操作者だけになる。gem-agent は macOS 専用のままとし、WSL2 は案内せず、サンドボックスの制御も抽象化しない
 - [`ADR-0116`](adr/0116-a-retry-is-recorded.ja.md) — 再試行を記録する: transcript が「待ち」と「遅い応答」を分ける（**Accepted**、実装済み）: モデル呼び出しのバックオフ再試行は、主ループでもどの枠でも、モデル・呼び出しの種類・試行番号・直前の試行を失敗させたステータス・待ち時間を持つ `model_retry` レコードを書く。エンドポイントのメッセージ文は残さず、再試行そのものにあった欠陥を 2 つ直す
 - [`ADR-0117`](adr/0117-one-model-call-is-one-request.ja.md) — モデル呼び出し 1 回はリクエスト 1 回: SDK の自動継続は切る（**Accepted**、実装済み）: Vertex AI の SDK を v1.77.0 に上げる。その既定は、応答が継続トークンつきで終わるとリクエストを送り直し、usage を合算する。すべてのリクエストでこれを切り、usage レコード・再試行のレコード・圧縮の発火が言葉どおりの意味を保つようにする。ストリームのイベントとして届いたエラーは呼び出しを終わらせるか再試行させ、SDK の読み取りの中の panic はプロセスではなく呼び出しを終わらせ、`make package` は最初に脆弱性の検査を走らせる
+- [`ADR-0118`](adr/0118-xhigh-is-a-thinking-level.ja.md) — `xhigh` を思考レベルに加える: ダイヤルは 5 つ目の値を取る（**Accepted**、実装済み。ADR-0025 §1 と ADR-0098 §1–2 を修正）: Gemini 4 Hydrogen は `high` の上のレベルを持つが、gem-agent はその語を断っていた。`xhigh` をレベルを指定するすべての場所 — `[model]` の 3 つのキー、`--thinking`、`/thinking`、/settings の行 — で受け付け、SDK に定数の無い文字列として送る。どのモデルが受け付けるかは引き続き API が決める（Gemini 4 Carbon と Argon では 400 と既存のヒントになることを実測）
 
 ## History（履歴）
 

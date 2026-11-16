@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`xhigh` is a thinking level** (ADR-0118). Gemini 4 Hydrogen has a
+  level above `high`, and gem-agent refused the word. It is now accepted
+  wherever a level is named: `[model].thinking`, `risk_thinking`,
+  `librarian_thinking`, `--thinking`, `/thinking`, and the
+  `model.thinking` row in /settings. A model without it — Gemini 4 Carbon
+  and Argon among them — refuses the next request with a 400, and
+  gem-agent's existing hint names the level and how to put it back.
+
 ## [0.102.1] - 2026-11-14
 
 ### Changed

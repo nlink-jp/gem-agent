@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/nlink-jp/toml"
@@ -344,9 +345,10 @@ type ModelConfig struct {
 	// explicit rather than silent — and some filters cannot be turned
 	// off at any setting.
 	Safety string `toml:"safety"`
-	// Thinking sets the Gemini 3 thinking level for main-model calls
-	// (ADR-0025): "minimal", "low", "medium", or "high". Empty means
-	// the model's own default. The summary model is unaffected.
+	// Thinking sets the thinking level for main-model calls (ADR-0025,
+	// ADR-0118): "minimal", "low", "medium", "high", or "xhigh". Empty
+	// means the model's own default; which levels a model takes is the
+	// API's call. The summary model is unaffected.
 	Thinking string `toml:"thinking"`
 	// Risk names the model the model tier runs on — the risk
 	// evaluation and the progress review (ADR-0082). Empty means the
@@ -399,13 +401,26 @@ func (m ModelConfig) RiskModel() string {
 	return m.Name
 }
 
-// ValidThinking reports whether s is an accepted [model].thinking value.
+// thinkingLevels are the words a thinking-level key accepts, lowest
+// first (ADR-0025, ADR-0118). Which of them a model takes is the API's
+// call, so there is no table of models here.
+var thinkingLevels = []string{"minimal", "low", "medium", "high", "xhigh"}
+
+// ThinkingLevels returns the accepted level words, lowest first. The
+// predicate, the validation errors, and the words /thinking and the
+// /settings row take all come from this one list.
+func ThinkingLevels() []string { return slices.Clone(thinkingLevels) }
+
+// ValidThinking reports whether s is an accepted thinking-level value:
+// one of ThinkingLevels, or empty for the model's own default.
 func ValidThinking(s string) bool {
-	switch s {
-	case "", "minimal", "low", "medium", "high":
-		return true
-	}
-	return false
+	return s == "" || slices.Contains(thinkingLevels, s)
+}
+
+// thinkingError is the startup error for a level key holding a word
+// outside the list; it names the key and every word it would take.
+func thinkingError(key, got string) error {
+	return fmt.Errorf("%s must be one of %s (got %q; empty means the model default)", key, strings.Join(thinkingLevels, ", "), got)
 }
 
 // SandboxConfig controls the sandbox-exec wrapper for shell_exec.
@@ -774,7 +789,7 @@ func (c *Config) validate() error {
 		return fmt.Errorf("[mcp].advertise must be all or on-request (got %q)", c.MCP.Advertise)
 	}
 	if !ValidThinking(c.Model.LibrarianThinking) {
-		return fmt.Errorf("[model].librarian_thinking must be minimal, low, medium, or high (got %q; empty means the model default)", c.Model.LibrarianThinking)
+		return thinkingError("[model].librarian_thinking", c.Model.LibrarianThinking)
 	}
 	// Below ~10% compaction would fire constantly and summarise nothing
 	// useful; at 100% it would fire after the request that already
@@ -783,10 +798,10 @@ func (c *Config) validate() error {
 		return fmt.Errorf("[agent].compact_at_pct must be between 10 and 99 (got %d)", c.Agent.CompactAtPct)
 	}
 	if !ValidThinking(c.Model.Thinking) {
-		return fmt.Errorf("[model].thinking must be minimal, low, medium, or high (got %q; empty means the model default)", c.Model.Thinking)
+		return thinkingError("[model].thinking", c.Model.Thinking)
 	}
 	if !ValidThinking(c.Model.RiskThinking) {
-		return fmt.Errorf("[model].risk_thinking must be minimal, low, medium, or high (got %q; empty means the model default)", c.Model.RiskThinking)
+		return thinkingError("[model].risk_thinking", c.Model.RiskThinking)
 	}
 	switch c.Model.Safety {
 	case "default", "relaxed", "off":

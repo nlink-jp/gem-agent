@@ -59,7 +59,7 @@ name = "gemini-3.8-flash"
 # the error in the escalation's reason — there is no silent fallback.
 #risk = "gemini-3.7-flash"
 
-# Thinking level for that slot (minimal|low|medium|high). Unset means the
+# Thinking level for that slot (minimal|low|medium|high|xhigh). Unset means the
 # slot model's own default; a slot never inherits [model].thinking. Set
 # on its own, it puts the main model's name on a slot at that level.
 #risk_thinking = "low"
@@ -85,17 +85,21 @@ name = "gemini-3.8-flash"
 # filters cannot be turned off at any setting.
 #safety = "default"
 
-# Gemini 3 thinking level for main-model calls (ADR-0025):
-#   minimal | low | medium | high
+# Thinking level for main-model calls (ADR-0025, ADR-0118):
+#   minimal | low | medium | high | xhigh
 # Unset means the model's own default. Thought tokens are billed and
 # shown in the footer and /usage; lower levels answer faster and
 # cheaper, higher levels reason more (measured on one arithmetic prompt:
 # low 93 / medium 170 / high 222 thought tokens). Which levels a model
 # accepts is model-dependent — gemini-3.7-flash and gemini-3.8-flash
 # reject "minimal" with a clear 400 on the first turn (measured; both
-# accept low/medium/high, medium being their default). The
-# summarize_file model is
-# not affected. The --thinking flag overrides this per run.
+# accept low/medium/high, medium being their default). By the provider's
+# table, Gemini 4 Carbon and Argon take low/medium/high (default
+# medium) and Gemini 4 Hydrogen takes low/medium/high/xhigh (default
+# high); all three reject "minimal", and Carbon and Argon reject
+# "xhigh", with the same 400 (measured 2026-11-16).
+# The summarize_file model is not affected. The --thinking flag
+# overrides this per run.
 #thinking = "high"
 
 [sandbox]

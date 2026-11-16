@@ -270,7 +270,7 @@ device attributes 要求を載せる。VT 互換の端末は必ずこれに答�
 追加し、この性質を述べるテストは最初の実装に対して 3 つの判定すべてで失敗する。
 
 選択は `[tui] images = "auto"`
-（[config.go:220](../../../internal/config/config.go)）。`theme`・`language`（`:205`・`:209`）と並ぶ。多重化端末の中では **off** である。
+（[config.go:221](../../../internal/config/config.go)）。`theme`・`language`（`:213`・`:217`）と並ぶ。多重化端末の中では **off** である。
 初稿が書いた「passthrough は他人の設定だから」ではなく、**payload を描くと測定された唯一の
 多重化端末が、画像 1 枚ごとにフレームを取り残したから**である。
 

@@ -1,7 +1,11 @@
 package llm
 
 import (
+	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +20,9 @@ func TestThinkingLevelMapping(t *testing.T) {
 		"low":     genai.ThinkingLevelLow,
 		"medium":  genai.ThinkingLevelMedium,
 		"high":    genai.ThinkingLevelHigh,
+		// ADR-0118 §2: the SDK has no constant for this one, so the wire
+		// string itself is what the test holds.
+		"xhigh": "XHIGH",
 	}
 	for in, want := range cases {
 		if got := ThinkingLevel(in); got != want {
@@ -96,4 +103,40 @@ func TestSetThinkingIsSafeForConcurrentUse(t *testing.T) {
 		go func() { defer wg.Done(); _ = main.thinkingNow() }()
 	}
 	wg.Wait()
+}
+
+// ADR-0118 §2: the level the SDK has no name for still goes on the wire
+// as the string the API reads, and the model's own default sends no
+// level at all.
+func TestXHighReachesTheWire(t *testing.T) {
+	var mu sync.Mutex
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(b))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}]}`+"\n\n")
+	}))
+	t.Cleanup(srv.Close)
+	v := localVertex(t, srv, "m")
+	hist := []Message{{Role: RoleUser, Content: "hi"}}
+
+	if _, err := v.ChatStream(context.Background(), "", hist, nil, nil); err != nil {
+		t.Fatalf("default level: %v", err)
+	}
+	v.SetThinking("xhigh")
+	if _, err := v.ChatStream(context.Background(), "", hist, nil, nil); err != nil {
+		t.Fatalf("xhigh: %v", err)
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("requests = %d, want 2", len(bodies))
+	}
+	if strings.Contains(bodies[0], "thinkingLevel") {
+		t.Errorf("the default level sent a level: %s", bodies[0])
+	}
+	if !strings.Contains(bodies[1], `"thinkingLevel":"XHIGH"`) {
+		t.Errorf("xhigh did not reach the wire as XHIGH: %s", bodies[1])
+	}
 }

@@ -17,6 +17,10 @@
 *ADR-0098 により改訂: §3 はもう成り立たない — `/thinking` と /settings の
 `model.thinking` 行が、セッション中にレベルを変える。*
 
+*ADR-0118 により改訂: §1 と §4 の 4 つの値は 5 つになった — `xhigh` も
+受け付ける。これは SDK が名前を持つ値ではない。§4 の残りは変わらない:
+どのレベルをモデルが受け付けるかは API が決める。*
+
 ## Context
 
 Gemini 3 はリクエスト単位の思考レベル（MINIMAL / LOW / MEDIUM / HIGH）を

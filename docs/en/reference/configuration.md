@@ -40,8 +40,9 @@ location = "global"        # default; Gemini 3: "global", "us", or "eu" only
 name = "<gemini model id>"
 # summary = "<light model>" # optional; summarize_file / web_fetch digests (ADR-0014)
 # context_window = 1048576  # optional; exact window for the footer and compaction
-# thinking = "high"         # optional; Gemini 3 thinking level: minimal|low|medium|high
-#                           # (unset = model default; supported levels are model-dependent;
+# thinking = "high"         # optional; thinking level: minimal|low|medium|high|xhigh
+#                           # (unset = model default; supported levels are model-dependent —
+#                           #  e.g. Gemini 4 Hydrogen takes xhigh, ADR-0118;
 #                           #  a named summary model unaffected — ADR-0025; /thinking changes it
 #                           #  for the session — ADR-0098)
 # risk = "<judge model>"    # optional; the model tier — auto mode's risk evaluation, the
@@ -408,7 +409,7 @@ the function name is the only place the intent can be said (ADR-0077).
 | `-c` / `--continue` | resume this project's most recent session |
 | `--resume <id>` | resume a specific session |
 | `--model <id>` | override the configured model |
-| `--thinking <level>` | override `[model].thinking` for this run: `minimal`\|`low`\|`medium`\|`high`, or `default` to clear a configured level (model-dependent — ADR-0025) |
+| `--thinking <level>` | override `[model].thinking` for this run: `minimal`\|`low`\|`medium`\|`high`\|`xhigh`, or `default` to clear a configured level (model-dependent — ADR-0025, ADR-0118) |
 | `--config <path>` | use another config file |
 | `--mcp <on\|off>` | override `[mcp].enabled` for this run — `off` skips every MCP server spawn, which is what a `-p` pipeline usually wants (ADR-0039) |
 | `--no-sandbox` | disable the Seatbelt wrapper (debugging only) — every `shell_exec` then needs your approval and no policy or auto mode lifts that (ADR-0073 §5) |

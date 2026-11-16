@@ -535,7 +535,7 @@ var en = Messages{
   /mcp       list connected MCP servers (/mcp reload reconnects · /mcp load <server> loads one)
   /auto      auto-approve: on|off, or bare to toggle (shift+tab too)
   /readonly  read-only: on|off · auto on|off arms the watcher · bare shows both
-  /thinking  thinking level for this session: minimal|low|medium|high|default · bare shows it
+  /thinking  thinking level for this session: minimal|low|medium|high|xhigh|default · bare shows it
   /add-dir <path>   add a directory outside the project, written like the project (this process only)
   /read-dir <path>  add a directory outside the project, read only (this process only)
   /dirs      list the project, the work directory and the added directories
@@ -571,7 +571,7 @@ keys:
 	ThinkingNowFmt:         "thinking level: %s (%s)\n",
 	ThinkingNowDefault:     "thinking level: default (the model's own)\n",
 	ThinkingSetFmt:         "thinking level: %s — from the next request, this session only\n",
-	ThinkingUsage:          "usage: /thinking minimal|low|medium|high|default (no argument shows the level; default is the model's own)\n",
+	ThinkingUsage:          "usage: /thinking minimal|low|medium|high|xhigh|default (no argument shows the level; default is the model's own)\n",
 	CeilingLiftTitle:       "Lift read-only?",
 	CeilingLiftConsequence: "Yes lifts read-only for the rest of this session.",
 	CeilingLiftHint:        "←→/Tab to choose · Enter to answer · y/n/N · Esc refuses",
@@ -763,7 +763,7 @@ var ja = Messages{
   /mcp       接続中の MCP サーバー一覧（/mcp reload で再接続 · /mcp load <サーバー> で 1 つロード）
   /auto      auto-approve: on|off、引数なしで切替（shift+tab でも可）
   /readonly  読み取り専用: on|off・auto on|off で自動切り替え・引数なしで両方表示
-  /thinking  このセッションの思考レベル: minimal|low|medium|high|default・引数なしで表示
+  /thinking  このセッションの思考レベル: minimal|low|medium|high|xhigh|default・引数なしで表示
   /add-dir <path>   プロジェクト外のディレクトリを、プロジェクトと同じく書ける形で足す（このプロセスの間だけ）
   /read-dir <path>  プロジェクト外のディレクトリを、読むだけの形で足す（このプロセスの間だけ）
   /dirs      プロジェクト・作業ディレクトリ・追加ディレクトリの一覧
@@ -799,7 +799,7 @@ var ja = Messages{
 	ThinkingNowFmt:         "思考レベル: %s（%s）\n",
 	ThinkingNowDefault:     "思考レベル: default（モデルの既定値）\n",
 	ThinkingSetFmt:         "思考レベル: %s — 次のリクエストから適用（このセッションのみ）\n",
-	ThinkingUsage:          "使い方: /thinking minimal|low|medium|high|default（引数なしでレベルを表示。default はモデルの既定値）\n",
+	ThinkingUsage:          "使い方: /thinking minimal|low|medium|high|xhigh|default（引数なしでレベルを表示。default はモデルの既定値）\n",
 	CeilingLiftTitle:       "read-only を解除しますか",
 	CeilingLiftConsequence: "「はい」はこのセッションの残りで read-only を解除します",
 	CeilingLiftHint:        "←→/Tab 選択 · Enter 決定 · y/n/N 直接指定 · Esc 拒否",

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/nlink-jp/gem-agent/internal/config"
+	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/tui"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
@@ -127,5 +128,59 @@ func TestSettingsThinkingRowReadOnlyWithoutADial(t *testing.T) {
 	row, ok := rowFor(newStore(t).data(), "model.thinking")
 	if !ok || len(row.Values) != 0 {
 		t.Errorf("row = %+v", row)
+	}
+}
+
+// ADR-0118 §1: /thinking and the panel row take xhigh, and the row's
+// cycle ends on it.
+func TestXHighTurnsTheDial(t *testing.T) {
+	en := uitext.For(uitext.EN)
+	dial := &fakeDial{}
+	out, isErr := thinkingCmd([]string{"xhigh"}, dial, thinkingCfg("", ""), en)
+	if isErr || dial.level != "xhigh" || !strings.Contains(out, "xhigh") {
+		t.Errorf("/thinking xhigh = %q (err %v), level %q", out, isErr, dial.level)
+	}
+	if !strings.Contains(en.ThinkingUsage, "xhigh") || !strings.Contains(uitext.For(uitext.JA).ThinkingUsage, "xhigh") {
+		t.Error("the usage line does not list xhigh in both languages")
+	}
+
+	s := newStore(t)
+	paneled := &fakeDial{}
+	s.thinking = paneled
+	row, ok := rowFor(s.data(), "model.thinking")
+	if !ok || len(row.Values) == 0 || row.Values[len(row.Values)-1] != "xhigh" {
+		t.Fatalf("row cycle = %v", row.Values)
+	}
+	s.Apply(tui.SettingChange{Label: "model.thinking", Value: "xhigh"})
+	if paneled.level != "xhigh" {
+		t.Errorf("the panel left the level at %q", paneled.level)
+	}
+}
+
+// A level is a word in config's one list; everything else that spells
+// it is held here, so a level added to the list fails this test until
+// the wire value, the usage and help lines in both languages, and the
+// flag's help say it too (ADR-0118).
+func TestEveryLevelIsSpelledWhereverItIsRead(t *testing.T) {
+	flagHelp := rootCmd.Flags().Lookup("thinking").Usage
+	for _, level := range config.ThinkingLevels() {
+		if llm.ThinkingLevel(level) == "" {
+			t.Errorf("%q has no wire value", level)
+		}
+		if !strings.Contains(flagHelp, level) {
+			t.Errorf("--thinking help does not list %q: %s", level, flagHelp)
+		}
+		for _, lang := range []uitext.Lang{uitext.EN, uitext.JA} {
+			msgs := uitext.For(lang)
+			if !strings.Contains(msgs.ThinkingUsage, level) {
+				t.Errorf("%v usage line does not list %q", lang, level)
+			}
+			if !strings.Contains(msgs.Help, level+"|") {
+				t.Errorf("%v /help does not list %q", lang, level)
+			}
+		}
+	}
+	if thinkingValues[0] != "default" || len(thinkingValues) != len(config.ThinkingLevels())+1 {
+		t.Errorf("the cycle is not default plus every level: %v", thinkingValues)
 	}
 }

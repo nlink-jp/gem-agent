@@ -15,9 +15,10 @@ type thinkingDial interface {
 }
 
 // thinkingValues are the choices the /settings row cycles through, and
-// the words /thinking accepts. "default" is the model's own default —
-// the word --thinking uses for the same thing.
-var thinkingValues = []string{"default", "minimal", "low", "medium", "high"}
+// the words /thinking accepts: "default" — the model's own default, the
+// word --thinking uses for the same thing — then every level config
+// accepts, lowest first.
+var thinkingValues = append([]string{"default"}, config.ThinkingLevels()...)
 
 // thinkingWord renders a level as the word the operator types.
 func thinkingWord(level string) string {

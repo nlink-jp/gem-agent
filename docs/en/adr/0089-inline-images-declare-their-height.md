@@ -326,8 +326,8 @@ terminal; it now has pseudo-terminal tests, and the one that states this
 property fails on the first implementation for all three verdicts.
 
 `[tui] images = "auto"` selects it
-([config.go:220](../../../internal/config/config.go)), beside `theme` and
-`language` (`:205` and `:209`). Inside a multiplexer
+([config.go:221](../../../internal/config/config.go)), beside `theme` and
+`language` (`:213` and `:217`). Inside a multiplexer
 the answer is **off** — not because passthrough is someone else's
 configuration, which is what the first draft said, but because the one
 multiplexer measured rendering a payload stranded a frame for every image.

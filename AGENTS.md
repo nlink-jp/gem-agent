@@ -951,6 +951,18 @@ a new hook) is an architecture change and takes the same rows as a
   proves anything under `go test -race` — `make test` does not pass it,
   so run the llm package with `-race` after touching the dial. Both slash
   surfaces share one `reloads` value; add a closure there, not per site.
+- **A thinking level is a word in one list** (ADR-0118) —
+  `config.ThinkingLevels()`. The predicate every key, the flag and
+  `/thinking` use, the three startup errors, and the /settings cycle all
+  read it. Three places still spell the word by hand: `llm.ThinkingLevel`
+  (the wire value), the usage and /help lines in `uitext` (en and ja),
+  and the `--thinking` flag's help in `cmd/root.go`;
+  `TestEveryLevelIsSpelledWhereverItIsRead` fails until they do. `xhigh`
+  has no SDK constant: `thinkingLevelXHigh` spells the wire string, and
+  `TestXHighReachesTheWire` holds it. Which model takes a level is never
+  decided here — no table of models; the API refuses and the 400 hint
+  names the way back. `internal/llm/levels_live_test.go` measures what a
+  model accepts, `levelswitch_live_test.go` a switch between two levels.
 - **Registered is not advertised under `[mcp].advertise = "on-request"`**
   (ADR-0083) — `cmd/mcpadvertise.go` owns the advertised and withheld
   sets; `Options.Advertise` is its predicate and serves BOTH `toolDefs`

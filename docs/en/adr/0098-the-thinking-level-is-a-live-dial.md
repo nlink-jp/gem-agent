@@ -10,6 +10,8 @@
 | Amends | ADR-0025 §3 (the level is read-only in /settings; live editing deferred) |
 | Relates to | ADR-0082 (the model tier's slot), ADR-0083 (the librarian's slot), ADR-0009 (the settings panel), ADR-0005 (resume) |
 
+*Amended by ADR-0118: the words in §1 and the cycle in §2 gain `xhigh`.*
+
 ## Context
 
 ADR-0025 made `[model].thinking` a startup setting and deferred live

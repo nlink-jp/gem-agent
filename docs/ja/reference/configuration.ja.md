@@ -39,8 +39,9 @@ location = "global"        # デフォルト; Gemini 3 系は "global" / "us" / 
 name = "<gemini model id>"
 # summary = "<light model>" # 任意; summarize_file / web_fetch 要約用（ADR-0014）
 # context_window = 1048576  # 任意; フッター表示と圧縮判定に使う厳密値
-# thinking = "high"         # 任意; Gemini 3 の思考レベル: minimal|low|medium|high
-#                           # (未設定 = モデル既定。対応レベルはモデル依存。
+# thinking = "high"         # 任意; 思考レベル: minimal|low|medium|high|xhigh
+#                           # (未設定 = モデル既定。対応レベルはモデル依存 —
+#                           #  たとえば Gemini 4 Hydrogen は xhigh を受け付ける、ADR-0118。
 #                           #  名前のある要約モデルには効かない — ADR-0025。/thinking で
 #                           #  セッション中に変えられる — ADR-0098)
 # risk = "<judge model>"    # 任意; モデル層 — auto モードのリスク評価・進捗レビュー・
@@ -394,7 +395,7 @@ MCP はクライアントが照合できる能力を公開しないので、フ�
 | `-c` / `--continue` | このプロジェクトの最新セッションを再開 |
 | `--resume <id>` | 特定セッションを再開 |
 | `--model <id>` | 設定モデルの上書き |
-| `--thinking <level>` | この実行だけ `[model].thinking` を上書き: `minimal`\|`low`\|`medium`\|`high`、または `default` で設定済みレベルをクリア（対応レベルはモデル依存 — ADR-0025） |
+| `--thinking <level>` | この実行だけ `[model].thinking` を上書き: `minimal`\|`low`\|`medium`\|`high`\|`xhigh`、または `default` で設定済みレベルをクリア（対応レベルはモデル依存 — ADR-0025、ADR-0118） |
 | `--config <path>` | 別の設定ファイルを使う |
 | `--mcp <on\|off>` | この実行だけ `[mcp].enabled` を上書き — `off` は全 MCP サーバー起動をスキップ。`-p` パイプラインが通常求めるもの（ADR-0039） |
 | `--no-sandbox` | Seatbelt ラップの無効化（デバッグ専用）— 全 `shell_exec` があなたの承認事項になり、ポリシーも auto モードも持ち上げない（ADR-0073 §5） |

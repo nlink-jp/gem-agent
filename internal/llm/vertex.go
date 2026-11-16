@@ -23,8 +23,8 @@ type Vertex struct {
 	client *genai.Client
 	model  string
 	safety []*genai.SafetySetting
-	// thinking is the Gemini 3 thinking level for ChatStream calls
-	// (ADR-0025), read when each request is built. The main backend's
+	// thinking is the thinking level for ChatStream calls (ADR-0025),
+	// read when each request is built. The main backend's
 	// is the live dial /thinking turns (ADR-0098 §6), so it is atomic:
 	// side calls read it while the UI writes it. A pointer, which keeps
 	// the struct copies in WithModel and WithThinking vet-clean — and
@@ -130,7 +130,7 @@ func newVertex(client *genai.Client, model, safety, thinking string, includeThou
 // edits to change it, swapped as a whole so a reader never pairs one
 // level with another's key.
 type thinkingSetting struct {
-	level string // "" = the model's own default; else "minimal".."high"
+	level string // "" = the model's own default; else "minimal".."xhigh"
 	key   string // named by the 400 hint
 }
 
@@ -167,7 +167,12 @@ func (v *Vertex) SetThinking(level string) {
 	v.thinking.Store(&thinkingSetting{level: level, key: liveThinkingKey})
 }
 
-// ThinkingLevel maps a config value ("minimal".."high") to the SDK
+// thinkingLevelXHigh is the level above HIGH (ADR-0118). The SDK has no
+// constant for it; its ThinkingLevel is the wire string itself, so the
+// value is spelled here.
+const thinkingLevelXHigh genai.ThinkingLevel = "XHIGH"
+
+// ThinkingLevel maps a config value ("minimal".."xhigh") to the SDK
 // enum; "" stays "" (the model's own default). Validation happens at
 // config load — an unknown value never reaches here.
 func ThinkingLevel(s string) genai.ThinkingLevel {
@@ -180,6 +185,8 @@ func ThinkingLevel(s string) genai.ThinkingLevel {
 		return genai.ThinkingLevelMedium
 	case "high":
 		return genai.ThinkingLevelHigh
+	case "xhigh":
+		return thinkingLevelXHigh
 	}
 	return ""
 }
