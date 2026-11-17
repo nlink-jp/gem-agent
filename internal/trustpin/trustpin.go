@@ -274,9 +274,10 @@ func consumedDigest(projectDir, name string) (string, bool) {
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), true
 }
 
-// fileDigest hashes one regular file, bounded at FileCap; a file past
-// the cap is hashed as its first FileCap bytes plus a marker, so it is
-// still pinned and a change past the cap still changes the size part.
+// fileDigest hashes one regular file by path, bounded at FileCap; a file
+// past the cap is hashed as its first FileCap bytes plus a marker. The
+// persistent-file snapshot uses it; a skill is digested through its
+// root (rootFileDigest), with the same bytes for the same file.
 func fileDigest(path string) (string, bool) {
 	st, err := os.Lstat(path)
 	if err != nil || !st.Mode().IsRegular() {
@@ -299,14 +300,55 @@ func fileDigest(path string) (string, bool) {
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), true
 }
 
-// dirDigest hashes a skill directory: for every regular file (sorted by
-// relative path, links included by their target string) the path, the
-// size and the content digest. cut reports the file cap.
-func dirDigest(dir string, maxFiles int) (string, bool) {
+// SkillPinName is the pin a project skill is recorded under: its
+// directory entry, never the name its frontmatter declares.
+func SkillPinName(entry string) string { return SkillsDir + "/" + entry }
+
+// SkillDigest digests a skill through its own open root, with the cap a
+// pin uses. It is the digest Compute records for that skill: the pin and
+// the comparison made when the skill is used (ADR-0119) are one
+// implementation, so an unchanged skill cannot read as changed.
+func SkillDigest(root *os.Root) (string, bool) { return DigestRoot(root, SkillFiles) }
+
+// rootFileDigest hashes one regular file under root, bounded at FileCap;
+// a file past the cap is hashed as its first FileCap bytes plus a
+// marker, so it is still pinned and a change past the cap still changes
+// the size part.
+func rootFileDigest(root *os.Root, rel string) (string, bool) {
+	st, err := root.Lstat(rel)
+	if err != nil || !st.Mode().IsRegular() {
+		return "", false
+	}
+	f, err := root.Open(rel)
+	if err != nil {
+		return "", false
+	}
+	defer func() { _ = f.Close() }()
+	data, more, err := bounded.ReadAll(f, FileCap)
+	if err != nil {
+		return "", false
+	}
+	h := sha256.New()
+	h.Write(data)
+	if more {
+		fmt.Fprintf(h, "\x00cut:%d", st.Size())
+	}
+	return "sha256:" + hex.EncodeToString(h.Sum(nil)), true
+}
+
+// DigestRoot hashes a skill directory through root: for every regular
+// file (sorted by relative path, links included by their target string)
+// the path, the size and the content digest. cut reports the file cap.
+//
+// It reads through the root — the object the skill loader holds open
+// and reads from — not through a path resolved again at each call: a
+// directory swapped under the same name is then compared as the tree
+// the loader will read, not as another one (ADR-0119 §1).
+func DigestRoot(root *os.Root, maxFiles int) (string, bool) {
 	type entry struct{ rel, line string }
 	var entries []entry
 	cut := false
-	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	_ = fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -314,14 +356,12 @@ func dirDigest(dir string, maxFiles int) (string, bool) {
 			cut = true
 			return fs.SkipAll
 		}
-		rel, _ := filepath.Rel(dir, path)
-		rel = filepath.ToSlash(rel)
 		switch {
 		case d.Type()&fs.ModeSymlink != 0:
-			target, _ := os.Readlink(path)
+			target, _ := root.Readlink(rel)
 			entries = append(entries, entry{rel, "link:" + target})
 		case d.Type().IsRegular():
-			if dg, ok := fileDigest(path); ok {
+			if dg, ok := rootFileDigest(root, rel); ok {
 				entries = append(entries, entry{rel, dg})
 			}
 		}
@@ -336,6 +376,19 @@ func dirDigest(dir string, maxFiles int) (string, bool) {
 		h.Write([]byte("\x00cut"))
 	}
 	return "sha256:" + hex.EncodeToString(h.Sum(nil)), cut
+}
+
+// dirDigest is DigestRoot for a directory named by path. A directory
+// that cannot be opened digests as an empty one, as a walk that found
+// nothing always did.
+func dirDigest(dir string, maxFiles int) (string, bool) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		h := sha256.New()
+		return "sha256:" + hex.EncodeToString(h.Sum(nil)), false
+	}
+	defer func() { _ = root.Close() }()
+	return DigestRoot(root, maxFiles)
 }
 
 func readDir(dir string, n int) ([]os.DirEntry, bool, error) {
