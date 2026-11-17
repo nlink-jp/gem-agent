@@ -58,7 +58,9 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
    under the digest of something else. A file the volume found under
    another spelling of its name — a different case, another Unicode form
    — is held to the entry whose name is the same once those are set
-   aside, when no entry has the exact name. A listing of a directory
+   aside, when no entry has the exact name; names are matched component
+   by component, through linked directories too, and a property test
+   holds the manifest's answers against what the volume actually returns. A listing of a directory
    inside the skill shows only the entries the digest covers: an empty
    directory is not in it, and its name is text too. Bytes that do not
    match are discarded, and the skill is handled as what it has become. Nothing a

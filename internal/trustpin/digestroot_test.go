@@ -4,12 +4,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
+	"math/rand/v2"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
+	"unicode"
 
 	"golang.org/x/text/unicode/norm"
 )
@@ -322,4 +326,166 @@ func TestManifestLineDoesNotFollowAnAbsoluteTarget(t *testing.T) {
 	if m.Holds("abs", []byte("anything")) {
 		t.Error("bytes read through an absolute link were held")
 	}
+}
+
+// The remaining spelling cases: a variant on a path that goes through a
+// linked directory, and a listing asked for under another spelling. Both
+// were refused after the first fix, which folded whole paths only.
+func TestManifestSpellsAPathComponentByComponent(t *testing.T) {
+	m := Manifest{
+		"SKILL.md":         ContentLine([]byte("body")),
+		"references/a.md":  ContentLine([]byte("a")),
+		"references/Sub/b": ContentLine([]byte("b")),
+		"refs":             "link:References", // the target is spelled differently too
+		"alias.md":         "link:skill.md",
+		"Both/x":           ContentLine([]byte("upper")),
+		"both/x":           ContentLine([]byte("lower")),
+	}
+	for _, c := range []struct {
+		rel, data string
+		want      bool
+	}{
+		{"Refs/a.md", "a", true},
+		{"refs/A.md", "a", true},
+		{"REFS/SUB/B", "b", true},
+		{"References/a.md", "a", true},
+		{"Alias.md", "body", true},
+		{"refs/A.md", "b", false},  // another file's bytes
+		{"refs/c.md", "a", false},  // no such entry under any spelling
+		{"both/x", "lower", true},  // an exact directory is never passed over
+		{"both/x", "upper", false}, //
+		{"Both/x", "upper", true},
+		// Two similar directories and no exact one: not chosen between. The
+		// bytes of either are this tree's bytes under that name once case is
+		// set aside — the same rule as for two files — and nothing else is.
+		{"BOTH/x", "upper", true},
+		{"BOTH/x", "lower", true},
+		{"BOTH/x", "neither", false},
+	} {
+		if got := m.Holds(c.rel, []byte(c.data)); got != c.want {
+			t.Errorf("Holds(%q, %q) = %v, want %v", c.rel, c.data, got, c.want)
+		}
+	}
+	for p, want := range map[string]bool{
+		"References": true, "References/a.md": true, "REFERENCES/sub": true, "Refs": true, "Refs/A.md": true,
+		"References/planted": false, "Refs/planted": false, "Nowhere": false,
+	} {
+		if got := m.Covers(p); got != want {
+			t.Errorf("Covers(%q) = %v, want %v", p, got, want)
+		}
+	}
+}
+
+// The manifest's answers against a real tree. For every path the volume
+// will open — the stored spelling, and on a volume that does not tell
+// case apart also a case variant of it, through links and linked
+// directories — the bytes read must be held, and other bytes must not.
+// A property rather than a list: the two fixes before this one each
+// handled the cases someone had thought of.
+func TestManifestHoldsWhatTheVolumeReturns(t *testing.T) {
+	rng := rand.New(rand.NewPCG(7, 11))
+	flip := func(s string) string {
+		b := []rune(s)
+		for i, r := range b {
+			if rng.IntN(2) == 0 {
+				b[i] = unicode.ToUpper(r)
+			} else {
+				b[i] = unicode.ToLower(r)
+			}
+		}
+		return string(b)
+	}
+	checked, variants := 0, 0
+	for tree := 0; tree < 60; tree++ {
+		dir := t.TempDir()
+		var files, dirs []string
+		dirs = append(dirs, "")
+		for i := 0; i < 3+rng.IntN(4); i++ {
+			parent := dirs[rng.IntN(len(dirs))]
+			d := path.Join(parent, fmt.Sprintf("Dir%c%d", 'a'+rune(rng.IntN(3)), i))
+			if err := os.MkdirAll(filepath.Join(dir, filepath.FromSlash(d)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			dirs = append(dirs, d)
+		}
+		for i := 0; i < 4+rng.IntN(6); i++ {
+			f := path.Join(dirs[rng.IntN(len(dirs))], fmt.Sprintf("File%d.md", i))
+			mustWrite(t, filepath.Join(dir, filepath.FromSlash(f)), []byte(fmt.Sprintf("tree %d file %d", tree, i)))
+			files = append(files, f)
+		}
+		// Links: to files and to directories, relative, sometimes spelled
+		// in another case, sometimes to another link.
+		var links []string
+		for i := 0; i < 2+rng.IntN(4); i++ {
+			parent := dirs[rng.IntN(len(dirs))]
+			name := path.Join(parent, fmt.Sprintf("Link%d", i))
+			var to string
+			switch pick := rng.IntN(3); {
+			case pick == 0 && len(links) > 0:
+				to = links[rng.IntN(len(links))]
+			case pick == 1 && len(dirs) > 1:
+				to = dirs[1+rng.IntN(len(dirs)-1)]
+			default:
+				to = files[rng.IntN(len(files))]
+			}
+			target, err := filepath.Rel(filepath.FromSlash(path.Join("/", parent)), filepath.FromSlash(path.Join("/", to)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			target = filepath.ToSlash(target)
+			if rng.IntN(3) == 0 {
+				target = flip(target)
+			}
+			if err := os.Symlink(target, filepath.Join(dir, filepath.FromSlash(name))); err != nil {
+				t.Fatal(err)
+			}
+			links = append(links, name)
+		}
+		root, err := os.OpenRoot(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, m, _ := SkillManifest(root)
+		// Candidate paths: every file, and every file under every link,
+		// each in its stored spelling and in a flipped one.
+		var candidates []string
+		for _, f := range files {
+			candidates = append(candidates, f)
+			for _, l := range links {
+				candidates = append(candidates, l, path.Join(l, path.Base(f)), path.Join(l, f))
+			}
+		}
+		for _, c := range candidates {
+			for _, p := range []string{c, flip(c)} {
+				f, err := root.Open(p)
+				if err != nil {
+					continue // the volume does not open it: nothing to hold
+				}
+				st, serr := f.Stat()
+				var data []byte
+				if serr == nil && st.Mode().IsRegular() {
+					data, err = io.ReadAll(f)
+				}
+				_ = f.Close()
+				if serr != nil || !st.Mode().IsRegular() || err != nil {
+					continue
+				}
+				checked++
+				if p != c {
+					variants++
+				}
+				if !m.Holds(p, data) {
+					t.Errorf("tree %d: the volume returned %q for %q and the manifest does not hold it", tree, data, p)
+				}
+				if m.Holds(p, append([]byte("not "), data...)) {
+					t.Errorf("tree %d: other bytes are held for %q", tree, p)
+				}
+			}
+		}
+		_ = root.Close()
+	}
+	if checked < 300 {
+		t.Fatalf("only %d paths were opened: the fixture is not exercising anything", checked)
+	}
+	t.Logf("%d reads checked, %d of them under another spelling", checked, variants)
 }

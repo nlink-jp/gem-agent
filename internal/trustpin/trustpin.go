@@ -353,6 +353,9 @@ func (m Manifest) follow(rel string) (string, bool) {
 		if rel == ".." || strings.HasPrefix(rel, "../") || path.IsAbs(rel) {
 			return "", false
 		}
+		// In the manifest's own spelling, at every hop: a link's target
+		// may be spelled differently from the entry it leads to as well.
+		rel = m.spell(rel)
 		// The shortest prefix that is a link, the whole path included.
 		at, target := -1, ""
 		for i := 0; i <= len(rel); i++ {
@@ -373,6 +376,86 @@ func (m Manifest) follow(rel string) (string, bool) {
 		rel = path.Clean(path.Join(path.Dir(rel[:at]), target, rel[at:]))
 	}
 	return "", false
+}
+
+// spell rewrites rel, component by component, into the spelling the
+// manifest has. A volume that does not tell case or Unicode form apart
+// opens "Refs/A.md" for a tree that holds "refs/a.md"; the manifest is
+// keyed by the names as stored. A component is rewritten only when no
+// name at that place is spelled exactly as asked and exactly one is the
+// same once case and form are set aside — an exact name is never
+// passed over for a similar one, and two similar names are never
+// chosen between. A component that matches nothing is left as it is.
+func (m Manifest) spell(rel string) string {
+	if rel == "." || rel == "" {
+		return rel
+	}
+	parts := strings.Split(rel, "/")
+	cur := ""
+	for i, c := range parts {
+		exact := c
+		if cur != "" {
+			exact = cur + "/" + c
+		}
+		if c == ".." || c == "." || m.has(exact) {
+			cur = exact
+			continue
+		}
+		match, n := "", 0
+		want := foldName(c)
+		for _, name := range m.namesIn(cur) {
+			if foldName(name) == want {
+				match, n = name, n+1
+			}
+		}
+		if n != 1 {
+			// Nothing to rewrite it to: the rest is left as asked.
+			return strings.Join(append(strings.Split(exact, "/"), parts[i+1:]...), "/")
+		}
+		if cur == "" {
+			cur = match
+		} else {
+			cur = cur + "/" + match
+		}
+	}
+	return cur
+}
+
+// has reports whether p is an entry of the manifest or a directory on
+// the way to one.
+func (m Manifest) has(p string) bool {
+	if _, ok := m[p]; ok {
+		return true
+	}
+	for k := range m {
+		if strings.HasPrefix(k, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// namesIn lists the names directly under dir ("" for the top): entries
+// and the directories on the way to entries, each once.
+func (m Manifest) namesIn(dir string) []string {
+	prefix := ""
+	if dir != "" {
+		prefix = dir + "/"
+	}
+	seen := map[string]bool{}
+	var names []string
+	for k := range m {
+		rest, ok := strings.CutPrefix(k, prefix)
+		if !ok || rest == "" {
+			continue
+		}
+		name, _, _ := strings.Cut(rest, "/")
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 // Line returns the content line of the file a read of rel through the
@@ -430,7 +513,7 @@ func foldName(p string) string {
 // FIFO and anything created since the digest was taken are not: the
 // digest does not see them, so a listing must not show them.
 func (m Manifest) Covers(p string) bool {
-	p = path.Clean(p)
+	p = m.spell(path.Clean(p))
 	if _, ok := m[p]; ok {
 		return true // a file, or a link under its own name
 	}

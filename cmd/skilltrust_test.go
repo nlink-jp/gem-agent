@@ -626,6 +626,31 @@ func TestAFileFoundUnderAnotherSpellingStillLoads(t *testing.T) {
 	if out := r.viaTool(map[string]any{"file": "Notes.md"}); !strings.Contains(out, "supporting file") {
 		t.Errorf("a file asked for in another case was refused: %q", out)
 	}
+	// Through a linked directory, and a listing: the two cases the first
+	// fix still refused.
+	refs := filepath.Join(dir, "references")
+	if err := os.MkdirAll(refs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(refs, "guide.md"), []byte("the guide\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("references", filepath.Join(dir, "refs")); err != nil {
+		t.Fatal(err)
+	}
+	if err := repin(r.policyPath, r.proj, r.pf); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{"Refs/guide.md", "refs/Guide.md", "REFERENCES/GUIDE.MD"} {
+		if out := r.viaTool(map[string]any{"file": file}); !strings.Contains(out, "the guide") {
+			t.Errorf("file=%q was refused: %q", file, out)
+		}
+	}
+	for _, file := range []string{"References", "Refs"} {
+		if out := r.viaTool(map[string]any{"file": file}); !strings.Contains(out, "guide.md") || strings.Contains(out, "not part of the trusted skill") {
+			t.Errorf("a listing of %q hid what the digest covers: %q", file, out)
+		}
+	}
 	// A skill whose own file is spelled skill.md.
 	if err := os.Rename(r.file, filepath.Join(dir, "skill.md.tmp")); err != nil {
 		t.Fatal(err)
