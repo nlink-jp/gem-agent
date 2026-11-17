@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.104.0] - 2026-11-17
+
 ### Security
 
 - **A project skill that changed after the session started is no longer
