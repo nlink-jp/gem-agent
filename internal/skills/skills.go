@@ -23,6 +23,7 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/bounded"
 	"github.com/nlink-jp/gem-agent/internal/pathid"
 
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -132,7 +133,7 @@ const ReadCap = 1 << 20
 const skillReadCap = ReadCap
 
 // ErrTooLarge: SKILL.md is past ReadCap.
-var ErrTooLarge = fmt.Errorf("SKILL.md is larger than %d bytes", ReadCap)
+var ErrTooLarge = errors.New("SKILL.md is larger than 1 MiB (1,048,576 bytes)")
 
 // Verify holds a read to what the caller is prepared to serve
 // (ADR-0119 §1). A nil *Verify verifies nothing.
@@ -635,7 +636,7 @@ func (s Skill) FileVerified(rel string, lim Limits, verify *Verify) (string, err
 			names = append(names, e.Name())
 		}
 		if hidden > 0 {
-			names = append(names, fmt.Sprintf("[%d entries are not part of the trusted skill and are not listed]", hidden))
+			names = append(names, fmt.Sprintf("[not listed: %d that are not part of the trusted skill]", hidden))
 		}
 		return strings.Join(names, "\n"), nil
 	}

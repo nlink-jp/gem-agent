@@ -167,7 +167,7 @@ func TestASkillFileThePinCannotCoverIsNotServed(t *testing.T) {
 	if len(list) != 1 || list[0].Name != "notes" {
 		t.Fatalf("listed: %v", list)
 	}
-	if joined := strings.Join(notes, " | "); !strings.Contains(joined, "big skipped") || !strings.Contains(joined, "larger than") {
+	if joined := strings.Join(notes, " | "); !strings.Contains(joined, "big skipped") || !strings.Contains(joined, "larger than 1 MiB") {
 		t.Errorf("notes = %q", joined)
 	}
 	// It grows after discovery.
@@ -221,7 +221,7 @@ func TestVerifiedReadsShowTheVerifierWhatTheyReturn(t *testing.T) {
 	}
 	only := &Verify{Listed: func(rel string) bool { return rel == "references/a.md" }}
 	out, err := s.FileVerified("references", DefaultLimits(), only)
-	if err != nil || strings.Contains(out, "IMPORTANT") || !strings.Contains(out, "a.md") || !strings.Contains(out, "1 entries are not part of the trusted skill") {
+	if err != nil || strings.Contains(out, "IMPORTANT") || !strings.Contains(out, "a.md") || !strings.Contains(out, "[not listed: 1 that are not part of the trusted skill]") {
 		t.Errorf("listing: out=%q err=%v", out, err)
 	}
 	// With no verifier everything is listed, as before.

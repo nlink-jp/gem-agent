@@ -426,7 +426,7 @@ func TestASkillTheRecordDoesNotHoldIsAskedAboutInItsOwnWords(t *testing.T) {
 	}
 	r.answers = []int{0}
 	out := r.viaTool(nil)
-	if len(r.questions) != 1 || !strings.Contains(r.questions[0], "is not in this project's trusted record") || strings.Contains(r.questions[0], "has changed since") {
+	if len(r.questions) != 1 || !strings.Contains(r.questions[0], "is not in this project's trust record") || strings.Contains(r.questions[0], "has changed since") {
 		t.Fatalf("question = %v", r.questions)
 	}
 	if !strings.Contains(out, skillV1) || r.diskPin() == "" {
@@ -486,6 +486,20 @@ func TestContentThatMovesWhileTheQuestionIsUp(t *testing.T) {
 				}
 				if r.events[len(r.events)-1] != "changing" || !strings.Contains(r.notices[len(r.notices)-1], "still changing") {
 					t.Errorf("events=%v notices=%v", r.events, r.notices)
+				}
+				// Later in the same turn it is refused without a dialog,
+				// as an unanswered question is: the model was told not to
+				// ask again, and one that does must not bring the dialog
+				// back while the files keep moving.
+				r.onAsk = nil
+				again := r.viaTool(nil)
+				if r.asks != tools.OperatorResolves || strings.Contains(again, "moved") || !strings.Contains(again, "do not ask for the skill again in this turn") {
+					t.Errorf("same turn: asks=%d result=%q", r.asks, again)
+				}
+				// The next turn asks again, and the answer counts.
+				r.g.newTurn()
+				if out := r.viaTool(nil); r.asks != tools.OperatorResolves+1 || !strings.Contains(out, "moved") {
+					t.Errorf("next turn: asks=%d result=%q", r.asks, out)
 				}
 			})
 		}
@@ -931,11 +945,11 @@ func TestPlainTrustAsk(t *testing.T) {
 		"Trust\n": -1, "trust me\n": -1, "not now\n": -1, "t\n": -1,
 	} {
 		var out bytes.Buffer
-		got := plainTrustAsk(bufio.NewReader(strings.NewReader(in)), &out, "project trust", "The skill greet has changed.\nLook: \"/p/x\"", options)
+		got := plainTrustAsk(bufio.NewReader(strings.NewReader(in)), &out, "project trust", "The skill greet has changed.\nLook: \"/p/x\"", "type trust or disable: ", "(else):", options)
 		if got != want {
 			t.Errorf("input %q = %d, want %d", in, got, want)
 		}
-		for _, w := range []string{"project trust", "The skill greet has changed.", "trust:", "Trust and load", "disable:", "Not now", "type trust or disable"} {
+		for _, w := range []string{"project trust", "The skill greet has changed.", "trust:", "Trust and load", "disable:", "(else):", "Not now", "type trust or disable: "} {
 			if !strings.Contains(out.String(), w) {
 				t.Errorf("prompt missing %q:\n%s", w, out.String())
 			}

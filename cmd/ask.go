@@ -114,7 +114,7 @@ func oneShotAsk(context.Context, string, []string) (int, error) {
 // skill's directory, arrives quoted (strconv.Quote, in skillQuestion):
 // it cannot break a line or carry an escape sequence, here or in the
 // TUI's dialog.
-func plainTrustAsk(in *bufio.Reader, out io.Writer, heading, question string, options []string) int {
+func plainTrustAsk(in *bufio.Reader, out io.Writer, heading, question, prompt, elseLabel string, options []string) int {
 	fmt.Fprintf(out, "\n[⚠ %s]\n", heading)
 	for _, l := range strings.Split(question, "\n") {
 		fmt.Fprintf(out, "  %s\n", l)
@@ -125,9 +125,9 @@ func plainTrustAsk(in *bufio.Reader, out io.Writer, heading, question string, op
 			fmt.Fprintf(out, "  %-8s %s\n", words[i]+":", o)
 			continue
 		}
-		fmt.Fprintf(out, "  %-8s %s\n", "(else):", o)
+		fmt.Fprintf(out, "  %-8s %s\n", elseLabel, o)
 	}
-	fmt.Fprint(out, "  type trust or disable (anything else leaves it undecided): ")
+	fmt.Fprint(out, "  "+prompt)
 	line, err := in.ReadString('\n')
 	if err != nil && line == "" {
 		fmt.Fprintln(out)

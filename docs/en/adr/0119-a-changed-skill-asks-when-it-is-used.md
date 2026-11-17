@@ -104,7 +104,8 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
    again. If it differs from the digest that raised the question, nothing
    is recorded and the question is asked once more about the new state; a
    second difference refuses the read as unanswered and says the skill is
-   still changing. Otherwise that digest is recorded for that one name
+   still changing; like an unanswered question, it is not asked again in
+   that turn. Otherwise that digest is recorded for that one name
    under the policy file's lock — by a write of its own, which takes the
    digest it expects — and the name leaves the session's exclusion set. A
    call that was cancelled records nothing. The read then runs, held to

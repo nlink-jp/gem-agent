@@ -1079,7 +1079,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 				prog.Send(tui.AskRequest{Heading: heading, Question: question, Options: options, Default: def, Hint: hint, Resp: resp})
 				idx = <-resp
 			} else {
-				idx = plainTrustAsk(stdin, cmd.ErrOrStderr(), heading, question, options)
+				idx = plainTrustAsk(stdin, cmd.ErrOrStderr(), heading, question, msgs.SkillTrustPlainPrompt, msgs.SkillTrustPlainElse, options)
 			}
 			if askCtx.Err() != nil {
 				return -1

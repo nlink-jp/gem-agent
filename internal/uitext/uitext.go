@@ -390,11 +390,16 @@ type Messages struct {
 	SkillTrustOptLater      string
 	// SkillTrustHint replaces the question dialog's hint for this
 	// question: arrows select, only Enter confirms, digits do nothing.
-	SkillTrustHint         string
+	SkillTrustHint string
+	// The plain REPL's line that says what to type, and its label for
+	// the option no word selects.
+	SkillTrustPlainPrompt  string
+	SkillTrustPlainElse    string
 	SkillTrustedFmt        string // recorded
 	SkillDisabledFmt       string // disabled for the session; also on each later use
 	SkillLaterFmt          string // not answered: not loaded, not asked again this turn
 	SkillUncoveredFmt      string // more files than a pin covers
+	SkillRecordFailedFmt   string // %s = name, %v = the error — trusted, not recorded, not loaded
 	SkillChangingFmt       string // moved again while being answered
 	SkillUnattendedFmt     string // nobody at a terminal
 	SkillGoneFmt           string // the directory is gone
@@ -651,19 +656,22 @@ keys:
 	PinStaleWriteFmt:            "project trust: %s had changed before this write — not re-trusted; asks at the next interactive start",
 	SkillTrustHeading:           "project trust — a skill is not what you trusted",
 	SkillTrustChangedFmt:        "The skill %s has changed since you trusted it.\nLook at its files before you answer: %s",
-	SkillTrustUnrecordedFmt:     "The skill %s is not in this project's trusted record.\nLook at its files before you answer: %s",
+	SkillTrustUnrecordedFmt:     "The skill %s is not in this project's trust record.\nLook at its files before you answer: %s",
 	SkillTrustExplain:           "Trust records this content as trusted — for later sessions too — and loads it. Disable keeps the skill off for the rest of this session.",
 	SkillTrustOptTrust:          "Trust and load",
 	SkillTrustOptDisable:        "Disable for this session",
 	SkillTrustOptLater:          "Not now — ask again after my next message",
 	SkillTrustHint:              "↑↓ select · Enter confirm · Esc leaves it undecided",
+	SkillTrustPlainPrompt:       "type trust or disable (anything else leaves it undecided): ",
+	SkillTrustPlainElse:         "(else):",
 	SkillTrustedFmt:             "project trust: skill %s trusted",
 	SkillDisabledFmt:            "project trust: skill %s is disabled for this session — not loaded; `gem-agent trust --accept` in another terminal, then /clear or /skills reload, brings it back",
 	SkillLaterFmt:               "project trust: skill %s not loaded — using it after your next message asks again",
-	SkillUncoveredFmt:           "project trust: skill %s holds more files than the trust check covers (2,000) — not loaded",
+	SkillUncoveredFmt:           "project trust: skill %s has more than 2,000 files, more than the trust check covers — not loaded; remove what the skill does not need",
+	SkillRecordFailedFmt:        "project trust: could not record the trust of skill %s (%v) — not loaded",
 	SkillChangingFmt:            "project trust: skill %s is still changing — not loaded; use it again when the change has finished",
 	SkillUnattendedFmt:          "project trust: skill %s is not what you trusted — not loaded; re-trust with `gem-agent trust --accept`",
-	SkillGoneFmt:                "project trust: skill %s — its directory is gone; /clear or /skills reload lists the skills again",
+	SkillGoneFmt:                "project trust: skill %s — its directory is gone or was replaced; /clear or /skills reload lists the skills again",
 	PersistentSinceLastFmt:      "note: changed since your previous session: %s",
 	PersistentSessionFmt:        "note: this session added or changed: %s",
 	AddedPersistentSinceLastFmt: "note: in the added directory %s, changed since your previous session: %s — a project opened under it would load or run these",
@@ -898,15 +906,18 @@ var ja = Messages{
 	SkillTrustExplain:           "信用する: この内容を信用済みとして記録し（以後のセッションにも有効）、読み込みます。無効にする: このセッションの間、このスキルを使いません。",
 	SkillTrustOptTrust:          "信用して読み込む",
 	SkillTrustOptDisable:        "このセッションでは無効にする",
-	SkillTrustOptLater:          "今は決めない — 次の発言の後で、また尋ねる",
+	SkillTrustOptLater:          "今は決めない — 次のメッセージの後で、また尋ねる",
 	SkillTrustHint:              "↑↓ で選択 · Enter 決定 · Esc 今は決めない",
+	SkillTrustPlainPrompt:       "trust か disable と入力（それ以外は今は決めない）: ",
+	SkillTrustPlainElse:         "(その他):",
 	SkillTrustedFmt:             "project trust: スキル %s を信用しました",
 	SkillDisabledFmt:            "project trust: スキル %s はこのセッションでは無効です — 読み込みません。戻すには、別のターミナルで `gem-agent trust --accept` を実行してから /clear か /skills reload",
-	SkillLaterFmt:               "project trust: スキル %s は読み込みません — 次の発言の後で使うときに、また尋ねます",
-	SkillUncoveredFmt:           "project trust: スキル %s は、信用の確認が見られる数（2,000）を超えるファイルを持っています — 読み込みません",
+	SkillLaterFmt:               "project trust: スキル %s は読み込みません — 次のメッセージの後で使うときに、また尋ねます",
+	SkillUncoveredFmt:           "project trust: スキル %s はファイルが 2,000 個を超えています（信用の確認は 2,000 個まで）— 読み込みません。スキルに不要なファイルを外してください",
+	SkillRecordFailedFmt:        "project trust: スキル %s の信用を記録できませんでした（%v）— 読み込みません",
 	SkillChangingFmt:            "project trust: スキル %s はまだ変わり続けています — 読み込みません。変更が終わってから使い直してください",
 	SkillUnattendedFmt:          "project trust: スキル %s は信用した内容と違います — 読み込みません。`gem-agent trust --accept` で再信用",
-	SkillGoneFmt:                "project trust: スキル %s のディレクトリがありません — /clear か /skills reload でスキルの一覧を作り直します",
+	SkillGoneFmt:                "project trust: スキル %s のディレクトリがなくなったか、置き換えられています — /clear か /skills reload でスキルの一覧を作り直します",
 	PersistentSinceLastFmt:      "note: 前回のセッション以降に変更: %s",
 	PersistentSessionFmt:        "note: このセッションが追加・変更: %s",
 	AddedPersistentSinceLastFmt: "note: 追加ディレクトリ %s で、前回のセッション以降に変更: %s — その下で開くプロジェクトはこれらを読み込むか実行します",

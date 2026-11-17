@@ -22,11 +22,11 @@ import (
 // the text of an error. Each one says not to fetch the files another
 // way: a denied load must not become a read_file of the same SKILL.md.
 const (
-	skillRefusalDisabled   = "The skill %q is disabled for this session at the operator's choice. Do not read its files by other means. Continue without it."
-	skillRefusalLater      = "The skill %q was not loaded: its content is not what the operator trusted, and the operator has not decided about it. Do not read its files by other means, and do not ask for the skill again in this turn. Continue without it."
-	skillRefusalUncovered  = "The skill %q was not loaded: it holds more files than the operator's trust check covers. Do not read its files by other means. Continue without it."
-	skillRefusalUnattended = "The skill %q was not loaded: its content is not what the operator trusted, and nobody is at the terminal to confirm it. Do not read its files by other means. Continue without it; the operator can re-trust it with `gem-agent trust --accept`."
-	skillRefusalChanging   = "The skill %q was not loaded: its files are still changing. Do not read its files by other means. Continue without it, or ask for it again later."
+	skillRefusalDisabled   = "The skill %q is disabled for this session at the operator's choice. Do not read its files by other means. Say that the skill was not loaded, and continue only with what does not depend on it."
+	skillRefusalLater      = "The skill %q was not loaded: its content is not what the operator's trust record holds, and the operator has not decided about it. Do not read its files by other means, and do not ask for the skill again in this turn. Say that the skill was not loaded, and continue only with what does not depend on it."
+	skillRefusalUncovered  = "The skill %q was not loaded: it holds more files than the operator's trust check covers. Do not read its files by other means. Say that the skill was not loaded, and continue only with what does not depend on it."
+	skillRefusalUnattended = "The skill %q was not loaded: its content is not what the operator's trust record holds, and nobody is at the terminal to confirm it. Do not read its files by other means. Say that the skill was not loaded, and continue only with what does not depend on it; the operator can re-trust it with `gem-agent trust --accept`."
+	skillRefusalChanging   = "The skill %q was not loaded: its files are still changing. Do not read its files by other means, and do not ask for the skill again in this turn. Say that the skill was not loaded, and continue only with what does not depend on it."
 	skillErrRecord         = "skill %q: the operator trusted it, but the trust could not be recorded, so it was not loaded"
 )
 
@@ -40,7 +40,7 @@ var errSkillMoved = errors.New("the skill's content is not what was compared")
 type skillGoneError struct{ name string }
 
 func (e *skillGoneError) Error() string {
-	return fmt.Sprintf("skill %q: its directory is gone", e.name)
+	return fmt.Sprintf("skill %q: its directory is gone or was replaced", e.name)
 }
 
 // skillGuard is the compare-before-consuming rule applied where a
@@ -339,7 +339,7 @@ func (g *skillGuard) record(s skills.Skill, digest string) error {
 	pin := trustpin.SkillPinName(s.Entry)
 	if err := mutatePins(g.policyPath, g.projectDir, g.policyFile, func(pins trustpin.Pins) { pins[pin] = digest }); err != nil {
 		if g.notice != nil {
-			g.notice(fmt.Sprintf("could not record the trust of skill %s: %v", s.Name, err))
+			g.notice(fmt.Sprintf(g.msgs.SkillRecordFailedFmt, s.Name, err))
 		}
 		return err
 	}
@@ -421,6 +421,10 @@ func (q *skillQuestion) Resolve(ctx context.Context) (context.Context, string) {
 // StillUnresolved is the end of a call whose skill kept changing: after
 // one more question, or during the read that followed a trust answer.
 func (q *skillQuestion) StillUnresolved() string {
+	// Remembered for the turn, like an unanswered question: a model that
+	// asks again at once must not raise the dialog again while the files
+	// keep moving.
+	q.g.decline(trustpin.SkillPinName(q.s.Entry))
 	q.g.event(q.s, "changing")
 	q.g.say(q.g.msgs.SkillChangingFmt, q.s)
 	return fmt.Sprintf(skillRefusalChanging, q.s.Name)
