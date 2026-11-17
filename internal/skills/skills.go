@@ -30,6 +30,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -133,6 +134,58 @@ func (s Skill) openRoot() (*os.Root, func(), error) {
 	return root, func() { _ = root.Close() }, nil
 }
 
+// WithRoot runs fn on the root every read of this skill goes through.
+// The comparison made when a skill is used (ADR-0119 §1) digests through
+// it, so what is compared is the tree Body and File read — not whatever
+// the skill's path resolves to at that moment.
+func (s Skill) WithRoot(fn func(root *os.Root) error) error {
+	root, release, err := s.openRoot()
+	if err != nil {
+		return err
+	}
+	defer release()
+	return fn(root)
+}
+
+// ChangedError is what a read of a project skill reports when the
+// skill's content is not what the operator's trust record holds
+// (ADR-0119). Nothing was read. The caller that can ask the operator
+// does; Digest is what the question is about, so a trust answer records
+// that content and no later one.
+type ChangedError struct {
+	// Name is the skill's validated name; Entry its directory entry,
+	// the key of its pin; Dir the directory the operator can look at.
+	Name, Entry, Dir string
+	Digest           string
+	// Unrecorded: the record holds no pin for this skill at all, rather
+	// than a different one.
+	Unrecorded bool
+}
+
+func (e *ChangedError) Error() string {
+	return "skill " + e.Name + " differs from its trusted record"
+}
+
+// unsafeEntry reports a name or path that could write into a dialog or
+// a note that shows it: a control character (a line break above all), a
+// format character such as a bidirectional override, or bytes that are
+// not text at all. The name a skill declares is validated by
+// namePattern; its directory is not, and the trust question shows the
+// directory (ADR-0119 §11). Both spellings are checked: the entry under
+// the skills root, and the path it resolves to — an entry with a plain
+// name may be a link to a directory that has neither.
+func unsafeEntry(name string) bool {
+	if !utf8.ValidString(name) {
+		return true
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return true
+		}
+	}
+	return false
+}
+
 // Close releases the skill's root. CloseAll does it for a discovered
 // list that a reload replaces.
 func (s Skill) Close() {
@@ -187,6 +240,12 @@ func Discover(globalDir, projectDir string, lim Limits) ([]Skill, []string) {
 			notes = append(notes, fmt.Sprintf("%s holds more than %d entries; only the first %d were scanned for skills", root, skillScanCap, skillScanCap))
 		}
 		for _, e := range entries {
+			if unsafeEntry(e.Name()) {
+				// Before anything is read from it, and quoted: the note
+				// must not carry the characters it is about.
+				notes = append(notes, fmt.Sprintf("skill directory %q skipped: its name holds a control or format character, or is not valid text", e.Name()))
+				continue
+			}
 			dir := filepath.Join(root, e.Name())
 			// os.Stat, not e.IsDir(): a symlinked skill directory reports
 			// IsDir()=false on the DirEntry, and symlinks are exactly how
@@ -245,6 +304,11 @@ func readSkill(dir, scope string, lim Limits) (*Skill, error) {
 	realDir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return nil, err
+	}
+	if unsafeEntry(realDir) {
+		// Dir is what the base-directory line and the trust question
+		// show. Quoted here too: the error becomes a note.
+		return nil, fmt.Errorf("it resolves to %q, which holds a control or format character", realDir)
 	}
 	// The root is opened first and SKILL.md read through it: the
 	// description enters the system prompt, and must come from inside
