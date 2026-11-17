@@ -137,7 +137,7 @@ func TestTheWalkLooksAtNoMoreThanItsBudget(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			_, root := buildTree(t, c.files, nil, c.dirs)
 			w := &manifestWalk{maxFiles: maxFiles, left: maxWalk, maxDepth: 100}
-			w.dir(root, "", 0)
+			w.walk(root)
 			if w.cut != c.cut {
 				t.Errorf("cut = %v, want %v", w.cut, c.cut)
 			}
@@ -318,5 +318,59 @@ func TestBothBoundsArePropertiesOfTheTree(t *testing.T) {
 				t.Fatalf("seed %d: cut at the file cap as %s, the old walk %s (cut %v)", seed, got, want, wantCut)
 			}
 		}
+	}
+}
+
+// A directory that can be listed and not searched is not walked: its
+// names can be read and nothing under them can. The walk never went
+// into one — it could not open it to list — and one that did would
+// record its links with no target, which is another digest for a tree
+// a pin was already taken of.
+func TestTheWalkDoesNotEnterADirectoryItCannotSearch(t *testing.T) {
+	dir, root := buildTree(t, []string{"SKILL.md", "closed/f", "closed/deeper/g"}, map[string]string{"closed/l": "f"}, nil)
+	closed := filepath.Join(dir, "closed")
+	if err := os.Chmod(closed, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(closed, 0o755) })
+	if os.Geteuid() == 0 {
+		t.Skip("nothing is closed to root")
+	}
+	_, files, cut := SkillManifest(root)
+	if cut || len(files) != 1 || files["SKILL.md"] == "" {
+		t.Errorf("cut = %v, covered %v: want SKILL.md alone", cut, files)
+	}
+}
+
+// A level is opened from the one above it, so no path the system is
+// given is ever as long as the tree is deep: names as long as a name
+// can be, at the real depth, are walked like any others. (The system
+// takes no path that long — the tree is made here through a root,
+// which resolves a path one name at a time.)
+func TestTheWalkIsNotBoundedByTheLengthOfAPath(t *testing.T) {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	long := strings.Repeat("n", 255)
+	rel := ""
+	for i := 0; i < SkillDepth; i++ {
+		rel += long
+		if err := root.Mkdir(rel, 0o755); err != nil {
+			t.Skipf("level %d: %v", i, err)
+		}
+		rel += "/"
+	}
+	if err := root.WriteFile(rel+long, []byte("deep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Symlink("target", rel+"link"); err != nil {
+		t.Fatal(err)
+	}
+	_, files, cut := SkillManifest(root)
+	if cut || len(files) != 2 || files[rel+long] != ContentLine([]byte("deep")) || files[rel+"link"] != "link:target" {
+		t.Errorf("cut = %v with %d entries: want the file and the link %d levels down", cut, len(files), SkillDepth)
 	}
 }

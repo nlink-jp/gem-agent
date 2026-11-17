@@ -24,6 +24,14 @@ func TestOpenRegularDoesNotWaitOnANameSwappedForAFifo(t *testing.T) {
 	for how, open := range map[string]func(root *os.Root, dir, name string) (*os.File, error){
 		"under a root": func(root *os.Root, _, name string) (*os.File, error) { return OpenRegular(root, name) },
 		"by path":      func(_ *os.Root, dir, name string) (*os.File, error) { return OpenRegularPath(filepath.Join(dir, name)) },
+		"from a directory held open": func(root *os.Root, _, name string) (*os.File, error) {
+			d, err := DirOf(root)
+			if err != nil {
+				return nil, err
+			}
+			defer func() { _ = d.Close() }()
+			return d.OpenRegular(name)
+		},
 	} {
 		t.Run(how, func(t *testing.T) {
 			dir := t.TempDir()
@@ -68,8 +76,13 @@ func TestOpenRegularDoesNotWaitOnANameSwappedForAFifo(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				deadline := time.Now().Add(1500 * time.Millisecond)
-				for time.Now().Before(deadline) {
+				// A second and a half as a rule. On a machine too busy
+				// to get an open of each kind through in that time, for
+				// as long as it takes, within reason: a run that saw
+				// one kind only has shown nothing.
+				start := time.Now()
+				for time.Since(start) < 1500*time.Millisecond ||
+					((opened.Load() == 0 || refused.Load() == 0) && time.Since(start) < 8*time.Second) {
 					f, err := open(root, dir, "name")
 					if err != nil {
 						if !errors.Is(err, ErrNotRegular) && !errors.Is(err, os.ErrNotExist) {
@@ -90,7 +103,7 @@ func TestOpenRegularDoesNotWaitOnANameSwappedForAFifo(t *testing.T) {
 			}()
 			select {
 			case <-done:
-			case <-time.After(10 * time.Second):
+			case <-time.After(20 * time.Second):
 				close(stop)
 				// The FIFO that holds the open has been renamed over and
 				// has no name left to release it by; the goroutine is

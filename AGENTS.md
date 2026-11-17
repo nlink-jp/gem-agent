@@ -288,7 +288,17 @@ a new hook) is an architecture change and takes the same rows as a
   until somebody wrote to it. The open itself is `O_NONBLOCK`, the kind
   is looked at again on the descriptor and the flag cleared, so a name
   swapped for a FIFO between the look and the open is refused too
-  (ADR-0120 §7; observed first on an online-only iCloud file). The same holds for every other open of a
+  (ADR-0120 §7; observed first on an online-only iCloud file). The skill
+  walk holds each level as a `bounded.Dir` and opens what it holds from
+  it by one name — a sub-directory with `O_DIRECTORY`, a file with
+  `O_NONBLOCK`, never through a link: `Root.OpenRoot` takes no flags and
+  waited on a sub-directory swapped for a FIFO, and a path from the
+  skill's root at every open cost 8.2 s for a tree this walks in 0.3 s
+  (ADR-0120 §8). A level is listed as a root lists it — every name
+  looked at, the listing stopped at one that cannot be — through a
+  descriptor of its own: the pins were taken from that listing, and a
+  listing by the directory's own kinds gave another digest for a tree
+  with an ACL in it. The same holds for every other open of a
   name (ADR-0120): a directory that is listed is opened with
   `bounded.OpenDir` (`O_DIRECTORY` — the kernel refuses a FIFO at the
   open), a root with `bounded.OpenRoot`, a file under a fixed name with
@@ -298,7 +308,8 @@ a new hook) is an architecture change and takes the same rows as a
   state files are held to the same rule. `TestOpensDoNotWait`
   (`internal/archtest`) fails on an `os.Open`, `os.OpenFile`,
   `os.OpenRoot`, `os.Create`, `os.WriteFile` or `toml.DecodeFile`, and
-  on an `os.Root` method that opens, outside `internal/bounded` — each
+  on an `os.Root` method that opens, and on a raw `unix.Open` /
+  `unix.Openat` / `syscall.Open`, outside `internal/bounded` — each
   exception is listed there with why it cannot wait (`O_EXCL`,
   `O_NONBLOCK`, read-write); the
   operator's own `--config` and `headers_file` are on its list,

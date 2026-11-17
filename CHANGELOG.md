@@ -25,7 +25,11 @@
   is opened is refused as well; before, that swap held the open every
   time it was tried. How such an open behaves on an online-only file of
   a cloud folder was observed first, on iCloud Drive: the same as a
-  plain one. The configuration file you pass with
+  plain one. The check a skill gets when it is used goes down the
+  skill's folders the same way now: a folder swapped for a FIFO while
+  the skill was being checked held the check — six tries of six — and
+  is refused instead. The trust records are what they were, and the
+  check takes no longer. The configuration file you pass with
   `--config` and the `headers_file` it names are unchanged — a FIFO there still waits until it is
   written, which may be what you mean.
 
