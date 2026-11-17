@@ -24,7 +24,7 @@ import (
 const (
 	skillRefusalDisabled   = "The skill %q is disabled for this session at the operator's choice. Do not read its files by other means. Say that the skill was not loaded, and continue only with what does not depend on it."
 	skillRefusalLater      = "The skill %q was not loaded: its content is not what the operator's trust record holds, and the operator has not decided about it. Do not read its files by other means, and do not ask for the skill again in this turn. Say that the skill was not loaded, and continue only with what does not depend on it."
-	skillRefusalUncovered  = "The skill %q was not loaded: it is larger than the operator's trust check covers. Do not read its files by other means. Say that the skill was not loaded, and continue only with what does not depend on it."
+	skillRefusalUncovered  = "The skill %q was not loaded: it is past what the operator's trust check covers. Do not read its files by other means. Say that the skill was not loaded, and continue only with what does not depend on it."
 	skillRefusalUnattended = "The skill %q was not loaded: its content is not what the operator's trust record holds, and nobody is at the terminal to confirm it. Do not read its files by other means. Say that the skill was not loaded, and continue only with what does not depend on it; the operator can re-trust it with `gem-agent trust --accept`."
 	skillRefusalChanging   = "The skill %q was not loaded: its files are still changing. Do not read its files by other means, and do not ask for the skill again in this turn. Say that the skill was not loaded, and continue only with what does not depend on it."
 	skillRefusalGone       = "The skill %q was not loaded: it is gone or was replaced. Do not read its files by other means. Say that the skill was not loaded, and continue only with what does not depend on it."
@@ -90,7 +90,8 @@ const (
 	skillCurrent skillState = iota
 	skillDisabled
 	skillGone
-	// skillUncovered: the directory holds more files than a pin covers.
+	// skillUncovered: the directory is past what a pin covers — too many
+	// files, too many entries of every kind, or nested too deep.
 	// What a pin does not cover is not served (§1).
 	skillUncovered
 	skillChanged

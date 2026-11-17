@@ -275,9 +275,14 @@ a new hook) is an architecture change and takes the same rows as a
   (`skills.Verify`, `trustpin.Manifest.Line`), so only bytes that tree
   holds for that file are returned. And nothing a pin does not cover is
   served — `skills.ReadCap` equals `trustpin.FileCap` (a test holds it),
-  and a skill whose digest was cut at 2,000 files, or at 4,000 entries of every kind
-  (`trustpin.SkillWalk`: the walk reads a directory only as far as its
-  budget goes, so it is bounded in what it looks at), is refused: the review
+  and a skill whose digest was cut at 2,000 files, at 4,000 entries of every kind
+  (`trustpin.SkillWalk`) or at directories 32 deep (`trustpin.SkillDepth`)
+  is refused. The walk is bounded in the work it does: a directory is
+  read only as far as the budget goes and opened from its parent's
+  handle, never by a path from the root (that cost d*d/2 opens). Skill
+  files are opened with `bounded.OpenRegular` — without waiting, regular
+  files only — because a `SKILL.md` that is a FIFO held discovery, and
+  startup, until somebody wrote to it. On the caps: the review
   showed `SKILL.md` itself could be the uncovered part. The digest is
   `trustpin.DigestRoot` over the skill's own open root — one
   implementation for the pin and the comparison, held byte-equal to the

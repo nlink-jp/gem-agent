@@ -124,7 +124,15 @@ func TestDigestRootEqualsThePinsAlreadyRecorded(t *testing.T) {
 					t.Fatal(err)
 				}
 				got, gotCut := DigestRoot(root, max)
+				entries, _ := manifestRoot(root, max, SkillWalk, SkillDepth)
 				_ = root.Close()
+				// The one tree the two walks read differently: exactly
+				// the cap, then something that is not a file that can
+				// be digested. The old walk looked at the cap on every
+				// entry and refused it; it is covered whole now.
+				if wantCut && !gotCut && len(entries) == max {
+					want, wantCut = pathDirDigest(dir, 1<<30)
+				}
 				if got != want || gotCut != wantCut {
 					t.Errorf("cap %d: through the root %s (cut %v), by path %s (cut %v)", max, got, gotCut, want, wantCut)
 				}
@@ -137,7 +145,9 @@ func TestDigestRootEqualsThePinsAlreadyRecorded(t *testing.T) {
 }
 
 // More files than the cap: both digests stop at the same files, so a
-// skill that was pinned cut is still equal to its pin.
+// skill that was pinned cut is still equal to its pin — while it is
+// within the walk's other bounds (walkbound_test.go); past those the
+// walk stops sooner than the old one did, and startup asks once.
 func TestDigestRootCutsWhereThePathWalkDid(t *testing.T) {
 	dir := t.TempDir()
 	for i := 0; i < 40; i++ {

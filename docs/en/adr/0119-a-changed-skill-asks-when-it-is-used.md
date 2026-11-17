@@ -171,7 +171,7 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
   session, and the operator answers with one key.
 - A read of a project skill costs one digest of its directory and one of
   the file it returns; a trust answer adds a digest; the bound is 2,000
-  files of 1 MiB. Measured on an Apple Silicon machine, APFS, warm cache
+  files of 1 MiB, 4,000 entries looked at, and 32 levels. Measured on an Apple Silicon machine, APFS, warm cache
   (the digest is the code lagent shares): the installed skills (1 to 21
   files, up to 126 KiB) take 0.1 to 2.7 ms per digest; a whole skill
   repository checked out as a skill, `.git` included (248 files, 1 MiB),
@@ -224,13 +224,14 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
   is what tells the model.
 - **The digest has limits, and what it does not cover is not served:** a
   skill with more than 2,000 files, or with more than 4,000 entries in
-  all — files, links and directories together — is not read at all, a `SKILL.md` over
+  all — files, links and directories together — or with directories nested
+  more than 32 deep, is not read at all, a `SKILL.md` over
   1 MiB is not a skill, and a supporting file over the 96 KiB read limit
   is refused. A link inside a skill is covered by its target string; a
   file read through it is held to the entry it leads to. The first
   version of this record accepted "files past the 2,000th are not
   covered"; the implementation review showed that `SKILL.md` itself could
-  be one of them. The second bound is on the walk itself, and was added after the first release: directories are neither counted as files nor part of the digest, so a tree of empty directories added to a trusted skill changed no digest and was walked whole at every use. Measured on that release: 100,000 empty directories took 9.6 s per compare, and one directory holding 200,000 files took 0.7 s, because a directory was listed whole before the cap was looked at. A directory is now read only as far as the walk's budget goes, and a tree over the budget is refused like one over the file cap. Within both bounds every digest is what it was. The budget is twice the file cap, so a skill that keeps every file in a directory of its own still fits. After the change the same two trees take 0.3 s and 0.008 s, and a tree at both bounds — 2,000 files and 2,000 directories — 0.2 s. A tree past a bound is refused either way; its digest may differ from a pin taken before, and then startup asks about it once.
+  be one of them. The second bound is on the walk itself, and was added after the first release: directories are neither counted as files nor part of the digest, so a tree of empty directories added to a trusted skill changed no digest and was walked whole at every use. Measured on lagent's first release, which takes the digest with the same code: 100,000 empty directories took 9.6 s per compare, and one directory holding 200,000 files took 0.7 s, because a directory was listed whole before the cap was looked at. A directory is now read only as far as the walk's budget goes, and a tree over the budget is refused like one over the file cap. Within the bounds every digest is what it was, with one exception: a tree of exactly 2,000 files with anything that is not a file it can digest sorting after the last of them, which the old walk refused and this one covers. The budget is twice the file cap, so a skill that keeps every file in a directory of its own still fits. The review of that change found a third cost. A directory was opened by its path from the root, which the runtime resolves one component at a time, so a chain of d directories cost d²/2 opens: 800 empty directories, inside the budget, took 32 s per compare, in the old walk and the new alike. A directory is now opened from its parent's handle, and since one handle is held for each level, nesting is bounded at 32. After both changes the two trees above take 0.3 s and 0.008 s, a chain of 200 directories 0.005 s, and a tree at every bound — 2,000 files 32 levels down, beside 2,000 directories — 0.3 s. A file that cannot be digested is not counted wherever it sorts; counted at the cap and not below it, it made the answer depend on its name. And a skill's files are opened without waiting, and only if they are regular files: a `SKILL.md` that is a FIFO held discovery, and so startup, until somebody wrote to it — measured, and present since skills were first read. A tree past a bound is refused either way; its digest may differ from a pin taken before, and then startup asks about it once.
 - **Scripts.** A skill loaded earlier may have told the model to run a
   script from its directory. If the script changes afterwards, the shell
   runs what is there, under the lane and approval rules of every command.

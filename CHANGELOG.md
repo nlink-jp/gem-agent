@@ -4,25 +4,40 @@
 
 ### Security
 
-- **The check a skill gets when it is used is bounded in what it looks
-  at** (ADR-0119). The compare counted files and stopped at 2,000. It did
-  not count directories, which are also no part of what a trust record
-  holds: empty directories added to a trusted skill asked nothing, and
-  were walked whole every time the skill was used. A directory was also
-  listed whole before the limit was looked at. Measured on lagent v0.28.0, which takes the digest with the same code: 100,000
-  empty directories took 9.6 s per use, and one directory of 200,000
-  files 0.7 s. Nothing reached the model that had not been compared —
-  the cost was time, and getting there takes write access to the skill's
-  directory on this machine (git does not carry empty directories). A
-  project skill may now hold 2,000 files, and 4,000 files and folders in
-  all; past either it is not loaded, with a notice. The same two trees
-  now take 0.3 s and 0.008 s.
+- **The check a skill gets when it is used is bounded in the work it
+  does** (ADR-0119). A folder is no part of what a trust record holds, so
+  folders added to a trusted skill asked nothing — and three things let
+  them cost time at every use. Every folder was walked: 100,000 empty
+  ones took 9.6 s. A folder was listed whole before the file limit was
+  looked at: one holding 200,000 files took 0.7 s. And a folder was
+  opened by its path from the top, which costs more the deeper it lies:
+  800 nested empty folders took 32 s. Measured on lagent v0.28.0, which takes the digest with the same code. Nothing reached the
+  model that had not been compared — the cost was time, and it takes
+  write access to the skill's directory on this machine (git does not
+  carry empty folders). A project skill may now hold 2,000 files, 4,000
+  files and folders in all, and folders nested 32 deep; past any of
+  these it is not loaded, with a notice. The same three trees now take
+  0.3 s, 0.008 s and 0.005 s, and a skill at every limit 0.3 s.
+- **A skill file that is a FIFO no longer stops startup.** Skill
+  discovery opened `SKILL.md` and waited for something to write to it,
+  so a project holding such a skill hung the runtime before anything was
+  asked (measured; present since skills were first read). Skill files
+  are now opened without waiting, and only if they are regular files.
 
 ### Fixed
 
 - **A skill of exactly 2,000 files is loaded.** It was refused as having
-  more than 2,000 when a folder happened to sort after its last file.
-  If you had trusted such a skill, it asks once more.
+  more than 2,000 when anything that is not a readable file — a folder,
+  most often — sorted after its last file. If you had trusted such a
+  skill, it asks once more.
+
+### Changed
+
+- **A skill that was already too large to load may be asked about once
+  at the next start.** Past the new limits the check stops sooner than
+  it did, so the record of such a skill no longer matches. Answer once
+  and it is recorded again; a run with nobody to ask leaves it out with
+  a note. Either way the skill is still not loaded.
 
 ## [0.104.0] - 2026-11-17
 

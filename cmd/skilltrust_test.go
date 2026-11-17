@@ -760,7 +760,7 @@ func TestATrustAnswerIsForThatSkillAndThatCall(t *testing.T) {
 	})
 }
 
-// §1: a skill with more files than a pin covers is not read. The files
+// §1: a skill past what a pin covers is not read. The files
 // past the cap are not in the digest; SKILL.md itself can be among them.
 func TestASkillThePinDoesNotCoverIsNotRead(t *testing.T) {
 	r := newGuardRig(t)
@@ -780,7 +780,7 @@ func TestASkillThePinDoesNotCoverIsNotRead(t *testing.T) {
 	}
 	r.write(skillV2)
 	out := r.viaTool(nil)
-	if strings.Contains(out, "DURIAN") || !strings.Contains(out, "larger than the operator's trust check covers") {
+	if strings.Contains(out, "DURIAN") || !strings.Contains(out, "past what the operator's trust check covers") {
 		t.Errorf("result = %q", out)
 	}
 	if turn, handled, errMsg := r.viaSlash(); turn != "" || !handled || errMsg != "" {
@@ -806,13 +806,13 @@ func TestASkillWithMoreEntriesThanTheWalkLooksAtIsNotLoaded(t *testing.T) {
 	}
 	before := r.diskPin()
 	out := r.viaTool(nil)
-	if strings.Contains(out, skillV1) || !strings.Contains(out, "larger than the operator's trust check covers") || !strings.Contains(out, "Do not read its files by other means") {
+	if strings.Contains(out, skillV1) || !strings.Contains(out, "past what the operator's trust check covers") || !strings.Contains(out, "Do not read its files by other means") {
 		t.Errorf("result = %q", out)
 	}
 	if turn, handled, errMsg := r.viaSlash(); turn != "" || !handled || errMsg != "" {
 		t.Errorf("/skill: turn=%q handled=%v errMsg=%q", turn, handled, errMsg)
 	}
-	if r.asks != 0 || r.events[0] != "uncovered" || !strings.Contains(r.notices[0], "4,000") {
+	if r.asks != 0 || r.events[0] != "uncovered" || !strings.Contains(r.notices[0], "4,000") || !strings.Contains(r.notices[0], "32 deep") {
 		t.Errorf("asks=%d events=%v notices=%v", r.asks, r.events, r.notices)
 	}
 	if r.diskPin() != before {

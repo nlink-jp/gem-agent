@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nlink-jp/gem-agent/internal/bounded"
 	"github.com/nlink-jp/gem-agent/internal/instructions"
@@ -37,13 +38,16 @@ import (
 type Pins map[string]string
 
 // Caps: one consumed file, the files of one skill, the entries of every
-// kind a skill's walk looks at, the entries of one directory, and the
-// whole persistent-file walk. SkillWalk is twice SkillFiles: a skill
-// that keeps every file in a directory of its own still fits.
+// kind a skill's walk looks at, how deep its directories nest, the
+// entries of one directory, and the whole persistent-file walk.
+// SkillWalk is twice SkillFiles: a skill that keeps every file in a
+// directory of its own still fits. SkillDepth is how many directory
+// handles one walk holds open at once.
 const (
 	FileCap     = 1 << 20
 	SkillFiles  = 2000
 	SkillWalk   = 2 * SkillFiles
+	SkillDepth  = 32
 	DirEntries  = 2000
 	WalkEntries = 20000
 )
@@ -95,7 +99,7 @@ func Compute(projectDir string) (Pins, []string) {
 			}
 			d, cut := dirDigest(dir, SkillFiles)
 			if cut {
-				notes = append(notes, fmt.Sprintf("%s/%s: larger than a trust record covers (%d files, %d entries in all) — the skill is not loaded", SkillsDir, e.Name(), SkillFiles, SkillWalk))
+				notes = append(notes, fmt.Sprintf("%s/%s: past what a trust record covers (up to 2,000 files, 4,000 entries in all, directories 32 deep) — the skill is not loaded when it is used", SkillsDir, e.Name()))
 			}
 			pins[SkillsDir+"/"+e.Name()] = d
 		}
@@ -258,14 +262,13 @@ func consumedDigest(projectDir, name string) (string, bool) {
 	} else if !st.Mode().IsRegular() {
 		return "", false
 	}
-	f, err := root.Open(name)
+	// Without waiting, and only a regular file: the name was looked at
+	// a moment ago, and may be something else by now.
+	f, err := bounded.OpenRegular(root, name)
 	if err != nil {
 		return "", false
 	}
 	defer func() { _ = f.Close() }()
-	if fst, err := f.Stat(); err != nil || !fst.Mode().IsRegular() {
-		return "", false
-	}
 	data, more, err := bounded.ReadAll(f, FileCap)
 	if err != nil {
 		return "", false
@@ -288,7 +291,7 @@ func fileDigest(path string) (string, bool) {
 	if err != nil || !st.Mode().IsRegular() {
 		return "", false
 	}
-	f, err := os.Open(path)
+	f, err := bounded.OpenRegularPath(path)
 	if err != nil {
 		return "", false
 	}
@@ -328,7 +331,7 @@ type Manifest map[string]string
 // tree — a compare before a read does not, by itself, say what the read
 // returned.
 func SkillManifest(root *os.Root) (digest string, files Manifest, cut bool) {
-	entries, cut := manifestRoot(root, SkillFiles, SkillWalk)
+	entries, cut := manifestRoot(root, SkillFiles, SkillWalk, SkillDepth)
 	files = make(Manifest, len(entries))
 	for _, e := range entries {
 		files[e.rel] = e.line
@@ -544,7 +547,7 @@ func rootFileDigest(root *os.Root, rel string) (string, bool) {
 	if err != nil || !st.Mode().IsRegular() {
 		return "", false
 	}
-	f, err := root.Open(rel)
+	f, err := bounded.OpenRegular(root, rel)
 	if err != nil {
 		return "", false
 	}
@@ -564,15 +567,15 @@ func rootFileDigest(root *os.Root, rel string) (string, bool) {
 // DigestRoot hashes a skill directory through root: for every regular
 // file (sorted by relative path, links included by their target string)
 // the path, the size and the content digest. cut reports that the tree
-// is past a bound: more files than maxFiles, or more entries of every
-// kind than SkillWalk.
+// is past a bound: more files than maxFiles, more entries of every kind
+// than SkillWalk, or directories nested deeper than SkillDepth.
 //
 // It reads through the root — the object the skill loader holds open
 // and reads from — not through a path resolved again at each call: a
 // directory swapped under the same name is then compared as the tree
 // the loader will read, not as another one (ADR-0119 §1).
 func DigestRoot(root *os.Root, maxFiles int) (string, bool) {
-	entries, cut := manifestRoot(root, maxFiles, SkillWalk)
+	entries, cut := manifestRoot(root, maxFiles, SkillWalk, SkillDepth)
 	return digestEntries(entries, cut), cut
 }
 
@@ -580,36 +583,43 @@ type manifestEntry struct{ rel, line string }
 
 // manifestRoot walks root and returns the covered entries, sorted. cut
 // reports that the tree is past a bound: a file or link past maxFiles,
-// or more than maxWalk entries of every kind.
+// more than maxWalk entries of every kind, or a directory nested deeper
+// than maxDepth.
 //
-// The walk is bounded in what it looks at, not only in what it
+// The walk is bounded in the work it does, not only in what it
 // collects. A directory is not an entry — it is neither counted as a
-// file nor part of the digest — so empty directories added to a trusted
-// skill change no digest, and a walk that stopped only at the file cap
-// went through all of them at every use; it also listed a directory
-// whole before it looked at the cap (ADR-0119, Consequences: measured).
-// Each directory is therefore read only as far as the budget goes, and
-// what is read is taken off the budget there, before any of it is
-// visited: over the whole walk no more than maxWalk names are listed,
-// plus one for each directory, to see whether there were more.
+// file nor part of the digest — so directories added to a trusted skill
+// change no digest and ask nothing, and a walk that stopped only at the
+// file cap paid for all of them at every use (ADR-0119: measured). Three
+// things kept that cost open, and each has its bound here:
 //
-// Both bounds are properties of the tree, not of the order it is read
-// in: it is cut when it holds more than maxFiles files and links, or
-// more than maxWalk entries in all. Within both, the result is what
-// fs.WalkDir gave — a directory's names are visited sorted, a link is
-// recorded and not followed, what cannot be read is skipped — so every
-// pin taken before is still equal to its tree.
-func manifestRoot(root *os.Root, maxFiles, maxWalk int) ([]manifestEntry, bool) {
-	w := &manifestWalk{root: root, maxFiles: maxFiles, left: maxWalk}
-	w.dir(".")
+//   - how much is listed: a directory is read only as far as the budget
+//     goes, and what is read comes off the budget before any of it is
+//     visited, so the walk lists no more than maxWalk names and one;
+//   - how far each open travels: a directory is opened from its parent's
+//     handle, one component, not by a path resolved again from the root
+//     — that made a chain of d directories cost d*d/2 opens;
+//   - how many handles are held: one per level, so maxDepth of them.
+//
+// The bounds are properties of the tree, not of the order it is read
+// in: a tree is cut when it holds more than maxFiles files and links
+// that can be digested, more than maxWalk entries in all, or a
+// directory below level maxDepth. Within all three the result is what
+// fs.WalkDir gave — a directory's names visited sorted, a link recorded
+// and not followed, what cannot be read skipped — so a pin taken before
+// is still equal to its tree. The one tree that reads differently is
+// the one the old walk refused at exactly the file cap, for whatever
+// sorted after its last file.
+func manifestRoot(root *os.Root, maxFiles, maxWalk, maxDepth int) ([]manifestEntry, bool) {
+	w := &manifestWalk{maxFiles: maxFiles, left: maxWalk, maxDepth: maxDepth}
+	w.dir(root, "", 0)
 	sort.Slice(w.entries, func(i, j int) bool { return w.entries[i].rel < w.entries[j].rel })
 	return w.entries, w.cut
 }
 
 // manifestWalk is one walk of a skill's tree.
 type manifestWalk struct {
-	root     *os.Root
-	maxFiles int
+	maxFiles, maxDepth int
 	// left is how many more entries the walk may look at.
 	left    int
 	entries []manifestEntry
@@ -619,9 +629,11 @@ type manifestWalk struct {
 	listed int
 }
 
-// dir reads the directory rel and visits what it holds, by name.
-func (w *manifestWalk) dir(rel string) {
-	d, err := w.root.Open(rel)
+// dir reads the directory held open as dir and visits what it holds,
+// by name. rel is its path from the skill's root ("" for the root
+// itself), level how many directories lie above it.
+func (w *manifestWalk) dir(dir *os.Root, rel string, level int) {
+	d, err := dir.Open(".")
 	if err != nil {
 		return // unreadable: skipped, as the walk always did
 	}
@@ -638,9 +650,10 @@ func (w *manifestWalk) dir(rel string) {
 	w.left -= len(list)
 	sort.Slice(list, func(i, j int) bool { return list[i].Name() < list[j].Name() })
 	for _, e := range list {
-		name := e.Name()
-		if rel != "." {
-			name = rel + "/" + name
+		base := e.Name()
+		name := base
+		if rel != "" {
+			name = rel + "/" + base
 		}
 		switch t := e.Type(); {
 		case t&fs.ModeSymlink != 0:
@@ -648,26 +661,52 @@ func (w *manifestWalk) dir(rel string) {
 				w.cut = true
 				return
 			}
-			target, _ := w.root.Readlink(name)
+			target, _ := dir.Readlink(base)
 			w.entries = append(w.entries, manifestEntry{name, "link:" + target})
 		case t.IsRegular():
+			// A file that cannot be digested is not an entry and is not
+			// counted, wherever it sorts: counted at the cap and not
+			// below it, it made the answer depend on its name.
+			dg, ok := rootFileDigest(dir, base)
+			if !ok {
+				continue
+			}
 			// The cap is looked at where a file is counted. Looked at
 			// on every entry, it refused a skill of exactly maxFiles
-			// files for the directory that happened to follow them.
+			// files for whatever happened to follow them.
 			if len(w.entries) >= w.maxFiles {
 				w.cut = true
 				return
 			}
-			if dg, ok := rootFileDigest(w.root, name); ok {
-				w.entries = append(w.entries, manifestEntry{name, dg})
-			}
+			w.entries = append(w.entries, manifestEntry{name, dg})
 		case t.IsDir():
-			if w.dir(name); w.cut {
+			if !descends(base) {
+				continue
+			}
+			if level == w.maxDepth {
+				w.cut = true
+				return
+			}
+			sub, err := dir.OpenRoot(base)
+			if err != nil {
+				continue // unreadable, or no longer a directory: skipped
+			}
+			w.dir(sub, name, level+1)
+			_ = sub.Close()
+			if w.cut {
 				return
 			}
 		}
 	}
 }
+
+// descends reports whether the walk goes into a directory of this
+// name. One whose name is not valid UTF-8 was never entered: the walk
+// used to read through the root's fs.FS, which refuses such a path, and
+// what is under it is in no pin taken so far. It stays out, so those
+// pins still compare equal; nothing under it is served either, since
+// only what the manifest holds is.
+func descends(base string) bool { return utf8.ValidString(base) }
 
 // digestEntries is the digest of a manifest: what a pin holds.
 func digestEntries(entries []manifestEntry, cut bool) string {

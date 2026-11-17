@@ -398,7 +398,7 @@ type Messages struct {
 	SkillTrustedFmt        string // recorded
 	SkillDisabledFmt       string // disabled for the session; also on each later use
 	SkillLaterFmt          string // not answered: not loaded, not asked again this turn
-	SkillUncoveredFmt      string // more files than a pin covers
+	SkillUncoveredFmt      string // past what a pin covers
 	SkillRecordFailedFmt   string // %s = name, %v = the error — trusted, not recorded, not loaded
 	SkillChangingFmt       string // moved again while being answered
 	SkillUnattendedFmt     string // nobody at a terminal
@@ -667,7 +667,7 @@ keys:
 	SkillTrustedFmt:             "project trust: skill %s trusted",
 	SkillDisabledFmt:            "project trust: skill %s is disabled for this session — not loaded; `gem-agent trust --accept` in another terminal, then /clear or /skills reload, brings it back",
 	SkillLaterFmt:               "project trust: skill %s not loaded — using it after your next message asks again",
-	SkillUncoveredFmt:           "project trust: skill %s is larger than the trust check covers (2,000 files; 4,000 files and folders in all) — not loaded; remove what the skill does not need",
+	SkillUncoveredFmt:           "project trust: skill %s is past what the trust check covers (2,000 files; 4,000 files and folders in all; folders 32 deep) — not loaded; remove what the skill does not need",
 	SkillRecordFailedFmt:        "project trust: could not record the trust of skill %s (%v) — not loaded",
 	SkillChangingFmt:            "project trust: skill %s is still changing — not loaded; use it again when the change has finished",
 	SkillUnattendedFmt:          "project trust: skill %s is not what you trusted — not loaded; re-trust with `gem-agent trust --accept`",
@@ -913,7 +913,7 @@ var ja = Messages{
 	SkillTrustedFmt:             "project trust: スキル %s を信用しました",
 	SkillDisabledFmt:            "project trust: スキル %s はこのセッションでは無効です — 読み込みません。戻すには、別のターミナルで `gem-agent trust --accept` を実行してから /clear か /skills reload",
 	SkillLaterFmt:               "project trust: スキル %s は読み込みません — 次のメッセージの後で使うときに、また尋ねます",
-	SkillUncoveredFmt:           "project trust: スキル %s は、信用の確認が見られる大きさ（ファイル 2,000 個まで、フォルダーと合わせて 4,000 個まで）を超えています — 読み込みません。スキルに不要なものを外してください",
+	SkillUncoveredFmt:           "project trust: スキル %s は、信用の確認が見られる範囲（ファイル 2,000 個まで、フォルダーと合わせて 4,000 個まで、フォルダーの入れ子 32 段まで）を超えています — 読み込みません。スキルに不要なものを外してください",
 	SkillRecordFailedFmt:        "project trust: スキル %s の信用を記録できませんでした（%v）— 読み込みません",
 	SkillChangingFmt:            "project trust: スキル %s はまだ変わり続けています — 読み込みません。変更が終わってから使い直してください",
 	SkillUnattendedFmt:          "project trust: スキル %s は信用した内容と違います — 読み込みません。`gem-agent trust --accept` で再信用",

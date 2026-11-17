@@ -9,12 +9,52 @@ package bounded
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 	"unicode/utf8"
 )
+
+// ErrNotRegular: the name is not a regular file.
+var ErrNotRegular = errors.New("not a regular file")
+
+// OpenRegular opens rel under root for reading, and only if it is a
+// regular file. It does not wait: a FIFO with no writer holds a plain
+// open until one arrives, so a name the project chooses — a skill's
+// SKILL.md — could stop the caller for as long as it liked, at startup.
+// The kind is read from the opened file, not from a stat before the
+// open, so a name swapped in between is refused too.
+func OpenRegular(root *os.Root, rel string) (*os.File, error) {
+	f, err := root.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	return regular(f, rel)
+}
+
+// OpenRegularPath is OpenRegular for a file named by path.
+func OpenRegularPath(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	return regular(f, path)
+}
+
+func regular(f *os.File, name string) (*os.File, error) {
+	st, err := f.Stat()
+	if err == nil && !st.Mode().IsRegular() {
+		err = &os.PathError{Op: "open", Path: name, Err: ErrNotRegular}
+	}
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
 
 // ReadAll reads at most cap bytes from r. more reports that r held
 // more than cap bytes; the returned data is then exactly cap bytes.
