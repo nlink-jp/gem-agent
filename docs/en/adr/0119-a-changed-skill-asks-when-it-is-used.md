@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-11-17) |
+| Status | **Accepted** (2026-11-17), implemented |
 | Date | 2026-11-17 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -44,37 +44,41 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
 
 ## Decision
 
-1. **Every read of a project skill compares first.** `load_skill` (the
-   body and the `file` form) and `/skill` digest that skill's directory
-   and compare it with the record on disk (`recordedPolicy`, ADR-0074's
-   amendment). One implementation takes the digest for the pin and for
-   this comparison, through an open root — the object the loader reads —
-   so the two cannot disagree about an unchanged skill. Equal: the read
-   runs as today. Different, or a listed skill the recorded set does not
-   hold: the question of item 2. A directory that is gone is an error, not
-   a question. With pins off, or with nothing recorded for the project,
-   nothing is compared — the state the list was built in. A global skill
-   is never compared.
-2. **The question is its own question in the gate.** The read-only lift
-   (ADR-0080 §4) is the precedent for a question that is not "may this
-   call run"; this one has its own answers. It names the skill by its
+1. **Every read of a project skill compares first, and once more after.**
+   `load_skill` (the body and the `file` form) and `/skill` digest that
+   skill's directory and compare it with the record on disk
+   (`recordedPolicy`, ADR-0074's amendment). One implementation takes the
+   digest for the pin and for this comparison, through an open root — the
+   object the loader reads — so the two cannot disagree about an unchanged
+   skill. Equal: the read runs, and the directory is digested once more
+   after it; what was read is returned only when both digests are the one
+   the record holds. A read that raced a change is discarded, and the
+   skill is handled as what it has become. Different, or a listed skill
+   the recorded set does not hold: the question of item 2. A directory
+   that is gone is an error, not a question. With pins off, or with
+   nothing recorded for the project, nothing is compared — the state the
+   list was built in. A global skill is never compared.
+2. **The question is the runtime's own, and it is not put through the
+   approval gate.** It opens under its own heading, names the skill by its
    validated name and shows its directory, says either that the content
    has changed since it was trusted or that the trusted record does not
    hold it, says the content should be looked at, and says what each
    answer does — including that trusting records the content for later
-   sessions. It offers two answers, trust and disable, and nothing else:
-   no "allow for this session", no "never ask again", no reason to type.
-   No standing answer reaches it: not the session allowlist, a `"never"`
+   sessions. It offers trust, disable and "not now" — the third is the
+   unanswered outcome made visible — and opens on "not now", so a key
+   pressed too soon changes nothing. Nothing else is offered, and no
+   standing answer reaches it: not the session allowlist, a `"never"`
    policy, auto-approve or the model tier. It does not consult the
    session's exclusion set either: a listed skill is one the session
    loaded. The wording does not say whose change it was.
-3. **Three outcomes, and the gate returns all three.** Trusted, disabled,
-   unanswered. Every gate implements the question — the TUI, the stdin
-   gate, the one-shot gate, the child agent's gate — and a gate that does
-   not is read as unanswered. On the TUI, Esc, Ctrl+C and an interrupted
-   turn are unanswered. On the stdin gate only the two answers count: a
-   blank line or other text asks again, a closed input is unanswered, and
-   an answer that arrives after the turn was interrupted is discarded.
+3. **Three outcomes: trusted, disabled, unanswered.** The question is put
+   through the dialog the round-limit question uses, which already
+   answers "nothing chosen" for Esc, Ctrl+C, a question that arrives after
+   the turn was interrupted and a turn that ends under it; all of these,
+   and "not now", are unanswered. On the plain REPL it is a numbered
+   prompt: a number answers, and a blank line, any other text and a closed
+   input are unanswered. An answer that arrives after the turn was
+   interrupted is discarded.
 4. **Trust records what was asked about.** The directory is digested
    again. If it differs from the digest that raised the question, nothing
    is recorded and the question is asked once more about the new state; a
@@ -87,13 +91,14 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
    stays; it is what was asked about.
 5. **Disable holds for the session.** The answer is kept beside the grant
    under a lock, read by `load_skill` and `/skill` before anything else,
-   and written only after the gate has answered, never from inside the
-   tool. Later uses of that skill are refused without a question; each one
-   shows the operator a one-line notice. The answer is forgotten where the
-   list of skills is rebuilt (`/clear`, `/skills reload`) and only there —
-   not at `/mcp reload`, and not when `/clear` clears in place because no
-   new session could be opened. Undoing it inside the session takes
-   `gem-agent trust --accept` from another terminal and one of those two.
+   and written only after the question has been answered, never from
+   inside the tool. Later uses of that skill are refused without a
+   question; each one shows the operator a one-line notice. The answer is
+   forgotten where the list of skills is rebuilt (`/clear`,
+   `/skills reload`) and only there — not at `/mcp reload`, and not when
+   `/clear` clears in place because no new session could be opened.
+   Undoing it inside the session takes `gem-agent trust --accept` from
+   another terminal and one of those two.
 6. **Unanswered refuses that one read.** Nothing is recorded and nothing
    is disabled; the next use asks again.
 7. **Where nobody is at a terminal, nothing is asked.** The predicate is
@@ -101,28 +106,35 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
    run both refuse the read. The refusal has its own text: it names
    `gem-agent trust --accept` and does not send the model to the read
    tools for the same file.
-8. **`load_skill` asks the way a refused credential read does** (ADR-0086
-   §2): the tool reports that the skill differs, the agent asks outside
-   the floor that abandons a slow tool, and on trust the tool runs again.
-   The digest and the dialog are never inside the tool's own run.
-9. **`/skill` asks before it injects, without a model round.** The
-   compare, the question and the read move to the turn's own goroutine and
-   go through the same agent path as item 8, so a cancelled turn raises no
-   dialog and the outcome is recorded the same way. Trust injects the body
-   as ADR-0010 §2 decided; disable or unanswered ends the turn without a
-   model call and says so.
+8. **`load_skill` says it needs the operator, and the agent asks.** The
+   tool's run returns a typed outcome (`tools.NeedsOperator`); the agent
+   has the question put outside the floor that abandons a slow tool, and
+   runs the tool once more under the context the answer returned. The
+   dialog is never inside the tool's own run; every digest, the pin write
+   and the read are. The agent learns nothing about skills. This is the
+   shape of ADR-0086 §2, where a refused read is asked about and then run
+   again.
+9. **`/skill` asks before it injects, without a model round.** The TUI's
+   event loop only parses the line; the compare, the question and the
+   read happen on the turn's own goroutine, through the same guard and
+   with the same bound on how often the question is put. A cancelled turn
+   raises no dialog, and the outcome is recorded the same way. Trust
+   injects the body as ADR-0010 §2 decided; disable or unanswered ends
+   the turn without a model call, and the operator has been told why.
 10. **What the model is told is fixed text.** `load_skill` results are
     sent unwrapped, so every refusal is built from constants and the
     skill's validated name — never the directory entry's name or the text
     of a filesystem error.
-11. **The directory cannot write the dialog.** A skill whose directory
-    entry holds a control character is not listed, with a note. The
-    question shows the directory quoted, and its text is made inert on
-    both screens.
+11. **The directory cannot write the dialog.** A skill is not listed,
+    with a note that quotes the name, when its directory entry or the
+    path it resolves to holds a control or format character or is not
+    valid text. The question shows the directory quoted, and the dialog's
+    text is made inert at the TUI's ingress like every message.
 12. **Every outcome is recorded under a kind of its own:** the question,
-    the outcome and each refused repeat, with the skill's name. Not as a
-    gate decision: the rule learner reads those as approval evidence.
-    Telemetry carries the same events.
+    the outcome and each refused repeat, with the skill's name, as
+    `skill_trust` in the transcript and `skill.trust` in the audit log.
+    Not as a gate decision: the rule learner reads those as approval
+    evidence.
 13. **The tool says what it does.** The `load_skill` description and the
     comment that calls it ungated are brought in line.
 
@@ -131,20 +143,19 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
 - "Compare before consuming" holds for skills at the moment of use. After
   a `git pull` that touches a skill, the first use asks once, in the
   session, and the operator answers with one key.
-- A read of a project skill costs one digest of its directory before and,
-  after a trust answer, two more. To be measured on a real skill set (the
-  largest installed) before the implementation is called done; the bound
-  is 2,000 files of 1 MiB.
-- This is not a one-dialog change. The gate's contract gains a question
-  with a three-way result in every implementation; both screens gain a
-  dialog; `/skill` stops being a text expansion and becomes a step of the
-  turn; the pin's digest moves onto a root. The design review put it at
-  the size of the read-only lift and the credential retry together. It was
-  chosen with that known: what it buys is that a changed skill is never
-  loaded unconfirmed and never needs another terminal.
-- The question, its two labels, the hint and the notices go in the
-  catalogue in both languages and through the label review. The refusals
-  are model-facing and fixed.
+- A read of a project skill costs two digests of its directory, one
+  before and one after; a trust answer adds one. To be measured on a real
+  skill set (the largest installed); the bound is 2,000 files of 1 MiB.
+- The agent gains a way for a tool to say it needs the operator; the
+  question dialog gains a heading and an opening choice; `/skill` stops
+  being a text expansion on the event loop and becomes a step of the
+  turn; the pin's digest moves onto a root; the audit log gains one
+  event. The design review estimated more — a new method on every
+  approval gate — before the existing question dialog was found to have
+  the three outcomes already.
+- The question, its three labels and the notices go in the catalogue in
+  both languages and through the label review. The refusals are
+  model-facing and fixed.
 - ADR-0010 §2 stands: `/skill` spends no model round.
 
 ## Tests the design requires
@@ -157,13 +168,16 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
 - One test drives a changed skill, with pins on and recorded, to the
   question through the production wiring: with "pins on and recorded" as a
   precondition, a wire that was never connected looks the same as "equal".
-- Each gate implementation has a test of the three outcomes it can
-  return, including Esc, an interrupt, a blank line and a closed input.
+- The dialog and the plain prompt each have a test of every way of not
+  answering: Esc, Ctrl+C, an interrupt, a turn that ends, a blank line,
+  other text and a closed input.
 - The three outcomes and the unattended refusal each have a test of what
   is recorded, what the model receives, what stays disabled and what the
   exclusion set holds afterwards.
 - The window of item 4 is tested by changing the directory between the
-  question and the answer, twice, and between the pin and the read.
+  question and the answer, twice, and between the pin and the read. The
+  ordinary read is tested with a change that lands between the compare
+  and the read.
 - A directory entry with a control character is tested as not listed.
 
 ## Accepted, and written down

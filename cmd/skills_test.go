@@ -41,7 +41,7 @@ Read the transcript, then produce minutes.`
 // model round spent asking for it (ADR-0010 §2).
 func TestExpandSkillInputInjectsTheBody(t *testing.T) {
 	list := testSkillDir(t)
-	turn, handled, errMsg := expandSkillInput("/skill meeting-notes rec.vtt --lang ja", list)
+	turn, handled, errMsg := expandSkillInput(context.Background(), "/skill meeting-notes rec.vtt --lang ja", list, nil)
 	if !handled || errMsg != "" {
 		t.Fatalf("handled=%v err=%q", handled, errMsg)
 	}
@@ -66,7 +66,7 @@ func TestLoadSkillNamesItsBaseDirectoryInClaudeCodesWords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := registerSkillTool(registry, func() []skills.Skill { return list }); err != nil {
+	if err := registerSkillTool(registry, func() []skills.Skill { return list }, nil); err != nil {
 		t.Fatal(err)
 	}
 	tool, ok := registry.Get(skills.ToolName)
@@ -114,7 +114,7 @@ func TestExpandSkillInputErrorsAreHandledNotTurns(t *testing.T) {
 		"/skill nope":   "unknown skill",
 		"/skill nope x": "unknown skill",
 	} {
-		turn, handled, errMsg := expandSkillInput(input, list)
+		turn, handled, errMsg := expandSkillInput(context.Background(), input, list, nil)
 		if !handled || turn != "" || !strings.Contains(errMsg, wantErr) {
 			t.Errorf("expand(%q) = %q, %v, %q", input, turn, handled, errMsg)
 		}
@@ -122,7 +122,7 @@ func TestExpandSkillInputErrorsAreHandledNotTurns(t *testing.T) {
 	// Everything else passes through untouched — including /skills,
 	// which is the listing command, not an invocation.
 	for _, input := range []string{"/skills", "/help", "hello", "!ls", "/skillet"} {
-		if _, handled, _ := expandSkillInput(input, list); handled {
+		if _, handled, _ := expandSkillInput(context.Background(), input, list, nil); handled {
 			t.Errorf("expand(%q) claimed the input", input)
 		}
 	}

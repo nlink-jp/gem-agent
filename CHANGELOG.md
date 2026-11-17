@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Security
+
+- **A project skill that changed after the session started is no longer
+  loaded unconfirmed** (ADR-0119). Project skills were compared with
+  what you trusted when the list of skills was built — at startup, at
+  `/clear` and at `/skills reload`. Their body and files are read from
+  disk each time a skill is used, and nothing compared them then: a
+  skill rewritten after the session started — by a `git pull`, or by a
+  write to a directory the skill links to — reached the model as your
+  own instructions, through `/skill` and through the model's own
+  `load_skill` (measured on lagent v0.27.4, which reads skills with the
+  same calls). Every use now compares first, and once more after the
+  read, so a change that lands in between is not returned either. When
+  the skill is not what you trusted, gem-agent asks before loading it:
+  **trust** records that one skill again and loads it, **disable** keeps
+  it off for the rest of the session, and **not now** — where the dialog
+  opens, and what Esc does — loads nothing this once and changes
+  nothing. Auto-approve, the model tier and "allow for this session" do
+  not answer it. In a one-shot or piped run nothing is asked and the
+  skill is not loaded. If the content changes again while you are
+  answering, it asks once more and then stops. The audit log gains the
+  event `skill.trust`.
+- **A skill directory whose name, or the path it resolves to, holds a
+  control or format character is not listed.** The name a skill declares
+  was always validated; its directory was not, and the new question
+  shows the directory.
+
 ## [0.103.1] - 2026-11-17
 
 ### Added

@@ -365,20 +365,37 @@ type Messages struct {
 	TrustItemSkillsFmt       string // %d = skill count
 	TrustQuestion            string // the [y/N] question
 	// Content pins (ADR-0074).
-	PinRecordedFmt         string // %d = files recorded, %s = their names
-	PinNonePending         string // no pins yet, non-interactive: loaded as before
-	PinChangeFmt           string // %s name, %s kind (PinKindChanged/PinKindAdded), %s size — one described change
-	PinKindChanged         string // the kind word of a changed file
-	PinKindAdded           string // the kind word of a new file
-	PinChangedFmt          string // %s = PinChangeFmt result; the prompt line
-	PinQuestion            string // the [y/N] question for one changed file
-	PinNotLoadedFmt        string // %s = PinChangeFmt result — not loaded
-	PinAcceptedFmt         string // %s = name
-	PinRemovedFmt          string // %s = name — gone since trusted; pin kept
-	PinPendingFmt          string // %s = PinChangeFmt results after an operator command
-	PinStaleWriteFmt       string // %s = name — had drifted before the approved write; not re-pinned
-	PersistentSinceLastFmt string // %s = comma list — changed since the previous session
-	PersistentSessionFmt   string // %s = comma list — added/changed by this session
+	PinRecordedFmt   string // %d = files recorded, %s = their names
+	PinNonePending   string // no pins yet, non-interactive: loaded as before
+	PinChangeFmt     string // %s name, %s kind (PinKindChanged/PinKindAdded), %s size — one described change
+	PinKindChanged   string // the kind word of a changed file
+	PinKindAdded     string // the kind word of a new file
+	PinChangedFmt    string // %s = PinChangeFmt result; the prompt line
+	PinQuestion      string // the [y/N] question for one changed file
+	PinNotLoadedFmt  string // %s = PinChangeFmt result — not loaded
+	PinAcceptedFmt   string // %s = name
+	PinRemovedFmt    string // %s = name — gone since trusted; pin kept
+	PinPendingFmt    string // %s = PinChangeFmt results after an operator command
+	PinStaleWriteFmt string // %s = name — had drifted before the approved write; not re-pinned
+	// The question about a project skill that is not what the trust
+	// record holds, asked when the skill is used (ADR-0049), and the
+	// notes for each way it can end. %s = the skill's name; the two
+	// question lines also take its directory, already quoted.
+	SkillTrustHeading       string
+	SkillTrustChangedFmt    string // %s = name, %s = quoted directory
+	SkillTrustUnrecordedFmt string // %s = name, %s = quoted directory
+	SkillTrustExplain       string
+	SkillTrustOptTrust      string
+	SkillTrustOptDisable    string
+	SkillTrustOptLater      string
+	SkillTrustedFmt         string // recorded and loaded
+	SkillDisabledFmt        string // disabled for the session; also on each later use
+	SkillLaterFmt           string // not answered: not loaded this once
+	SkillChangingFmt        string // moved again while being answered
+	SkillUnattendedFmt      string // nobody at a terminal
+	SkillGoneFmt            string // the directory is gone
+	PersistentSinceLastFmt  string // %s = comma list — changed since the previous session
+	PersistentSessionFmt    string // %s = comma list — added/changed by this session
 	// The same for an added write directory (ADR-0099 §10): the first %s
 	// is the directory, the second the comma list.
 	AddedPersistentSinceLastFmt string
@@ -628,6 +645,19 @@ keys:
 	PinRemovedFmt:               "project trust: %s was removed since you trusted it",
 	PinPendingFmt:               "project trust: %s since you trusted it — not re-trusted; `gem-agent trust --accept` or the next interactive start",
 	PinStaleWriteFmt:            "project trust: %s had changed before this write — not re-trusted; asks at the next interactive start",
+	SkillTrustHeading:           "project trust — a skill is not what you trusted",
+	SkillTrustChangedFmt:        "The skill %s has changed since you trusted it.\nLook at its files before you answer: %s",
+	SkillTrustUnrecordedFmt:     "The skill %s is not in this project's trusted record.\nLook at its files before you answer: %s",
+	SkillTrustExplain:           "Trust records this content as trusted — for later sessions too — and loads it. Disable keeps the skill off for the rest of this session.",
+	SkillTrustOptTrust:          "Trust and load",
+	SkillTrustOptDisable:        "Disable for this session",
+	SkillTrustOptLater:          "Not now — ask again next time",
+	SkillTrustedFmt:             "project trust: skill %s re-trusted",
+	SkillDisabledFmt:            "project trust: skill %s is disabled for this session — not loaded; `gem-agent trust --accept` in another terminal, then /clear, brings it back",
+	SkillLaterFmt:               "project trust: skill %s not loaded this time — its next use asks again",
+	SkillChangingFmt:            "project trust: skill %s is still changing — not loaded; use it again when the change has finished",
+	SkillUnattendedFmt:          "project trust: skill %s is not what you trusted — not loaded; re-trust with `gem-agent trust --accept`",
+	SkillGoneFmt:                "project trust: skill %s — its directory is gone; /clear lists the skills again",
 	PersistentSinceLastFmt:      "note: changed since your previous session: %s",
 	PersistentSessionFmt:        "note: this session added or changed: %s",
 	AddedPersistentSinceLastFmt: "note: in the added directory %s, changed since your previous session: %s — a project opened under it would load or run these",
@@ -856,6 +886,19 @@ var ja = Messages{
 	PinRemovedFmt:               "project trust: %s は信用した時点から削除されています",
 	PinPendingFmt:               "project trust: 信用した時点から %s — 再信用していません。`gem-agent trust --accept` か次の対話起動で",
 	PinStaleWriteFmt:            "project trust: %s はこの書込の前から変わっていました — 再信用していません。次の対話起動で確認",
+	SkillTrustHeading:           "project trust — 信用した内容と違うスキルがあります",
+	SkillTrustChangedFmt:        "スキル %s は、信用した時点から変わっています。\n答える前に中身を確かめてください: %s",
+	SkillTrustUnrecordedFmt:     "スキル %s は、このプロジェクトの信用の記録にありません。\n答える前に中身を確かめてください: %s",
+	SkillTrustExplain:           "信用する: この内容を信用済みとして記録し（以後のセッションにも有効）、読み込みます。無効にする: このセッションの間、このスキルを使いません。",
+	SkillTrustOptTrust:          "信用して読み込む",
+	SkillTrustOptDisable:        "このセッションでは無効にする",
+	SkillTrustOptLater:          "今は決めない — 次に使うときにまた尋ねる",
+	SkillTrustedFmt:             "project trust: スキル %s を再信用しました",
+	SkillDisabledFmt:            "project trust: スキル %s はこのセッションでは無効です — 読み込みません。戻すには、別のターミナルで `gem-agent trust --accept` を実行してから /clear",
+	SkillLaterFmt:               "project trust: スキル %s は今回は読み込みません — 次に使うときにまた尋ねます",
+	SkillChangingFmt:            "project trust: スキル %s はまだ変わり続けています — 読み込みません。変更が終わってから使い直してください",
+	SkillUnattendedFmt:          "project trust: スキル %s は信用した内容と違います — 読み込みません。`gem-agent trust --accept` で再信用",
+	SkillGoneFmt:                "project trust: スキル %s のディレクトリがありません — /clear でスキルの一覧を作り直します",
 	PersistentSinceLastFmt:      "note: 前回のセッション以降に変更: %s",
 	PersistentSessionFmt:        "note: このセッションが追加・変更: %s",
 	AddedPersistentSinceLastFmt: "note: 追加ディレクトリ %s で、前回のセッション以降に変更: %s — その下で開くプロジェクトはこれらを読み込むか実行します",

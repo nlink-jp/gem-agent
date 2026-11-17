@@ -63,6 +63,7 @@ func TestNopSinkIsSafe(t *testing.T) {
 	s.Usage(1, 2, 3, 4, 0, 10)
 	s.Compaction(1, 2)
 	s.MediaUpload(1, "gs://x")
+	s.SkillTrust("greet", "question")
 	s.Shutdown()
 	Nop().SessionEnd()
 }
@@ -246,6 +247,27 @@ func TestHeadersRideTheWire(t *testing.T) {
 // ADR-0066 §3: the audit stream carries the same buckets as the
 // transcript record, tool_prompt included, so a fleet-wide figure from
 // Cloud Logging uses the same four-term arithmetic as a local one.
+// ADR-0119 §12: the question about a skill that is not what the trust
+// record holds, and its outcome, are an event of their own — the skill
+// and what happened, nothing of its content — and not an
+// approval.decision.
+func TestSkillTrustIsItsOwnEvent(t *testing.T) {
+	s, rec := recordingSink(t)
+	s.SkillTrust("greet", "question")
+	s.SkillTrust("greet", "trusted")
+	if len(rec.recs) != 2 {
+		t.Fatalf("records = %d, want 2", len(rec.recs))
+	}
+	for i, want := range []string{"question", "trusted"} {
+		if name := rec.recs[i].EventName(); name != "skill.trust" {
+			t.Errorf("event name = %q", name)
+		}
+		if a := attrsOf(rec.recs[i]); a["skill"] != "greet" || a["event"] != want || len(a) != 2 {
+			t.Errorf("attrs = %v", a)
+		}
+	}
+}
+
 func TestUsageEventCarriesEveryBucket(t *testing.T) {
 	s, rec := recordingSink(t)
 	s.Usage(1200, 900, 40, 0, 7000, 9140)

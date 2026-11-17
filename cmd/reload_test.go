@@ -46,7 +46,7 @@ func TestSkillToolSeesReloadedList(t *testing.T) {
 		t.Fatal(err)
 	}
 	var list []skills.Skill
-	if err := registerSkillTool(reg, func() []skills.Skill { return list }); err != nil {
+	if err := registerSkillTool(reg, func() []skills.Skill { return list }, nil); err != nil {
 		t.Fatal(err)
 	}
 	tool, ok := reg.Get(skills.ToolName)

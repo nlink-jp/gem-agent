@@ -98,6 +98,38 @@ func oneShotAsk(context.Context, string, []string) (int, error) {
 	return 0, errors.New("no interactive operator in one-shot mode; decide yourself and state the choice you made")
 }
 
+// plainTrustAsk puts the runtime's own question on the plain REPL
+// (ADR-0119 §3): the heading, the question, numbered options, a number
+// read from in — the shared reader. It returns the chosen index, or -1
+// for a blank line, anything that is not one of the numbers, and a
+// closed input: not answering changes nothing, so there is no reason to
+// insist.
+//
+// The text is the runtime's own. The one part the project names, the
+// skill's directory, arrives quoted (strconv.Quote, in skillQuestion):
+// it cannot break a line or carry an escape sequence, here or in the
+// TUI's dialog.
+func plainTrustAsk(in *bufio.Reader, out io.Writer, heading, question string, options []string) int {
+	fmt.Fprintf(out, "\n[⚠ %s]\n", heading)
+	for _, l := range strings.Split(question, "\n") {
+		fmt.Fprintf(out, "  %s\n", l)
+	}
+	for i, o := range options {
+		fmt.Fprintf(out, "  %d) %s\n", i+1, o)
+	}
+	fmt.Fprintf(out, "  choose 1-%d (anything else leaves it undecided): ", len(options))
+	line, err := in.ReadString('\n')
+	if err != nil && line == "" {
+		fmt.Fprintln(out)
+		return -1
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(line))
+	if err != nil || n < 1 || n > len(options) {
+		return -1
+	}
+	return n - 1
+}
+
 // plainAsk asks on the plain REPL: numbered options on out, a number
 // read from in — the approve.Gate pattern. EOF or a blank line
 // declines.

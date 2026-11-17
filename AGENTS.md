@@ -124,7 +124,9 @@ config.example.toml  shipped config template (pinned by a loader test)
 gem-agent.example.project.toml  shipped <project>/.gem-agent.toml template
 mcp.example.json     shipped MCP server template (pinned by a loader test)
 main.go            entry point (package main, calls cmd.Execute(version))
-cmd/               cobra root command, REPL loop, wiring, system prompt
+cmd/               cobra root command, REPL loop, wiring, system prompt; the
+                   compare-and-ask a project skill goes through when it is
+                   used (cmd/skilltrust.go, ADR-0119)
 internal/config/   strict-decode TOML + env/flag precedence
 internal/llm/      Backend interface + Vertex AI impl (thought signatures, backoff)
 internal/agent/    tool-calling loop, approval dispatch, nonce wrapping, history,
@@ -260,6 +262,32 @@ a new hook) is an architecture change and takes the same rows as a
 
 ## Gotchas
 
+- **A project skill is compared when it is USED, not only when it is
+  listed** (ADR-0119; cmd/skilltrust.go). The list is built at startup,
+  `/clear` and `/skills reload`; the body and files are read from disk on
+  every `load_skill` and `/skill`, and up to and including v0.103.1
+  nothing compared them then — a skill rewritten mid-session reached
+  the model unwrapped (measured on lagent, same read calls). Every read
+  goes through `skillGuard`, bracketed by a digest before and after: a
+  new read site that calls `Body`/`File` directly brings the hole back,
+  and `TestSkillTrustIsWiredIn` enumerates the sites. The digest is
+  `trustpin.DigestRoot` over the skill's own open root — one
+  implementation for the pin and the comparison, held byte-equal to the
+  old path walk by a reference copy in the test, because every pin on
+  disk was taken with that walk. The question is the question dialog
+  under a runtime heading (`tui.AskRequest.Heading`), not the approval
+  gate: the gate would offer "allow for this session" and count an
+  interrupt as no. It opens on "not now". A tool reaches a dialog by
+  returning `tools.NeedsOperator`; the agent resolves it OUTSIDE
+  `runWithFloor` and re-runs the tool — never ask from inside `Run`.
+  Refusals to the model are constants plus the validated name
+  (`load_skill` results are unwrapped). Outcomes are `skill_trust`
+  records and `skill.trust` audit events, not `gate_decision`: the rule
+  learner reads gate decisions as approval evidence. A site that
+  rebuilds the skill list calls `skillTrust.forget()`. `!` cannot run
+  `gem-agent trust --accept` from inside a session: the operator lane
+  does not write the config directory (measured on lagent), which is
+  why the question exists. lagent has the same mechanism (its ADR-0049).
 - **A pin is compared with the policy file as it is at that moment,
   never with the copy read at startup** (`recordedPolicy`, cmd/pins.go;
   ADR-0074's amendment). The session's copy follows the file only when
