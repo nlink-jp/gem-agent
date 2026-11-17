@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.105.0] - 2026-11-17
+
 ### Security
 
 - **The check a skill gets when it is used is bounded in the work it
