@@ -714,7 +714,7 @@ there is a command for dealing with it, the line says so.
 | Notice | Meaning |
 |---|---|
 | `sandbox: DISABLED`, `sandbox unverified: …`, `read lane disabled: …` | The sandbox is not in effect, or part of it could not be verified ([17.3](#173-checking-the-state-of-the-sandbox)) |
-| `project trust: …` | The project's files were not loaded, or their content changed after you trusted them ([chapter 11](#11-project-instruction-files-and-trust)) |
+| `project trust: …` | The project's files were not loaded, or their content changed after you trusted them ([chapter 11](#11-project-instruction-files-and-trust)). For the notices about skills, see [13.5](#135-a-skill-that-changed-partway-through) |
 | A line naming an MCP server | A server could not be started ([12.7](#127-when-something-is-wrong)) |
 | `note: changed since your previous session: …` | Instruction files, the git configuration or the like have changed since last time ([17.2](#172-the-layers-of-defence)) |
 | A line giving the size of the work directories | The work directories of past sessions exceed 10 MiB ([8.7](#87-work-directories)) |
@@ -2307,6 +2307,8 @@ slipped in from outside, would become a rule as it stands.
 | The description written at the top of `SKILL.md` (`description`) | 1,024 characters. Anything beyond is cut, and you are told at startup |
 | The body of `SKILL.md` | 64 KB. Anything beyond is cut, and a note says so |
 | Other files inside the skill | 96 KB. A file over this cannot be loaded |
+| The `SKILL.md` file itself | 1 MiB. A larger one is not treated as a skill, and you are told at startup |
+| The number of files in one project skill | 2,000. A skill with more is not loaded, and you are told when it is about to be used ([13.5](#135-a-skill-that-changed-partway-through)) |
 | The number of skills | 100. Any beyond that are left out of the list, and you are told |
 
 Split a long procedure so that `SKILL.md` names files under `references/` and
@@ -2353,8 +2355,9 @@ Things to know:
 - **Select with the arrows, confirm with Enter.** Unlike other question
   dialogs, the digit keys do nothing here, and the selection stops at the
   top and the bottom. If the dialog appears while you are typing a message,
-  the keys you were typing cannot become the "trust" answer. On the plain
-  screen, without the TUI, you answer by typing `trust` or `disable`.
+  the keys you were typing cannot become the "trust" answer. In a
+  line-by-line conversation, without the TUI, you answer by typing `trust`
+  or `disable` (the example at the end of this section).
 - **Only you answer it.** Neither auto-approve mode nor "allow for this
   session" answers this question.
 - **Look at the content before you answer.** The dialog shows where the skill
@@ -2371,7 +2374,8 @@ Things to know:
   `/skills reload`.
 - **A skill that cannot be checked is not loaded.** A skill with more than
   2,000 files is not loaded, and you are told so (a skill that carries a
-  `node_modules` or a `.venv` is one). A skill whose `SKILL.md` is over
+  `node_modules` or a `.venv` is one); remove what the skill does not need
+  and it can be loaded. A skill whose `SKILL.md` is over
   1 MiB is not treated as a skill. A listing of a folder inside a skill
   shows only the files and folders that were checked.
 - **Only project skills are compared.** Your own skills in
@@ -2379,6 +2383,39 @@ Things to know:
 - **Scripts are separate.** If only a script of a skill changes after the
   skill was loaded, running the script goes through the same sandbox and
   approval as any other command.
+- **The model is told too.** When a skill is not loaded, the model is told
+  to say so in its answer, to continue only with what does not depend on the
+  skill, and not to read the skill's files by other means.
+
+**The question in a line-by-line conversation.** When only the output is
+connected to a pipe or a file, there is no TUI and the same question is
+printed like this. Answer by typing `trust` or `disable`. Any other input, or
+an empty line, is the same as "Not now".
+
+```
+[⚠ project trust — a skill is not what you trusted]
+  The skill greet has changed since you trusted it.
+  Look at its files before you answer: "/Users/you/work/demo/.claude/skills/greet"
+  Trust records this content as trusted — for later sessions too — and loads it. Disable keeps the skill off for the rest of this session.
+  trust:   Trust and load
+  disable: Disable for this session
+  (else):  Not now — ask again after my next message
+  type trust or disable (anything else leaves it undecided):
+```
+
+**The notices after an answer, and when a skill is not loaded.** The outcome
+is reported in one line that begins with `project trust:`.
+
+| Notice | Meaning | What to do |
+|---|---|---|
+| `skill <name> trusted` | Recorded and loaded | Nothing |
+| `skill <name> is disabled for this session …` | You answered "Disable for this session" | To bring it back, run `gem-agent trust --accept` in another terminal, then `/clear` |
+| `skill <name> not loaded — using it after your next message asks again` | You answered "Not now", or did not answer | Nothing. It asks the next time the skill is used |
+| `skill <name> is still changing …` | The content kept changing while you were being asked | Use it again when the change (a `git pull`, a build) has finished |
+| `skill <name> is not what you trusted …` | The content differed where nobody could be asked, such as a one-shot run | Look at the content, then record it again with `gem-agent trust --accept` |
+| `skill <name> has more than 2,000 files …` | More files than the check covers | Remove what the skill does not need (`node_modules`, `.venv`). It is compared again the next time it is used, and asks if the content changed |
+| `skill <name> — its directory is gone or was replaced …` | The skill's directory disappeared, or was swapped for another, during the session | `/clear` or `/skills reload` lists the skills again. To use a skill that was swapped in, look at it, record it with `gem-agent trust --accept`, then list the skills again |
+| `could not record the trust of skill <name> (reason) …` | You answered "Trust and load", but the record could not be written | Read the reason in the parentheses. Make `~/.config/gem-agent/policy.toml` writable, then use the skill again |
 
 ## 14. Building in your own rules with hooks
 
@@ -3195,6 +3232,7 @@ variables for gem-agent's own configuration (`GEMAGENT_PROJECT`,
 |---|---|
 | The project's `AGENTS.md` is not loaded | Look at the state with `gem-agent trust`. Either the project is not trusted, or the content changed after you trusted it ([chapter 11](#11-project-instruction-files-and-trust)) |
 | `"never"` in `.gem-agent.toml` has no effect | The project needs to be listed in `[approval].trusted_projects` ([11.4](#114-projects-trusted-without-asking)) |
+| A skill was not loaded, and a `project trust: skill …` notice appeared | The table in [13.5](#135-a-skill-that-changed-partway-through) says what each notice means and what to do |
 | You were about to use a skill and were asked whether to trust it | The skill's content changed partway through the session. Look at the content in the place the dialog shows, then answer ([13.5](#135-a-skill-that-changed-partway-through)) |
 | A skill's script cannot be read and fails | Check whether it is a symbolic link into `~/.claude`, and change it to a copy ([13.1](#131-install-a-skill)) |
 | An MCP server does not connect | See [12.7](#127-when-something-is-wrong) |
