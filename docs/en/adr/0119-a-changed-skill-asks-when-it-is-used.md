@@ -169,9 +169,12 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
   a `git pull` that touches a skill, the first use asks once, in the
   session, and the operator answers with one key.
 - A read of a project skill costs one digest of its directory and one of
-  the file it returns; a trust answer adds a digest. To be measured on a
-  real skill set (the largest installed); the bound is 2,000 files of
-  1 MiB.
+  the file it returns; a trust answer adds a digest; the bound is 2,000
+  files of 1 MiB. Measured on an Apple Silicon machine, APFS, warm cache
+  (the digest is the code lagent shares): the installed skills (1 to 21
+  files, up to 126 KiB) take 0.1 to 2.7 ms per digest; a whole skill
+  repository checked out as a skill, `.git` included (248 files, 1 MiB),
+  takes 135 ms.
 - The agent gains a way for a tool to say it needs the operator; the
   question dialog gains a heading and an opening choice; `/skill` stops
   being a text expansion on the event loop and becomes a step of the

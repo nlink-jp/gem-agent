@@ -480,6 +480,18 @@ func TestManifestHoldsWhatTheVolumeReturns(t *testing.T) {
 				if m.Holds(p, append([]byte("not "), data...)) {
 					t.Errorf("tree %d: other bytes are held for %q", tree, p)
 				}
+				// Nor the bytes of another file of the same tree: every
+				// file here has its own content, so what one name holds
+				// no other name may.
+				for _, other := range files {
+					od, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(other)))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if string(od) != string(data) && m.Holds(p, od) {
+						t.Errorf("tree %d: %q holds the bytes of %q", tree, p, other)
+					}
+				}
 			}
 		}
 		_ = root.Close()
