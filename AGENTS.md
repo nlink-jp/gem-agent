@@ -293,8 +293,11 @@ a new hook) is an architecture change and takes the same rows as a
   `bounded.WriteFile` — the write lane can leave a FIFO where the work
   directory, an added directory or the project directory was, and the
   state files are held to the same rule. `TestOpensDoNotWait`
-  (`internal/archtest`) fails on a plain `os.Open`, `os.OpenRoot`,
-  `os.WriteFile` or `toml.DecodeFile` outside `internal/bounded`; the
+  (`internal/archtest`) fails on an `os.Open`, `os.OpenFile`,
+  `os.OpenRoot`, `os.Create`, `os.WriteFile` or `toml.DecodeFile`, and
+  on an `os.Root` method that opens, outside `internal/bounded` — each
+  exception is listed there with why it cannot wait (`O_EXCL`,
+  `O_NONBLOCK`, read-write); the
   operator's own `--config` and `headers_file` are on its list,
   undecided.
   On the caps: the review

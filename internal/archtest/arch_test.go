@@ -251,10 +251,14 @@ func TestReadsAreBounded(t *testing.T) {
 // writing waits for a reader (ADR-0120 — measured at every open the
 // two sweeps found). An open of a name goes through internal/bounded,
 // which opens a directory as a directory and a file only when it is a
-// regular one; what is left is listed with why.
+// regular one; what is left is listed with why it cannot wait — or, for
+// what the operator names, that it is undecided. os.OpenFile and the
+// Root methods are held too: the first form of this test left them
+// out, and a trace file opened to truncate went unseen.
 func TestOpensDoNotWait(t *testing.T) {
 	calls := collectCalls(t, repoRoot(t), boundedPackages, []string{
-		"os.Open", "os.OpenRoot", "os.WriteFile", "toml.DecodeFile", ".Open", ".OpenRoot",
+		"os.Open", "os.OpenFile", "os.OpenRoot", "os.Create", "os.WriteFile", "toml.DecodeFile",
+		".Open", ".OpenFile", ".OpenRoot", ".Create", ".ReadFile", ".WriteFile",
 	})
 	var kept []call
 	for _, c := range calls {
@@ -264,13 +268,23 @@ func TestOpensDoNotWait(t *testing.T) {
 		kept = append(kept, c)
 	}
 	report(t, kept, map[string]string{
-		"cmd descriptorPathOf":               "`.` of a root that is already open",
-		"cmd fileSHA256":                     "lstat'd just before as a regular file of the size that was saved; ADR-0020 and ADR-0021 cite this file by line",
-		"internal/config LoadWithOverrides":  "the operator's own configuration, named with --config: a FIFO or a process substitution there may be meant (ADR-0120 §5, undecided)",
-		"internal/docext readMember":         "an entry of a zip archive already open, not a name on disk",
-		"internal/sandbox verifyAddedRoot":   "probe files inside a directory just made under a random name",
-		"internal/telemetry loadHeaders":     "the headers file the operator names in the configuration: as --config (ADR-0120 §5, undecided)",
-		"internal/trustpin manifestWalk.dir": "`.` of the directory held open, and a sub-directory by name after its listed kind: Root.OpenRoot takes no flags (the residual in ADR-0120)",
+		"cmd resolveImages":                        "/dev/tty, a device this runtime names itself",
+		"internal/config MutatePolicyFile":         "the lock file, opened read-write: that does not wait on a FIFO (measured), and flock then refuses one",
+		"internal/mention openConfined":            "the opener handed to openRegular, which opens with O_NONBLOCK and looks at what it holds",
+		"internal/sandbox CanonicalDir":            "O_NONBLOCK|O_DIRECTORY",
+		"internal/sandbox VerifyFileReadLane":      "O_EXCL: a probe file is created, never opened over what is there",
+		"internal/session Open":                    "O_EXCL: a new transcript is created, never opened over what is there",
+		"internal/session Reopen":                  "opened read-write, which does not wait on a FIFO (measured); the lock that follows refuses one",
+		"internal/tools Registry.openRead":         "the opener handed to openRegular, which opens with O_NONBLOCK and looks at what it holds",
+		"internal/tools Registry.replaceFile":      "O_EXCL: the temporary a write lands in is created, never opened over what is there",
+		"internal/tools Registry.shellSpoolOpener": "O_EXCL: a spool is created, never opened over what is there",
+		"cmd descriptorPathOf":                     "`.` of a root that is already open",
+		"cmd fileSHA256":                           "lstat'd just before as a regular file of the size that was saved; ADR-0020 and ADR-0021 cite this file by line",
+		"internal/config LoadWithOverrides":        "the operator's own configuration, named with --config: a FIFO or a process substitution there may be meant (ADR-0120 §5, undecided)",
+		"internal/docext readMember":               "an entry of a zip archive already open, not a name on disk",
+		"internal/sandbox verifyAddedRoot":         "probe files inside a directory just made under a random name",
+		"internal/telemetry loadHeaders":           "the headers file the operator names in the configuration: as --config (ADR-0120 §5, undecided)",
+		"internal/trustpin manifestWalk.dir":       "`.` of the directory held open, and a sub-directory by name after its listed kind: Root.OpenRoot takes no flags (the residual in ADR-0120)",
 	})
 }
 

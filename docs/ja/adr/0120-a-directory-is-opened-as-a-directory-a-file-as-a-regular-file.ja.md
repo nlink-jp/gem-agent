@@ -56,7 +56,7 @@ FIFO を普通に開くと、相手側を誰かが開くまで待ちます。ADR
 3. **このランタイムが、自分で決めた名前で読むファイルは、通常ファイルのときだけ開きます**（`bounded.OpenRegularPath`。ADR-0119 がプロジェクトの 4 つにしたのと同じ）。メモリ、トランスクリプト、マーカー、スナップショット、`policy.toml`、`risk-rules.md` とプロジェクトの `rules.md` です。状態ディレクトリはレーンから書けませんが、含めます。理由は 3 つあります。その中の 1 つ、作業ディレクトリは、モデルが差し替えられる名前でした。これらのファイルが FIFO であるべき場面はありません。そして、ランタイム自身のツリーの中に例外の無い規則はテストで保てますが、名前ごとに判断していたことが、これらの open を取り残した原因でした。
 4. **決まった名前で書くファイルは、通常ファイルの上にだけ書きます**（`bounded.WriteFile`）。メモリと、ポリシーファイルとプロジェクトのルールを保存するときの一時ファイルです。
 5. **操作者が名指すものは、ここでは変えません。** `--config` で渡した設定ファイルと、設定が名指す `headers_file` は、FIFO なら何かが書くまで待ちます。そこに FIFO やプロセス置換を置くのは、操作者が意図したことかもしれません。断るかどうかは操作者の判断で、未決のまま残します。
-6. **テストで保ちます**（`internal/archtest` の `TestOpensDoNotWait`）。`internal/bounded` の外に `os.Open`、`os.OpenRoot`、`os.WriteFile`、`toml.DecodeFile` は無く、`Open` や `OpenRoot` というメソッドの呼び出しもありません。例外は、テストが理由つきで挙げているものだけです。
+6. **テストで保ちます**（`internal/archtest` の `TestOpensDoNotWait`）。`internal/bounded` の外に `os.Open`、`os.OpenFile`、`os.OpenRoot`、`os.Create`、`os.WriteFile`、`toml.DecodeFile` は無く、`Open`、`OpenFile`、`OpenRoot`、`Create`、`ReadFile`、`WriteFile` というメソッドの呼び出しもありません。例外は、待たない理由をテストが 1 つずつ挙げているものだけです。最初の形は `os.OpenFile` と `OpenFile` メソッドを見ておらず、変更のレビューが、そのために見えていなかったものを見つけました。
 
 ## Consequences
 
