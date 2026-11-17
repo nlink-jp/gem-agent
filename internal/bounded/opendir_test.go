@@ -39,12 +39,6 @@ func TestOpenDirDoesNotWaitAndTakesOnlyADirectory(t *testing.T) {
 			"by path":      func() (*os.File, error) { return OpenDir(filepath.Join(dir, name)) },
 			"under a root": func() (*os.File, error) { return OpenDirIn(root, name) },
 		} {
-			if how == "under a root" && name == "link-to-sub" {
-				// A root does not follow a link in the last element when
-				// O_DIRECTORY is not all that is asked; either answer is
-				// an answer, and the listing below is what matters.
-				continue
-			}
 			var d *os.File
 			var err error
 			returnsAtOnce(t, fifo, func() { d, err = open() })
