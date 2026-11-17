@@ -172,7 +172,7 @@ func New(projectDir string, execFn ExecFunc, shellTimeout time.Duration) (*Regis
 	if err != nil {
 		return nil, fmt.Errorf("project directory: %w", err)
 	}
-	projectRoot, err := os.OpenRoot(real)
+	projectRoot, err := bounded.OpenRoot(real)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +263,7 @@ func (r *Registry) AddDirs(roots []sandbox.AddedRoot) error {
 	}
 	var opened []addedHandle
 	for _, a := range roots {
-		root, err := os.OpenRoot(a.Dir)
+		root, err := bounded.OpenRoot(a.Dir)
 		if err != nil {
 			for _, o := range opened {
 				o.h.close()
@@ -375,7 +375,7 @@ func (r *Registry) UseWorkDir(dir string) error {
 	if err != nil {
 		return fmt.Errorf("work directory: %w", err)
 	}
-	root, err := os.OpenRoot(real)
+	root, err := bounded.OpenRoot(real)
 	if err != nil {
 		return fmt.Errorf("work directory: %w", err)
 	}

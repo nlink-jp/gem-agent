@@ -104,7 +104,7 @@ const (
 // readDirBounded lists at most n entries of dir, reporting whether
 // there were more.
 func readDirBounded(dir string, n int) ([]os.DirEntry, bool, error) {
-	d, err := os.Open(dir)
+	d, err := bounded.OpenDir(dir)
 	if err != nil {
 		return nil, false, err
 	}
@@ -165,7 +165,7 @@ func (s Skill) openRoot() (*os.Root, func(), error) {
 	if s.root != nil {
 		return s.root, func() {}, nil
 	}
-	root, err := os.OpenRoot(s.Dir)
+	root, err := bounded.OpenRoot(s.Dir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -334,7 +334,7 @@ func readSkill(dir, scope string, lim Limits) (*Skill, error) {
 	// The root is opened first and SKILL.md read through it: the
 	// description enters the system prompt, and must come from inside
 	// the skill directory however the tree changes underneath.
-	root, err := os.OpenRoot(realDir)
+	root, err := bounded.OpenRoot(realDir)
 	if err != nil {
 		return nil, err
 	}
@@ -615,7 +615,7 @@ func (s Skill) FileVerified(rel string, lim Limits, verify *Verify) (string, err
 		return "", err
 	}
 	if info.IsDir() {
-		d, err := root.Open(inside)
+		d, err := bounded.OpenDirIn(root, inside)
 		if err != nil {
 			return "", err
 		}

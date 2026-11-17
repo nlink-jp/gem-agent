@@ -202,7 +202,7 @@ func cutRunes(s string, n int) string {
 // most cap bytes, and reports the file's full size. A link that leads
 // out of the directory is refused by the root at the open.
 func readInstruction(path string, cap int) ([]byte, int64, error) {
-	root, err := os.OpenRoot(filepath.Dir(path))
+	root, err := bounded.OpenRoot(filepath.Dir(path))
 	if err != nil {
 		return nil, 0, err
 	}

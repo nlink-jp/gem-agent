@@ -44,7 +44,7 @@ close access f`, path)
 		}
 		return nil, fmt.Errorf("clipboard capture failed: %s", msg)
 	}
-	f, err := os.Open(path)
+	f, err := bounded.OpenRegularPath(path)
 	if err != nil {
 		return nil, err
 	}

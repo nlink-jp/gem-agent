@@ -243,7 +243,7 @@ func Parents(projectDir string, snap map[string]string) []string {
 // content, so retargeting it is a change even when the bytes match
 // (review F1: a link was "absent" to the pin and present to the loader).
 func consumedDigest(projectDir, name string) (string, bool) {
-	root, err := os.OpenRoot(projectDir)
+	root, err := bounded.OpenRoot(projectDir)
 	if err != nil {
 		return "", false
 	}
@@ -724,7 +724,7 @@ func digestEntries(entries []manifestEntry, cut bool) string {
 // that cannot be opened digests as an empty one, as a walk that found
 // nothing always did.
 func dirDigest(dir string, maxFiles int) (string, bool) {
-	root, err := os.OpenRoot(dir)
+	root, err := bounded.OpenRoot(dir)
 	if err != nil {
 		h := sha256.New()
 		return "sha256:" + hex.EncodeToString(h.Sum(nil)), false
@@ -734,7 +734,7 @@ func dirDigest(dir string, maxFiles int) (string, bool) {
 }
 
 func readDir(dir string, n int) ([]os.DirEntry, bool, error) {
-	d, err := os.Open(dir)
+	d, err := bounded.OpenDir(dir)
 	if err != nil {
 		return nil, false, err
 	}

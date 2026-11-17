@@ -127,7 +127,7 @@ func EnsureProjectDir(dir, projectDir string) error {
 const markerCap = 64 * 1024
 
 func readMarker(path string) ([]byte, error) {
-	f, err := os.Open(path)
+	f, err := bounded.OpenRegularPath(path)
 	if err != nil {
 		return nil, err
 	}

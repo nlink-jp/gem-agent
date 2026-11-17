@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/nlink-jp/gem-agent/internal/bounded"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 	"github.com/nlink-jp/gem-agent/internal/uitext"
@@ -220,7 +221,7 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 	}
 
 	// Open first and read the real path back from the descriptor.
-	root, err := os.OpenRoot(real)
+	root, err := bounded.OpenRoot(real)
 	if err != nil {
 		return "", fmt.Errorf(m.GrantCannotOpenFmt, real, err)
 	}

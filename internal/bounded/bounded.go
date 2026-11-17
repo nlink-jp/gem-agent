@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 	"unicode/utf8"
 )
 
@@ -76,6 +77,57 @@ func regular(f *os.File, name string) (*os.File, error) {
 		return nil, err
 	}
 	return f, nil
+}
+
+// OpenDir opens the directory at path for listing. A name that is
+// expected to be a directory — a skills directory, a session's work
+// directory, a directory of the state tree — can be a FIFO instead, and
+// a plain open of one waits for a writer: measured for
+// <project>/.claude/skills, which held discovery, the trust probe and
+// the pins, and for a work directory the write lane had replaced, which
+// held the exit (ADR-0120). O_DIRECTORY makes the kernel answer "not a
+// directory" at the open, without waiting, so there is nothing between
+// a look and the open to swap; it is what os.ReadDir itself passes, and
+// changes nothing about how a directory opens.
+func OpenDir(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_RDONLY|syscall.O_DIRECTORY, 0)
+}
+
+// OpenDirIn is OpenDir for rel under root.
+func OpenDirIn(root *os.Root, rel string) (*os.File, error) {
+	return root.OpenFile(rel, os.O_RDONLY|syscall.O_DIRECTORY, 0)
+}
+
+// OpenRoot is os.OpenRoot for a name that must be a directory already.
+// os.OpenRoot opens plainly and looks afterwards, so a FIFO at the name
+// holds it: the write lane can put one where the work directory, an
+// added directory or the project directory was (measured, ADR-0120),
+// and every loader that opened a root there by path waited. The kind is
+// looked at first. os.OpenRoot takes no flags, so a name swapped for a
+// FIFO between the look and the open still waits — the same residual
+// OpenRegular has.
+func OpenRoot(path string) (*os.Root, error) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !st.IsDir() {
+		return nil, &os.PathError{Op: "open", Path: path, Err: syscall.ENOTDIR}
+	}
+	return os.OpenRoot(path)
+}
+
+// WriteFile is os.WriteFile for a name that is a regular file or does
+// not exist yet. Opened for writing, a FIFO waits for a reader, and
+// writing a FIFO somebody reads is not writing the file: a memory, the
+// policy file's temporary and the like are files this runtime writes
+// and reads back (ADR-0120). The kind is looked at first, through a
+// link as the write goes; a name swapped in between still waits.
+func WriteFile(path string, data []byte, perm os.FileMode) error {
+	if st, err := os.Stat(path); err == nil && !st.Mode().IsRegular() {
+		return &os.PathError{Op: "open", Path: path, Err: ErrNotRegular}
+	}
+	return os.WriteFile(path, data, perm)
 }
 
 // ReadAll reads at most cap bytes from r. more reports that r held

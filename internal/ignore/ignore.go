@@ -77,7 +77,7 @@ func osReader(path string, cap int64) ([]byte, error) {
 	if !info.Mode().IsRegular() || info.Size() > cap {
 		return nil, fmt.Errorf("%s: not a regular file within %d bytes", path, cap)
 	}
-	f, err := os.Open(path)
+	f, err := bounded.OpenRegularPath(path)
 	if err != nil {
 		return nil, err
 	}

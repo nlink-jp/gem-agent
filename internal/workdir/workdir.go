@@ -32,6 +32,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/nlink-jp/gem-agent/internal/bounded"
 	"github.com/nlink-jp/gem-agent/internal/statedir"
 )
 
@@ -182,7 +183,7 @@ func List(projectDir, excludeSessionID string) (infos []Info, more bool, err err
 		return nil, false, err
 	}
 	base := filepath.Join(root, statedir.EscapeProject(projectDir), "work")
-	d, err := os.Open(base)
+	d, err := bounded.OpenDir(base)
 	if os.IsNotExist(err) {
 		return nil, false, nil
 	}
@@ -324,7 +325,7 @@ func Remove(projectDir, sessionID string) error {
 // a directory that still holds anything, which is what makes it safe to
 // do without asking.
 func RemoveIfEmpty(dir string) {
-	d, err := os.Open(dir)
+	d, err := bounded.OpenDir(dir)
 	if err != nil {
 		return
 	}

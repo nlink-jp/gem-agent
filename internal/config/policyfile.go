@@ -13,6 +13,7 @@ import (
 
 	"github.com/nlink-jp/toml"
 
+	"github.com/nlink-jp/gem-agent/internal/bounded"
 	"github.com/nlink-jp/gem-agent/internal/pathid"
 )
 
@@ -167,6 +168,29 @@ func PolicyPath(configPath string) string {
 	return filepath.Join(filepath.Dir(configPath), PolicyFileName)
 }
 
+// policyFileCap is the largest policy file read: what the decoder
+// accepts, so a larger one is refused as it always was.
+const policyFileCap = 1 << 20
+
+// readPolicyFile reads the policy file, which this runtime writes and
+// nothing else should: a regular file, or it is not read. Opened
+// plainly, a FIFO of that name held every start (ADR-0120).
+func readPolicyFile(path string) ([]byte, error) {
+	f, err := bounded.OpenRegularPath(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	data, more, err := bounded.ReadAll(f, policyFileCap)
+	if err != nil {
+		return nil, err
+	}
+	if more {
+		return nil, fmt.Errorf("larger than %d bytes", policyFileCap)
+	}
+	return data, nil
+}
+
 // LoadPolicyFile reads the machine-owned policy. A missing file is not an
 // error: it simply has not been written yet.
 func LoadPolicyFile(path string) (*PolicyFile, error) {
@@ -177,7 +201,11 @@ func LoadPolicyFile(path string) (*PolicyFile, error) {
 		}
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	_, err := toml.DecodeFile(path, pf)
+	raw, err := readPolicyFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	_, err = toml.Decode(string(raw), pf)
 	var unknown *toml.UnknownKeysError
 	if err != nil && !errors.As(err, &unknown) {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
@@ -446,7 +474,7 @@ func (pf *PolicyFile) Save(path string) error {
 		return fmt.Errorf("refusing to write an unreadable policy file: %w", err)
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
+	if err := bounded.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {

@@ -218,10 +218,9 @@ func TestPathPackagesOpenThroughRoots(t *testing.T) {
 		// enforce (ADR-0072 §4.4 recorded).
 		"internal/mention resolveImagePath": "operator-typed absolute image path outside the roots",
 		"internal/mention openConfined":     "operator-typed absolute path outside the roots",
-		// The skills root is the configured directory itself, opened
-		// to list it; each skill then holds its own os.Root.
-		"internal/skills readDirBounded": "opens the configured skills root to list it",
-		"internal/skills Discover":       "IsDir probe of a skills-root entry before the skill's own os.Root is opened",
+		// The skills root is the configured directory itself, listed
+		// through bounded.OpenDir; each skill then holds its own os.Root.
+		"internal/skills Discover": "IsDir probe of a skills-root entry before the skill's own os.Root is opened",
 		// The default FileReader for callers without a root (tests, the
 		// git cross-check); the file tools inject a root-backed reader.
 		"internal/ignore osReader": "default reader for root-less callers",
@@ -245,6 +244,34 @@ func TestReadsAreBounded(t *testing.T) {
 		kept = append(kept, c)
 	}
 	report(t, kept, map[string]string{})
+}
+
+// TestOpensDoNotWait: a plain open waits on a FIFO for as long as
+// nobody writes to it, os.OpenRoot opens plainly, and an open for
+// writing waits for a reader (ADR-0120 — measured at every open the
+// two sweeps found). An open of a name goes through internal/bounded,
+// which opens a directory as a directory and a file only when it is a
+// regular one; what is left is listed with why.
+func TestOpensDoNotWait(t *testing.T) {
+	calls := collectCalls(t, repoRoot(t), boundedPackages, []string{
+		"os.Open", "os.OpenRoot", "os.WriteFile", "toml.DecodeFile", ".Open", ".OpenRoot",
+	})
+	var kept []call
+	for _, c := range calls {
+		if c.pkg == "internal/bounded" {
+			continue
+		}
+		kept = append(kept, c)
+	}
+	report(t, kept, map[string]string{
+		"cmd descriptorPathOf":               "`.` of a root that is already open",
+		"cmd fileSHA256":                     "lstat'd just before as a regular file of the size that was saved; ADR-0020 and ADR-0021 cite this file by line",
+		"internal/config LoadWithOverrides":  "the operator's own configuration, named with --config: a FIFO or a process substitution there may be meant (ADR-0120 §5, undecided)",
+		"internal/docext readMember":         "an entry of a zip archive already open, not a name on disk",
+		"internal/sandbox verifyAddedRoot":   "probe files inside a directory just made under a random name",
+		"internal/telemetry loadHeaders":     "the headers file the operator names in the configuration: as --config (ADR-0120 §5, undecided)",
+		"internal/trustpin manifestWalk.dir": "`.` of the directory held open, and a sub-directory by name after its listed kind: Root.OpenRoot takes no flags (the residual in ADR-0120)",
+	})
 }
 
 // TestOneDecisionPoint: the rule tier is consulted in exactly one

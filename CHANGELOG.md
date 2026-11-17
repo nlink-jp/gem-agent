@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Security
+
+- **A FIFO where a directory or one of the runtime's own files should be
+  no longer holds the runtime** (ADR-0120). The earlier fix covered
+  four project files; every other open has now been measured, each with
+  a FIFO at the name. Three kinds waited. `.claude/skills` in a project:
+  discovery, the look before the trust question and the trust records
+  all stopped, before anything was asked. A directory the session's
+  shell commands may write: a command can remove the work directory, an
+  added directory or the project directory and leave a FIFO under its
+  name, and the next thing to open it — the tidy-up at exit, `/clear`, a
+  resume, a file read — never came back. And the runtime's own files: a
+  memory, a transcript, `policy.toml`, `risk-rules.md` and the others,
+  most of them read at every start. A FIFO there takes access to your
+  own state directory, which the shell lanes do not have. All of these
+  now answer at once: a directory is opened only as a directory, and a
+  file the runtime names itself only when it is a regular file. Reads
+  the model asks for (`read_file`, search, the listings, images) were
+  measured too and never waited. The configuration file you pass with
+  `--config` and the `headers_file` it names are unchanged — a FIFO there still waits until it is
+  written, which may be what you mean.
+
 ## [0.105.0] - 2026-11-17
 
 ### Security

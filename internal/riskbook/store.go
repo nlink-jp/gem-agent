@@ -118,7 +118,7 @@ func SaveProject(projectDir, text string) error {
 	}
 	path := filepath.Join(dir, projectFileName)
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(text), 0o600); err != nil {
+	if err := bounded.WriteFile(tmp, []byte(text), 0o600); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -173,7 +173,7 @@ func (b Book) Compose() string {
 const rulebookCap = 1 << 20
 
 func readRulebook(path string) ([]byte, error) {
-	f, err := os.Open(path)
+	f, err := bounded.OpenRegularPath(path)
 	if err != nil {
 		return nil, err
 	}
