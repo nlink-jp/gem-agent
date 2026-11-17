@@ -285,7 +285,10 @@ a new hook) is an architecture change and takes the same rows as a
   files, `.mcp.json`, the project config) is opened with
   `bounded.OpenRegular` — the kind is looked at before the open, regular
   files only — because a FIFO of that name held the read, and startup,
-  until somebody wrote to it. The same holds for every other open of a
+  until somebody wrote to it. The open itself is `O_NONBLOCK`, the kind
+  is looked at again on the descriptor and the flag cleared, so a name
+  swapped for a FIFO between the look and the open is refused too
+  (ADR-0120 §7; observed first on an online-only iCloud file). The same holds for every other open of a
   name (ADR-0120): a directory that is listed is opened with
   `bounded.OpenDir` (`O_DIRECTORY` — the kernel refuses a FIFO at the
   open), a root with `bounded.OpenRoot`, a file under a fixed name with

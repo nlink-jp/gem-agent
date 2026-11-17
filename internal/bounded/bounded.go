@@ -27,16 +27,19 @@ var ErrNotRegular = errors.New("not a regular file")
 // instruction file, .mcp.json, the project config — could stop the
 // caller for as long as it liked, at startup and before anything was
 // asked. The kind is looked at first, and what is not a regular file
-// is never opened; it is looked at again on the opened file, so what
-// is read is what was opened.
+// is never opened.
 //
-// It is not an open that cannot wait (O_NONBLOCK). That would also
-// cover a name swapped for a FIFO between the look and the open, which
-// this does not; but how such an open and its reads behave on a file
+// The open itself cannot wait either (O_NONBLOCK), and the kind is
+// looked at again on what was opened: a name swapped for a FIFO between
+// the look and the open is refused, where a plain open after the look
+// waited on it — the swap hit within a few hundred opens every time it
+// was tried (ADR-0120 §7). The flag is cleared before the file is
+// handed back, so every read is what it was. The first form of this
+// left the plain open in, because how such an open behaves on a file
 // whose content is not on this disk — an online-only file of a cloud
-// folder — had not been observed when this was written, and a project
-// there must keep reading as it did. It has been observed since, on
-// iCloud Drive (ADR-0120); opening this way is a decision of its own.
+// folder — had not been observed. It was, on iCloud Drive: the open
+// returns at once and downloads nothing with the flag or without it,
+// and the first read waits for the download and returns the bytes.
 func OpenRegular(root *os.Root, rel string) (*os.File, error) {
 	st, err := root.Stat(rel)
 	if err != nil {
@@ -45,7 +48,7 @@ func OpenRegular(root *os.Root, rel string) (*os.File, error) {
 	if !st.Mode().IsRegular() {
 		return nil, &os.PathError{Op: "open", Path: rel, Err: ErrNotRegular}
 	}
-	f, err := root.Open(rel)
+	f, err := root.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -61,17 +64,22 @@ func OpenRegularPath(path string) (*os.File, error) {
 	if !st.Mode().IsRegular() {
 		return nil, &os.PathError{Op: "open", Path: path, Err: ErrNotRegular}
 	}
-	f, err := os.Open(path)
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}
 	return regular(f, path)
 }
 
+// regular takes a file opened without waiting, refuses it unless it is
+// a regular file, and clears the flag the open carried.
 func regular(f *os.File, name string) (*os.File, error) {
 	st, err := f.Stat()
 	if err == nil && !st.Mode().IsRegular() {
 		err = &os.PathError{Op: "open", Path: name, Err: ErrNotRegular}
+	}
+	if err == nil {
+		err = syscall.SetNonblock(int(f.Fd()), false)
 	}
 	if err != nil {
 		_ = f.Close()

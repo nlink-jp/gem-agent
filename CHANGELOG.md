@@ -20,7 +20,12 @@
   now answer at once: a directory is opened only as a directory, and a
   file the runtime names itself only when it is a regular file. Reads
   the model asks for (`read_file`, search, the listings, images) were
-  measured too and never waited. The configuration file you pass with
+  measured too and never waited. A file is also opened in a way that
+  cannot wait at all, so a name swapped for a FIFO at the very moment it
+  is opened is refused as well; before, that swap held the open every
+  time it was tried. How such an open behaves on an online-only file of
+  a cloud folder was observed first, on iCloud Drive: the same as a
+  plain one. The configuration file you pass with
   `--config` and the `headers_file` it names are unchanged — a FIFO there still waits until it is
   written, which may be what you mean.
 
