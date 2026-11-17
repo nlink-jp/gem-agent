@@ -19,12 +19,12 @@
 
 ### カウンタに見えるもの、見えないもの
 
-`emit`（[model.go:1023](../../../internal/tui/model.go)）は 1 行を scrollback へ
+`emit`（[model.go:1026](../../../internal/tui/model.go)）は 1 行を scrollback へ
 印字し、その物理行数を数える。bottom pin はその数に乗っている。`go.mod:14` が固定
 している版 `charmbracelet/x/ansi` v0.11.6 で実測すると、`ansi.StringWidth` は iTerm2 の
 `OSC 1337 File=`、kitty の `APC _G`、sixel の `DCS q` のいずれにも **0** を返し、
 `ansi.Strip` は空文字を返す。`ansi.Hardwrap` は 3 方式ともバイト同一で通すので、
-`wrapForScrollback`（[model.go:1282](../../../internal/tui/model.go)）は base64 の
+`wrapForScrollback`（[model.go:1285](../../../internal/tui/model.go)）は base64 の
 連なりを切り刻まない。独立検証パスはこれを実 PNG と現実的な sixel で取り直した。
 リポジトリ自身のテストは 3 方式のうち 2 つしか覆っていなかった。いまは
 `tools/imgpayload` が 3 つとも持つ。ある稿はそこで逆方向に行き過ぎ、より広い再測定
@@ -219,7 +219,7 @@ view 層であり、ツールが返したものが「エスケープに見える
 
 これは**既存の面を塞いだと主張するものではない**。ツール出力は ANSI 除去なしで印字される。
 非テストコードで `ansi.Strip` が呼ばれるのはちょうど 1 箇所
-（[model.go:1300](../../../internal/tui/model.go)）、`physicalRows` の中で幅を**測る**ためだけで
+（[model.go:1303](../../../internal/tui/model.go)）、`physicalRows` の中で幅を**測る**ためだけで
 ある。よってシェル出力の生エスケープは既に端末へ届いている。既存であり、ここで広がらず、
 ここで直しもしない。
 

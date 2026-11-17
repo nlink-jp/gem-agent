@@ -20,7 +20,16 @@ type TextDelta string
 type AskRequest struct {
 	Question string
 	Options  []string
-	Resp     chan int
+	// Heading, when set, opens the dialog in place of the "question:"
+	// title, in the warning style. The runtime's own question — whether
+	// to trust a skill that changed (ADR-0119) — must not read as one
+	// the model asked, and the model's ask_user cannot set it.
+	Heading string
+	// Default is the option highlighted when the dialog opens. The
+	// trust question opens on "not now": a key pressed too soon then
+	// records nothing and disables nothing.
+	Default int
+	Resp    chan int
 }
 
 // StreamUpdate is turn observability from the backend (ADR-0033):

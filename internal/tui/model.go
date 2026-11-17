@@ -837,6 +837,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		req := msg
 		m.ask = &req
 		m.askChoice = 0
+		if req.Default > 0 && req.Default < len(req.Options) {
+			m.askChoice = req.Default
+		}
 		m.askAt = time.Now()
 		m.phase = phaseAsk
 		return m, m.armNotice()
@@ -2544,6 +2547,12 @@ func (m Model) updateAsk(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.phase = phaseRunning
 	m.status = m.msgs.StatusToolWait
 	req.Resp <- answer
+	if answer < 0 && req.Heading != "" {
+		// The runtime's own question, left unanswered: "denied" would
+		// say a decision was made. The asker's notice says what
+		// happens instead.
+		return m, nil
+	}
 	chosen := m.msgs.VerdictDenied
 	if answer >= 0 {
 		chosen = req.Options[answer]
@@ -2567,7 +2576,20 @@ func (m Model) askView() string {
 	if inner < 20 {
 		inner = 20
 	}
-	qLines := strings.Split(ansi.Hardwrap(fmt.Sprintf(m.msgs.AskTitleFmt, req.Question), inner, true), "\n")
+	title := fmt.Sprintf(m.msgs.AskTitleFmt, req.Question)
+	if req.Heading != "" {
+		// The runtime's question: its own heading, and the text as
+		// written — "question:" is how the model's questions open.
+		title = req.Question
+	}
+	qLines := strings.Split(ansi.Hardwrap(title, inner, true), "\n")
+	if req.Heading != "" {
+		head := strings.Split(ansi.Hardwrap("⚠ "+req.Heading, inner, true), "\n")
+		for i := range head {
+			head[i] = m.st.warn.Render(head[i])
+		}
+		qLines = append(head, qLines...)
+	}
 	// The options wrap too, and their rows beyond one per option come
 	// out of the question's budget (review round 4: eight long options
 	// at 80×24 pushed the title off the top with no disclosure); rows
