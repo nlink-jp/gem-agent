@@ -223,13 +223,14 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
   system prompt's skill section — until the list is rebuilt. The refusal
   is what tells the model.
 - **The digest has limits, and what it does not cover is not served:** a
-  skill with more than 2,000 files is not read at all, a `SKILL.md` over
+  skill with more than 2,000 files, or with more than 4,000 entries in
+  all — files, links and directories together — is not read at all, a `SKILL.md` over
   1 MiB is not a skill, and a supporting file over the 96 KiB read limit
   is refused. A link inside a skill is covered by its target string; a
   file read through it is held to the entry it leads to. The first
   version of this record accepted "files past the 2,000th are not
   covered"; the implementation review showed that `SKILL.md` itself could
-  be one of them.
+  be one of them. The second bound is on the walk itself, and was added after the first release: directories are neither counted as files nor part of the digest, so a tree of empty directories added to a trusted skill changed no digest and was walked whole at every use. Measured on that release: 100,000 empty directories took 9.6 s per compare, and one directory holding 200,000 files took 0.7 s, because a directory was listed whole before the cap was looked at. A directory is now read only as far as the walk's budget goes, and a tree over the budget is refused like one over the file cap. Within both bounds every digest is what it was.
 - **Scripts.** A skill loaded earlier may have told the model to run a
   script from its directory. If the script changes afterwards, the shell
   runs what is there, under the lane and approval rules of every command.
@@ -242,7 +243,7 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
   instruction files have no later read to guard.
 - **A project skill that carries a dependency tree** — a `node_modules`,
   a `.venv` — is past 2,000 files and cannot be loaded. It stays in the
-  catalogue the model has; the notice says why. The cap is checked as the walk goes: a skill of exactly 2,000 files with a directory walked after the last of them is refused as well.
+  catalogue the model has; the notice says why. The file cap is checked when a file is about to be counted, so a skill of exactly 2,000 files loads whatever directories follow them; the first release checked it at the next entry of any kind and refused that skill.
 - **A trust write can still land late** in one narrow case: a call
   cancelled after its last check and then held more than a second on the
   policy file's lock. It records the digest the operator was asked about.
