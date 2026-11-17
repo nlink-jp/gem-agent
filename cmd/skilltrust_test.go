@@ -498,6 +498,11 @@ func TestContentThatMovesWhileTheQuestionIsUp(t *testing.T) {
 				if r.asks != tools.OperatorResolves || strings.Contains(again, "moved") || !strings.Contains(again, "do not ask for the skill again in this turn") {
 					t.Errorf("same turn: asks=%d result=%q", r.asks, again)
 				}
+				// And it says what happened: the operator did answer, so
+				// neither the model nor the notice says they did not.
+				if !strings.Contains(again, "still changing") || !strings.Contains(r.notices[len(r.notices)-1], "still changing") {
+					t.Errorf("same turn: result=%q notice=%q", again, r.notices[len(r.notices)-1])
+				}
 				// The next turn asks again, and the answer counts.
 				r.g.newTurn()
 				if out := r.viaTool(nil); r.asks != tools.OperatorResolves+1 || !strings.Contains(out, "moved") {
@@ -797,10 +802,56 @@ func TestTheLoaderReadsNoMoreThanAPinCovers(t *testing.T) {
 	}
 }
 
-// §1: a directory that is gone is an error, not a question. The skill's
+// §4: a trust answer that cannot be recorded loads nothing. The model
+// is given a refusal like every other one — not a bare error, which
+// said the operator trusted the skill and left the read tools open —
+// and the operator is told once, through either door.
+func TestATrustThatCannotBeRecordedLoadsNothing(t *testing.T) {
+	for name, door := range map[string]func(r *guardRig) string{
+		"load_skill": func(r *guardRig) string { return r.viaTool(nil) },
+		"/skill": func(r *guardRig) string {
+			turn, handled, errMsg := r.viaSlash()
+			if !handled || errMsg != "" {
+				r.t.Errorf("/skill: handled=%v errMsg=%q", handled, errMsg)
+			}
+			return turn
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newGuardRig(t)
+			before := r.diskPin()
+			r.write(skillV2)
+			r.answers = []int{0}
+			dir := filepath.Dir(r.policyPath)
+			if err := os.Chmod(dir, 0o555); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+			out := door(r)
+			if strings.Contains(out, "DURIAN") {
+				t.Errorf("content was returned without a record: %q", out)
+			}
+			if name == "load_skill" && (!strings.Contains(out, "could not be recorded") || !strings.Contains(out, "Do not read its files by other means")) {
+				t.Errorf("result = %q", out)
+			}
+			if name == "/skill" && out != "" {
+				t.Errorf("a turn started: %q", out)
+			}
+			if len(r.notices) != 1 || !strings.Contains(r.notices[0], "could not record the trust of skill greet") {
+				t.Errorf("notices = %v", r.notices)
+			}
+			_ = os.Chmod(dir, 0o755)
+			if r.diskPin() != before {
+				t.Error("the pin moved")
+			}
+		})
+	}
+}
+
+// §1: a directory that is gone is refused, not asked about. The skill's
 // root still sees the tree it was opened on, so a directory replaced
 // under the same name is "gone" too, not silently the new one.
-func TestAGoneDirectoryIsAnErrorNotAQuestion(t *testing.T) {
+func TestAGoneDirectoryIsRefusedNotAskedAbout(t *testing.T) {
 	for name, remove := range map[string]func(r *guardRig){
 		"removed": func(r *guardRig) {
 			dir := filepath.Dir(r.file)
@@ -828,7 +879,7 @@ func TestAGoneDirectoryIsAnErrorNotAQuestion(t *testing.T) {
 			r := newGuardRig(t)
 			remove(r)
 			out := r.viaTool(nil)
-			if !strings.Contains(out, "its directory is gone") || strings.Contains(out, "DURIAN") || strings.Contains(out, "APPLE") {
+			if !strings.Contains(out, "is gone or was replaced") || !strings.Contains(out, "Do not read its files by other means") || strings.Contains(out, "DURIAN") || strings.Contains(out, "APPLE") {
 				t.Errorf("result = %q", out)
 			}
 			if r.asks != 0 {
@@ -919,12 +970,12 @@ func TestRefusalsCarryOnlyTheValidatedName(t *testing.T) {
 	results = append(results, r.viaTool(nil)) // disabled
 	results = append(results, r.viaTool(nil)) // and refused as disabled
 	results = append(results, (&skillQuestion{g: r.g, s: r.s}).StillUnresolved())
-	results = append(results, fmt.Sprintf(skillRefusalUncovered, r.s.Name), (&skillGoneError{name: r.s.Name}).Error())
+	results = append(results, fmt.Sprintf(skillRefusalUncovered, r.s.Name), fmt.Sprintf(skillRefusalGone, r.s.Name), fmt.Sprintf(skillRefusalRecord, r.s.Name))
 	for _, out := range results {
 		if !strings.Contains(out, `"greet"`) {
 			t.Errorf("the refusal does not name the skill: %q", out)
 		}
-		if !strings.Contains(out, "Do not read its files by other means") && !strings.Contains(out, "its directory is gone") {
+		if !strings.Contains(out, "Do not read its files by other means") || !strings.Contains(out, "Say that the skill was not loaded") {
 			t.Errorf("the refusal leaves the read tools open: %q", out)
 		}
 		for _, leak := range []string{r.s.Dir, r.s.Entry, r.proj, "sha256:", "DURIAN"} {

@@ -27,21 +27,14 @@ const (
 	skillRefusalUncovered  = "The skill %q was not loaded: it holds more files than the operator's trust check covers. Do not read its files by other means. Say that the skill was not loaded, and continue only with what does not depend on it."
 	skillRefusalUnattended = "The skill %q was not loaded: its content is not what the operator's trust record holds, and nobody is at the terminal to confirm it. Do not read its files by other means. Say that the skill was not loaded, and continue only with what does not depend on it; the operator can re-trust it with `gem-agent trust --accept`."
 	skillRefusalChanging   = "The skill %q was not loaded: its files are still changing. Do not read its files by other means, and do not ask for the skill again in this turn. Say that the skill was not loaded, and continue only with what does not depend on it."
-	skillErrRecord         = "skill %q: the operator trusted it, but the trust could not be recorded, so it was not loaded"
+	skillRefusalGone       = "The skill %q was not loaded: it is gone or was replaced. Do not read its files by other means. Say that the skill was not loaded, and continue only with what does not depend on it."
+	skillRefusalRecord     = "The skill %q was not loaded: the operator trusted it, but the trust could not be recorded. Do not read its files by other means. Say that the skill was not loaded, and continue only with what does not depend on it."
 )
 
 // errSkillMoved: the bytes a read returned are not the bytes the trust
 // record's tree holds for that file — the content moved between the
 // compare and the read, or was never what was compared.
 var errSkillMoved = errors.New("the skill's content is not what was compared")
-
-// skillGoneError is a skill whose directory is gone or was replaced.
-// The operator has been told; the model is given the fixed sentence.
-type skillGoneError struct{ name string }
-
-func (e *skillGoneError) Error() string {
-	return fmt.Sprintf("skill %q: its directory is gone or was replaced", e.name)
-}
 
 // skillGuard is the compare-before-consuming rule applied where a
 // project skill is actually consumed (ADR-0119). The pin was compared
@@ -85,7 +78,9 @@ type skillGuard struct {
 	// later holds the skills whose question went unanswered in the
 	// current turn. They are not asked about again until the next one:
 	// a model that keeps calling load_skill must not be able to keep a
-	// dialog coming, and "not now" has to mean it (§6).
+	// dialog coming, and "not now" has to mean it (§6). The value says
+	// why, so a later refusal in the turn says what happened: true for a
+	// skill that kept changing, false for a question left unanswered.
 	later map[string]bool
 }
 
@@ -119,19 +114,20 @@ func (g *skillGuard) newTurn() {
 	g.later = nil
 }
 
-func (g *skillGuard) declined(pin string) bool {
+func (g *skillGuard) declined(pin string) (declined, changing bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.later[pin]
+	changing, declined = g.later[pin]
+	return declined, changing
 }
 
-func (g *skillGuard) decline(pin string) {
+func (g *skillGuard) decline(pin string, changing bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.later == nil {
 		g.later = map[string]bool{}
 	}
-	g.later[pin] = true
+	g.later[pin] = changing
 }
 
 // forget drops every disable answer. It is called where the list of
@@ -297,7 +293,7 @@ func (g *skillGuard) attempt(ctx context.Context, s skills.Skill, load func(*ski
 	case skillGone:
 		g.event(s, "gone")
 		g.say(g.msgs.SkillGoneFmt, s)
-		return "", "", &skillGoneError{name: s.Name}
+		return "", fmt.Sprintf(skillRefusalGone, s.Name), nil
 	case skillUncovered:
 		g.event(s, "uncovered")
 		g.say(g.msgs.SkillUncoveredFmt, s)
@@ -311,7 +307,7 @@ func (g *skillGuard) attempt(ctx context.Context, s skills.Skill, load func(*ski
 			return "", "", ctx.Err()
 		}
 		if err := g.record(s, digest); err != nil {
-			return "", "", fmt.Errorf(skillErrRecord, s.Name)
+			return "", fmt.Sprintf(skillRefusalRecord, s.Name), nil // record has told the operator
 		}
 		out, err = load(verifier(manifest))
 		if errors.Is(err, errSkillMoved) {
@@ -324,8 +320,12 @@ func (g *skillGuard) attempt(ctx context.Context, s skills.Skill, load func(*ski
 		g.say(g.msgs.SkillUnattendedFmt, s)
 		return "", fmt.Sprintf(skillRefusalUnattended, s.Name), nil
 	}
-	if g.declined(trustpin.SkillPinName(s.Entry)) {
+	if declined, changing := g.declined(trustpin.SkillPinName(s.Entry)); declined {
 		g.event(s, "refused")
+		if changing {
+			g.say(g.msgs.SkillChangingFmt, s)
+			return "", fmt.Sprintf(skillRefusalChanging, s.Name), nil
+		}
 		g.say(g.msgs.SkillLaterFmt, s)
 		return "", fmt.Sprintf(skillRefusalLater, s.Name), nil
 	}
@@ -380,7 +380,7 @@ func (q *skillQuestion) Resolve(ctx context.Context) (context.Context, string) {
 	}
 	pin := trustpin.SkillPinName(s.Entry)
 	if ctx.Err() != nil {
-		g.decline(pin)
+		g.decline(pin, false)
 		g.event(s, "unanswered")
 		return nil, fmt.Sprintf(skillRefusalLater, s.Name)
 	}
@@ -412,7 +412,7 @@ func (q *skillQuestion) Resolve(ctx context.Context) (context.Context, string) {
 		g.say(g.msgs.SkillDisabledFmt, s)
 		return nil, fmt.Sprintf(skillRefusalDisabled, s.Name)
 	}
-	g.decline(pin)
+	g.decline(pin, false)
 	g.event(s, "unanswered")
 	g.say(g.msgs.SkillLaterFmt, s)
 	return nil, fmt.Sprintf(skillRefusalLater, s.Name)
@@ -424,7 +424,7 @@ func (q *skillQuestion) StillUnresolved() string {
 	// Remembered for the turn, like an unanswered question: a model that
 	// asks again at once must not raise the dialog again while the files
 	// keep moving.
-	q.g.decline(trustpin.SkillPinName(q.s.Entry))
+	q.g.decline(trustpin.SkillPinName(q.s.Entry), true)
 	q.g.event(q.s, "changing")
 	q.g.say(q.g.msgs.SkillChangingFmt, q.s)
 	return fmt.Sprintf(skillRefusalChanging, q.s.Name)
@@ -459,10 +459,6 @@ func (g *skillGuard) readForOperator(ctx context.Context, s skills.Skill, load f
 		out, refusal, err := g.attempt(run, s, load)
 		if refusal != "" {
 			return "", false, nil
-		}
-		var gone *skillGoneError
-		if errors.As(err, &gone) {
-			return "", false, nil // the guard's notice has said so
 		}
 		var q *skillQuestion
 		if !errors.As(err, &q) {

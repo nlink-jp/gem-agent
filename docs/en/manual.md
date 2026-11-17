@@ -2308,7 +2308,7 @@ slipped in from outside, would become a rule as it stands.
 | The body of `SKILL.md` | 64 KB. Anything beyond is cut, and a note says so |
 | Other files inside the skill | 96 KB. A file over this cannot be loaded |
 | The `SKILL.md` file itself | 1 MiB. A larger one is not treated as a skill, and you are told at startup |
-| The number of files in one project skill | 2,000. A skill with more is not loaded, and you are told when it is about to be used ([13.5](#135-a-skill-that-changed-partway-through)) |
+| The number of files in one project skill | 2,000. A skill with more is not loaded, and you are told when it is about to be used ([13.5](#135-a-skill-that-changed-partway-through)). The limit applies while content is compared ([11.3](#113-asked-again-when-content-changes)) |
 | The number of skills | 100. Any beyond that are left out of the list, and you are told |
 
 Split a long procedure so that `SKILL.md` names files under `references/` and
@@ -2355,9 +2355,9 @@ Things to know:
 - **Select with the arrows, confirm with Enter.** Unlike other question
   dialogs, the digit keys do nothing here, and the selection stops at the
   top and the bottom. If the dialog appears while you are typing a message,
-  the keys you were typing cannot become the "trust" answer. In a
-  line-by-line conversation, without the TUI, you answer by typing `trust`
-  or `disable` (the example at the end of this section).
+  the keys you were typing cannot become the "trust" answer. When the
+  output is connected to a pipe or a file, there is no TUI and you answer by
+  typing `trust` or `disable` (the example at the end of this section).
 - **Only you answer it.** Neither auto-approve mode nor "allow for this
   session" answers this question.
 - **Look at the content before you answer.** The dialog shows where the skill
@@ -2387,10 +2387,11 @@ Things to know:
   to say so in its answer, to continue only with what does not depend on the
   skill, and not to read the skill's files by other means.
 
-**The question in a line-by-line conversation.** When only the output is
-connected to a pipe or a file, there is no TUI and the same question is
-printed like this. Answer by typing `trust` or `disable`. Any other input, or
-an empty line, is the same as "Not now".
+**The question when the output is piped.** When the input is still a
+terminal and only the output is connected to a pipe or a file, there is no
+TUI and the same question is printed like this. Answer by typing `trust` or `disable`. Any other input, or
+an empty line, is the same as "Not now". With the input connected to a pipe
+(the line-by-line conversation), nothing is asked.
 
 ```
 [⚠ project trust — a skill is not what you trusted]
@@ -2408,13 +2409,13 @@ is reported in one line that begins with `project trust:`.
 
 | Notice | Meaning | What to do |
 |---|---|---|
-| `skill <name> trusted` | Recorded and loaded | Nothing |
-| `skill <name> is disabled for this session …` | You answered "Disable for this session" | To bring it back, run `gem-agent trust --accept` in another terminal, then `/clear` |
-| `skill <name> not loaded — using it after your next message asks again` | You answered "Not now", or did not answer | Nothing. It asks the next time the skill is used |
+| `skill <name> trusted` | Recorded; the skill is then loaded | Nothing |
+| `skill <name> is disabled for this session …` | You answered "Disable for this session" | To bring it back, run `gem-agent trust --accept` in another terminal, then `/clear` or `/skills reload` |
+| `skill <name> not loaded — using it after your next message asks again` | You answered "Not now", or did not answer | Nothing. It asks when the skill is used after your next message |
 | `skill <name> is still changing …` | The content kept changing while you were being asked | Use it again when the change (a `git pull`, a build) has finished |
 | `skill <name> is not what you trusted …` | The content differed where nobody could be asked, such as a one-shot run | Look at the content, then record it again with `gem-agent trust --accept` |
 | `skill <name> has more than 2,000 files …` | More files than the check covers | Remove what the skill does not need (`node_modules`, `.venv`). It is compared again the next time it is used, and asks if the content changed |
-| `skill <name> — its directory is gone or was replaced …` | The skill's directory disappeared, or was swapped for another, during the session | `/clear` or `/skills reload` lists the skills again. To use a skill that was swapped in, look at it, record it with `gem-agent trust --accept`, then list the skills again |
+| `skill <name> is gone or was replaced …` | The skill's directory or its `SKILL.md` disappeared, or the directory was swapped for another, during the session | `/clear` or `/skills reload` lists the skills again. To use a skill that was swapped in, look at it, record it with `gem-agent trust --accept`, then list the skills again |
 | `could not record the trust of skill <name> (reason) …` | You answered "Trust and load", but the record could not be written | Read the reason in the parentheses. Make `~/.config/gem-agent/policy.toml` writable, then use the skill again |
 
 ## 14. Building in your own rules with hooks

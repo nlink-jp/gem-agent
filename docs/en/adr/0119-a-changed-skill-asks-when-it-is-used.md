@@ -68,8 +68,8 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
    covers is not read, and a `SKILL.md` past the megabyte a pin covers
    byte for byte is not a skill. Different, or a listed skill the
    recorded set does not hold: the question of item 2. A directory that
-   is gone — or moved aside, with another put at its path — is an error,
-   not a question. With pins off, or with nothing recorded for the
+   is gone — or moved aside, with another put at its path — is refused,
+   not asked about. Every refusal the model is given — this one, and a trust answer that could not be recorded, included — tells it not to read the skill's files by other means and to say that the skill was not loaded. With pins off, or with nothing recorded for the
    project, nothing is compared — the state the list was built in. A
    global skill is never compared.
 2. **The question is the runtime's own, and it is not put through the
@@ -242,7 +242,7 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
   instruction files have no later read to guard.
 - **A project skill that carries a dependency tree** — a `node_modules`,
   a `.venv` — is past 2,000 files and cannot be loaded. It stays in the
-  catalogue the model has; the notice says why.
+  catalogue the model has; the notice says why. The cap is checked as the walk goes: a skill of exactly 2,000 files with a directory walked after the last of them is refused as well.
 - **A trust write can still land late** in one narrow case: a call
   cancelled after its last check and then held more than a second on the
   policy file's lock. It records the digest the operator was asked about.

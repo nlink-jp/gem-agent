@@ -92,7 +92,7 @@ func Compute(projectDir string) (Pins, []string) {
 			}
 			d, cut := dirDigest(dir, SkillFiles)
 			if cut {
-				notes = append(notes, fmt.Sprintf("%s/%s: more than %d files; the pin covers the first", SkillsDir, e.Name(), SkillFiles))
+				notes = append(notes, fmt.Sprintf("%s/%s: more than %d files, more than a trust record covers — the skill is not loaded", SkillsDir, e.Name(), SkillFiles))
 			}
 			pins[SkillsDir+"/"+e.Name()] = d
 		}
