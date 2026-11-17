@@ -2536,6 +2536,14 @@ func (m Model) updateAsk(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		if r := msg.String(); len(r) == 1 && r[0] >= '1' && r[0] <= '9' {
 			if i := int(r[0] - '1'); i < n {
+				if req.Heading != "" {
+					// The runtime's own question: one of its answers
+					// records persistent trust, and a digit typed into a
+					// message that was being written must not be that
+					// answer. A digit selects; Enter confirms.
+					m.askChoice = i
+					return m, nil
+				}
 				answer = i
 			}
 		}
@@ -2660,7 +2668,11 @@ func (m Model) askView() string {
 	if hiddenOpts > 0 {
 		b.WriteString("\n" + m.st.warn.Render(fmt.Sprintf(m.msgs.AskHiddenFmt, hiddenOpts)))
 	}
-	b.WriteString("\n" + m.st.hint.Render(m.msgs.AskHint))
+	hint := m.msgs.AskHint
+	if req.Hint != "" {
+		hint = req.Hint
+	}
+	b.WriteString("\n" + m.st.hint.Render(hint))
 	return m.liveView() + "\n" + m.st.box.Render(b.String()) + "\n" + m.footer() + "\n"
 }
 

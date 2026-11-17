@@ -2336,19 +2336,24 @@ Trust records this content as trusted — for later sessions too — and loads i
 Disable keeps the skill off for the rest of this session.
   1) Trust and load
   2) Disable for this session
-▶ 3) Not now — ask again next time
+▶ 3) Not now — ask again after my next message
 ```
 
 | Answer | What happens |
 |---|---|
 | Trust and load | Records that one skill as trusted again and loads it. Later sessions do not ask |
 | Disable for this session | It is not loaded. For the rest of this session it is refused without asking, with a one-line notice each time |
-| Not now (Esc does the same) | It is not loaded this once. Nothing is recorded, and the next use asks again |
+| Not now (Esc does the same) | It is not loaded, and nothing is recorded. It is not asked about again in that turn; using it after your next message asks again |
 
 Things to know:
 
 - **The dialog opens on "Not now".** Pressing Enter by mistake records
   nothing and disables nothing.
+- **A digit only selects; Enter confirms.** In other question dialogs a
+  digit answers at once, but here it only moves the selection. That keeps a
+  digit you were typing into a message, when the dialog appeared, from
+  becoming the answer. On the plain screen, without the TUI, you answer by
+  typing `trust` or `disable`.
 - **Only you answer it.** Neither auto-approve mode nor "allow for this
   session" answers this question.
 - **Look at the content before you answer.** The dialog shows where the skill
@@ -2362,6 +2367,9 @@ Things to know:
 - **To bring a disabled skill back in the same session,** run
   `gem-agent trust --accept` in another terminal, then `/clear` or
   `/skills reload`.
+- **A skill that cannot be checked is not loaded.** A skill with more than
+  2,000 files is not loaded, and you are told so. A skill whose `SKILL.md`
+  is over 1 MiB is not treated as a skill.
 - **Only project skills are compared.** Your own skills in
   `~/.config/gem-agent/skills/` are not.
 - **Scripts are separate.** If only a script of a skill changes after the

@@ -133,3 +133,42 @@ func TestAskHeadingIsInert(t *testing.T) {
 		t.Errorf("not inert: %q / %q", got.Heading, got.Question)
 	}
 }
+
+// One answer to the runtime's question records persistent trust. A digit
+// typed into a message the operator was writing when the dialog appeared
+// must not be that answer: on a headed question a digit moves the
+// selection, and only Enter confirms. The model's own question keeps its
+// one-press digits (TestAskDialog).
+func TestAskHeadedQuestionDigitsOnlySelect(t *testing.T) {
+	m, _ := runningModel(t)
+	resp := make(chan int, 1)
+	req := trustAsk(resp)
+	req.Hint = "1-3 select, Enter confirms"
+	next, _ := m.Update(req)
+	m = next.(Model)
+	m.askAt = time.Time{} // past the typed-ahead grace
+	m = press(m, runeMsg("1"))
+	select {
+	case got := <-resp:
+		t.Fatalf("a digit alone answered the trust question: %d", got)
+	default:
+	}
+	if m.askChoice != 0 || m.phase != phaseAsk {
+		t.Errorf("after the digit: choice=%d phase=%v", m.askChoice, m.phase)
+	}
+	v := m.View()
+	if !strings.Contains(v, "1-3 select, Enter confirms") || strings.Contains(v, "pick directly") {
+		t.Errorf("the hint does not say how this question is answered:\n%s", v)
+	}
+	if !strings.Contains(v, "▶ 1) Trust and load") {
+		t.Errorf("the digit did not move the selection:\n%s", v)
+	}
+	m = press(m, runeMsg("9")) // out of range: nothing
+	if m.askChoice != 0 {
+		t.Errorf("an out-of-range digit moved the selection to %d", m.askChoice)
+	}
+	press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if got := <-resp; got != 0 {
+		t.Errorf("Enter after selecting 1 = %d", got)
+	}
+}

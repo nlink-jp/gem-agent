@@ -142,3 +142,78 @@ func TestWithRootSeesWhatTheLoaderReads(t *testing.T) {
 		t.Error("a closed skill's root still reads")
 	}
 }
+
+// A content pin covers a file's bytes up to one megabyte and only its
+// size past that. A SKILL.md larger than that could keep its frontmatter
+// inside the megabyte and its body outside it, and change the body
+// without changing its pin. Such a file is not a skill, and a file that
+// grows past the cap after discovery is not read.
+func TestASkillFileThePinCannotCoverIsNotServed(t *testing.T) {
+	proj := t.TempDir()
+	root := filepath.Join(proj, ".claude", "skills")
+	big := "---\nname: big\ndescription: Does big.\n" + strings.Repeat("# padding line\n", ReadCap/15+1) + "---\n# big\n\nthe body, past the cap\n"
+	if len(big) <= ReadCap {
+		t.Fatalf("fixture: %d bytes is not past the cap", len(big))
+	}
+	if err := os.MkdirAll(filepath.Join(root, "big"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "big", "SKILL.md"), []byte(big), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeSkillAt(t, filepath.Join(root, "notes"), "notes")
+	list, notes := Discover("", proj, DefaultLimits())
+	defer CloseAll(list)
+	if len(list) != 1 || list[0].Name != "notes" {
+		t.Fatalf("listed: %v", list)
+	}
+	if joined := strings.Join(notes, " | "); !strings.Contains(joined, "big skipped") || !strings.Contains(joined, "larger than") {
+		t.Errorf("notes = %q", joined)
+	}
+	// It grows after discovery.
+	if err := os.WriteFile(filepath.Join(root, "notes", "SKILL.md"), []byte(big), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if body, err := list[0].Body(DefaultLimits()); err == nil {
+		t.Errorf("a SKILL.md past the cap was read: %d bytes", len(body))
+	}
+}
+
+// BodyVerified and FileVerified hand the verifier everything that is
+// returned, under the path the file has in the skill, and its error is
+// the read's error.
+func TestVerifiedReadsShowTheVerifierWhatTheyReturn(t *testing.T) {
+	proj := t.TempDir()
+	dir := filepath.Join(proj, ".claude", "skills", "notes")
+	writeSkillAt(t, dir, "notes")
+	if err := os.MkdirAll(filepath.Join(dir, "references"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "references", "a.md"), []byte("reference a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := Discover("", proj, DefaultLimits())
+	defer CloseAll(list)
+	s := list[0]
+	seen := map[string]string{}
+	record := func(rel string, data []byte) error { seen[rel] = string(data); return nil }
+	body, err := s.BodyVerified(DefaultLimits(), record)
+	if err != nil || !strings.Contains(seen["SKILL.md"], body) || !strings.HasPrefix(seen["SKILL.md"], "---\nname: notes") {
+		t.Errorf("body=%q err=%v seen=%q", body, err, seen["SKILL.md"])
+	}
+	file, err := s.FileVerified("references/a.md", DefaultLimits(), record)
+	if err != nil || file != "reference a\n" || seen["references/a.md"] != file {
+		t.Errorf("file=%q err=%v seen=%v", file, err, seen)
+	}
+	refuse := func(string, []byte) error { return os.ErrPermission }
+	if out, err := s.BodyVerified(DefaultLimits(), refuse); err != os.ErrPermission || out != "" {
+		t.Errorf("body: out=%q err=%v", out, err)
+	}
+	if out, err := s.FileVerified("references/a.md", DefaultLimits(), refuse); err != os.ErrPermission || out != "" {
+		t.Errorf("file: out=%q err=%v", out, err)
+	}
+	// A listing returns names, not content: nothing to verify.
+	if out, err := s.FileVerified("references", DefaultLimits(), refuse); err != nil || out != "a.md" {
+		t.Errorf("listing: out=%q err=%v", out, err)
+	}
+}

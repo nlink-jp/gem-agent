@@ -186,8 +186,12 @@ sees the new set from the next round.
 only when the list is built: its body and files are read from disk
 then. `skillGuard` (cmd/skilltrust.go) digests the skill through its own
 open root — the tree the loader reads, by the implementation that took
-the pin — before the read and once more after it. A skill that is not
-what the trust record holds becomes the operator's question: trust
+the pin — and holds the read to that digest's manifest: the bytes read
+for a file are returned only if they are the bytes that tree holds for
+it. Nothing a pin does not cover is served (a `SKILL.md` over 1 MiB is
+not a skill; a skill with more than 2,000 files is not read). A skill
+that is not what the trust record holds becomes the operator's
+question: trust
 (that digest is recorded and the skill loaded), disable (off until
 `/clear` or `/skills reload` rebuilds the list) or not now (this read
 is refused, nothing changes; the dialog opens here, and Esc does the

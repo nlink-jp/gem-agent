@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/tools"
@@ -103,6 +104,26 @@ func TestNeedsOperatorAsksNothingForACancelledTurn(t *testing.T) {
 	out, _, _, _ := a.execCall(ctx, llm.ToolCall{ID: "c", Name: "probe"})
 	if resolves != 0 {
 		t.Errorf("the question was put for a cancelled turn (out=%q)", out)
+	}
+}
+
+// A call the floor gave up on asks nothing either, even though it comes
+// back later with a question: the operator has moved on, and whatever
+// the question would lead to must not happen behind them.
+func TestNeedsOperatorIsNotResolvedForAnAbandonedCall(t *testing.T) {
+	resolves := 0
+	ctx, cancel := context.WithCancel(context.Background())
+	returned := make(chan struct{})
+	a := probeAgent(t, func(context.Context) (string, error) {
+		cancel()
+		time.Sleep(abandonGrace + 300*time.Millisecond)
+		defer close(returned)
+		return "", &probeQuestion{resolves: &resolves, again: true}
+	})
+	out, _, _, _ := a.execCall(ctx, llm.ToolCall{ID: "c", Name: "probe"})
+	<-returned
+	if resolves != 0 || out != abandonedResult {
+		t.Errorf("resolves=%d out=%q", resolves, out)
 	}
 }
 

@@ -29,7 +29,11 @@ type AskRequest struct {
 	// trust question opens on "not now": a key pressed too soon then
 	// records nothing and disables nothing.
 	Default int
-	Resp    chan int
+	// Hint, when set, replaces the dialog's hint line. A headed
+	// question is answered by Enter alone — a digit moves the
+	// selection and confirms nothing — and its hint has to say so.
+	Hint string
+	Resp chan int
 }
 
 // StreamUpdate is turn observability from the backend (ADR-0033):

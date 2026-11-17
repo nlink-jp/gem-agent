@@ -184,3 +184,59 @@ func TestSkillDigestIsThePinComputeRecords(t *testing.T) {
 		}
 	}
 }
+
+// The manifest is what the digest was computed from: its digest is the
+// pin's, and a file's line is the digest of that file's bytes — so the
+// bytes a read returned can be checked against the tree that was
+// trusted (ADR-0119 §1).
+func TestSkillManifestMatchesItsDigestAndItsFiles(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "SKILL.md"), []byte("---\nname: x\n---\nbody\n"))
+	mustWrite(t, filepath.Join(dir, "references", "a.md"), []byte("a\n"))
+	mustWrite(t, filepath.Join(dir, "scripts", "run.sh"), []byte("echo hi\n"))
+	for name, target := range map[string]string{"alias.md": "SKILL.md", "refs": "references", "hop": "refs", "out": "/etc/hosts", "up": "../elsewhere"} {
+		if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	digest, files, cut := SkillManifest(root)
+	if want, wantCut := SkillDigest(root); digest != want || cut != wantCut {
+		t.Fatalf("manifest digest %s (cut %v), pin digest %s (cut %v)", digest, cut, want, wantCut)
+	}
+	for rel, content := range map[string]string{
+		"SKILL.md":         "---\nname: x\n---\nbody\n",
+		"references/a.md":  "a\n",
+		"alias.md":         "---\nname: x\n---\nbody\n", // a link to SKILL.md
+		"refs/a.md":        "a\n",                       // through a linked directory
+		"hop/a.md":         "a\n",                       // through a link to that link
+		"./scripts/run.sh": "echo hi\n",
+	} {
+		line, ok := files.Line(rel)
+		if !ok || line != ContentLine([]byte(content)) {
+			t.Errorf("%s: line %q ok=%v, want the digest of its content", rel, line, ok)
+		}
+	}
+	for _, rel := range []string{"missing.md", "out", "up", "up/x", "../SKILL.md", "/etc/hosts", "references"} {
+		if line, ok := files.Line(rel); ok {
+			t.Errorf("%s has a line: %q", rel, line)
+		}
+	}
+	if ContentLine([]byte("a\n")) == ContentLine([]byte("b\n")) {
+		t.Error("two contents share a line")
+	}
+}
+
+// A link that leads back to itself has no line, rather than no end.
+func TestManifestLineStopsOnALoop(t *testing.T) {
+	m := Manifest{"a": "link:b", "b": "link:a", "d": "link:d/x"}
+	for _, rel := range []string{"a", "b", "a/f", "d", "d/f"} {
+		if _, ok := m.Line(rel); ok {
+			t.Errorf("%s resolved", rel)
+		}
+	}
+}

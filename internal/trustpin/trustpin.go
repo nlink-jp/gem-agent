@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -310,6 +311,82 @@ func SkillPinName(entry string) string { return SkillsDir + "/" + entry }
 // implementation, so an unchanged skill cannot read as changed.
 func SkillDigest(root *os.Root) (string, bool) { return DigestRoot(root, SkillFiles) }
 
+// Manifest is what a skill's digest was computed from: each covered
+// file's relative path (slash-separated) and its line — the digest of
+// its content, or "link:<target>" for a link, which is recorded and not
+// followed.
+type Manifest map[string]string
+
+// SkillManifest is SkillDigest together with the manifest the digest
+// was computed from. The comparison at use (ADR-0119 §1) needs both:
+// the digest says the tree is the one that was trusted, and the
+// manifest lets the bytes actually returned be checked against that
+// tree — a compare before a read does not, by itself, say what the read
+// returned.
+func SkillManifest(root *os.Root) (digest string, files Manifest, cut bool) {
+	entries, cut := manifestRoot(root, SkillFiles)
+	files = make(Manifest, len(entries))
+	for _, e := range entries {
+		files[e.rel] = e.line
+	}
+	return digestEntries(entries, cut), files, cut
+}
+
+// ContentLine is the manifest line of a file whose whole content is
+// data. It holds for a file of at most FileCap bytes; a larger one is
+// covered only by its first FileCap bytes and its size, which is why
+// nothing larger is ever served from a skill.
+func ContentLine(data []byte) string {
+	h := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(h[:])
+}
+
+// Line returns the content line of the file a read of rel through the
+// skill's root returns, following the links the manifest records — a
+// link entry holds its target, and the bytes belong to the entry the
+// target leads to. A path the manifest does not cover, a link that
+// leaves the tree and a chain longer than a few hops have no line.
+func (m Manifest) Line(rel string) (string, bool) {
+	rel = path.Clean(rel)
+	for hop := 0; hop < 8; hop++ {
+		if strings.HasPrefix(rel, "../") || rel == ".." || path.IsAbs(rel) {
+			return "", false
+		}
+		if line, ok := m[rel]; ok {
+			target, isLink := strings.CutPrefix(line, "link:")
+			if !isLink {
+				return line, true
+			}
+			if path.IsAbs(target) {
+				return "", false
+			}
+			rel = path.Clean(path.Join(path.Dir(rel), target))
+			continue
+		}
+		// Not an entry itself: a directory on the way may be a link.
+		next, found := "", false
+		for i := 0; i < len(rel); i++ {
+			if rel[i] != '/' {
+				continue
+			}
+			target, isLink := strings.CutPrefix(m[rel[:i]], "link:")
+			if !isLink {
+				continue
+			}
+			if path.IsAbs(target) {
+				return "", false
+			}
+			next, found = path.Clean(path.Join(path.Dir(rel[:i]), target, rel[i+1:])), true
+			break
+		}
+		if !found {
+			return "", false
+		}
+		rel = next
+	}
+	return "", false
+}
+
 // rootFileDigest hashes one regular file under root, bounded at FileCap;
 // a file past the cap is hashed as its first FileCap bytes plus a
 // marker, so it is still pinned and a change past the cap still changes
@@ -345,8 +422,15 @@ func rootFileDigest(root *os.Root, rel string) (string, bool) {
 // directory swapped under the same name is then compared as the tree
 // the loader will read, not as another one (ADR-0119 §1).
 func DigestRoot(root *os.Root, maxFiles int) (string, bool) {
-	type entry struct{ rel, line string }
-	var entries []entry
+	entries, cut := manifestRoot(root, maxFiles)
+	return digestEntries(entries, cut), cut
+}
+
+type manifestEntry struct{ rel, line string }
+
+// manifestRoot walks root and returns the covered entries, sorted.
+func manifestRoot(root *os.Root, maxFiles int) ([]manifestEntry, bool) {
+	var entries []manifestEntry
 	cut := false
 	_ = fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -359,15 +443,20 @@ func DigestRoot(root *os.Root, maxFiles int) (string, bool) {
 		switch {
 		case d.Type()&fs.ModeSymlink != 0:
 			target, _ := root.Readlink(rel)
-			entries = append(entries, entry{rel, "link:" + target})
+			entries = append(entries, manifestEntry{rel, "link:" + target})
 		case d.Type().IsRegular():
 			if dg, ok := rootFileDigest(root, rel); ok {
-				entries = append(entries, entry{rel, dg})
+				entries = append(entries, manifestEntry{rel, dg})
 			}
 		}
 		return nil
 	})
 	sort.Slice(entries, func(i, j int) bool { return entries[i].rel < entries[j].rel })
+	return entries, cut
+}
+
+// digestEntries is the digest of a manifest: what a pin holds.
+func digestEntries(entries []manifestEntry, cut bool) string {
 	h := sha256.New()
 	for _, e := range entries {
 		fmt.Fprintf(h, "%s\x00%s\n", e.rel, e.line)
@@ -375,7 +464,7 @@ func DigestRoot(root *os.Root, maxFiles int) (string, bool) {
 	if cut {
 		h.Write([]byte("\x00cut"))
 	}
-	return "sha256:" + hex.EncodeToString(h.Sum(nil)), cut
+	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
 
 // dirDigest is DigestRoot for a directory named by path. A directory

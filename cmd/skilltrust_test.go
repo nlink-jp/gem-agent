@@ -79,9 +79,9 @@ func newGuardRig(t *testing.T) *guardRig {
 		cfg: cfg, policyFile: pf, policyPath: policyPath, projectDir: proj,
 		trusted: true, interactive: true, msgs: msgs,
 		include: func(pin string) { delete(r.excluded, pin) },
-		ask: func(ctx context.Context, heading, question string, options []string, def int) int {
+		ask: func(ctx context.Context, heading, question, hint string, options []string, def int) int {
 			r.asks++
-			r.questions = append(r.questions, heading+"\n"+question+"\n"+strings.Join(options, " | "))
+			r.questions = append(r.questions, heading+"\n"+question+"\n"+strings.Join(options, " | ")+"\n"+hint)
 			r.defaults = append(r.defaults, def)
 			if r.onAsk != nil {
 				r.onAsk(r.asks)
@@ -256,7 +256,7 @@ func TestTrustRecordsWhatWasAskedAboutAndLoads(t *testing.T) {
 	if strings.Join(r.events, " ") != "question trusted" {
 		t.Errorf("events = %v", r.events)
 	}
-	if len(r.notices) != 1 || !strings.Contains(r.notices[0], "re-trusted") {
+	if len(r.notices) != 1 || !strings.Contains(r.notices[0], "skill greet trusted") {
 		t.Errorf("notices = %v", r.notices)
 	}
 	// Nothing else in the record moved.
@@ -333,9 +333,20 @@ func TestNoAnswerChangesNothing(t *testing.T) {
 			if strings.Join(r.events, " ") != "question unanswered" {
 				t.Errorf("events = %v", r.events)
 			}
+			// Later in the same turn it is refused without a dialog: a
+			// model that keeps calling load_skill cannot keep one coming.
+			again := r.viaTool(nil)
+			if r.asks != 1 || strings.Contains(again, "DURIAN") || !strings.Contains(again, "do not ask for the skill again in this turn") {
+				t.Errorf("same turn: asks=%d result=%q", r.asks, again)
+			}
+			if r.events[len(r.events)-1] != "refused" || len(r.notices) != 2 {
+				t.Errorf("same turn: events=%v notices=%v", r.events, r.notices)
+			}
+			// The next turn asks again.
+			r.g.newTurn()
 			r.viaTool(nil)
 			if r.asks != 2 {
-				t.Errorf("the next use did not ask again: asks=%d", r.asks)
+				t.Errorf("the next turn did not ask again: asks=%d", r.asks)
 			}
 		})
 	}
@@ -347,6 +358,26 @@ func TestNoAnswerChangesNothing(t *testing.T) {
 		q := &skillQuestion{g: r.g, s: r.s, digest: "sha256:x"}
 		if next, result := q.Resolve(ctx); next != nil || !strings.Contains(result, "has not decided") || r.asks != 0 {
 			t.Errorf("next=%v result=%q asks=%d", next, result, r.asks)
+		}
+	})
+	// An answer that arrives after the turn was interrupted is not an
+	// answer: on the plain REPL it is the next line the operator typed,
+	// meant for the prompt. "trust" there must record nothing.
+	t.Run("an answer that arrives after the interrupt", func(t *testing.T) {
+		r := newGuardRig(t)
+		before := r.diskPin()
+		r.write(skillV2)
+		ctx, cancel := context.WithCancel(context.Background())
+		r.answers = []int{0}
+		r.onAsk = func(int) { cancel() }
+		_, digest, _ := r.g.check(r.s)
+		q := &skillQuestion{g: r.g, s: r.s, digest: digest}
+		next, result := q.Resolve(ctx)
+		if next != nil || !strings.Contains(result, "has not decided") {
+			t.Errorf("a late \"trust\" was taken: next=%v result=%q", next, result)
+		}
+		if r.diskPin() != before || strings.Join(r.events, " ") != "question unanswered" {
+			t.Errorf("pin moved or events=%v", r.events)
 		}
 	})
 }
@@ -366,6 +397,7 @@ func TestTheQuestionAsTheOperatorSeesIt(t *testing.T) {
 		"project trust", "The skill greet has changed since you trusted it",
 		"Look at its files", `"` + r.s.Dir + `"`, "for later sessions too",
 		"Trust and load | Disable for this session | Not now",
+		"Enter confirm",
 	} {
 		if !strings.Contains(q, want) {
 			t.Errorf("question missing %q:\n%s", want, q)
@@ -466,12 +498,11 @@ func TestContentThatMovesWhileTheQuestionIsUp(t *testing.T) {
 func TestContentThatMovesDuringTheReadIsNotReturned(t *testing.T) {
 	r := newGuardRig(t)
 	r.write(skillV2)
-	_, digest := r.g.check(r.s)
+	_, digest, _ := r.g.check(r.s)
 	ctx := withSkillTrust(context.Background(), r.s.Entry, digest)
-	out, refusal, err := r.g.attempt(ctx, r.s, func() (string, error) {
-		body, err := r.s.Body(skills.DefaultLimits())
-		r.write(skillV3) // lands between the read and the last digest
-		return body, err
+	out, refusal, err := r.g.attempt(ctx, r.s, func(verify skills.Verify) (string, error) {
+		r.write(skillV3) // lands after the pin was recorded, before the read
+		return r.s.BodyVerified(skills.DefaultLimits(), verify)
 	})
 	var q *skillQuestion
 	if !errors.As(err, &q) || !q.moved || out != "" || refusal != "" {
@@ -486,57 +517,169 @@ func TestContentThatMovesDuringTheReadIsNotReturned(t *testing.T) {
 	}
 }
 
-// §1: the ordinary read is bracketed too. A skill that is what the
-// record holds when it is compared, and something else by the time it
-// has been read, is not returned: the read is discarded and the skill is
-// handled as what it has become — a question where somebody can answer,
-// a refusal where nobody can.
-func TestAReadThatRacesAChangeIsNotReturned(t *testing.T) {
-	swap := func(r *guardRig) func() (string, error) {
-		return func() (string, error) {
-			r.write(skillV2) // lands after the compare
-			return r.s.Body(skills.DefaultLimits())
-		}
+// §1: what is returned is bound to what was compared. The read is held
+// to the manifest of the digest that matched the record, so bytes that
+// are not that tree's bytes for that file are never returned — whether
+// the change landed after the compare, or landed and was taken back
+// before anything could look again.
+func TestOnlyTheComparedBytesAreReturned(t *testing.T) {
+	body := func(r *guardRig, verify skills.Verify) (string, error) {
+		return r.s.BodyVerified(skills.DefaultLimits(), verify)
 	}
-	t.Run("nobody at a terminal", func(t *testing.T) {
+	t.Run("a change after the compare, nobody at a terminal", func(t *testing.T) {
 		r := newGuardRig(t)
 		r.g.interactive = false
-		out, refusal, err := r.g.attempt(context.Background(), r.s, swap(r))
+		out, refusal, err := r.g.attempt(context.Background(), r.s, func(v skills.Verify) (string, error) {
+			r.write(skillV2)
+			return body(r, v)
+		})
 		if out != "" || err != nil || !strings.Contains(refusal, "nobody is at the terminal") {
 			t.Errorf("out=%q refusal=%q err=%v", out, refusal, err)
 		}
 	})
-	t.Run("somebody is there: it becomes the question", func(t *testing.T) {
+	t.Run("a change after the compare becomes the question", func(t *testing.T) {
 		r := newGuardRig(t)
-		out, refusal, err := r.g.attempt(context.Background(), r.s, swap(r))
+		out, refusal, err := r.g.attempt(context.Background(), r.s, func(v skills.Verify) (string, error) {
+			r.write(skillV2)
+			return body(r, v)
+		})
 		var q *skillQuestion
 		if out != "" || refusal != "" || !errors.As(err, &q) || q.moved {
 			t.Fatalf("out=%q refusal=%q err=%v", out, refusal, err)
 		}
-		if _, now := r.g.check(r.s); q.digest != now {
+		if _, now, _ := r.g.check(r.s); q.digest != now {
 			t.Error("the question is not about the content that is there now")
+		}
+	})
+	t.Run("swapped in and back again", func(t *testing.T) {
+		r := newGuardRig(t)
+		out, refusal, err := r.g.attempt(context.Background(), r.s, func(v skills.Verify) (string, error) {
+			r.write(skillV2)
+			got, e := body(r, v)
+			r.write(skillV1) // back before anything compares again
+			return got, e
+		})
+		var q *skillQuestion
+		if out != "" || refusal != "" || !errors.As(err, &q) || !q.moved {
+			t.Fatalf("content that was never compared was returned: out=%q refusal=%q err=%v", out, refusal, err)
+		}
+		if _, result := q.Resolve(context.Background()); !strings.Contains(result, "still changing") {
+			t.Errorf("result = %q", result)
+		}
+	})
+	t.Run("a supporting file is held to its own bytes", func(t *testing.T) {
+		r := newGuardRig(t)
+		notes := filepath.Join(filepath.Dir(r.file), "notes.md")
+		out, _, err := r.g.attempt(context.Background(), r.s, func(v skills.Verify) (string, error) {
+			if e := os.WriteFile(notes, []byte("PLANTED\n"), 0o644); e != nil {
+				t.Fatal(e)
+			}
+			got, e := r.s.FileVerified("notes.md", skills.DefaultLimits(), v)
+			if e2 := os.WriteFile(notes, []byte("supporting file\n"), 0o644); e2 != nil {
+				t.Fatal(e2)
+			}
+			return got, e
+		})
+		if strings.Contains(out, "PLANTED") || err == nil {
+			t.Errorf("out=%q err=%v", out, err)
 		}
 	})
 	t.Run("the read that did not race is returned", func(t *testing.T) {
 		r := newGuardRig(t)
-		out, refusal, err := r.g.attempt(context.Background(), r.s, func() (string, error) { return r.s.Body(skills.DefaultLimits()) })
+		out, refusal, err := r.g.attempt(context.Background(), r.s, func(v skills.Verify) (string, error) { return body(r, v) })
 		if !strings.Contains(out, skillV1) || refusal != "" || err != nil {
 			t.Errorf("out=%q refusal=%q err=%v", out, refusal, err)
 		}
 	})
-	t.Run("the record moved with it", func(t *testing.T) {
+	t.Run("a change after the read is the next read's business", func(t *testing.T) {
 		r := newGuardRig(t)
-		out, _, err := r.g.attempt(context.Background(), r.s, func() (string, error) {
-			body, e := r.s.Body(skills.DefaultLimits())
+		out, _, err := r.g.attempt(context.Background(), r.s, func(v skills.Verify) (string, error) {
+			got, e := body(r, v)
 			r.write(skillV2)
-			acceptElsewhere(t, r.policyPath, r.proj) // a re-trust in another terminal, mid-read
-			return body, e
+			return got, e
 		})
-		var q *skillQuestion
-		if out != "" || !errors.As(err, &q) || !q.moved {
-			t.Errorf("out=%q err=%v", out, err)
+		if !strings.Contains(out, skillV1) || err != nil {
+			t.Errorf("the compared bytes were not returned: out=%q err=%v", out, err)
 		}
 	})
+}
+
+// §4: the trust answer is for one skill as it was when the question was
+// put. It does not carry to another skill, and a call that was cancelled
+// records nothing — the write must not land after the operator moved on.
+func TestATrustAnswerIsForThatSkillAndThatCall(t *testing.T) {
+	load := func(r *guardRig) func(skills.Verify) (string, error) {
+		return func(v skills.Verify) (string, error) { return r.s.BodyVerified(skills.DefaultLimits(), v) }
+	}
+	t.Run("another skill's answer", func(t *testing.T) {
+		r := newGuardRig(t)
+		before := r.diskPin()
+		r.write(skillV2)
+		_, digest, _ := r.g.check(r.s)
+		ctx := withSkillTrust(context.Background(), "some-other-skill", digest)
+		out, _, err := r.g.attempt(ctx, r.s, load(r))
+		var q *skillQuestion
+		if out != "" || !errors.As(err, &q) || r.diskPin() != before {
+			t.Errorf("another skill's trust answer was used: out=%q err=%v", out, err)
+		}
+	})
+	t.Run("a cancelled call", func(t *testing.T) {
+		r := newGuardRig(t)
+		before := r.diskPin()
+		r.write(skillV2)
+		_, digest, _ := r.g.check(r.s)
+		ctx, cancel := context.WithCancel(withSkillTrust(context.Background(), r.s.Entry, digest))
+		cancel()
+		out, refusal, err := r.g.attempt(ctx, r.s, load(r))
+		if out != "" || refusal != "" || !errors.Is(err, context.Canceled) {
+			t.Errorf("out=%q refusal=%q err=%v", out, refusal, err)
+		}
+		if r.diskPin() != before || !r.excluded[r.pin] || len(r.events) != 0 {
+			t.Errorf("a cancelled call recorded trust: events=%v", r.events)
+		}
+	})
+}
+
+// §1: a skill with more files than a pin covers is not read. The files
+// past the cap are not in the digest; SKILL.md itself can be among them.
+func TestASkillThePinDoesNotCoverIsNotRead(t *testing.T) {
+	r := newGuardRig(t)
+	extra := filepath.Join(filepath.Dir(r.file), "0")
+	if err := os.MkdirAll(extra, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < trustpin.SkillFiles; i++ {
+		if err := os.WriteFile(filepath.Join(extra, fmt.Sprintf("f%04d", i)), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Trusted in that state: the pin is the cut digest, and SKILL.md
+	// sorts after the 2,000 files, outside it.
+	if err := repin(r.policyPath, r.proj, r.pf); err != nil {
+		t.Fatal(err)
+	}
+	r.write(skillV2)
+	out := r.viaTool(nil)
+	if strings.Contains(out, "DURIAN") || !strings.Contains(out, "more files than the operator's trust check covers") {
+		t.Errorf("result = %q", out)
+	}
+	if turn, handled, errMsg := r.viaSlash(); turn != "" || !handled || errMsg != "" {
+		t.Errorf("/skill: turn=%q handled=%v errMsg=%q", turn, handled, errMsg)
+	}
+	if r.asks != 0 || r.events[0] != "uncovered" || !strings.Contains(r.notices[0], "2,000") {
+		t.Errorf("asks=%d events=%v notices=%v", r.asks, r.events, r.notices)
+	}
+}
+
+// The loader serves nothing a pin does not cover: the cap on SKILL.md is
+// the size up to which a pin covers a file's bytes.
+func TestTheLoaderReadsNoMoreThanAPinCovers(t *testing.T) {
+	if skills.ReadCap != trustpin.FileCap {
+		t.Errorf("skills.ReadCap = %d, trustpin.FileCap = %d: a SKILL.md between the two could change its body without changing its pin", skills.ReadCap, trustpin.FileCap)
+	}
+	if lim := skills.DefaultLimits(); lim.MaxFile > trustpin.FileCap || lim.MaxBody > trustpin.FileCap {
+		t.Errorf("a supporting file or body limit is past what a pin covers: %+v", lim)
+	}
 }
 
 // §1: a directory that is gone is an error, not a question. The skill's
@@ -555,15 +698,13 @@ func TestAGoneDirectoryIsAnErrorNotAQuestion(t *testing.T) {
 				r.t.Fatal(err)
 			}
 		},
-		"replaced under the same name": func(r *guardRig) {
+		// The old tree is intact and still what the record holds; the
+		// root would read it. But the path now leads elsewhere, and the
+		// base-directory line would send the model's commands there.
+		"moved aside, another put at its path": func(r *guardRig) {
 			dir := filepath.Dir(r.file)
 			if err := os.Rename(dir, dir+".old"); err != nil {
 				r.t.Fatal(err)
-			}
-			for _, f := range []string{"SKILL.md", "notes.md"} {
-				if err := os.Remove(filepath.Join(dir+".old", f)); err != nil {
-					r.t.Fatal(err)
-				}
 			}
 			r.write(skillV2)
 		},
@@ -572,11 +713,16 @@ func TestAGoneDirectoryIsAnErrorNotAQuestion(t *testing.T) {
 			r := newGuardRig(t)
 			remove(r)
 			out := r.viaTool(nil)
-			if !strings.Contains(out, "its directory is gone") || strings.Contains(out, "DURIAN") {
+			if !strings.Contains(out, "its directory is gone") || strings.Contains(out, "DURIAN") || strings.Contains(out, "APPLE") {
 				t.Errorf("result = %q", out)
 			}
 			if r.asks != 0 {
 				t.Error("a question was put about a directory that is gone")
+			}
+			// /skill says it once: the guard's notice, no second line.
+			before := len(r.notices)
+			if turn, handled, errMsg := r.viaSlash(); turn != "" || !handled || errMsg != "" || len(r.notices) != before+1 {
+				t.Errorf("/skill: turn=%q handled=%v errMsg=%q notices=%v", turn, handled, errMsg, r.notices[before:])
 			}
 		})
 	}
@@ -630,6 +776,7 @@ func TestSlashSkillAsksBeforeItInjects(t *testing.T) {
 	if turn, handled, errMsg := r.viaSlash(); turn != "" || !handled || errMsg != "" {
 		t.Fatalf("not now: turn=%q handled=%v errMsg=%q", turn, handled, errMsg)
 	}
+	r.g.newTurn() // the operator types /skill again: a new turn
 	turn, handled, errMsg := r.viaSlash()
 	if !handled || errMsg != "" || !strings.Contains(turn, skillV2) || !strings.Contains(turn, "with arguments: now") {
 		t.Fatalf("trust: turn=%q handled=%v errMsg=%q", turn, handled, errMsg)
@@ -651,14 +798,18 @@ func TestRefusalsCarryOnlyTheValidatedName(t *testing.T) {
 	r.g.interactive = false
 	results = append(results, r.viaTool(nil)) // unattended
 	r.g.interactive = true
+	results = append(results, r.viaTool(nil)) // refused for the rest of the turn
+	r.g.newTurn()
 	r.answers = []int{2, 1}
 	results = append(results, r.viaTool(nil)) // disabled
+	results = append(results, r.viaTool(nil)) // and refused as disabled
 	results = append(results, (&skillQuestion{g: r.g, s: r.s}).StillUnresolved())
+	results = append(results, fmt.Sprintf(skillRefusalUncovered, r.s.Name), (&skillGoneError{name: r.s.Name}).Error())
 	for _, out := range results {
 		if !strings.Contains(out, `"greet"`) {
 			t.Errorf("the refusal does not name the skill: %q", out)
 		}
-		if !strings.Contains(out, "Do not read its files by other means") {
+		if !strings.Contains(out, "Do not read its files by other means") && !strings.Contains(out, "its directory is gone") {
 			t.Errorf("the refusal leaves the read tools open: %q", out)
 		}
 		for _, leak := range []string{r.s.Dir, r.s.Entry, r.proj, "sha256:", "DURIAN"} {
@@ -669,18 +820,23 @@ func TestRefusalsCarryOnlyTheValidatedName(t *testing.T) {
 	}
 }
 
-// The plain REPL's question: a number answers, and everything else — a
-// blank line, text, a number out of range, a closed input — leaves it
-// undecided. Nothing the project names reaches the terminal raw.
+// The plain REPL's question is answered by a word. The reader is shared
+// with the prompt, so a line typed ahead is read the moment the question
+// is printed: a stray number, "y" or Enter must leave it undecided, and
+// only the two words answer.
 func TestPlainTrustAsk(t *testing.T) {
 	options := []string{"Trust and load", "Disable for this session", "Not now"}
-	for in, want := range map[string]int{"1\n": 0, "2\n": 1, "3\n": 2, " 2 \n": 1, "\n": -1, "y\n": -1, "4\n": -1, "0\n": -1, "": -1, "trust\n": -1} {
+	for in, want := range map[string]int{
+		"trust\n": 0, " trust \n": 0, "disable\n": 1,
+		"1\n": -1, "2\n": -1, "3\n": -1, "y\n": -1, "yes\n": -1, "\n": -1, "": -1,
+		"Trust\n": -1, "trust me\n": -1, "not now\n": -1, "t\n": -1,
+	} {
 		var out bytes.Buffer
 		got := plainTrustAsk(bufio.NewReader(strings.NewReader(in)), &out, "project trust", "The skill greet has changed.\nLook: \"/p/x\"", options)
 		if got != want {
 			t.Errorf("input %q = %d, want %d", in, got, want)
 		}
-		for _, w := range []string{"project trust", "The skill greet has changed.", "1) Trust and load", "3) Not now"} {
+		for _, w := range []string{"project trust", "The skill greet has changed.", "trust:", "Trust and load", "disable:", "Not now", "type trust or disable"} {
 			if !strings.Contains(out.String(), w) {
 				t.Errorf("prompt missing %q:\n%s", w, out.String())
 			}
@@ -731,7 +887,8 @@ func TestSkillTrustIsWiredIn(t *testing.T) {
 		"the TUI's /skill reads in the turn":    "expandSkillInput(turnCtx, input, skillsList, skillTrust)",
 		"the plain REPL's /skill goes through":  "expandSkillInput(ctx, input, skillsList, skillTrust)",
 		"the event loop only parses":            "_, handled, errMsg := parseSkillInput(in, skillsList)",
-		"the question uses the runtime heading": "tui.AskRequest{Heading: heading, Question: question, Options: options, Default: def, Resp: resp}",
+		"the question uses the runtime heading": "tui.AskRequest{Heading: heading, Question: question, Options: options, Default: def, Hint: hint, Resp: resp}",
+		"a refused /skill ends the turn":        "prog.Send(tui.TurnDone{Err: err})\n\t\t\t\t\t\t\treturn\n\t\t\t\t\t\t}\n\t\t\t\t\t\tinput = turn",
 	} {
 		if !strings.Contains(root, want) {
 			t.Errorf("%s: root.go no longer has %q", what, want)
@@ -739,6 +896,14 @@ func TestSkillTrustIsWiredIn(t *testing.T) {
 	}
 	if n := strings.Count(root, "expandSkillInput("); n != 2 {
 		t.Errorf("root.go calls expandSkillInput %d times, want the two that pass the guard", n)
+	}
+	// Every interactive turn starts by forgetting which questions went
+	// unanswered: the TUI's turn goroutine and the plain REPL's loop.
+	if n := strings.Count(root, "skillTrust.newTurn()"); n != 2 {
+		t.Errorf("root.go calls skillTrust.newTurn() %d times, want 2", n)
+	}
+	if i, j := strings.Index(root, "skillTrust.newTurn()"), strings.Index(root, "expandSkillInput(turnCtx"); i < 0 || j < i {
+		t.Error("the TUI turn does not start a new turn for the guard before /skill is read")
 	}
 	// forget() belongs to the paths that rebuild the list — /clear and
 	// /skills reload — and to no other.
@@ -756,30 +921,54 @@ func TestSkillTrustIsWiredIn(t *testing.T) {
 		}
 		rest = rest[i+1:]
 	}
-	// The read sites, enumerated: every Body/File call on a skill in
-	// cmd goes through the guard.
+	// The read sites, enumerated: every read of a skill's body or files
+	// anywhere in cmd goes through the guard, and takes its verifier.
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := []string{
+		"return s.FileVerified(file, skills.DefaultLimits(), verify)", // skillToolResult
+		"body, err := s.BodyVerified(skills.DefaultLimits(), verify)", // skillToolResult
+		"return s.BodyVerified(skills.DefaultLimits(), verify) })",    // /skill, inside readForOperator
+	}
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for n, line := range strings.Split(string(src), "\n") {
+			code := strings.TrimSpace(line)
+			if strings.HasPrefix(code, "//") {
+				continue
+			}
+			reads := false
+			for _, call := range []string{".Body(", ".File(", ".BodyVerified(", ".FileVerified("} {
+				reads = reads || strings.Contains(code, call)
+			}
+			if !reads {
+				continue
+			}
+			ok := false
+			for _, a := range allowed {
+				ok = ok || strings.Contains(code, a)
+			}
+			if !ok {
+				t.Errorf("%s:%d reads a skill outside the guard: %s", f, n+1, code)
+			}
+		}
+	}
 	skillsSrc, err := os.ReadFile("skills.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range strings.Split(string(skillsSrc), "\n") {
-		code := strings.TrimSpace(line)
-		if strings.HasPrefix(code, "//") {
-			continue
-		}
-		if strings.Contains(code, ".Body(") || strings.Contains(code, ".File(") {
-			ok := strings.Contains(code, "guard.readForOperator(") || // /skill
-				strings.Contains(code, "return s.File(file, skills.DefaultLimits())") || // inside skillToolResult
-				strings.Contains(code, "body, err := s.Body(skills.DefaultLimits())") // inside skillToolResult
-			if !ok {
-				t.Errorf("a skill is read outside the guard: %s", code)
-			}
-		}
-	}
-	if n := strings.Count(string(skillsSrc), "skillToolResult(s, file)"); n != 1 {
+	if n := strings.Count(string(skillsSrc), "skillToolResult(s, file, verify)"); n != 1 {
 		t.Errorf("skillToolResult is called %d times, want once — from load_skill, inside g.read", n)
 	}
-	if !strings.Contains(string(skillsSrc), "return g.read(ctx, s, func() (string, error) { return skillToolResult(s, file) })") {
+	if !strings.Contains(string(skillsSrc), "return g.read(ctx, s, func(verify skills.Verify) (string, error) { return skillToolResult(s, file, verify) })") {
 		t.Error("load_skill no longer reads through the guard")
 	}
 }

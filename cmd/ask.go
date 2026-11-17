@@ -99,11 +99,16 @@ func oneShotAsk(context.Context, string, []string) (int, error) {
 }
 
 // plainTrustAsk puts the runtime's own question on the plain REPL
-// (ADR-0119 §3): the heading, the question, numbered options, a number
-// read from in — the shared reader. It returns the chosen index, or -1
-// for a blank line, anything that is not one of the numbers, and a
-// closed input: not answering changes nothing, so there is no reason to
-// insist.
+// (ADR-0119 §3): the heading, the question, and the two words that
+// answer it, read from in — the shared reader. It returns 0 for
+// "trust", 1 for "disable", and -1 for anything else: a blank line,
+// other text, a closed input. Not answering changes nothing, so there
+// is no reason to insist.
+//
+// A word, not a number: the reader is shared with the prompt, and a
+// line typed ahead while the model was working is read here the moment
+// the question is printed. A stray "1" must not record persistent
+// trust; a stray "trust" is not a thing people type by accident.
 //
 // The text is the runtime's own. The one part the project names, the
 // skill's directory, arrives quoted (strconv.Quote, in skillQuestion):
@@ -114,20 +119,26 @@ func plainTrustAsk(in *bufio.Reader, out io.Writer, heading, question string, op
 	for _, l := range strings.Split(question, "\n") {
 		fmt.Fprintf(out, "  %s\n", l)
 	}
+	words := []string{"trust", "disable"}
 	for i, o := range options {
-		fmt.Fprintf(out, "  %d) %s\n", i+1, o)
+		if i < len(words) {
+			fmt.Fprintf(out, "  %-8s %s\n", words[i]+":", o)
+			continue
+		}
+		fmt.Fprintf(out, "  %-8s %s\n", "(else):", o)
 	}
-	fmt.Fprintf(out, "  choose 1-%d (anything else leaves it undecided): ", len(options))
+	fmt.Fprint(out, "  type trust or disable (anything else leaves it undecided): ")
 	line, err := in.ReadString('\n')
 	if err != nil && line == "" {
 		fmt.Fprintln(out)
 		return -1
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(line))
-	if err != nil || n < 1 || n > len(options) {
-		return -1
+	for i, w := range words {
+		if strings.TrimSpace(line) == w {
+			return i
+		}
 	}
-	return n - 1
+	return -1
 }
 
 // plainAsk asks on the plain REPL: numbered options on out, a number

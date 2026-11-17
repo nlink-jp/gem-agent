@@ -117,10 +117,27 @@ func readDirBounded(dir string, n int) ([]os.DirEntry, bool, error) {
 	return entries, false, nil
 }
 
-// skillReadCap bounds one read of a skill file at discovery and in
-// Body: the frontmatter and body of any real SKILL.md fit in it; a
-// sparse or generated giant does not reach memory.
-const skillReadCap = 4 << 20
+// ReadCap bounds one read of SKILL.md at discovery and in Body, and a
+// SKILL.md larger than it is not a skill. It is the size up to which a
+// content pin covers a file's bytes (trustpin.FileCap; a test holds the
+// two equal): past it a pin sees only the size, so a larger SKILL.md
+// could keep its frontmatter in the covered megabyte and its body
+// outside it, and change the body without changing its pin (the release
+// review of ADR-0119 demonstrated it). Nothing the pin does not cover is
+// served. The frontmatter and body of any real SKILL.md are a small
+// fraction of this.
+const ReadCap = 1 << 20
+
+const skillReadCap = ReadCap
+
+// ErrTooLarge: SKILL.md is past ReadCap.
+var ErrTooLarge = fmt.Errorf("SKILL.md is larger than %d bytes", ReadCap)
+
+// Verify is given each file's bytes, under its path relative to the
+// skill's directory (slash-separated), before anything made from them is
+// returned. An error from it is the read's error: the bytes are not
+// what the caller is prepared to serve (ADR-0119 §1).
+type Verify func(rel string, data []byte) error
 
 // openRoot returns the skill's root and the release the caller owes.
 func (s Skill) openRoot() (*os.Root, func(), error) {
@@ -145,25 +162,6 @@ func (s Skill) WithRoot(fn func(root *os.Root) error) error {
 	}
 	defer release()
 	return fn(root)
-}
-
-// ChangedError is what a read of a project skill reports when the
-// skill's content is not what the operator's trust record holds
-// (ADR-0119). Nothing was read. The caller that can ask the operator
-// does; Digest is what the question is about, so a trust answer records
-// that content and no later one.
-type ChangedError struct {
-	// Name is the skill's validated name; Entry its directory entry,
-	// the key of its pin; Dir the directory the operator can look at.
-	Name, Entry, Dir string
-	Digest           string
-	// Unrecorded: the record holds no pin for this skill at all, rather
-	// than a different one.
-	Unrecorded bool
-}
-
-func (e *ChangedError) Error() string {
-	return "skill " + e.Name + " differs from its trusted record"
 }
 
 // unsafeEntry reports a name or path that could write into a dialog or
@@ -324,7 +322,10 @@ func readSkill(dir, scope string, lim Limits) (*Skill, error) {
 		}
 		return nil, err
 	}
-	data, _, err := readCapped(root, "SKILL.md", skillReadCap)
+	data, more, err := readCapped(root, "SKILL.md", skillReadCap)
+	if err == nil && more {
+		err = ErrTooLarge
+	}
 	if err != nil {
 		_ = root.Close()
 		return nil, err
@@ -521,7 +522,13 @@ func Find(list []Skill, name string) (Skill, bool) {
 // Body returns the skill's instructions: SKILL.md without its
 // frontmatter, clipped at the limit with an explicit truncation note (a
 // silently amputated procedure looks complete).
-func (s Skill) Body(lim Limits) (string, error) {
+func (s Skill) Body(lim Limits) (string, error) { return s.BodyVerified(lim, nil) }
+
+// BodyVerified is Body with the file's bytes handed to verify first.
+// The whole file is read — a SKILL.md past ReadCap is an error, not a
+// truncated body — so what verify sees is everything the body is made
+// from.
+func (s Skill) BodyVerified(lim Limits, verify Verify) (string, error) {
 	root, release, err := s.openRoot()
 	if err != nil {
 		return "", err
@@ -531,15 +538,19 @@ func (s Skill) Body(lim Limits) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if more {
+		return "", ErrTooLarge // it outgrew the cap since discovery
+	}
+	if verify != nil {
+		if err := verify("SKILL.md", data); err != nil {
+			return "", err
+		}
+	}
 	_, body := splitFrontmatter(string(data))
 	body = strings.TrimSpace(body)
-	if len(body) > lim.MaxBody || more {
+	if len(body) > lim.MaxBody {
 		cut := cutRunes(body, lim.MaxBody)
-		total := fmt.Sprintf("%d", len(body))
-		if more {
-			total = fmt.Sprintf("more than %d", skillReadCap) // the file outgrew the read cap (review A-08)
-		}
-		body = cut + fmt.Sprintf("\n\n[skill truncated: %d of %s bytes shown]", len(cut), total)
+		body = cut + fmt.Sprintf("\n\n[skill truncated: %d of %d bytes shown]", len(cut), len(body))
 	}
 	return body, nil
 }
@@ -549,7 +560,14 @@ func (s Skill) Body(lim Limits) (string, error) {
 // symlinks resolved and re-checked — this confinement is what bounds the
 // agent's unwrap exemption for this tool: without it, load_skill would
 // be "read any file on disk, unwrapped" (ADR-0010 §4).
-func (s Skill) File(rel string, lim Limits) (string, error) {
+func (s Skill) File(rel string, lim Limits) (string, error) { return s.FileVerified(rel, lim, nil) }
+
+// FileVerified is File with the file's bytes handed to verify first. A
+// file is read whole or not at all: one past the limit is refused by
+// size, and one that grew past it between the size check and the read
+// is refused too, so verify always sees everything that is returned. A
+// directory listing returns names, not content, and is not verified.
+func (s Skill) FileVerified(rel string, lim Limits, verify Verify) (string, error) {
 	if filepath.IsAbs(rel) {
 		return "", fmt.Errorf("file must be a path relative to the skill directory")
 	}
@@ -604,9 +622,14 @@ func (s Skill) File(rel string, lim Limits) (string, error) {
 		return "", err
 	}
 	if more {
-		// Exactly MaxFile bytes: trim a rune the cut broke (review A-08).
-		cut := string(bounded.TrimIncompleteRune(data))
-		return cut + fmt.Sprintf("\n\n[file truncated: %d bytes shown of a file past the %d-byte limit]", len(cut), lim.MaxFile), nil
+		// It grew past the limit after the size check: refused like a
+		// file that was already past it, rather than served in part.
+		return "", fmt.Errorf("%s is larger than the skill file limit of %d bytes", rel, lim.MaxFile)
+	}
+	if verify != nil {
+		if err := verify(filepath.ToSlash(inside), data); err != nil {
+			return "", err
+		}
 	}
 	return string(data), nil
 }

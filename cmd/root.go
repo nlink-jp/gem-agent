@@ -1064,19 +1064,19 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// session left out (ADR-0119 §4).
 		include: func(pin string) { delete(grant.excluded, pin) },
 		// The trust question (ADR-0119 §2–§3): the question dialog under
-		// the runtime's own heading on the TUI, a numbered prompt on the
+		// the runtime's own heading on the TUI, a typed word on the
 		// plain REPL. -1 is every way of not answering, an answer that
 		// arrives after the turn was interrupted included. The guard
 		// does not ask where nobody is at a terminal; a one-shot run
 		// answers -1 here as well.
-		ask: func(askCtx context.Context, heading, question string, options []string, def int) int {
+		ask: func(askCtx context.Context, heading, question, hint string, options []string, def int) int {
 			if flagPrompt != "" || askCtx.Err() != nil {
 				return -1
 			}
 			var idx int
 			if prog != nil {
 				resp := make(chan int, 1)
-				prog.Send(tui.AskRequest{Heading: heading, Question: question, Options: options, Default: def, Resp: resp})
+				prog.Send(tui.AskRequest{Heading: heading, Question: question, Options: options, Default: def, Hint: hint, Resp: resp})
 				idx = <-resp
 			} else {
 				idx = plainTrustAsk(stdin, cmd.ErrOrStderr(), heading, question, options)
@@ -1929,6 +1929,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			},
 			StartTurn: func(turnCtx context.Context, input string) {
 				go func() {
+					// A new turn: a skill whose question went unanswered
+					// in the last one may be asked about again (ADR-0119 §6).
+					skillTrust.newTurn()
 					if _, isSkill, _ := parseSkillInput(input, skillsList); isSkill {
 						// /skill: the compare, the question and the read
 						// happen here, before any model call. A refused
@@ -2039,6 +2042,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			writeSettingsTable(stderr, settings.data())
 			continue
 		}
+		// Everything below this line is a turn. A skill whose question
+		// went unanswered in the last one may be asked about again
+		// (ADR-0119 §6).
+		skillTrust.newTurn()
 		if turn, handled, errMsg := expandSkillInput(ctx, input, skillsList, skillTrust); handled {
 			if errMsg != "" {
 				fmt.Fprintln(stderr, errMsg)

@@ -44,20 +44,27 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
 
 ## Decision
 
-1. **Every read of a project skill compares first, and once more after.**
-   `load_skill` (the body and the `file` form) and `/skill` digest that
-   skill's directory and compare it with the record on disk
+1. **Every read of a project skill compares first, and returns only what
+   was compared.** `load_skill` (the body and the `file` form) and `/skill`
+   digest that skill's directory and compare it with the record on disk
    (`recordedPolicy`, ADR-0074's amendment). One implementation takes the
    digest for the pin and for this comparison, through an open root — the
    object the loader reads — so the two cannot disagree about an unchanged
-   skill. Equal: the read runs, and the directory is digested once more
-   after it; what was read is returned only when both digests are the one
-   the record holds. A read that raced a change is discarded, and the
-   skill is handled as what it has become. Different, or a listed skill
-   the recorded set does not hold: the question of item 2. A directory
-   that is gone is an error, not a question. With pins off, or with
-   nothing recorded for the project, nothing is compared — the state the
-   list was built in. A global skill is never compared.
+   skill. The digest comes with its manifest, each covered file's own
+   digest, and the read is held to it: the bytes read for a file are
+   returned only if they are the bytes that tree holds for that file. A
+   compare before the read alone would leave the read open — content
+   swapped in between, or swapped in and back again, would be returned
+   under the digest of something else. Bytes that do not match are
+   discarded, and the skill is handled as what it has become. Nothing a
+   pin does not cover is served: a skill with more files than a pin
+   covers is not read, and a `SKILL.md` past the megabyte a pin covers
+   byte for byte is not a skill. Different, or a listed skill the
+   recorded set does not hold: the question of item 2. A directory that
+   is gone — or moved aside, with another put at its path — is an error,
+   not a question. With pins off, or with nothing recorded for the
+   project, nothing is compared — the state the list was built in. A
+   global skill is never compared.
 2. **The question is the runtime's own, and it is not put through the
    approval gate.** It opens under its own heading, names the skill by its
    validated name and shows its directory, says either that the content
@@ -75,20 +82,24 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
    through the dialog the round-limit question uses, which already
    answers "nothing chosen" for Esc, Ctrl+C, a question that arrives after
    the turn was interrupted and a turn that ends under it; all of these,
-   and "not now", are unanswered. On the plain REPL it is a numbered
-   prompt: a number answers, and a blank line, any other text and a closed
-   input are unanswered. An answer that arrives after the turn was
-   interrupted is discarded.
+   and "not now", are unanswered. One answer records persistent trust, so
+   it takes a deliberate key: on this question a digit moves the
+   selection and only Enter confirms, where the model's own questions
+   take a digit as the answer. On the plain REPL the answer is a word,
+   `trust` or `disable`; a blank line, a number, any other text and a
+   closed input are unanswered — the reader is shared with the prompt,
+   and a line typed ahead must not be an answer. An answer that arrives
+   after the turn was interrupted is discarded.
 4. **Trust records what was asked about.** The directory is digested
    again. If it differs from the digest that raised the question, nothing
    is recorded and the question is asked once more about the new state; a
    second difference refuses the read as unanswered and says the skill is
    still changing. Otherwise that digest is recorded for that one name
    under the policy file's lock — by a write of its own, which takes the
-   digest it expects — and the name leaves the session's exclusion set.
-   The read runs, and the directory is digested once more: if it differs,
-   the result is discarded and the read is refused the same way. The pin
-   stays; it is what was asked about.
+   digest it expects — and the name leaves the session's exclusion set. A
+   call that was cancelled records nothing. The read then runs, held to
+   that digest's manifest as in item 1. The pin stays whatever the read
+   finds; it is what was asked about.
 5. **Disable holds for the session.** The answer is kept beside the grant
    under a lock, read by `load_skill` and `/skill` before anything else,
    and written only after the question has been answered, never from
@@ -99,8 +110,11 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
    `/clear` clears in place because no new session could be opened.
    Undoing it inside the session takes `gem-agent trust --accept` from
    another terminal and one of those two.
-6. **Unanswered refuses that one read.** Nothing is recorded and nothing
-   is disabled; the next use asks again.
+6. **Unanswered refuses the read, and the skill is not asked about again
+   in that turn.** Later uses in the same turn are refused without a
+   dialog, with a notice: a model that keeps calling `load_skill` cannot
+   keep a dialog coming. The next turn asks again. Nothing is recorded and
+   nothing is disabled.
 7. **Where nobody is at a terminal, nothing is asked.** The predicate is
    the one the pin check uses at startup, so a one-shot run and a piped
    run both refuse the read. The refusal has its own text: it names
@@ -135,17 +149,19 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
     `skill_trust` in the transcript and `skill.trust` in the audit log.
     Not as a gate decision: the rule learner reads those as approval
     evidence.
-13. **The tool says what it does.** The `load_skill` description and the
-    comment that calls it ungated are brought in line.
+13. **The comment that called `load_skill` ungated is corrected.** Its
+    description, which the model sees, is left as it is: it says nothing
+    untrue.
 
 ## Consequences
 
 - "Compare before consuming" holds for skills at the moment of use. After
   a `git pull` that touches a skill, the first use asks once, in the
   session, and the operator answers with one key.
-- A read of a project skill costs two digests of its directory, one
-  before and one after; a trust answer adds one. To be measured on a real
-  skill set (the largest installed); the bound is 2,000 files of 1 MiB.
+- A read of a project skill costs one digest of its directory and one of
+  the file it returns; a trust answer adds a digest. To be measured on a
+  real skill set (the largest installed); the bound is 2,000 files of
+  1 MiB.
 - The agent gains a way for a tool to say it needs the operator; the
   question dialog gains a heading and an opening choice; `/skill` stops
   being a text expansion on the event loop and becomes a step of the
@@ -169,15 +185,17 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
   question through the production wiring: with "pins on and recorded" as a
   precondition, a wire that was never connected looks the same as "equal".
 - The dialog and the plain prompt each have a test of every way of not
-  answering: Esc, Ctrl+C, an interrupt, a turn that ends, a blank line,
-  other text and a closed input.
+  answering — Esc, Ctrl+C, an interrupt, a turn that ends, a blank line,
+  a number, other text and a closed input — and of a digit not
+  confirming.
 - The three outcomes and the unattended refusal each have a test of what
   is recorded, what the model receives, what stays disabled and what the
   exclusion set holds afterwards.
 - The window of item 4 is tested by changing the directory between the
   question and the answer, twice, and between the pin and the read. The
   ordinary read is tested with a change that lands between the compare
-  and the read.
+  and the read, and with one that is taken back before anything compares
+  again.
 - A directory entry with a control character is tested as not listed.
 
 ## Accepted, and written down
@@ -190,9 +208,14 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
 - **A disabled skill stays in the catalogue the model already has** — the
   system prompt's skill section — until the list is rebuilt. The refusal
   is what tells the model.
-- **The digest has limits:** files past the 2,000th are not covered, a
-  link is covered by its target string, and a file's content past 1 MiB by
-  its size only.
+- **The digest has limits, and what it does not cover is not served:** a
+  skill with more than 2,000 files is not read at all, a `SKILL.md` over
+  1 MiB is not a skill, and a supporting file over the 96 KiB read limit
+  is refused. A link inside a skill is covered by its target string; a
+  file read through it is held to the entry it leads to. The first
+  version of this record accepted "files past the 2,000th are not
+  covered"; the implementation review showed that `SKILL.md` itself could
+  be one of them.
 - **Scripts.** A skill loaded earlier may have told the model to run a
   script from its directory. If the script changes afterwards, the shell
   runs what is there, under the lane and approval rules of every command.
