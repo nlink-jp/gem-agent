@@ -2524,9 +2524,26 @@ func (m Model) updateAsk(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	answer := -2 // -2 = no answer yet; -1 = decline
 	switch msg.Type {
 	case tea.KeyLeft, tea.KeyUp, tea.KeyShiftTab:
+		if req.Heading != "" {
+			// The runtime's own question does not wrap. It opens on its
+			// last option, the one that changes nothing; with a wrap,
+			// Tab and Enter — what completing a path and sending a
+			// message looks like — would land on the first, which
+			// records trust.
+			if m.askChoice > 0 {
+				m.askChoice--
+			}
+			return m, nil
+		}
 		m.askChoice = (m.askChoice - 1 + n) % n
 		return m, nil
 	case tea.KeyRight, tea.KeyDown, tea.KeyTab:
+		if req.Heading != "" {
+			if m.askChoice < n-1 {
+				m.askChoice++
+			}
+			return m, nil
+		}
 		m.askChoice = (m.askChoice + 1) % n
 		return m, nil
 	case tea.KeyEnter:
@@ -2538,10 +2555,10 @@ func (m Model) updateAsk(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if i := int(r[0] - '1'); i < n {
 				if req.Heading != "" {
 					// The runtime's own question: one of its answers
-					// records persistent trust, and a digit typed into a
-					// message that was being written must not be that
-					// answer. A digit selects; Enter confirms.
-					m.askChoice = i
+					// records persistent trust, and neither a digit nor a
+					// digit and Enter — "1", sent as a message — may be
+					// that answer. Digits do nothing here; the options
+					// are not numbered. Arrows select, Enter confirms.
 					return m, nil
 				}
 				answer = i
@@ -2605,6 +2622,9 @@ func (m Model) askView() string {
 	var optRows []string
 	for i, o := range req.Options {
 		text := fmt.Sprintf("%d) %s", i+1, o)
+		if req.Heading != "" {
+			text = o // not numbered: a digit does not answer this one
+		}
 		for j, l := range strings.Split(ansi.Hardwrap(text, inner-2, true), "\n") {
 			switch {
 			case j == 0 && i == m.askChoice:

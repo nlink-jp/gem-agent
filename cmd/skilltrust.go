@@ -209,17 +209,21 @@ func (g *skillGuard) check(s skills.Skill) (skillState, string, trustpin.Manifes
 }
 
 // verifier holds a read to the tree a manifest describes: the bytes
-// returned for a file must be the bytes that tree holds for it. A nil
-// manifest — nothing is compared for this skill — verifies nothing.
-func verifier(manifest trustpin.Manifest) skills.Verify {
+// returned for a file must be the bytes that tree holds for it, and a
+// listing shows only entries the digest covers. A nil manifest — nothing
+// is compared for this skill — verifies nothing.
+func verifier(manifest trustpin.Manifest) *skills.Verify {
 	if manifest == nil {
 		return nil
 	}
-	return func(rel string, data []byte) error {
-		if line, ok := manifest.Line(rel); !ok || line != trustpin.ContentLine(data) {
-			return errSkillMoved
-		}
-		return nil
+	return &skills.Verify{
+		Content: func(rel string, data []byte) error {
+			if !manifest.Holds(rel, data) {
+				return errSkillMoved
+			}
+			return nil
+		},
+		Listed: manifest.Covers,
 	}
 }
 
@@ -271,7 +275,7 @@ func skillTrustFrom(ctx context.Context, entry string) (string, bool) {
 // only then is that digest recorded; and the read is held to that
 // digest's manifest. A cancelled call records nothing: the write must
 // not land after the operator has moved on.
-func (g *skillGuard) attempt(ctx context.Context, s skills.Skill, load func(skills.Verify) (string, error)) (out, refusal string, err error) {
+func (g *skillGuard) attempt(ctx context.Context, s skills.Skill, load func(*skills.Verify) (string, error)) (out, refusal string, err error) {
 	state, digest, manifest := g.check(s)
 	if state == skillCurrent {
 		out, err = load(verifier(manifest))
@@ -425,7 +429,7 @@ func (q *skillQuestion) StillUnresolved() string {
 var _ tools.NeedsOperator = (*skillQuestion)(nil)
 
 // read is load_skill's read: a refusal is the call's result.
-func (g *skillGuard) read(ctx context.Context, s skills.Skill, load func(skills.Verify) (string, error)) (string, error) {
+func (g *skillGuard) read(ctx context.Context, s skills.Skill, load func(*skills.Verify) (string, error)) (string, error) {
 	if g == nil {
 		return load(nil)
 	}
@@ -441,7 +445,7 @@ func (g *skillGuard) read(ctx context.Context, s skills.Skill, load func(skills.
 // compare and the same question run here, with the same bound on how
 // often it is put. loaded false with a nil error means the skill was
 // refused and the operator has been told why; the turn does not start.
-func (g *skillGuard) readForOperator(ctx context.Context, s skills.Skill, load func(skills.Verify) (string, error)) (out string, loaded bool, err error) {
+func (g *skillGuard) readForOperator(ctx context.Context, s skills.Skill, load func(*skills.Verify) (string, error)) (out string, loaded bool, err error) {
 	if g == nil {
 		out, err = load(nil)
 		return out, err == nil, err

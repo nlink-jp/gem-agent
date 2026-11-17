@@ -2334,9 +2334,10 @@ The skill greet has changed since you trusted it.
 Look at its files before you answer: "/Users/you/work/demo/.claude/skills/greet"
 Trust records this content as trusted — for later sessions too — and loads it.
 Disable keeps the skill off for the rest of this session.
-  1) Trust and load
-  2) Disable for this session
-▶ 3) Not now — ask again after my next message
+  Trust and load
+  Disable for this session
+▶ Not now — ask again after my next message
+↑↓ select · Enter confirm · Esc leaves it undecided
 ```
 
 | Answer | What happens |
@@ -2349,11 +2350,11 @@ Things to know:
 
 - **The dialog opens on "Not now".** Pressing Enter by mistake records
   nothing and disables nothing.
-- **A digit only selects; Enter confirms.** In other question dialogs a
-  digit answers at once, but here it only moves the selection. That keeps a
-  digit you were typing into a message, when the dialog appeared, from
-  becoming the answer. On the plain screen, without the TUI, you answer by
-  typing `trust` or `disable`.
+- **Select with the arrows, confirm with Enter.** Unlike other question
+  dialogs, the digit keys do nothing here, and the selection stops at the
+  top and the bottom. If the dialog appears while you are typing a message,
+  the keys you were typing cannot become the "trust" answer. On the plain
+  screen, without the TUI, you answer by typing `trust` or `disable`.
 - **Only you answer it.** Neither auto-approve mode nor "allow for this
   session" answers this question.
 - **Look at the content before you answer.** The dialog shows where the skill
@@ -2368,8 +2369,10 @@ Things to know:
   `gem-agent trust --accept` in another terminal, then `/clear` or
   `/skills reload`.
 - **A skill that cannot be checked is not loaded.** A skill with more than
-  2,000 files is not loaded, and you are told so. A skill whose `SKILL.md`
-  is over 1 MiB is not treated as a skill.
+  2,000 files is not loaded, and you are told so (a skill that carries a
+  `node_modules` or a `.venv` is one). A skill whose `SKILL.md` is over
+  1 MiB is not treated as a skill. A listing of a folder inside a skill
+  shows only the files and folders that were checked.
 - **Only project skills are compared.** Your own skills in
   `~/.config/gem-agent/skills/` are not.
 - **Scripts are separate.** If only a script of a skill changes after the

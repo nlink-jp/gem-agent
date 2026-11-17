@@ -27,6 +27,7 @@ import (
 
 	"github.com/nlink-jp/gem-agent/internal/bounded"
 	"github.com/nlink-jp/gem-agent/internal/instructions"
+	"github.com/nlink-jp/gem-agent/internal/pathid"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 )
 
@@ -341,50 +342,111 @@ func ContentLine(data []byte) string {
 	return "sha256:" + hex.EncodeToString(h[:])
 }
 
-// Line returns the content line of the file a read of rel through the
-// skill's root returns, following the links the manifest records — a
-// link entry holds its target, and the bytes belong to the entry the
-// target leads to. A path the manifest does not cover, a link that
-// leaves the tree and a chain longer than a few hops have no line.
-func (m Manifest) Line(rel string) (string, bool) {
+// follow rewrites rel through the links the manifest records, until no
+// component of it is a link: a link entry holds its target, and a read
+// through it reaches what the target leads to. ok is false for a path
+// that leaves the tree, an absolute target, and a chain longer than a
+// few hops.
+func (m Manifest) follow(rel string) (string, bool) {
 	rel = path.Clean(rel)
 	for hop := 0; hop < 8; hop++ {
-		if strings.HasPrefix(rel, "../") || rel == ".." || path.IsAbs(rel) {
+		if rel == ".." || strings.HasPrefix(rel, "../") || path.IsAbs(rel) {
 			return "", false
 		}
-		if line, ok := m[rel]; ok {
-			target, isLink := strings.CutPrefix(line, "link:")
-			if !isLink {
-				return line, true
-			}
-			if path.IsAbs(target) {
-				return "", false
-			}
-			rel = path.Clean(path.Join(path.Dir(rel), target))
-			continue
-		}
-		// Not an entry itself: a directory on the way may be a link.
-		next, found := "", false
-		for i := 0; i < len(rel); i++ {
-			if rel[i] != '/' {
+		// The shortest prefix that is a link, the whole path included.
+		at, target := -1, ""
+		for i := 0; i <= len(rel); i++ {
+			if i < len(rel) && rel[i] != '/' {
 				continue
 			}
-			target, isLink := strings.CutPrefix(m[rel[:i]], "link:")
-			if !isLink {
-				continue
+			if t, isLink := strings.CutPrefix(m[rel[:i]], "link:"); isLink {
+				at, target = i, t
+				break
 			}
-			if path.IsAbs(target) {
-				return "", false
-			}
-			next, found = path.Clean(path.Join(path.Dir(rel[:i]), target, rel[i+1:])), true
-			break
 		}
-		if !found {
+		if at < 0 {
+			return rel, true
+		}
+		if path.IsAbs(target) {
 			return "", false
 		}
-		rel = next
+		rel = path.Clean(path.Join(path.Dir(rel[:at]), target, rel[at:]))
 	}
 	return "", false
+}
+
+// Line returns the content line of the file a read of rel through the
+// skill's root returns, following the links the manifest records. A
+// path the manifest does not cover has no line.
+func (m Manifest) Line(rel string) (string, bool) {
+	r, ok := m.follow(rel)
+	if !ok {
+		return "", false
+	}
+	line, ok := m[r]
+	return line, ok
+}
+
+// Holds reports whether data is this tree's content for the file a read
+// of rel returns. The entry under that exact name decides when there is
+// one. When there is none, the volume may still have found the file
+// under another spelling of its name — a different case, or another
+// Unicode form: the loader asks for "SKILL.md" and for whatever the
+// model wrote, and a case-insensitive volume answers for "skill.md" and
+// "Notes.md" alike. The bytes are then accepted if they are the content
+// of an entry whose name is the same once case and Unicode form are set
+// aside: they are still bytes of the trusted tree, under the name that
+// was asked for. (The first version compared exact names only and
+// refused such a skill as "still changing", for ever.)
+//
+// Folding here hands nothing to another file. On a volume that tells
+// "Notes.md" from "notes.md" a read of a name with no entry fails at the
+// open and never gets this far; a name that has an entry is decided by
+// that entry alone.
+func (m Manifest) Holds(rel string, data []byte) bool {
+	want := ContentLine(data)
+	if line, ok := m.Line(rel); ok {
+		return line == want
+	}
+	key := foldName(rel)
+	for k := range m {
+		if foldName(k) != key {
+			continue
+		}
+		if line, ok := m.Line(k); ok && line == want {
+			return true
+		}
+	}
+	return false
+}
+
+// foldName is a name with case and Unicode form set aside.
+func foldName(p string) string {
+	return strings.ToLower(pathid.Key(path.Clean(p)))
+}
+
+// Covers reports whether p — a file, a link, or a directory on the way
+// to one — is part of the tree the digest covers. An empty directory, a
+// FIFO and anything created since the digest was taken are not: the
+// digest does not see them, so a listing must not show them.
+func (m Manifest) Covers(p string) bool {
+	p = path.Clean(p)
+	if _, ok := m[p]; ok {
+		return true // a file, or a link under its own name
+	}
+	r, ok := m.follow(p)
+	if !ok {
+		return false
+	}
+	if _, ok := m[r]; ok {
+		return true
+	}
+	for k := range m {
+		if strings.HasPrefix(k, r+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // rootFileDigest hashes one regular file under root, bounded at FileCap;

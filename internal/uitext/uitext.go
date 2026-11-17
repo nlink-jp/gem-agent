@@ -389,7 +389,7 @@ type Messages struct {
 	SkillTrustOptDisable    string
 	SkillTrustOptLater      string
 	// SkillTrustHint replaces the question dialog's hint for this
-	// question: a digit selects, and only Enter confirms.
+	// question: arrows select, only Enter confirms, digits do nothing.
 	SkillTrustHint         string
 	SkillTrustedFmt        string // recorded
 	SkillDisabledFmt       string // disabled for the session; also on each later use
@@ -656,7 +656,7 @@ keys:
 	SkillTrustOptTrust:          "Trust and load",
 	SkillTrustOptDisable:        "Disable for this session",
 	SkillTrustOptLater:          "Not now — ask again after my next message",
-	SkillTrustHint:              "↑↓/Tab or 1-3 select · Enter confirm · Esc leaves it undecided",
+	SkillTrustHint:              "↑↓ select · Enter confirm · Esc leaves it undecided",
 	SkillTrustedFmt:             "project trust: skill %s trusted",
 	SkillDisabledFmt:            "project trust: skill %s is disabled for this session — not loaded; `gem-agent trust --accept` in another terminal, then /clear or /skills reload, brings it back",
 	SkillLaterFmt:               "project trust: skill %s not loaded — using it after your next message asks again",
@@ -899,7 +899,7 @@ var ja = Messages{
 	SkillTrustOptTrust:          "信用して読み込む",
 	SkillTrustOptDisable:        "このセッションでは無効にする",
 	SkillTrustOptLater:          "今は決めない — 次の発言の後で、また尋ねる",
-	SkillTrustHint:              "↑↓/Tab・1-3 で選択 · Enter 決定 · Esc 今は決めない",
+	SkillTrustHint:              "↑↓ で選択 · Enter 決定 · Esc 今は決めない",
 	SkillTrustedFmt:             "project trust: スキル %s を信用しました",
 	SkillDisabledFmt:            "project trust: スキル %s はこのセッションでは無効です — 読み込みません。戻すには、別のターミナルで `gem-agent trust --accept` を実行してから /clear か /skills reload",
 	SkillLaterFmt:               "project trust: スキル %s は読み込みません — 次の発言の後で使うときに、また尋ねます",

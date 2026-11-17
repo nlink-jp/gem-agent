@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -133,11 +134,30 @@ const skillReadCap = ReadCap
 // ErrTooLarge: SKILL.md is past ReadCap.
 var ErrTooLarge = fmt.Errorf("SKILL.md is larger than %d bytes", ReadCap)
 
-// Verify is given each file's bytes, under its path relative to the
-// skill's directory (slash-separated), before anything made from them is
-// returned. An error from it is the read's error: the bytes are not
-// what the caller is prepared to serve (ADR-0119 §1).
-type Verify func(rel string, data []byte) error
+// Verify holds a read to what the caller is prepared to serve
+// (ADR-0119 §1). A nil *Verify verifies nothing.
+type Verify struct {
+	// Content is given each file's bytes, under its path relative to
+	// the skill's directory (slash-separated), before anything made from
+	// them is returned. An error from it is the read's error.
+	Content func(rel string, data []byte) error
+	// Listed reports whether an entry may appear in a directory listing.
+	// A listing returns names, and a name is text too: one the caller
+	// has not compared — an empty directory called whatever its author
+	// liked — is left out, and the listing says how many were.
+	Listed func(rel string) bool
+}
+
+func (v *Verify) content(rel string, data []byte) error {
+	if v == nil || v.Content == nil {
+		return nil
+	}
+	return v.Content(rel, data)
+}
+
+func (v *Verify) listed(rel string) bool {
+	return v == nil || v.Listed == nil || v.Listed(rel)
+}
 
 // openRoot returns the skill's root and the release the caller owes.
 func (s Skill) openRoot() (*os.Root, func(), error) {
@@ -528,7 +548,7 @@ func (s Skill) Body(lim Limits) (string, error) { return s.BodyVerified(lim, nil
 // The whole file is read — a SKILL.md past ReadCap is an error, not a
 // truncated body — so what verify sees is everything the body is made
 // from.
-func (s Skill) BodyVerified(lim Limits, verify Verify) (string, error) {
+func (s Skill) BodyVerified(lim Limits, verify *Verify) (string, error) {
 	root, release, err := s.openRoot()
 	if err != nil {
 		return "", err
@@ -541,10 +561,8 @@ func (s Skill) BodyVerified(lim Limits, verify Verify) (string, error) {
 	if more {
 		return "", ErrTooLarge // it outgrew the cap since discovery
 	}
-	if verify != nil {
-		if err := verify("SKILL.md", data); err != nil {
-			return "", err
-		}
+	if err := verify.content("SKILL.md", data); err != nil {
+		return "", err
 	}
 	_, body := splitFrontmatter(string(data))
 	body = strings.TrimSpace(body)
@@ -566,8 +584,8 @@ func (s Skill) File(rel string, lim Limits) (string, error) { return s.FileVerif
 // file is read whole or not at all: one past the limit is refused by
 // size, and one that grew past it between the size check and the read
 // is refused too, so verify always sees everything that is returned. A
-// directory listing returns names, not content, and is not verified.
-func (s Skill) FileVerified(rel string, lim Limits, verify Verify) (string, error) {
+// directory listing shows only the entries verify allows.
+func (s Skill) FileVerified(rel string, lim Limits, verify *Verify) (string, error) {
 	if filepath.IsAbs(rel) {
 		return "", fmt.Errorf("file must be a path relative to the skill directory")
 	}
@@ -604,12 +622,20 @@ func (s Skill) FileVerified(rel string, lim Limits, verify Verify) (string, erro
 			return "", err
 		}
 		names := make([]string, 0, len(entries))
+		hidden := 0
 		for i, e := range entries {
 			if i == skillDirEntryCap {
 				names = append(names, fmt.Sprintf("[more than %d entries — listing stopped]", skillDirEntryCap))
 				break
 			}
+			if !verify.listed(path.Join(filepath.ToSlash(inside), e.Name())) {
+				hidden++
+				continue
+			}
 			names = append(names, e.Name())
+		}
+		if hidden > 0 {
+			names = append(names, fmt.Sprintf("[%d entries are not part of the trusted skill and are not listed]", hidden))
 		}
 		return strings.Join(names, "\n"), nil
 	}
@@ -626,10 +652,8 @@ func (s Skill) FileVerified(rel string, lim Limits, verify Verify) (string, erro
 		// file that was already past it, rather than served in part.
 		return "", fmt.Errorf("%s is larger than the skill file limit of %d bytes", rel, lim.MaxFile)
 	}
-	if verify != nil {
-		if err := verify(filepath.ToSlash(inside), data); err != nil {
-			return "", err
-		}
+	if err := verify.content(filepath.ToSlash(inside), data); err != nil {
+		return "", err
 	}
 	return string(data), nil
 }

@@ -28,13 +28,13 @@ func TestAskHeadingAndDefault(t *testing.T) {
 	next, _ := m.Update(trustAsk(resp))
 	m = next.(Model)
 	v := m.View()
-	for _, want := range []string{"project trust — a skill has changed", "The skill deploy has changed", "Look at its files", "1) Trust and load", "▶ 3) Not now"} {
+	for _, want := range []string{"project trust — a skill has changed", "The skill deploy has changed", "Look at its files", "  Trust and load", "▶ Not now"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("view missing %q:\n%s", want, v)
 		}
 	}
-	if strings.Contains(v, "question:") {
-		t.Errorf("the runtime's question reads as the model's:\n%s", v)
+	if strings.Contains(v, "question:") || strings.Contains(v, "1) ") {
+		t.Errorf("the runtime's question reads as the model's, or numbers its options:\n%s", v)
 	}
 	if strings.Index(v, "project trust") > strings.Index(v, "The skill deploy") {
 		t.Errorf("the heading does not open the dialog:\n%s", v)
@@ -134,41 +134,73 @@ func TestAskHeadingIsInert(t *testing.T) {
 	}
 }
 
-// One answer to the runtime's question records persistent trust. A digit
-// typed into a message the operator was writing when the dialog appeared
-// must not be that answer: on a headed question a digit moves the
-// selection, and only Enter confirms. The model's own question keeps its
-// one-press digits (TestAskDialog).
-func TestAskHeadedQuestionDigitsOnlySelect(t *testing.T) {
-	m, _ := runningModel(t)
-	resp := make(chan int, 1)
-	req := trustAsk(resp)
-	req.Hint = "1-3 select, Enter confirms"
-	next, _ := m.Update(req)
-	m = next.(Model)
-	m.askAt = time.Time{} // past the typed-ahead grace
-	m = press(m, runeMsg("1"))
-	select {
-	case got := <-resp:
-		t.Fatalf("a digit alone answered the trust question: %d", got)
-	default:
+// One answer to the runtime's question records persistent trust, so it
+// takes keys nobody types by accident. A digit does nothing — not even
+// followed by Enter, which is "1" sent as a message. The selection does
+// not wrap: Tab and Enter, from the opening choice, stay on it. Only the
+// arrows up to "trust" and then Enter give that answer. The model's own
+// question keeps its one-press digits and its wrap (TestAskDialog).
+func TestAskHeadedQuestionTakesDeliberateKeys(t *testing.T) {
+	open := func(t *testing.T) (Model, chan int) {
+		m, _ := runningModel(t)
+		resp := make(chan int, 1)
+		req := trustAsk(resp)
+		req.Hint = "arrows select, Enter confirms"
+		next, _ := m.Update(req)
+		m = next.(Model)
+		m.askAt = time.Time{} // past the typed-ahead grace
+		return m, resp
 	}
-	if m.askChoice != 0 || m.phase != phaseAsk {
-		t.Errorf("after the digit: choice=%d phase=%v", m.askChoice, m.phase)
+	for name, keys := range map[string][]tea.Msg{
+		"a digit and Enter":      {runeMsg("1"), tea.KeyMsg{Type: tea.KeyEnter}},
+		"Tab and Enter":          {tea.KeyMsg{Type: tea.KeyTab}, tea.KeyMsg{Type: tea.KeyEnter}},
+		"Down and Enter":         {tea.KeyMsg{Type: tea.KeyDown}, tea.KeyMsg{Type: tea.KeyEnter}},
+		"Right, Right and Enter": {tea.KeyMsg{Type: tea.KeyRight}, tea.KeyMsg{Type: tea.KeyRight}, tea.KeyMsg{Type: tea.KeyEnter}},
+		"Enter alone":            {tea.KeyMsg{Type: tea.KeyEnter}},
+		"digits, then Enter":     {runeMsg("2"), runeMsg("1"), runeMsg("9"), tea.KeyMsg{Type: tea.KeyEnter}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m, resp := open(t)
+			for _, k := range keys {
+				next, _ := m.Update(k)
+				m = next.(Model)
+			}
+			if got := <-resp; got != 2 {
+				t.Errorf("%s answered %d, want 2 (not now)", name, got)
+			}
+		})
 	}
-	v := m.View()
-	if !strings.Contains(v, "1-3 select, Enter confirms") || strings.Contains(v, "pick directly") {
-		t.Errorf("the hint does not say how this question is answered:\n%s", v)
-	}
-	if !strings.Contains(v, "▶ 1) Trust and load") {
-		t.Errorf("the digit did not move the selection:\n%s", v)
-	}
-	m = press(m, runeMsg("9")) // out of range: nothing
-	if m.askChoice != 0 {
-		t.Errorf("an out-of-range digit moved the selection to %d", m.askChoice)
-	}
-	press(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if got := <-resp; got != 0 {
-		t.Errorf("Enter after selecting 1 = %d", got)
-	}
+	t.Run("a digit alone answers nothing", func(t *testing.T) {
+		m, resp := open(t)
+		m = press(m, runeMsg("1"))
+		select {
+		case got := <-resp:
+			t.Fatalf("a digit answered the trust question: %d", got)
+		default:
+		}
+		if m.askChoice != 2 || m.phase != phaseAsk {
+			t.Errorf("after the digit: choice=%d phase=%v", m.askChoice, m.phase)
+		}
+		if v := m.View(); !strings.Contains(v, "arrows select, Enter confirms") || strings.Contains(v, "pick directly") {
+			t.Errorf("the hint does not say how this question is answered:\n%s", v)
+		}
+	})
+	t.Run("up twice and Enter trusts", func(t *testing.T) {
+		m, resp := open(t)
+		m = press(m, tea.KeyMsg{Type: tea.KeyUp})
+		m = press(m, tea.KeyMsg{Type: tea.KeyUp})
+		m = press(m, tea.KeyMsg{Type: tea.KeyUp}) // already at the top: stays
+		press(m, tea.KeyMsg{Type: tea.KeyEnter})
+		if got := <-resp; got != 0 {
+			t.Errorf("up, up, Enter = %d, want 0", got)
+		}
+	})
+	t.Run("up once and Enter disables", func(t *testing.T) {
+		m, resp := open(t)
+		m = press(m, tea.KeyMsg{Type: tea.KeyShiftTab})
+		press(m, tea.KeyMsg{Type: tea.KeyEnter})
+		if got := <-resp; got != 1 {
+			t.Errorf("up, Enter = %d, want 1", got)
+		}
+	})
 }

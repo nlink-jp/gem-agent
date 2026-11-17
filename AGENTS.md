@@ -283,7 +283,9 @@ a new hook) is an architecture change and takes the same rows as a
   disk was taken with that walk. The question is the question dialog
   under a runtime heading (`tui.AskRequest.Heading`), not the approval
   gate: the gate would offer "allow for this session" and count an
-  interrupt as no. It opens on "not now". A tool reaches a dialog by
+  interrupt as no. It opens on "not now", and takes only the arrows and
+  Enter: digits do nothing and the selection does not wrap, because
+  "1"+Enter and Tab+Enter are what sending a message looks like. A tool reaches a dialog by
   returning `tools.NeedsOperator`; the agent resolves it OUTSIDE
   `runWithFloor` and re-runs the tool — never ask from inside `Run`.
   Refusals to the model are constants plus the validated name

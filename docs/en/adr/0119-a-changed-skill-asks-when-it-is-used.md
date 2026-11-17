@@ -55,8 +55,13 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
    returned only if they are the bytes that tree holds for that file. A
    compare before the read alone would leave the read open — content
    swapped in between, or swapped in and back again, would be returned
-   under the digest of something else. Bytes that do not match are
-   discarded, and the skill is handled as what it has become. Nothing a
+   under the digest of something else. A file the volume found under
+   another spelling of its name — a different case, another Unicode form
+   — is held to the entry whose name is the same once those are set
+   aside, when no entry has the exact name. A listing of a directory
+   inside the skill shows only the entries the digest covers: an empty
+   directory is not in it, and its name is text too. Bytes that do not
+   match are discarded, and the skill is handled as what it has become. Nothing a
    pin does not cover is served: a skill with more files than a pin
    covers is not read, and a `SKILL.md` past the megabyte a pin covers
    byte for byte is not a skill. Different, or a listed skill the
@@ -83,9 +88,12 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
    answers "nothing chosen" for Esc, Ctrl+C, a question that arrives after
    the turn was interrupted and a turn that ends under it; all of these,
    and "not now", are unanswered. One answer records persistent trust, so
-   it takes a deliberate key: on this question a digit moves the
-   selection and only Enter confirms, where the model's own questions
-   take a digit as the answer. On the plain REPL the answer is a word,
+   it takes keys nobody types by accident: on this question the arrows
+   select and Enter confirms; the digit keys do nothing, the options are
+   not numbered, and the selection does not wrap — so neither "1" and
+   Enter nor Tab and Enter, what sending a message looks like, can reach
+   "trust" from the opening choice. The model's own questions keep their
+   one-press digits. On the plain REPL the answer is a word,
    `trust` or `disable`; a blank line, a number, any other text and a
    closed input are unanswered — the reader is shared with the prompt,
    and a line typed ahead must not be an answer. An answer that arrives
@@ -186,8 +194,8 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
   precondition, a wire that was never connected looks the same as "equal".
 - The dialog and the plain prompt each have a test of every way of not
   answering — Esc, Ctrl+C, an interrupt, a turn that ends, a blank line,
-  a number, other text and a closed input — and of a digit not
-  confirming.
+  a number, other text and a closed input — and of a digit, a digit and
+  Enter, and Tab and Enter not reaching "trust".
 - The three outcomes and the unattended refusal each have a test of what
   is recorded, what the model receives, what stays disabled and what the
   exclusion set holds afterwards.
@@ -226,6 +234,12 @@ is not "may this call run" (the read-only lift, ADR-0080 §4).
   answer records a set holding that one name.
 - **`/clear` and the reloads** still leave a changed file out and name it;
   instruction files have no later read to guard.
+- **A project skill that carries a dependency tree** — a `node_modules`,
+  a `.venv` — is past 2,000 files and cannot be loaded. It stays in the
+  catalogue the model has; the notice says why.
+- **A trust write can still land late** in one narrow case: a call
+  cancelled after its last check and then held more than a second on the
+  policy file's lock. It records the digest the operator was asked about.
 - **A skill that keeps changing** is refused after one more question. The
   operator asks for it again once the pull or the build has finished.
 
