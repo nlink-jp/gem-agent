@@ -61,7 +61,7 @@ What did not wait: every read the model can ask for (`read_file`, `search_files`
 ## Consequences
 
 - A FIFO at `<project>/.claude/skills` is a project with no skills. A FIFO where a root was is a root that does not open, and what needed it reports an error at once.
-- A `policy.toml` or a `risk-rules.md` that is a FIFO stops the start with an error that names it; it used to stop the start without a word. A link to a regular file is read as before.
+- A `policy.toml` that is a FIFO stops the start with an error that names it; it used to stop the start without a word. A `risk-rules.md` that is one is not loaded: the start goes on with the notice any unreadable rulebook gets, and the judge works without it. A link to a regular file is read as before.
 - A file under a fixed name that is not a regular file is not written: saving a memory over a FIFO is an error.
 - Residual: a name swapped for a FIFO between the look and the open still waits — for a file (3, and ADR-0119), for a root (2), and for the sub-directories of the skill walk, which `manifestWalk.dir` opens with `Root.OpenRoot` after their listed kind. For a directory that is listed nothing is left. The swap takes a process that keeps rewriting the name while the runtime opens it, in a place it can already write, and all it gains is a wait.
 - Closing the rest takes an open that cannot wait (`O_NONBLOCK`) for files, and for roots an `os.OpenRoot` that takes flags, which Go does not have. The file tools already open with `O_NONBLOCK` (ADR-0072 §4.8), but how such an open and its reads behave on an online-only file of a cloud folder has still not been observed on purpose. Until it is, the loaders keep the plain open after the look.
