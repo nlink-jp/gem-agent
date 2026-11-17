@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
@@ -120,12 +122,20 @@ func plainTrustAsk(in *bufio.Reader, out io.Writer, heading, question, prompt, e
 		fmt.Fprintf(out, "  %s\n", l)
 	}
 	words := []string{"trust", "disable"}
-	for i, o := range options {
+	// The labels are padded to the widest one in terminal columns, not
+	// in runes: the Japanese label is wider than its rune count, and
+	// %-8s would start its option three columns to the right.
+	labels := make([]string, len(options))
+	width := 0
+	for i := range options {
+		labels[i] = elseLabel
 		if i < len(words) {
-			fmt.Fprintf(out, "  %-8s %s\n", words[i]+":", o)
-			continue
+			labels[i] = words[i] + ":"
 		}
-		fmt.Fprintf(out, "  %-8s %s\n", elseLabel, o)
+		width = max(width, ansi.StringWidth(labels[i]))
+	}
+	for i, o := range options {
+		fmt.Fprintf(out, "  %s%s %s\n", labels[i], strings.Repeat(" ", width-ansi.StringWidth(labels[i])), o)
 	}
 	fmt.Fprint(out, "  "+prompt)
 	line, err := in.ReadString('\n')

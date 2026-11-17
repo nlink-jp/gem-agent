@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/nlink-jp/gem-agent/internal/agent"
 	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/llm"
@@ -953,6 +955,37 @@ func TestPlainTrustAsk(t *testing.T) {
 			if !strings.Contains(out.String(), w) {
 				t.Errorf("prompt missing %q:\n%s", w, out.String())
 			}
+		}
+	}
+}
+
+// The options start in the same terminal column in every language: the
+// Japanese label for "anything else" is wider than its rune count, and
+// padding by runes pushed its option three columns to the right.
+func TestPlainTrustAskAlignsItsOptions(t *testing.T) {
+	for _, lang := range []uitext.Lang{uitext.EN, uitext.JA} {
+		m := uitext.For(lang)
+		options := []string{m.SkillTrustOptTrust, m.SkillTrustOptDisable, m.SkillTrustOptLater}
+		var out bytes.Buffer
+		plainTrustAsk(bufio.NewReader(strings.NewReader("\n")), &out, m.SkillTrustHeading, "q", m.SkillTrustPlainPrompt, m.SkillTrustPlainElse, options)
+		cols := map[int]bool{}
+		for _, o := range options {
+			found := false
+			for _, line := range strings.Split(out.String(), "\n") {
+				if before, ok := strings.CutSuffix(line, o); ok {
+					cols[ansi.StringWidth(before)] = true
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("%s: no line ends with the option %q:\n%s", lang, o, out.String())
+			}
+		}
+		if len(cols) != 1 {
+			t.Errorf("%s: the options start in columns %v:\n%s", lang, cols, out.String())
+		}
+		if !strings.Contains(out.String(), m.SkillTrustPlainPrompt) || !strings.Contains(out.String(), m.SkillTrustPlainElse) {
+			t.Errorf("%s: the prompt is not the catalogue's:\n%s", lang, out.String())
 		}
 	}
 }
