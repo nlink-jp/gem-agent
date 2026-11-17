@@ -34,8 +34,9 @@ var ErrNotRegular = errors.New("not a regular file")
 // cover a name swapped for a FIFO between the look and the open, which
 // this does not; but how such an open and its reads behave on a file
 // whose content is not on this disk — an online-only file of a cloud
-// folder — has not been observed, and a project there must keep
-// reading as it did.
+// folder — had not been observed when this was written, and a project
+// there must keep reading as it did. It has been observed since, on
+// iCloud Drive (ADR-0120); opening this way is a decision of its own.
 func OpenRegular(root *os.Root, rel string) (*os.File, error) {
 	st, err := root.Stat(rel)
 	if err != nil {
