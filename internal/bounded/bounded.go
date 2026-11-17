@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"sync"
-	"syscall"
 	"unicode/utf8"
 )
 
@@ -22,13 +21,29 @@ import (
 var ErrNotRegular = errors.New("not a regular file")
 
 // OpenRegular opens rel under root for reading, and only if it is a
-// regular file. It does not wait: a FIFO with no writer holds a plain
-// open until one arrives, so a name the project chooses — a skill's
-// SKILL.md — could stop the caller for as long as it liked, at startup.
-// The kind is read from the opened file, not from a stat before the
-// open, so a name swapped in between is refused too.
+// regular file. A plain open of a FIFO with no writer waits until one
+// arrives, so a name the project chooses — a skill's SKILL.md, an
+// instruction file, .mcp.json, the project config — could stop the
+// caller for as long as it liked, at startup and before anything was
+// asked. The kind is looked at first, and what is not a regular file
+// is never opened; it is looked at again on the opened file, so what
+// is read is what was opened.
+//
+// It is not an open that cannot wait (O_NONBLOCK). That would also
+// cover a name swapped for a FIFO between the look and the open, which
+// this does not; but how such an open and its reads behave on a file
+// whose content is not on this disk — an online-only file of a cloud
+// folder — has not been observed, and a project there must keep
+// reading as it did.
 func OpenRegular(root *os.Root, rel string) (*os.File, error) {
-	f, err := root.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	st, err := root.Stat(rel)
+	if err != nil {
+		return nil, err
+	}
+	if !st.Mode().IsRegular() {
+		return nil, &os.PathError{Op: "open", Path: rel, Err: ErrNotRegular}
+	}
+	f, err := root.Open(rel)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +52,14 @@ func OpenRegular(root *os.Root, rel string) (*os.File, error) {
 
 // OpenRegularPath is OpenRegular for a file named by path.
 func OpenRegularPath(path string) (*os.File, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !st.Mode().IsRegular() {
+		return nil, &os.PathError{Op: "open", Path: path, Err: ErrNotRegular}
+	}
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}

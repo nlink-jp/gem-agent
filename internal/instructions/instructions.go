@@ -207,7 +207,9 @@ func readInstruction(path string, cap int) ([]byte, int64, error) {
 		return nil, 0, err
 	}
 	defer func() { _ = root.Close() }()
-	f, err := root.Open(filepath.Base(path))
+	// Only a regular file: an instruction file that is a FIFO held the
+	// load, and startup with it, until somebody wrote to it.
+	f, err := bounded.OpenRegular(root, filepath.Base(path))
 	if err != nil {
 		if strings.Contains(err.Error(), "escapes") {
 			return nil, 0, fmt.Errorf("a link to outside its directory — not read")

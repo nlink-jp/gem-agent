@@ -223,8 +223,8 @@ func CloseAll(list []Skill) {
 // readCapped reads rel through root, at most cap bytes, reporting
 // whether more followed.
 func readCapped(root *os.Root, rel string, cap int) ([]byte, bool, error) {
-	// Not a plain open: a SKILL.md that is a FIFO would hold discovery,
-	// and so startup, until somebody wrote to it.
+	// Not a plain open: a SKILL.md that is a FIFO held discovery, and
+	// so startup, until somebody wrote to it.
 	f, err := bounded.OpenRegular(root, rel)
 	if err != nil {
 		return nil, false, err

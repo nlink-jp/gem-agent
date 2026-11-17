@@ -262,8 +262,8 @@ func consumedDigest(projectDir, name string) (string, bool) {
 	} else if !st.Mode().IsRegular() {
 		return "", false
 	}
-	// Without waiting, and only a regular file: the name was looked at
-	// a moment ago, and may be something else by now.
+	// Only a regular file, looked at before the open and again on what
+	// was opened.
 	f, err := bounded.OpenRegular(root, name)
 	if err != nil {
 		return "", false

@@ -16,13 +16,16 @@
   write access to the skill's directory on this machine (git does not
   carry empty folders). A project skill may now hold 2,000 files, 4,000
   files and folders in all, and folders nested 32 deep; past any of
-  these it is not loaded, with a notice. The same three trees now take
-  0.3 s, 0.008 s and 0.005 s, and a skill at every limit 0.3 s.
-- **A skill file that is a FIFO no longer stops startup.** Skill
-  discovery opened `SKILL.md` and waited for something to write to it,
-  so a project holding such a skill hung the runtime before anything was
-  asked (measured; present since skills were first read). Skill files
-  are now opened without waiting, and only if they are regular files.
+  these it is not loaded, with a notice. The same three trees are now
+  refused in 0.3 s, 0.008 s and 0.005 s, and a skill at every limit is
+  checked in 0.3 s.
+- **A project file that is a FIFO no longer stops startup.** A skill's
+  `SKILL.md`, an instruction file (`AGENTS.md` and the like),
+  `.mcp.json` and the project configuration were each opened plainly,
+  and a FIFO waits for something to write to it: a project holding one
+  hung the runtime — for the project configuration, before the trust
+  question was asked (measured for each; present since each was first
+  read). They are now opened only if they are regular files.
 
 ### Fixed
 
@@ -33,11 +36,13 @@
 
 ### Changed
 
-- **A skill that was already too large to load may be asked about once
-  at the next start.** Past the new limits the check stops sooner than
+- **A skill past the limits may be asked about once at the next
+  start.** That is a skill that was already too large to load, and one
+  that loaded before and is past a new limit — more than 4,000 files
+  and folders, or folders more than 32 deep. The check stops sooner than
   it did, so the record of such a skill no longer matches. Answer once
   and it is recorded again; a run with nobody to ask leaves it out with
-  a note. Either way the skill is still not loaded.
+  a note. Either way the skill is not loaded.
 
 ## [0.104.0] - 2026-11-17
 

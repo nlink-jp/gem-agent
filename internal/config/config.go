@@ -871,7 +871,9 @@ func readCapped(path string, cap int64) ([]byte, error) {
 		return nil, err
 	}
 	defer func() { _ = root.Close() }()
-	f, err := root.Open(filepath.Base(path))
+	// Only a regular file: opened plainly, a FIFO of this name held the
+	// read — and startup — until somebody wrote to it.
+	f, err := bounded.OpenRegular(root, filepath.Base(path))
 	if err != nil {
 		return nil, err
 	}
