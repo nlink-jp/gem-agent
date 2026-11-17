@@ -780,7 +780,7 @@ func TestASkillThePinDoesNotCoverIsNotRead(t *testing.T) {
 	}
 	r.write(skillV2)
 	out := r.viaTool(nil)
-	if strings.Contains(out, "DURIAN") || !strings.Contains(out, "more files than the operator's trust check covers") {
+	if strings.Contains(out, "DURIAN") || !strings.Contains(out, "larger than the operator's trust check covers") {
 		t.Errorf("result = %q", out)
 	}
 	if turn, handled, errMsg := r.viaSlash(); turn != "" || !handled || errMsg != "" {
@@ -788,6 +788,35 @@ func TestASkillThePinDoesNotCoverIsNotRead(t *testing.T) {
 	}
 	if r.asks != 0 || r.events[0] != "uncovered" || !strings.Contains(r.notices[0], "2,000") {
 		t.Errorf("asks=%d events=%v notices=%v", r.asks, r.events, r.notices)
+	}
+}
+
+// The compare's walk has a bound of its own. A directory is not part of
+// a skill's digest, so empty ones added to a trusted skill change
+// nothing a pin holds and ask nothing — and the compare went through
+// every one of them at each use. Past the bound the skill is not
+// loaded, like one with too many files, and nothing is asked.
+func TestASkillWithMoreEntriesThanTheWalkLooksAtIsNotLoaded(t *testing.T) {
+	r := newGuardRig(t)
+	dir := filepath.Dir(r.file)
+	for i := 0; i <= trustpin.SkillWalk; i++ {
+		if err := os.Mkdir(filepath.Join(dir, fmt.Sprintf("d%05d", i)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := r.diskPin()
+	out := r.viaTool(nil)
+	if strings.Contains(out, skillV1) || !strings.Contains(out, "larger than the operator's trust check covers") || !strings.Contains(out, "Do not read its files by other means") {
+		t.Errorf("result = %q", out)
+	}
+	if turn, handled, errMsg := r.viaSlash(); turn != "" || !handled || errMsg != "" {
+		t.Errorf("/skill: turn=%q handled=%v errMsg=%q", turn, handled, errMsg)
+	}
+	if r.asks != 0 || r.events[0] != "uncovered" || !strings.Contains(r.notices[0], "4,000") {
+		t.Errorf("asks=%d events=%v notices=%v", r.asks, r.events, r.notices)
+	}
+	if r.diskPin() != before {
+		t.Error("the pin moved")
 	}
 }
 

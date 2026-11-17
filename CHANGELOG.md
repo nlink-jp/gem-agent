@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Security
+
+- **The check a skill gets when it is used is bounded in what it looks
+  at** (ADR-0119). The compare counted files and stopped at 2,000. It did
+  not count directories, which are also no part of what a trust record
+  holds: empty directories added to a trusted skill asked nothing, and
+  were walked whole every time the skill was used. A directory was also
+  listed whole before the limit was looked at. Measured on lagent v0.28.0, which takes the digest with the same code: 100,000
+  empty directories took 9.6 s per use, and one directory of 200,000
+  files 0.7 s. Nothing reached the model that had not been compared —
+  the cost was time, and getting there takes write access to the skill's
+  directory on this machine (git does not carry empty directories). A
+  project skill may now hold 2,000 files, and 4,000 files and folders in
+  all; past either it is not loaded, with a notice. The same two trees
+  now take 0.3 s and 0.008 s.
+
+### Fixed
+
+- **A skill of exactly 2,000 files is loaded.** It was refused as having
+  more than 2,000 when a folder happened to sort after its last file.
+  If you had trusted such a skill, it asks once more.
+
 ## [0.104.0] - 2026-11-17
 
 ### Security

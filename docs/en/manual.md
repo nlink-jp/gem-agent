@@ -2308,7 +2308,7 @@ slipped in from outside, would become a rule as it stands.
 | The body of `SKILL.md` | 64 KB. Anything beyond is cut, and a note says so |
 | Other files inside the skill | 96 KB. A file over this cannot be loaded |
 | The `SKILL.md` file itself | 1 MiB. A larger one is not treated as a skill, and you are told at startup |
-| The number of files in one project skill | 2,000. A skill with more is not loaded, and you are told when it is about to be used ([13.5](#135-a-skill-that-changed-partway-through)). The limit applies while content is compared ([11.3](#113-asked-again-when-content-changes)) |
+| The size of one project skill | 2,000 files, and 4,000 files and folders in all. A larger skill is not loaded, and you are told when it is about to be used ([13.5](#135-a-skill-that-changed-partway-through)). The limit applies while content is compared ([11.3](#113-asked-again-when-content-changes)) |
 | The number of skills | 100. Any beyond that are left out of the list, and you are told |
 
 Split a long procedure so that `SKILL.md` names files under `references/` and
@@ -2373,9 +2373,9 @@ Things to know:
   `gem-agent trust --accept` in another terminal, then `/clear` or
   `/skills reload`.
 - **A skill that cannot be checked is not loaded.** A skill with more than
-  2,000 files is not loaded, and you are told so (a skill that carries a
-  `node_modules` or a `.venv` is one); remove what the skill does not need
-  and it can be loaded. A skill whose `SKILL.md` is over
+  2,000 files, or with more than 4,000 files and folders in all, is not
+  loaded, and you are told so (a skill that carries a `node_modules` or a
+  `.venv` is one); remove what the skill does not need and it can be loaded. A skill whose `SKILL.md` is over
   1 MiB is not treated as a skill. A listing of a folder inside a skill
   shows only the files and folders that were checked.
 - **Only project skills are compared.** Your own skills in
@@ -2414,7 +2414,7 @@ is reported in one line that begins with `project trust:`.
 | `skill <name> not loaded — using it after your next message asks again` | You answered "Not now", or did not answer | Nothing. It asks when the skill is used after your next message |
 | `skill <name> is still changing …` | The content kept changing while you were being asked | Use it again when the change (a `git pull`, a build) has finished |
 | `skill <name> is not what you trusted …` | The content differed where nobody could be asked, such as a one-shot run | Look at the content, then record it again with `gem-agent trust --accept` |
-| `skill <name> has more than 2,000 files …` | More files than the check covers | Remove what the skill does not need (`node_modules`, `.venv`). It is compared again the next time it is used, and asks if the content changed |
+| `skill <name> is larger than the trust check covers …` | More than 2,000 files, or more than 4,000 files and folders in all | Remove what the skill does not need (`node_modules`, `.venv`). It is compared again the next time it is used, and asks if the content changed |
 | `skill <name> is gone or was replaced …` | The skill's directory or its `SKILL.md` disappeared, or the directory was swapped for another, during the session | `/clear` or `/skills reload` lists the skills again. To use a skill that was swapped in, look at it, record it with `gem-agent trust --accept`, then list the skills again |
 | `could not record the trust of skill <name> (reason) …` | You answered "Trust and load", but the record could not be written | Read the reason in the parentheses. Make `~/.config/gem-agent/policy.toml` writable, then use the skill again |
 
