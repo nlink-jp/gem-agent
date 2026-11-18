@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"os"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -86,11 +85,12 @@ func TestStartupNotesFreeze(t *testing.T) {
 // bufio.Reader (AGENTS.md gotcha): a second reader strands typed-ahead
 // input. Pinned at the source level.
 func TestNoSecondStdinReader(t *testing.T) {
-	src, err := os.ReadFile("root.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(src), "bufio.NewReader(os.Stdin)") {
-		t.Error("root.go wraps os.Stdin in a second bufio.Reader — hand prompts the shared `stdin` instead")
+	// Every file of cmd: the readers are built in startup.go since
+	// ADR-0124, and a check that read root.go alone would pass on nothing.
+	names, src := cmdSources(t)
+	for _, name := range names {
+		if strings.Contains(src[name], "bufio.NewReader(os.Stdin)") {
+			t.Errorf("%s wraps os.Stdin in a second bufio.Reader — hand prompts the shared `stdin` instead", name)
+		}
 	}
 }

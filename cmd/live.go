@@ -520,3 +520,27 @@ func (sess *liveSession) clear() string {
 	sess.sessionStartHooks("clear")
 	return render()
 }
+
+// turn runs one turn of the conversation. A grant since the last turn
+// (ADR-0099 §12 step 7) rebuilds the prompt's roots first — between
+// turns, never during one. Every front end starts its turns here
+// (ADR-0124 §1); under -p no grant can happen, so the check is idle.
+func (sess *liveSession) turn(ctx context.Context, input string, out func(string)) error {
+	if sess.granter.promptStale.Swap(false) {
+		sess.ag.SetSystem(sess.composeSystem())
+	}
+	_, err := sess.ag.Run(ctx, input, out)
+	return err
+}
+
+// slash runs a slash command against the live session: the TUI and the
+// plain REPL called slashOutput with the same twelve arguments, most of
+// them session state. slashOutput keeps its parameters — its tests hand
+// each command exactly the parts it needs.
+func (sess *liveSession) slash(input string, ld loaded, md models, as assembled) (output string, isErr bool, quit bool) {
+	return slashOutput(input, sess.ag, sess.registry, sess.mcpSummary, sess.skillsList,
+		as.reloads,
+		func() string { return usageReport(sess.ag, md.tally, sess.cfg.Model.Name, md.riskModel) },
+		func() string { return memoryListing(ld.memBase, sess.projectDir) },
+		as.rbRunner.Command, appVersion, sess.msgs, sess.clear)
+}
