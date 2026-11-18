@@ -2,7 +2,7 @@
 
 | 項目 | 値 |
 |-------|-----|
-| Status | **Accepted**（2026-11-17） — §8 は ADR-0122 で撤回 |
+| Status | **Superseded by [ADR-0123](0123-the-line-comes-before-the-fix.ja.md)**（2026-11-18）— 2026-11-17 に採択・実装、のちに取り外し |
 | Date | 2026-11-17 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

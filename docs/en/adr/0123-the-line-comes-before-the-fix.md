@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Proposed** (2026-11-18) |
+| Status | **Accepted** (2026-11-18) — implemented |
 | Date | 2026-11-18 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -33,13 +33,13 @@ Every change since v0.100.0 was read again from where an attack would start:
 
 2. **A project skill is no longer compared when it is used** (ADR-0119 superseded). Origin C, and B through a pull. The upstream author who changes a skill already writes the project's code, which the operator builds and runs; the changed text reaches the model until the next `/clear` or start, which compare it as ADR-0074 says, and the commands it leads to still go through the lanes and the approval. A model that rewrites a skill gains nothing in its own session and is caught at the next start. Taken out: the compare at use, the question and its three outcomes, the disable state, `tools.NeedsOperator` and the agent's handling of it, the question dialog's heading and opening choice, the plain prompt's word answer, `/skill` as a step of the turn (it is a text expansion again, ADR-0010 §2), the `skill_trust` / `skill.trust` records, the refusal texts, and the rule that a skill directory whose name holds a control or format character is not listed — it kept the question's text clean, and the TUI already makes every message inert at its ingress (ADR-0093).
 
-3. **A skill's digest is taken by the walk v0.103.1 shipped**, with its cap of 2,000 files. The walk's bound on entries and depth, and its handle for each level, are taken out: what they bound is a tree a repository carries as files, which the file cap already bounds, and what an unbounded tree costs is a slow start. Every tree within the cap digests as before, so no trust record changes.
+3. **A skill's digest is taken by the walk v0.103.1 shipped**, with its cap of 2,000 files. The walk's bound on entries and depth, and its handle for each level, are taken out: what they bound is a tree a repository carries as files, which the file cap already bounds, and what an unbounded tree costs is a slow start. Compared on ten trees — links in and out, a dangling link, a skill directory that is a link, nested and non-ASCII names, a name with a newline, a file over 1 MiB, 2,100 files, unreadable files and folders, a FIFO, the instruction files — every pin and note is the same before and after, except a skill nested 40 deep: v0.104.0–v0.106.0 cut it at 32 levels, and its whole tree is digested now, so a pin taken of it then asks once at the next start.
 
 4. **Opens are the standard library's again** (ADR-0120 superseded): `os.Open`, `Root.Open`, `os.OpenRoot`, `os.ReadDir`, `os.WriteFile` and `os.RemoveAll` where v0.103.1 used them. Taken out: `bounded.OpenRegular`, `OpenRegularPath`, `OpenRegularPathNoFollow`, `OpenDir`, `OpenDirIn`, `OpenRoot`, `WriteFile`, `RemoveAll`, `ErrNotRegular`, the test `TestOpensDoNotWait`, and ADR-0119's look before opening the four project files. What a FIFO at a name does is make an open wait. Git carries no FIFO, so it takes a command the operator approved or a process outside the lanes; the operator ends the wait with an interrupt. Kept: the file tools' own open, which does not wait (ADR-0072 §4.8, before v0.100.0), and the file-read child opening only the roots a call names (ADR-0114 §4, a share that stops answering).
 
 5. **The startup checks are v0.105.0's again** (ADR-0121 superseded, ADR-0122 §3 withdrawn): probes made exclusively under random names (ADR-0073 R1), the control is the same command outside the sandbox, removal is by path, the scratch probe has its fixed name, and a probe command has no time bound. The clipboard capture's file is made in the temporary directory again, under the random name it had. Taken out: `internal/sandbox/probe.go`'s held directories and the test `TestTheChecksGoThroughHeldDirectories`. Each of these needed origin D (ADR-0121's own table of measurements).
 
-6. **The trust record on disk is the record.** v0.103.1 kept the session's pins when the policy file no longer held the project's pins. The policy file is out of every lane's reach; it loses them when the operator, or a process outside the lanes, removes them. Taken out: that fallback. Kept: a write into a file the session left out says so (the same commit's other half), and the comparison with the file on disk (v0.103.1).
+6. **The trust record on disk is the record.** v0.103.1 kept the session's pins when the policy file no longer held the project's pins. The policy file is out of every lane's reach; it loses them when the operator, or a process outside the lanes, removes them. Taken out: that fallback, and `adoptPolicy`, which kept the pins through the session's own writes. Kept: a write into a file the session left out says so (the same commit's other half), and the comparison with the file on disk (v0.103.1).
 
 7. **Kept, judged on the same four answers:**
 
@@ -58,7 +58,7 @@ Every change since v0.100.0 was read again from where an attack would start:
 - No question about a changed skill. A skill changed during a session is loaded as it is now until `/clear` or the next start, which leave it out and name it, as for an instruction file.
 - A FIFO at a name the runtime opens makes it wait until it is interrupted.
 - The startup checks run as in v0.105.0.
-- The documents that describe what is taken out are changed with it: README and README.ja (the skill question), the manual and the configuration, integration and sessions references in both languages, AGENTS.md.
+- The documents that describe what is taken out are changed with it: README and README.ja (the skill question), the manual and the configuration and integration references in both languages, AGENTS.md, and ADR-0074's amendment.
 
 **Accepted, and written down:**
 
@@ -72,7 +72,7 @@ Every change since v0.100.0 was read again from where an attack would start:
 
 ## Tests the design requires
 
-- The digest of every tree the existing tests distinguish is the same by the walk taken back as by the walk taken out.
+- The digest of each kind of tree a pin distinguishes is the same by the walk taken back as by the walk taken out (compared once, on the trees listed in decision 3).
 - The tests that held what is taken out go with it; the tests v0.103.1 and v0.105.0 had for the same code come back where they still describe it.
 - `make check` passes, and the startup checks pass on APFS.
 
