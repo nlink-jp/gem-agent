@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -338,9 +340,7 @@ func (in mcpIntake) save(server, tool, ext string, data []byte) tools.Saved {
 // A file already at that name is reused only when its own bytes hash to
 // the name. MCP servers and write-lane commands can write the work
 // directory (ADR-0058 §4), so a name proves nothing about its content;
-// a mismatching file is replaced (ADR-0105 §1). The directory is the
-// one the session took, and the file is made and named in it through
-// that — see saveResult.
+// a mismatching file is replaced (ADR-0105 §1).
 func (in mcpIntake) write(server, tool, ext string, data []byte) (string, error) {
 	dir := in.workDir()
 	if dir == "" {
@@ -348,10 +348,70 @@ func (in mcpIntake) write(server, tool, ext string, data []byte) (string, error)
 	}
 	path := in.pathFor(server, tool, ext, data)
 	name := filepath.Base(path)
-	if err := saveResult(dir, name, data); err != nil {
+	if sum, err := fileSHA256(path, int64(len(data))); err == nil && sum == sha256.Sum256(data) {
+		return path, nil
+	}
+	// Temp + rename, so a reader never sees a half-written file and a
+	// crash never leaves one that looks complete.
+	tmp, err := os.CreateTemp(dir, name+".tmp-")
+	if err != nil {
+		return "", err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		// Cleanup on a path that has already failed: the write error is
+		// what the caller needs, and a failure to tidy up after it does
+		// not change the answer.
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return "", err
+	}
+	// This Close is checked, unlike the one above: it is the last thing
+	// between the data and durability, and a file that closed badly must
+	// never be renamed into place looking complete.
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return "", err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		_ = os.Remove(tmp.Name())
 		return "", err
 	}
 	return path, nil
+}
+
+// fileSHA256 hashes the file at path as a stream, when it is a regular
+// file of the expected size. What sits at a name in the work directory
+// may be anything — a FIFO would block the open, a link to /dev/zero
+// would hash for ever — so anything else is simply not reused
+// (independent review). The name was lstat'd and then opened plainly,
+// and a name swapped between the two waited or never ended: it is
+// opened without waiting and not through a link, the kind and the size
+// are read from what was opened, and no more than that size is hashed
+// (ADR-0120 §9).
+func fileSHA256(path string, size int64) ([sha256.Size]byte, error) {
+	var sum [sha256.Size]byte
+	f, err := openSavedResult(path)
+	if err != nil {
+		return sum, err
+	}
+	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil {
+		return sum, err
+	}
+	if st.Size() != size {
+		return sum, fmt.Errorf("%s is not the saved result", path)
+	}
+	h := sha256.New()
+	n, err := io.Copy(h, io.LimitReader(f, size+1))
+	if err != nil {
+		return sum, err
+	}
+	if n != size {
+		return sum, fmt.Errorf("%s is not the saved result", path)
+	}
+	copy(sum[:], h.Sum(nil))
+	return sum, nil
 }
 
 // extForMIME maps a content type to a file extension. An unknown type

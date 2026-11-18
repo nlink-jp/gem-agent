@@ -2919,13 +2919,6 @@ handling above applies. The same holds when another program replaces one of
 those files while the check is running: the notice then says the file was
 replaced.
 
-The directories the sandbox lets commands write — the project and the session's
-work directory — are fixed when the session takes them. If a command replaces
-one of them (removes it and leaves a link under its name), the next `/clear` or
-added directory reports `sandbox unverified: … is no longer the directory this
-session took`, and every shell command asks before it runs. Restart gem-agent to
-have the sandbox again.
-
 When the configuration enables the sandbox but the OS cannot apply it,
 gem-agent does not start. It never silently runs without the sandbox.
 

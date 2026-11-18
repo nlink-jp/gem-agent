@@ -2,31 +2,6 @@
 
 ## [Unreleased]
 
-### Security
-
-- **A lane that replaces its work directory by a link no longer gains
-  the place the link leads to** (ADR-0122). The sandbox is built at
-  startup and again in a session — at `/clear`, and when a directory
-  is granted — and every build resolved the project's and the work
-  directory's names anew. A command in the write lane can remove its
-  work directory and put a link under the name; measured on the real
-  profile, the next build then let the write lane write wherever the
-  link led, with the startup checks passing. The same held for a
-  project directory the lane could empty (one with no git
-  configuration and no instruction file). The runtime now opens each
-  such place once and holds it: the sandbox is anchored on what was
-  opened, never on a name read again. A rebuild that finds the
-  project, the work directory or the temporary directory replaced
-  builds nothing, says which one, and every shell command asks you
-  until you restart. (A temporary directory set with `TMPDIR` could
-  be moved aside the same way; the review of this fix found it.)
-  Results saved into the work directory and
-  the runtime's own directories there are made through the directory
-  it holds too — a result saved by path was made where the link led.
-  This closes the cause behind the last releases' fixes: every
-  function that names a file by path is now listed with what it is
-  for, and a test fails on one that is not.
-
 ## [0.106.0] - 2026-11-18
 
 ### Security

@@ -36,7 +36,6 @@ func TestRotateWorkDirMovesEveryConsumer(t *testing.T) {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		taken(t, d)
 	}
 	execFn, enf, _, err := buildExecFn(true, project, oldWork, nil, nil, nil, nil)
 	if err != nil {

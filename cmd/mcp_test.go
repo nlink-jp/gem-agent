@@ -149,7 +149,7 @@ func TestMCPAdapterRecordsWhatItSaved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := reg.UseWorkDir(taken(t, t.TempDir())); err != nil {
+	if err := reg.UseWorkDir(t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	for i, isErr := range []bool{false, true} {
