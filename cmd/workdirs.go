@@ -124,6 +124,7 @@ func runWorkdirsClean(cmd *cobra.Command, args []string) error {
 	var picked []workdir.Info
 	if len(args) > 0 {
 		stat := func(id string) (workdir.Info, error) { return workdir.Stat(projectDir, id) }
+		seen := map[string]bool{}
 		for _, typed := range args {
 			in, err := resolveWorkdir(typed, infos, more, stat)
 			if err != nil {
@@ -132,6 +133,10 @@ func runWorkdirsClean(cmd *cobra.Command, args []string) error {
 			if live(in.ID) {
 				return fmt.Errorf("session %s is running — not deleting its work directory", in.ID)
 			}
+			if seen[in.ID] {
+				continue // named twice, by a prefix and its id, say: listed and counted once
+			}
+			seen[in.ID] = true
 			picked = append(picked, in)
 		}
 	} else {
@@ -198,7 +203,10 @@ func resolveWorkdir(typed string, infos []workdir.Info, cut bool, stat func(stri
 	if st, err := stat(typed); err == nil {
 		return st, nil
 	}
-	if !session.ValidPrefix(typed) {
+	// A full id names that session and no other, as for --resume: an old
+	// timestamp id is also a prefix of the same second's "-2", and must
+	// not fall through to it when its own directory is gone.
+	if session.ValidID(typed) || !session.ValidPrefix(typed) {
 		return workdir.Info{}, fmt.Errorf("no work directory for session %s here", typed)
 	}
 	var matches []workdir.Info

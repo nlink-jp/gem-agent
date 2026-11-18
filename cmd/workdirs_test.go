@@ -174,7 +174,8 @@ func TestResolveWorkdirByPrefix(t *testing.T) {
 	a := workdir.Info{ID: "3f2a9c1e-0b7d-4e21-9a3c-5d6e7f809a1b"}
 	b := workdir.Info{ID: "3f2a1111-0b7d-4e21-9a3c-5d6e7f809a1b"}
 	c := workdir.Info{ID: "77aa0000-0b7d-4e21-9a3c-5d6e7f809a1b"}
-	infos := []workdir.Info{a, b, c}
+	d := workdir.Info{ID: "20250101-120000-2"}
+	infos := []workdir.Info{a, b, c, d}
 	far := workdir.Info{ID: "99bb0000-0b7d-4e21-9a3c-5d6e7f809a1b"}
 	stat := func(id string) (workdir.Info, error) {
 		if id == far.ID {
@@ -197,6 +198,11 @@ func TestResolveWorkdirByPrefix(t *testing.T) {
 		{typed: "4444", errHas: "no work directory for session 4444"},
 		{typed: "4444", cut: true, errHas: "among the first"},
 		{typed: "77aa", cut: true, errHas: "listing was cut"},
+		// A full id whose directory is gone names nothing, even when it
+		// is a prefix of another (the same second's "-2"), and a full id
+		// beyond a cut listing is not called a prefix.
+		{typed: "20250101-120000", errHas: "no work directory for session 20250101-120000"},
+		{typed: "4444aaaa-0b7d-4e21-9a3c-5d6e7f809a1b", cut: true, errHas: "no work directory for session 4444aaaa"},
 	} {
 		got, err := resolveWorkdir(tc.typed, infos, tc.cut, stat)
 		if tc.errHas != "" {
@@ -228,5 +234,22 @@ func TestWorkdirsCleanTakesAPrefix(t *testing.T) {
 	}
 	if infos, _, _ := workdir.List(project, ""); len(infos) != 2 {
 		t.Fatalf("%d dirs left, want the other two", len(infos))
+	}
+}
+
+// A directory named twice — by a prefix and by its full id — is listed
+// and counted once.
+func TestWorkdirsCleanCountsADirectoryOnce(t *testing.T) {
+	project := workdirsFixture(t)
+	const id = "3f2a9c1e-0b7d-4e21-9a3c-5d6e7f809a1b"
+	if _, err := workdir.Ensure(project, id); err != nil {
+		t.Fatal(err)
+	}
+	flagWorkdirsYes = true
+	t.Cleanup(func() { flagWorkdirsYes = false })
+
+	out := runWorkdirs(t, "", "clean", id[:8], id)
+	if !strings.Contains(out, "delete 1 dir(s)") || strings.Count(out, "deleted "+id) != 1 {
+		t.Fatalf("a directory named twice was counted twice:\n%s", out)
 	}
 }
