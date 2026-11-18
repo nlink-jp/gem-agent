@@ -310,21 +310,30 @@ func dirDigest(dir string, maxFiles int) (string, bool) {
 		if err != nil {
 			return nil
 		}
+		rel, _ := filepath.Rel(dir, path)
+		rel = filepath.ToSlash(rel)
+		var line string
+		switch {
+		case d.Type()&fs.ModeSymlink != 0:
+			target, _ := os.Readlink(path)
+			line = "link:" + target
+		case d.Type().IsRegular():
+			dg, ok := fileDigest(path)
+			if !ok {
+				return nil // not digested, so not counted
+			}
+			line = dg
+		default:
+			return nil // a directory or anything else is no entry
+		}
+		// The cap is met by an entry about to be added, not by the next
+		// callback of any kind: a skill of exactly maxFiles files with a
+		// folder sorting after the last of them is covered whole.
 		if len(entries) >= maxFiles {
 			cut = true
 			return fs.SkipAll
 		}
-		rel, _ := filepath.Rel(dir, path)
-		rel = filepath.ToSlash(rel)
-		switch {
-		case d.Type()&fs.ModeSymlink != 0:
-			target, _ := os.Readlink(path)
-			entries = append(entries, entry{rel, "link:" + target})
-		case d.Type().IsRegular():
-			if dg, ok := fileDigest(path); ok {
-				entries = append(entries, entry{rel, dg})
-			}
-		}
+		entries = append(entries, entry{rel, line})
 		return nil
 	})
 	sort.Slice(entries, func(i, j int) bool { return entries[i].rel < entries[j].rel })
