@@ -221,6 +221,21 @@ func TestDirListsNoMoreThanItIsAskedFor(t *testing.T) {
 	}
 }
 
+// A name that is gone between the listing and the look at it is left
+// out, and the listing goes on: a skill being written while it is
+// walked is not an error.
+func TestDirLeavesOutANameThatIsGone(t *testing.T) {
+	_, _, d := dirFixture(t)
+	list, err := d.kinds([]string{"file", "gone", "sub", "gone-too", "fifo"})
+	var names []string
+	for _, e := range list {
+		names = append(names, e.Name)
+	}
+	if err != nil || strings.Join(names, ", ") != "file, sub, fifo" {
+		t.Errorf("listed %v, %v: want the three that are there", names, err)
+	}
+}
+
 // A listing is the one an os.Root gives: the same names in the same
 // order with the same kinds, and stopped at the same name when one
 // cannot be looked at. The pins on disk were taken from that listing,

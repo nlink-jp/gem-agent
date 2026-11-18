@@ -2718,7 +2718,7 @@ func removeFallbackScratch() {
 	fallbackScratchMu.Lock()
 	defer fallbackScratchMu.Unlock()
 	if fallbackScratch != "" && strings.Contains(filepath.Base(fallbackScratch), "gem-agent-read-scratch-") {
-		_ = os.RemoveAll(fallbackScratch)
+		_ = bounded.RemoveAll(fallbackScratch)
 		fallbackScratch = ""
 	}
 }

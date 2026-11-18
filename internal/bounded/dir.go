@@ -75,15 +75,10 @@ func (d *Dir) List(n int) ([]Entry, error) {
 	var out []Entry
 	for len(out) < n {
 		names, rerr := l.Readdirnames(n - len(out))
-		for _, name := range names {
-			typ, err := d.kind(name)
-			if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.EBADF) {
-				continue
-			}
-			if err != nil {
-				return out, err
-			}
-			out = append(out, Entry{Name: name, Type: typ})
+		listed, err := d.kinds(names)
+		out = append(out, listed...)
+		if err != nil {
+			return out, err
 		}
 		if errors.Is(rerr, io.EOF) || (rerr == nil && len(names) == 0) {
 			break
@@ -91,6 +86,24 @@ func (d *Dir) List(n int) ([]Entry, error) {
 		if rerr != nil {
 			return out, rerr
 		}
+	}
+	return out, nil
+}
+
+// kinds gives each of names its kind, in their order: one that is gone
+// since it was listed is left out, and one that cannot be looked at
+// ends it there, with what came before it and the error.
+func (d *Dir) kinds(names []string) ([]Entry, error) {
+	var out []Entry
+	for _, name := range names {
+		typ, err := d.kind(name)
+		if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.EBADF) {
+			continue
+		}
+		if err != nil {
+			return out, err
+		}
+		out = append(out, Entry{Name: name, Type: typ})
 	}
 	return out, nil
 }

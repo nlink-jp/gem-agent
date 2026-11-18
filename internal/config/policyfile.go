@@ -186,7 +186,7 @@ func readPolicyFile(path string) ([]byte, error) {
 		return nil, err
 	}
 	if more {
-		return nil, fmt.Errorf("larger than %d bytes", policyFileCap)
+		return nil, fmt.Errorf("read %s: larger than %d bytes", path, policyFileCap)
 	}
 	return data, nil
 }
@@ -203,7 +203,7 @@ func LoadPolicyFile(path string) (*PolicyFile, error) {
 	}
 	raw, err := readPolicyFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return nil, err // it names the file
 	}
 	_, err = toml.Decode(string(raw), pf)
 	var unknown *toml.UnknownKeysError

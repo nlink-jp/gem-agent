@@ -46,6 +46,37 @@ func TestListDoesNotWaitOnAFifo(t *testing.T) {
 	}
 }
 
+// A clean removes the session's cache before its work directory. The
+// directory that holds the caches is in the state tree, and a FIFO
+// under its name held the removal after the operator had confirmed it:
+// the first removal fails, and os.RemoveAll then opens the parent
+// plainly. It is an error at once, and the work directory is left for
+// a retry to find.
+func TestRemoveDoesNotWaitOnAFifoWhereTheCachesWere(t *testing.T) {
+	const proj = "/some/project"
+	root := t.TempDir()
+	t.Setenv(statedir.EnvRoot, root)
+	work, err := Ensure(proj, "sid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "f"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cache, ok := ApprovedCachePath(work)
+	if !ok {
+		t.Fatal("the work directory has no cache path")
+	}
+	fifo := fifoAt(t, filepath.Dir(cache))
+	returnsAtOnce(t, fifo, func() { err = Remove(proj, "sid") })
+	if err == nil {
+		t.Error("Remove reported success with a FIFO where the caches were")
+	}
+	if _, err := os.Stat(filepath.Join(work, "f")); err != nil {
+		t.Errorf("the work directory is gone, so nothing lists the session: %v", err)
+	}
+}
+
 // fifoAt makes a FIFO at path, with its parent directories.
 func fifoAt(t *testing.T, path string) string {
 	t.Helper()

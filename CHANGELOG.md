@@ -29,7 +29,14 @@
   skill's folders the same way now: a folder swapped for a FIFO while
   the skill was being checked held the check — six tries of six — and
   is refused instead. The trust records are what they were, and the
-  check takes no longer. The configuration file you pass with
+  check takes no longer. The review before this release found three
+  more opens that waited, and they are closed as well: comparing a
+  result with one already saved under its name, when that name was
+  swapped for a FIFO; removing a session's work directory when the
+  directory of caches beside it had become a FIFO — `workdirs clean`
+  did not come back after you confirmed; and writing one of the
+  runtime's own files at the moment its name was swapped. The
+  configuration file you pass with
   `--config` and the `headers_file` it names are unchanged — a FIFO there still waits until it is
   written, which may be what you mean.
 

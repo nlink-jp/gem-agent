@@ -382,25 +382,33 @@ func (in mcpIntake) write(server, tool, ext string, data []byte) (string, error)
 // fileSHA256 hashes the file at path as a stream, when it is a regular
 // file of the expected size. What sits at a name in the work directory
 // may be anything — a FIFO would block the open, a link to /dev/zero
-// would hash for ever — so the name is lstat'd first and anything else
-// is simply not reused (independent review).
+// would hash for ever — so anything else is simply not reused
+// (independent review). The name was lstat'd and then opened plainly,
+// and a name swapped between the two waited or never ended: it is
+// opened without waiting and not through a link, the kind and the size
+// are read from what was opened, and no more than that size is hashed
+// (ADR-0120 §9).
 func fileSHA256(path string, size int64) ([sha256.Size]byte, error) {
 	var sum [sha256.Size]byte
-	st, err := os.Lstat(path)
-	if err != nil {
-		return sum, err
-	}
-	if !st.Mode().IsRegular() || st.Size() != size {
-		return sum, fmt.Errorf("%s is not the saved result", path)
-	}
-	f, err := os.Open(path)
+	f, err := openSavedResult(path)
 	if err != nil {
 		return sum, err
 	}
 	defer func() { _ = f.Close() }()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	st, err := f.Stat()
+	if err != nil {
 		return sum, err
+	}
+	if st.Size() != size {
+		return sum, fmt.Errorf("%s is not the saved result", path)
+	}
+	h := sha256.New()
+	n, err := io.Copy(h, io.LimitReader(f, size+1))
+	if err != nil {
+		return sum, err
+	}
+	if n != size {
+		return sum, fmt.Errorf("%s is not the saved result", path)
 	}
 	copy(sum[:], h.Sum(nil))
 	return sum, nil

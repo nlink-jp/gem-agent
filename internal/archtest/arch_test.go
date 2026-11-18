@@ -256,12 +256,17 @@ func TestReadsAreBounded(t *testing.T) {
 // Root methods are held too: the first form of this test left them
 // out, and a trace file opened to truncate went unseen. So are the raw
 // opens: the one place that opens from a directory's descriptor is
-// bounded.Dir (ADR-0120 §8).
+// bounded.Dir (ADR-0120 §8). And os.RemoveAll and os.OpenInRoot, which
+// open a name's parent plainly: the release review found a removal that
+// waited on a FIFO where the parent had been, and an exception whose
+// reason was a look before a plain open — the form §7 had measured as
+// beaten (ADR-0120 §9).
 func TestOpensDoNotWait(t *testing.T) {
 	calls := collectCalls(t, repoRoot(t), boundedPackages, []string{
 		"os.Open", "os.OpenFile", "os.OpenRoot", "os.Create", "os.WriteFile", "toml.DecodeFile",
 		".Open", ".OpenFile", ".OpenRoot", ".Create", ".ReadFile", ".WriteFile",
 		"unix.Open", "unix.Openat", "syscall.Open", "syscall.Openat",
+		"os.RemoveAll", "os.OpenInRoot",
 	})
 	var kept []call
 	for _, c := range calls {
@@ -282,7 +287,6 @@ func TestOpensDoNotWait(t *testing.T) {
 		"internal/tools Registry.replaceFile":      "O_EXCL: the temporary a write lands in is created, never opened over what is there",
 		"internal/tools Registry.shellSpoolOpener": "O_EXCL: a spool is created, never opened over what is there",
 		"cmd descriptorPathOf":                     "`.` of a root that is already open",
-		"cmd fileSHA256":                           "lstat'd just before as a regular file of the size that was saved; ADR-0020 and ADR-0021 cite this file by line",
 		"internal/config LoadWithOverrides":        "the operator's own configuration, named with --config: a FIFO or a process substitution there may be meant (ADR-0120 §5, undecided)",
 		"internal/docext readMember":               "an entry of a zip archive already open, not a name on disk",
 		"internal/sandbox verifyAddedRoot":         "probe files inside a directory just made under a random name",

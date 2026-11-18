@@ -307,12 +307,12 @@ func Remove(projectDir, sessionID string) error {
 	// The cache goes first: only the work directory is enumerated, so a
 	// failure here must leave it for a retry to find.
 	if cache, ok := ApprovedCachePath(dir); ok {
-		if err := os.RemoveAll(cache); err != nil {
+		if err := bounded.RemoveAll(cache); err != nil {
 			return err
 		}
 		RemoveIfEmpty(filepath.Dir(cache))
 	}
-	if err := os.RemoveAll(dir); err != nil {
+	if err := bounded.RemoveAll(dir); err != nil {
 		return err
 	}
 	RemoveIfEmpty(filepath.Dir(dir))

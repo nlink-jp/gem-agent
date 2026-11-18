@@ -105,6 +105,18 @@ func TestDigestRootEqualsThePinsAlreadyRecorded(t *testing.T) {
 				mustWrite(t, filepath.Join(dir, filepath.FromSlash(rel)), []byte(rel))
 			}
 		},
+		// The walk goes on past a directory it cannot open: what sorts
+		// after it is in the pin.
+		"a directory that cannot be opened, and what comes after it": func(t *testing.T, dir string) {
+			for _, rel := range []string{"SKILL.md", "closed/inside", "later/file", "zz"} {
+				mustWrite(t, filepath.Join(dir, filepath.FromSlash(rel)), []byte(rel))
+			}
+			closed := filepath.Join(dir, "closed")
+			if err := os.Chmod(closed, 0); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(closed, 0o755) })
+		},
 		"an unreadable file": func(t *testing.T, dir string) {
 			mustWrite(t, filepath.Join(dir, "SKILL.md"), []byte("s\n"))
 			mustWrite(t, filepath.Join(dir, "secret"), []byte("x\n"))

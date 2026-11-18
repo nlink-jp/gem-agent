@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"unicode/utf8"
@@ -65,6 +66,33 @@ func OpenRegularPath(path string) (*os.File, error) {
 		return nil, &os.PathError{Op: "open", Path: path, Err: ErrNotRegular}
 	}
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	return regular(f, path)
+}
+
+// OpenRegularPathNoFollow is OpenRegularPath for a name that has to be
+// the file itself: a link is refused, to a regular file as well. It is
+// for a name in a directory the session's commands and the MCP servers
+// write, where a look and then a plain open waited on a name swapped
+// for a FIFO, and a link could lead to a file that never ends
+// (ADR-0120 §9).
+func OpenRegularPathNoFollow(path string) (*os.File, error) {
+	st, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !st.Mode().IsRegular() {
+		return nil, &os.PathError{Op: "open", Path: path, Err: ErrNotRegular}
+	}
+	return openRegularNoFollow(path)
+}
+
+// openRegularNoFollow is OpenRegularPathNoFollow after its look: what
+// still holds when the name is something else by now.
+func openRegularNoFollow(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -131,12 +159,64 @@ func OpenRoot(path string) (*os.Root, error) {
 // writing a FIFO somebody reads is not writing the file: a memory, the
 // policy file's temporary and the like are files this runtime writes
 // and reads back (ADR-0120). The kind is looked at first, through a
-// link as the write goes; a name swapped in between still waits.
+// link as the write goes.
+//
+// The open cannot wait either, and the kind is looked at again on what
+// was opened, as for a read: the first form of this looked and then
+// called os.WriteFile, and a name swapped for a FIFO in between waited
+// (ADR-0120 §9). Without waiting, a FIFO nobody reads does not open at
+// all, and one somebody reads opens and is refused. The file is
+// emptied after that look and not by the open, so nothing but a
+// regular file is touched.
 func WriteFile(path string, data []byte, perm os.FileMode) error {
 	if st, err := os.Stat(path); err == nil && !st.Mode().IsRegular() {
 		return &os.PathError{Op: "open", Path: path, Err: ErrNotRegular}
 	}
-	return os.WriteFile(path, data, perm)
+	return writeFile(path, data, perm)
+}
+
+// writeFile is WriteFile after its look.
+func writeFile(path string, data []byte, perm os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|syscall.O_NONBLOCK, perm)
+	if errors.Is(err, syscall.ENXIO) {
+		// What a FIFO with no reader, or a device that is not there,
+		// answers an open that does not wait.
+		return &os.PathError{Op: "open", Path: path, Err: ErrNotRegular}
+	}
+	if err != nil {
+		return err
+	}
+	if f, err = regular(f, path); err != nil {
+		return err
+	}
+	err = f.Truncate(0)
+	if err == nil {
+		_, err = f.Write(data)
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
+}
+
+// RemoveAll is os.RemoveAll for a path whose parent may no longer be a
+// directory. os.RemoveAll opens the parent plainly once the first
+// removal fails, and a FIFO where the parent was held it: measured for
+// a session's cache directory, whose parent is in the state tree
+// (ADR-0120 §9). The parent is opened as a root, which is refused at
+// once when it is not a directory, and the name is removed from it. A
+// parent that is not there is nothing to remove, as for os.RemoveAll.
+func RemoveAll(path string) error {
+	path = filepath.Clean(path)
+	root, err := OpenRoot(filepath.Dir(path))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	return root.RemoveAll(filepath.Base(path))
 }
 
 // ReadAll reads at most cap bytes from r. more reports that r held

@@ -24,6 +24,9 @@ func TestOpenRegularDoesNotWaitOnANameSwappedForAFifo(t *testing.T) {
 	for how, open := range map[string]func(root *os.Root, dir, name string) (*os.File, error){
 		"under a root": func(root *os.Root, _, name string) (*os.File, error) { return OpenRegular(root, name) },
 		"by path":      func(_ *os.Root, dir, name string) (*os.File, error) { return OpenRegularPath(filepath.Join(dir, name)) },
+		"by path, no link followed": func(_ *os.Root, dir, name string) (*os.File, error) {
+			return OpenRegularPathNoFollow(filepath.Join(dir, name))
+		},
 		"from a directory held open": func(root *os.Root, _, name string) (*os.File, error) {
 			d, err := DirOf(root)
 			if err != nil {
