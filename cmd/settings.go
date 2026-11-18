@@ -559,7 +559,7 @@ func (s *settingsStore) applyExclude(ch tui.SettingChange) (tui.SettingsData, st
 	if err != nil {
 		return s.data(), "could not save the exclusion: " + err.Error()
 	}
-	adoptPolicy(s.policyFile, fresh, s.projectDir)
+	*s.policyFile = *fresh
 	if s.reloadMCP == nil {
 		return s.data(), ch.Exclude + ": saved, but this session cannot reconnect MCP"
 	}
@@ -633,7 +633,7 @@ func (s *settingsStore) applyPolicy(ch tui.SettingChange) (tui.SettingsData, str
 	// Through the pointer: runREPL holds the same PolicyFile for the
 	// pin checks, and a rebound pointer would leave it stale
 	// (verification D).
-	adoptPolicy(s.policyFile, fresh, s.projectDir)
+	*s.policyFile = *fresh
 	data, err := s.Rebuild()
 	if err != nil {
 		return s.data(), "policy saved but not applied: " + err.Error()

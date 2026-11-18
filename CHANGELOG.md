@@ -35,6 +35,14 @@
   names nobody can guess, and are made so that nothing already there is
   opened. The clipboard capture's file is made in the temporary folder
   again, under a name nobody can guess.
+- **The trust record on disk is the record, even when it no longer
+  holds the project's pins** (ADR-0123). v0.103.1 kept the pins a
+  session started with when the policy file was emptied, deleted and
+  rewritten, or restored from an older copy, and kept them through the
+  session's own writes. The policy file is somewhere no command
+  gem-agent runs can write, so pins it lost were removed by you or by a
+  program outside gem-agent. A policy file that is missing or cannot be
+  read still leaves the session comparing with what it last read.
 - **A project skill is no longer compared each time it is used, and
   nothing asks you about it mid-session** (ADR-0123). v0.104.0 compared a
   project skill with what you trusted at every use and, when it had

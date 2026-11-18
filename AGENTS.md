@@ -309,25 +309,14 @@ a new hook) is an architecture change and takes the same rows as a
   --accept` in another terminal — the very thing the notice tells them
   to run. It is the read side of what `MutatePolicyFile` closed for
   writes. The read does not replace the session's copy (other
-  goroutines read it). The file can re-trust; it cannot un-pin: one
-  that is gone, does not parse, or no longer holds pins the session has
-  for the project leaves the session's copy as the record, so the
-  comparison may leave a changed file out, never load one. The third
-  case was found by the release review — "no pins" reads as "nothing
-  pinned yet" and loads everything, and a policy file deleted and
-  rewritten by a session in another project is exactly that. A write
-  into a name the session left out is never re-pinned; `repinnable`
-  answers false for it so the write says so, even when the record
-  matches the file again.
-  That guard rests on the session's copy remembering the pins, so the
-  copy is replaced in one place only, `adoptPolicy`, which keeps pins
-  the file lost: before it, a `/settings` change after the file was
-  deleted made the copy forget them (the second review round; released
-  versions had this). Accepted residue, fail-closed: with the record
-  lost, an approved write records a set holding only the written name,
-  so the other trusted files read as "added" and stay out until a
-  restart re-trusts them — the session does not re-create a record the
-  operator removed. `TestNoPinIsComparedWithTheStartupCopy` keeps a new
+  goroutines read it). A file that is gone or does not parse leaves
+  the session's copy as the record; a file that was read is the record,
+  pins or none — the policy file is out of every lane's reach, and the
+  session does not keep pins against it (ADR-0123 §6; a fallback that
+  did, and `adoptPolicy` that carried it through writes, were taken
+  out). A write into a name the session left out is never re-pinned;
+  `repinnable` answers false for it so the write says so, even when the
+  record matches the file again. `TestNoPinIsComparedWithTheStartupCopy` keeps a new
   reader from going back to `policyFile.PinsFor`. lagent has the same
   fix.
 - **A record a server can write is not a record.** ADR-0105's first

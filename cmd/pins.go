@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -75,12 +74,6 @@ func checkPins(cfg *config.Config, policyFile *config.PolicyFile, policyPath, pr
 	notes = append(notes, capNotes...)
 	rec, recErr := recordedPolicy(policyPath, projectDir, policyFile)
 	switch {
-	case errors.Is(recErr, errRecordLost):
-		// The file was read; it is the record that is missing. Each file's
-		// own note still names `trust --accept`, which cannot help when the
-		// project's trust went with the pins: a restart is what records
-		// them again.
-		notes = append(notes, "project trust: the policy file no longer records this project's trusted files — comparing with what this session last read; restart to record them again")
 	case recErr != nil:
 		notes = append(notes, fmt.Sprintf("project trust: could not read the policy file (%v) — comparing with what this session last read", recErr))
 	}
@@ -320,15 +313,11 @@ func savePins(policyPath, projectDir string, pins trustpin.Pins, policyFile *con
 // The session's own copy is not replaced here. Other goroutines read it
 // (the settings panel), and a mutation is what refreshes it.
 //
-// The file can re-trust; it cannot un-pin. A file that is gone, that
-// cannot be read, or that no longer holds pins this session has for the
-// project leaves the session's copy as the record, so the comparison
-// errs toward leaving a changed file out, never toward loading one.
-// The last case is the one that would otherwise fail open: "no pins"
-// reads as "nothing pinned yet", which loads everything, and a policy
-// file deleted and then rewritten by a session in another project is
-// exactly that. The error is for a caller that can say so.
-var errRecordLost = errors.New("the policy file no longer records this project's trusted files")
+// A file that is gone or cannot be read leaves the session's copy as
+// the record: a read that failed is not a record. A file that was read
+// is the record, pins or none: the policy file is out of every lane's
+// reach, so pins it lost were removed by the operator or by a process
+// outside the lanes (ADR-0123 §6).
 
 func recordedPolicy(policyPath, projectDir string, session *config.PolicyFile) (*config.PolicyFile, error) {
 	if policyPath == "" {
@@ -344,41 +333,7 @@ func recordedPolicy(policyPath, projectDir string, session *config.PolicyFile) (
 	if err != nil {
 		return session, err
 	}
-	if session != nil && session.HasPins(projectDir) && !fresh.HasPins(projectDir) {
-		return session, errRecordLost
-	}
 	return fresh, nil
-}
-
-// adoptPolicy makes the session's copy follow the file after a write,
-// with one exception: pins the session holds for the project stay when
-// the file has none. "The file can re-trust; it cannot un-pin"
-// (recordedPolicy) holds only while the session's copy remembers the
-// pins, and every write replaced that copy with the file. A /settings
-// change made after the policy file was deleted recreated it empty, the
-// copy followed, and the next re-check read "nothing pinned yet" and
-// loaded what had changed. Every `= *fresh` in this package goes through
-// here (TestTheSessionsCopyIsReplacedInOnePlace).
-func adoptPolicy(session, fresh *config.PolicyFile, projectDir string) {
-	if session == nil || fresh == nil {
-		return
-	}
-	var kept config.ProjectPolicy
-	had := session.HasPins(projectDir)
-	if had {
-		kept = session.Projects[session.ProjectKey(projectDir)]
-	}
-	*session = *fresh
-	if !had || session.HasPins(projectDir) {
-		return
-	}
-	if session.Projects == nil {
-		session.Projects = map[string]config.ProjectPolicy{}
-	}
-	key := session.ProjectKey(projectDir)
-	entry := session.Projects[key]
-	entry.Pins, entry.PinnedAt = kept.Pins, kept.PinnedAt
-	session.Projects[key] = entry
 }
 
 // mutatePins edits the recorded pins under the policy file's lock: fn
@@ -398,7 +353,9 @@ func mutatePins(policyPath, projectDir string, policyFile *config.PolicyFile, fn
 	if err != nil {
 		return err
 	}
-	adoptPolicy(policyFile, fresh, projectDir)
+	if policyFile != nil {
+		*policyFile = *fresh
+	}
 	return nil
 }
 

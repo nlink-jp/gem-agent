@@ -258,27 +258,15 @@ re-pin — now reads the policy file as it is at that moment
 (`recordedPolicy`). A read does not replace the session's own copy:
 other goroutines read it, and a mutation is what refreshes it.
 
-The file can re-trust; it cannot un-pin. A file that is gone, that does
-not parse, or that no longer holds pins the session has for the project
-leaves the session's copy as the record, so a comparison errs toward
-leaving a changed file out, never toward loading one; `checkPins` says
-so in the last two cases. The third was found by the release review of
-this amendment: "no pins" reads as "nothing pinned yet", which loads
-everything, and a policy file deleted and then rewritten by a session
-in another project is exactly that state.
-
-That guard rests on the session's copy remembering the pins, and every
-write the session made replaced the copy with the file. The copy is now
-replaced in one place, `adoptPolicy`, which keeps pins the file lost: a
-`/settings` change after the file was deleted no longer makes the
-session forget them. The second round of the same review found this;
-it predates the amendment.
-
-Accepted residue, fail-closed: with the record lost, an approved write
-records a set holding only the written name, so the other trusted files
-read as added and stay out until a restart re-trusts them. Seeding the
-file from the session's memory would have the session re-create a
-record the operator removed.
+A file that is gone, or that does not parse, leaves the session's copy
+as the record, and `checkPins` says so when it could not read the file.
+A file that was read is the record, whatever pins it holds. The release
+review of this amendment added a fallback that kept the session's pins
+when the file had none for the project, and a single place
+(`adoptPolicy`) that kept them through the session's own writes; both
+were taken out by ADR-0123 §6. The policy file is out of every lane's
+reach, so pins it lost were removed by the operator or by a process
+outside the lanes.
 
 A write into a name this session left out is still never re-pinned
 (§1). `repinnable` answers false for it as the write begins, so the

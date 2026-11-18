@@ -152,61 +152,21 @@ func TestAnUnreadableRecordLeavesTheSessionsCopy(t *testing.T) {
 	}
 }
 
-// The record on disk can re-trust a file; it cannot un-pin the project.
-// "No pins" reads as "nothing pinned yet", which loads everything, so a
-// policy file that parses but has lost this project's pins must not
-// become the record: deleted and then rewritten by a session in another
-// project, emptied, or restored from an older copy.
-func TestARecordWithoutThisProjectsPinsIsNotTheRecord(t *testing.T) {
-	msgs := uitext.For(uitext.EN)
-	for name, lose := range map[string]func(t *testing.T, policyPath, proj string){
-		"rewritten by a session in another project": func(t *testing.T, policyPath, proj string) {
-			if err := os.Remove(policyPath); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := config.MutatePolicyFile(policyPath, func(pf *config.PolicyFile) {
-				pf.SetTrust(t.TempDir(), config.TrustGranted)
-			}); err != nil {
-				t.Fatal(err)
-			}
-		},
-		"emptied": func(t *testing.T, policyPath, proj string) {
-			if err := os.WriteFile(policyPath, nil, 0o600); err != nil {
-				t.Fatal(err)
-			}
-		},
-		"trust kept, pins gone": func(t *testing.T, policyPath, proj string) {
-			bare := &config.PolicyFile{Tools: map[string]string{}, Projects: map[string]config.ProjectPolicy{}}
-			bare.SetTrust(proj, config.TrustGranted)
-			if err := bare.Save(policyPath); err != nil {
-				t.Fatal(err)
-			}
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			cfg, pf, policyPath, proj := staleSession(t)
-			if err := os.WriteFile(filepath.Join(proj, ".mcp.json"), []byte("{\"changed\":1}\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			lose(t, policyPath, proj)
-			if disk, err := config.LoadPolicyFile(policyPath); err != nil || disk.HasPins(proj) {
-				t.Fatalf("fixture: the file should parse and hold no pins for the project: %v", err)
-			}
-			var out bytes.Buffer
-			ex, notes := checkPins(cfg, pf, policyPath, proj, true, false, nil, &out, msgs)
-			if !ex["AGENTS.md"] || !ex[".mcp.json"] {
-				t.Errorf("changed files were loaded: excluded=%v notes=%v", ex, notes)
-			}
-			if joined := strings.Join(notes, "\n"); !strings.Contains(joined, "no longer records this project's trusted files") || !strings.Contains(joined, "restart") {
-				t.Errorf("the operator is not told the record lost the project: %v", notes)
-			}
-			if note := pinChangesNote(cfg, pf, policyPath, proj, true, msgs); !strings.Contains(note, "AGENTS.md changed") {
-				t.Errorf("the note after a command went silent: %q", note)
-			}
-			if pinIsCurrent(pf, policyPath, proj, "AGENTS.md") {
-				t.Error("the changed file reads as current")
-			}
-		})
+// A record that was read is the record, pins or none (ADR-0123 §6): the
+// policy file is out of every lane's reach, so pins it no longer holds
+// were removed by the operator or by a process outside the lanes, and
+// the session does not keep them against the file.
+func TestARecordThatWasReadIsTheRecord(t *testing.T) {
+	_, pf, policyPath, proj := staleSession(t)
+	if err := os.WriteFile(policyPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := recordedPolicy(policyPath, proj, pf)
+	if err != nil {
+		t.Fatalf("an empty record is a record: %v", err)
+	}
+	if rec == pf || rec.HasPins(proj) {
+		t.Errorf("the session's pins were kept against the file")
 	}
 }
 
@@ -235,106 +195,6 @@ func TestAWriteIntoAFileTheSessionLeftOutSaysSo(t *testing.T) {
 	}
 	if !repinnable(pf, policyPath, proj, ".mcp.json", excluded) {
 		t.Error("the exclusion of one name spread to another")
-	}
-}
-
-// The guard above rests on the session's copy remembering the pins, and
-// every write this session makes replaces that copy with the file. With
-// the policy file gone, one /settings change recreated it empty, the
-// copy followed, and the next re-check read "nothing pinned yet".
-func TestTheSessionsOwnWriteDoesNotForgetThePins(t *testing.T) {
-	msgs := uitext.For(uitext.EN)
-	cfg, pf, policyPath, proj := staleSession(t)
-	if err := os.Remove(policyPath); err != nil {
-		t.Fatal(err)
-	}
-	// What a /settings change does: mutate the file, adopt the result.
-	fresh, err := config.MutatePolicyFile(policyPath, func(f *config.PolicyFile) {
-		f.Set("", "shell", "always")
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fresh.HasPins(proj) {
-		t.Fatal("fixture: the recreated file should have no pins for the project")
-	}
-	adoptPolicy(pf, fresh, proj)
-	if pf.ForProject(proj)["shell"] != "always" {
-		t.Errorf("the copy did not follow the write: %v", pf.ForProject(proj))
-	}
-	var out bytes.Buffer
-	ex, notes := checkPins(cfg, pf, policyPath, proj, true, false, nil, &out, msgs)
-	if !ex["AGENTS.md"] {
-		t.Errorf("after the session's own write the changed file was loaded: excluded=%v notes=%v", ex, notes)
-	}
-	if note := pinChangesNote(cfg, pf, policyPath, proj, true, msgs); !strings.Contains(note, "AGENTS.md changed") {
-		t.Errorf("the note after a command went silent: %q", note)
-	}
-}
-
-// adoptPolicy keeps nothing but lost pins: a file that has pins for the
-// project wins whatever they are (that is a re-trust), a session with
-// none adopts the file as it is, and the rest of the file is followed.
-func TestAdoptPolicyKeepsOnlyPinsTheFileLost(t *testing.T) {
-	_, pf, policyPath, proj := staleSession(t)
-	mine := pf.PinsFor(proj)["AGENTS.md"]
-
-	acceptElsewhere(t, policyPath, proj)
-	disk, err := config.LoadPolicyFile(policyPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	theirs := disk.PinsFor(proj)["AGENTS.md"]
-	adoptPolicy(pf, disk, proj)
-	if got := pf.PinsFor(proj)["AGENTS.md"]; got != theirs || got == mine {
-		t.Errorf("a re-trust in the file did not replace the session's pin: %q", got)
-	}
-
-	empty := &config.PolicyFile{Tools: map[string]string{}}
-	adoptPolicy(pf, empty, proj)
-	if got := pf.PinsFor(proj)["AGENTS.md"]; got != theirs {
-		t.Errorf("pins the file lost were not kept: %q", got)
-	}
-	if pf.TrustFor(proj) != "" {
-		t.Errorf("more than the pins was kept: trust = %q", pf.TrustFor(proj))
-	}
-
-	none := &config.PolicyFile{Tools: map[string]string{}, Projects: map[string]config.ProjectPolicy{}}
-	adoptPolicy(none, empty, proj)
-	if none.HasPins(proj) {
-		t.Error("a session without pins gained some")
-	}
-}
-
-// The session's copy is replaced in one place. A new `= *fresh` beside
-// it is how the pins get forgotten again.
-func TestTheSessionsCopyIsReplacedInOnePlace(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	sites := 0
-	for _, f := range files {
-		if strings.HasSuffix(f, "_test.go") {
-			continue
-		}
-		src, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for i, l := range strings.Split(string(src), "\n") {
-			code := strings.TrimSpace(l)
-			if strings.HasPrefix(code, "//") || !strings.Contains(code, "= *fresh") {
-				continue
-			}
-			sites++
-			if f != "pins.go" || code != "*session = *fresh" {
-				t.Errorf("%s:%d replaces a policy copy outside adoptPolicy: %s", f, i+1, code)
-			}
-		}
-	}
-	if sites != 1 {
-		t.Errorf("found %d `= *fresh` sites, want the one in adoptPolicy", sites)
 	}
 }
 
