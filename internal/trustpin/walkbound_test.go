@@ -96,7 +96,7 @@ func TestTheFileCapIsLookedAtWhereAFileIsCounted(t *testing.T) {
 	}
 	t.Run("the real cap", func(t *testing.T) {
 		_, root := buildTree(t, names("", SkillFiles), nil, []string{"zzz"})
-		_, files, cut := SkillManifest(root)
+		files, cut := covered(root)
 		if cut || len(files) != SkillFiles {
 			t.Errorf("cut = %v with %d files covered: a skill of exactly %d files is covered", cut, len(files), SkillFiles)
 		}
@@ -157,7 +157,7 @@ func TestTheWalkLooksAtNoMoreThanItsBudget(t *testing.T) {
 			}
 			return out
 		}())
-		if _, _, cut := SkillManifest(root); !cut {
+		if _, cut := covered(root); !cut {
 			t.Errorf("a skill of one file and %d directories is past the walk's bound", SkillWalk)
 		}
 	})
@@ -201,11 +201,11 @@ func TestTheWalkGoesNoDeeperThanItsBound(t *testing.T) {
 	}
 	t.Run("the real depth", func(t *testing.T) {
 		_, root := buildTree(t, []string{"SKILL.md", chain(SkillDepth) + "/deep.md"}, nil, nil)
-		if _, files, cut := SkillManifest(root); cut || len(files) != 2 {
+		if files, cut := covered(root); cut || len(files) != 2 {
 			t.Errorf("cut = %v with %d files: %d levels are within the bound", cut, len(files), SkillDepth)
 		}
 		_, root = buildTree(t, []string{"SKILL.md"}, nil, []string{chain(SkillDepth + 1)})
-		if _, _, cut := SkillManifest(root); !cut {
+		if _, cut := covered(root); !cut {
 			t.Errorf("%d levels are past the bound", SkillDepth+1)
 		}
 	})
@@ -336,7 +336,7 @@ func TestTheWalkDoesNotEnterADirectoryItCannotSearch(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("nothing is closed to root")
 	}
-	_, files, cut := SkillManifest(root)
+	files, cut := covered(root)
 	if cut || len(files) != 1 || files["SKILL.md"] == "" {
 		t.Errorf("cut = %v, covered %v: want SKILL.md alone", cut, files)
 	}
@@ -369,8 +369,8 @@ func TestTheWalkIsNotBoundedByTheLengthOfAPath(t *testing.T) {
 	if err := root.Symlink("target", rel+"link"); err != nil {
 		t.Fatal(err)
 	}
-	_, files, cut := SkillManifest(root)
-	if cut || len(files) != 2 || files[rel+long] != ContentLine([]byte("deep")) || files[rel+"link"] != "link:target" {
+	files, cut := covered(root)
+	if cut || len(files) != 2 || files[rel+long] != contentLine([]byte("deep")) || files[rel+"link"] != "link:target" {
 		t.Errorf("cut = %v with %d entries: want the file and the link %d levels down", cut, len(files), SkillDepth)
 	}
 }

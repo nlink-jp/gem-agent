@@ -2376,8 +2376,7 @@ Things to know:
   2,000 files, with more than 4,000 files and folders in all, or with
   folders nested more than 32 deep, is not loaded, and you are told so (a
   skill that carries a `node_modules` or a `.venv` is one); remove what the skill does not need and it can be loaded. A skill whose `SKILL.md` is over
-  1 MiB is not treated as a skill. A listing of a folder inside a skill
-  shows only the files and folders that were checked.
+  1 MiB is not treated as a skill.
 - **Only project skills are compared.** Your own skills in
   `~/.config/gem-agent/skills/` are not.
 - **Scripts are separate.** If only a script of a skill changes after the

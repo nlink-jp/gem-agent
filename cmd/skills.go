@@ -97,7 +97,7 @@ func registerSkillTool(registry *tools.Registry, get func() []skills.Skill, guar
 			if guard != nil {
 				g = guard()
 			}
-			return g.read(ctx, s, func(verify *skills.Verify) (string, error) { return skillToolResult(s, file, verify) })
+			return g.read(ctx, s, func() (string, error) { return skillToolResult(s, file) })
 		},
 	})
 }
@@ -105,11 +105,11 @@ func registerSkillTool(registry *tools.Registry, get func() []skills.Skill, guar
 // skillToolResult is what load_skill returns for a skill that may be
 // read: a supporting file as it is, or the body under the line that
 // says where the skill lives.
-func skillToolResult(s skills.Skill, file string, verify *skills.Verify) (string, error) {
+func skillToolResult(s skills.Skill, file string) (string, error) {
 	if file != "" {
-		return s.FileVerified(file, skills.DefaultLimits(), verify)
+		return s.File(file, skills.DefaultLimits())
 	}
-	body, err := s.BodyVerified(skills.DefaultLimits(), verify)
+	body, err := s.Body(skills.DefaultLimits())
 	if err != nil {
 		return "", err
 	}
@@ -164,7 +164,7 @@ func expandSkillInput(ctx context.Context, input string, list []skills.Skill, gu
 		return "", handled, errMsg
 	}
 	s := inv.skill
-	body, loaded, err := guard.readForOperator(ctx, s, func(verify *skills.Verify) (string, error) { return s.BodyVerified(skills.DefaultLimits(), verify) })
+	body, loaded, err := guard.readForOperator(ctx, s, func() (string, error) { return s.Body(skills.DefaultLimits()) })
 	if err != nil {
 		return "", true, "could not load the skill: " + err.Error()
 	}

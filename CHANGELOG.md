@@ -39,6 +39,14 @@
   hold it. That needs a program racing the walk, and the type is
   removed. Nothing you trusted changes: the same folders give the same
   trust record before and after (compared on six kinds of tree).
+- **A project skill is compared before it is read, and what was read
+  is not checked a second time** (ADR-0122). v0.104.0 also checked the bytes
+  it had just read against the content it had compared, to catch a
+  file swapped between the two — which needs a program racing the
+  read — and matched file names by case and Unicode form so that this
+  check would not refuse a file the disk had found under another
+  spelling. Both are removed. A listing of a folder inside a project
+  skill shows every entry again, without the line "[not listed: …]".
 
 ## [0.106.0] - 2026-11-18
 

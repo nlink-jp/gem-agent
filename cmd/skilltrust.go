@@ -31,11 +31,6 @@ const (
 	skillRefusalRecord     = "The skill %q was not loaded: the operator trusted it, but the trust could not be recorded. Do not read its files by other means. Say that the skill was not loaded, and continue only with what does not depend on it."
 )
 
-// errSkillMoved: the bytes a read returned are not the bytes the trust
-// record's tree holds for that file — the content moved between the
-// compare and the read, or was never what was compared.
-var errSkillMoved = errors.New("the skill's content is not what was compared")
-
 // skillGuard is the compare-before-consuming rule applied where a
 // project skill is actually consumed (ADR-0119). The pin was compared
 // when the list of skills was built; the body and the supporting files
@@ -146,31 +141,29 @@ func (g *skillGuard) forget() {
 // check compares s with the trust record. The disable answer is read
 // before anything else. The digest is taken through the skill's own
 // root — the tree Body and File read — by the implementation that took
-// the pin, and it comes with its manifest, so a read can be held to the
-// files of that tree. Pins off, an untrusted project or a project with
-// nothing recorded compare nothing: that is the state the list was
-// built in, and the manifest is nil. The exclusion set is not
-// consulted: a listed skill is one the session loaded.
-func (g *skillGuard) check(s skills.Skill) (skillState, string, trustpin.Manifest) {
+// the pin. Pins off, an untrusted project or a project with nothing
+// recorded compare nothing: that is the state the list was built in.
+// The exclusion set is not consulted: a listed skill is one the session
+// loaded.
+func (g *skillGuard) check(s skills.Skill) (skillState, string) {
 	if g == nil || s.Scope != "project" {
-		return skillCurrent, "", nil
+		return skillCurrent, ""
 	}
 	pin := trustpin.SkillPinName(s.Entry)
 	if g.isDisabled(pin) {
-		return skillDisabled, "", nil
+		return skillDisabled, ""
 	}
 	if !g.trusted || !g.cfg.Approval.PinTrustedFiles {
-		return skillCurrent, "", nil
+		return skillCurrent, ""
 	}
 	rec, _ := recordedPolicy(g.policyPath, g.projectDir, g.policyFile)
 	if !rec.HasPins(g.projectDir) {
-		return skillCurrent, "", nil
+		return skillCurrent, ""
 	}
 	var (
-		digest   string
-		manifest trustpin.Manifest
-		cut      bool
-		gone     bool
+		digest string
+		cut    bool
+		gone   bool
 	)
 	err := s.WithRoot(func(root *os.Root) error {
 		// The root is the tree the skill was discovered in. If the
@@ -187,41 +180,22 @@ func (g *skillGuard) check(s skills.Skill) (skillState, string, trustpin.Manifes
 			gone = true
 			return nil
 		}
-		digest, manifest, cut = trustpin.SkillManifest(root)
+		digest, cut = trustpin.SkillDigest(root)
 		return nil
 	})
 	switch {
 	case err != nil || gone:
-		return skillGone, "", nil
+		return skillGone, ""
 	case cut:
-		return skillUncovered, "", nil
+		return skillUncovered, ""
 	}
 	switch recorded := rec.PinsFor(g.projectDir)[pin]; {
 	case recorded == "":
-		return skillUnrecorded, digest, manifest
+		return skillUnrecorded, digest
 	case recorded != digest:
-		return skillChanged, digest, manifest
+		return skillChanged, digest
 	}
-	return skillCurrent, digest, manifest
-}
-
-// verifier holds a read to the tree a manifest describes: the bytes
-// returned for a file must be the bytes that tree holds for it, and a
-// listing shows only entries the digest covers. A nil manifest — nothing
-// is compared for this skill — verifies nothing.
-func verifier(manifest trustpin.Manifest) *skills.Verify {
-	if manifest == nil {
-		return nil
-	}
-	return &skills.Verify{
-		Content: func(rel string, data []byte) error {
-			if !manifest.Holds(rel, data) {
-				return errSkillMoved
-			}
-			return nil
-		},
-		Listed: manifest.Covers,
-	}
+	return skillCurrent, digest
 }
 
 // event writes one record of its own kind. A trust answer is not the
@@ -260,31 +234,20 @@ func skillTrustFrom(ctx context.Context, entry string) (string, bool) {
 // the fixed sentence for the model and nothing was read. An error that
 // is a *skillQuestion means the operator has to be asked first.
 //
-// What is returned is bound to what was compared: load is handed a
-// verifier built from the manifest of the digest that matched the
-// record, and the bytes it reads are returned only if they are that
-// tree's bytes for that file. A compare before the read alone leaves the
-// read open — content swapped in between, or swapped in and back again,
-// would be returned under the digest of something else.
+// The skill is compared, and then read: what is read is not compared
+// again (ADR-0122 §5). Content swapped between the two needs a program
+// racing this call, and the next use compares.
 //
 // With a trust answer in ctx the order is the one §4 fixes: the
 // directory is digested again and must still be what was asked about;
-// only then is that digest recorded; and the read is held to that
-// digest's manifest. A cancelled call records nothing: the write must
-// not land after the operator has moved on.
-func (g *skillGuard) attempt(ctx context.Context, s skills.Skill, load func(*skills.Verify) (string, error)) (out, refusal string, err error) {
-	state, digest, manifest := g.check(s)
+// only then is that digest recorded, and the skill read. A cancelled
+// call records nothing: the write must not land after the operator has
+// moved on.
+func (g *skillGuard) attempt(ctx context.Context, s skills.Skill, load func() (string, error)) (out, refusal string, err error) {
+	state, digest := g.check(s)
 	if state == skillCurrent {
-		out, err = load(verifier(manifest))
-		if !errors.Is(err, errSkillMoved) {
-			return out, "", err
-		}
-		// What was read is not what was compared. Handle the skill as
-		// what it is now; if it compares as current again, it is being
-		// switched back and forth, and this call ends here.
-		if state, digest, manifest = g.check(s); state == skillCurrent {
-			return "", "", &skillQuestion{g: g, s: s, moved: true}
-		}
+		out, err = load()
+		return out, "", err
 	}
 	switch state {
 	case skillDisabled:
@@ -310,10 +273,7 @@ func (g *skillGuard) attempt(ctx context.Context, s skills.Skill, load func(*ski
 		if err := g.record(s, digest); err != nil {
 			return "", fmt.Sprintf(skillRefusalRecord, s.Name), nil // record has told the operator
 		}
-		out, err = load(verifier(manifest))
-		if errors.Is(err, errSkillMoved) {
-			return "", "", &skillQuestion{g: g, s: s, moved: true}
-		}
+		out, err = load()
 		return out, "", err
 	}
 	if !g.interactive {
@@ -361,9 +321,6 @@ type skillQuestion struct {
 	// digest is what the question is about.
 	digest     string
 	unrecorded bool
-	// moved: the content changed while it was being read after a trust
-	// answer. There is nothing left to ask about this call.
-	moved bool
 }
 
 func (q *skillQuestion) Error() string {
@@ -376,9 +333,6 @@ func (q *skillQuestion) Error() string {
 // is shown quoted: it is the one piece of the dialog the project names.
 func (q *skillQuestion) Resolve(ctx context.Context) (context.Context, string) {
 	g, s := q.g, q.s
-	if q.moved {
-		return nil, q.StillUnresolved()
-	}
 	pin := trustpin.SkillPinName(s.Entry)
 	if ctx.Err() != nil {
 		g.decline(pin, false)
@@ -434,9 +388,9 @@ func (q *skillQuestion) StillUnresolved() string {
 var _ tools.NeedsOperator = (*skillQuestion)(nil)
 
 // read is load_skill's read: a refusal is the call's result.
-func (g *skillGuard) read(ctx context.Context, s skills.Skill, load func(*skills.Verify) (string, error)) (string, error) {
+func (g *skillGuard) read(ctx context.Context, s skills.Skill, load func() (string, error)) (string, error) {
 	if g == nil {
-		return load(nil)
+		return load()
 	}
 	out, refusal, err := g.attempt(ctx, s, load)
 	if refusal != "" {
@@ -450,9 +404,9 @@ func (g *skillGuard) read(ctx context.Context, s skills.Skill, load func(*skills
 // compare and the same question run here, with the same bound on how
 // often it is put. loaded false with a nil error means the skill was
 // refused and the operator has been told why; the turn does not start.
-func (g *skillGuard) readForOperator(ctx context.Context, s skills.Skill, load func(*skills.Verify) (string, error)) (out string, loaded bool, err error) {
+func (g *skillGuard) readForOperator(ctx context.Context, s skills.Skill, load func() (string, error)) (out string, loaded bool, err error) {
 	if g == nil {
-		out, err = load(nil)
+		out, err = load()
 		return out, err == nil, err
 	}
 	run := ctx

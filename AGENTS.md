@@ -271,10 +271,11 @@ a new hook) is an architecture change and takes the same rows as a
   the model unwrapped (measured on lagent, same read calls). Every read
   goes through `skillGuard`: a new read site that calls `Body`/`File`
   directly brings the hole back, and `TestSkillTrustIsWiredIn`
-  enumerates the sites across cmd. A compare before the read is not
-  enough: the read is held to the MANIFEST of the digest that matched
-  (`skills.Verify`, `trustpin.Manifest.Line`), so only bytes that tree
-  holds for that file are returned. And nothing a pin does not cover is
+  enumerates the sites across cmd. The skill is compared and then read, and what was read is
+  not compared again: that second check, and the manifest that matched
+  names by case and form to keep it from misfiring, were taken out
+  (ADR-0122 §5) — content swapped between the two needs a program racing
+  the call, and the next use compares. Nothing a pin does not cover is
   served — `skills.ReadCap` equals `trustpin.FileCap` (a test holds it),
   and a skill whose digest was cut at 2,000 files, at 4,000 entries of every kind
   (`trustpin.SkillWalk`) or at directories 32 deep (`trustpin.SkillDepth`)
