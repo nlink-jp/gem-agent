@@ -134,14 +134,12 @@ func readCapped(path string, cap int64) ([]byte, error) {
 	// Through an os.Root at the file's directory: a link leaving the
 	// directory is refused, as the instruction loader refuses it — the
 	// pins digest the same view (ADR-0074, review F1).
-	root, err := bounded.OpenRoot(filepath.Dir(path))
+	root, err := os.OpenRoot(filepath.Dir(path))
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = root.Close() }()
-	// Only a regular file: opened plainly, a FIFO of this name held the
-	// read — and startup — until somebody wrote to it.
-	f, err := bounded.OpenRegular(root, filepath.Base(path))
+	f, err := root.Open(filepath.Base(path))
 	if err != nil {
 		return nil, err
 	}

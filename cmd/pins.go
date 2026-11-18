@@ -433,7 +433,7 @@ func persistentStateFile(projectDir string) (string, error) {
 // loadPersistentSnapshot reads the previous session's snapshot; a
 // missing or unreadable file is an empty snapshot (nothing to compare).
 func loadPersistentSnapshot(path string) map[string]string {
-	f, err := bounded.OpenRegularPath(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil
 	}

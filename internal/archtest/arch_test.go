@@ -246,54 +246,6 @@ func TestReadsAreBounded(t *testing.T) {
 	report(t, kept, map[string]string{})
 }
 
-// TestOpensDoNotWait: a plain open waits on a FIFO for as long as
-// nobody writes to it, os.OpenRoot opens plainly, and an open for
-// writing waits for a reader (ADR-0120 — measured at every open the
-// two sweeps found). An open of a name goes through internal/bounded,
-// which opens a directory as a directory and a file only when it is a
-// regular one; what is left is listed with why it cannot wait — or, for
-// what the operator names, that it is undecided. os.OpenFile and the
-// Root methods are held too: the first form of this test left them
-// out, and a trace file opened to truncate went unseen. So are the raw
-// opens. And os.RemoveAll and os.OpenInRoot, which
-// open a name's parent plainly: the release review found a removal that
-// waited on a FIFO where the parent had been, and an exception whose
-// reason was a look before a plain open — the form §7 had measured as
-// beaten (ADR-0120 §9).
-func TestOpensDoNotWait(t *testing.T) {
-	calls := collectCalls(t, repoRoot(t), boundedPackages, []string{
-		"os.Open", "os.OpenFile", "os.OpenRoot", "os.Create", "os.WriteFile", "toml.DecodeFile",
-		".Open", ".OpenFile", ".OpenRoot", ".Create", ".ReadFile", ".WriteFile",
-		"unix.Open", "unix.Openat", "syscall.Open", "syscall.Openat",
-		"os.RemoveAll", "os.OpenInRoot",
-	})
-	var kept []call
-	for _, c := range calls {
-		if c.pkg == "internal/bounded" {
-			continue
-		}
-		kept = append(kept, c)
-	}
-	report(t, kept, map[string]string{
-		"cmd resolveImages":                        "/dev/tty, a device this runtime names itself",
-		"internal/config MutatePolicyFile":         "the lock file, opened read-write: that does not wait on a FIFO (measured), and flock then refuses one",
-		"internal/mention openConfined":            "the opener handed to openRegular, which opens with O_NONBLOCK and looks at what it holds",
-		"internal/sandbox CanonicalDir":            "O_NONBLOCK|O_DIRECTORY",
-		"internal/sandbox probes.fileNamed":        "O_EXCL from a root held open — what is under the name is never opened",
-		"internal/sandbox probes.subdir":           "a directory the check has just made under a random name; a FIFO there was swapped in during the check, which is a race (ADR-0122 §3)",
-		"internal/trustpin manifestWalk.dir":       "`.` of a root already open, and a sub-directory the listing just named, opened from its parent: one that waits is a FIFO swapped in after the listing, which is a race (ADR-0122 §4)",
-		"internal/session Open":                    "O_EXCL: a new transcript is created, never opened over what is there",
-		"internal/session Reopen":                  "opened read-write, which does not wait on a FIFO (measured); the lock that follows refuses one",
-		"internal/tools Registry.openRead":         "the opener handed to openRegular, which opens with O_NONBLOCK and looks at what it holds",
-		"internal/tools Registry.replaceFile":      "O_EXCL: the temporary a write lands in is created, never opened over what is there",
-		"internal/tools Registry.shellSpoolOpener": "O_EXCL: a spool is created, never opened over what is there",
-		"cmd descriptorPathOf":                     "`.` of a root that is already open",
-		"internal/config LoadWithOverrides":        "the operator's own configuration, named with --config: a FIFO or a process substitution there may be meant (ADR-0120 §5, undecided)",
-		"internal/docext readMember":               "an entry of a zip archive already open, not a name on disk",
-		"internal/telemetry loadHeaders":           "the headers file the operator names in the configuration: as --config (ADR-0120 §5, undecided)",
-	})
-}
-
 // TestTheChecksGoThroughHeldDirectories: the sandbox checks make their
 // probes where the lanes write, and whatever they did there by path —
 // made, wrote, removed — or handed to a shell outside the sandbox, they

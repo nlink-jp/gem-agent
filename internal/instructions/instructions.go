@@ -202,14 +202,12 @@ func cutRunes(s string, n int) string {
 // most cap bytes, and reports the file's full size. A link that leads
 // out of the directory is refused by the root at the open.
 func readInstruction(path string, cap int) ([]byte, int64, error) {
-	root, err := bounded.OpenRoot(filepath.Dir(path))
+	root, err := os.OpenRoot(filepath.Dir(path))
 	if err != nil {
 		return nil, 0, err
 	}
 	defer func() { _ = root.Close() }()
-	// Only a regular file: an instruction file that is a FIFO held the
-	// load, and startup with it, until somebody wrote to it.
-	f, err := bounded.OpenRegular(root, filepath.Base(path))
+	f, err := root.Open(filepath.Base(path))
 	if err != nil {
 		if strings.Contains(err.Error(), "escapes") {
 			return nil, 0, fmt.Errorf("a link to outside its directory — not read")

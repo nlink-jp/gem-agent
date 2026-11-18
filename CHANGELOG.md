@@ -19,6 +19,13 @@
 
 ### Changed
 
+- **Files and folders are opened the ordinary way again** (ADR-0123).
+  v0.106.0 opened the runtime's own files, the session's folders and the
+  folders you add so that a named pipe (FIFO) put where one of them was
+  could not make gem-agent wait. Git cannot carry a named pipe, so one
+  gets there only through a command you approved or a program outside
+  gem-agent, and all it does is make gem-agent wait until you interrupt
+  it. The special opens and the test that held them are removed.
 - **The sandbox checks at startup no longer guard their own result
   against a program that races them** (ADR-0122). v0.106.0 made them tell a
   test file that had been replaced from the one they made, repeat each

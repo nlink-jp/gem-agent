@@ -10,7 +10,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-	"time"
 	"unicode/utf8"
 
 	"github.com/nlink-jp/gem-agent/internal/mcp"
@@ -494,51 +493,5 @@ func TestAFIFOAtTheNameDoesNotHang(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(path); string(got) != body {
 		t.Errorf("file holds %q", got)
-	}
-}
-
-// What is hashed to decide a reuse is the file itself, of the size that
-// was saved, opened without waiting: a look and then a plain open
-// waited on a name swapped for a FIFO, and through a link swapped in it
-// read a file that never ends.
-func TestFileSHA256HashesOnlyTheSavedFile(t *testing.T) {
-	dir := t.TempDir()
-	body := []byte("the saved result")
-	file := filepath.Join(dir, "file")
-	if err := os.WriteFile(file, body, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if sum, err := fileSHA256(file, int64(len(body))); err != nil || sum != sha256.Sum256(body) {
-		t.Errorf("the saved file: %x, %v", sum, err)
-	}
-	if _, err := fileSHA256(file, int64(len(body))+1); err == nil {
-		t.Error("a file of another size was hashed as the saved result")
-	}
-	if err := syscall.Mkfifo(filepath.Join(dir, "pipe"), 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
-	}
-	for link, target := range map[string]string{"to-file": "file", "to-pipe": "pipe", "to-zero": "/dev/zero"} {
-		if err := os.Symlink(target, filepath.Join(dir, link)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, name := range []string{"pipe", "to-file", "to-pipe", "to-zero", "missing"} {
-		done := make(chan error, 1)
-		go func() {
-			_, err := fileSHA256(filepath.Join(dir, name), int64(len(body)))
-			done <- err
-		}()
-		select {
-		case err := <-done:
-			if err == nil {
-				t.Errorf("%s was hashed as the saved result", name)
-			}
-		case <-time.After(5 * time.Second):
-			// Release the open that waits, so the test ends.
-			if rw, err := os.OpenFile(filepath.Join(dir, "pipe"), os.O_RDWR|syscall.O_NONBLOCK, 0); err == nil {
-				defer func() { _ = rw.Close() }()
-			}
-			t.Fatalf("%s: the hash did not come back", name)
-		}
 	}
 }

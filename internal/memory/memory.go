@@ -109,7 +109,7 @@ func Load(baseDir, projectDir string, lim Limits) ([]Memory, []string) {
 				return
 			}
 		}
-		d, err := bounded.OpenDir(dir)
+		d, err := os.Open(dir)
 		if err != nil {
 			return
 		}
@@ -191,7 +191,7 @@ func Save(baseDir, projectDir, scope, name, content string, lim Limits) (Memory,
 	path := filepath.Join(dir, name+".md")
 	_, statErr := os.Stat(path)
 	existed := statErr == nil
-	if err := bounded.WriteFile(path, []byte(content+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content+"\n"), 0o644); err != nil {
 		return Memory{}, false, err
 	}
 	return Memory{Scope: scope, Name: name, Path: path, Content: content}, existed, nil
@@ -273,7 +273,7 @@ const memoryDirCap = 2000
 // readMemoryFile reads at most cap bytes of a memory file and reports
 // the file's size, so a truncation note can name the real total.
 func readMemoryFile(path string, cap int) ([]byte, int64, error) {
-	f, err := bounded.OpenRegularPath(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, 0, err
 	}

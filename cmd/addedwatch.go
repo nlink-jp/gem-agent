@@ -221,7 +221,7 @@ func (w *addedWatch) save() {
 // loadAddedSnapshots reads the per-root snapshots; a missing, oversized
 // or unreadable file is no previous state, as for the project's own.
 func loadAddedSnapshots(path string) map[string]map[string]string {
-	f, err := bounded.OpenRegularPath(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil
 	}
