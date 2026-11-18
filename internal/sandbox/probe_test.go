@@ -116,8 +116,8 @@ func TestTheControlWritesOnlyTheProbeThatWasMade(t *testing.T) {
 					t.Errorf("%v, want the probe reported as replaced", err)
 				}
 			}
-			if err := p.ours(name); !errors.Is(err, errProbeReplaced) {
-				t.Errorf("the name was taken for the probe: %v", err)
+			if p.ours(name) {
+				t.Error("what replaced the probe was taken for the probe")
 			}
 			kept(t, victim)
 			if strings.Contains(what, "in the directory") {
@@ -269,6 +269,40 @@ func TestAProbeDirectoryThatIsNotEmptyIsNotUsed(t *testing.T) {
 	}
 }
 
+// A read-only added directory that cannot hold a probe has its probes
+// skipped, with a note. One whose probe directory was replaced between
+// its making and its opening is not that: something writes there, and
+// the check fails as it does for any other directory.
+func TestAReplacedProbeDirectoryIsNotADirectoryThatCannotBeWritten(t *testing.T) {
+	root := t.TempDir()
+	old := mkdirProbe
+	defer func() { mkdirProbe = old }()
+	mkdirProbe = func(p *probes, name string) error {
+		if err := old(p, name); err != nil {
+			return err
+		}
+		// A file where the directory was.
+		if err := os.Remove(p.at(name)); err != nil {
+			return err
+		}
+		return os.WriteFile(p.at(name), []byte("x"), 0o600)
+	}
+	notes, _, err := verifyAddedRoot(map[Lane]string{}, AddedRoot{Dir: root}, true)
+	if !errors.Is(err, errProbeReplaced) || len(notes) != 0 {
+		t.Errorf("a read-only added directory whose probe directory was replaced: notes %v, err %v", notes, err)
+	}
+	// The directory that really cannot be written is still a note.
+	mkdirProbe = old
+	if os.Geteuid() != 0 {
+		must(t, os.Chmod(root, 0o500))
+		defer func() { _ = os.Chmod(root, 0o700) }()
+		notes, _, err = verifyAddedRoot(map[Lane]string{}, AddedRoot{Dir: root}, true)
+		if err != nil || len(notes) != 1 || !strings.Contains(notes[0], "not writable here") {
+			t.Errorf("a read-only added directory that cannot be written: notes %v, err %v", notes, err)
+		}
+	}
+}
+
 // A lane's command that did not run to its own end was not refused: a
 // process in the write lane can end any of the operator's processes,
 // and one that ended a probe made a lane that denies nothing look as
@@ -278,10 +312,22 @@ func TestAProbeEndedFromOutsideIsNotADenial(t *testing.T) {
 	if !errors.Is(err, errProbeEnded) {
 		t.Fatalf("a probe ended by a signal: %v, want it told apart", err)
 	}
-	if denial(err, LaneRead, "allowed a write") == nil {
-		t.Error("a probe that was ended from outside was counted as denied")
+	if Denial(err, LaneRead, "a write", "allowed a write") == nil {
+		t.Error("a probe that was ended by a signal was counted as denied")
 	}
-	if err := runProbe([]string{"/bin/bash", "-c", "exit 1"}); err == nil || errors.Is(err, errProbeEnded) || denial(err, LaneRead, "x") != nil {
+	// The shell waits for a program it started, and that program is
+	// ended: the shell lives to report a status above 128, and that is
+	// not the shell's own failure either.
+	err = runProbe([]string{"/bin/bash", "-c", "/bin/bash -c 'kill -KILL $$'; exit $?"})
+	if !errors.Is(err, errProbeEnded) || Denial(err, LaneRead, "a read", "read it") == nil {
+		t.Errorf("a probe whose program was ended by a signal: %v, want it told apart", err)
+	}
+	// One that could not be started was not refused anything.
+	err = runProbe([]string{filepath.Join(t.TempDir(), "no-such-program")})
+	if !errors.Is(err, errProbeNotRun) || Denial(err, LaneRead, "a write", "allowed a write") == nil {
+		t.Errorf("a probe that could not be run: %v, want it told apart", err)
+	}
+	if err := runProbe([]string{"/bin/bash", "-c", "exit 1"}); err == nil || errors.Is(err, errProbeEnded) || errors.Is(err, errProbeNotRun) || Denial(err, LaneRead, "x", "y") != nil {
 		t.Errorf("a probe that failed by itself: %v", err)
 	}
 }
@@ -291,7 +337,7 @@ func TestAProbeEndedFromOutsideIsNotADenial(t *testing.T) {
 // such was left at every start.
 func TestTheBoundEndsWhatTheProbeStarted(t *testing.T) {
 	old := probeTimeout
-	probeTimeout = 300 * time.Millisecond
+	probeTimeout = time.Second // time for the shell to start its program and say which
 	defer func() { probeTimeout = old }()
 	dir := t.TempDir()
 	pipe, pidfile := filepath.Join(dir, "pipe"), filepath.Join(dir, "pid")
@@ -332,13 +378,15 @@ func TestAProbeThatDoesNotFinishIsEndedAndFailsItsCheck(t *testing.T) {
 	if !errors.Is(err, errProbeTimeout) {
 		t.Fatalf("a probe waiting on a FIFO: %v after %v, want it ended", err, time.Since(start))
 	}
-	if denial(err, LaneRead, "allowed a write") == nil {
+	if derr := Denial(err, LaneRead, "a write into the project", "allowed a write"); derr == nil {
 		t.Error("a probe that did not finish was counted as denied")
+	} else if want := "the read lane's probe of a write into the project showed nothing: the command did not finish within 300ms"; derr.Error() != want {
+		t.Errorf("the note reads %q, want %q", derr, want)
 	}
-	if err := denial(nil, LaneRead, "allowed a write"); err == nil || !strings.Contains(err.Error(), "the read lane allowed a write") {
+	if err := Denial(nil, LaneRead, "a write", "allowed a write"); err == nil || !strings.Contains(err.Error(), "the read lane allowed a write") {
 		t.Errorf("a probe that was allowed: %v", err)
 	}
-	if err := denial(&exec.ExitError{}, LaneRead, "allowed a write"); err != nil {
+	if err := Denial(&exec.ExitError{}, LaneRead, "a write", "allowed a write"); err != nil {
 		t.Errorf("a probe that was denied: %v", err)
 	}
 	if err := runProbe([]string{"/usr/bin/true"}); err != nil {

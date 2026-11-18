@@ -108,7 +108,7 @@ func (f *swapFixture) racer(t *testing.T, prepare, replaceFile, replaceDir strin
 	script := `
 P=` + shellQuote(f.spec.ProjectDir) + `; A=` + shellQuote(f.spec.Added[0].Dir) + `; O=` + shellQuote(f.outside) + `
 n=0
-while :; do
+while [ $SECONDS -lt 180 ]; do
   n=$((n+1))
   ` + prepare + `
   for p in "$P"/.gem-agent-lane-probe-* "$A"/.gem-agent-root-probe-*; do
@@ -281,13 +281,13 @@ func TestAProbeReplacedAtEitherMomentFailsTheCheck(t *testing.T) {
 					if !errors.Is(err, errProbeReplaced) {
 						t.Errorf("%s: %v, want the check failed on a replaced probe", where, err)
 					}
+					_ = os.Remove(hit) // what the test put there is the test's to remove
 					if ch := f.changed(); len(ch) != 0 {
 						t.Fatalf("%s: outside the lanes, %s", where, strings.Join(ch, "; "))
 					}
 					if got, _ := os.ReadFile(inside); string(got) != "keep\n" {
 						t.Fatalf("%s: a file of the project now holds %q", where, got)
 					}
-					_ = os.Remove(hit) // what the test put there is the test's to remove
 				}
 			}
 		}
@@ -350,7 +350,7 @@ func TestTheFileReadCheckCountsOnlyTheCagesRefusal(t *testing.T) {
 		"the cage refused it":                         {func(string) error { return refused }, true},
 		"the child read it":                           {func(string) error { return nil }, false},
 		"the child failed":                            {func(string) error { return errors.New("exit status 1") }, false},
-		"the child did not finish":                    {func(string) error { return fmt.Errorf("%w (10s)", errProbeTimeout) }, false},
+		"the child did not finish":                    {func(string) error { return fmt.Errorf("%w within 10s", errProbeTimeout) }, false},
 		"the probe was removed":                       {func(p string) error { _ = os.Remove(p); return refused }, false},
 		"the probe was closed":                        {func(p string) error { _ = os.Chmod(p, 0); return refused }, false},
 		"the probe became a link":                     {func(p string) error { _ = os.Remove(p); _ = os.Symlink("probe-ordinary.txt", p); return refused }, false},
@@ -398,5 +398,160 @@ func TestTheScratchProbeHasNoNameToWaitUnder(t *testing.T) {
 	}
 	if _, err := os.Lstat(link); err != nil {
 		t.Errorf("the probe removed a name it did not make: %v", err)
+	}
+}
+
+// The added directory's check is held to the same: its control is made
+// again after the refusal, and its probe directory must still be under
+// its name. Here the read lane refuses nothing, and something else
+// makes its commands fail — a name taken, a probe closed to everybody —
+// or the probe directory is replaced under the commands: each fails the
+// check, in the added directory and for the write lane's own probe
+// directory.
+func TestAnAddedDirectorysProbesAreHeldToTheSame(t *testing.T) {
+	f := newSwapFixture(t)
+	defer func() { probeStep = func(string, string) {} }()
+	once := func(stage, base string, change func(path string)) {
+		done := false
+		probeStep = func(at, path string) {
+			if at == stage && !done && (base == "" || filepath.Base(path) == base) {
+				done = true
+				change(path)
+			}
+		}
+	}
+	weak := map[Lane]string{LaneRead: "(version 1)(allow default)", LaneWrite: f.profiles[LaneWrite], LaneOperator: f.profiles[LaneOperator]}
+
+	once("dropped", "created", func(path string) { _ = os.Mkdir(path, 0o700) })
+	_, _, err := VerifyAddedRoots(weak, f.spec, true)
+	if !errors.Is(err, errProbeReplaced) {
+		t.Errorf("a name the read lane's command would make, taken: %v, want the check failed on it", err)
+	}
+	// A read lane that refuses writes as it should and reads a
+	// credential name in the added directory: the fault the credential
+	// probe is there to find, hidden by the probe being closed.
+	reads := map[Lane]string{
+		LaneRead:  f.profiles[LaneRead] + "(allow file-read* (subpath " + sbplString(f.spec.Added[0].Dir) + "))\n",
+		LaneWrite: f.profiles[LaneWrite], LaneOperator: f.profiles[LaneOperator],
+	}
+	if _, _, err := VerifyAddedRoots(reads, f.spec, true); err == nil || !strings.Contains(err.Error(), "read a credential name") {
+		t.Fatalf("the fixture's read lane does not read a credential name: %v", err)
+	}
+	once("controlled", ".env", func(path string) { _ = os.Chmod(path, 0) })
+	_, _, err = VerifyAddedRoots(reads, f.spec, true)
+	if err == nil || !strings.Contains(err.Error(), "after the lane refused it") {
+		t.Errorf("a credential probe closed to everybody: %v, want the check failed by its second control", err)
+	}
+
+	// The probe directory moved aside under the lane's command, and a
+	// link to an empty directory put under its name: with the real
+	// profiles, so that nothing but the look at the name can tell.
+	swap := func(elsewhere string) func(path string) {
+		return func(path string) {
+			dir := filepath.Dir(path)
+			if err := os.Mkdir(elsewhere, 0o700); err != nil {
+				t.Error(err)
+			}
+			if err := os.Rename(dir, dir+".moved"); err != nil {
+				t.Error(err)
+			}
+			if err := os.Symlink(elsewhere, dir); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	once("dropped", "created", swap(filepath.Join(f.spec.Added[0].Dir, "elsewhere")))
+	_, _, err = VerifyAddedRoots(f.profiles, f.spec, true)
+	if !errors.Is(err, errProbeReplaced) {
+		t.Errorf("an added directory's probe directory replaced under the command: %v, want the check failed on it", err)
+	}
+	once("dropped", "AGENTS.md", swap(filepath.Join(f.spec.ProjectDir, "elsewhere")))
+	_, err = VerifyWriteLane(f.profiles[LaneWrite], f.spec)
+	if !errors.Is(err, errProbeReplaced) {
+		t.Errorf("the write lane's probe directory replaced under the command: %v, want the check failed on it", err)
+	}
+	probeStep = func(string, string) {}
+	if ch := f.changed(); len(ch) != 0 {
+		t.Fatalf("outside the lanes, %s", strings.Join(ch, "; "))
+	}
+}
+
+// TestTheChecksPassOnTheVolumeNamed runs every check with the project
+// and the added directories on the volume PROBE_TEST_VOLUME names a
+// directory of, and holds them to passing and to leaving nothing. It is
+// for volumes that are not like a local disk: on FAT and exFAT a file's
+// number changes at its first write, and a check that remembered the
+// number from the making took every probe there for a replaced one and
+// left it behind (found by the review before the release; ADR-0121).
+// Without the variable it runs on the temporary directory's volume.
+func TestTheChecksPassOnTheVolumeNamed(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-only")
+	}
+	if err := Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
+	}
+	vol := os.Getenv("PROBE_TEST_VOLUME")
+	if vol == "" {
+		vol = t.TempDir()
+	}
+	base, err := os.MkdirTemp(vol, "probe-volume-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(base) })
+	base, _ = ResolveWriteDir(base)
+	home, _ := os.UserHomeDir()
+	proj, wroot, rroot, scratch := filepath.Join(base, "proj"), filepath.Join(base, "notes"), filepath.Join(base, "ref"), filepath.Join(base, "scratch")
+	for _, d := range []string{proj, wroot, rroot, scratch} {
+		if err := os.Mkdir(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	spec := Spec{ProjectDir: proj, Home: home, DenyExec: DefaultDenyExec, ReadScratch: scratch,
+		Added: []AddedRoot{{Dir: wroot, Write: true}, {Dir: rroot}}}
+	profiles := map[Lane]string{}
+	for _, l := range []Lane{LaneRead, LaneWrite, LaneOperator} {
+		p, err := LaneProfile(l, spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		profiles[l] = p
+	}
+	for round := 1; round <= 2; round++ {
+		if left, err := VerifyReadLane(profiles[LaneRead], spec); err != nil || len(left) != 0 {
+			t.Errorf("round %d, the read lane: %v, left %v", round, err, left)
+		}
+		if left, err := VerifyWriteLane(profiles[LaneWrite], spec); err != nil || len(left) != 0 {
+			t.Errorf("round %d, the write lane: %v, left %v", round, err, left)
+		}
+		if notes, left, err := VerifyAddedRoots(profiles, spec, true); err != nil || len(left) != 0 || len(notes) != 0 {
+			t.Errorf("round %d, the added directories: %v, left %v, notes %v", round, err, left, notes)
+		}
+		fileDir := filepath.Join(base, "file-probe")
+		if err := os.Mkdir(fileDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		refused := fmt.Errorf("%w: exit status 3", ErrCageRefused)
+		if err := VerifyFileReadLane(fileDir, home, func(_, path string) error {
+			if filepath.Base(path) == ".env" {
+				return refused
+			}
+			return nil
+		}); err != nil {
+			t.Errorf("round %d, the file-read check's own probes: %v", round, err)
+		}
+		for _, d := range []string{proj, wroot, rroot, scratch, fileDir} {
+			if entries, _ := os.ReadDir(d); len(entries) != 0 {
+				var names []string
+				for _, e := range entries {
+					names = append(names, e.Name())
+				}
+				t.Errorf("round %d: left in %s: %v", round, filepath.Base(d), names)
+			}
+		}
+		if err := os.Remove(fileDir); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

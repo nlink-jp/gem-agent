@@ -305,6 +305,7 @@ func TestTheChecksGoThroughHeldDirectories(t *testing.T) {
 	calls := collectCalls(t, repoRoot(t), []string{"internal/sandbox"}, []string{
 		"os.CreateTemp", "os.MkdirTemp", "os.Mkdir", "os.MkdirAll", "os.Remove", "os.RemoveAll",
 		"os.Rename", "os.WriteFile", "os.Symlink", "os.Link", "os.Chmod", "os.Create",
+		"os.Truncate", "os.Chtimes", "os.Chown", "os.Lchown",
 		"exec.Command", "exec.CommandContext",
 	})
 	report(t, calls, map[string]string{

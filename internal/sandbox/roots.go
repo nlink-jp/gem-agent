@@ -237,8 +237,8 @@ func Absorbed(real string, write bool, roots []AddedRoot) []AddedRoot {
 // tree denied for reach); a write root must be writable by the write
 // lane with its persistent names denied, and a read root writable by no
 // lane. Each must-fail probe runs first without the sandbox as its
-// control. The probe files are created under a random name and removed
-// by full path.
+// control. The probe files are made in a directory of their own, held
+// open, and removed through it.
 //
 // A read root the operator's own process cannot write (a read-only
 // volume) cannot hold a probe; nothing can write it either, so its
@@ -278,6 +278,11 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (note
 	if root, err = openProbes(a.Dir); err == nil {
 		dir, err = root.subdir(".gem-agent-root-probe-")
 	}
+	if errors.Is(err, errProbeReplaced) {
+		// Not a directory that cannot be written: one that something
+		// writes, whatever its level.
+		return nil, nil, err
+	}
 	if err != nil {
 		// Gone is not read-only: an ejected volume fails like a write root,
 		// so a rebuild drops it (ADR-0114 §2).
@@ -301,7 +306,7 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (note
 	// process's own — a write that makes the file, removed again before
 	// the lane's command, or a read of the file made above — never a
 	// shell outside the sandbox on a path (ADR-0121 §2).
-	mustFail := func(lane Lane, command, name, what string, read bool) error {
+	mustFail := func(lane Lane, command, name, probe, allowed string, read bool) error {
 		var err error
 		if read {
 			err = dir.read(name)
@@ -312,9 +317,9 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (note
 			return err
 		}
 		if err != nil {
-			return fmt.Errorf("the control run of %q failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", command, err)
+			return fmt.Errorf("the control of %s failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", probe, err)
 		}
-		if err := denial(run(lane, command), lane, what); err != nil {
+		if err := Denial(run(lane, command), lane, probe, allowed); err != nil {
 			if !read {
 				dir.drop(name)
 			}
@@ -330,7 +335,7 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (note
 			return dir.absent(name)
 		}
 		if err := dir.read(name); err != nil && !errors.Is(err, errProbeReplaced) {
-			return fmt.Errorf("the control run of %q failed outside the sandbox after the lane refused it (%v) — the probe cannot tell a denial from an unrelated failure", command, err)
+			return fmt.Errorf("the control of %s failed outside the sandbox after the lane refused it (%v) — the probe cannot tell a denial from an unrelated failure", probe, err)
 		} else if err != nil {
 			return err
 		}
@@ -338,10 +343,10 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (note
 	}
 	write := "echo x > " + shellQuote(dir.at(created))
 	if readLane {
-		if err := mustFail(LaneRead, write, created, "created a file in it", false); err != nil {
+		if err := mustFail(LaneRead, write, created, "a write into it", "created a file in it", false); err != nil {
 			return nil, nil, err
 		}
-		if err := mustFail(LaneRead, "cat "+shellQuote(dir.at(cred))+" > /dev/null", cred, "read a credential name in it", true); err != nil {
+		if err := mustFail(LaneRead, "exec cat "+shellQuote(dir.at(cred))+" > /dev/null", cred, "a read of a credential name in it", "read a credential name in it", true); err != nil {
 			return nil, nil, err
 		}
 		if err := run(LaneRead, "cat "+shellQuote(dir.at(plain))+" > /dev/null"); err != nil {
@@ -361,13 +366,13 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (note
 			return nil, nil, fmt.Errorf("the write lane cannot write it: %w", err)
 		}
 		dir.drop(created)
-		if err := mustFail(LaneWrite, "echo x > "+shellQuote(dir.at(persistent)), persistent, "wrote an instruction file's name in it", false); err != nil {
+		if err := mustFail(LaneWrite, "echo x > "+shellQuote(dir.at(persistent)), persistent, "a write under an instruction file's name in it", "wrote an instruction file's name in it", false); err != nil {
 			return nil, nil, err
 		}
 		return nil, nil, dir.inPlace()
 	}
 	for _, lane := range []Lane{LaneWrite, LaneOperator} {
-		if err := mustFail(lane, write, created, "wrote a read-only added directory", false); err != nil {
+		if err := mustFail(lane, write, created, "a write into it", "wrote a read-only added directory", false); err != nil {
 			return nil, nil, err
 		}
 	}

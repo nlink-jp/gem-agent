@@ -355,18 +355,26 @@ a new hook) is an architecture change and takes the same rows as a
   and removed only through `probes` (`internal/sandbox/probe.go`: a
   `bounded.Dir` held open, one name at a time). The control of a file
   probe is the runtime's own write, with the file compared to the one
-  that was made — never an `exec.Command` outside the sandbox on a
+  that was made — what the name leads to now against what the
+  descriptor kept open from the making holds now, never a number
+  remembered from the making: FAT and exFAT give a file its number at
+  the first write, and every probe there read as replaced (run
+  `PROBE_TEST_VOLUME=<a directory there> go test -run
+  TheChecksPassOnTheVolumeNamed ./internal/sandbox/` for a volume
+  that is not a local disk) — never an `exec.Command` outside the sandbox on a
   probe's path, and never an `os.Root`, which follows a link to
   another name inside it. Probe commands run through `runProbe` (ten
-  seconds, the whole process group); one that did not finish or was
-  ended from outside is a failed check (`Denial`), not a denial — the
+  seconds, the whole process group); one that did not finish, was
+  ended by a signal (its own, or its program's: a status above 128)
+  or could not be run is a failed check (`Denial`), not a denial — the
   write lane can end any of the operator's processes. The control is
   made again after the lane's refusal, so a probe closed to everybody
   or a name taken in between fails the check too. A replaced probe is
   `errProbeReplaced`. Clean-up removes only what the check made, and
   never names what replaced a probe as a leftover to delete.
   `TestTheChecksGoThroughHeldDirectories` (`internal/archtest`) fails
-  on a by-path file call or a second spawn site in the package;
+  on a call that makes, changes or removes a file by path (the ones
+  it lists) or a second spawn site in the package;
   `probeStep` is the tests' way to replace a probe at the moments
   that matter. The same pattern outside the checks: a file handed to
   a child that runs outside the sandbox is made where no lane writes

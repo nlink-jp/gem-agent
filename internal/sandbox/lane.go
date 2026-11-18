@@ -868,7 +868,7 @@ func VerifyReadLane(profile string, spec Spec) (leftovers []string, err error) {
 		if err != nil {
 			return nil, fmt.Errorf("the control run of %s failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", m.what, err)
 		}
-		if err := denial(run(true, m.command), LaneRead, "allowed "+m.what); err != nil {
+		if err := Denial(run(true, m.command), LaneRead, m.what, "allowed "+m.what); err != nil {
 			return nil, err
 		}
 		if m.file != nil {
@@ -884,7 +884,7 @@ func VerifyReadLane(profile string, spec Spec) (leftovers []string, err error) {
 	// The terminal: no control — the runner detaches the command from
 	// the operator's terminal, so the open must fail whatever the
 	// environment (review F-01).
-	if err := denial(run(true, "exec 3</dev/tty"), LaneRead, "allowed opening the terminal"); err != nil {
+	if err := Denial(run(true, "exec 3</dev/tty"), LaneRead, "opening the terminal", "allowed opening the terminal"); err != nil {
 		return nil, err
 	}
 	if spec.ReadScratch != "" {
@@ -949,7 +949,7 @@ func VerifyWriteLane(profile string, spec Spec) (leftovers []string, err error) 
 			in.drop(name)
 			in.expect(name)
 		}
-		if err := denial(run("echo x > "+shellQuote(in.at(name))), LaneWrite, "allowed "+what); err != nil {
+		if err := Denial(run("echo x > "+shellQuote(in.at(name))), LaneWrite, what, "allowed "+what); err != nil {
 			return err
 		}
 		// What the lane refused must still be what the control showed
