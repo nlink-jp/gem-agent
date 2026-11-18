@@ -1125,10 +1125,10 @@ func assembleSession(sess *liveSession, cmd *cobra.Command, cl *cleanups, rs run
 			idx, err := rg.askOperator(askCtx, question, []string{accept, discard})
 			return err == nil && idx == 0, err
 		},
-		emit: sess.surf.output,
+		emit:   sess.surf.output,
 		record: func(kind string, data any) { _ = sess.log(kind, data) },
-		tally: md.tally,
-		now:   time.Now,
+		tally:  md.tally,
+		now:    time.Now,
 	}
 
 	// showImage is the one door to the operator's screen (ADR-0091). Both
