@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **`/clear` no longer crashes a session that started without a
+  transcript.** When the session log could not be opened at startup, a
+  `/clear` that found persistent files changed during the session
+  crashed while recording them. Nothing is recorded for the old
+  session now, as everywhere else a transcript is missing.
+
 ## [0.108.0] - 2026-11-18
 
 ### Changed
