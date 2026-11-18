@@ -11,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/nlink-jp/gem-agent/internal/bounded"
 )
 
 // TestLaneProfilesAddedRoots holds the shape of ADR-0099 §1/§7: a write
@@ -431,12 +429,12 @@ func stuckProbes(t *testing.T, dir, prefix string) func() []string {
 	t.Helper()
 	var stuck []string
 	remove := removeProbe
-	removeProbe = func(d *bounded.Dir, p string, isDir bool) error {
+	removeProbe = func(root *os.Root, p string) error {
 		if within(dir, p) && strings.HasPrefix(filepath.Base(p), prefix) {
 			stuck = append(stuck, p)
 			return os.ErrPermission
 		}
-		return remove(d, p, isDir)
+		return remove(root, p)
 	}
 	return func() []string {
 		removeProbe = remove

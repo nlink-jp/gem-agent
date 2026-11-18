@@ -2,9 +2,11 @@ package sandbox
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -65,9 +67,20 @@ func kept(t *testing.T, path string) {
 	}
 }
 
-// The control writes into the probe that was made, and into nothing
-// that was put in its place: whatever sits under the name by then, it
-// is refused at once and what it leads to is as it was.
+func must(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The control was a shell outside the sandbox writing into the probe's
+// path, and a link put under that path had the write go through it
+// (measured, ADR-0121). The control writes through the descriptor kept
+// from the probe's making and opens no name: whatever sits under the
+// name by then, it does not wait, and what the name leads to is as it
+// was. The clean-up removes the name it made and nothing the name leads
+// to.
 func TestTheControlWritesOnlyTheProbeThatWasMade(t *testing.T) {
 	p, name, dir, _ := probeFixture(t)
 	if err := p.write(name); err != nil {
@@ -75,6 +88,9 @@ func TestTheControlWritesOnlyTheProbeThatWasMade(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(filepath.Join(dir, name)); string(got) != "x\n" {
 		t.Errorf("the probe holds %q", got)
+	}
+	if err := p.read(name); err != nil {
+		t.Errorf("the probe read back: %v", err)
 	}
 	for what, replace := range map[string]func(t *testing.T, path, dir, victim string){
 		"a link out of the directory": func(t *testing.T, path, _, victim string) {
@@ -87,20 +103,8 @@ func TestTheControlWritesOnlyTheProbeThatWasMade(t *testing.T) {
 		"a hard link to another file": func(t *testing.T, path, _, victim string) {
 			must(t, os.Link(victim, path))
 		},
-		"another file": func(t *testing.T, path, _, _ string) {
-			must(t, os.WriteFile(path, []byte("keep\n"), 0o600))
-		},
 		"a FIFO nobody reads": func(t *testing.T, path, _, _ string) {
 			must(t, syscall.Mkfifo(path, 0o600))
-		},
-		"a FIFO somebody reads": func(t *testing.T, path, _, _ string) {
-			must(t, syscall.Mkfifo(path, 0o600))
-			r, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
-			must(t, err)
-			t.Cleanup(func() { _ = r.Close() })
-		},
-		"a directory": func(t *testing.T, path, _, _ string) {
-			must(t, os.Mkdir(path, 0o700))
 		},
 		"nothing": func(t *testing.T, path, _, _ string) {},
 	} {
@@ -109,40 +113,23 @@ func TestTheControlWritesOnlyTheProbeThatWasMade(t *testing.T) {
 			path := filepath.Join(dir, name)
 			must(t, os.Remove(path))
 			replace(t, path, dir, victim)
-			for _, control := range []func(string) error{p.write, p.read} {
-				var err error
-				soon(t, path, func() { err = control(name) })
-				if !errors.Is(err, errProbeReplaced) {
-					t.Errorf("%v, want the probe reported as replaced", err)
-				}
-			}
-			if p.ours(name) {
-				t.Error("what replaced the probe was taken for the probe")
+			var err error
+			soon(t, path, func() { err = p.write(name) })
+			if err != nil {
+				t.Errorf("the control: %v — it writes the file it holds, whatever the name is now", err)
 			}
 			kept(t, victim)
 			if strings.Contains(what, "in the directory") {
 				kept(t, filepath.Join(dir, "inside"))
 			}
-			if what == "another file" {
-				kept(t, path)
-			}
-			// And the clean-up leaves it: what is under the name is not
-			// what the check made.
 			if left := p.cleanup(); len(left) != 0 {
-				t.Errorf("left = %v: what replaced the probe was named as the check's leftover", left)
-			}
-			if _, err := os.Lstat(path); (err == nil) != (what != "nothing") {
-				t.Errorf("what replaced the probe was removed by the clean-up: %v", err)
+				t.Errorf("left = %v", left)
 			}
 			kept(t, victim)
+			if strings.Contains(what, "in the directory") {
+				kept(t, filepath.Join(dir, "inside"))
+			}
 		})
-	}
-}
-
-func must(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -164,8 +151,8 @@ func TestTheControlMakesAProbeOnlyUnderAFreeName(t *testing.T) {
 	fresh := filepath.Join(filepath.Dir(victim), "fresh")
 	for name, target := range map[string]string{"to-victim": victim, "to-nothing": fresh} {
 		must(t, os.Symlink(target, filepath.Join(dir, name)))
-		if err := p.write(name); !errors.Is(err, errProbeReplaced) {
-			t.Errorf("%s: %v, want the name reported as taken", name, err)
+		if err := p.write(name); !errors.Is(err, fs.ErrExist) {
+			t.Errorf("%s: %v, want the name refused as taken", name, err)
 		}
 	}
 	kept(t, victim)
@@ -174,11 +161,11 @@ func TestTheControlMakesAProbeOnlyUnderAFreeName(t *testing.T) {
 	}
 }
 
-// The clean-up removes names from the directories it holds. A probe
-// directory replaced by a link is not gone through: the files beside
-// the project that carry the probes' names stay, the files the check
-// made go from the directory it holds, and the link — which the check
-// did not make — is neither removed nor named as the check's to delete.
+// The clean-up removed probes by path, and a probe directory replaced
+// by a link had files removed from the directory the link led to
+// (measured, ADR-0121). It removes names from the directories it holds:
+// the files beside the project that carry the probes' names stay, and
+// the files the check made go from the directory it holds.
 func TestCleanupRemovesNothingThroughAReplacedDirectory(t *testing.T) {
 	base := t.TempDir()
 	held, outside := filepath.Join(base, "held"), filepath.Join(base, "outside")
@@ -197,22 +184,15 @@ func TestCleanupRemovesNothingThroughAReplacedDirectory(t *testing.T) {
 	must(t, dir.fileNamed("plain", "probe\n"))
 	dir.expect("created")
 	dir.expect("AGENTS.md")
-	if err := dir.inPlace(); err != nil {
-		t.Fatalf("a probe directory nobody touched: %v", err)
-	}
 	// Moved aside, and a link to the outside directory put under its name.
 	moved := filepath.Join(held, "moved")
 	must(t, os.Rename(dir.path, moved))
 	must(t, os.Symlink(outside, dir.path))
-	if err := dir.inPlace(); !errors.Is(err, errProbeReplaced) {
-		t.Errorf("a replaced probe directory: %v, want it reported", err)
-	}
 	// The control still writes into the directory that was made.
 	must(t, dir.write("AGENTS.md"))
 	if _, err := os.Stat(filepath.Join(moved, "AGENTS.md")); err != nil {
 		t.Errorf("the control did not write into the directory it holds: %v", err)
 	}
-	link := dir.path
 	left := root.cleanup()
 	for _, n := range names {
 		kept(t, filepath.Join(outside, n))
@@ -220,115 +200,12 @@ func TestCleanupRemovesNothingThroughAReplacedDirectory(t *testing.T) {
 	if entries, _ := os.ReadDir(moved); len(entries) != 0 {
 		t.Errorf("the check's own files were left in the directory it held: %v", entries)
 	}
-	if len(left) != 0 {
-		t.Errorf("left = %v: something the check did not make was named as its leftover", left)
-	}
-	if st, err := os.Lstat(link); err != nil || st.Mode()&os.ModeSymlink == 0 {
-		t.Errorf("what was put under the directory's name was removed: %v, %v", st, err)
-	}
-}
-
-// A probe directory is used only as empty as it was made. Another
-// directory moved over its name — the write lane can do that with one
-// rename — holds files that are not the check's: the check fails, and
-// nothing in that directory is written or removed.
-func TestAProbeDirectoryThatIsNotEmptyIsNotUsed(t *testing.T) {
-	base := t.TempDir()
-	held, theirs := filepath.Join(base, "held"), filepath.Join(base, "theirs")
-	for _, d := range []string{held, theirs} {
-		must(t, os.Mkdir(d, 0o700))
-	}
-	names := []string{".env", "plain", "created", "AGENTS.md"}
-	for _, n := range names {
-		must(t, os.WriteFile(filepath.Join(theirs, n), []byte("keep\n"), 0o600))
-	}
-	root, err := openProbes(held)
-	must(t, err)
-	// The moment between the making and the opening, taken: the name
-	// the check is about to make is given a directory that is not empty.
-	old := mkdirProbe
-	mkdirProbe = func(p *probes, name string) error {
-		if err := old(p, name); err != nil {
-			return err
+	// What is left to report is the directory the check made, which is
+	// no longer under the name it is removed by.
+	for _, l := range left {
+		if strings.HasPrefix(l, outside) {
+			t.Errorf("left names %s: a file beside the project is not the check's leftover", l)
 		}
-		// The system call itself: os.Rename refuses a directory as
-		// the new name, and rename(2) takes an empty one.
-		return syscall.Rename(theirs, p.at(name))
-	}
-	dir, err := root.subdir(".probe-")
-	mkdirProbe = old
-	if !errors.Is(err, errProbeReplaced) {
-		t.Fatalf("a probe directory that holds files: %v, want it refused", err)
-	}
-	left := root.cleanup()
-	for _, n := range names {
-		kept(t, filepath.Join(dir.path, n))
-	}
-	if len(left) != 0 {
-		t.Errorf("left = %v: a directory the check did not make was named as its leftover", left)
-	}
-}
-
-// A read-only added directory that cannot hold a probe has its probes
-// skipped, with a note. One whose probe directory was replaced between
-// its making and its opening is not that: something writes there, and
-// the check fails as it does for any other directory.
-func TestAReplacedProbeDirectoryIsNotADirectoryThatCannotBeWritten(t *testing.T) {
-	root := t.TempDir()
-	old := mkdirProbe
-	defer func() { mkdirProbe = old }()
-	mkdirProbe = func(p *probes, name string) error {
-		if err := old(p, name); err != nil {
-			return err
-		}
-		// A file where the directory was.
-		if err := os.Remove(p.at(name)); err != nil {
-			return err
-		}
-		return os.WriteFile(p.at(name), []byte("x"), 0o600)
-	}
-	notes, _, err := verifyAddedRoot(map[Lane]string{}, AddedRoot{Dir: root}, true)
-	if !errors.Is(err, errProbeReplaced) || len(notes) != 0 {
-		t.Errorf("a read-only added directory whose probe directory was replaced: notes %v, err %v", notes, err)
-	}
-	// The directory that really cannot be written is still a note.
-	mkdirProbe = old
-	if os.Geteuid() != 0 {
-		must(t, os.Chmod(root, 0o500))
-		defer func() { _ = os.Chmod(root, 0o700) }()
-		notes, _, err = verifyAddedRoot(map[Lane]string{}, AddedRoot{Dir: root}, true)
-		if err != nil || len(notes) != 1 || !strings.Contains(notes[0], "not writable here") {
-			t.Errorf("a read-only added directory that cannot be written: notes %v, err %v", notes, err)
-		}
-	}
-}
-
-// A lane's command that did not run to its own end was not refused: a
-// process in the write lane can end any of the operator's processes,
-// and one that ended a probe made a lane that denies nothing look as
-// if it had denied.
-func TestAProbeEndedFromOutsideIsNotADenial(t *testing.T) {
-	err := runProbe([]string{"/bin/bash", "-c", "kill -TERM $$"})
-	if !errors.Is(err, errProbeEnded) {
-		t.Fatalf("a probe ended by a signal: %v, want it told apart", err)
-	}
-	if Denial(err, LaneRead, "a write", "allowed a write") == nil {
-		t.Error("a probe that was ended by a signal was counted as denied")
-	}
-	// The shell waits for a program it started, and that program is
-	// ended: the shell lives to report a status above 128, and that is
-	// not the shell's own failure either.
-	err = runProbe([]string{"/bin/bash", "-c", "/bin/bash -c 'kill -KILL $$'; exit $?"})
-	if !errors.Is(err, errProbeEnded) || Denial(err, LaneRead, "a read", "read it") == nil {
-		t.Errorf("a probe whose program was ended by a signal: %v, want it told apart", err)
-	}
-	// One that could not be started was not refused anything.
-	err = runProbe([]string{filepath.Join(t.TempDir(), "no-such-program")})
-	if !errors.Is(err, errProbeNotRun) || Denial(err, LaneRead, "a write", "allowed a write") == nil {
-		t.Errorf("a probe that could not be run: %v, want it told apart", err)
-	}
-	if err := runProbe([]string{"/bin/bash", "-c", "exit 1"}); err == nil || errors.Is(err, errProbeEnded) || errors.Is(err, errProbeNotRun) || Denial(err, LaneRead, "x", "y") != nil {
-		t.Errorf("a probe that failed by itself: %v", err)
 	}
 }
 
@@ -405,6 +282,114 @@ func TestShellQuoteNamesThePathItWasGiven(t *testing.T) {
 		out, err := exec.Command("/bin/bash", "-c", "printf %s "+shellQuote(path)).Output()
 		if err != nil || string(out) != path {
 			t.Errorf("%q came back as %q (%v)", path, out, err)
+		}
+	}
+}
+
+// checksFixture is a project, a write root, a read root and a scratch
+// directory under vol, with the three lanes' profiles.
+func checksFixture(t *testing.T, vol string) (base string, spec Spec, profiles map[Lane]string) {
+	t.Helper()
+	if runtime.GOOS != "darwin" {
+		t.Skip("sandbox-exec is macOS-only")
+	}
+	if err := Available(); err != nil {
+		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
+	}
+	base, err := os.MkdirTemp(vol, "probe-volume-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(base) })
+	base, _ = ResolveWriteDir(base)
+	home, _ := os.UserHomeDir()
+	proj, wroot, rroot, scratch := filepath.Join(base, "proj"), filepath.Join(base, "notes"), filepath.Join(base, "ref"), filepath.Join(base, "scratch")
+	for _, d := range []string{proj, wroot, rroot, scratch} {
+		if err := os.Mkdir(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	spec = Spec{ProjectDir: proj, Home: home, DenyExec: DefaultDenyExec, ReadScratch: scratch,
+		Added: []AddedRoot{{Dir: wroot, Write: true}, {Dir: rroot}}}
+	profiles = map[Lane]string{}
+	for _, l := range []Lane{LaneRead, LaneWrite, LaneOperator} {
+		p, err := LaneProfile(l, spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		profiles[l] = p
+	}
+	return base, spec, profiles
+}
+
+// The read lane's scratch probe was one fixed name in the scratch
+// directory, which the write lane writes: a link put under it
+// beforehand — no race in that — had the lane's own write go through
+// it. The name is one nobody could have known.
+func TestTheScratchProbeHasNoNameToWaitUnder(t *testing.T) {
+	_, spec, profiles := checksFixture(t, t.TempDir())
+	target := filepath.Join(spec.ReadScratch, "other.txt")
+	if err := os.WriteFile(target, []byte("keep\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(spec.ReadScratch, ".gem-agent-lane-probe")
+	if err := os.Symlink("other.txt", link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyReadLane(profiles[LaneRead], spec); err != nil {
+		t.Errorf("the read lane with a bystander link in its scratch directory: %v", err)
+	}
+	if got, _ := os.ReadFile(target); string(got) != "keep\n" {
+		t.Errorf("the probe wrote through a link that was waiting for it: %q", got)
+	}
+	if _, err := os.Lstat(link); err != nil {
+		t.Errorf("the probe removed a name it did not make: %v", err)
+	}
+}
+
+// The checks pass, twice over, and leave nothing behind — on the volume
+// the tests run on, and on one named with PROBE_TEST_VOLUME: a volume
+// that is not a local disk gives a file its number and its times in
+// ways of its own, and the checks have to pass there too.
+func TestTheChecksPassOnTheVolumeNamed(t *testing.T) {
+	vol := os.Getenv("PROBE_TEST_VOLUME")
+	if vol == "" {
+		vol = t.TempDir()
+	}
+	base, spec, profiles := checksFixture(t, vol)
+	for round := 1; round <= 2; round++ {
+		if left, err := VerifyReadLane(profiles[LaneRead], spec); err != nil || len(left) != 0 {
+			t.Errorf("round %d, the read lane: %v, left %v", round, err, left)
+		}
+		if left, err := VerifyWriteLane(profiles[LaneWrite], spec); err != nil || len(left) != 0 {
+			t.Errorf("round %d, the write lane: %v, left %v", round, err, left)
+		}
+		if notes, left, err := VerifyAddedRoots(profiles, spec, true); err != nil || len(left) != 0 || len(notes) != 0 {
+			t.Errorf("round %d, the added directories: %v, left %v, notes %v", round, err, left, notes)
+		}
+		fileDir := filepath.Join(base, "file-probe")
+		if err := os.Mkdir(fileDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := VerifyFileReadLane(fileDir, spec.Home, func(_, path string) error {
+			if filepath.Base(path) == ".env" {
+				return errors.New("exit status 3")
+			}
+			return nil
+		}); err != nil {
+			t.Errorf("round %d, the file-read check's own probes: %v", round, err)
+		}
+		for _, d := range []string{spec.ProjectDir, spec.Added[0].Dir, spec.Added[1].Dir, spec.ReadScratch, fileDir} {
+			if entries, _ := os.ReadDir(d); len(entries) != 0 {
+				var names []string
+				for _, e := range entries {
+					names = append(names, e.Name())
+				}
+				t.Errorf("round %d: left in %s: %v", round, filepath.Base(d), names)
+			}
+		}
+		if err := os.Remove(fileDir); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

@@ -37,7 +37,9 @@ for f in changed:
     if not f.endswith((".go", ".mod")):
         continue
     old = git_show(f)
-    if old is None:
+    if old is None or not pathlib.Path(repo, f).exists():
+        # New since BASE, or deleted: no line of it moved. A citation
+        # into a deleted file is TestADRFileCitationsResolve's to report.
         continue
     a, b = old.split("\n"), pathlib.Path(repo, f).read_text().split("\n")
     m = {}

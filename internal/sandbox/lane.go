@@ -845,12 +845,6 @@ func VerifyReadLane(profile string, spec Spec) (leftovers []string, err error) {
 		}
 		return runProbe(argv, extra...)
 	}
-	again := func(what string, err error) error {
-		if err != nil && !errors.Is(err, errProbeReplaced) {
-			return fmt.Errorf("the control run of %s failed outside the sandbox after the lane refused it (%v) — the probe cannot tell a denial from an unrelated failure", what, err)
-		}
-		return err
-	}
 	for _, m := range mustFail {
 		// The control: the same thing succeeds outside the sandbox, so a
 		// failure inside is the sandbox's doing. For a write it is this
@@ -862,23 +856,11 @@ func VerifyReadLane(profile string, spec Spec) (leftovers []string, err error) {
 		} else {
 			err = run(false, m.command)
 		}
-		if errors.Is(err, errProbeReplaced) {
-			return nil, err
-		}
 		if err != nil {
 			return nil, fmt.Errorf("the control run of %s failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", m.what, err)
 		}
 		if err := Denial(run(true, m.command), LaneRead, m.what, "allowed "+m.what); err != nil {
 			return nil, err
-		}
-		if m.file != nil {
-			// The control once more: the write the lane refused must
-			// still succeed here, on the same file. A probe that is
-			// something else by now, or can no longer be written by
-			// anybody, was not refused by the lane.
-			if err := again(m.what, m.file.in.write(m.file.name)); err != nil {
-				return nil, err
-			}
 		}
 	}
 	// The terminal: no control — the runner detaches the command from
@@ -937,11 +919,7 @@ func VerifyWriteLane(profile string, spec Spec) (leftovers []string, err error) 
 	// shell outside the sandbox on a path (ADR-0121 §2) — and then the
 	// lane's command.
 	mustFail := func(what string, in *probes, name string, made bool) error {
-		err := in.write(name)
-		if errors.Is(err, errProbeReplaced) {
-			return err
-		}
-		if err != nil {
+		if err := in.write(name); err != nil {
 			return fmt.Errorf("the control run of %s failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", what, err)
 		}
 		if !made {
@@ -949,21 +927,7 @@ func VerifyWriteLane(profile string, spec Spec) (leftovers []string, err error) 
 			in.drop(name)
 			in.expect(name)
 		}
-		if err := Denial(run("echo x > "+shellQuote(in.at(name))), LaneWrite, what, "allowed "+what); err != nil {
-			return err
-		}
-		// What the lane refused must still be what the control showed
-		// could be done: the same file, still writable here — or, for
-		// a file the command would have made, a name still free.
-		if !made {
-			return in.absent(name)
-		}
-		if err := in.write(name); err != nil && !errors.Is(err, errProbeReplaced) {
-			return fmt.Errorf("the control run of %s failed outside the sandbox after the lane refused it (%v) — the probe cannot tell a denial from an unrelated failure", what, err)
-		} else if err != nil {
-			return err
-		}
-		return nil
+		return Denial(run("echo x > "+shellQuote(in.at(name))), LaneWrite, what, "allowed "+what)
 	}
 	project, err := openProbes(spec.ProjectDir)
 	if err != nil {
@@ -988,9 +952,6 @@ func VerifyWriteLane(profile string, spec Spec) (leftovers []string, err error) 
 	if err := mustFail("a write under an instruction file's name", probeDir, "AGENTS.md", false); err != nil {
 		return nil, err
 	}
-	if err := probeDir.inPlace(); err != nil {
-		return nil, err
-	}
 	if home != nil {
 		if err := mustFail("a write outside the project", home, outside, true); err != nil {
 			return nil, err
@@ -998,19 +959,12 @@ func VerifyWriteLane(profile string, spec Spec) (leftovers []string, err error) 
 	}
 	probeDir.expect("plain")
 	if err := run("echo x > " + shellQuote(probeDir.at("plain"))); err != nil {
-		// Refused where the path leads now, if the directory was
-		// replaced: that is not the lane failing to write the project.
-		if rerr := probeDir.inPlace(); rerr != nil {
-			return nil, rerr
-		}
 		return nil, fmt.Errorf("the write lane cannot write an ordinary project file: %w", err)
 	}
 	if err := run("/usr/bin/true"); err != nil {
 		return nil, fmt.Errorf("the write lane cannot run a program: %w", err)
 	}
-	// The lane's commands named the probe directory by its path: what
-	// they showed is about it only while it is still under that name.
-	return nil, probeDir.inPlace()
+	return nil, nil
 }
 
 // shellQuote single-quotes s for bash.
@@ -1149,8 +1103,7 @@ func FileReadProfile(home string) string {
 //
 // run is the caller's spawn: it performs the read THE RUNTIME WILL
 // PERFORM — the real child, under the given profile, on that path —
-// and returns its error: ErrCageRefused when the child reports that
-// the kernel refused the read, and whatever else went wrong as it is. A probe that ran a shell instead proved the
+// and returns its error. A probe that ran a shell instead proved the
 // name regex fires for bash and nothing about the Go child, which is
 // where every defect of the first cut lived (independent review).
 func VerifyFileReadLane(dir, home string, run func(profile, path string) error) error {
@@ -1181,23 +1134,13 @@ func VerifyFileReadLane(dir, home string, run func(profile, path string) error) 
 	if err := run(profile, plain); err != nil {
 		return fmt.Errorf("the file-read cage cannot read an ordinary file: %w", err)
 	}
-	// The control, before the caged read and after it: this process
-	// reads the credential-named probe it made. A probe that is gone,
-	// replaced or closed to everybody fails a read whatever the cage
-	// does, and a child that failed for any reason but the cage's
-	// refusal — ended from outside, out of time — showed nothing
-	// (ADR-0121 §7).
-	if err := held.read(".env"); err != nil {
-		return fmt.Errorf("the file-read probe cannot read its own probe file: %w", err)
-	}
+	// A child that did not finish showed nothing; any other failure of
+	// the read is counted as the cage's refusal (ADR-0122 §3).
 	switch err := run(profile, secret); {
 	case err == nil:
 		return fmt.Errorf("the file-read cage allowed a credential-named file")
-	case !errors.Is(err, ErrCageRefused):
-		return fmt.Errorf("the file-read probe of a credential-named file failed, and not by the cage refusing it: %w", err)
-	}
-	if err := held.read(".env"); err != nil {
-		return fmt.Errorf("the file-read probe cannot read its own probe file: %w", err)
+	case errors.Is(err, errProbeTimeout):
+		return fmt.Errorf("the file-read probe of a credential-named file showed nothing: %w", err)
 	}
 	// And the listing, which is what a walk does first. A deny that
 	// covered file-read-metadata failed the whole directory read here

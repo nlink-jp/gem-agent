@@ -855,14 +855,7 @@ func TestFileReadProfileRefusesContentAndListsNames(t *testing.T) {
 		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
 			argv = Wrap(profile, "/bin/bash", "ls "+shellQuote(path))
 		}
-		// What the real child reports with its exit code, the shell
-		// says on its error stream: a read the kernel refused is
-		// "Operation not permitted".
-		out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput()
-		if err != nil && strings.Contains(string(out), "Operation not permitted") {
-			return fmt.Errorf("%w: %v", ErrCageRefused, err)
-		}
-		return err
+		return exec.Command(argv[0], argv[1:]...).Run()
 	}
 	if err := VerifyFileReadLane(probeDir, filepath.Dir(probeDir), read); err != nil {
 		t.Errorf("VerifyFileReadLane: %v", err)

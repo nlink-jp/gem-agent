@@ -363,39 +363,30 @@ a new hook) is an architecture change and takes the same rows as a
   is compared by device and number — that was built and not released;
   ADR-0122 §1 says what the sandbox is held against, and a finding that
   needs a program racing the runtime is recorded, not built against.
-- **The sandbox checks touch only the probes they made** (ADR-0121) —
-  the probes are made where the lanes write, so a process in a lane
-  can replace one between its making and its use. Measured under the
-  real write-lane profile: the shell control outside the sandbox wrote
-  through a link, the removal by path deleted files through a replaced
-  directory, and a FIFO held the start. A probe is made, written, read
-  and removed only through `probes` (`internal/sandbox/probe.go`: a
-  `bounded.Dir` held open, one name at a time). The control of a file
-  probe is the runtime's own write, with the file compared to the one
-  that was made — what the name leads to now against what the
-  descriptor kept open from the making holds now, never a number
-  remembered from the making: FAT and exFAT give a file its number at
-  the first write, and every probe there read as replaced (run
+- **The sandbox checks touch only the probes they made** (ADR-0121, as
+  amended by ADR-0122 §3) — the probes are made where the lanes write. A
+  shell control outside the sandbox wrote through a link put under a
+  probe's path, and the removal by path deleted files through a
+  replaced directory (measured). A probe is made and removed only
+  through `probes` (`internal/sandbox/probe.go`: the directory held
+  open as an `os.Root`, one name at a time), and a probe file stays
+  open from its making: the control writes through that descriptor and
+  never opens a name — never an `exec.Command` outside the sandbox on a
+  probe's path. Probe commands run through `runProbe` (ten seconds, the
+  whole process group); one that did not finish is a failed check
+  (`Denial`), not a denial. The checks do not defend their own verdict
+  against a process that races them — no comparison of a probe with
+  the one that was made, no second control: that was built and taken
+  out (ADR-0122 §3), and is not built again for a finding that needs a
+  racing program. For a volume that is not a local disk:
   `PROBE_TEST_VOLUME=<a directory there> go test -run
-  TheChecksPassOnTheVolumeNamed ./internal/sandbox/` for a volume
-  that is not a local disk) — never an `exec.Command` outside the sandbox on a
-  probe's path, and never an `os.Root`, which follows a link to
-  another name inside it. Probe commands run through `runProbe` (ten
-  seconds, the whole process group); one that did not finish, was
-  ended by a signal (its own, or its program's: a status above 128)
-  or could not be run is a failed check (`Denial`), not a denial — the
-  write lane can end any of the operator's processes. The control is
-  made again after the lane's refusal, so a probe closed to everybody
-  or a name taken in between fails the check too. A replaced probe is
-  `errProbeReplaced`. Clean-up removes only what the check made, and
-  never names what replaced a probe as a leftover to delete.
+  TheChecksPassOnTheVolumeNamed ./internal/sandbox/`.
   `TestTheChecksGoThroughHeldDirectories` (`internal/archtest`) fails
   on a call that makes, changes or removes a file by path (the ones
-  it lists) or a second spawn site in the package;
-  `probeStep` is the tests' way to replace a probe at the moments
-  that matter. The same pattern outside the checks: a file handed to
-  a child that runs outside the sandbox is made where no lane writes
-  (`clipboardTemp`), never in the temporary directory.
+  it lists) or a second spawn site in the package. The same pattern
+  outside the checks: a file handed to a child that runs outside the
+  sandbox is made where no lane writes (`clipboardTemp`), never in the
+  temporary directory.
 - **A pin is compared with the policy file as it is at that moment,
   never with the copy read at startup** (`recordedPolicy`, cmd/pins.go;
   ADR-0074's amendment). The session's copy follows the file only when

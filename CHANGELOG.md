@@ -20,6 +20,20 @@
   large MCP result is not saved through a work directory that became
   a link either — it was written where the link led.
 
+### Changed
+
+- **The sandbox checks at startup no longer guard their own result
+  against a program that races them** (ADR-0122). v0.106.0 made them tell a
+  test file that had been replaced from the one they made, repeat each
+  control after the sandbox's refusal, and tell a test command that was
+  ended from outside from one that was refused. Each of those needs a
+  program written to race the check, and a check that passes wrongly
+  does not make the sandbox weaker. What stays: the checks write only
+  into the test files they hold open, remove only the names they made,
+  and give every test command ten seconds. The notices "… was replaced
+  while the sandbox was being checked" and "… showed nothing: the
+  command was ended by a signal" no longer appear.
+
 ## [0.106.0] - 2026-11-18
 
 ### Security

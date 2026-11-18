@@ -285,11 +285,6 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (note
 	if root, err = openProbes(a.Dir); err == nil {
 		dir, err = root.subdir(".gem-agent-root-probe-")
 	}
-	if errors.Is(err, errProbeReplaced) {
-		// Not a directory that cannot be written: one that something
-		// writes, whatever its level.
-		return nil, nil, err
-	}
 	if err != nil {
 		// Gone is not read-only: an ejected volume fails like a write root,
 		// so a rebuild drops it (ADR-0114 §2).
@@ -320,9 +315,6 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (note
 		} else if err = dir.write(name); err == nil {
 			dir.drop(name)
 		}
-		if errors.Is(err, errProbeReplaced) {
-			return err
-		}
 		if err != nil {
 			return fmt.Errorf("the control of %s failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", probe, err)
 		}
@@ -330,20 +322,6 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (note
 			if !read {
 				dir.drop(name)
 			}
-			return err
-		}
-		// What the lane refused must still be what the control showed
-		// could be done: the same file, still readable here — or a
-		// name still free — in a directory still under its name.
-		if err := dir.inPlace(); err != nil {
-			return err
-		}
-		if !read {
-			return dir.absent(name)
-		}
-		if err := dir.read(name); err != nil && !errors.Is(err, errProbeReplaced) {
-			return fmt.Errorf("the control of %s failed outside the sandbox after the lane refused it (%v) — the probe cannot tell a denial from an unrelated failure", probe, err)
-		} else if err != nil {
 			return err
 		}
 		return nil
@@ -357,31 +335,23 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (note
 			return nil, nil, err
 		}
 		if err := run(LaneRead, "cat "+shellQuote(dir.at(plain))+" > /dev/null"); err != nil {
-			if rerr := dir.inPlace(); rerr != nil {
-				return nil, nil, rerr
-			}
 			return nil, nil, fmt.Errorf("the read lane cannot read an ordinary file in it: %w", err)
 		}
 	}
 	if a.Write {
 		if err := run(LaneWrite, write); err != nil {
-			// Refused where the path leads now, if the directory was
-			// replaced: that is not the lane failing to write the root.
-			if rerr := dir.inPlace(); rerr != nil {
-				return nil, nil, rerr
-			}
 			return nil, nil, fmt.Errorf("the write lane cannot write it: %w", err)
 		}
 		dir.drop(created)
 		if err := mustFail(LaneWrite, "echo x > "+shellQuote(dir.at(persistent)), persistent, "a write under an instruction file's name in it", "wrote an instruction file's name in it", false); err != nil {
 			return nil, nil, err
 		}
-		return nil, nil, dir.inPlace()
+		return nil, nil, nil
 	}
 	for _, lane := range []Lane{LaneWrite, LaneOperator} {
 		if err := mustFail(lane, write, created, "a write into it", "wrote a read-only added directory", false); err != nil {
 			return nil, nil, err
 		}
 	}
-	return nil, nil, dir.inPlace()
+	return nil, nil, nil
 }

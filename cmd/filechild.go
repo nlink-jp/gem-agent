@@ -340,16 +340,8 @@ func installFileChildWith(reg *tools.Registry, self, home, probeDir string) stri
 				return err
 			}
 		}
-		// Bounded in time and told apart: only the child's own report
-		// that the kernel refused the read is the cage's refusal. A
-		// child ended from outside, or one that failed on a probe that
-		// is no longer there, was not refused (ADR-0121 §7).
-		err = sandbox.RunProbe([]string{sandbox.Executable, "-p", profile, self, fileChildCommand}, bytes.NewReader(req))
-		var ee *exec.ExitError
-		if errors.As(err, &ee) && ee.ExitCode() == credentialExit {
-			return fmt.Errorf("%w: %v", sandbox.ErrCageRefused, err)
-		}
-		return err
+		// Bounded in time, like every probe command (ADR-0121 §4).
+		return sandbox.RunProbe([]string{sandbox.Executable, "-p", profile, self, fileChildCommand}, bytes.NewReader(req))
 	}
 	if err := sandbox.VerifyFileReadLane(probeDir, home, probe); err != nil {
 		return degradedNote(err)
