@@ -485,6 +485,9 @@ var (
 	durationRe = regexp.MustCompile(`\b\d+(\.\d+)?(ms|µs|s)\b`)
 	weekdayRe  = regexp.MustCompile(`\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), \d{1,2} (January|February|March|April|May|June|July|August|September|October|November|December) \d{4}\b`)
 	dateRe     = regexp.MustCompile(`\b\d{4}-\d\d-\d\d\b`)
+	// A weekday on its own, as the session's facts write the start day
+	// ("(Wednesday, JST)"): it changes at midnight like the date beside it.
+	bareDayRe = regexp.MustCompile(`\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b`)
 )
 
 // normalize replaces what differs between two runs of the same session —
@@ -499,6 +502,7 @@ func normalize(e charEnv, s string) string {
 	s = timeRe.ReplaceAllString(s, "<TIME>")
 	s = weekdayRe.ReplaceAllString(s, "<DAY>")
 	s = dateRe.ReplaceAllString(s, "<DATE>")
+	s = bareDayRe.ReplaceAllString(s, "<WEEKDAY>")
 	ids := map[string]string{}
 	s = uuidRe.ReplaceAllStringFunc(s, func(id string) string {
 		if n, ok := ids[id]; ok {
@@ -742,4 +746,3 @@ insecure = true
 		"print the exit summary",
 	})
 }
-
