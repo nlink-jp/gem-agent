@@ -2510,14 +2510,29 @@ func buildLanes(sandboxOn bool, projectDir, workDir string, denyExec []string, c
 	// symlinks resolved (/var → /private/var): a regex anchored on the
 	// unresolved spelling protects nothing, which the verification below
 	// would then report as an unconfined write lane.
-	if real, err := sandbox.ResolveWriteDir(projectDir); err == nil {
+	//
+	// Each is the first answer its name gave in this process, never a
+	// later one (ADR-0122 §2): the lanes are built more than once, a
+	// lane can replace its work directory — or a project it can empty —
+	// by a link, and a name resolved again here anchored the profile on
+	// wherever the link led. A name that resolves elsewhere by now
+	// builds nothing.
+	real, err := sandbox.ResolveKept(projectDir)
+	if isReplaced(err) {
+		return nil, sandbox.Enforcement{}, nil, nil, err
+	}
+	if err == nil {
 		projectDir = real
 	}
 	spec := sandbox.Spec{ProjectDir: projectDir, DenyExec: append(append([]string{}, sandbox.DefaultDenyExec...), denyExec...), PersistentParents: persistentParents, Added: added}
 	if workDir != "" {
 		// The session work directory (ADR-0058). A shell command told to
 		// put its output in $GEMAGENT_WORK_DIR has to be able to.
-		if resolved, err := sandbox.ResolveWriteDir(workDir); err == nil {
+		resolved, err := sandbox.ResolveKept(workDir)
+		if isReplaced(err) {
+			return nil, sandbox.Enforcement{}, nil, nil, err
+		}
+		if err == nil {
 			spec.WorkDir = resolved
 		}
 	}
@@ -3214,7 +3229,13 @@ func rotateWorkDir(registry *tools.Registry, shellExec *liveExec, sandboxOn bool
 	fn, enf, laneNotes, dropped, err := buildWithoutFailedRoots(added, func(roots []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
 		return buildExecFn(sandboxOn, projectDir, dir, denyExec, caches, persistentParents, roots)
 	})
-	if err != nil {
+	if isReplaced(err) {
+		// The project or the work directory is not where it was
+		// (ADR-0122 §2): no lanes are built on it, and nothing runs
+		// unasked. The lanes built before stay in the way.
+		registry.SetLaneExec(shellExec.run, sandbox.Enforcement{})
+		notes = append(notes, replacedNote(err))
+	} else if err != nil {
 		notes = append(notes, fmt.Sprintf("shell commands keep the previous sandbox profile: %v", err))
 	} else {
 		shellExec.set(fn)

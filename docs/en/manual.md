@@ -2919,6 +2919,13 @@ handling above applies. The same holds when another program replaces one of
 those files while the check is running: the notice then says the file was
 replaced.
 
+The sandbox is built again at every `/clear` and each time you add a
+directory. If a command has replaced the project directory or the session's
+work directory by a link in the meantime, it is not built again: the notice
+`sandbox unverified: … no longer leads to …` names the directory, every shell
+command asks you from then on, and restarting gem-agent brings the sandbox
+back.
+
 When the configuration enables the sandbox but the OS cannot apply it,
 gem-agent does not start. It never silently runs without the sandbox.
 

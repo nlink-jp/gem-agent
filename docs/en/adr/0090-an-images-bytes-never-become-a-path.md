@@ -23,7 +23,7 @@ an image into the session work directory and hands the model
 `[image saved at <path> … use view_image on that path]`
 ([mcpresult.go:302](../../../cmd/mcpresult.go)), so a path is sitting right
 there — and `write` short-circuits on `os.Stat`
-([mcpresult.go:349](../../../cmd/mcpresult.go)) while every call hands the
+([mcpresult.go:354](../../../cmd/mcpresult.go)) while every call hands the
 server the work directory as `_meta[workdir.MetaKey]`
 ([client.go:610](../../../internal/mcp/client.go)). A local server child
 therefore knows its own name, its tool name, the bytes it will return and

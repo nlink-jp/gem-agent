@@ -5,6 +5,7 @@
 package sandbox
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -79,7 +80,12 @@ func Wrap(profile string, shell string, command string) []string {
 func ScratchDirs() []string {
 	var dirs []string
 	for _, d := range []string{os.TempDir(), "/private/tmp", "/dev/fd"} {
-		if resolved, err := ResolveWriteDir(d); err == nil {
+		// The first answer each name gave (ADR-0122 §2): the temporary
+		// directory is one the write lane writes, and a link put under
+		// its name must not become a scratch directory at a later call.
+		resolved, err := ResolveKept(d)
+		var replaced *ReplacedError
+		if err == nil || errors.As(err, &replaced) {
 			dirs = append(dirs, resolved)
 		}
 	}

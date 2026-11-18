@@ -269,6 +269,13 @@ func VerifyAddedRoots(profiles map[Lane]string, spec Spec, readLane bool) (notes
 }
 
 func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (notes, leftovers []string, err error) {
+	// A write root is one a lane can replace by a link, and the probes
+	// are made in it by its name: a root that no longer leads where it
+	// did fails here, like one that is gone (ADR-0122 §2).
+	var replaced *ReplacedError
+	if _, err := ResolveKept(a.Dir); errors.As(err, &replaced) {
+		return nil, nil, err
+	}
 	// The probes are made in a directory of their own, held open, and
 	// written, read and removed through it (ADR-0121): the root is a
 	// place a lane writes, and a probe named by path was whatever sat
