@@ -73,8 +73,7 @@ func checkPins(cfg *config.Config, policyFile *config.PolicyFile, policyPath, pr
 	current, capNotes := trustpin.Compute(projectDir)
 	notes = append(notes, capNotes...)
 	rec, recErr := recordedPolicy(policyPath, projectDir, policyFile)
-	switch {
-	case recErr != nil:
+	if recErr != nil {
 		notes = append(notes, fmt.Sprintf("project trust: could not read the policy file (%v) — comparing with what this session last read", recErr))
 	}
 	if !rec.HasPins(projectDir) {
@@ -318,7 +317,6 @@ func savePins(policyPath, projectDir string, pins trustpin.Pins, policyFile *con
 // is the record, pins or none: the policy file is out of every lane's
 // reach, so pins it lost were removed by the operator or by a process
 // outside the lanes (ADR-0123 §6).
-
 func recordedPolicy(policyPath, projectDir string, session *config.PolicyFile) (*config.PolicyFile, error) {
 	if policyPath == "" {
 		return session, nil

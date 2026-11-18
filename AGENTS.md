@@ -271,8 +271,9 @@ a new hook) is an architecture change and takes the same rows as a
   dialog heading and walk bounds past the 2,000-file cap were built for
   it and taken out — do not build them again without the four answers
   of ADR-0123 §1. The digest is the v0.103.1 path walk
-  (`trustpin.Compute`), and every pin on disk was taken with a walk that
-  digests the same within its bounds.
+  (`trustpin.Compute`), with the file cap met only by a file about to be
+  added (`TestTheFileCapCountsFilesOnly`): v0.103.1 met it at the next
+  entry of any kind and cut a skill of exactly 2,000 files.
 - **Opens are the standard library's** (ADR-0123 §4, superseding
   ADR-0120). A FIFO where the runtime opens a name makes it wait until
   the operator interrupts; git carries no FIFO, so it takes an approved
