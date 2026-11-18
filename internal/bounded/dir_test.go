@@ -306,3 +306,122 @@ func TestDirHoldsOneDescriptorHoweverMuchIsListed(t *testing.T) {
 		t.Errorf("%d descriptors open before five listings, %d after", before, after)
 	}
 }
+
+// What a check makes in a directory it holds — a file, a directory —
+// it makes, writes and removes by one name, and nothing under that name
+// is gone through: a link is not followed, a FIFO is not waited on, and
+// a name that is a path is refused (ADR-0121).
+func TestDirMakesWritesAndRemovesByOneName(t *testing.T) {
+	dir, _, d := dirFixture(t)
+	held, err := DirAt(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = held.Close() }()
+	if _, err := DirAt(filepath.Join(dir, "fifo")); err == nil {
+		t.Error("a FIFO was held as a directory")
+	}
+
+	// Create: only under a free name.
+	f, err := held.Create("made", 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	made, ierr := IDOf(f)
+	_, werr := f.WriteString("made")
+	_ = f.Close()
+	if ierr != nil || werr != nil {
+		t.Fatal(ierr, werr)
+	}
+	if id, typ, err := held.ID("made"); err != nil || id != made || typ != 0 {
+		t.Errorf("the name's identity is %v (%v, %v), the file's %v", id, typ, err, made)
+	}
+	if self, err := d.Self(); err != nil || self == made {
+		t.Errorf("a directory and a file in it are told apart: %v, %v", self, err)
+	}
+	for _, name := range []string{"made", "file", "fifo", "to-file", "long", "sub", "sub/new", "../new", ".", ""} {
+		atOnce(t, dir, func() {
+			if f, err := held.Create(name, 0o600); err == nil {
+				_ = f.Close()
+				t.Errorf("%q was created over what was there, or by a path", name)
+			}
+		})
+	}
+	if data, _ := os.ReadFile(filepath.Join(dir, "file")); string(data) != "content" {
+		t.Errorf("a file was written through: %q", data)
+	}
+
+	// OpenWrite: a regular file by its own name, and not emptied.
+	w, err := held.OpenWrite("made")
+	if err != nil {
+		t.Fatal(err)
+	}
+	flags, ferr := unix.FcntlInt(w.Fd(), unix.F_GETFL, 0)
+	_, werr = w.WriteString("MA")
+	_ = w.Close()
+	if ferr != nil || flags&unix.O_NONBLOCK != 0 || werr != nil {
+		t.Errorf("flags %#x (%v), write %v", flags, ferr, werr)
+	}
+	if data, _ := os.ReadFile(filepath.Join(dir, "made")); string(data) != "MAde" {
+		t.Errorf("the file holds %q: the open emptied it, or the write did not land", data)
+	}
+	for _, name := range []string{"fifo", "to-file", "sub", "nothing", "sub/inner", ".."} {
+		atOnce(t, dir, func() {
+			if f, err := held.OpenWrite(name); err == nil {
+				_ = f.Close()
+				t.Errorf("%q was opened for writing", name)
+			}
+		})
+	}
+	// A FIFO somebody reads opens without waiting, and is refused.
+	r, err := os.OpenFile(filepath.Join(dir, "fifo"), os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	atOnce(t, dir, func() {
+		if f, err := held.OpenWrite("fifo"); !errors.Is(err, ErrNotRegular) {
+			if err == nil {
+				_ = f.Close()
+			}
+			t.Errorf("a FIFO somebody reads: %v, want ErrNotRegular", err)
+		}
+	})
+	_ = r.Close()
+
+	// Mkdir, and the two removals: a name goes, what a link led to stays.
+	if err := held.Mkdir("newdir", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"newdir", "file", "sub/x", ".."} {
+		if err := held.Mkdir(name, 0o700); err == nil {
+			t.Errorf("Mkdir(%q) succeeded", name)
+		}
+	}
+	for _, c := range []struct {
+		name string
+		dir  bool
+		ok   bool
+	}{
+		{"newdir", false, false}, {"newdir", true, true}, // a directory only as a directory
+		{"to-file", true, false}, {"to-file", false, true}, // a link as a name
+		{"to-sub", true, false}, {"to-sub", false, true},
+		{"fifo", false, true}, {"made", false, true},
+		{"sub", true, false}, // not empty
+		{"sub/inner", false, false}, {"..", true, false},
+	} {
+		rm := held.Remove
+		if c.dir {
+			rm = held.RemoveDir
+		}
+		var err error
+		atOnce(t, dir, func() { err = rm(c.name) })
+		if (err == nil) != c.ok {
+			t.Errorf("removing %q (as a directory: %v): %v", c.name, c.dir, err)
+		}
+	}
+	for _, name := range []string{"file", "sub/inner"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("what a link led to is gone: %v", err)
+		}
+	}
+}

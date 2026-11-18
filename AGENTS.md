@@ -346,6 +346,31 @@ a new hook) is an architecture change and takes the same rows as a
   `gem-agent trust --accept` from inside a session: the operator lane
   does not write the config directory (measured on lagent), which is
   why the question exists. lagent has the same mechanism (its ADR-0049).
+- **The sandbox checks touch only the probes they made** (ADR-0121) —
+  the probes are made where the lanes write, so a process in a lane
+  can replace one between its making and its use. Measured under the
+  real write-lane profile: the shell control outside the sandbox wrote
+  through a link, the removal by path deleted files through a replaced
+  directory, and a FIFO held the start. A probe is made, written, read
+  and removed only through `probes` (`internal/sandbox/probe.go`: a
+  `bounded.Dir` held open, one name at a time). The control of a file
+  probe is the runtime's own write, with the file compared to the one
+  that was made — never an `exec.Command` outside the sandbox on a
+  probe's path, and never an `os.Root`, which follows a link to
+  another name inside it. Probe commands run through `runProbe` (ten
+  seconds, the whole process group); one that did not finish or was
+  ended from outside is a failed check (`Denial`), not a denial — the
+  write lane can end any of the operator's processes. The control is
+  made again after the lane's refusal, so a probe closed to everybody
+  or a name taken in between fails the check too. A replaced probe is
+  `errProbeReplaced`. Clean-up removes only what the check made, and
+  never names what replaced a probe as a leftover to delete.
+  `TestTheChecksGoThroughHeldDirectories` (`internal/archtest`) fails
+  on a by-path file call or a second spawn site in the package;
+  `probeStep` is the tests' way to replace a probe at the moments
+  that matter. The same pattern outside the checks: a file handed to
+  a child that runs outside the sandbox is made where no lane writes
+  (`clipboardTemp`), never in the temporary directory.
 - **A pin is compared with the policy file as it is at that moment,
   never with the copy read at startup** (`recordedPolicy`, cmd/pins.go;
   ADR-0074's amendment). The session's copy follows the file only when

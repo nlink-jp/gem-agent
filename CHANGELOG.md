@@ -4,6 +4,30 @@
 
 ### Security
 
+- **The sandbox checks at startup no longer write or delete outside the
+  lanes** (ADR-0121). At every start the runtime makes test files where
+  the lanes write, and checks that each lane refuses what it should. A
+  process already running in the write lane — a child an earlier
+  command left behind — could replace one of those files between its
+  making and its use. Measured with such a process under the real
+  profile: a test file replaced by a link had `x` written through it
+  into a file no lane may write; a test directory replaced by a link
+  had files beside the project deleted, those named `AGENTS.md`,
+  `.env`, `plain` and `created`; and a test file replaced by a FIFO
+  held the start. The checks now hold their directories open and
+  make, write and remove the test files through them, write only into
+  the file they made, and give every test command ten seconds. A
+  check that meets a replaced file fails and says so, and the lane
+  then asks, as after any failed check. A test command that was
+  ended from outside, or did not finish, no longer counts as refused
+  either: a process in the write lane could end one, and a lane that
+  refused nothing then read as one that had.
+- **The file `@clipboard` is captured into is made in the runtime's
+  own state directory** (ADR-0121 §9). It was made in the temporary
+  directory, which every write lane writes, and the capture runs
+  outside the sandbox: a link moved under the file's name had the
+  clipboard written through it into a file no lane may write
+  (reproduced under the real profile by the design review).
 - **A FIFO where a directory or one of the runtime's own files should be
   no longer holds the runtime** (ADR-0120). The earlier fix covered
   four project files; every other open has now been measured, each with

@@ -2915,7 +2915,9 @@ For this check, at every start and every `/clear`, gem-agent tries to create
 small files whose names start with `.gem-agent-lane-probe-` in the project
 directory and elsewhere, and deletes them at once. If the project directory
 cannot be written to, the check does not pass and the "could not be verified"
-handling above applies.
+handling above applies. The same holds when another program replaces one of
+those files while the check is running: the notice then says the file was
+replaced.
 
 When the configuration enables the sandbox but the OS cannot apply it,
 gem-agent does not start. It never silently runs without the sandbox.

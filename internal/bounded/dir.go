@@ -44,8 +44,119 @@ func DirOf(root *os.Root) (*Dir, error) {
 	return &Dir{f}, nil
 }
 
+// DirAt opens the directory at path, as a directory, to be held: what
+// OpenDir opens, as a Dir. It is for a directory whose names another
+// process may replace while they are used — the sandbox checks make
+// their probes where the lanes write (ADR-0121).
+func DirAt(path string) (*Dir, error) {
+	f, err := OpenDir(path)
+	if err != nil {
+		return nil, err
+	}
+	return &Dir{f}, nil
+}
+
 // Close releases the directory.
 func (d *Dir) Close() error { return d.f.Close() }
+
+// FileID tells one file from every other: the device it is on and its
+// number there. A name can come to hold another file; a FileID taken
+// from what was made says whether it still holds that one.
+type FileID struct{ Dev, Ino uint64 }
+
+// IDOf is the identity of an open file.
+func IDOf(f *os.File) (FileID, error) {
+	rc, err := f.SyscallConn()
+	if err != nil {
+		return FileID{}, err
+	}
+	var st unix.Stat_t
+	var ferr error
+	if err := rc.Control(func(fd uintptr) {
+		ferr = again(func() error { return unix.Fstat(int(fd), &st) })
+	}); err != nil {
+		return FileID{}, err
+	}
+	if ferr != nil {
+		return FileID{}, &os.PathError{Op: "fstat", Path: f.Name(), Err: ferr}
+	}
+	return FileID{uint64(st.Dev), st.Ino}, nil
+}
+
+// Self is the identity of the directory held.
+func (d *Dir) Self() (FileID, error) { return IDOf(d.f) }
+
+// ID is the identity of what is under name, itself and not what it may
+// lead to, and its kind.
+func (d *Dir) ID(name string) (FileID, fs.FileMode, error) {
+	if !oneName(name) {
+		return FileID{}, 0, &os.PathError{Op: "fstatat", Path: name, Err: syscall.EINVAL}
+	}
+	st, err := d.stat(name)
+	if err != nil {
+		return FileID{}, 0, err
+	}
+	return FileID{uint64(st.Dev), st.Ino}, kindOf(st.Mode), nil
+}
+
+// Mkdir makes the sub-directory name.
+func (d *Dir) Mkdir(name string, perm os.FileMode) error {
+	if !oneName(name) {
+		return &os.PathError{Op: "mkdirat", Path: name, Err: syscall.EINVAL}
+	}
+	if err := d.at(func(dirfd int) error { return unix.Mkdirat(dirfd, name, uint32(perm.Perm())) }); err != nil {
+		return &os.PathError{Op: "mkdirat", Path: name, Err: err}
+	}
+	return nil
+}
+
+// Create makes the file name and opens it for writing. The name must
+// not be there: what is — a file, a link, to nowhere as well, a FIFO —
+// is never opened, so the open cannot wait and cannot land elsewhere.
+func (d *Dir) Create(name string, perm os.FileMode) (*os.File, error) {
+	if !oneName(name) {
+		return nil, &os.PathError{Op: "openat", Path: name, Err: syscall.EINVAL}
+	}
+	fd := -1
+	err := d.at(func(dirfd int) (err error) {
+		fd, err = unix.Openat(dirfd, name, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, uint32(perm.Perm()))
+		return err
+	})
+	if err != nil {
+		return nil, &os.PathError{Op: "openat", Path: name, Err: err}
+	}
+	return os.NewFile(uintptr(fd), name), nil
+}
+
+// OpenWrite opens the file name for writing, and only if it is a
+// regular file: without waiting, not through a link, and with nothing
+// done to it by the open — it is not emptied. A FIFO nobody reads does
+// not open that way, and one somebody reads is refused once it is seen.
+func (d *Dir) OpenWrite(name string) (*os.File, error) {
+	f, err := d.openRegular(name, unix.O_WRONLY)
+	if errors.Is(err, unix.ENXIO) {
+		return nil, &os.PathError{Op: "open", Path: name, Err: ErrNotRegular}
+	}
+	return f, err
+}
+
+// Remove removes name from the directory, whatever it is but a
+// directory: a link goes, and what it led to stays.
+func (d *Dir) Remove(name string) error { return d.unlink(name, 0) }
+
+// RemoveDir removes the empty sub-directory name, and nothing that is
+// not a directory.
+func (d *Dir) RemoveDir(name string) error { return d.unlink(name, unix.AT_REMOVEDIR) }
+
+func (d *Dir) unlink(name string, flags int) error {
+	if !oneName(name) {
+		return &os.PathError{Op: "unlinkat", Path: name, Err: syscall.EINVAL}
+	}
+	if err := d.at(func(dirfd int) error { return unix.Unlinkat(dirfd, name, flags) }); err != nil {
+		return &os.PathError{Op: "unlinkat", Path: name, Err: err}
+	}
+	return nil
+}
 
 // List lists at most n names from the start of the directory, in
 // directory order, each with its kind. There is no "all of them": n
@@ -110,28 +221,41 @@ func (d *Dir) kinds(names []string) ([]Entry, error) {
 
 // kind is the kind of name, itself and not what it may lead to.
 func (d *Dir) kind(name string) (fs.FileMode, error) {
+	st, err := d.stat(name)
+	if err != nil {
+		return 0, err
+	}
+	return kindOf(st.Mode), nil
+}
+
+// stat looks at name itself, not at what it may lead to.
+func (d *Dir) stat(name string) (unix.Stat_t, error) {
 	var st unix.Stat_t
 	err := d.at(func(dirfd int) error { return unix.Fstatat(dirfd, name, &st, unix.AT_SYMLINK_NOFOLLOW) })
 	if err != nil {
-		return 0, &os.PathError{Op: "fstatat", Path: name, Err: err}
+		return st, &os.PathError{Op: "fstatat", Path: name, Err: err}
 	}
-	// The kinds as os gives them: what it does not know reads as a
-	// regular file there, and is refused when it is opened.
-	switch st.Mode & unix.S_IFMT {
+	return st, nil
+}
+
+// kindOf is the kind a mode says, as os gives kinds: what it does not
+// know reads as a regular file there, and is refused when it is opened.
+func kindOf(mode uint16) fs.FileMode {
+	switch mode & unix.S_IFMT {
 	case unix.S_IFDIR:
-		return fs.ModeDir, nil
+		return fs.ModeDir
 	case unix.S_IFLNK:
-		return fs.ModeSymlink, nil
+		return fs.ModeSymlink
 	case unix.S_IFIFO:
-		return fs.ModeNamedPipe, nil
+		return fs.ModeNamedPipe
 	case unix.S_IFSOCK:
-		return fs.ModeSocket, nil
+		return fs.ModeSocket
 	case unix.S_IFCHR:
-		return fs.ModeDevice | fs.ModeCharDevice, nil
+		return fs.ModeDevice | fs.ModeCharDevice
 	case unix.S_IFBLK, unix.S_IFWHT:
-		return fs.ModeDevice, nil
+		return fs.ModeDevice
 	}
-	return 0, nil
+	return 0
 }
 
 // OpenDir opens the sub-directory name.
@@ -147,7 +271,13 @@ func (d *Dir) OpenDir(name string) (*Dir, error) {
 // regular file: what OpenRegular does under a root, for one name here
 // — except that a link is not followed, to a regular file either.
 func (d *Dir) OpenRegular(name string) (*os.File, error) {
-	fd, err := d.openat(name, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_NOFOLLOW, true)
+	return d.openRegular(name, unix.O_RDONLY)
+}
+
+// openRegular opens name for reading or for writing, as OpenRegular
+// and OpenWrite describe.
+func (d *Dir) openRegular(name string, access int) (*os.File, error) {
+	fd, err := d.openat(name, access|unix.O_NONBLOCK|unix.O_NOFOLLOW, true)
 	if err != nil {
 		return nil, err
 	}
