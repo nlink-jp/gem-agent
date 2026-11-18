@@ -21,7 +21,7 @@ name ([risk.go:209](../../../internal/risk/risk.go)) — cannot see it.
 That constraint rules out the obvious design. The MCP intake already writes
 an image into the session work directory and hands the model
 `[image saved at <path> … use view_image on that path]`
-([mcpresult.go:302](../../../cmd/mcpresult.go)), so a path is sitting right
+([mcpresult.go:300](../../../cmd/mcpresult.go)), so a path is sitting right
 there — and `write` short-circuits on `os.Stat`
 ([mcpresult.go:349](../../../cmd/mcpresult.go)) while every call hands the
 server the work directory as `_meta[workdir.MetaKey]`
@@ -37,17 +37,17 @@ the real path. A view layer that opened it would not be.
 
 The third refuted draft said the view layer would be handed "the bytes the
 intake already holds". It cannot: `render` returns a `string`
-([mcpresult.go:60](../../../cmd/mcpresult.go)), `mcpIntake` keeps a
+([mcpresult.go:58](../../../cmd/mcpresult.go)), `mcpIntake` keeps a
 work-directory getter, a byte cap and a preview length — the sink this
 decision added is withdrawn by ADR-0091, and what it has never kept is the
-bytes ([mcpresult.go:53](../../../cmd/mcpresult.go)), and the tool contract is
+bytes ([mcpresult.go:51](../../../cmd/mcpresult.go)), and the tool contract is
 `Run func(ctx, args) (string, error)`
-([tools.go:68](../../../internal/tools/tools.go)). After `Run` returns, the
+([tools.go:69](../../../internal/tools/tools.go)). After `Run` returns, the
 blocks are gone.
 
 But the runtime is not short of a channel. The agent loop already talks to
 the UI **during** a tool call — `prog.Send(tui.ToolCall{…})` at
-[root.go:1011](../../../cmd/root.go) — so an out-of-band route from a tool
+[root.go:1012](../../../cmd/root.go) — so an out-of-band route from a tool
 result to the screen is an existing, working pattern rather than a new
 mechanism. Nothing about the string contract has to move.
 
@@ -102,7 +102,7 @@ does not allow.
 One condition, not two. A block whose note does not fit the response
 budget is already neither saved nor described individually — the guard
 sizes `binaryNote` before anything is written
-([mcpresult.go:143](../../../cmd/mcpresult.go)) — and is counted into a
+([mcpresult.go:141](../../../cmd/mcpresult.go)) — and is counted into a
 leftovers line. Such a block is **not drawn** either.
 
 The alternative — drawing a picture the model was never told about, from a

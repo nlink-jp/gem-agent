@@ -193,7 +193,7 @@ func TestAddedRootsReachTheLanesAndSurviveClear(t *testing.T) {
 		t.Fatal(err)
 	}
 	shellExec := &liveExec{fn: execFn}
-	work := t.TempDir()
+	work := taken(t, t.TempDir())
 	notesOut := rotateWorkDir(registry, shellExec, true, project, work, nil, nil, false, nil, registry.AddedDirs(), nil, nil)
 	for _, n := range notesOut {
 		if strings.Contains(n, "keep the previous") {
@@ -236,7 +236,7 @@ func TestClearDropsOnlyTheRootThatFailsItsProbes(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(stale, 0o755) })
 	shellExec := &liveExec{fn: execFn}
-	work := underHome(t, "work")
+	work := taken(t, underHome(t, "work"))
 	var heard []string
 	got := rotateWorkDir(registry, shellExec, true, project, work, nil, nil, false, nil, registry.AddedDirs(), nil, func(d []string) { heard = d })
 	if len(got) != 1 || !strings.Contains(got[0], stale) || !strings.Contains(got[0], "/add-dir") || strings.Contains(got[0], "keep the previous") {

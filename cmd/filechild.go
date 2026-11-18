@@ -7,16 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/nlink-jp/gem-agent/internal/bounded"
 	"github.com/nlink-jp/gem-agent/internal/pathid"
+	"github.com/nlink-jp/gem-agent/internal/place"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
@@ -365,14 +368,29 @@ func installFileChildWith(reg *tools.Registry, self, home, probeDir string) stri
 // could be a link it planted. Empty means there is nowhere to probe, and
 // the caller leaves the reads in process.
 func fileProbeDir(workDir string) (dir string, done func()) {
+	// Made in the place the session holds — the work directory, or the
+	// temporary directory when there is none — by one name, and taken
+	// as a place of its own (ADR-0122): made by path, it was made
+	// wherever a link under the work directory's name led.
+	var parent *place.Place
+	var err error
+	prefix := "probe-"
 	if workDir != "" {
-		if d, err := os.MkdirTemp(workDir, "probe-"); err == nil {
-			return d, func() { _ = os.Remove(d) }
-		}
+		parent, err = place.Of(workDir)
+	} else {
+		parent, err = place.Take(os.TempDir())
+		prefix = "gem-agent-file-probe-"
 	}
-	d, err := os.MkdirTemp("", "gem-agent-file-probe-")
 	if err != nil {
 		return "", func() {}
 	}
-	return d, func() { _ = os.Remove(d) }
+	name := prefix + strconv.FormatUint(rand.Uint64(), 36)
+	sub, err := parent.Sub(name, 0o700)
+	if err != nil {
+		return "", func() {}
+	}
+	return sub.Real(), func() {
+		_ = parent.Dir().RemoveDir(name)
+		sub.Release()
+	}
 }

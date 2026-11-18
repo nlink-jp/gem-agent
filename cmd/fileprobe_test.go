@@ -16,9 +16,11 @@ func TestFileProbeDirIgnoresAPlantedLink(t *testing.T) {
 	if err := os.Symlink(victim, filepath.Join(work, "probe")); err != nil {
 		t.Fatal(err)
 	}
+	taken(t, work)
+	real, _ := filepath.EvalSymlinks(work)
 	dir, done := fileProbeDir(work)
 	defer done()
-	if filepath.Dir(dir) != work {
+	if filepath.Dir(dir) != real {
 		t.Fatalf("probe directory %q is not in the work directory", dir)
 	}
 	fi, err := os.Lstat(dir)
@@ -42,6 +44,7 @@ func TestPlantedScratchLinkDisablesTheReadLane(t *testing.T) {
 	if err := os.Symlink(victim, filepath.Join(work, "scratch")); err != nil {
 		t.Fatal(err)
 	}
+	taken(t, work)
 	if dir, err := readScratchDir(work); err == nil {
 		t.Fatalf("the planted link was accepted: %q", dir)
 	}

@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/nlink-jp/gem-agent/internal/place"
 )
 
 // probeFixture is a held directory with one probe made in it, and a
@@ -407,4 +409,45 @@ func TestShellQuoteNamesThePathItWasGiven(t *testing.T) {
 			t.Errorf("%q came back as %q (%v)", path, out, err)
 		}
 	}
+}
+
+// A check opens the place the session took, from the descriptor it
+// holds. A name that no longer leads to that place is an error — it is
+// not opened by its path, which would make the probes wherever the
+// name leads now.
+func TestTheChecksOpenThePlaceTheSessionTook(t *testing.T) {
+	base := t.TempDir()
+	dir, other := filepath.Join(base, "dir"), filepath.Join(base, "other")
+	for _, d := range []string{dir, other} {
+		must(t, os.Mkdir(d, 0o700))
+	}
+	taken, err := place.Take(dir)
+	must(t, err)
+	defer taken.Release()
+	p, err := openProbes(dir)
+	must(t, err)
+	name, err := p.file(".probe-")
+	must(t, err)
+	if _, err := os.Lstat(filepath.Join(dir, name)); err != nil {
+		t.Errorf("the probe was not made in the place: %v", err)
+	}
+	if left := p.cleanup(); len(left) != 0 {
+		t.Errorf("left %v", left)
+	}
+	// Still held after a check has closed its own descriptor.
+	if err := taken.InPlace(); err != nil {
+		t.Errorf("the place after a check: %v", err)
+	}
+	must(t, os.Rename(dir, dir+".moved"))
+	must(t, os.Symlink(other, dir))
+	if p, err := openProbes(dir); !errors.Is(err, place.ErrReplaced) {
+		if err == nil {
+			_ = p.cleanup()
+		}
+		t.Errorf("a replaced place: %v, want it refused", err)
+	}
+	// A directory nobody took is opened by its path, as before.
+	p, err = openProbes(other)
+	must(t, err)
+	_ = p.cleanup()
 }

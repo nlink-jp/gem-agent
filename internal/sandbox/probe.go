@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nlink-jp/gem-agent/internal/bounded"
+	"github.com/nlink-jp/gem-agent/internal/place"
 )
 
 // The checks make probes where the lanes write, so a process in a lane
@@ -139,9 +140,21 @@ type probes struct {
 	mine   bool // opened, and as empty as it was made
 }
 
-// openProbes holds the directory at path.
+// openProbes holds the directory at path: the place the session took
+// under that name, when there is one — the project, the work directory
+// and what was made in them — opened again from the descriptor it
+// holds, and refused when the name no longer leads to it (ADR-0122). A
+// directory that is nobody's place — the shared temporary directory,
+// home, an added directory — is opened by its path.
 func openProbes(path string) (*probes, error) {
-	d, err := bounded.DirAt(path)
+	var d *bounded.Dir
+	p, err := place.Of(path)
+	switch {
+	case err == nil:
+		d, err = p.Dir().Reopen()
+	case errors.Is(err, place.ErrNotTaken):
+		d, err = bounded.DirAt(path)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -19,7 +19,7 @@ view 層が行う読み取りはツールコールではないので、`Agent.de
 
 その制約が、いちばん素直な設計を排除する。MCP intake は既に画像をセッションの work dir へ
 書き出し、モデルには `[image saved at <path> … use view_image on that path]` を渡している
-（[mcpresult.go:302](../../../cmd/mcpresult.go)）。つまりパスはそこにある。しかし `write` は
+（[mcpresult.go:300](../../../cmd/mcpresult.go)）。つまりパスはそこにある。しかし `write` は
 `os.Stat` で短絡し（[mcpresult.go:349](../../../cmd/mcpresult.go)）、毎回の呼び出しがサーバに
 work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:610](../../../internal/mcp/client.go)）。
 ローカルのサーバ子プロセスは自分の名前・ツール名・返すバイト列・ディレクトリを知るので、
@@ -31,14 +31,14 @@ work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:610](../..
 ### 配管は実際にどうなっているか
 
 反証された第 3 稿は、view 層に「intake が既に保持しているバイト列」を渡すと書いた。渡せない。
-`render` は `string` を返し（[mcpresult.go:60](../../../cmd/mcpresult.go)）、`mcpIntake` が
+`render` は `string` を返し（[mcpresult.go:58](../../../cmd/mcpresult.go)）、`mcpIntake` が
 持つのは work dir の getter とバイト上限とプレビュー長だけで
-（[mcpresult.go:53](../../../cmd/mcpresult.go)。本決定が足した sink は ADR-0091 が撤回した）、一度も持ったことが無いのがバイト列であり、ツール契約は
-`Run func(ctx, args) (string, error)` である（[tools.go:68](../../../internal/tools/tools.go)）。
+（[mcpresult.go:51](../../../cmd/mcpresult.go)。本決定が足した sink は ADR-0091 が撤回した）、一度も持ったことが無いのがバイト列であり、ツール契約は
+`Run func(ctx, args) (string, error)` である（[tools.go:69](../../../internal/tools/tools.go)）。
 `Run` が返れば blocks は消えている。
 
 しかしランタイムに経路が無いわけではない。エージェントループはツールコールの**最中に**既に
-UI へ話しかけている — `prog.Send(tui.ToolCall{…})`（[root.go:1011](../../../cmd/root.go)）—
+UI へ話しかけている — `prog.Send(tui.ToolCall{…})`（[root.go:1012](../../../cmd/root.go)）—
 ので、ツール結果から画面への帯域外経路は新しい機構ではなく既存の働いている型である。文字列
 契約は 1 ミリも動かさなくてよい。
 
@@ -87,7 +87,7 @@ sink は対話的 TUI でない入口すべてで**不活性**である。そこ
 
 条件は 1 つであって 2 つではない。注記が response budget に収まらないブロックは、既に保存も
 個別記述もされない — ガードは何かを書く前に `binaryNote` の大きさを測る
-（[mcpresult.go:143](../../../cmd/mcpresult.go)）— そして leftovers 行に数えられる。そうした
+（[mcpresult.go:141](../../../cmd/mcpresult.go)）— そして leftovers 行に数えられる。そうした
 ブロックは**描かない**。
 
 代案（モデルが知らされていない絵を、結果が切り詰められた呼び出しから描く）は、セッションの

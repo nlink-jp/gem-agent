@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -85,6 +86,53 @@ func IDOf(f *os.File) (FileID, error) {
 
 // Self is the identity of the directory held.
 func (d *Dir) Self() (FileID, error) { return IDOf(d.f) }
+
+// Reopen opens the directory held once more, from itself: a second
+// descriptor a caller may close, on the same directory whatever its
+// name leads to by now.
+func (d *Dir) Reopen() (*Dir, error) {
+	fd, err := d.openat(".", unix.O_RDONLY|unix.O_DIRECTORY, false)
+	if err != nil {
+		return nil, err
+	}
+	return &Dir{os.NewFile(uintptr(fd), d.f.Name())}, nil
+}
+
+// Path is the path the kernel holds for the directory (fcntl
+// F_GETPATH): links resolved and the case the volume keeps. It is what
+// the directory is called now, which need not be the name it was
+// opened by.
+func (d *Dir) Path() (string, error) {
+	var buf [unix.PathMax]byte
+	err := d.at(func(dirfd int) error {
+		// As sandbox.DescriptorPath asks it.
+		if _, _, e := syscall.Syscall(syscall.SYS_FCNTL, uintptr(dirfd), uintptr(unix.F_GETPATH), uintptr(unsafe.Pointer(&buf[0]))); e != 0 {
+			return e
+		}
+		return nil
+	})
+	if err != nil {
+		return "", &os.PathError{Op: "fcntl", Path: d.f.Name(), Err: err}
+	}
+	n := 0
+	for n < len(buf) && buf[n] != 0 {
+		n++
+	}
+	return string(buf[:n]), nil
+}
+
+// Rename gives the name old in the directory the name new there, over
+// whatever new held: both are names of this directory, so nothing is
+// moved in or out of it.
+func (d *Dir) Rename(old, new string) error {
+	if !oneName(old) || !oneName(new) {
+		return &os.LinkError{Op: "renameat", Old: old, New: new, Err: syscall.EINVAL}
+	}
+	if err := d.at(func(dirfd int) error { return unix.Renameat(dirfd, old, dirfd, new) }); err != nil {
+		return &os.LinkError{Op: "renameat", Old: old, New: new, Err: err}
+	}
+	return nil
+}
 
 // ID is the identity of what is under name, itself and not what it may
 // lead to, and its kind.

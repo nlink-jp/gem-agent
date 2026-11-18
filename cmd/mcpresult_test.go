@@ -3,6 +3,7 @@ package cmd
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nlink-jp/gem-agent/internal/mcp"
+	"github.com/nlink-jp/gem-agent/internal/place"
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
@@ -183,8 +185,14 @@ func extractPath(t *testing.T, out, work string) string {
 }
 
 // fixedDir is the intake's directory getter for tests: one directory
-// for the test's lifetime.
-func fixedDir(dir string) func() string { return func() string { return dir } }
+// for the test's lifetime, taken as the session takes the work
+// directory it makes.
+func fixedDir(dir string) func() string {
+	if dir != "" {
+		_, _ = place.Take(dir)
+	}
+	return func() string { return dir }
+}
 
 // textOf keeps the text of a render and drops its save records, for the
 // tests that are about what the model reads.
@@ -497,48 +505,99 @@ func TestAFIFOAtTheNameDoesNotHang(t *testing.T) {
 	}
 }
 
-// What is hashed to decide a reuse is the file itself, of the size that
-// was saved, opened without waiting: a look and then a plain open
-// waited on a name swapped for a FIFO, and through a link swapped in it
-// read a file that never ends.
-func TestFileSHA256HashesOnlyTheSavedFile(t *testing.T) {
-	dir := t.TempDir()
-	body := []byte("the saved result")
-	file := filepath.Join(dir, "file")
-	if err := os.WriteFile(file, body, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if sum, err := fileSHA256(file, int64(len(body))); err != nil || sum != sha256.Sum256(body) {
-		t.Errorf("the saved file: %x, %v", sum, err)
-	}
-	if _, err := fileSHA256(file, int64(len(body))+1); err == nil {
-		t.Error("a file of another size was hashed as the saved result")
-	}
-	if err := syscall.Mkfifo(filepath.Join(dir, "pipe"), 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
-	}
-	for link, target := range map[string]string{"to-file": "file", "to-pipe": "pipe", "to-zero": "/dev/zero"} {
-		if err := os.Symlink(target, filepath.Join(dir, link)); err != nil {
+// A result is saved in the work directory the session took, through
+// the directory it holds. A work directory replaced by a link saves
+// nothing — made by path, the file was made wherever the link led — and
+// what sits under the result's name is kept only when it is the file
+// itself holding these bytes: a link to such a file, a FIFO, a link to
+// a file that never ends are each replaced by the result, without a
+// wait.
+func TestAResultIsSavedInTheWorkDirectoryTheSessionTook(t *testing.T) {
+	base := t.TempDir()
+	work, outside := filepath.Join(base, "work"), filepath.Join(base, "outside")
+	for _, d := range []string{work, outside} {
+		if err := os.Mkdir(d, 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{"pipe", "to-file", "to-pipe", "to-zero", "missing"} {
+	taken(t, work)
+	body := []byte("the saved result")
+	if err := saveResult(work, "r.txt", body); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := os.Stat(filepath.Join(work, "r.txt"))
+	// The same bytes again: the file that is there is kept as it is.
+	if err := saveResult(work, "r.txt", body); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := os.Stat(filepath.Join(work, "r.txt")); !os.SameFile(st, again) {
+		t.Error("a file already holding the result was replaced")
+	}
+	if err := os.WriteFile(filepath.Join(work, "elsewhere"), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, plant := range map[string]func(path string) error{
+		"other bytes":            func(p string) error { return os.WriteFile(p, []byte("planted"), 0o600) },
+		"a link to the same":     func(p string) error { return os.Symlink("elsewhere", p) },
+		"a FIFO":                 func(p string) error { return syscall.Mkfifo(p, 0o600) },
+		"a link to no end":       func(p string) error { return os.Symlink("/dev/zero", p) },
+		"a link out of the work": func(p string) error { return os.Symlink(filepath.Join(outside, "made"), p) },
+	} {
+		path := filepath.Join(work, "planted-"+strings.ReplaceAll(name, " ", "-"))
+		if err := plant(path); err != nil {
+			t.Fatal(err)
+		}
 		done := make(chan error, 1)
-		go func() {
-			_, err := fileSHA256(filepath.Join(dir, name), int64(len(body)))
-			done <- err
-		}()
+		go func() { done <- saveResult(work, filepath.Base(path), body) }()
 		select {
 		case err := <-done:
-			if err == nil {
-				t.Errorf("%s was hashed as the saved result", name)
+			if err != nil {
+				t.Errorf("%s: %v", name, err)
 			}
 		case <-time.After(5 * time.Second):
-			// Release the open that waits, so the test ends.
-			if rw, err := os.OpenFile(filepath.Join(dir, "pipe"), os.O_RDWR|syscall.O_NONBLOCK, 0); err == nil {
-				defer func() { _ = rw.Close() }()
-			}
-			t.Fatalf("%s: the hash did not come back", name)
+			t.Fatalf("%s: the save did not come back", name)
+		}
+		if st, err := os.Lstat(path); err != nil || !st.Mode().IsRegular() {
+			t.Errorf("%s: under the name there is now %v (%v), want the result itself", name, st, err)
+		}
+		if got, _ := os.ReadFile(path); string(got) != string(body) {
+			t.Errorf("%s: the name holds %q", name, got)
+		}
+	}
+	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
+		t.Errorf("a file was made outside the work directory: %v", entries)
+	}
+	if got, _ := os.ReadFile(filepath.Join(work, "elsewhere")); string(got) != string(body) {
+		t.Errorf("a file a link led to was written: %q", got)
+	}
+	// No temporary file is left.
+	entries, _ := os.ReadDir(work)
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".tmp-") {
+			t.Errorf("left behind: %s", e.Name())
+		}
+	}
+
+	// The work directory replaced by a link: nothing is saved, and
+	// nothing is made where the link leads.
+	if err := os.Rename(work, work+".moved"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, work); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveResult(work, "after.txt", body); !errors.Is(err, place.ErrReplaced) {
+		t.Errorf("a save into a replaced work directory: %v, want it refused", err)
+	}
+	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
+		t.Errorf("a file was made where the link leads: %v", entries)
+	}
+	// And the intake reports it as a result that was not saved.
+	in := newMCPIntake(func() string { return work })
+	_, saved := in.render("srv", "tool", textBlock(strings.Repeat("x", 100)))
+	for _, s := range saved {
+		if s.Path != "" || s.Err == "" {
+			t.Errorf("the intake recorded a save into a replaced work directory: %+v", s)
 		}
 	}
 }
