@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-11-17), implemented |
+| Status | **Accepted** (2026-11-17), implemented; §1's hold on the bytes a read returns withdrawn by ADR-0122 |
 | Date | 2026-11-17 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |

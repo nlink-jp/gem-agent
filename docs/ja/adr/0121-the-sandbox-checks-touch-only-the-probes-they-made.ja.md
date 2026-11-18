@@ -2,7 +2,7 @@
 
 | 項目 | 値 |
 |-------|-----|
-| Status | **Accepted**（2026-11-18） |
+| Status | **Accepted**（2026-11-18） — §2・§3 と、§1・§5・§7 の比較は ADR-0122 で撤回 |
 | Date | 2026-11-18 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
