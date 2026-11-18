@@ -116,3 +116,31 @@ func returnsAtOnce(t *testing.T, fifo string, fn func()) {
 		}
 	}
 }
+
+// A state tree removed and made again is the state tree: the next
+// session gets its work directory. The directory above a session's is
+// taken to make it and not kept — kept, it read as a replaced place at
+// every later session of the process.
+func TestEnsureWorksAgainAfterTheStateTreeWasRemoved(t *testing.T) {
+	const proj = "/some/project"
+	root := t.TempDir()
+	t.Setenv(statedir.EnvRoot, root)
+	first, err := Ensure(proj, "sid1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Remove(proj, "sid1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Dir(first)); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	second, err := Ensure(proj, "sid2")
+	if err != nil {
+		t.Fatalf("a session after the state tree was removed: %v", err)
+	}
+	if st, err := os.Stat(second); err != nil || !st.IsDir() {
+		t.Errorf("the new work directory: %v, %v", st, err)
+	}
+	_ = Remove(proj, "sid2")
+}

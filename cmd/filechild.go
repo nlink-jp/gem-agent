@@ -384,7 +384,7 @@ func fileProbeDir(workDir string) (dir string, done func()) {
 	if err != nil {
 		return "", func() {}
 	}
-	name := prefix + strconv.FormatUint(rand.Uint64(), 36)
+	name := randomDirName(prefix)
 	sub, err := parent.Sub(name, 0o700)
 	if err != nil {
 		return "", func() {}
@@ -393,4 +393,11 @@ func fileProbeDir(workDir string) (dir string, done func()) {
 		_ = parent.Dir().RemoveDir(name)
 		sub.Release()
 	}
+}
+
+// randomDirName is prefix and a number nobody could have known
+// beforehand: the name of a directory the runtime makes where a lane
+// writes.
+func randomDirName(prefix string) string {
+	return prefix + strconv.FormatUint(rand.Uint64(), 36)
 }

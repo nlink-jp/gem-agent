@@ -100,6 +100,10 @@ func takeOwnDir(dir string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
+	// The directory above is the state tree's and is not kept: held for
+	// the life of the process, a state tree removed and made again read
+	// as replaced at every later session of that process.
+	defer above.Release()
 	_, err = above.Sub(filepath.Base(dir), mode)
 	return err
 }

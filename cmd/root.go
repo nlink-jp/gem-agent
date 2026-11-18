@@ -550,7 +550,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// /read-dir and the model's request_directory share this one path.
 	granter := &dirGranter{
 		registry: registry, shellExec: shellExec, sandboxOn: sandboxOn,
-		projectDir: realOrSelf(projectDir), workDir: func() string { return workDir },
+		projectDir: takenOrSelf(projectDir), workDir: func() string { return workDir },
 		denyExec: cfg.Sandbox.ReadLaneDenyExec, caches: cfg.Sandbox.Caches(), readLanePrompts: cfg.Sandbox.ReadLanePrompts,
 		parents: func() []string { return trustpin.Parents(projectDir, persistentSnap) },
 		base:    rootBaseContext(cfgPath), watch: watch, sources: map[string]string{}, msgs: msgs,
@@ -1706,6 +1706,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		if workDir != "" {
 			workdir.RemoveIfEmpty(workDir)
 		}
+		clearedWork := workDir
 		workDir = ""
 		if dir, err := workdir.Ensure(projectDir, sessionID); err != nil {
 			note("session work directory unavailable: %v", err)
@@ -1729,6 +1730,10 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		// Still under the grant lock taken above: a late grant cannot
 		// swap in a runner built against the old work directory.
 		notes = append(notes, rotateWorkDir(registry, shellExec, sandboxOn, projectDir, workDir, cfg.Sandbox.ReadLaneDenyExec, cfg.Sandbox.Caches(), cfg.Sandbox.ReadLanePrompts, trustpin.Parents(projectDir, persistentSnap), registry.AddedDirs(), func() { ag.SetSystem(composeSystem()) }, granter.forget)...)
+		// The session that was cleared is over: the places it took for
+		// its work are given up, so a long conversation does not hold a
+		// directory open for every /clear behind it.
+		releaseWorkPlaces(clearedWork)
 		granter.endClear()
 		// A cleared session restarts what carries its identity (ADR-0071
 		// addendum): telemetry is re-resourced with the new id, and the
@@ -2524,6 +2529,11 @@ func buildLanes(sandboxOn bool, projectDir, workDir string, denyExec []string, c
 		return nil, sandbox.Enforcement{}, nil, nil, err
 	}
 	projectDir = project.Real()
+	// The temporary directory is a place the profiles are anchored on
+	// too, and one the write lane writes.
+	if err := sandbox.TempDirReplaced(); err != nil {
+		return nil, sandbox.Enforcement{}, nil, nil, err
+	}
 	spec := sandbox.Spec{ProjectDir: projectDir, DenyExec: append(append([]string{}, sandbox.DefaultDenyExec...), denyExec...), PersistentParents: persistentParents, Added: added}
 	if workDir != "" {
 		// The session work directory (ADR-0058). A shell command told to
@@ -2693,11 +2703,12 @@ func readScratchDir(workDir string) (string, error) {
 		}
 		return scratch.Real(), nil
 	}
-	dir, err := os.MkdirTemp("", "gem-agent-read-scratch-")
+	// Made in the temporary directory the session holds, by one name.
+	tmp, err := place.Take(os.TempDir())
 	if err != nil {
 		return "", err
 	}
-	scratch, err := place.Take(dir)
+	scratch, err := tmp.Sub(randomDirName("gem-agent-read-scratch-"), 0o700)
 	if err != nil {
 		return "", err
 	}
@@ -2734,7 +2745,11 @@ func removeFallbackScratch() {
 	defer fallbackScratchMu.Unlock()
 	if fallbackScratch != "" && strings.Contains(filepath.Base(fallbackScratch), "gem-agent-read-scratch-") {
 		place.Release(fallbackScratch)
-		_ = bounded.RemoveAll(fallbackScratch)
+		// Removed from the temporary directory the session holds, by
+		// its one name: that directory is one a lane writes.
+		if tmp, err := place.Of(filepath.Dir(fallbackScratch)); err == nil {
+			_ = tmp.RemoveAll(filepath.Base(fallbackScratch))
+		}
 		fallbackScratch = ""
 	}
 }
@@ -3276,11 +3291,36 @@ func realHome() string {
 	return home
 }
 
+// releaseWorkPlaces gives up the places a session took for its work:
+// the work directory, its scratch and its cache.
+func releaseWorkPlaces(workDir string) {
+	if workDir == "" {
+		return
+	}
+	// By the name the session used and by the real path: the cache is
+	// taken under the real one, and through a state tree reached by a
+	// link the two differ — released by one name only, a cache stayed
+	// open behind every /clear.
+	names := []string{workDir}
+	if p, ok := place.Held(workDir); ok {
+		names = append(names, p.Real())
+	}
+	for _, dir := range names {
+		place.Release(filepath.Join(dir, "scratch"))
+		if cache, ok := workdir.ApprovedCachePath(dir); ok {
+			place.Release(cache)
+		}
+	}
+	place.Release(workDir)
+}
+
 // replacedNote is what the operator is told when a place the session
-// took turns out to have been replaced: which one, and what the
-// session does from there.
+// took turns out to have been replaced: which one, what the session
+// does now, and what brings the sandbox back. A restart does for every
+// place; /clear does only for a work directory, and "a new session"
+// reads as /clear.
 func replacedNote(err error) string {
-	return fmt.Sprintf("sandbox unverified: %v — every shell command asks you from here on; start a new session to have the sandbox again", err)
+	return fmt.Sprintf("sandbox unverified: %v — every shell command asks you now; restart gem-agent to have the sandbox again", err)
 }
 
 // buildWithoutFailedRoots builds the lanes over added, leaving out each

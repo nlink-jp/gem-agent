@@ -16,14 +16,16 @@
   configuration and no instruction file). The runtime now opens each
   such place once and holds it: the sandbox is anchored on what was
   opened, never on a name read again. A rebuild that finds the
-  project or the work directory replaced builds nothing, says which
-  one, and from there every shell command asks you; a new session
-  has the sandbox again. Results saved into the work directory and
+  project, the work directory or the temporary directory replaced
+  builds nothing, says which one, and every shell command asks you
+  until you restart. (A temporary directory set with `TMPDIR` could
+  be moved aside the same way; the review of this fix found it.)
+  Results saved into the work directory and
   the runtime's own directories there are made through the directory
   it holds too — a result saved by path was made where the link led.
-  This closes the cause behind the last releases' fixes: every call
-  that names a file by path is now listed, and a test fails on one
-  that is not.
+  This closes the cause behind the last releases' fixes: every
+  function that names a file by path is now listed with what it is
+  for, and a test fails on one that is not.
 
 ## [0.106.0] - 2026-11-18
 

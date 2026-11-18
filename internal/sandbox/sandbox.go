@@ -5,11 +5,14 @@
 package sandbox
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/nlink-jp/gem-agent/internal/place"
 )
 
 // Executable is the sandbox-exec binary path. macOS ships it in /usr/bin;
@@ -76,14 +79,36 @@ func Wrap(profile string, shell string, command string) []string {
 // slice, so its "outside the writable roots" can never disagree with
 // what Seatbelt denies. A location that does not exist on this
 // machine is left out.
+//
+// The temporary directory is a place the session takes (ADR-0122): the
+// write lane writes it, and where its parent lets it be renamed — a
+// TMPDIR the operator set — it can be replaced by a link. Its name was
+// resolved here at every build of the profiles, and the write lane
+// then wrote where the link led (found by the review of ADR-0122,
+// under the real profile). It is taken the first time it is asked for
+// and is its real path from then on; replaced, it is left out, and
+// TempDirReplaced says so to whoever builds the lanes. /private/tmp
+// and /dev/fd are the system's.
 func ScratchDirs() []string {
 	var dirs []string
-	for _, d := range []string{os.TempDir(), "/private/tmp", "/dev/fd"} {
+	if tmp, err := place.Take(os.TempDir()); err == nil {
+		dirs = append(dirs, tmp.Real())
+	}
+	for _, d := range []string{"/private/tmp", "/dev/fd"} {
 		if resolved, err := ResolveWriteDir(d); err == nil {
 			dirs = append(dirs, resolved)
 		}
 	}
 	return dirs
+}
+
+// TempDirReplaced is the error of a temporary directory that is no
+// longer the one the session took, or nil.
+func TempDirReplaced() error {
+	if _, err := place.Take(os.TempDir()); errors.Is(err, place.ErrReplaced) {
+		return err
+	}
+	return nil
 }
 
 // ScratchFiles returns the device sinks a shell command may write to

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/nlink-jp/gem-agent/internal/config"
+	"github.com/nlink-jp/gem-agent/internal/place"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/statedir"
 )
@@ -32,7 +33,7 @@ type addedDir struct {
 // mounted now, is told and passed over instead of stopping the start.
 func resolveAddedDirs(cfg *config.Config, projectDir, workDir, cfgPath string) (added []addedDir, skipped []string, err error) {
 	ctx := rootBaseContext(cfgPath)
-	ctx.ProjectDir, ctx.WorkDir = realOrSelf(projectDir), realOrSelf(workDir)
+	ctx.ProjectDir, ctx.WorkDir = takenOrSelf(projectDir), takenOrSelf(workDir)
 	cfgWrite, cfgRead := cfg.Directories.Paths()
 	type given struct {
 		path, source, label string
@@ -104,6 +105,21 @@ func rootBaseContext(cfgPath string) sandbox.RootContext {
 
 // realOrSelf resolves an existing directory to the real path Seatbelt
 // matches, leaving one that does not exist (or "") as given.
+// takenOrSelf is the kernel's name of the place the session took under
+// dir, and realOrSelf(dir) when it took none. A judgement about the
+// project or the work directory is about the directory the session
+// took: resolved from the name again, it was about whatever a lane had
+// put under the name (ADR-0122).
+func takenOrSelf(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	if p, ok := place.Held(dir); ok {
+		return p.Canonical()
+	}
+	return realOrSelf(dir)
+}
+
 func realOrSelf(dir string) string {
 	if dir == "" {
 		return ""

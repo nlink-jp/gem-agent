@@ -189,3 +189,35 @@ func TestOpenRootAndRelease(t *testing.T) {
 	}
 	again.Release()
 }
+
+// RemoveAll removes a name from the place held, and from nothing else:
+// with the place's name leading elsewhere by now, nothing is removed
+// where it leads.
+func TestRemoveAllRemovesFromThePlaceHeld(t *testing.T) {
+	_, dir, other := fixture(t)
+	p := take(t, dir)
+	must(t, os.MkdirAll(filepath.Join(dir, "tree", "deep"), 0o700))
+	must(t, os.WriteFile(filepath.Join(dir, "tree", "deep", "f"), []byte("x"), 0o600))
+	must(t, os.Symlink(other, filepath.Join(dir, "tree", "out")))
+	if err := p.RemoveAll("tree"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "tree")); !os.IsNotExist(err) {
+		t.Errorf("the tree is still there: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(other, "keep")); err != nil {
+		t.Errorf("what a link in the tree led to is gone: %v", err)
+	}
+	must(t, os.Mkdir(filepath.Join(other, "tree"), 0o700))
+	must(t, os.Rename(dir, dir+".moved"))
+	must(t, os.Symlink(other, dir))
+	if err := p.RemoveAll("tree"); !errors.Is(err, ErrReplaced) {
+		t.Errorf("a removal through a replaced place: %v, want it refused", err)
+	}
+	if _, err := os.Stat(filepath.Join(other, "tree")); err != nil {
+		t.Errorf("a directory was removed where the place's name leads now: %v", err)
+	}
+	if got, ok := Held(dir); !ok || got != p || got.Real() != p.Real() {
+		t.Errorf("Held after the replacement: %v, %v, want the place that was taken", got, ok)
+	}
+}

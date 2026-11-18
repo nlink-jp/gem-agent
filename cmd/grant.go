@@ -205,7 +205,7 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 	}
 	current := g.registry.AddedDirs()
 	rc := g.base
-	rc.ProjectDir, rc.WorkDir, rc.Roots = g.projectDir, realOrSelf(g.workDir()), current
+	rc.ProjectDir, rc.WorkDir, rc.Roots = g.projectDir, takenOrSelf(g.workDir()), current
 	judged, err := sandbox.RefuseRoot(real, write, rc)
 	if err != nil {
 		var cov *sandbox.CoveredError

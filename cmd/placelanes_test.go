@@ -338,3 +338,150 @@ func TestTheFileToolsDoNotOpenAReplacedWorkDirectory(t *testing.T) {
 		t.Errorf("a replaced project: %v, want it refused", err)
 	}
 }
+
+// /clear gives up the places the cleared session took for its work: a
+// long conversation does not hold a directory open for every /clear
+// behind it, and the names are free again.
+func TestClearGivesUpTheWorkPlacesOfTheSessionBefore(t *testing.T) {
+	proj, _ := lanesFixture(t)
+	work, err := workdir.Ensure(proj, "sid1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, _, err := buildLanes(true, proj, work, nil, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	cache, _ := workdir.ApprovedCachePath(work)
+	names := []string{work, filepath.Join(work, "scratch"), cache}
+	for _, n := range names {
+		if _, err := place.Of(n); err != nil {
+			t.Fatalf("%s was not taken by the build: %v", n, err)
+		}
+	}
+	releaseWorkPlaces(work)
+	for _, n := range names {
+		if _, err := place.Of(n); !errors.Is(err, place.ErrNotTaken) {
+			t.Errorf("%s after the release: %v, want it given up", n, err)
+		}
+	}
+	if _, err := place.Of(proj); err != nil {
+		t.Errorf("the project after a /clear: %v, want it still held", err)
+	}
+}
+
+// The temporary directory is a place the lanes write and the profiles
+// are anchored on. Where its parent lets it be renamed — a TMPDIR the
+// operator set — the write lane can move it aside and leave a link, and
+// its name was resolved again at every build: the next build let the
+// write lane write where the link led (found by the review of the
+// first form of ADR-0122, under the real profile). It is taken once
+// like the others, and a build that finds it replaced builds nothing.
+func TestALaneThatReplacesTheTemporaryDirectoryGainsNothingAtTheRebuild(t *testing.T) {
+	proj, target := lanesFixture(t)
+	tmp := filepath.Join(filepath.Dir(proj), "tmp")
+	if err := os.Mkdir(tmp, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", tmp)
+	t.Cleanup(func() { place.Release(tmp) })
+	work, err := workdir.Ensure(proj, "sid1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn, enf, _, _, err := buildLanes(true, proj, work, nil, nil, nil, nil)
+	if err != nil || !enf.Confined {
+		t.Fatalf("the first build: %+v, %v", enf, err)
+	}
+	if err := laneRun(t, fn, sandbox.LaneWrite, "cd / && mv "+tmp+" "+filepath.Join(proj, "old-tmp")+" && ln -s "+target+" "+tmp); err != nil {
+		t.Fatalf("the write lane could not replace the temporary directory: the replacement was not exercised (%v)", err)
+	}
+	fn2, _, _, _, err := buildLanes(true, proj, work, nil, nil, nil, nil)
+	if !errors.Is(err, place.ErrReplaced) || fn2 != nil {
+		t.Errorf("the rebuild after the replacement: %v, want it refused as a replaced place", err)
+	}
+	if laneRun(t, fn, sandbox.LaneWrite, "echo x > "+filepath.Join(target, "after")) == nil {
+		t.Error("the write lane built before the replacement writes where the link leads")
+	}
+	for _, d := range sandbox.ScratchDirs() {
+		if d == target {
+			t.Errorf("the scratch directories now hold where the link leads: %v", sandbox.ScratchDirs())
+		}
+	}
+	untouched(t, target)
+}
+
+// A state tree reached through a link has two names for everything in
+// it, and the cache is taken under the real one: released by the name
+// the session used only, a cache stayed open behind every /clear. And a
+// judgement about the work directory is about the directory the
+// session took, also after its name leads elsewhere.
+func TestWorkPlacesAreGivenUpUnderEveryNameTheyWereTakenBy(t *testing.T) {
+	proj, target := lanesFixture(t)
+	base := filepath.Dir(proj)
+	realState := filepath.Join(base, "real-state")
+	if err := os.Mkdir(realState, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	linked := filepath.Join(base, "state-link")
+	if err := os.Symlink(realState, linked); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(statedir.EnvRoot, linked)
+	round := func(sid string) string {
+		work, err := workdir.Ensure(proj, sid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, _, _, err := buildLanes(true, proj, work, nil, nil, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		return work
+	}
+	for _, sid := range []string{"s1", "s2"} {
+		work := round(sid)
+		p, ok := place.Held(work)
+		if !ok {
+			t.Fatalf("%s: the work directory was not taken", sid)
+		}
+		real := p.Real()
+		if real == work {
+			t.Fatal("the state tree is not reached through a link: the fixture shows nothing")
+		}
+		var names []string
+		for _, dir := range []string{work, real} {
+			cache, _ := workdir.ApprovedCachePath(dir)
+			names = append(names, dir, filepath.Join(dir, "scratch"), cache)
+		}
+		held := 0
+		for _, n := range names {
+			if _, ok := place.Held(n); ok {
+				held++
+			}
+		}
+		if held < 4 {
+			t.Fatalf("%s: only %d of the session's names are held: the build did not take its places", sid, held)
+		}
+		releaseWorkPlaces(work)
+		for _, n := range names {
+			if _, ok := place.Held(n); ok {
+				t.Errorf("%s: %s is still held after the session was cleared", sid, n)
+			}
+		}
+	}
+
+	work := round("judged")
+	taken, _ := filepath.EvalSymlinks(work)
+	if got := takenOrSelf(work); got != taken {
+		t.Errorf("the work directory is judged as %s, want the directory that was taken, %s", got, taken)
+	}
+	if err := os.Rename(work, work+".moved"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, work); err != nil {
+		t.Fatal(err)
+	}
+	if got := takenOrSelf(work); got != taken {
+		t.Errorf("after its name was given a link, the work directory is judged as %s, want still %s", got, taken)
+	}
+	releaseWorkPlaces(work)
+}

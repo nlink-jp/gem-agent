@@ -362,11 +362,20 @@ a new hook) is an architecture change and takes the same rows as a
   runtimes). Profiles are anchored on `Place.Real()`; nothing in
   `buildLanes` resolves a name. What the runtime makes in a place goes
   through `Place.Dir()` by one name (`saveResult`, the scratch, the
-  check directories). A new by-path call fails
-  `TestEveryPathCallHasItsClass` (`internal/archtest`) until it has
-  one of six classes — and there is none for making, writing or
-  removing by path where a lane writes. A test that makes a work
-  directory itself takes it (`taken(t, dir)` in `cmd`).
+  check directories). The temporary directory is a place too:
+  `sandbox.ScratchDirs` takes it, and resolved its name at every build
+  until the review of this fix found that. A by-path call in a
+  function the table does not name fails
+  `TestEveryPathCallHasItsClass` (`internal/archtest`) until the
+  function has one of seven classes — there is none for making or
+  writing by path, or removing through a path, where a lane writes —
+  and a function that resolves a name (`EvalSymlinks`,
+  `ResolveWriteDir`, `os.TempDir`) fails
+  `TestNamesAreResolvedOnlyWhereItIsSaidWhy` until it says when. The
+  tests' limit: a new call in a function already listed passes, so add
+  the call's reason to the row. A test that makes a work directory
+  itself takes it (`taken(t, dir)` in `cmd`). A replaced place puts
+  the session in ask-everything mode until a restart (`replacedNote`).
 - **The sandbox checks touch only the probes they made** (ADR-0121) —
   the probes are made where the lanes write, so a process in a lane
   can replace one between its making and its use. Measured under the

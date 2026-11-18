@@ -11,11 +11,18 @@ import (
 	"testing"
 )
 
-// The classes a call that names a file by path can have. There are six,
-// and none of them is "makes, writes or removes something, by path, in
-// a place a lane writes": that is done through the place the session
-// took (internal/place) or a directory it holds (internal/bounded), and
-// a call that would need such a class has no row to go in.
+// The classes a call that names a file by path can have. There are
+// seven, and none of them is "makes or writes something by path, or
+// removes something through a path, in a place a lane writes": that is
+// done through the place the session took (internal/place) or a
+// directory it holds (internal/bounded), and a call that would need
+// such a class has no row to go in.
+//
+// What the table holds, and what it does not: its key is a function,
+// so a new call in a function it names passes without a word — the
+// table tells a reader where to look, and a function added to the code
+// must be added here. It sees a call through an import, not a field
+// (exec.Cmd.Dir is not a call), and not the tools/ directory.
 const (
 	// entrance: where a directory is taken, or a name is resolved to
 	// judge it — once, at the moment the session takes the place.
@@ -33,6 +40,11 @@ const (
 	// ownState: the runtime's own state and configuration directories,
 	// which no lane writes.
 	ownState = "own state"
+	// removesName: removes a session's directory by its name in the
+	// state tree, from the directory above it, which no lane writes.
+	// What a lane left under the name goes as that name — a link as a
+	// link, and nothing it leads to (measured).
+	removesName = "removes a name"
 )
 
 // pathCallClasses gives every function that names a file by path, or
@@ -62,6 +74,8 @@ var pathCallClasses = map[string]string{
 	"internal/sandbox CanonicalDir":    entrance,
 	"internal/sandbox RefuseRoot":      entrance,
 	"internal/sandbox ResolveWriteDir": entrance,
+	"internal/sandbox ScratchDirs":     entrance,
+	"internal/sandbox TempDirReplaced": entrance,
 	"internal/sandbox openProbes":      entrance,
 	"internal/sandbox walkReal":        entrance,
 	"internal/tools Registry.AddDirs":  entrance,
@@ -72,7 +86,6 @@ var pathCallClasses = map[string]string{
 	"cmd installFileChildWith":              readOnly,
 	"cmd probeProject":                      readOnly,
 	"cmd readDirBounded":                    readOnly,
-	"cmd removeFallbackScratch":             readOnly,
 	"internal/config LoadProject":           readOnly,
 	"internal/config readCapped":            readOnly,
 	"internal/ignore osReader":              readOnly,
@@ -91,8 +104,8 @@ var pathCallClasses = map[string]string{
 	"internal/trustpin dirDigest":           readOnly,
 	"internal/trustpin fileDigest":          readOnly,
 	"internal/trustpin readDir":             readOnly,
-	"internal/workdir Remove":               readOnly,
-	"internal/workdir RemoveIfEmpty":        readOnly,
+	"internal/workdir Remove":               removesName,
+	"internal/workdir RemoveIfEmpty":        removesName,
 	"internal/workdir Stat":                 readOnly,
 	"internal/workdir describe":             readOnly,
 
@@ -260,18 +273,125 @@ func TestEveryPathCallHasItsClass(t *testing.T) {
 	}
 }
 
-// TestProfilesAreNotAnchoredOnANameResolvedAgain: the functions that
-// build what a lane may write take their directories from the places
-// the session took. The helpers that resolve a name — which is right
-// where a place is taken or a typed path is judged — are called from
-// the functions listed here and from nowhere else in cmd.
-func TestProfilesAreNotAnchoredOnANameResolvedAgain(t *testing.T) {
-	calls := collectCalls(t, repoRoot(t), []string{"cmd"}, []string{"sandbox.ResolveWriteDir", "sandbox.CanonicalDir"})
-	report(t, calls, map[string]string{
-		"cmd currentProject":   "the project the operator started in, resolved once at startup",
-		"cmd realHome":         "the operator's home, which no lane writes",
-		"cmd realOrSelf":       "the context a typed directory is judged in",
-		"cmd typedStillNames":  "a typed path compared with the root that was opened for it",
-		"cmd dirGranter.grant": "a typed directory, judged before it is opened",
-	})
+// nameResolvers are the functions that turn a name into the directory
+// it leads to now — filepath.EvalSymlinks and the helpers built on it —
+// or read the temporary directory's name. Each is here with when it
+// does so: where a place is taken, where a path somebody typed is
+// judged, or on a name no lane can replace.
+//
+// A sandbox profile anchored on a name resolved at a later build was
+// anchored on whatever a lane had put under the name. That was closed
+// for the project and the work directory, and the review of that fix
+// found the temporary directory resolved the same way one package
+// down, in a function the first form of this test did not look at: it
+// looked at one package and at calls through an import. This one looks
+// at every package and at calls within a package as well.
+var nameResolvers = map[string]string{
+	"cmd currentProject":   "the project the operator started in, once at startup",
+	"cmd dirGranter.grant": "a directory the operator typed, judged before it is opened",
+	"cmd fileProbeDir":     "takes the temporary directory as a place",
+	"cmd readScratchDir":   "takes the temporary directory as a place",
+	"cmd realHome":         "the operator's home, which no lane writes",
+	"cmd realOrSelf":       "the helper itself: the kernel's name of a directory somebody named",
+	"cmd rootBaseContext":  "the configuration, home and state directories, which no lane writes",
+	"cmd resolveAddedDirs": "an added directory the operator named, where it is resolved to be judged",
+	"cmd selfPath":         "this program's own file",
+	"cmd takenOrSelf":      "a directory nobody took: nothing to ask the places for",
+	"cmd typedStillNames":  "a typed path compared with the root that was opened for it",
+
+	"internal/config canonicalPath":        "the configuration file the operator named",
+	"internal/mention resolve":             "a path the operator typed in a message",
+	"internal/mention resolveImagePath":    "a path the operator typed in a message",
+	"internal/place Take":                  "the one place a name is resolved to be taken",
+	"internal/sandbox CanonicalDir":        "the helper itself",
+	"internal/sandbox RefuseRoot":          "a directory the operator asks to add, judged before it is taken",
+	"internal/sandbox ResolveWriteDir":     "the helper itself",
+	"internal/sandbox ScratchDirs":         "/private/tmp and /dev/fd, which are the system's; the temporary directory is taken as a place",
+	"internal/sandbox TempDirReplaced":     "asks the place taken for the temporary directory",
+	"internal/sandbox resolveDenyExec":     "the programs the read lane may not start",
+	"internal/skills readSkill":            "a skill's directory, where it is discovered; its content is compared when it is used",
+	"internal/tools Registry.describeFile": "a path the model named, to judge and describe it",
+	"internal/tools openPlace":             "a directory nobody took: the file-read child, a process of its own",
+	"internal/tools resolveExisting":       "a path the model named, to judge it before a root opens it",
+	"internal/trustpin Compute":            "the project, to record what its files hold",
+}
+
+// TestNamesAreResolvedOnlyWhereItIsSaidWhy holds nameResolvers to the
+// code, in cmd and internal, for calls through an import and calls
+// within a package alike.
+func TestNamesAreResolvedOnlyWhereItIsSaidWhy(t *testing.T) {
+	watched := map[string]bool{"EvalSymlinks": true, "ResolveWriteDir": true, "CanonicalDir": true, "TempDir": true, "realOrSelf": true}
+	root := repoRoot(t)
+	fset := token.NewFileSet()
+	seen := map[string]bool{}
+	for _, top := range []string{"cmd", "internal"} {
+		err := filepath.WalkDir(filepath.Join(root, top), func(p string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				if d.Name() == "testdata" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+				return nil
+			}
+			f, err := parser.ParseFile(fset, p, nil, 0)
+			if err != nil {
+				return err
+			}
+			rel, _ := filepath.Rel(root, filepath.Dir(p))
+			pkg := filepath.ToSlash(rel)
+			for _, decl := range f.Decls {
+				fd, ok := decl.(*ast.FuncDecl)
+				if !ok || fd.Body == nil {
+					continue
+				}
+				fn := fd.Name.Name
+				if fd.Recv != nil && len(fd.Recv.List) > 0 {
+					fn = recvName(fd.Recv.List[0].Type) + "." + fn
+				}
+				ast.Inspect(fd.Body, func(n ast.Node) bool {
+					call, ok := n.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					callee := ""
+					switch x := call.Fun.(type) {
+					case *ast.Ident:
+						callee = x.Name
+					case *ast.SelectorExpr:
+						callee = x.Sel.Name
+					}
+					if !watched[callee] {
+						return true
+					}
+					key := pkg + " " + fn
+					seen[key] = true
+					if _, ok := nameResolvers[key]; !ok {
+						pos := fset.Position(call.Pos())
+						t.Errorf("%s:%d %s resolves a name (%s) and is not in nameResolvers: a place a lane writes is asked for from internal/place, not resolved again (ADR-0122)",
+							pos.Filename, pos.Line, key, callee)
+					}
+					return true
+				})
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stale []string
+	for key := range nameResolvers {
+		if !seen[key] {
+			stale = append(stale, key)
+		}
+	}
+	sort.Strings(stale)
+	for _, key := range stale {
+		t.Errorf("nameResolvers names %q, which resolves no name any more — remove the row", key)
+	}
 }

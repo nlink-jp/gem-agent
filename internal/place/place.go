@@ -40,9 +40,10 @@ var ErrNotTaken = errors.New("was never taken by this session")
 
 // Place is one directory the session took.
 type Place struct {
-	dir   *bounded.Dir
-	real  string
-	names []string // every name it answers to here
+	dir       *bounded.Dir
+	real      string
+	canonical string   // the kernel's own name for it, when it gave one
+	names     []string // every name it answers to here
 }
 
 var (
@@ -74,7 +75,9 @@ func Take(path string) (*Place, error) {
 	p := &Place{dir: d, real: real, names: []string{abs, real}}
 	// The kernel's own name for it — the case the volume keeps — is a
 	// name callers use too.
+	p.canonical = real
 	if kernel, err := d.Path(); err == nil {
+		p.canonical = kernel
 		p.names = append(p.names, kernel)
 	}
 	if err := p.InPlace(); err != nil {
@@ -116,6 +119,36 @@ func Of(name string) (*Place, error) {
 // the place was taken. A sandbox profile is anchored on it.
 func (p *Place) Real() string { return p.real }
 
+// Canonical is the place's path as the kernel names it — the case the
+// volume keeps — for a judgement that compares such names.
+func (p *Place) Canonical() string { return p.canonical }
+
+// Held is the place taken under name, whether or not the name still
+// leads to it: for giving a place up, and for a judgement that needs
+// what the session took and not what the name holds now.
+func Held(name string) (*Place, bool) {
+	abs, err := filepath.Abs(name)
+	if err != nil {
+		return nil, false
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	p := held[abs]
+	return p, p != nil
+}
+
+// RemoveAll removes name and what is under it from the place: through
+// a root that is the directory held, so that what goes is in this
+// place whatever the place's name leads to by now.
+func (p *Place) RemoveAll(name string) error {
+	root, err := p.OpenRoot()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	return root.RemoveAll(name)
+}
+
 // Dir is the directory held, for making, writing and removing what is
 // in it by one name. It is the place's own: it is not to be closed.
 func (p *Place) Dir() *bounded.Dir { return p.dir }
@@ -153,7 +186,7 @@ func (p *Place) Sub(name string, perm os.FileMode) (*Place, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s is not a directory: %w", real, err)
 	}
-	sub := &Place{dir: d, real: real}
+	sub := &Place{dir: d, real: real, canonical: filepath.Join(p.canonical, name)}
 	for _, n := range p.names {
 		sub.names = append(sub.names, filepath.Join(n, name))
 	}
