@@ -2455,7 +2455,7 @@ func buildLanes(sandboxOn bool, projectDir, workDir string, denyExec []string, c
 	// there for read-lane commands, so what such a command may change
 	// is exactly this directory and the device sinks.
 	if scratch, err := readScratchDir(spec.WorkDir); err != nil {
-		notes = append(notes, fmt.Sprintf("read lane disabled: no private scratch directory (%v); every shell_exec asks", err))
+		notes = append(notes, fmt.Sprintf("read lane disabled: no private scratch directory (%v); read-lane commands need approval too", err))
 	} else {
 		spec.ReadScratch = scratch
 		if approved, err := approvedCacheDir(spec.WorkDir); err != nil {
@@ -2481,7 +2481,7 @@ func buildLanes(sandboxOn bool, projectDir, workDir string, denyExec []string, c
 		leftovers = append(leftovers, readLeft...)
 		if err != nil {
 			enf.ReadLane = false
-			notes = append(notes, fmt.Sprintf("read lane disabled: %v; every shell_exec asks", err))
+			notes = append(notes, fmt.Sprintf("read lane disabled: %v; read-lane commands need approval too", err))
 		}
 	}
 	// Confinement itself is measured, not assumed (ADR-0073 §7): where

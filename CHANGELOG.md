@@ -6,6 +6,10 @@
 
 - **Tab completes `/show`.** The command worked and `/help` listed it,
   but Tab did not offer it.
+- **The startup note for a read-only sandbox that could not be checked
+  says what changes.** It said "every shell_exec asks"; what changes is
+  that read-only commands need approval too, which auto-approve can
+  give, as the manual says.
 
 ## [0.107.0] - 2026-11-18
 
