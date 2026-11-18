@@ -43,6 +43,7 @@ const (
 	charScriptEnv = "GEMAGENT_CHARACTERIZE_SCRIPT"
 	charRecordEnv = "GEMAGENT_CHARACTERIZE_RECORD"
 	charArgsEnv   = "GEMAGENT_CHARACTERIZE_ARGS"
+	charExitEnv   = "GEMAGENT_CHARACTERIZE_EXIT"
 	charVersion   = "v0.0.0-characterize"
 )
 
@@ -69,6 +70,18 @@ func runCharacterizeChild() int {
 	rec := &scriptRecorder{path: os.Getenv(charRecordEnv)}
 	newModelClient = func(_ context.Context, cfg *config.Config) (modelClient, error) {
 		return &scriptedModel{script: script, rec: rec, model: cfg.Model.Name}, nil
+	}
+	if path := os.Getenv(charExitEnv); path != "" {
+		cleanupTrace = func(name string) {
+			f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+			if err != nil {
+				panic(err)
+			}
+			defer func() { _ = f.Close() }()
+			if _, err := f.WriteString(name + "\n"); err != nil {
+				panic(err)
+			}
+		}
 	}
 	appVersion = charVersion
 	rootCmd.Version = charVersion
@@ -222,9 +235,9 @@ func newCharEnv(t *testing.T) charEnv {
 		config:  filepath.Join(root, "home", ".config", "gem-agent", "config.toml"),
 	}
 	files := map[string]string{
-		filepath.Join(e.project, "AGENTS.md"):                         "# Project rules\n\nAnswer briefly.\n",
-		filepath.Join(e.project, "notes.txt"):                         "first line\nsecond line\n",
-		filepath.Join(e.project, ".mcp.json"):                         "{\"mcpServers\": {}}\n",
+		filepath.Join(e.project, "AGENTS.md"):                             "# Project rules\n\nAnswer briefly.\n",
+		filepath.Join(e.project, "notes.txt"):                             "first line\nsecond line\n",
+		filepath.Join(e.project, ".mcp.json"):                             "{\"mcpServers\": {}}\n",
 		filepath.Join(e.project, ".claude", "skills", "demo", "SKILL.md"): "---\nname: demo\ndescription: A demonstration skill.\n---\n\nSay hello.\n",
 		e.config: fmt.Sprintf(`[gcp]
 project = "characterize-project"
@@ -265,12 +278,18 @@ type charResult struct {
 	status         int
 	calls          string
 	transcripts    string
+	// exit is the teardown as it ran, one step name per line. Kept out of
+	// render: the references predate the names, and the order is checked
+	// against ADR-0124 §2.5 directly.
+	exit []string
 }
 
 func runCharacterize(t *testing.T, e charEnv, turns []scriptTurn, stdin []string, args ...string) charResult {
 	t.Helper()
 	scriptPath := filepath.Join(e.root, "script.json")
 	recordPath := filepath.Join(e.root, "calls.jsonl")
+	exitPath := filepath.Join(e.root, "exit.txt")
+	_ = os.Remove(exitPath)
 	raw, err := json.Marshal(turns)
 	if err != nil {
 		t.Fatal(err)
@@ -302,6 +321,7 @@ func runCharacterize(t *testing.T, e charEnv, turns []scriptTurn, stdin []string
 		charChildEnv+"=1",
 		charScriptEnv+"="+scriptPath,
 		charRecordEnv+"="+recordPath,
+		charExitEnv+"="+exitPath,
 		charArgsEnv+"="+string(argv),
 	)
 	in, err := cmd.StdinPipe()
@@ -345,12 +365,14 @@ func runCharacterize(t *testing.T, e charEnv, turns []scriptTurn, stdin []string
 		t.Fatal(runErr)
 	}
 	calls, _ := os.ReadFile(recordPath)
+	exitRaw, _ := os.ReadFile(exitPath)
 	return charResult{
 		stdout:      stdout.String(),
 		stderr:      stderr.String(),
 		status:      status,
 		calls:       prettyCalls(t, calls),
 		transcripts: readTranscripts(t, filepath.Join(e.home, ".local", "state", "gem-agent", "sessions")),
+		exit:        strings.Fields(strings.ReplaceAll(strings.TrimSpace(string(exitRaw)), " ", "_")),
 	}
 }
 
@@ -510,6 +532,34 @@ func TestCharacterizeOneShot(t *testing.T) {
 	}
 	r := runCharacterize(t, e, turns, nil, "--no-sandbox", "-p", "What do the notes say?")
 	checkCharacterization(t, "oneshot", r.render(e))
+	// ADR-0124 §2.5 without what this run does not set up: no TUI, no
+	// exit summary under -p, telemetry off.
+	checkExitSequence(t, r.exit, []string{
+		"report the added roots' persistent files",
+		"report the project's persistent files",
+		"run the session-end hooks",
+		"end the telemetry session",
+		"close the MCP clients",
+		"close the skills' roots",
+		"remove the work directory if empty",
+		"remove the fallback scratch",
+		"close the transcript",
+	})
+}
+
+// checkExitSequence compares the teardown as it ran with ADR-0124 §2.5's
+// order (the direct-shell hook, its step 13, is no longer state to undo:
+// runDirectShell takes it as an argument).
+func checkExitSequence(t *testing.T, got, want []string) {
+	t.Helper()
+	norm := make([]string, len(want))
+	for i, w := range want {
+		norm[i] = strings.ReplaceAll(w, " ", "_")
+	}
+	if strings.Join(got, "\n") != strings.Join(norm, "\n") {
+		t.Fatalf("the exit sequence changed (ADR-0124 §2.5)\ngot:\n  %s\nwant:\n  %s",
+			strings.Join(got, "\n  "), strings.Join(norm, "\n  "))
+	}
 }
 
 // The plain REPL: piped stdin without -p is the operator's own input.
@@ -533,4 +583,16 @@ func TestCharacterizePlainREPL(t *testing.T) {
 	}
 	r := runCharacterize(t, e, turns, stdin, "--no-sandbox")
 	checkCharacterization(t, "plain", r.render(e))
+	checkExitSequence(t, r.exit, []string{
+		"report the added roots' persistent files",
+		"report the project's persistent files",
+		"run the session-end hooks",
+		"print the exit summary",
+		"end the telemetry session",
+		"close the MCP clients",
+		"close the skills' roots",
+		"remove the work directory if empty",
+		"remove the fallback scratch",
+		"close the transcript",
+	})
 }

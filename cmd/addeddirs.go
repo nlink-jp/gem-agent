@@ -30,7 +30,7 @@ type addedDir struct {
 // (sandbox.Situational, ADR-0114 §1): the global file serves every
 // project, so one that holds this project, or sits on a volume not
 // mounted now, is told and passed over instead of stopping the start.
-func resolveAddedDirs(cfg *config.Config, projectDir, workDir, cfgPath string) (added []addedDir, skipped []string, err error) {
+func resolveAddedDirs(cfg *config.Config, projectDir, workDir, cfgPath string, addDirs, readDirs []string) (added []addedDir, skipped []string, err error) {
 	ctx := rootBaseContext(cfgPath)
 	ctx.ProjectDir, ctx.WorkDir = realOrSelf(projectDir), realOrSelf(workDir)
 	cfgWrite, cfgRead := cfg.Directories.Paths()
@@ -42,13 +42,13 @@ func resolveAddedDirs(cfg *config.Config, projectDir, workDir, cfgPath string) (
 	for _, p := range cfgWrite {
 		all = append(all, given{p, "config", "[directories].write", true})
 	}
-	for _, p := range flagAddDir {
+	for _, p := range addDirs {
 		all = append(all, given{p, "flag", "--add-dir", true})
 	}
 	for _, p := range cfgRead {
 		all = append(all, given{p, "config", "[directories].read", false})
 	}
-	for _, p := range flagReadDir {
+	for _, p := range readDirs {
 		all = append(all, given{p, "flag", "--read-dir", false})
 	}
 	var out []addedDir

@@ -25,7 +25,7 @@ func TestDirectShellOutputReachesTheModelAsData(t *testing.T) {
 	backend := &scriptBackend{responses: []*llm.Response{{Content: "ok"}}}
 	ag := agent.New(agent.Options{Backend: backend, Model: "m", Registry: reg, MaxTurns: 1})
 
-	out := runDirectShell(context.Background(), reg, ag, "echo OUTPUT-MARKER")
+	out := runDirectShell(context.Background(), reg, ag, "echo OUTPUT-MARKER", nil)
 	if !strings.Contains(out, "OUTPUT-MARKER") {
 		t.Fatalf("the operator did not get the output: %q", out)
 	}

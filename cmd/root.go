@@ -154,6 +154,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// verbatim (ADR-0093 §3) — before the first print, so every one after
 	// it is covered.
 	inertStreams(cmd, terminalWriter)
+	// The session's teardown (ADR-0124 §2.5): every part pushes what it
+	// set up, and the stack runs once, last pushed first.
+	cl := &cleanups{trace: cleanupTrace}
+	defer cl.run()
+	fl := readFlags()
 	// Startup warnings are teed: they hit stderr immediately (plain
 	// REPL, one-shot, early failures), but the TUI's first ClearScreen
 	// wipes that copy — a broken skill or unreadable memory flashed for
@@ -163,7 +168,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	var stderr io.Writer = notes
 
 	// --- config ---
-	cfgPath := flagConfig
+	cfgPath := fl.config
 	if cfgPath == "" {
 		p, err := config.DefaultPath()
 		if err != nil {
@@ -171,13 +176,13 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		cfgPath = p
 	}
-	oneShot := flagPrompt != ""
-	roFlag, roAutoFlag, err := readOnlyOverride(flagWritable, flagReadOnly, flagAutoRO, oneShot)
+	oneShot := fl.prompt != ""
+	roFlag, roAutoFlag, err := readOnlyOverride(fl.writable, fl.readOnly, fl.autoRO, oneShot)
 	if err != nil {
 		return err
 	}
 	cfg, err := config.LoadWithOverrides(cfgPath, config.Overrides{
-		Model: flagModel, Thinking: flagThinking, MCP: flagMCP, Auto: flagAuto,
+		Model: fl.model, Thinking: fl.thinking, MCP: fl.mcp, Auto: fl.auto,
 		ReadOnly: roFlag, ReadOnlyAuto: roAutoFlag})
 	if err != nil {
 		return err
@@ -191,7 +196,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 	// Everything downstream — the agent, telemetry — reads this one
 	// effective value, never the raw config field.
-	autoOn := effectiveAuto(cfg.Agent.AutoApprove, oneShot, flagAuto)
+	autoOn := effectiveAuto(cfg.Agent.AutoApprove, oneShot, fl.auto)
 	// The ceiling this run starts with, resolved once for the same
 	// reason (ADR-0080 §1).
 	ceiling := effectiveCeiling(cfg.Agent, oneShot)
@@ -289,7 +294,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// compile into the same policy build — so the project tighten, the
 	// Block floor, hooks, and the bare-"*" ban all hold without knowing
 	// the flag exists (ADR-0053 §2).
-	if err := applyAllowFlag(mergedTools, flagAllow); err != nil {
+	if err := applyAllowFlag(mergedTools, fl.allow); err != nil {
 		return err
 	}
 	// Learned command rules are parsed but NOT applied (ADR-0049 §3):
@@ -342,13 +347,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			_ = savePersistentSnapshot(persistentPath, now)
 		}
 	}
-	afterDirectShell = func() string {
+	// What a `!` command changed in the files later sessions trust is
+	// said after its output.
+	afterShell := func() string {
 		return pinChangesNote(cfg, policyFile, policyPath, projectDir, projectTrusted, msgs)
 	}
-	defer func() { afterDirectShell = nil }()
 
 	// --- session transcript: the log, and the resume source (ADR-0005) ---
-	if flagContinue && flagResume != "" {
+	if fl.continueLast && fl.resume != "" {
 		return fmt.Errorf("--continue and --resume name different sessions; use one")
 	}
 	sessionDir, sessionDirErr := session.DefaultDir()
@@ -356,11 +362,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	var restored []llm.Message
 	resumedID := ""
 	var resumedFrom time.Time // when a resumed conversation began (ADR-0097)
-	if flagContinue || flagResume != "" {
+	if fl.continueLast || fl.resume != "" {
 		if sessionDirErr != nil {
 			return fmt.Errorf("cannot resume: %w", sessionDirErr)
 		}
-		meta, err := resolveResume(sessionDir, projectDir, cfg.Model.Name, flagResume)
+		meta, err := resolveResume(sessionDir, projectDir, cfg.Model.Name, fl.resume)
 		if err != nil {
 			return err
 		}
@@ -379,11 +385,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// curLog is the transcript in use; /clear replaces it (ADR-0071 §2),
 	// so the exit-time close reads the variable, not a snapshot.
 	var curLog *session.Logger
-	defer func() {
+	cl.push("close the transcript", func() {
 		if curLog != nil {
 			_ = curLog.Close()
 		}
-	}()
+	})
 	if sessionDirErr != nil {
 		fmt.Fprintf(stderr, "warning: session log disabled: %v\n", sessionDirErr)
 	} else {
@@ -437,12 +443,12 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(stderr, "warning: cannot set %s: %v\n", workdir.ProjectEnvVar, err)
 	}
 	workDir := ""
-	defer removeFallbackScratch()
-	defer func() {
+	cl.push("remove the fallback scratch", removeFallbackScratch)
+	cl.push("remove the work directory if empty", func() {
 		if workDir != "" {
 			workdir.RemoveIfEmpty(workDir)
 		}
-	}()
+	})
 	if sessionID != "" {
 		if dir, err := workdir.Ensure(projectDir, sessionID); err != nil {
 			// A missing work directory degrades the session (oversized
@@ -480,7 +486,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- shell execution strategy (ADR-0001 defense-in-depth) ---
-	sandboxOn := cfg.Sandbox.Enabled && !flagNoSandbox
+	sandboxOn := cfg.Sandbox.Enabled && !fl.noSandbox
 	if sandboxOn {
 		// Fail closed (ADR-0073 §5): a sandbox that cannot apply here
 		// (a nested Seatbelt) must not degrade silently into unconfined
@@ -494,7 +500,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// the operator typed the path and must hear it did not apply. A
 	// configured one that does not fit this session is told and skipped
 	// (ADR-0114 §1).
-	added, skippedDirs, err := resolveAddedDirs(cfg, projectDir, workDir, cfgPath)
+	added, skippedDirs, err := resolveAddedDirs(cfg, projectDir, workDir, cfgPath, fl.addDir, fl.readDir)
 	if err != nil {
 		return err
 	}
@@ -595,7 +601,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// single-writer discipline holds because a slash command cannot run
 	// while a turn is in flight.
 	skillsList, skillNotes := discoverSkills(projectDir, grant)
-	defer func() { skills.CloseAll(skillsList) }() // reads the variable: reloads replace it
+	cl.push("close the skills' roots", func() { skills.CloseAll(skillsList) }) // reads the variable: reloads replace it
 	for _, n := range skillNotes {
 		fmt.Fprintf(stderr, "warning: %s\n", n)
 	}
@@ -607,7 +613,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// What of them the model is shown is the advertiser's (ADR-0083):
 	// everything under [mcp].advertise = "all", loaded tools only under
 	// "on-request". It records committed loads to the transcript in use.
-	adv := newMCPAdvertiser(cfg.MCP.OnRequest(), cfg.MCP.Preload, flagAllow, liveLog{get: func() agent.SessionLog { return sessionLog }})
+	adv := newMCPAdvertiser(cfg.MCP.OnRequest(), cfg.MCP.Preload, fl.allow, liveLog{get: func() agent.SessionLog { return sessionLog }})
 	// screen is the route to the operator's screen, late-bound because
 	// the program does not exist yet (ADR-0090 §1's plumbing, which
 	// ADR-0091 keeps while withdrawing the intake as its source). What
@@ -625,11 +631,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(stderr, "warning: the resumed session had loaded %s, which this session does not have\n", strings.Join(missing, ", "))
 		}
 	}
-	defer func() {
+	cl.push("close the MCP clients", func() {
 		for _, c := range mcpClients {
 			c.Close()
 		}
-	}()
+	})
 
 	// --- agent memory: facts persisted across sessions (ADR-0020) ---
 	// A missing home disables memory with a warning; the runtime must
@@ -667,7 +673,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(stderr, "warning: telemetry disabled: %v\n", err)
 		} else {
 			sink = s
-			defer func() {
+			cl.push("flush telemetry", func() {
 				// The flush is bounded (3s) but was silent, and a
 				// silent wait after the last Ctrl+C reads as a hang
 				// (ADR-0065 §4). One-shot mode stays quiet for
@@ -676,14 +682,14 @@ func runREPL(cmd *cobra.Command, args []string) error {
 					fmt.Fprintln(cmd.ErrOrStderr(), msgs.ExitFlushing)
 				}
 				sink.Shutdown()
-			}()
+			})
 		}
 	}
 	// The effective auto state, not the raw config field: one-shot mode
 	// disarms auto-approve, and an audit event claiming it was armed in
 	// a run where it never could be is a false record (ADR-0053 §4).
 	sink.SessionStart(cfg.Model.Name, sandboxOn, autoOn, len(mcpClients))
-	defer sink.SessionEnd() // LIFO: runs before Shutdown's flush
+	cl.push("end the telemetry session", sink.SessionEnd) // last-first: runs before Shutdown's flush
 
 	// --- LLM backend ---
 	backend, err := newModelClient(ctx, cfg)
@@ -845,7 +851,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// bufio.Reader over the same fd strands typed-ahead input in one
 	// buffer while the other blocks (AGENTS.md gotcha; review round 3).
 	askOperator := func(askCtx context.Context, question string, options []string) (int, error) {
-		if flagPrompt != "" {
+		if oneShot {
 			return oneShotAsk(askCtx, question, options)
 		}
 		if prog != nil {
@@ -945,7 +951,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 
 	// ag.Run, so the pointer is always set by then.
 	var ag *agent.Agent
-	if flagPrompt == "" {
+	if !oneShot {
 		// Only where a human answers (ADR-0099 §4): under -p it could
 		// only be denied.
 		if err := registerRequestDirectory(registry, granter); err != nil {
@@ -1252,11 +1258,11 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	// can forget it; one-shot mode stays clean for pipelines.
 	if !oneShot {
 		out := cmd.ErrOrStderr()
-		defer func() {
+		cl.push("print the exit summary", func() {
 			for _, l := range exitSummary(ag.Usage(), sessionID, msgs) {
 				fmt.Fprintln(out, l)
 			}
-		}()
+		})
 	}
 
 	// showImage is the one door to the operator's screen (ADR-0091). Both
@@ -1531,22 +1537,26 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		hookRunner.SessionEnd(ctx, hookSession, reason)
 	}
-	defer sessionEndHooks("exit")
-	defer reportPersistent("exit", func(kind string, data any) error {
-		if sessionLog == nil {
-			return nil
-		}
-		return sessionLog.Log(kind, data)
+	cl.push("run the session-end hooks", func() { sessionEndHooks("exit") })
+	cl.push("report the project's persistent files", func() {
+		reportPersistent("exit", func(kind string, data any) error {
+			if sessionLog == nil {
+				return nil
+			}
+			return sessionLog.Log(kind, data)
+		})
 	})
-	// Defers run last-first: at exit the roots are reported before the
+	// Cleanups run last-first: at exit the roots are reported before the
 	// project and before the session-end hooks, so a change a hook makes
 	// shows at the next start — as the project's own report already
 	// does. /clear runs the hooks first.
-	defer watch.report("exit", func(kind string, data any) error {
-		if sessionLog == nil {
-			return nil
-		}
-		return sessionLog.Log(kind, data)
+	cl.push("report the added roots' persistent files", func() {
+		watch.report("exit", func(kind string, data any) error {
+			if sessionLog == nil {
+				return nil
+			}
+			return sessionLog.Log(kind, data)
+		})
 	})
 
 	// /clear starts a new session (ADR-0071 §2): the old transcript is
@@ -1744,7 +1754,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		}
 		wrote := false
 		runErr := runTurnWith(ctx, ladder, func(turnCtx context.Context) error {
-			_, err := ag.Run(turnCtx, flagPrompt, func(s string) {
+			_, err := ag.Run(turnCtx, fl.prompt, func(s string) {
 				wrote = wrote || s != ""
 				fmt.Fprint(cmd.OutOrStdout(), s)
 			})
@@ -1847,7 +1857,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			},
 			Shell: func(shellCtx context.Context, command string) {
 				go func() {
-					out := runDirectShell(shellCtx, registry, ag, command)
+					out := runDirectShell(shellCtx, registry, ag, command, afterShell)
 					// Interrupted runs hand a queued message back instead
 					// of auto-sending it (ADR-0007 via ADR-0021).
 					prog.Send(tui.ShellDone{Output: out, Interrupted: shellCtx.Err() != nil})
@@ -1901,9 +1911,9 @@ func runREPL(cmd *cobra.Command, args []string) error {
 		tuiGate.SetProgram(prog)
 		screen.SetProgram(prog)
 		go resolveWindow()
-		defer quietStdLog(func(line string) {
+		cl.push("restore the standard logger", quietStdLog(func(line string) {
 			_ = liveLog{get: func() agent.SessionLog { return sessionLog }}.Log("library_log", map[string]any{"line": line})
-		})()
+		}))
 		_, err := prog.Run()
 		return err
 	}
@@ -1952,7 +1962,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 			// not the process (ADR-0021 — outside it, the default action
 			// killed the whole session).
 			_ = runTurnWith(ctx, ladder, func(shellCtx context.Context) error {
-				fmt.Fprintln(cmd.OutOrStdout(), runDirectShell(shellCtx, registry, ag, command))
+				fmt.Fprintln(cmd.OutOrStdout(), runDirectShell(shellCtx, registry, ag, command, afterShell))
 				return nil
 			})
 			continue
@@ -2665,14 +2675,13 @@ func compactNow(ctx context.Context, ag *agent.Agent, msgs *uitext.Messages, sin
 // exit-status surfacing — no approval prompt: the user typed it), and
 // feeds command + output into the agent history so the next turn can
 // refer to what happened.
-// afterDirectShell, when set by the running session, runs after a `!`
-// command and returns a note for the output: the operator's own shell
-// may have changed the files later sessions trust, and the command
-// line does not show that — the difference is named, the pins are not
-// moved (ADR-0074 §1).
-var afterDirectShell func() string
-
-func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Agent, command string) string {
+// after, when non-nil, runs after the command and returns a note for the
+// output: the operator's own shell may have changed the files later
+// sessions trust, and the command line does not show that — the
+// difference is named, the pins are not moved (ADR-0074 §1). The session
+// passes it; it was a package variable the session set and cleared
+// (ADR-0124 §2.1).
+func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Agent, command string, after func() string) string {
 	tool, ok := registry.Get("shell_exec")
 	if !ok {
 		return "error: shell_exec is unavailable"
@@ -2686,8 +2695,8 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 	if strings.TrimSpace(out) == "" {
 		out = "(no output)"
 	}
-	if afterDirectShell != nil {
-		if n := afterDirectShell(); n != "" {
+	if after != nil {
+		if n := after(); n != "" {
 			out += "\n[⚠ " + n + "]"
 		}
 	}
@@ -3204,4 +3213,24 @@ func buildWithoutFailedRoots(added []sandbox.AddedRoot, build func([]sandbox.Add
 		return nil, sandbox.Enforcement{}, nil, nil, err
 	}
 	return fn, enf, append(dropNotes, notes...), dropped, nil
+}
+
+// runFlags is the root command's flag values, read once at the top of
+// runREPL (ADR-0124 §2.1): the session reads this, never the globals
+// cobra binds.
+type runFlags struct {
+	config, model, thinking, mcp, prompt, resume string
+	noSandbox, continueLast, auto                bool
+	writable, readOnly, autoRO                   bool
+	allow, addDir, readDir                       []string
+}
+
+func readFlags() runFlags {
+	return runFlags{
+		config: flagConfig, model: flagModel, thinking: flagThinking, mcp: flagMCP,
+		prompt: flagPrompt, resume: flagResume,
+		noSandbox: flagNoSandbox, continueLast: flagContinue, auto: flagAuto,
+		writable: flagWritable, readOnly: flagReadOnly, autoRO: flagAutoRO,
+		allow: flagAllow, addDir: flagAddDir, readDir: flagReadDir,
+	}
 }
