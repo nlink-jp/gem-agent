@@ -294,7 +294,12 @@ a new hook) is an architecture change and takes the same rows as a
   `O_NONBLOCK`, never through a link: `Root.OpenRoot` takes no flags and
   waited on a sub-directory swapped for a FIFO, and a path from the
   skill's root at every open cost 8.2 s for a tree this walks in 0.3 s
-  (ADR-0120 §8). A level is listed as a root lists it — every name
+  (ADR-0120 §8). That walk is slow while any process keeps renaming a
+  directory on the volume, as every open of a file by any program is
+  (macOS 27.2: about 155 ms an open); the operator accepted that as it
+  is, so do not give the walk a bound in time or open its files several
+  at a time for it (ADR-0120, Consequences and Alternatives). A level is
+  listed as a root lists it — every name
   looked at, the listing stopped at one that cannot be — through a
   descriptor of its own: the pins were taken from that listing, and a
   listing by the directory's own kinds gave another digest for a tree
