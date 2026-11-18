@@ -289,21 +289,17 @@ a new hook) is an architecture change and takes the same rows as a
   is looked at again on the descriptor and the flag cleared, so a name
   swapped for a FIFO between the look and the open is refused too
   (ADR-0120 §7; observed first on an online-only iCloud file). The skill
-  walk holds each level as a `bounded.Dir` and opens what it holds from
-  it by one name — a sub-directory with `O_DIRECTORY`, a file with
-  `O_NONBLOCK`, never through a link: `Root.OpenRoot` takes no flags and
-  waited on a sub-directory swapped for a FIFO, and a path from the
-  skill's root at every open cost 8.2 s for a tree this walks in 0.3 s
-  (ADR-0120 §8). That walk is slow while any process keeps renaming a
+  walk opens each level from the one above it (`Root.OpenRoot`), which
+  waits on a sub-directory swapped for a FIFO after the listing. That
+  needs a program racing the walk, and the type that closed it
+  (`bounded.Dir`, ADR-0120 §8) was taken out (ADR-0122 §4) — it is not
+  brought back for that. A path from the skill's root at every open
+  cost 8.2 s for a tree this walks in 0.3 s, so the walk keeps one
+  handle a level. It is slow while any process keeps renaming a
   directory on the volume, as every open of a file by any program is
   (macOS 27.2: about 155 ms an open); the operator accepted that as it
   is, so do not give the walk a bound in time or open its files several
-  at a time for it (ADR-0120, Consequences and Alternatives). A level is
-  listed as a root lists it — every name
-  looked at, the listing stopped at one that cannot be — through a
-  descriptor of its own: the pins were taken from that listing, and a
-  listing by the directory's own kinds gave another digest for a tree
-  with an ACL in it. The same holds for every other open of a
+  at a time for it (ADR-0120, Consequences and Alternatives). The same holds for every other open of a
   name (ADR-0120): a directory that is listed is opened with
   `bounded.OpenDir` (`O_DIRECTORY` — the kernel refuses a FIFO at the
   open), a root with `bounded.OpenRoot`, a file under a fixed name with

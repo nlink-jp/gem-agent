@@ -255,8 +255,7 @@ func TestReadsAreBounded(t *testing.T) {
 // what the operator names, that it is undecided. os.OpenFile and the
 // Root methods are held too: the first form of this test left them
 // out, and a trace file opened to truncate went unseen. So are the raw
-// opens: the one place that opens from a directory's descriptor is
-// bounded.Dir (ADR-0120 §8). And os.RemoveAll and os.OpenInRoot, which
+// opens. And os.RemoveAll and os.OpenInRoot, which
 // open a name's parent plainly: the release review found a removal that
 // waited on a FIFO where the parent had been, and an exception whose
 // reason was a look before a plain open — the form §7 had measured as
@@ -282,6 +281,7 @@ func TestOpensDoNotWait(t *testing.T) {
 		"internal/sandbox CanonicalDir":            "O_NONBLOCK|O_DIRECTORY",
 		"internal/sandbox probes.fileNamed":        "O_EXCL from a root held open — what is under the name is never opened",
 		"internal/sandbox probes.subdir":           "a directory the check has just made under a random name; a FIFO there was swapped in during the check, which is a race (ADR-0122 §3)",
+		"internal/trustpin manifestWalk.dir":       "`.` of a root already open, and a sub-directory the listing just named, opened from its parent: one that waits is a FIFO swapped in after the listing, which is a race (ADR-0122 §4)",
 		"internal/session Open":                    "O_EXCL: a new transcript is created, never opened over what is there",
 		"internal/session Reopen":                  "opened read-write, which does not wait on a FIFO (measured); the lock that follows refuses one",
 		"internal/tools Registry.openRead":         "the opener handed to openRegular, which opens with O_NONBLOCK and looks at what it holds",

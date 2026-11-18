@@ -137,7 +137,7 @@ func TestTheWalkLooksAtNoMoreThanItsBudget(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			_, root := buildTree(t, c.files, nil, c.dirs)
 			w := &manifestWalk{maxFiles: maxFiles, left: maxWalk, maxDepth: 100}
-			w.walk(root)
+			w.dir(root, "", 0)
 			if w.cut != c.cut {
 				t.Errorf("cut = %v, want %v", w.cut, c.cut)
 			}

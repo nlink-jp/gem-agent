@@ -27,14 +27,6 @@ func TestOpenRegularDoesNotWaitOnANameSwappedForAFifo(t *testing.T) {
 		"by path, no link followed": func(_ *os.Root, dir, name string) (*os.File, error) {
 			return OpenRegularPathNoFollow(filepath.Join(dir, name))
 		},
-		"from a directory held open": func(root *os.Root, _, name string) (*os.File, error) {
-			d, err := DirOf(root)
-			if err != nil {
-				return nil, err
-			}
-			defer func() { _ = d.Close() }()
-			return d.OpenRegular(name)
-		},
 	} {
 		t.Run(how, func(t *testing.T) {
 			dir := t.TempDir()

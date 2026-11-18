@@ -33,6 +33,12 @@
   and give every test command ten seconds. The notices "… was replaced
   while the sandbox was being checked" and "… showed nothing: the
   command was ended by a signal" no longer appear.
+- **A project skill's files are walked through the standard directory
+  handle again** (ADR-0122). v0.106.0 walked them through a type of its own,
+  so that a folder swapped for a named pipe during the walk could not
+  hold it. That needs a program racing the walk, and the type is
+  removed. Nothing you trusted changes: the same folders give the same
+  trust record before and after (compared on six kinds of tree).
 
 ## [0.106.0] - 2026-11-18
 

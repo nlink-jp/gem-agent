@@ -285,7 +285,7 @@ func consumedDigest(projectDir, name string) (string, bool) {
 // fileDigest hashes one regular file by path, bounded at FileCap; a file
 // past the cap is hashed as its first FileCap bytes plus a marker. The
 // persistent-file snapshot uses it; a skill is digested through its
-// root (fileDigestIn), with the same bytes for the same file.
+// root (rootFileDigest), with the same bytes for the same file.
 func fileDigest(path string) (string, bool) {
 	st, err := os.Lstat(path)
 	if err != nil || !st.Mode().IsRegular() {
@@ -538,20 +538,20 @@ func (m Manifest) Covers(p string) bool {
 	return false
 }
 
-// fileDigestIn hashes the regular file base of the directory dir,
-// bounded at FileCap; a file past the cap is hashed as its first FileCap
-// bytes plus a marker, so it is still pinned and a change past the cap
-// still changes the size part.
-func fileDigestIn(dir *bounded.Dir, base string) (string, bool) {
-	f, err := dir.OpenRegular(base)
+// rootFileDigest hashes one regular file under root, bounded at FileCap;
+// a file past the cap is hashed as its first FileCap bytes plus a
+// marker, so it is still pinned and a change past the cap still changes
+// the size part.
+func rootFileDigest(root *os.Root, rel string) (string, bool) {
+	st, err := root.Lstat(rel)
+	if err != nil || !st.Mode().IsRegular() {
+		return "", false
+	}
+	f, err := bounded.OpenRegular(root, rel)
 	if err != nil {
 		return "", false
 	}
 	defer func() { _ = f.Close() }()
-	st, err := f.Stat()
-	if err != nil {
-		return "", false
-	}
 	data, more, err := bounded.ReadAll(f, FileCap)
 	if err != nil {
 		return "", false
@@ -612,7 +612,7 @@ type manifestEntry struct{ rel, line string }
 // sorted after its last file.
 func manifestRoot(root *os.Root, maxFiles, maxWalk, maxDepth int) ([]manifestEntry, bool) {
 	w := &manifestWalk{maxFiles: maxFiles, left: maxWalk, maxDepth: maxDepth}
-	w.walk(root)
+	w.dir(root, "", 0)
 	sort.Slice(w.entries, func(i, j int) bool { return w.entries[i].rel < w.entries[j].rel })
 	return w.entries, w.cut
 }
@@ -629,46 +629,33 @@ type manifestWalk struct {
 	listed int
 }
 
-// walk walks the tree root holds. A root that cannot be listed is a
-// tree with nothing in it, as it always was.
-func (w *manifestWalk) walk(root *os.Root) {
-	d, err := bounded.DirOf(root)
+// dir reads the directory held open as dir and visits what it holds,
+// by name. rel is its path from the skill's root ("" for the root
+// itself), level how many directories lie above it.
+func (w *manifestWalk) dir(dir *os.Root, rel string, level int) {
+	d, err := dir.Open(".")
 	if err != nil {
-		return
+		return // unreadable: skipped, as the walk always did
 	}
-	w.dir(d, "", 0)
-	_ = d.Close()
-}
-
-// dir visits what the directory held open as dir holds, by name. rel
-// is its path from the skill's root ("" for the root itself), level how
-// many directories lie above it.
-//
-// Every open is of one name, from the directory that holds it, and is
-// one that cannot wait (bounded.Dir, ADR-0120 §8). The kind a listing
-// gives is of the moment it was listed: a name that is a FIFO by the
-// time it is opened is refused there, as a directory or as a file. The
-// listing itself is the one a root gives — a name that cannot be looked
-// at ends it — because that is the listing the pins were taken from.
-func (w *manifestWalk) dir(dir *bounded.Dir, rel string, level int) {
 	// One more than the budget: enough to know the directory does not
 	// fit, and no more. A read that fails part-way still gives what it
 	// read, and that much is visited, as before.
-	list, _ := dir.List(w.left + 1)
+	list, _ := d.ReadDir(w.left + 1)
+	_ = d.Close()
 	w.listed += len(list)
 	if len(list) > w.left {
 		w.cut = true
 		return
 	}
 	w.left -= len(list)
-	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+	sort.Slice(list, func(i, j int) bool { return list[i].Name() < list[j].Name() })
 	for _, e := range list {
-		base := e.Name
+		base := e.Name()
 		name := base
 		if rel != "" {
 			name = rel + "/" + base
 		}
-		switch t := e.Type; {
+		switch t := e.Type(); {
 		case t&fs.ModeSymlink != 0:
 			if len(w.entries) >= w.maxFiles {
 				w.cut = true
@@ -680,7 +667,7 @@ func (w *manifestWalk) dir(dir *bounded.Dir, rel string, level int) {
 			// A file that cannot be digested is not an entry and is not
 			// counted, wherever it sorts: counted at the cap and not
 			// below it, it made the answer depend on its name.
-			dg, ok := fileDigestIn(dir, base)
+			dg, ok := rootFileDigest(dir, base)
 			if !ok {
 				continue
 			}
@@ -700,7 +687,7 @@ func (w *manifestWalk) dir(dir *bounded.Dir, rel string, level int) {
 				w.cut = true
 				return
 			}
-			sub, err := dir.OpenDir(base)
+			sub, err := dir.OpenRoot(base)
 			if err != nil {
 				continue // unreadable, or no longer a directory: skipped
 			}
