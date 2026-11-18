@@ -38,7 +38,7 @@ func keptWorkDir(dir string) error {
 		return nil
 	}
 	if _, err := sandbox.ResolveKept(dir); isReplaced(err) {
-		return fmt.Errorf("the result was not saved: %w", err)
+		return fmt.Errorf("the session work directory: %w", err)
 	}
 	return nil
 }

@@ -285,10 +285,10 @@ func TestAResultIsNotSavedThroughAWorkDirectoryThatBecameALink(t *testing.T) {
 	}
 }
 
-// An added directory that was replaced fails its own check: the grant
-// is refused, or /clear drops the directory, as for one that is gone.
-// It is not the project or the work directory, and does not put every
-// command before the operator.
+// An added directory that was replaced fails its own check, and its
+// error is not the one that puts every command before the operator:
+// that is for the project and the work directory. And the note names
+// the directory and where it leads now.
 func TestAReplacedAddedDirectoryIsNotAReplacedProject(t *testing.T) {
 	replaced := &sandbox.ReplacedError{Dir: "/a", Was: "/a", Now: "/b"}
 	if !isReplaced(replaced) {
