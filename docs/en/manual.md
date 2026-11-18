@@ -2916,13 +2916,6 @@ directory and elsewhere, and deletes them at once. If the project directory
 cannot be written to, the check does not pass and the "could not be verified"
 handling above applies.
 
-The sandbox is built again at every `/clear` and each time you add a
-directory. If a command has replaced the project directory or the session's
-work directory by a link in the meantime, it is not built again: the notice
-`sandbox unverified: … was replaced …` names the directory and where it
-leads now, and every shell command asks you from then on. Put
-the directory back, then restart gem-agent, to have the sandbox again.
-
 When the configuration enables the sandbox but the OS cannot apply it,
 gem-agent does not start. It never silently runs without the sandbox.
 

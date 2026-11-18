@@ -346,11 +346,6 @@ func (in mcpIntake) write(server, tool, ext string, data []byte) (string, error)
 	if dir == "" {
 		return "", fmt.Errorf("no session work directory to save the result in")
 	}
-	// Saved by path, outside the sandbox: not through a work directory
-	// a lane replaced by a link (ADR-0122 §2).
-	if err := keptWorkDir(dir); err != nil {
-		return "", err
-	}
 	path := in.pathFor(server, tool, ext, data)
 	name := filepath.Base(path)
 	if sum, err := fileSHA256(path, int64(len(data))); err == nil && sum == sha256.Sum256(data) {

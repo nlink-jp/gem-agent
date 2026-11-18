@@ -23,19 +23,17 @@ Read again with one question put first — under what conditions, and how often,
 | A skill swapped between the compare and the read | the same kind of program | the swapped text reaches the model once |
 | A check's command ended from outside, read as a refusal | the same, and a lane that is in fact broken | a check passes that should not |
 | A trusted skill rewritten during a session | a `git pull`, or a command that writes a directory the skill links to | the new text reaches the model unasked |
-| A lane's work directory replaced by a link, then a rebuild of the lanes | two ordinary commands in the write lane, then the operator adds a directory | the write lane may write where the link leads |
+| A lane's work directory replaced by a link, then a rebuild of the lanes | a command in the write lane that the operator approves or has approved in advance, or a project's own code the operator ran; then the operator adds a directory, and one more such command | the write lane may write where the link leads |
 
-The first four need a program written to race the runtime. Whoever can run one in the write lane can rewrite the project's own code, which the operator runs outside any sandbox afterwards: that is more than any of the four gives. The last two need no race. ADR-0119's compare-and-ask closes the fifth. The sixth was open in every released version: the lanes are built more than once — at startup, at `/clear`, at each grant — and each build resolved the project's and the work directory's names again, so a name that had become a link anchored the profile on the link's target (measured on v0.106.0 by calling the build after `rm -rf "$GEMAGENT_WORK_DIR" && ln -s <dir> "$GEMAGENT_WORK_DIR"`: the write lane's profile allowed `<dir>`. A project with no protected name in it can be replaced the same way). The runtime also writes under the work directory's name itself, outside the sandbox, when it saves a large MCP result: after the same two commands the result's file was made where the link led (measured).
+The first four need a program written to race the runtime. Whoever can run one in the write lane can rewrite the project's own code, which the operator runs outside any sandbox afterwards: that is more than any of the four gives. The last two need no race. ADR-0119's compare-and-ask closes the fifth. The sixth was open in every released version: the lanes are built more than once — at startup, at `/clear`, at each grant — and each build resolved the project's and the work directory's names again, so a name that had become a link anchored the profile on the link's target (measured on v0.106.0 by building the lanes again after the work directory had been moved aside and a link put under its name: the write lane wrote where the link led). It starts from a command that replaces the directory, and a command in the write lane runs when the operator approves it or under an approval given in advance; the rule tier holds an `rm -rf` for the operator whatever the mode (measured). What stands behind it is a model led by text it read, or a project's own code run by a command the operator approved — and either can already rewrite the project.
 
 ## Decision
 
 1. **The sandbox is held against a command the model ran by mistake or was talked into running. It is not held against a program written to race the runtime.** A finding is judged in this order: under what conditions and how often it can happen; who does it; what they already have; what it newly gives them. A finding outside that line is recorded and not built against. Whether a way in has been written down anywhere is not part of the judgement, and neither is how much code closing it, or taking a closing out, would be.
 
-2. **The directories the lanes are anchored on are resolved once.** The real path of the project, of the work directory and of the temporary directory is the answer the name gave the first time it was resolved in this process (`sandbox.ResolveKept`). A later build resolves the name again only to compare: when the project or the work directory no longer resolves to the kept answer, no lanes are built, every shell command asks from then on, and a note says which directory was replaced, where it leads now, and that the sandbox comes back when the directory has been put back and the runtime restarted. The operator is told whoever asked for the rebuild — a grant the model requested as well. The lanes built earlier stay in the way. A name that is simply gone keeps its answer: the lanes stay anchored where the directory was, and a command may make it again there. The temporary directory keeps its answer and stops nothing: a profile anchored on the old place gives a link nothing.
+2. **The directories the lanes are anchored on are resolved once.** The real path of the project, of the work directory and of the temporary directory is the answer the name gave the first time it was resolved in this process (`sandbox.ResolveKept`); a later build uses it and does not resolve the name again. A profile anchored on the name gives a link put under it nothing: the kernel refuses a write that goes through the link. A work directory that has become a link gets no scratch directory made in it, and the read lane then asks, as it does whenever it has no scratch.
 
-   The same comparison is made where the runtime uses such a name again after a lane could have replaced it: before an MCP result is saved under the work directory — a replaced one saves nothing, and the call says so — and before an added directory's probes are made in it at a rebuild — a replaced one fails its check and is dropped like one that is gone (ADR-0114 §2).
-
-   Nothing is held open for this, and no file is compared by device and number. A directory replaced between the comparison and the use is a race.
+   That is all of it. Nothing is held open, nothing is compared, no mode is added and the operator is told nothing new.
 
 3. **The startup checks keep to their probes by holding them, and no longer defend their own verdict.** A probe file is made under a random name through the directory it is in, held open as an `os.Root`, and stays open: the control writes into the open file and never opens a name. Clean-up removes the names the check made, through the root, and nothing by path. Every probe command still has ten seconds and is ended with what it started (ADR-0121 §4), and the scratch probe keeps its random name (§8).
 
@@ -52,7 +50,7 @@ The first four need a program written to race the runtime. Whoever can run one i
 - The notes "… was replaced while the sandbox was being checked" and "… showed nothing: the command was ended by a signal" are gone. "… did not finish within 10s" stays.
 - A listing of a directory inside a project skill shows every entry again; the line "[not listed: N that are not part of the trusted skill]" is gone.
 - A skill can no longer be refused as "still changing" because a file was asked for under another spelling. That notice is left for a skill that changes twice while its question is being answered.
-- A session whose project or work directory was replaced by a link asks for every shell command until it is restarted.
+- A session whose work directory was replaced by a link builds its lanes on the name it had; its read lane asks, having no scratch directory.
 
 **Accepted, and written down.** Each needs a program on this machine that races the runtime:
 
@@ -62,13 +60,20 @@ The first four need a program written to race the runtime. Whoever can run one i
 | A probe directory replaced, during a check, by a link to another directory inside the same root | files there under the check's four names are removed |
 | A check's command ended from outside | a check passes, where the lane is in fact broken |
 | A skill swapped between the compare and the read | the swapped text reaches the model once; the next use compares |
-| A directory replaced between the comparison of 2 and its use | the lanes are anchored on the kept answer all the same; what the runtime makes by path under the name — the scratch directory, a saved MCP result, a check's probes — lands where the link leads |
 
-One residual needs no race. An empty directory added to a trusted skill changes no digest, and its name now shows in a listing of the directory it is in: a name of at most 255 bytes. Git carries no empty directory, and the write lane is refused a project's `.claude` (measured), so it comes from a command the operator ran in the operator lane, or the skill's directory is a link to a place the write lane writes.
+These need no race, and are accepted too. Each starts from a command in the write lane that the operator approved, or approved in advance, or from a project's own code the operator ran; whoever stands behind it can already rewrite the project.
+
+| What can happen | Result |
+|---|---|
+| A work directory replaced by a link, then a large MCP result | the runtime saves the result's file where the link leads, under the name it derives |
+| The same, then a call to an MCP server that is given the work directory's name | the server writes where the link leads; the model can name any directory to it in the call as it is |
+| An added write directory, or a project with no protected name in it, replaced by a link, then a restart | the new process takes the name as it finds it, and its lanes are anchored where the link leads (home, `~/Library` and `~/.ssh` are refused as added directories) |
+| An added write directory replaced by a link, then a rebuild | the check's probes are made and removed where the link leads; the lanes refuse the directory |
+| An empty directory added to a trusted skill | its name, at most 255 bytes, shows in a listing; git carries no empty directory and the write lane is refused a project's `.claude` (measured), so the skill's directory has to be a link to a place the write lane writes |
 
 ## Tests the design requires
 
-- A work directory replaced by a link: the rebuild builds nothing and every command asks; the same for the project; a replaced temporary directory changes no profile; a work directory that is gone is not a replaced one, and the lanes are built again; an MCP result is not saved through a work directory that became a link. Put back, the plain resolution at each build fails the first two.
+- A work directory replaced by a link: the lanes built again write neither where the link leads nor through it, and the runtime makes nothing there; a replaced temporary directory changes no profile; a work directory that is gone is built on again. Put back, the plain resolution at each build fails the first.
 - The control writes into the file that was made when its name has become a link, and the link's target is unchanged; clean-up removes nothing from a directory put under a probe directory's name outside the root.
 - The checks pass on APFS and on the volume a test is pointed at.
 - The digest of a skill's tree is what it was (the tests of the walk's bounds and of the digest stay as they are).
@@ -76,5 +81,6 @@ One residual needs no race. An empty directory added to a trusted skill changes 
 ## Alternatives considered
 
 - **Leave what was released as it is.** The code runs at every start and at every use of a project skill, a third of it on system calls the standard library already wraps, for events that need a racing program. Rejected.
-- **Hold every anchored directory open and compare what is under its name by device and number** — built after v0.106.0 with a table of held directories and a test that classified every call taking a path, and not released. It closes the race decision 2 leaves, at fifteen times the code. Rejected by decision 1.
+- **Hold every anchored directory open and compare what is under its name by device and number** — built after v0.106.0 with a table of held directories and a test that classified every call taking a path, and not released. It closes a replacement between two system calls as well, at ten times the code. Rejected by decision 1.
+- **Compare the name at every rebuild, and put every command before the operator when it differs** — the first form of decision 2, with a note to the operator and the same comparison before an MCP result is saved and before an added directory is probed. Cut before release: it adds a mode and four checks for something that starts from the operator's own approval of the command that replaces the directory.
 - **Compare a skill file by file at each read instead of digesting the whole tree at each use** — it would have made the walk's bounds unnecessary. Not taken up here: it changes what a trust record means, and nothing in use asks for it.

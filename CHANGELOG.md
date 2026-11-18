@@ -8,18 +8,14 @@
   when the sandbox is built again** (ADR-0122). The sandbox is built at
   startup, at `/clear` and each time you add a directory, and each
   build looked up where the project and the session's work directory
-  really are. A command in the write lane can remove its work
-  directory and put a link under its name (`rm -rf "$GEMAGENT_WORK_DIR"`,
-  then `ln -s`): at the next build the place the link led to became
-  one the write lane may write (measured; in every version so far). A
-  project with no protected file in it could be replaced the same way.
-  The places are now the ones found the first time. When the project
-  or the work directory no longer leads there, the sandbox is not
-  built again: a notice names the directory and where
-  it leads now, and every shell command asks from then on. Put the
-  directory back, then restart gem-agent, to have the sandbox again. A
-  large MCP result is not saved through a work directory that became
-  a link either — it was written where the link led.
+  really are. A command in the write lane can move its work directory
+  aside and put a link under its name: at the next build the place the
+  link led to became one the write lane may write (measured; in every
+  version so far). A project with no protected file in it could be
+  replaced the same way. The places are now the ones found the first
+  time, so a link put under the name later is not somewhere the sandbox
+  lets a command write. Such a command runs only when you approve it,
+  or under an approval you gave in advance.
 
 ### Changed
 

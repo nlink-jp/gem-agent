@@ -276,20 +276,6 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 		// The build's notes repeat what startup already said; only the
 		// probes' leftovers are news (ADR-0107 §4).
 		fn, enf, _, leftovers, err = build(g.sandboxOn, g.projectDir, g.workDir(), g.denyExec, g.caches, g.parents(), next)
-		if isReplaced(err) {
-			// The project or the work directory is not where it was:
-			// from here every shell command asks (ADR-0122 §2).
-			_ = root.Close()
-			g.registry.SetLaneExec(g.shellExec.run, sandbox.Enforcement{})
-			note := replacedNote(err)
-			if source != "slash" && g.notice != nil {
-				// The model asked for the directory, and the error is its
-				// result: the operator is told as well why every command
-				// asks from here.
-				notices = append(notices, note)
-			}
-			return "", g.tellLeftovers(source, leftovers, errors.New(note), &notices)
-		}
 		if err != nil {
 			_ = root.Close()
 			return "", g.tellLeftovers(source, leftovers, fmt.Errorf(m.GrantNotAddedFmt, canonical, err), &notices)

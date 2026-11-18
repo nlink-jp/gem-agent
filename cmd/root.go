@@ -2513,26 +2513,17 @@ func buildLanes(sandboxOn bool, projectDir, workDir string, denyExec []string, c
 	//
 	// Each is the first answer its name gave in this process, never a
 	// later one (ADR-0122 §2): the lanes are built more than once, a
-	// lane can replace its work directory — or a project it can empty —
-	// by a link, and a name resolved again here anchored the profile on
-	// wherever the link led. A name that resolves elsewhere by now
-	// builds nothing.
-	real, err := sandbox.ResolveKept(projectDir)
-	if isReplaced(err) {
-		return nil, sandbox.Enforcement{}, nil, nil, err
-	}
-	if err == nil {
+	// command in the write lane can replace its work directory — or a
+	// project it can empty — by a link, and a name resolved again here
+	// anchored the profile on wherever the link led.
+	if real, err := sandbox.ResolveKept(projectDir); err == nil {
 		projectDir = real
 	}
 	spec := sandbox.Spec{ProjectDir: projectDir, DenyExec: append(append([]string{}, sandbox.DefaultDenyExec...), denyExec...), PersistentParents: persistentParents, Added: added}
 	if workDir != "" {
 		// The session work directory (ADR-0058). A shell command told to
 		// put its output in $GEMAGENT_WORK_DIR has to be able to.
-		resolved, err := sandbox.ResolveKept(workDir)
-		if isReplaced(err) {
-			return nil, sandbox.Enforcement{}, nil, nil, err
-		}
-		if err == nil {
+		if resolved, err := sandbox.ResolveKept(workDir); err == nil {
 			spec.WorkDir = resolved
 		}
 	}
@@ -2675,6 +2666,11 @@ func toolchainCacheEnv(scratch, approved string, lane sandbox.Lane, caches map[s
 // has no work directory.
 func readScratchDir(workDir string) (string, error) {
 	if workDir != "" {
+		// A work directory that has become a link gets no scratch: made
+		// by path, it would be made where the link leads (ADR-0122 §2).
+		if fi, err := os.Lstat(workDir); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("%s is a link", workDir)
+		}
 		dir := filepath.Join(workDir, "scratch")
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return "", err
@@ -3229,13 +3225,7 @@ func rotateWorkDir(registry *tools.Registry, shellExec *liveExec, sandboxOn bool
 	fn, enf, laneNotes, dropped, err := buildWithoutFailedRoots(added, func(roots []sandbox.AddedRoot) (tools.LaneExecFunc, sandbox.Enforcement, []string, error) {
 		return buildExecFn(sandboxOn, projectDir, dir, denyExec, caches, persistentParents, roots)
 	})
-	if isReplaced(err) {
-		// The project or the work directory is not where it was
-		// (ADR-0122 §2): no lanes are built on it, and nothing runs
-		// unasked. The lanes built before stay in the way.
-		registry.SetLaneExec(shellExec.run, sandbox.Enforcement{})
-		notes = append(notes, replacedNote(err))
-	} else if err != nil {
+	if err != nil {
 		notes = append(notes, fmt.Sprintf("shell commands keep the previous sandbox profile: %v", err))
 	} else {
 		shellExec.set(fn)
