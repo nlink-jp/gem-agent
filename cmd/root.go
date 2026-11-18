@@ -686,7 +686,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	defer sink.SessionEnd() // LIFO: runs before Shutdown's flush
 
 	// --- LLM backend ---
-	backend, err := llm.NewVertex(ctx, cfg.GCP.Project, cfg.GCP.Location, cfg.Model.Name, cfg.Model.Safety, cfg.Model.Thinking, cfg.TUI.ShowThoughts)
+	backend, err := newModelClient(ctx, cfg)
 	if err != nil {
 		return err
 	}

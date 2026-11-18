@@ -36,7 +36,7 @@ func retryRecord(ev llm.RetryEvent) map[string]any {
 // answer look the same in the transcript, and telling them apart is
 // the first step of asking why a session was slow. Best-effort like
 // every diagnostic record: a failed write does not touch the call.
-func recordRetries(backend *llm.Vertex, log agent.SessionLog) {
+func recordRetries(backend interface{ SetRetryRecorder(func(llm.RetryEvent)) }, log agent.SessionLog) {
 	installRetryRecorder(backend.SetRetryRecorder, log)
 }
 
