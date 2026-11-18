@@ -228,10 +228,7 @@ func newCharEnv(t *testing.T) charEnv { return newCharEnvWith(t, "") }
 
 // expandExtra fills the temporary root into extra config.
 func expandExtra(extra, root string) string {
-	if extra == "" {
-		return ""
-	}
-	return fmt.Sprintf(extra, root)
+	return strings.ReplaceAll(extra, "%[1]s", root)
 }
 
 // newCharEnvWith adds extra to the config file; "%[1]s" in it is the
@@ -603,8 +600,8 @@ func TestCharacterizePlainREPL(t *testing.T) {
 		"report the added roots' persistent files",
 		"report the project's persistent files",
 		"run the session-end hooks",
-		"print the exit summary",
 		"end the telemetry session",
+		"print the exit summary",
 		"close the MCP clients",
 		"close the skills' roots",
 		"remove the work directory if empty",
@@ -685,3 +682,49 @@ func TestExitSequenceOnStartupFailure(t *testing.T) {
 		})
 	}
 }
+
+// With audit logging on, the exit says it is flushing before the wait
+// (ADR-0065 §4) and the summary still comes last: the resume command is
+// the last thing in the scrollback. Nothing listens at the collector's
+// address, so the flush fails at once and the session carries on.
+func TestExitSummaryIsLastWithTelemetry(t *testing.T) {
+	e := newCharEnvWith(t, `
+[telemetry]
+enabled = true
+backend = "otlp-http"
+endpoint = "127.0.0.1:9"
+insecure = true
+`)
+	r := runCharacterize(t, e, []scriptTurn{{Text: "Hello."}}, []string{"hi"}, "--no-sandbox")
+	if r.status != 0 {
+		t.Fatalf("status %d:\n%s", r.status, r.stderr)
+	}
+	lines := strings.Split(strings.TrimRight(r.stderr, "\n"), "\n")
+	flushing := -1
+	for i, l := range lines {
+		if strings.Contains(l, "sending audit events") {
+			flushing = i
+		}
+	}
+	if flushing < 0 {
+		t.Fatalf("no flush notice:\n%s", r.stderr)
+	}
+	tail := lines[flushing+1:]
+	if len(tail) != 2 || !strings.Contains(tail[0], "resume: gem-agent -c") || !strings.Contains(tail[1], "1 rounds") {
+		t.Fatalf("after the flush notice want exactly the exit summary, got %q\n%s", tail, r.stderr)
+	}
+	checkExitSequence(t, r.exit, []string{
+		"report the added roots' persistent files",
+		"report the project's persistent files",
+		"run the session-end hooks",
+		"end the telemetry session",
+		"flush telemetry",
+		"print the exit summary",
+		"close the MCP clients",
+		"close the skills' roots",
+		"remove the work directory if empty",
+		"remove the fallback scratch",
+		"close the transcript",
+	})
+}
+

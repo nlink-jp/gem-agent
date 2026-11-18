@@ -212,3 +212,16 @@ unchanged; the silence is gone.
 - ADR-0040 — "progress is saved" on a stopped turn
 - ADR-0052 — every skip and cut is reported, never silent
 - nlink-jp/knowledge, config-and-io: exec cancellation kills only the direct child
+
+## Addendum (2026-11-18): the notice comes before the summary
+
+§4 put the notice before the flush, and the exit summary — the resume
+command and the totals, which the operator asked to be the last thing
+in the scrollback — was printed before both, so with audit logging on
+the last line read `sending audit events…`. The maintainer chose the
+order notice, flush, summary: the wait is still announced before it
+starts, and the summary is last again, at the cost of appearing after
+the flush (at most 3 s, usually at once). Implemented as the order of
+the session's teardown (ADR-0124 §2.5); `TestExitSummaryIsLastWithTelemetry`
+holds it.
+

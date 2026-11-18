@@ -13,6 +13,10 @@
 
 ### Fixed
 
+- **The exit summary is the last thing on screen again with audit
+  logging on.** The resume command and the totals printed first, and
+  `sending audit events… (up to 3s)` came after them. Now the notice
+  comes first, the events are sent, and the summary follows.
 - **`/clear` no longer crashes a session that started without a
   transcript.** When the session log could not be opened at startup, a
   `/clear` that found persistent files changed during the session

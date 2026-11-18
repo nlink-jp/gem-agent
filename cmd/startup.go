@@ -630,6 +630,25 @@ func loadProject(sess *liveSession, cmd *cobra.Command, cl *cleanups, fl runFlag
 
 func buildModels(sess *liveSession, cmd *cobra.Command, cl *cleanups, rs runSettings) (models, error) {
 	var err error
+	// Exit summary (operator request): every interactive exit route —
+	// /quit, Ctrl+C, Ctrl+D — ends with the resume hint and the cost
+	// line as the last thing in the scrollback. A cleanup so no route
+	// can forget it; one-shot mode stays clean for pipelines. Pushed
+	// before the telemetry below so it runs after the audit flush: the
+	// flush notice (ADR-0065 §4) printed after the summary and was the
+	// last line instead. The agent is assembled later; a start that
+	// fails before it has nothing to summarise.
+	if !rs.oneShot {
+		out := cmd.ErrOrStderr()
+		cl.push("print the exit summary", func() {
+			if sess.ag == nil {
+				return
+			}
+			for _, l := range exitSummary(sess.ag.Usage(), sess.sessionID, sess.msgs) {
+				fmt.Fprintln(out, l)
+			}
+		})
+	}
 	// --- telemetry: audit events to the operator's collector (ADR-0035) ---
 	// Default off. Failures never hurt the session: creation errors
 	// warn and fall back to the no-op sink.
@@ -1138,19 +1157,6 @@ func assembleSession(sess *liveSession, cmd *cobra.Command, cl *cleanups, rs run
 		},
 		tally: md.tally,
 		now:   time.Now,
-	}
-
-	// Exit summary (operator request): every interactive exit route —
-	// /quit, Ctrl+C, Ctrl+D — ends with the resume hint and the cost
-	// line as the last thing in the scrollback. Deferred so no route
-	// can forget it; one-shot mode stays clean for pipelines.
-	if !rs.oneShot {
-		out := cmd.ErrOrStderr()
-		cl.push("print the exit summary", func() {
-			for _, l := range exitSummary(sess.ag.Usage(), sess.sessionID, sess.msgs) {
-				fmt.Fprintln(out, l)
-			}
-		})
 	}
 
 	// showImage is the one door to the operator's screen (ADR-0091). Both

@@ -37,7 +37,7 @@ The packages are layered and the rest of the code is in proportion. What is out 
 ### Found while reading (not part of this decision)
 
 1. **A panic on `/clear` (a defect).** When the startup transcript cannot be opened although the state directory resolved, `curLog` stays nil. A later `/clear` that opens its new transcript reports the persistent files through `curLog.Log`, and `(*session.Logger).Log` locks its mutex first: with anything to report, the session panics. Every other transcript write in `runREPL` checks for nil first. It is fixed in its own `fix:` commit, with a test, **before** step 0 — so the restructure, whose transcript holder is nil-safe by construction (§2.3), changes no behaviour.
-2. **The exit summary is not always last (the maintainer's call).** The exit summary is deferred so that it is "the last thing in the scrollback" (its comment, an operator request). With telemetry enabled, the flush notice (ADR-0065 §4) prints after it. Whether that is a defect or an accepted order is the maintainer's call; a change, if any, is its own `fix:` commit, not part of this work.
+2. **The exit summary is not always last (the maintainer's call — decided: fixed, see the end of the addendum).** The exit summary is deferred so that it is "the last thing in the scrollback" (its comment, an operator request). With telemetry enabled, the flush notice (ADR-0065 §4) prints after it. Whether that is a defect or an accepted order is the maintainer's call; a change, if any, is its own `fix:` commit, not part of this work.
 
 ## Decision
 
@@ -235,4 +235,6 @@ Implemented in seven commits on gem-agent `main`: the `/clear` panic fix (`4a4e8
 - `liveSession`-level tests replacing the two copies: the resume tests call `openTranscript`, the grant tests build their granter with `buildConfinement`.
 - The TUI in a real terminal: the characterization child with its scripted model, run under a private tmux server on `b795451` and on `27b8c06` — start, a turn, `/clear`, `/mcp reload`, the settings panel, a second turn, `/quit`. Transcripts and hook payloads identical; screens differing only in a temporary directory's random name and tmux's dead-pane time. A live Vertex session was not run: what the restructure moved does not reach the model client beyond the seam, and the declarations and prompt the model receives are compared byte for byte.
 
-The implementation-time `/code-review` of §4 runs before the release that ships this, as §4 says. "Found while reading" 2 (the exit summary's place) remains the maintainer's call.
+The implementation-time `/code-review` of §4 runs before the release that ships this, as §4 says.
+
+**"Found while reading" 2, decided.** The maintainer chose to fix it: the exit summary is pushed before the telemetry steps, so §2.5's order becomes … session-end hooks, telemetry `SessionEnd`, flush notice and `Shutdown`, **exit summary**, then the closes and removals. With audit logging on, the notice still precedes the wait and the summary is the last line (ADR-0065 addendum). Its own `fix:` commit, as decided here.

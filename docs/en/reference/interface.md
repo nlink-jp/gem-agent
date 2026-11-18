@@ -245,9 +245,10 @@ Every interactive exit — `/quit`, Ctrl+C, Ctrl+D — ends with a
 two-line summary: the session id with the resume command, and the
 session's round/token totals. The last thing in the scrollback answers
 "how do I get back to this?". A third line names abandoned tool calls
-still running, when there are any; and with audit logging enabled the
-exit says `sending audit events… (up to 3s)` before its bounded flush
-instead of pausing silently (ADR-0065).
+still running, when there are any. With audit logging enabled the
+exit first says `sending audit events… (up to 3s)` and flushes, instead
+of pausing silently (ADR-0065), and then prints the summary, which
+stays last.
 
 `/usage` breaks the session down: main-loop rounds with the cache hit
 rate, risk-check and compaction side-calls, and per-tool lines
