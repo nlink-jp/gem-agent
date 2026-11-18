@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.106.0] - 2026-11-18
+
 ### Security
 
 - **The sandbox checks at startup no longer write or delete outside the
