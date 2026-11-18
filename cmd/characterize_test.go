@@ -44,6 +44,7 @@ const (
 	charRecordEnv = "GEMAGENT_CHARACTERIZE_RECORD"
 	charArgsEnv   = "GEMAGENT_CHARACTERIZE_ARGS"
 	charExitEnv   = "GEMAGENT_CHARACTERIZE_EXIT"
+	charFailEnv   = "GEMAGENT_CHARACTERIZE_MODEL_FAILS"
 	charVersion   = "v0.0.0-characterize"
 )
 
@@ -69,6 +70,9 @@ func runCharacterizeChild() int {
 	}
 	rec := &scriptRecorder{path: os.Getenv(charRecordEnv)}
 	newModelClient = func(_ context.Context, cfg *config.Config) (modelClient, error) {
+		if os.Getenv(charFailEnv) != "" {
+			return nil, errors.New("the scripted model refuses to start")
+		}
 		return &scriptedModel{script: script, rec: rec, model: cfg.Model.Name}, nil
 	}
 	if path := os.Getenv(charExitEnv); path != "" {
@@ -322,7 +326,7 @@ func runCharacterize(t *testing.T, e charEnv, turns []scriptTurn, stdin []string
 	env := []string{}
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
-		if strings.HasPrefix(k, "GEMAGENT_") || k == "HOME" || k == "LANG" || k == "LC_ALL" {
+		if (strings.HasPrefix(k, "GEMAGENT_") && k != charFailEnv) || k == "HOME" || k == "LANG" || k == "LC_ALL" {
 			continue
 		}
 		env = append(env, kv)
@@ -639,3 +643,45 @@ command = "cat >> %[1]s/session_end.jsonl; echo >> %[1]s/session_end.jsonl"
 	checkCharacterization(t, "clear", r.render(e)+normalize(e, "=== session_end hook payloads\n"+string(ended)))
 }
 
+// A start that fails undoes what it set up and nothing else (ADR-0124
+// §2.5): each case fails in a different phase, and the teardown that ran
+// is what the phases before it pushed.
+func TestExitSequenceOnStartupFailure(t *testing.T) {
+	after := []string{"remove the work directory if empty", "remove the fallback scratch", "close the transcript"}
+	cases := []struct {
+		name   string
+		env    string
+		args   []string
+		reason string // in stderr: the start failed where the case says
+		want   []string
+	}{
+		{"resolveRun: a bad thinking level", "", []string{"--thinking", "loud"}, "loud", nil},
+		{"admitProject: a bare * in --allow", "", []string{"--allow", "*"}, `"*"`, nil},
+		{"openTranscript: nothing to continue", "", []string{"--continue"}, "no previous session", nil},
+		// HOME is the child's: --add-dir refuses the operator's home.
+		{"buildConfinement: --add-dir names a home directory", "", []string{"--add-dir", "HOME"}, "home directory", after},
+		{"buildModels: the model client fails", charFailEnv + "=1", nil, "refuses to start", append([]string{
+			"end the telemetry session", "close the MCP clients", "close the skills' roots"}, after...)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := newCharEnv(t)
+			args := []string{"--no-sandbox", "-p", "hi"}
+			for _, a := range c.args {
+				if a == "HOME" {
+					a = e.home
+				}
+				args = append(args, a)
+			}
+			if c.env != "" {
+				k, v, _ := strings.Cut(c.env, "=")
+				t.Setenv(k, v)
+			}
+			r := runCharacterize(t, e, nil, nil, args...)
+			if r.status == 0 || !strings.Contains(r.stderr, c.reason) {
+				t.Fatalf("want a failed start naming %q, got status %d:\n%s", c.reason, r.status, r.stderr)
+			}
+			checkExitSequence(t, r.exit, c.want)
+		})
+	}
+}

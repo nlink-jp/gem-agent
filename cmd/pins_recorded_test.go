@@ -218,16 +218,21 @@ func TestNoPinIsComparedWithTheStartupCopy(t *testing.T) {
 			}
 		}
 	}
-	root, err := os.ReadFile("root.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(root), "writes.begin(tc, name, repinnable(") {
-		t.Error("root.go: an approved write does not ask repinnable whether it will be recorded")
-	}
-	for _, direct := range []string{".PinsFor(", ".HasPins("} {
-		if strings.Contains(string(root), direct) {
-			t.Errorf("root.go reads pins itself (%s): comparisons belong in pins.go", direct)
+	// The session's wiring: runREPL and the parts ADR-0124 split it into.
+	var wiring strings.Builder
+	for _, name := range sessionWiringFiles {
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
 		}
+		wiring.Write(src)
+		for _, direct := range []string{".PinsFor(", ".HasPins("} {
+			if strings.Contains(string(src), direct) {
+				t.Errorf("%s reads pins itself (%s): comparisons belong in pins.go", name, direct)
+			}
+		}
+	}
+	if !strings.Contains(wiring.String(), "writes.begin(tc, name, repinnable(") {
+		t.Error("the session wiring: an approved write does not ask repinnable whether it will be recorded")
 	}
 }

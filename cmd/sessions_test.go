@@ -6,8 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/llm"
 	"github.com/nlink-jp/gem-agent/internal/session"
+	"github.com/nlink-jp/gem-agent/internal/statedir"
 )
 
 // seed writes a complete session transcript and returns its id.
@@ -27,12 +29,12 @@ func seed(t *testing.T, dir, project, model string, msgs ...llm.Message) string 
 }
 
 func TestResolveResumeLoadsTheMostRecentSessionOfThisProject(t *testing.T) {
-	dir := t.TempDir()
+	dir := sessionsDir(t)
 	id := seed(t, dir, "/proj", "gemini-x",
 		llm.Message{Role: llm.RoleUser, Content: "where were we"},
 		llm.Message{Role: llm.RoleAssistant, Content: "here"})
 
-	meta, history, _, err := resolveAndLoad(dir, "/proj", "gemini-x", "")
+	meta, history, _, err := resolveAndLoad(t, dir, "/proj", "gemini-x", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,10 +49,10 @@ func TestResolveResumeLoadsTheMostRecentSessionOfThisProject(t *testing.T) {
 // A transcript replayed in the wrong tree describes files that are not
 // there, and carries one project's contents into another's context.
 func TestResolveResumeRefusesAnotherProject(t *testing.T) {
-	dir := t.TempDir()
+	dir := sessionsDir(t)
 	id := seed(t, dir, "/elsewhere", "gemini-x", llm.Message{Role: llm.RoleUser, Content: "hi"})
 
-	_, _, _, err := resolveAndLoad(dir, "/proj", "gemini-x", id)
+	_, _, _, err := resolveAndLoad(t, dir, "/proj", "gemini-x", id)
 	if err == nil {
 		t.Fatal("resumed a session recorded in a different project")
 	}
@@ -59,7 +61,7 @@ func TestResolveResumeRefusesAnotherProject(t *testing.T) {
 	}
 
 	// --continue must not even see it.
-	if _, _, _, err := resolveAndLoad(dir, "/proj", "gemini-x", ""); err == nil ||
+	if _, _, _, err := resolveAndLoad(t, dir, "/proj", "gemini-x", ""); err == nil ||
 		!strings.Contains(err.Error(), "no previous session") {
 		t.Errorf("--continue error = %v", err)
 	}
@@ -69,10 +71,10 @@ func TestResolveResumeRefusesAnotherProject(t *testing.T) {
 // model's into another has no basis, and the failure would land after
 // the operator thought they were back at work (ADR-0005).
 func TestResolveResumeRefusesADifferentModel(t *testing.T) {
-	dir := t.TempDir()
+	dir := sessionsDir(t)
 	id := seed(t, dir, "/proj", "gemini-recorded", llm.Message{Role: llm.RoleUser, Content: "hi"})
 
-	_, _, _, err := resolveAndLoad(dir, "/proj", "gemini-other", id)
+	_, _, _, err := resolveAndLoad(t, dir, "/proj", "gemini-other", id)
 	if err == nil {
 		t.Fatal("resumed a session recorded with a different model")
 	}
@@ -82,23 +84,23 @@ func TestResolveResumeRefusesADifferentModel(t *testing.T) {
 }
 
 func TestResolveResumeRejectsPathsAndUnknownIDs(t *testing.T) {
-	dir := t.TempDir()
+	dir := sessionsDir(t)
 	seed(t, dir, "/proj", "m", llm.Message{Role: llm.RoleUser, Content: "hi"})
 
 	for _, id := range []string{"../../../etc/passwd", "/etc/passwd", "notanid"} {
-		if _, _, _, err := resolveAndLoad(dir, "/proj", "m", id); err == nil {
+		if _, _, _, err := resolveAndLoad(t, dir, "/proj", "m", id); err == nil {
 			t.Errorf("resolveResume accepted %q as a session id", id)
 		}
 	}
-	if _, _, _, err := resolveAndLoad(dir, "/proj", "m", "20200101-000000"); err == nil {
+	if _, _, _, err := resolveAndLoad(t, dir, "/proj", "m", "20200101-000000"); err == nil {
 		t.Error("resolveResume accepted an id with no session behind it")
 	}
 }
 
 func TestResolveResumeRejectsAnEmptyTranscript(t *testing.T) {
-	dir := t.TempDir()
+	dir := sessionsDir(t)
 	id := seed(t, dir, "/proj", "m")
-	if _, _, _, err := resolveAndLoad(dir, "/proj", "m", id); err == nil {
+	if _, _, _, err := resolveAndLoad(t, dir, "/proj", "m", id); err == nil {
 		t.Error("resumed a session with no conversation in it")
 	}
 }
@@ -159,12 +161,12 @@ func TestWriteSessionsShowsIDAndPreview(t *testing.T) {
 
 // --continue must land on the last session that has something in it.
 func TestContinueSkipsConversationlessSessions(t *testing.T) {
-	dir := t.TempDir()
+	dir := sessionsDir(t)
 	want := seed(t, dir, "/proj", "m", llm.Message{Role: llm.RoleUser, Content: "real work"})
 	// A later run that only used slash commands: header, no conversation.
 	empty := seed(t, dir, "/proj", "m")
 
-	meta, history, _, err := resolveAndLoad(dir, "/proj", "m", "")
+	meta, history, _, err := resolveAndLoad(t, dir, "/proj", "m", "")
 	if err != nil {
 		t.Fatalf("--continue failed with an empty session present: %v", err)
 	}
@@ -175,27 +177,55 @@ func TestContinueSkipsConversationlessSessions(t *testing.T) {
 		t.Errorf("history = %+v", history)
 	}
 	// Named explicitly, the empty one still reports what is actually wrong.
-	if _, _, _, err := resolveAndLoad(dir, "/proj", "m", empty); err == nil ||
+	if _, _, _, err := resolveAndLoad(t, dir, "/proj", "m", empty); err == nil ||
 		!strings.Contains(err.Error(), "no conversation") {
 		t.Errorf("explicit --resume of an empty session: %v", err)
 	}
 }
 
-// resolveAndLoad mirrors runREPL's resume flow exactly: resolve the
-// id, take the flock via Reopen, THEN load under it (review round 2 —
-// loading before the lock raced another process's final appends).
-func resolveAndLoad(dir, projectDir, model, id string) (session.Meta, []llm.Message, []string, error) {
-	meta, err := resolveResume(dir, projectDir, model, id)
-	if err != nil {
-		return meta, nil, nil, err
+// resolveAndLoad runs the startup's own resume path, openTranscript —
+// resolve the id, take the flock via Reopen, THEN load under it (review
+// round 2: loading before the lock raced another process's final
+// appends). A copy of that flow stood here until ADR-0124 made the phase
+// callable; a copy can agree with itself while the original changes.
+// dir must be the sessions directory of the state root sessionsDir set.
+func resolveAndLoad(t *testing.T, dir, projectDir, model, id string) (session.Meta, []llm.Message, []string, error) {
+	t.Helper()
+	if want, err := session.DefaultDir(); err != nil || want != dir {
+		t.Fatalf("sessions directory %q is not the state root's %q (%v): seed under sessionsDir", dir, want, err)
 	}
-	lg, err := session.Reopen(dir, projectDir, meta.ID)
-	if err != nil {
-		return meta, nil, nil, err
+	// openTranscript exports the session id, as a start does.
+	t.Setenv(session.EnvVar, "")
+	sess := newLiveSession()
+	var stderr strings.Builder
+	sess.stderr = &stderr
+	sess.version = "v0.0.0-test"
+	sess.projectDir = projectDir
+	sess.cfg = &config.Config{}
+	sess.cfg.Model.Name = model
+	sess.cfg.GCP.Location = "global"
+	cl := &cleanups{}
+	defer cl.run()
+	op, err := openTranscript(sess, cl, runFlags{continueLast: id == "", resume: id})
+	var notes []string
+	for _, l := range strings.Split(stderr.String(), "\n") {
+		if n, ok := strings.CutPrefix(l, "warning: "); ok {
+			notes = append(notes, n)
+		}
 	}
-	defer func() { _ = lg.Close() }()
-	history, notes, err := loadResumedHistory(lg, meta.ID)
-	return meta, history, notes, err
+	return session.Meta{ID: op.resumedID, Started: op.resumedFrom}, op.restored, notes, err
+}
+
+// sessionsDir points the state root at a temporary directory for this
+// test and returns its sessions directory, where openTranscript looks.
+func sessionsDir(t *testing.T) string {
+	t.Helper()
+	t.Setenv(statedir.EnvRoot, t.TempDir())
+	dir, err := session.DefaultDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 // ADR-0101: --resume in the directory a session was recorded in works
@@ -211,7 +241,7 @@ func TestResumeAcceptsTheProjectUnderAnotherSpelling(t *testing.T) {
 	if _, err := os.Stat(typed); err != nil {
 		t.Skipf("this volume does not treat the two spellings as one name: %v", err)
 	}
-	dir := t.TempDir()
+	dir := sessionsDir(t)
 	lg, err := session.Open(dir, project)
 	if err != nil {
 		t.Fatal(err)
@@ -220,7 +250,7 @@ func TestResumeAcceptsTheProjectUnderAnotherSpelling(t *testing.T) {
 	_ = lg.Log(session.KindMessage, llm.Message{Role: llm.RoleUser, Content: "hello"})
 	id := lg.ID()
 	_ = lg.Close()
-	if _, history, _, err := resolveAndLoad(dir, typed, "m", id); err != nil || len(history) != 1 {
+	if _, history, _, err := resolveAndLoad(t, dir, typed, "m", id); err != nil || len(history) != 1 {
 		t.Errorf("resume under the other spelling: history %d, err %v", len(history), err)
 	}
 	other := filepath.Join(base, "other")

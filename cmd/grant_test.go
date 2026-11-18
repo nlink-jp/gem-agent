@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nlink-jp/gem-agent/internal/config"
 	"github.com/nlink-jp/gem-agent/internal/risk"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/statedir"
@@ -20,9 +21,11 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/uitext"
 )
 
-// newTestGranter builds the grant path over a real sandbox the way
-// runREPL does: a registry, a live runner verified with the given
-// startup roots, the watch and a record sink.
+// newTestGranter builds the grant path over a real sandbox with the
+// startup's own phase, buildConfinement: the registry, the live runner
+// verified with the given startup roots, the watch, and the record sink
+// the session's transcript is. A hand-built copy of that wiring stood
+// here until ADR-0124 made the phase callable.
 func newTestGranter(t *testing.T, startup []sandbox.AddedRoot, readLanePrompts bool) (*dirGranter, *[]map[string]any, *bytes.Buffer) {
 	t.Helper()
 	if runtime.GOOS != "darwin" {
@@ -32,41 +35,47 @@ func newTestGranter(t *testing.T, startup []sandbox.AddedRoot, readLanePrompts b
 		t.Skipf("sandbox-exec cannot apply a profile here: %v", err)
 	}
 	t.Setenv(statedir.EnvRoot, t.TempDir())
-	project := underHome(t, "proj")
-	execFn, enf, _, err := buildExecFn(true, project, "", nil, nil, nil, startup)
-	if err != nil || !enf.Confined {
+	var out bytes.Buffer
+	sess := newLiveSession()
+	sess.stderr = &out
+	sess.msgs = uitext.For(uitext.EN)
+	sess.projectDir = underHome(t, "proj")
+	sess.cfg = &config.Config{}
+	sess.cfg.Sandbox.Enabled = true
+	sess.cfg.Sandbox.ReadLanePrompts = readLanePrompts
+	sess.cfg.Agent.ShellTimeoutSec = 5
+	var fl runFlags
+	for _, a := range startup {
+		if a.Write {
+			fl.addDir = append(fl.addDir, a.Dir)
+		} else {
+			fl.readDir = append(fl.readDir, a.Dir)
+		}
+	}
+	home, _ := os.UserHomeDir()
+	cf, err := buildConfinement(sess, fl, runSettings{}, admission{home: home}, sess.workArea)
+	if err != nil || !cf.enforcement.Confined {
 		t.Skipf("sandbox unverified here: %v", err)
 	}
-	if readLanePrompts {
-		enf.ReadLane = false
-	}
-	registry, err := tools.New(project, nil, 5*time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	shellExec := &liveExec{fn: execFn}
-	registry.SetLaneExec(shellExec.run, enf)
-	if err := registry.AddDirs(startup); err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
+	// What startup printed (the lanes' and the file reads' notes) is not
+	// what these tests measure: they read what a grant prints.
+	out.Reset()
+	// The session's transcript, from here on: what a grant records.
 	var records []map[string]any
-	g := &dirGranter{
-		registry: registry, shellExec: shellExec, sandboxOn: true, projectDir: project,
-		workDir: func() string { return "" }, readLanePrompts: readLanePrompts,
-		parents: func() []string { return nil }, base: rootBaseContext(""),
-		watch: newAddedWatch(nil, project, &out, uitext.For(uitext.EN)), sources: map[string]string{},
-		log: func(kind string, data any) error {
-			if kind == "added_directories" {
-				records = append(records, data.(map[string]any))
-			}
-			return nil
-		},
-	}
-	for _, a := range startup {
-		g.sources[a.Dir] = "flag"
-	}
-	return g, &records, &out
+	sess.sessionLog = recordSink(func(kind string, data any) {
+		if kind == "added_directories" {
+			records = append(records, data.(map[string]any))
+		}
+	})
+	return sess.granter, &records, &out
+}
+
+// recordSink is a transcript that hands each record to a function.
+type recordSink func(kind string, data any)
+
+func (r recordSink) Log(kind string, data any) error {
+	r(kind, data)
+	return nil
 }
 
 func runLane(t *testing.T, g *dirGranter, lane sandbox.Lane, command string) error {
