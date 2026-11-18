@@ -208,6 +208,10 @@ func ValidID(s string) bool { return idPattern.MatchString(s) }
 // leading characters: hex and hyphens, four characters or more.
 var prefixPattern = regexp.MustCompile(`^[0-9a-f-]{4,}$`)
 
+// ValidPrefix reports whether s may name a session by its leading
+// characters, as --resume accepts it.
+func ValidPrefix(s string) bool { return prefixPattern.MatchString(s) }
+
 // NewID returns a random UUID v4 (ADR-0071 §1): unique on the machine
 // and, for practical purposes, everywhere — the timestamp ids it
 // replaces were unique only within one project directory.

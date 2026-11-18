@@ -1569,7 +1569,7 @@ pile up (a work directory that nothing went into is cleared away on exit).
 ```sh
 gem-agent workdirs              # list this project's work directories
 gem-agent workdirs clean        # show what would be deleted, confirm, then delete
-gem-agent workdirs clean <ID>   # delete only the given session's (the full ID, not a prefix)
+gem-agent workdirs clean <ID>   # delete only the given session's (the ID's first 4 or more characters will do)
 ```
 
 - Before deleting, it shows the list of targets and their total size and asks
@@ -2907,7 +2907,7 @@ how you use it.
 | `gem-agent sessions [--all]` | List the sessions that can be resumed. `--all` for every project |
 | `gem-agent trust [--accept]` | Show the trust state of the project. `--accept` records the current content afresh in a trusted project |
 | `gem-agent workdirs` | List this project's work directories of past sessions |
-| `gem-agent workdirs clean [ID…] [--yes]` | Delete work directories after confirming. `--yes` deletes without confirming |
+| `gem-agent workdirs clean [ID…] [--yes]` | Delete work directories after confirming. An ID may be given by its first 4 or more characters. `--yes` deletes without confirming |
 | `gem-agent completion <shell>` | Print a shell completion script |
 | `gem-agent --version` | Show the version |
 

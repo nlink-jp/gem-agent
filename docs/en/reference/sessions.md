@@ -312,7 +312,9 @@ session's. The scans are bounded: the listing stops at 10,000
 sessions and says so, a directory's count stops at 50,000 files and
 shows as `N+`, and the startup note shows `N+` / `12 MB+` when its
 numbers are lower bounds. `workdirs clean <id>` finds a session the
-cut listing did not reach.
+cut listing did not reach. An id may also be given by its first four or
+more characters, as for `--resume`; such a prefix must name one
+directory, and on a cut listing the full id is asked for.
 
 ## Session ids and `/clear` (ADR-0071)
 

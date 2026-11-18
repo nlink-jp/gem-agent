@@ -1511,7 +1511,7 @@ Google Cloud の請求の画面を見ます。
 ```sh
 gem-agent workdirs              # このプロジェクトの作業ディレクトリを一覧
 gem-agent workdirs clean        # 消す対象を示して、確かめてから消す
-gem-agent workdirs clean <ID>   # 指定したセッションのものだけ消す（ID は省略しない完全なもの）
+gem-agent workdirs clean <ID>   # 指定したセッションのものだけ消す（ID は先頭の 4 文字以上でもよい）
 ```
 
 - 消す前に、対象の一覧と合計の大きさを示して確認します。`y` 以外の答えでは
@@ -2801,7 +2801,7 @@ gem-agent は起動しません。黙ってサンドボックスなしで動く�
 | `gem-agent sessions [--all]` | 再開できるセッションの一覧。`--all` ですべてのプロジェクト |
 | `gem-agent trust [--accept]` | プロジェクトの信用の状態を表示。`--accept` は、信用済みのプロジェクトで、今の中身を記録し直す |
 | `gem-agent workdirs` | このプロジェクトの、過去のセッションの作業ディレクトリの一覧 |
-| `gem-agent workdirs clean [ID…] [--yes]` | 作業ディレクトリを、確かめてから消す。`--yes` で確かめずに消す |
+| `gem-agent workdirs clean [ID…] [--yes]` | 作業ディレクトリを、確かめてから消す。ID は先頭の 4 文字以上でもよい。`--yes` で確かめずに消す |
 | `gem-agent completion <シェル>` | シェルの補完スクリプトを出力する |
 | `gem-agent --version` | 版を表示する |
 

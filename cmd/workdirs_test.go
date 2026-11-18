@@ -166,3 +166,67 @@ func TestWorkdirsCleanRefusesAnUnknownID(t *testing.T) {
 		t.Error("an unknown id must be an error")
 	}
 }
+
+// An id may be named by its leading characters, as --resume takes it:
+// `gem-agent sessions` shows eight, and the full id was the only form
+// clean accepted.
+func TestResolveWorkdirByPrefix(t *testing.T) {
+	a := workdir.Info{ID: "3f2a9c1e-0b7d-4e21-9a3c-5d6e7f809a1b"}
+	b := workdir.Info{ID: "3f2a1111-0b7d-4e21-9a3c-5d6e7f809a1b"}
+	c := workdir.Info{ID: "77aa0000-0b7d-4e21-9a3c-5d6e7f809a1b"}
+	infos := []workdir.Info{a, b, c}
+	far := workdir.Info{ID: "99bb0000-0b7d-4e21-9a3c-5d6e7f809a1b"}
+	stat := func(id string) (workdir.Info, error) {
+		if id == far.ID {
+			return far, nil
+		}
+		return workdir.Info{}, os.ErrNotExist
+	}
+
+	for _, tc := range []struct {
+		typed, want, errHas string
+		cut                 bool
+	}{
+		{typed: a.ID, want: a.ID},
+		{typed: "3f2a9c1e", want: a.ID},
+		{typed: "77aa", want: c.ID},
+		{typed: far.ID, want: far.ID, cut: true},
+		{typed: "3f2a", errHas: "matches 2 work directories"},
+		{typed: "77a", errHas: "no work directory for session 77a"},
+		{typed: "zzzz", errHas: "no work directory for session zzzz"},
+		{typed: "4444", errHas: "no work directory for session 4444"},
+		{typed: "4444", cut: true, errHas: "among the first"},
+		{typed: "77aa", cut: true, errHas: "listing was cut"},
+	} {
+		got, err := resolveWorkdir(tc.typed, infos, tc.cut, stat)
+		if tc.errHas != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.errHas) {
+				t.Errorf("%q (cut=%v): err = %v, want it to say %q", tc.typed, tc.cut, err, tc.errHas)
+			}
+			continue
+		}
+		if err != nil || got.ID != tc.want {
+			t.Errorf("%q (cut=%v) = %q, %v; want %q", tc.typed, tc.cut, got.ID, err, tc.want)
+		}
+	}
+}
+
+// The eight characters `gem-agent sessions` shows are enough to clean
+// one session's directory, and the confirmation names it in full.
+func TestWorkdirsCleanTakesAPrefix(t *testing.T) {
+	project := workdirsFixture(t)
+	const id = "3f2a9c1e-0b7d-4e21-9a3c-5d6e7f809a1b"
+	if _, err := workdir.Ensure(project, id); err != nil {
+		t.Fatal(err)
+	}
+	flagWorkdirsYes = true
+	t.Cleanup(func() { flagWorkdirsYes = false })
+
+	out := runWorkdirs(t, "", "clean", id[:8])
+	if !strings.Contains(out, "  "+id+"  ") || !strings.Contains(out, "deleted "+id) {
+		t.Fatalf("the prefix did not resolve to the full id:\n%s", out)
+	}
+	if infos, _, _ := workdir.List(project, ""); len(infos) != 2 {
+		t.Fatalf("%d dirs left, want the other two", len(infos))
+	}
+}

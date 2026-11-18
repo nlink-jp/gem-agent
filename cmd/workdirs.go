@@ -6,6 +6,7 @@ import (
 	"golang.org/x/term"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -38,10 +39,11 @@ the explicit remedy, and it never touches a running session's directory.`,
 }
 
 var workdirsCleanCmd = &cobra.Command{
-	Use:   "clean [session-id]...",
+	Use:   "clean [session-id|prefix]...",
 	Short: "Delete session work directories (asks first)",
 	Long: `Delete the named session work directories, or every one whose
-session is not currently running when no ids are given.
+session is not currently running when no ids are given. An id may be
+given by its first characters (four or more), as for --resume.
 
 The exact list — ids, sizes, total — is printed and confirmed before
 anything is removed; EOF or anything but 'y' aborts. A directory that
@@ -119,25 +121,16 @@ func runWorkdirsClean(cmd *cobra.Command, args []string) error {
 	// that does not exist is an error, not a silent skip — a cleanup
 	// that quietly ignores a typo looks like it worked (ADR-0037's
 	// allowlist lesson, applied to deletion).
-	byID := map[string]workdir.Info{}
-	for _, in := range infos {
-		byID[in.ID] = in
-	}
 	var picked []workdir.Info
 	if len(args) > 0 {
-		for _, id := range args {
-			in, ok := byID[id]
-			if !ok {
-				// Not in the listing — which may have been cut (R12):
-				// the named form stats the directory itself.
-				st, err := workdir.Stat(projectDir, id)
-				if err != nil {
-					return fmt.Errorf("no work directory for session %s here", id)
-				}
-				in = st
+		stat := func(id string) (workdir.Info, error) { return workdir.Stat(projectDir, id) }
+		for _, typed := range args {
+			in, err := resolveWorkdir(typed, infos, more, stat)
+			if err != nil {
+				return err
 			}
-			if live(id) {
-				return fmt.Errorf("session %s is running — not deleting its work directory", id)
+			if live(in.ID) {
+				return fmt.Errorf("session %s is running — not deleting its work directory", in.ID)
 			}
 			picked = append(picked, in)
 		}
@@ -186,6 +179,50 @@ func runWorkdirsClean(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(out, "deleted %s\n", in.ID)
 	}
 	return nil
+}
+
+// resolveWorkdir finds the work directory an operator named: a full
+// session id, or its leading characters as --resume takes them (four
+// or more, hex and hyphens) — `gem-agent sessions` shows eight. A
+// full id not in the listing, which may have been cut, is looked up
+// directly. A prefix must name exactly one directory, and is refused
+// on a cut listing, where the one it found may not be the only one.
+// The ids picked are printed in full and confirmed before anything is
+// removed.
+func resolveWorkdir(typed string, infos []workdir.Info, cut bool, stat func(string) (workdir.Info, error)) (workdir.Info, error) {
+	for _, in := range infos {
+		if in.ID == typed {
+			return in, nil
+		}
+	}
+	if st, err := stat(typed); err == nil {
+		return st, nil
+	}
+	if !session.ValidPrefix(typed) {
+		return workdir.Info{}, fmt.Errorf("no work directory for session %s here", typed)
+	}
+	var matches []workdir.Info
+	for _, in := range infos {
+		if strings.HasPrefix(in.ID, typed) {
+			matches = append(matches, in)
+		}
+	}
+	switch {
+	case len(matches) == 0 && cut:
+		return workdir.Info{}, fmt.Errorf("no work directory starts with %q among the first %d listed — type the full id", typed, workdir.ListCap)
+	case len(matches) == 0:
+		return workdir.Info{}, fmt.Errorf("no work directory for session %s here", typed)
+	case len(matches) > 1:
+		ids := make([]string, len(matches))
+		for i, m := range matches {
+			ids[i] = m.ID
+		}
+		sort.Strings(ids)
+		return workdir.Info{}, fmt.Errorf("%q matches %d work directories (%s); type more characters", typed, len(matches), strings.Join(ids, ", "))
+	case cut:
+		return workdir.Info{}, fmt.Errorf("%q matches %s among the first %d listed, but the listing was cut — type the full id", typed, matches[0].ID, workdir.ListCap)
+	}
+	return matches[0], nil
 }
 
 // confirmYes reads one line and accepts only an explicit yes.
