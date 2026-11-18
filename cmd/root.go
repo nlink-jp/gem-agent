@@ -2706,7 +2706,7 @@ func runDirectShell(ctx context.Context, registry *tools.Registry, ag *agent.Age
 func slashCompletions(getSkills func() []skills.Skill) func(string) []string {
 	commands := []string{
 		"/add-dir", "/auto", "/clear", "/compact", "/dirs", "/exit", "/help", "/mcp", "/memory",
-		"/quit", "/read-dir", "/readonly", "/riskbook", "/settings", "/skill", "/skills",
+		"/quit", "/read-dir", "/readonly", "/riskbook", "/settings", "/show", "/skill", "/skills",
 		"/thinking", "/tools", "/usage", "/version",
 	}
 	return func(prefix string) []string {

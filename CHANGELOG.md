@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Tab completes `/show`.** The command worked and `/help` listed it,
+  but Tab did not offer it.
+
 ## [0.107.0] - 2026-11-18
 
 ### Security

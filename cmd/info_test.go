@@ -65,6 +65,8 @@ func TestSlashSurfacesAgree(t *testing.T) {
 		switch c {
 		case "/settings", "/compact", "/skill":
 			continue // intercepted upstream of slashOutput in both UIs
+		case "/show":
+			continue // handled in slashOutput by an if ahead of its switch
 		}
 		if !handled[c] {
 			t.Errorf("completion %s has no case in slashOutput", c)

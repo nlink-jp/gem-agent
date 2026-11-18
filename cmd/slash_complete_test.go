@@ -15,7 +15,7 @@ func TestSlashCompletionsSource(t *testing.T) {
 	}
 	got := complete("/s")
 	joined := strings.Join(got, " ")
-	for _, want := range []string{"/settings", "/skill", "/skills"} {
+	for _, want := range []string{"/settings", "/show", "/skill", "/skills"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("/s missing %s: %v", want, got)
 		}
