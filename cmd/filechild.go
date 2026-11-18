@@ -340,8 +340,10 @@ func installFileChildWith(reg *tools.Registry, self, home, probeDir string) stri
 				return err
 			}
 		}
-		// Bounded in time, like every probe command (ADR-0121 §4).
-		return sandbox.RunProbe([]string{sandbox.Executable, "-p", profile, self, fileChildCommand}, bytes.NewReader(req))
+		c := exec.Command(sandbox.Executable, "-p", profile, self, fileChildCommand)
+		c.Env = sandbox.ChildEnv(os.Environ())
+		c.Stdin = bytes.NewReader(req)
+		return c.Run()
 	}
 	if err := sandbox.VerifyFileReadLane(probeDir, home, probe); err != nil {
 		return degradedNote(err)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -147,6 +148,25 @@ func RefuseRoot(path string, write bool, c RootContext) (string, error) {
 	return real, nil
 }
 
+// removeFile is os.Remove; a test makes it fail to reach the leftover
+// paths, which a real volume only takes with a sharing role.
+var removeFile = os.Remove
+
+// removeProbes removes a probe's files and then its directory, in the
+// order given, and names each it could not remove (ADR-0107 §4). In a
+// synced folder a leftover does not stay local: it is copied to the
+// operator's other devices and to everyone who shares the folder, so it
+// is reported, never left in silence. A path already gone is not one.
+func removeProbes(paths ...string) []string {
+	var left []string
+	for _, p := range paths {
+		if err := removeFile(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			left = append(left, p)
+		}
+	}
+	return left
+}
+
 // LeftoverNote is the operator's note for probe files that could not be
 // removed: what is left, and that it is theirs to delete.
 func LeftoverNote(left []string) string {
@@ -237,8 +257,8 @@ func Absorbed(real string, write bool, roots []AddedRoot) []AddedRoot {
 // tree denied for reach); a write root must be writable by the write
 // lane with its persistent names denied, and a read root writable by no
 // lane. Each must-fail probe runs first without the sandbox as its
-// control. The probe files are made in a directory of their own, held
-// open, and removed through it.
+// control. The probe files are created under a random name and removed
+// by full path.
 //
 // A read root the operator's own process cannot write (a read-only
 // volume) cannot hold a probe; nothing can write it either, so its
@@ -269,15 +289,7 @@ func VerifyAddedRoots(profiles map[Lane]string, spec Spec, readLane bool) (notes
 }
 
 func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (notes, leftovers []string, err error) {
-	// The probes are made in a directory of their own, held open, and
-	// written, read and removed through it (ADR-0121): the root is a
-	// place a lane writes, and a probe named by path was whatever sat
-	// under that path by the time it was used.
-	var root, dir *probes
-	defer func() { leftovers = root.cleanup() }()
-	if root, err = openProbes(a.Dir); err == nil {
-		dir, err = root.subdir(".gem-agent-root-probe-")
-	}
+	probeDir, err := os.MkdirTemp(a.Dir, ".gem-agent-root-probe-*")
 	if err != nil {
 		// Gone is not read-only: an ejected volume fails like a write root,
 		// so a rebuild drops it (ADR-0114 §2).
@@ -286,48 +298,52 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (note
 		}
 		return []string{fmt.Sprintf("added directory %s is not writable here, so its probes were skipped", a.Dir)}, nil, nil
 	}
-	const cred, plain, created, persistent = ".env", "plain", "created", "AGENTS.md"
+	cred := filepath.Join(probeDir, ".env")
+	plain := filepath.Join(probeDir, "plain")
+	created := filepath.Join(probeDir, "created")
+	persistent := filepath.Join(probeDir, "AGENTS.md")
+	defer func() { leftovers = removeProbes(cred, plain, created, persistent, probeDir) }()
 	for _, f := range []string{cred, plain} {
-		if err := dir.fileNamed(f, "probe\n"); err != nil {
+		if err := os.WriteFile(f, []byte("probe\n"), 0o600); err != nil {
 			return nil, nil, fmt.Errorf("cannot create a probe file in it: %w", err)
 		}
 	}
-	dir.expect(created)
-	dir.expect(persistent)
 	run := func(lane Lane, command string) error {
-		return runProbe(Wrap(profiles[lane], "/bin/bash", command))
+		argv := Wrap(profiles[lane], "/bin/bash", command)
+		cmd := exec.Command(argv[0], argv[1:]...)
+		cmd.Env = ChildEnv(os.Environ())
+		return cmd.Run()
 	}
-	// mustFail is one probe a lane must refuse. Its control is this
-	// process's own — a write that makes the file, removed again before
-	// the lane's command, or a read of the file made above — never a
-	// shell outside the sandbox on a path (ADR-0122 §3).
-	mustFail := func(lane Lane, command, name, probe, allowed string, read bool) error {
-		var err error
-		if read {
-			err = dir.read(name)
-		} else if err = dir.write(name); err == nil {
-			dir.drop(name)
+	control := func(command, made string) error {
+		cmd := exec.Command("/bin/bash", "-c", command)
+		cmd.Env = ChildEnv(os.Environ())
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("the control run of %q failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", command, err)
 		}
-		if err != nil {
-			return fmt.Errorf("the control of %s failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", probe, err)
-		}
-		if err := Denial(run(lane, command), lane, probe, allowed); err != nil {
-			if !read {
-				dir.drop(name)
-			}
-			return err
+		if made != "" {
+			_ = os.Remove(made)
 		}
 		return nil
 	}
-	write := "echo x > " + shellQuote(dir.at(created))
+	mustFail := func(lane Lane, command, made, what string) error {
+		if err := control(command, made); err != nil {
+			return err
+		}
+		if run(lane, command) == nil {
+			_ = os.Remove(made)
+			return fmt.Errorf("the %s lane %s", lane, what)
+		}
+		return nil
+	}
+	write := "echo x > " + shellQuote(created)
 	if readLane {
-		if err := mustFail(LaneRead, write, created, "a write into it", "created a file in it", false); err != nil {
+		if err := mustFail(LaneRead, write, created, "created a file in it"); err != nil {
 			return nil, nil, err
 		}
-		if err := mustFail(LaneRead, "exec cat "+shellQuote(dir.at(cred))+" > /dev/null", cred, "a read of a credential name in it", "read a credential name in it", true); err != nil {
+		if err := mustFail(LaneRead, "cat "+shellQuote(cred)+" > /dev/null", "", "read a credential name in it"); err != nil {
 			return nil, nil, err
 		}
-		if err := run(LaneRead, "cat "+shellQuote(dir.at(plain))+" > /dev/null"); err != nil {
+		if err := run(LaneRead, "cat "+shellQuote(plain)+" > /dev/null"); err != nil {
 			return nil, nil, fmt.Errorf("the read lane cannot read an ordinary file in it: %w", err)
 		}
 	}
@@ -335,14 +351,14 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (note
 		if err := run(LaneWrite, write); err != nil {
 			return nil, nil, fmt.Errorf("the write lane cannot write it: %w", err)
 		}
-		dir.drop(created)
-		if err := mustFail(LaneWrite, "echo x > "+shellQuote(dir.at(persistent)), persistent, "a write under an instruction file's name in it", "wrote an instruction file's name in it", false); err != nil {
+		_ = os.Remove(created)
+		if err := mustFail(LaneWrite, "echo x > "+shellQuote(persistent), persistent, "wrote an instruction file's name in it"); err != nil {
 			return nil, nil, err
 		}
 		return nil, nil, nil
 	}
 	for _, lane := range []Lane{LaneWrite, LaneOperator} {
-		if err := mustFail(lane, write, created, "a write into it", "wrote a read-only added directory", false); err != nil {
+		if err := mustFail(lane, write, created, "wrote a read-only added directory"); err != nil {
 			return nil, nil, err
 		}
 	}

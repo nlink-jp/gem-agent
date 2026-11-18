@@ -3,12 +3,10 @@ package cmd
 import (
 	"github.com/nlink-jp/gem-agent/internal/bounded"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
-	"github.com/nlink-jp/gem-agent/internal/statedir"
 
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
@@ -18,11 +16,13 @@ import (
 // promised. The AppleScript writes to a temp file because «class PNGf»
 // data cannot cross stdout losslessly.
 func clipboardImage() ([]byte, error) {
-	path, done, err := clipboardTemp()
+	tmp, err := os.CreateTemp("", "gem-agent-clipboard-*.png")
 	if err != nil {
 		return nil, err
 	}
-	defer done()
+	path := tmp.Name()
+	_ = tmp.Close()
+	defer func() { _ = os.Remove(path) }()
 
 	script := fmt.Sprintf(`set f to open for access POSIX file %q with write permission
 try
@@ -44,7 +44,7 @@ close access f`, path)
 		}
 		return nil, fmt.Errorf("clipboard capture failed: %s", msg)
 	}
-	f, err := bounded.OpenRegularPath(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
@@ -60,32 +60,6 @@ close access f`, path)
 		return nil, fmt.Errorf("no image on the clipboard (take a screenshot with Cmd+Ctrl+Shift+4 first)")
 	}
 	return data, nil
-}
-
-// clipboardTemp makes the file the capture is written into, and
-// returns its path and what removes it. It is made in the runtime's own
-// state directory, which no lane writes. It used to be made in the
-// temporary directory, which every write lane writes: osascript runs
-// outside the sandbox and writes into the path it is given, so a
-// process in a lane that put a link under that name had the clipboard
-// written through it into a file no lane may write (the design review
-// of ADR-0121 reproduced it under the real profile).
-func clipboardTemp() (path string, done func(), err error) {
-	root, err := statedir.Root()
-	if err != nil {
-		return "", nil, err
-	}
-	dir := filepath.Join(root, "clipboard")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", nil, err
-	}
-	tmp, err := os.CreateTemp(dir, "capture-*.png")
-	if err != nil {
-		return "", nil, err
-	}
-	path = tmp.Name()
-	_ = tmp.Close()
-	return path, func() { _ = os.Remove(path) }, nil
 }
 
 // clipboardImageCap bounds a clipboard capture: a screenshot, not a

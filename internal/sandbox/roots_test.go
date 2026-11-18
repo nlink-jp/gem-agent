@@ -382,62 +382,60 @@ func TestAddedRootEnforcement(t *testing.T) {
 	}
 }
 
-// TestCleanupReportsLeftovers: a probe file that cannot be removed is
-// named, with its directory, and a name already gone is not
+// TestRemoveProbesReportsLeftovers: a probe file that cannot be removed
+// is named, with its directory, and a path already gone is not
 // (ADR-0107 §4). The directory is made read-only so its entries cannot
 // be unlinked.
-func TestCleanupReportsLeftovers(t *testing.T) {
+func TestRemoveProbesReportsLeftovers(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root removes entries from a read-only directory")
 	}
-	root, err := openProbes(t.TempDir())
-	if err != nil {
+	dir := filepath.Join(t.TempDir(), ".gem-agent-root-probe-x")
+	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	dir, err := root.subdir(".gem-agent-root-probe-")
-	if err != nil {
+	stuck := filepath.Join(dir, ".env")
+	if err := os.WriteFile(stuck, []byte("probe\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := dir.fileNamed(".env", "probe\n"); err != nil {
-		t.Fatal(err)
-	}
-	dir.expect("created") // never made: already gone
-	stuck := dir.at(".env")
-	if err := os.Chmod(dir.path, 0o500); err != nil {
+	gone := filepath.Join(dir, "created")
+	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
-		_ = os.Chmod(dir.path, 0o700)
+		_ = os.Chmod(dir, 0o700)
 		_ = os.Remove(stuck)
-		_ = os.Remove(dir.path)
+		_ = os.Remove(dir)
 	}()
-	left := root.cleanup()
-	if len(left) != 2 || left[0] != stuck || left[1] != dir.path {
-		t.Fatalf("left = %v, want [%s %s]", left, stuck, dir.path)
+	left := removeProbes(stuck, gone, dir)
+	if len(left) != 2 || left[0] != stuck || left[1] != dir {
+		t.Fatalf("left = %v, want [%s %s]", left, stuck, dir)
 	}
 	note := LeftoverNote(left)
-	if !strings.Contains(note, stuck) || !strings.Contains(note, dir.path) || !strings.Contains(note, "delete them yourself") {
+	if !strings.Contains(note, stuck) || !strings.Contains(note, dir) || !strings.Contains(note, "delete them yourself") {
 		t.Errorf("note does not name the leftovers and what to do: %q", note)
+	}
+	if left := removeProbes(gone); len(left) != 0 {
+		t.Errorf("a path already gone was reported: %v", left)
 	}
 }
 
-// stuckProbes makes the removal fail for any name under dir that starts
-// with prefix — a probe directory the operator's role may create but
-// not delete — and returns a cleanup that restores the removal and
+// stuckProbes makes removeFile fail for any path under dir whose base
+// starts with prefix — a probe directory the operator's role may create
+// but not delete — and returns a cleanup that restores removeFile and
 // removes what was left.
 func stuckProbes(t *testing.T, dir, prefix string) func() []string {
 	t.Helper()
 	var stuck []string
-	remove := removeProbe
-	removeProbe = func(root *os.Root, p string) error {
+	removeFile = func(p string) error {
 		if within(dir, p) && strings.HasPrefix(filepath.Base(p), prefix) {
 			stuck = append(stuck, p)
 			return os.ErrPermission
 		}
-		return remove(root, p)
+		return os.Remove(p)
 	}
 	return func() []string {
-		removeProbe = remove
+		removeFile = os.Remove
 		for _, p := range stuck {
 			_ = os.Remove(p)
 		}

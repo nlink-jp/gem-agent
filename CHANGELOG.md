@@ -26,17 +26,15 @@
   gets there only through a command you approved or a program outside
   gem-agent, and all it does is make gem-agent wait until you interrupt
   it. The special opens and the test that held them are removed.
-- **The sandbox checks at startup no longer guard their own result
-  against a program that races them** (ADR-0122). v0.106.0 made them tell a
-  test file that had been replaced from the one they made, repeat each
-  control after the sandbox's refusal, and tell a test command that was
-  ended from outside from one that was refused. Each of those needs a
-  program written to race the check, and a check that passes wrongly
-  does not make the sandbox weaker. What stays: the checks write only
-  into the test files they hold open, remove only the names they made,
-  and give every test command ten seconds. The notices "… was replaced
-  while the sandbox was being checked" and "… showed nothing: the
-  command was ended by a signal" no longer appear.
+- **The sandbox checks at startup are those of v0.105.0 again**
+  (ADR-0123). v0.106.0 made them hold the folders their test files are
+  made in, write and remove only through those, and give every test
+  command ten seconds, so that a program replacing their test files
+  while they run could not make them write or remove elsewhere. That
+  needs a program written to race the check. The test files still get
+  names nobody can guess, and are made so that nothing already there is
+  opened. The clipboard capture's file is made in the temporary folder
+  again, under a name nobody can guess.
 - **A project skill's files are walked through the standard directory
   handle again** (ADR-0122). v0.106.0 walked them through a type of its own,
   so that a folder swapped for a named pipe during the walk could not

@@ -246,27 +246,6 @@ func TestReadsAreBounded(t *testing.T) {
 	report(t, kept, map[string]string{})
 }
 
-// TestTheChecksGoThroughHeldDirectories: the sandbox checks make their
-// probes where the lanes write, and whatever they did there by path —
-// made, wrote, removed — or handed to a shell outside the sandbox, they
-// did to whatever a process in a lane had put under that path by then:
-// measured as a write through a link, files removed beside the project
-// and a start that waited (ADR-0121). The package holds no call that
-// names a file by path and one place that starts a probe command; the
-// next probe that is added cannot bring either back unseen.
-func TestTheChecksGoThroughHeldDirectories(t *testing.T) {
-	calls := collectCalls(t, repoRoot(t), []string{"internal/sandbox"}, []string{
-		"os.CreateTemp", "os.MkdirTemp", "os.Mkdir", "os.MkdirAll", "os.Remove", "os.RemoveAll",
-		"os.Rename", "os.WriteFile", "os.Symlink", "os.Link", "os.Chmod", "os.Create",
-		"os.Truncate", "os.Chtimes", "os.Chown", "os.Lchown",
-		"exec.Command", "exec.CommandContext",
-	})
-	report(t, calls, map[string]string{
-		"internal/sandbox RunProbe":  "the one place a probe command is started: bounded in time, in a process group of its own",
-		"internal/sandbox Available": "sandbox-exec itself running /usr/bin/true: it names no file a lane writes",
-	})
-}
-
 // TestOneDecisionPoint: the rule tier is consulted in exactly one
 // function of the agent, and every gate reads that function's result
 // (ADR-0072 §1.1, §4.5, §4.9 — three re-implementations of the floors,

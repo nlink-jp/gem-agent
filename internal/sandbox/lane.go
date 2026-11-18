@@ -1,9 +1,9 @@
 package sandbox
 
 import (
-	"errors"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -760,121 +760,84 @@ func VerifyReadLane(profile string, spec Spec) (leftovers []string, err error) {
 		}
 	}()
 	port := ln.Addr().(*net.TCPAddr).Port
-	// The probe targets are files this process makes under random names
-	// in directories it holds open, and writes and removes through
-	// those: a fixed name could collide with the project's own file or
-	// follow a planted symlink (final review R1 — the control run
-	// overwrote a link's target), and a name made here can be replaced
-	// before it is used (ADR-0121).
-	var held []*probes
-	// A leftover is reported, never dropped (ADR-0107 §4): the project
-	// may be a synced folder.
-	defer func() {
-		for _, p := range held {
-			leftovers = append(leftovers, p.cleanup()...)
-		}
-	}()
-	probe := func(dir, where string) (*probes, string, error) {
-		p, err := openProbes(dir)
-		if err != nil {
-			return nil, "", fmt.Errorf("cannot create a probe file in %s: %w", where, err)
-		}
-		held = append(held, p)
-		name, err := p.file(".gem-agent-lane-probe-")
-		if err != nil {
-			return nil, "", fmt.Errorf("cannot create a probe file in %s: %w", where, err)
-		}
-		return p, name, nil
+	// The probe targets are files this process creates exclusively
+	// (O_EXCL, random names) and removes afterwards: a fixed name could
+	// collide with the project's own file or follow a planted symlink
+	// (final review R1 — the control run overwrote a link's target).
+	projectFile, err := os.CreateTemp(spec.ProjectDir, ".gem-agent-lane-probe-*")
+	if err != nil {
+		return nil, fmt.Errorf("cannot create a probe file in the project: %w", err)
 	}
-	type fileProbe struct {
-		in   *probes
-		name string
+	projectProbe := projectFile.Name()
+	_ = projectFile.Close()
+	sharedFile, err := os.CreateTemp("/private/tmp", ".gem-agent-lane-probe-*")
+	if err != nil {
+		return removeProbes(projectProbe), fmt.Errorf("cannot create a probe file in /private/tmp: %w", err)
 	}
-	mustFail := []struct {
-		what, command string
-		file          *fileProbe // the probe a write names, or nil
-	}{}
-	write := func(what, dir, where string) error {
-		p, name, err := probe(dir, where)
-		if err != nil {
-			return err
-		}
-		mustFail = append(mustFail, struct {
-			what, command string
-			file          *fileProbe
-		}{what, "echo x > " + shellQuote(p.at(name)), &fileProbe{p, name}})
-		return nil
-	}
-	if err := write("a write into the project", spec.ProjectDir, "the project"); err != nil {
-		return nil, err
-	}
-	if err := write("a write into the shared temporary directory", "/private/tmp", "/private/tmp"); err != nil {
-		return nil, err
-	}
-	mustFail = append(mustFail,
-		struct {
-			what, command string
-			file          *fileProbe
-		}{"a socket connect", fmt.Sprintf("exec 3<>/dev/tcp/127.0.0.1/%d", port), nil},
-		struct {
-			what, command string
-			file          *fileProbe
-		}{"a signal to its parent process", "kill -0 $PPID", nil},
-	)
+	sharedProbe := sharedFile.Name()
+	_ = sharedFile.Close()
+	probes := []string{projectProbe, sharedProbe}
 	// The approved lanes' cache is the read lane's to leave alone
 	// (ADR-0109); the claim is measured like the others.
+	approvedProbe := ""
 	if spec.ApprovedCacheRoot != "" {
-		if err := write("a write into the approved lanes' cache", spec.ApprovedCacheRoot, "the approved cache"); err != nil {
-			return nil, err
+		approvedFile, err := os.CreateTemp(spec.ApprovedCacheRoot, ".gem-agent-lane-probe-*")
+		if err != nil {
+			return removeProbes(probes...), fmt.Errorf("cannot create a probe file in the approved cache: %w", err)
 		}
+		approvedProbe = approvedFile.Name()
+		_ = approvedFile.Close()
+		probes = append(probes, approvedProbe)
+	}
+	// A leftover is reported, never dropped (ADR-0107 §4): the project
+	// may be a synced folder.
+	defer func() { leftovers = removeProbes(probes...) }()
+	run := func(sandboxed bool, command string) error {
+		var cmd *exec.Cmd
+		if sandboxed {
+			argv := Wrap(profile, "/bin/bash", command)
+			cmd = exec.Command(argv[0], argv[1:]...)
+		} else {
+			cmd = exec.Command("/bin/bash", "-c", command)
+		}
+		// A child this runtime spawns, probe or not.
+		cmd.Env = ChildEnv(os.Environ())
+		if spec.ReadScratch != "" {
+			cmd.Env = append(cmd.Env, "TMPDIR="+spec.ReadScratch)
+		}
+		return cmd.Run()
+	}
+	mustFail := []struct{ what, command string }{
+		{"a write into the project", "echo x > " + shellQuote(projectProbe)},
+		{"a write into the shared temporary directory", "echo x > " + shellQuote(sharedProbe)},
+		{"a socket connect", fmt.Sprintf("exec 3<>/dev/tcp/127.0.0.1/%d", port)},
+		{"a signal to its parent process", "kill -0 $PPID"},
+	}
+	if approvedProbe != "" {
+		mustFail = append(mustFail, struct{ what, command string }{"a write into the approved lanes' cache", "echo x > " + shellQuote(approvedProbe)})
 	}
 	if len(spec.DenyExec) > 0 {
-		mustFail = append(mustFail, struct {
-			what, command string
-			file          *fileProbe
-		}{"launching a denied program", "/usr/bin/osascript -e 'return 1'", nil})
-	}
-	run := func(sandboxed bool, command string) error {
-		argv := []string{"/bin/bash", "-c", command}
-		if sandboxed {
-			argv = Wrap(profile, "/bin/bash", command)
-		}
-		var extra []string
-		if spec.ReadScratch != "" {
-			extra = append(extra, "TMPDIR="+spec.ReadScratch)
-		}
-		return runProbe(argv, extra...)
+		mustFail = append(mustFail, struct{ what, command string }{"launching a denied program", "/usr/bin/osascript -e 'return 1'"})
 	}
 	for _, m := range mustFail {
-		// The control: the same thing succeeds outside the sandbox, so a
-		// failure inside is the sandbox's doing. For a write it is this
-		// process's own, into the file made above and no other
-		// (ADR-0122 §3); for the rest, the same command.
-		var err error
-		if m.file != nil {
-			err = m.file.in.write(m.file.name)
-		} else {
-			err = run(false, m.command)
-		}
-		if err != nil {
+		// The control: the same probe succeeds outside the sandbox, so a
+		// failure inside is the sandbox's doing. The write probes write
+		// into the files created above, never anywhere else.
+		if err := run(false, m.command); err != nil {
 			return nil, fmt.Errorf("the control run of %s failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", m.what, err)
 		}
-		if err := Denial(run(true, m.command), LaneRead, m.what, "allowed "+m.what); err != nil {
-			return nil, err
+		if err := run(true, m.command); err == nil {
+			return nil, fmt.Errorf("the read lane allowed %s", m.what)
 		}
 	}
 	// The terminal: no control — the runner detaches the command from
 	// the operator's terminal, so the open must fail whatever the
 	// environment (review F-01).
-	if err := Denial(run(true, "exec 3</dev/tty"), LaneRead, "opening the terminal", "allowed opening the terminal"); err != nil {
-		return nil, err
+	if err := run(true, "exec 3</dev/tty"); err == nil {
+		return nil, fmt.Errorf("the read lane allowed opening the terminal")
 	}
 	if spec.ReadScratch != "" {
-		// A name nobody could have put a link under beforehand: the
-		// scratch directory is in the work directory, which the write
-		// lane writes, and a fixed name was written through.
-		scratchProbe := `"$TMPDIR/` + randomName(".gem-agent-lane-probe-") + `"`
-		if err := run(true, "echo x > "+scratchProbe+" && rm "+scratchProbe); err != nil {
+		if err := run(true, `echo x > "$TMPDIR/.gem-agent-lane-probe" && rm "$TMPDIR/.gem-agent-lane-probe"`); err != nil {
 			return nil, fmt.Errorf("the read lane cannot write its own scratch directory: %w", err)
 		}
 	}
@@ -905,63 +868,56 @@ func VerifyWriteLane(profile string, spec Spec) (leftovers []string, err error) 
 	// the work directory nor a scratch root (/private/tmp is scratch in
 	// this lane). A project that contains home has no outside to probe;
 	// the persistent-name probe below still tells a cage from none.
-	var held []*probes
-	defer func() {
-		for _, p := range held {
-			leftovers = append(leftovers, p.cleanup()...)
-		}
-	}()
-	run := func(command string) error {
-		return runProbe(Wrap(profile, "/bin/bash", command))
-	}
-	// mustFail is one probe the lane must refuse: its control — this
-	// process's own write through the directory it holds, never a
-	// shell outside the sandbox on a path (ADR-0122 §3) — and then the
-	// lane's command.
-	mustFail := func(what string, in *probes, name string, made bool) error {
-		if err := in.write(name); err != nil {
-			return fmt.Errorf("the control run of %s failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", what, err)
-		}
-		if !made {
-			// The control made it; the lane's command must not be able to.
-			in.drop(name)
-			in.expect(name)
-		}
-		return Denial(run("echo x > "+shellQuote(in.at(name))), LaneWrite, what, "allowed "+what)
-	}
-	project, err := openProbes(spec.ProjectDir)
-	if err != nil {
-		return nil, fmt.Errorf("cannot create a probe directory in the project: %w", err)
-	}
-	held = append(held, project)
-	probeDir, err := project.subdir(".gem-agent-lane-probe-")
-	if err != nil {
-		return nil, fmt.Errorf("cannot create a probe directory in the project: %w", err)
-	}
-	var home *probes
-	outside := ""
+	outsideProbe := ""
 	if spec.Home != "" && !within(spec.ProjectDir, spec.Home) {
-		if home, err = openProbes(spec.Home); err != nil {
+		f, err := os.CreateTemp(spec.Home, ".gem-agent-lane-probe-*")
+		if err != nil {
 			return nil, fmt.Errorf("cannot create a probe file under home: %w", err)
 		}
-		held = append(held, home)
-		if outside, err = home.file(".gem-agent-lane-probe-"); err != nil {
-			return nil, fmt.Errorf("cannot create a probe file under home: %w", err)
+		outsideProbe = f.Name()
+		_ = f.Close()
+		defer func() { leftovers = append(leftovers, removeProbes(outsideProbe)...) }()
+	}
+	probeDir, err := os.MkdirTemp(spec.ProjectDir, ".gem-agent-lane-probe-*")
+	if err != nil {
+		return nil, fmt.Errorf("cannot create a probe directory in the project: %w", err)
+	}
+	persistent := filepath.Join(probeDir, "AGENTS.md")
+	plain := filepath.Join(probeDir, "plain")
+	defer func() { leftovers = append(leftovers, removeProbes(persistent, plain, probeDir)...) }()
+	run := func(sandboxed bool, command string) error {
+		var cmd *exec.Cmd
+		if sandboxed {
+			argv := Wrap(profile, "/bin/bash", command)
+			cmd = exec.Command(argv[0], argv[1:]...)
+		} else {
+			cmd = exec.Command("/bin/bash", "-c", command)
+		}
+		// A child this runtime spawns, probe or not.
+		cmd.Env = ChildEnv(os.Environ())
+		return cmd.Run()
+	}
+	mustFail := []struct{ what, command, created string }{
+		{"a write under an instruction file's name", "echo x > " + shellQuote(persistent), persistent},
+	}
+	if outsideProbe != "" {
+		mustFail = append(mustFail, struct{ what, command, created string }{"a write outside the project", "echo x > " + shellQuote(outsideProbe), ""})
+	}
+	for _, m := range mustFail {
+		if err := run(false, m.command); err != nil {
+			return nil, fmt.Errorf("the control run of %s failed outside the sandbox (%v) — the probe cannot tell a denial from an unrelated failure", m.what, err)
+		}
+		if m.created != "" {
+			_ = os.Remove(m.created)
+		}
+		if err := run(true, m.command); err == nil {
+			return nil, fmt.Errorf("the write lane allowed %s", m.what)
 		}
 	}
-	if err := mustFail("a write under an instruction file's name", probeDir, "AGENTS.md", false); err != nil {
-		return nil, err
-	}
-	if home != nil {
-		if err := mustFail("a write outside the project", home, outside, true); err != nil {
-			return nil, err
-		}
-	}
-	probeDir.expect("plain")
-	if err := run("echo x > " + shellQuote(probeDir.at("plain"))); err != nil {
+	if err := run(true, "echo x > "+shellQuote(plain)); err != nil {
 		return nil, fmt.Errorf("the write lane cannot write an ordinary project file: %w", err)
 	}
-	if err := run("/usr/bin/true"); err != nil {
+	if err := run(true, "/usr/bin/true"); err != nil {
 		return nil, fmt.Errorf("the write lane cannot run a program: %w", err)
 	}
 	return nil, nil
@@ -1110,20 +1066,22 @@ func VerifyFileReadLane(dir, home string, run func(profile, path string) error) 
 	if err := Available(); err != nil {
 		return err
 	}
-	// The two probes are made exclusively — a link planted under a name
-	// is not followed — through the directory held open, and removed
-	// through it: the directory is in the work directory, which the
-	// write lane writes, and removed by path its probes were removed
-	// from whatever directory sat under its name by then (ADR-0121 §7).
-	held, err := openProbes(dir)
-	if err != nil {
-		return fmt.Errorf("the file-read probe cannot open its directory: %w", err)
-	}
-	defer func() { _ = held.cleanup() }()
-	secret, plain := held.at(".env"), held.at("probe-ordinary.txt")
-	for _, f := range []struct{ name, data string }{{".env", "PROBE=1\n"}, {"probe-ordinary.txt", "ordinary\n"}} {
-		if err := held.fileNamed(f.name, f.data); err != nil {
-			return fmt.Errorf("the file-read probe cannot create %s: %w", f.name, err)
+	secret := filepath.Join(dir, ".env")
+	plain := filepath.Join(dir, "probe-ordinary.txt")
+	for _, f := range []struct{ path, data string }{{secret, "PROBE=1\n"}, {plain, "ordinary\n"}} {
+		// Exclusive: a link planted under this name is not followed, and
+		// only what this probe created is removed.
+		file, err := os.OpenFile(f.path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			return fmt.Errorf("the file-read probe cannot create %s: %w", filepath.Base(f.path), err)
+		}
+		defer func(p string) { _ = os.Remove(p) }(f.path)
+		_, err = file.WriteString(f.data)
+		if cerr := file.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			return fmt.Errorf("the file-read probe cannot write %s: %w", filepath.Base(f.path), err)
 		}
 	}
 	// The profile the runner will actually install, not one built from
@@ -1134,13 +1092,8 @@ func VerifyFileReadLane(dir, home string, run func(profile, path string) error) 
 	if err := run(profile, plain); err != nil {
 		return fmt.Errorf("the file-read cage cannot read an ordinary file: %w", err)
 	}
-	// A child that did not finish showed nothing; any other failure of
-	// the read is counted as the cage's refusal (ADR-0122 §3).
-	switch err := run(profile, secret); {
-	case err == nil:
+	if err := run(profile, secret); err == nil {
 		return fmt.Errorf("the file-read cage allowed a credential-named file")
-	case errors.Is(err, errProbeTimeout):
-		return fmt.Errorf("the file-read probe of a credential-named file showed nothing: %w", err)
 	}
 	// And the listing, which is what a walk does first. A deny that
 	// covered file-read-metadata failed the whole directory read here
