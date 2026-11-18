@@ -467,8 +467,8 @@ func buildConfinement(sess *liveSession, fl runFlags, rs runSettings, adm admiss
 	for _, s := range skippedDirs {
 		_, _ = fmt.Fprintf(sess.stderr, sess.msgs.AddedSkippedFmt+"\n", s)
 	}
-	if len(added) > 0 && sess.sessionLog != nil {
-		_ = sess.sessionLog.Log("added_directories", addedDirsRecord(added))
+	if len(added) > 0 {
+		_ = sess.log("added_directories", addedDirsRecord(added))
 	}
 	// Persistent files in the write roots are watched (ADR-0099 §10):
 	// what changed since the previous session is said now, what this
@@ -519,12 +519,7 @@ func buildConfinement(sess *liveSession, fl runFlags, rs runSettings, adm admiss
 		denyExec: sess.cfg.Sandbox.ReadLaneDenyExec, caches: sess.cfg.Sandbox.Caches(), readLanePrompts: sess.cfg.Sandbox.ReadLanePrompts,
 		parents: func() []string { return trustpin.Parents(sess.projectDir, sess.persistentSnap) },
 		base:    rootBaseContext(rs.cfgPath), watch: sess.watch, sources: map[string]string{}, msgs: sess.msgs,
-		log: func(kind string, data any) error {
-			if sess.sessionLog == nil {
-				return nil
-			}
-			return sess.sessionLog.Log(kind, data)
-		},
+		log: sess.log,
 	}
 	for _, a := range added {
 		sess.granter.sources[a.Dir] = a.Source
@@ -630,25 +625,6 @@ func loadProject(sess *liveSession, cmd *cobra.Command, cl *cleanups, fl runFlag
 
 func buildModels(sess *liveSession, cmd *cobra.Command, cl *cleanups, rs runSettings) (models, error) {
 	var err error
-	// Exit summary (operator request): every interactive exit route —
-	// /quit, Ctrl+C, Ctrl+D — ends with the resume hint and the cost
-	// line as the last thing in the scrollback. A cleanup so no route
-	// can forget it; one-shot mode stays clean for pipelines. Pushed
-	// before the telemetry below so it runs after the audit flush: the
-	// flush notice (ADR-0065 §4) printed after the summary and was the
-	// last line instead. The agent is assembled later; a start that
-	// fails before it has nothing to summarise.
-	if !rs.oneShot {
-		out := cmd.ErrOrStderr()
-		cl.push("print the exit summary", func() {
-			if sess.ag == nil {
-				return
-			}
-			for _, l := range exitSummary(sess.ag.Usage(), sess.sessionID, sess.msgs) {
-				fmt.Fprintln(out, l)
-			}
-		})
-	}
 	// --- telemetry: audit events to the operator's collector (ADR-0035) ---
 	// Default off. Failures never hurt the session: creation errors
 	// warn and fall back to the no-op sink.
@@ -1150,11 +1126,7 @@ func assembleSession(sess *liveSession, cmd *cobra.Command, cl *cleanups, rs run
 			return err == nil && idx == 0, err
 		},
 		emit: sess.surf.output,
-		record: func(kind string, data any) {
-			if sess.sessionLog != nil {
-				_ = sess.sessionLog.Log(kind, data)
-			}
-		},
+		record: func(kind string, data any) { _ = sess.log(kind, data) },
 		tally: md.tally,
 		now:   time.Now,
 	}
@@ -1219,26 +1191,29 @@ func assembleSession(sess *liveSession, cmd *cobra.Command, cl *cleanups, rs run
 	} else {
 		sess.sessionStartHooks("startup")
 	}
+	// Exit summary (operator request): every interactive exit route —
+	// /quit, Ctrl+C, Ctrl+D — ends with the resume hint and the cost
+	// line as the last thing in the scrollback. A final cleanup: after
+	// everything else, the audit flush and its notice (ADR-0065 §4)
+	// included. One-shot mode stays clean for pipelines.
+	if !rs.oneShot {
+		out := cmd.ErrOrStderr()
+		cl.pushFinal("print the exit summary", func() {
+			for _, l := range exitSummary(sess.ag.Usage(), sess.sessionID, sess.msgs) {
+				fmt.Fprintln(out, l)
+			}
+		})
+	}
 	cl.push("run the session-end hooks", func() { sess.sessionEndHooks("exit") })
 	cl.push("report the project's persistent files", func() {
-		sess.reportPersistent("exit", func(kind string, data any) error {
-			if sess.sessionLog == nil {
-				return nil
-			}
-			return sess.sessionLog.Log(kind, data)
-		})
+		sess.reportPersistent("exit", sess.log)
 	})
 	// Cleanups run last-first: at exit the roots are reported before the
 	// project and before the session-end hooks, so a change a hook makes
 	// shows at the next start — as the project's own report already
 	// does. /clear runs the hooks first.
 	cl.push("report the added roots' persistent files", func() {
-		sess.watch.report("exit", func(kind string, data any) error {
-			if sess.sessionLog == nil {
-				return nil
-			}
-			return sess.sessionLog.Log(kind, data)
-		})
+		sess.watch.report("exit", sess.log)
 	})
 
 	return assembled{rbRunner: rbRunner, reloads: reloads, settingsData: settingsData}

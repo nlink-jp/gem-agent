@@ -4,7 +4,6 @@
 The notes have two lines.
 
 === stderr
-warning: file reads run in this process, not in a sandbox (the file-read cage cannot read an ordinary file: exit status 2). Credential files are still refused by gem-agent itself rather than by the kernel: reading one asks you, a search skips it and names it. Nothing to do now; /settings shows the state
 sandbox: DISABLED — shell commands run unconfined; restart with the sandbox enabled to confine them
 
 [tool] read_file path=notes.txt purpose=read the notes

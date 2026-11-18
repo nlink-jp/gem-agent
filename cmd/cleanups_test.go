@@ -54,3 +54,18 @@ func TestCleanupsOnlyWhatWasPushed(t *testing.T) {
 		t.Fatalf("ran %v", ran)
 	}
 }
+
+// Final steps run after every pushed step, in the order pushed, however
+// early they were pushed.
+func TestCleanupsFinalStepsRunLast(t *testing.T) {
+	var ran []string
+	c := &cleanups{}
+	c.push("a", func() { ran = append(ran, "a") })
+	c.pushFinal("f1", func() { ran = append(ran, "f1") })
+	c.push("b", func() { ran = append(ran, "b") })
+	c.pushFinal("f2", func() { ran = append(ran, "f2") })
+	c.run()
+	if got := strings.Join(ran, ","); got != "b,a,f1,f2" {
+		t.Fatalf("ran %q, want b,a,f1,f2", got)
+	}
+}

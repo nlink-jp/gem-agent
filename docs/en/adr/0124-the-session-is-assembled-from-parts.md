@@ -237,4 +237,15 @@ Implemented in seven commits on gem-agent `main`: the `/clear` panic fix (`4a4e8
 
 The implementation-time `/code-review` of §4 runs before the release that ships this, as §4 says.
 
-**"Found while reading" 2, decided.** The maintainer chose to fix it: the exit summary is pushed before the telemetry steps, so §2.5's order becomes … session-end hooks, telemetry `SessionEnd`, flush notice and `Shutdown`, **exit summary**, then the closes and removals. With audit logging on, the notice still precedes the wait and the summary is the last line (ADR-0065 addendum). Its own `fix:` commit, as decided here.
+**"Found while reading" 2, decided.** The maintainer chose to fix it, in its own `fix:` commit: the exit summary runs after every other teardown step, the audit flush and its notice included. With audit logging on, the notice still precedes the wait and the summary is the last line (ADR-0065 addendum).
+
+### The review before release (2026-11-18)
+
+`/code-review` over `v0.108.0..HEAD` returned six findings, all fixed before the release:
+
+1. **`sessionWiringFiles` had fallen behind**: it predated `frontends.go` and left out `modelclient.go`, so the pin-wiring check did not read them. Both are listed, and `TestSessionWiringFilesAreComplete` fails when a file that handles `*liveSession` is missing from the list.
+2. **The prompt feeder of the characterization tests could hang**: it signalled prompts on a bounded channel, under its lock, after nobody read it. Signals no longer block.
+3. **The references held a machine-dependent line**: the file-read cage's startup note (whether the probe passes here, and its exit status, depend on the machine and the temporary HOME). The note is left out of what is compared; the references changed by exactly that line each, checked before they were replaced.
+4. **The transcript holder lacked the nil-safe `log` §2.2 promised**, and the eight nil checks of the Context's item 3 were still there. `transcript.log` is that path now and all eight, and `/clear`'s two reports, go through it; `recordTo`, the fix's one-site guard, is gone. `liveLog` stays: its absent case reports an error to its callers, a different contract.
+5. **The exit summary's place was implied by which phase pushed first.** The cleanup stack gained final steps (`pushFinal`), which run after every other step in the order pushed; the summary is one, pushed where the agent is assembled. The exit order is §2.5's with the summary moved to the very end.
+6. **The prompt counting rescanned all of stderr on every write**; it scans what was written.

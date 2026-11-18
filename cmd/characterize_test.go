@@ -393,16 +393,24 @@ func runCharacterize(t *testing.T, e charEnv, turns []scriptTurn, stdin []string
 type promptWriter struct {
 	mu      sync.Mutex
 	buf     bytes.Buffer
-	seen    int
 	prompts chan struct{}
 }
 
+// Write counts the prompts in what it was just given (with the two bytes
+// before it, for a prompt split across writes) and signals each without
+// blocking: once the feeder has fed its lines nobody drains the channel,
+// and a write that waited on it would hold the child's stderr forever.
 func (w *promptWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	before := w.buf.Len()
 	n, err := w.buf.Write(p)
-	for c := strings.Count(w.buf.String(), "\n> "); w.seen < c; w.seen++ {
-		w.prompts <- struct{}{}
+	from := max(before-2, 0)
+	for range strings.Count(string(w.buf.Bytes()[from:]), "\n> ") {
+		select {
+		case w.prompts <- struct{}{}:
+		default:
+		}
 	}
 	return n, err
 }
@@ -504,9 +512,16 @@ func normalize(e charEnv, s string) string {
 	return s
 }
 
+// cageNoteRe is the startup note for a file-read cage that could not be
+// proven here. Whether the probe passes, and the exit status it reports
+// when it does not, depend on this machine's sandbox and on where the
+// temporary HOME lies — not on what a session does — so the note is left
+// out of what the references compare.
+var cageNoteRe = regexp.MustCompile(`(?m)^warning: file reads run in this process, not in a sandbox \(.*\n`)
+
 func (r charResult) render(e charEnv) string {
 	return normalize(e, fmt.Sprintf("=== status\n%d\n=== stdout\n%s\n=== stderr\n%s\n=== model calls\n%s\n=== transcripts\n%s",
-		r.status, r.stdout, r.stderr, r.calls, r.transcripts))
+		r.status, r.stdout, cageNoteRe.ReplaceAllString(r.stderr, ""), r.calls, r.transcripts))
 }
 
 func checkCharacterization(t *testing.T, name, got string) {
@@ -601,12 +616,12 @@ func TestCharacterizePlainREPL(t *testing.T) {
 		"report the project's persistent files",
 		"run the session-end hooks",
 		"end the telemetry session",
-		"print the exit summary",
 		"close the MCP clients",
 		"close the skills' roots",
 		"remove the work directory if empty",
 		"remove the fallback scratch",
 		"close the transcript",
+		"print the exit summary",
 	})
 }
 
@@ -719,12 +734,12 @@ insecure = true
 		"run the session-end hooks",
 		"end the telemetry session",
 		"flush telemetry",
-		"print the exit summary",
 		"close the MCP clients",
 		"close the skills' roots",
 		"remove the work directory if empty",
 		"remove the fallback scratch",
 		"close the transcript",
+		"print the exit summary",
 	})
 }
 

@@ -23,7 +23,6 @@ GEMAGENT_WORK_DIR=<HOME>/.local/state/gem-agent/<PROJECT-ESCAPED>/work/<ID2>
 Hello again.
 
 === stderr
-warning: file reads run in this process, not in a sandbox (the file-read cage cannot read an ordinary file: exit status 2). Credential files are still refused by gem-agent itself rather than by the kernel: reading one asks you, a search skips it and names it. Nothing to do now; /settings shows the state
 gem-agent v0.0.0-characterize — scripted-main
 instructions: AGENTS.md
 skills: 1 (/skills)
