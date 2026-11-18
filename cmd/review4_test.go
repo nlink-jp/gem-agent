@@ -177,19 +177,24 @@ func TestExportWorkDirUnsetsWhenNone(t *testing.T) {
 // The /clear sequence is the one ADR-0071 §4a states: session_end hook,
 // session.end audit event, the new transcript's takeover, telemetry
 // restart, MCP reconnect, session.start, session_start hook. Pinned
-// on the source, since onClear is a closure over the session.
+// on the source: the order is the thing under test. Since ADR-0124 the
+// sequence is liveSession.clear, whose fields are read through the
+// receiver; the receiver is dropped before the steps are matched.
 func TestClearSequenceMatchesTheADR(t *testing.T) {
-	src, err := os.ReadFile("root.go")
+	src, err := os.ReadFile("live.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	body := string(src)
-	start := strings.Index(body, "onClear := func() string {")
-	end := strings.Index(body[start:], "\n\t}\n")
-	if start < 0 || end < 0 {
-		t.Fatal("onClear not found")
+	start := strings.Index(body, "func (sess *liveSession) clear() string {")
+	if start < 0 {
+		t.Fatal("liveSession.clear not found")
 	}
-	body = body[start : start+end]
+	end := strings.Index(body[start:], "\n}\n")
+	if end < 0 {
+		t.Fatal("the end of liveSession.clear not found")
+	}
+	body = strings.ReplaceAll(body[start:start+end], "sess.", "")
 	steps := []string{
 		`sessionEndHooks("clear")`,
 		"sink.SessionEnd()",
@@ -197,13 +202,13 @@ func TestClearSequenceMatchesTheADR(t *testing.T) {
 		"sink.Restart(ctx, sessionID)",
 		"reconnectMCP(false)",
 		"sink.SessionStart(",
-		`sessionHooks("clear")`,
+		`sessionStartHooks("clear")`,
 	}
 	last := -1
 	for _, s := range steps {
 		i := strings.LastIndex(body, s)
 		if i < 0 {
-			t.Fatalf("step %q missing from onClear", s)
+			t.Fatalf("step %q missing from liveSession.clear", s)
 		}
 		if i < last {
 			t.Fatalf("step %q comes before the previous step", s)

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -12,21 +11,21 @@ import (
 // and third press. Pinned by scanning the wiring, the way the shared
 // stdin reader is.
 func TestEveryTurnOutsideTheTUIUsesTheLadder(t *testing.T) {
-	src, err := os.ReadFile("root.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	bare := regexp.MustCompile(`\brunTurn\(ctx`)
-	with := regexp.MustCompile(`\brunTurnWith\(ctx`)
+	names, src := cmdSources(t)
+	// The session context is a field of the live session since ADR-0124.
+	bare := regexp.MustCompile(`\brunTurn\((sess\.)?ctx`)
+	with := regexp.MustCompile(`\brunTurnWith\((sess\.)?ctx`)
 	calls := 0
-	for i, line := range strings.Split(string(src), "\n") {
-		if bare.MatchString(line) {
-			t.Errorf("root.go:%d uses the bare runTurn — the ladder is lost there", i+1)
-		}
-		if with.MatchString(line) {
-			calls++
-			if !strings.Contains(line, "ladder") {
-				t.Errorf("root.go:%d calls runTurnWith without the ladder", i+1)
+	for _, name := range names {
+		for i, line := range strings.Split(src[name], "\n") {
+			if bare.MatchString(line) {
+				t.Errorf("%s:%d uses the bare runTurn — the ladder is lost there", name, i+1)
+			}
+			if with.MatchString(line) {
+				calls++
+				if !strings.Contains(line, "ladder") {
+					t.Errorf("%s:%d calls runTurnWith without the ladder", name, i+1)
+				}
 			}
 		}
 	}

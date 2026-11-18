@@ -86,25 +86,33 @@ func TestWebSourcesAreTheUsageSources(t *testing.T) {
 // test notices: the recorder is optional by design. The line is the
 // thing under test (the pattern of TestTUIOptionsWiring).
 func TestRetryRecorderIsWired(t *testing.T) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "root.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	names, src := cmdSources(t)
 	found := false
-	ast.Inspect(f, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
+	for _, name := range names {
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, name, src[name], 0)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if fn, ok := call.Fun.(*ast.Ident); ok && fn.Name == "recordRetries" && len(call.Args) == 2 {
-			if arg, ok := call.Args[0].(*ast.Ident); ok && arg.Name == "backend" {
-				found = true
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
 			}
-		}
-		return true
-	})
+			if fn, ok := call.Fun.(*ast.Ident); ok && fn.Name == "recordRetries" && len(call.Args) == 2 {
+				// The session's backend: a local before ADR-0124, a field
+				// of the live session after.
+				switch arg := call.Args[0].(type) {
+				case *ast.Ident:
+					found = found || arg.Name == "backend"
+				case *ast.SelectorExpr:
+					found = found || arg.Sel.Name == "backend"
+				}
+			}
+			return true
+		})
+	}
 	if !found {
-		t.Fatal("root.go does not call recordRetries(backend, …): retries would be shown and never recorded")
+		t.Fatal("cmd does not call recordRetries(backend, …): retries would be shown and never recorded")
 	}
 }

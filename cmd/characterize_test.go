@@ -220,7 +220,19 @@ type charEnv struct {
 	root, home, project, config string
 }
 
-func newCharEnv(t *testing.T) charEnv {
+func newCharEnv(t *testing.T) charEnv { return newCharEnvWith(t, "") }
+
+// expandExtra fills the temporary root into extra config.
+func expandExtra(extra, root string) string {
+	if extra == "" {
+		return ""
+	}
+	return fmt.Sprintf(extra, root)
+}
+
+// newCharEnvWith adds extra to the config file; "%[1]s" in it is the
+// temporary root.
+func newCharEnvWith(t *testing.T, extra string) charEnv {
 	t.Helper()
 	// EvalSymlinks: /var is a link to /private/var on macOS, and the
 	// session resolves its project directory.
@@ -254,7 +266,7 @@ trusted_projects = [%q]
 
 [tui]
 language = "en"
-`, e.project),
+`, e.project) + expandExtra(extra, root),
 	}
 	for p, body := range files {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -596,3 +608,34 @@ func TestCharacterizePlainREPL(t *testing.T) {
 		"close the transcript",
 	})
 }
+
+// /clear starts a new session (ADR-0071 §2): what a child process sees
+// of the session — the exported environment, read by a `!` command
+// before and after — and what the hooks are handed — the session_start
+// payload rides the next turn as data, the session_end payload is
+// appended to a file — show the identity, transcript and work directory
+// changing over.
+func TestCharacterizeClear(t *testing.T) {
+	e := newCharEnvWith(t, `
+[[hooks.session_start]]
+command = "cat"
+
+[[hooks.session_end]]
+command = "cat >> %[1]s/session_end.jsonl; echo >> %[1]s/session_end.jsonl"
+`)
+	turns := []scriptTurn{
+		{Text: "Hello."},
+		{Text: "Hello again."},
+	}
+	stdin := []string{
+		"hi",
+		"!env | grep '^GEMAGENT_' | sort",
+		"/clear",
+		"!env | grep '^GEMAGENT_' | sort",
+		"hi again",
+	}
+	r := runCharacterize(t, e, turns, stdin, "--no-sandbox")
+	ended, _ := os.ReadFile(filepath.Join(e.root, "session_end.jsonl"))
+	checkCharacterization(t, "clear", r.render(e)+normalize(e, "=== session_end hook payloads\n"+string(ended)))
+}
+
