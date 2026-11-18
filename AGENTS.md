@@ -124,9 +124,7 @@ config.example.toml  shipped config template (pinned by a loader test)
 gem-agent.example.project.toml  shipped <project>/.gem-agent.toml template
 mcp.example.json     shipped MCP server template (pinned by a loader test)
 main.go            entry point (package main, calls cmd.Execute(version))
-cmd/               cobra root command, REPL loop, wiring, system prompt; the
-                   compare-and-ask a project skill goes through when it is
-                   used (cmd/skilltrust.go, ADR-0119)
+cmd/               cobra root command, REPL loop, wiring, system prompt
 internal/config/   strict-decode TOML + env/flag precedence
 internal/llm/      Backend interface + Vertex AI impl (thought signatures, backoff)
 internal/agent/    tool-calling loop, approval dispatch, nonce wrapping, history,
@@ -262,65 +260,24 @@ a new hook) is an architecture change and takes the same rows as a
 
 ## Gotchas
 
-- **A project skill is compared when it is USED, not only when it is
-  listed** (ADR-0119; cmd/skilltrust.go). The list is built at startup,
-  `/clear` and `/skills reload`; the body and files are read from disk on
-  every `load_skill` and `/skill`, and up to and including v0.103.1
-  nothing compared them then — a skill rewritten mid-session reached
-  the model unwrapped (measured on lagent, same read calls). Every read
-  goes through `skillGuard`: a new read site that calls `Body`/`File`
-  directly brings the hole back, and `TestSkillTrustIsWiredIn`
-  enumerates the sites across cmd. The skill is compared and then read, and what was read is
-  not compared again: that second check, and the manifest that matched
-  names by case and form to keep it from misfiring, were taken out
-  (ADR-0122 §5) — content swapped between the two needs a program racing
-  the call, and the next use compares. Nothing a pin does not cover is
-  served — `skills.ReadCap` equals `trustpin.FileCap` (a test holds it),
-  and a skill whose digest was cut at 2,000 files, at 4,000 entries of every kind
-  (`trustpin.SkillWalk`) or at directories 32 deep (`trustpin.SkillDepth`)
-  is refused. The walk is bounded in the work it does: a directory is
-  read only as far as the budget goes and opened from its parent's
-  handle, never by a path from the root (that cost d*d/2 opens). A file
-  whose name the project chooses (a skill's files, the instruction
-  files, `.mcp.json`, the project config) is opened with
-  `bounded.OpenRegular` — the kind is looked at before the open, regular
-  files only — because a FIFO of that name held the read, and startup,
-  until somebody wrote to it. The open itself is `O_NONBLOCK`, the kind
-  is looked at again on the descriptor and the flag cleared, so a name
-  swapped for a FIFO between the look and the open is refused too
-  (ADR-0120 §7; observed first on an online-only iCloud file). The skill
-  walk opens each level from the one above it (`Root.OpenRoot`), which
-  waits on a sub-directory swapped for a FIFO after the listing. That
-  needs a program racing the walk, and the type that closed it
-  (`bounded.Dir`, ADR-0120 §8) was taken out (ADR-0122 §4) — it is not
-  brought back for that. A path from the skill's root at every open
-  cost 8.2 s for a tree this walks in 0.3 s, so the walk keeps one
-  handle a level. It is slow while any process keeps renaming a
-  directory on the volume, as every open of a file by any program is
-  (macOS 27.2: about 155 ms an open); the operator accepted that as it
-  is, so do not give the walk a bound in time or open its files several
-  at a time for it (ADR-0120, Consequences and Alternatives).
-  On the caps: the review
-  showed `SKILL.md` itself could be the uncovered part. The digest is
-  `trustpin.DigestRoot` over the skill's own open root — one
-  implementation for the pin and the comparison, held byte-equal to the
-  old path walk by a reference copy in the test, because every pin on
-  disk was taken with that walk. The question is the question dialog
-  under a runtime heading (`tui.AskRequest.Heading`), not the approval
-  gate: the gate would offer "allow for this session" and count an
-  interrupt as no. It opens on "not now", and takes only the arrows and
-  Enter: digits do nothing and the selection does not wrap, because
-  "1"+Enter and Tab+Enter are what sending a message looks like. A tool reaches a dialog by
-  returning `tools.NeedsOperator`; the agent resolves it OUTSIDE
-  `runWithFloor` and re-runs the tool — never ask from inside `Run`.
-  Refusals to the model are constants plus the validated name
-  (`load_skill` results are unwrapped). Outcomes are `skill_trust`
-  records and `skill.trust` audit events, not `gate_decision`: the rule
-  learner reads gate decisions as approval evidence. A site that
-  rebuilds the skill list calls `skillTrust.forget()`. `!` cannot run
-  `gem-agent trust --accept` from inside a session: the operator lane
-  does not write the config directory (measured on lagent), which is
-  why the question exists. lagent has the same mechanism (its ADR-0049).
+- **A project skill is compared when the list is built, not when it is
+  used** (ADR-0123 §2, superseding ADR-0119). The list is built at
+  startup, `/clear` and `/skills reload`, and that is where a changed
+  skill is left out and named, as an instruction file is. A skill
+  changed mid-session (a `git pull`) reaches the model until then: its
+  author already writes the project's code, and the commands the text
+  leads to still go through the lanes and the approval. A compare at
+  use, its trust question, a disable state, `tools.NeedsOperator`, a
+  dialog heading and walk bounds past the 2,000-file cap were built for
+  it and taken out — do not build them again without the four answers
+  of ADR-0123 §1. The digest is the v0.103.1 path walk
+  (`trustpin.Compute`), and every pin on disk was taken with a walk that
+  digests the same within its bounds.
+- **Opens are the standard library's** (ADR-0123 §4, superseding
+  ADR-0120). A FIFO where the runtime opens a name makes it wait until
+  the operator interrupts; git carries no FIFO, so it takes an approved
+  command or a process outside the lanes. The file tools' own
+  non-waiting open (ADR-0072 §4.8) is a different matter and stays.
 - **The lanes' anchors are the first answer their names gave**
   (ADR-0122 §2; `sandbox.ResolveKept`, `internal/sandbox/kept.go`) — the
   lanes are built again at `/clear` and at each grant, and a command in

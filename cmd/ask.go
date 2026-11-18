@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/x/ansi"
-
 	"github.com/nlink-jp/gem-agent/internal/tools"
 )
 
@@ -98,57 +96,6 @@ func registerAskTool(registry *tools.Registry, ask askFunc) error {
 // pipeline must not hang on a question (ADR-0036 §3).
 func oneShotAsk(context.Context, string, []string) (int, error) {
 	return 0, errors.New("no interactive operator in one-shot mode; decide yourself and state the choice you made")
-}
-
-// plainTrustAsk puts the runtime's own question on the plain REPL
-// (ADR-0119 §3): the heading, the question, and the two words that
-// answer it, read from in — the shared reader. It returns 0 for
-// "trust", 1 for "disable", and -1 for anything else: a blank line,
-// other text, a closed input. Not answering changes nothing, so there
-// is no reason to insist.
-//
-// A word, not a number: the reader is shared with the prompt, and a
-// line typed ahead while the model was working is read here the moment
-// the question is printed. A stray "1" must not record persistent
-// trust; a stray "trust" is not a thing people type by accident.
-//
-// The text is the runtime's own. The one part the project names, the
-// skill's directory, arrives quoted (strconv.Quote, in skillQuestion):
-// it cannot break a line or carry an escape sequence, here or in the
-// TUI's dialog.
-func plainTrustAsk(in *bufio.Reader, out io.Writer, heading, question, prompt, elseLabel string, options []string) int {
-	fmt.Fprintf(out, "\n[⚠ %s]\n", heading)
-	for _, l := range strings.Split(question, "\n") {
-		fmt.Fprintf(out, "  %s\n", l)
-	}
-	words := []string{"trust", "disable"}
-	// The labels are padded to the widest one in terminal columns, not
-	// in runes: the Japanese label is wider than its rune count, and
-	// %-8s would start its option three columns to the right.
-	labels := make([]string, len(options))
-	width := 0
-	for i := range options {
-		labels[i] = elseLabel
-		if i < len(words) {
-			labels[i] = words[i] + ":"
-		}
-		width = max(width, ansi.StringWidth(labels[i]))
-	}
-	for i, o := range options {
-		fmt.Fprintf(out, "  %s%s %s\n", labels[i], strings.Repeat(" ", width-ansi.StringWidth(labels[i])), o)
-	}
-	fmt.Fprint(out, "  "+prompt)
-	line, err := in.ReadString('\n')
-	if err != nil && line == "" {
-		fmt.Fprintln(out)
-		return -1
-	}
-	for i, w := range words {
-		if strings.TrimSpace(line) == w {
-			return i
-		}
-	}
-	return -1
 }
 
 // plainAsk asks on the plain REPL: numbered options on out, a number

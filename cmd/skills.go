@@ -59,16 +59,13 @@ func discoverSkills(projectDir string, grant projectGrant) ([]skills.Skill, []st
 	return kept, notes
 }
 
-// registerSkillTool adds load_skill to the registry. It is read-only and
-// reads only inside discovered skill directories, which is also what
-// bounds the agent's unwrap exemption for its results. It passes no
-// approval gate, but it is not unconditional: a project skill is
-// compared with the operator's trust record before every read, and one
-// that differs is the operator's question (ADR-0119) — guard does both.
+// registerSkillTool adds load_skill to the registry. Read-only and
+// ungated: it can only read inside discovered skill directories, which
+// is also what bounds the agent's unwrap exemption for its results.
 // The skill list is read through the getter on every call (ADR-0039):
 // /skills reload swaps the list, and the tool is registered even when
 // the session starts with zero skills, so a reload can populate it.
-func registerSkillTool(registry *tools.Registry, get func() []skills.Skill, guard func() *skillGuard) error {
+func registerSkillTool(registry *tools.Registry, get func() []skills.Skill) error {
 	return registry.Register(&tools.Tool{
 		Name: skills.ToolName,
 		Description: "Load a skill installed by the user. With only `name`, returns the skill's " +
@@ -92,88 +89,49 @@ func registerSkillTool(registry *tools.Registry, get func() []skills.Skill, guar
 			if !ok {
 				return "", fmt.Errorf("unknown skill %q — /skills lists the installed ones", name)
 			}
-			file, _ := args["file"].(string)
-			var g *skillGuard
-			if guard != nil {
-				g = guard()
+			if file, _ := args["file"].(string); file != "" {
+				return s.File(file, skills.DefaultLimits())
 			}
-			return g.read(ctx, s, func() (string, error) { return skillToolResult(s, file) })
+			body, err := s.Body(skills.DefaultLimits())
+			if err != nil {
+				return "", err
+			}
+			// The base-directory line is Claude Code's, verbatim
+			// (ADR-0070 §1): skills are written against that sentence
+			// (`SKILL_DIR/scripts/…`), and without it a global skill's
+			// scripts are reachable by no path the model knows.
+			return fmt.Sprintf("Skill %q (%s scope) — the user's instructions for this kind of task.\n%s\n\n%s",
+				s.Name, s.Scope, skills.BaseDirLine(s), body), nil
 		},
 	})
 }
 
-// skillToolResult is what load_skill returns for a skill that may be
-// read: a supporting file as it is, or the body under the line that
-// says where the skill lives.
-func skillToolResult(s skills.Skill, file string) (string, error) {
-	if file != "" {
-		return s.File(file, skills.DefaultLimits())
-	}
-	body, err := s.Body(skills.DefaultLimits())
-	if err != nil {
-		return "", err
-	}
-	// The base-directory line is Claude Code's, verbatim
-	// (ADR-0070 §1): skills are written against that sentence
-	// (`SKILL_DIR/scripts/…`), and without it a global skill's
-	// scripts are reachable by no path the model knows.
-	return fmt.Sprintf("Skill %q (%s scope) — the user's instructions for this kind of task.\n%s\n\n%s",
-		s.Name, s.Scope, skills.BaseDirLine(s), body), nil
-}
-
-// skillInvocation is a parsed "/skill <name> [args]".
-type skillInvocation struct {
-	skill skills.Skill
-	args  string
-}
-
-// parseSkillInput recognises "/skill <name> [args]" and finds the skill.
-// It reads no file. handled reports whether the input was a /skill
-// invocation at all; errMsg is operator-facing and means "handled, but
-// nothing to run". The TUI calls it on its event loop, where nothing
-// may block: the read, and the question a changed skill raises
-// (ADR-0119 §9), happen later, on the turn's goroutine.
-func parseSkillInput(input string, list []skills.Skill) (inv skillInvocation, handled bool, errMsg string) {
+// expandSkillInput turns "/skill <name> [args]" into the text of a turn,
+// with the body injected directly — the operator already decided, so no
+// model round is spent asking for it (ADR-0010 §2). handled reports
+// whether the input was a /skill invocation at all; errMsg is
+// operator-facing and means "handled, but nothing to run".
+func expandSkillInput(input string, list []skills.Skill) (turn string, handled bool, errMsg string) {
 	if input != "/skill" && !strings.HasPrefix(input, "/skill ") {
-		return inv, false, ""
+		return "", false, ""
 	}
 	rest := strings.TrimSpace(strings.TrimPrefix(input, "/skill"))
 	if rest == "" {
-		return inv, true, "usage: /skill <name> [arguments] — /skills lists what is installed"
+		return "", true, "usage: /skill <name> [arguments] — /skills lists what is installed"
 	}
 	name, args, _ := strings.Cut(rest, " ")
 	s, ok := skills.Find(list, name)
 	if !ok {
-		return inv, true, fmt.Sprintf("unknown skill %q — /skills lists what is installed", name)
+		return "", true, fmt.Sprintf("unknown skill %q — /skills lists what is installed", name)
 	}
-	return skillInvocation{skill: s, args: strings.TrimSpace(args)}, true, ""
-}
-
-// expandSkillInput turns "/skill <name> [args]" into the text of a turn,
-// with the body injected directly — the operator already decided, so no
-// model round is spent asking for it (ADR-0010 §2). The body is read
-// through the guard: a project skill that is not what the trust record
-// holds is the operator's question first (ADR-0119 §9), so this may
-// block on a dialog and must not run on the TUI's event loop.
-//
-// handled with an empty turn and an empty errMsg means the skill was
-// refused and the operator has already been told why: no turn starts.
-func expandSkillInput(ctx context.Context, input string, list []skills.Skill, guard *skillGuard) (turn string, handled bool, errMsg string) {
-	inv, handled, errMsg := parseSkillInput(input, list)
-	if !handled || errMsg != "" {
-		return "", handled, errMsg
-	}
-	s := inv.skill
-	body, loaded, err := guard.readForOperator(ctx, s, func() (string, error) { return s.Body(skills.DefaultLimits()) })
+	body, err := s.Body(skills.DefaultLimits())
 	if err != nil {
 		return "", true, "could not load the skill: " + err.Error()
 	}
-	if !loaded {
-		return "", true, ""
-	}
+	args = strings.TrimSpace(args)
 	argLine := "(none)"
-	if inv.args != "" {
-		argLine = inv.args
+	if args != "" {
+		argLine = args
 	}
 	return fmt.Sprintf(`I am invoking the skill %q with arguments: %s
 

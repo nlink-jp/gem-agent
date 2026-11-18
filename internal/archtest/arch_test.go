@@ -218,9 +218,10 @@ func TestPathPackagesOpenThroughRoots(t *testing.T) {
 		// enforce (ADR-0072 §4.4 recorded).
 		"internal/mention resolveImagePath": "operator-typed absolute image path outside the roots",
 		"internal/mention openConfined":     "operator-typed absolute path outside the roots",
-		// The skills root is the configured directory itself, listed
-		// through bounded.OpenDir; each skill then holds its own os.Root.
-		"internal/skills Discover": "IsDir probe of a skills-root entry before the skill's own os.Root is opened",
+		// The skills root is the configured directory itself, opened
+		// to list it; each skill then holds its own os.Root.
+		"internal/skills readDirBounded": "opens the configured skills root to list it",
+		"internal/skills Discover":       "IsDir probe of a skills-root entry before the skill's own os.Root is opened",
 		// The default FileReader for callers without a root (tests, the
 		// git cross-check); the file tools inject a root-backed reader.
 		"internal/ignore osReader": "default reader for root-less callers",

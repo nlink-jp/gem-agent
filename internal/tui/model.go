@@ -837,9 +837,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		req := msg
 		m.ask = &req
 		m.askChoice = 0
-		if req.Default > 0 && req.Default < len(req.Options) {
-			m.askChoice = req.Default
-		}
 		m.askAt = time.Now()
 		m.phase = phaseAsk
 		return m, m.armNotice()
@@ -2524,26 +2521,9 @@ func (m Model) updateAsk(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	answer := -2 // -2 = no answer yet; -1 = decline
 	switch msg.Type {
 	case tea.KeyLeft, tea.KeyUp, tea.KeyShiftTab:
-		if req.Heading != "" {
-			// The runtime's own question does not wrap. It opens on its
-			// last option, the one that changes nothing; with a wrap,
-			// Tab and Enter — what completing a path and sending a
-			// message looks like — would land on the first, which
-			// records trust.
-			if m.askChoice > 0 {
-				m.askChoice--
-			}
-			return m, nil
-		}
 		m.askChoice = (m.askChoice - 1 + n) % n
 		return m, nil
 	case tea.KeyRight, tea.KeyDown, tea.KeyTab:
-		if req.Heading != "" {
-			if m.askChoice < n-1 {
-				m.askChoice++
-			}
-			return m, nil
-		}
 		m.askChoice = (m.askChoice + 1) % n
 		return m, nil
 	case tea.KeyEnter:
@@ -2553,14 +2533,6 @@ func (m Model) updateAsk(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		if r := msg.String(); len(r) == 1 && r[0] >= '1' && r[0] <= '9' {
 			if i := int(r[0] - '1'); i < n {
-				if req.Heading != "" {
-					// The runtime's own question: one of its answers
-					// records persistent trust, and neither a digit nor a
-					// digit and Enter — "1", sent as a message — may be
-					// that answer. Digits do nothing here; the options
-					// are not numbered. Arrows select, Enter confirms.
-					return m, nil
-				}
 				answer = i
 			}
 		}
@@ -2572,12 +2544,6 @@ func (m Model) updateAsk(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.phase = phaseRunning
 	m.status = m.msgs.StatusToolWait
 	req.Resp <- answer
-	if answer < 0 && req.Heading != "" {
-		// The runtime's own question, left unanswered: "denied" would
-		// say a decision was made. The asker's notice says what
-		// happens instead.
-		return m, nil
-	}
 	chosen := m.msgs.VerdictDenied
 	if answer >= 0 {
 		chosen = req.Options[answer]
@@ -2601,20 +2567,7 @@ func (m Model) askView() string {
 	if inner < 20 {
 		inner = 20
 	}
-	title := fmt.Sprintf(m.msgs.AskTitleFmt, req.Question)
-	if req.Heading != "" {
-		// The runtime's question: its own heading, and the text as
-		// written — "question:" is how the model's questions open.
-		title = req.Question
-	}
-	qLines := strings.Split(ansi.Hardwrap(title, inner, true), "\n")
-	if req.Heading != "" {
-		head := strings.Split(ansi.Hardwrap("⚠ "+req.Heading, inner, true), "\n")
-		for i := range head {
-			head[i] = m.st.warn.Render(head[i])
-		}
-		qLines = append(head, qLines...)
-	}
+	qLines := strings.Split(ansi.Hardwrap(fmt.Sprintf(m.msgs.AskTitleFmt, req.Question), inner, true), "\n")
 	// The options wrap too, and their rows beyond one per option come
 	// out of the question's budget (review round 4: eight long options
 	// at 80×24 pushed the title off the top with no disclosure); rows
@@ -2622,9 +2575,6 @@ func (m Model) askView() string {
 	var optRows []string
 	for i, o := range req.Options {
 		text := fmt.Sprintf("%d) %s", i+1, o)
-		if req.Heading != "" {
-			text = o // not numbered: a digit does not answer this one
-		}
 		for j, l := range strings.Split(ansi.Hardwrap(text, inner-2, true), "\n") {
 			switch {
 			case j == 0 && i == m.askChoice:
@@ -2688,11 +2638,7 @@ func (m Model) askView() string {
 	if hiddenOpts > 0 {
 		b.WriteString("\n" + m.st.warn.Render(fmt.Sprintf(m.msgs.AskHiddenFmt, hiddenOpts)))
 	}
-	hint := m.msgs.AskHint
-	if req.Hint != "" {
-		hint = req.Hint
-	}
-	b.WriteString("\n" + m.st.hint.Render(hint))
+	b.WriteString("\n" + m.st.hint.Render(m.msgs.AskHint))
 	return m.liveView() + "\n" + m.st.box.Render(b.String()) + "\n" + m.footer() + "\n"
 }
 

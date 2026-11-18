@@ -23,7 +23,6 @@ import (
 	"github.com/nlink-jp/gem-agent/internal/bounded"
 	"github.com/nlink-jp/gem-agent/internal/pathid"
 
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -31,7 +30,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -103,7 +101,7 @@ const (
 // readDirBounded lists at most n entries of dir, reporting whether
 // there were more.
 func readDirBounded(dir string, n int) ([]os.DirEntry, bool, error) {
-	d, err := bounded.OpenDir(dir)
+	d, err := os.Open(dir)
 	if err != nil {
 		return nil, false, err
 	}
@@ -118,65 +116,21 @@ func readDirBounded(dir string, n int) ([]os.DirEntry, bool, error) {
 	return entries, false, nil
 }
 
-// ReadCap bounds one read of SKILL.md at discovery and in Body, and a
-// SKILL.md larger than it is not a skill. It is the size up to which a
-// content pin covers a file's bytes (trustpin.FileCap; a test holds the
-// two equal): past it a pin sees only the size, so a larger SKILL.md
-// could keep its frontmatter in the covered megabyte and its body
-// outside it, and change the body without changing its pin (the release
-// review of ADR-0119 demonstrated it). Nothing the pin does not cover is
-// served. The frontmatter and body of any real SKILL.md are a small
-// fraction of this.
-const ReadCap = 1 << 20
-
-const skillReadCap = ReadCap
-
-// ErrTooLarge: SKILL.md is past ReadCap.
-var ErrTooLarge = errors.New("SKILL.md is larger than 1 MiB (1,048,576 bytes)")
+// skillReadCap bounds one read of a skill file at discovery and in
+// Body: the frontmatter and body of any real SKILL.md fit in it; a
+// sparse or generated giant does not reach memory.
+const skillReadCap = 4 << 20
 
 // openRoot returns the skill's root and the release the caller owes.
 func (s Skill) openRoot() (*os.Root, func(), error) {
 	if s.root != nil {
 		return s.root, func() {}, nil
 	}
-	root, err := bounded.OpenRoot(s.Dir)
+	root, err := os.OpenRoot(s.Dir)
 	if err != nil {
 		return nil, nil, err
 	}
 	return root, func() { _ = root.Close() }, nil
-}
-
-// WithRoot runs fn on the root every read of this skill goes through.
-// The comparison made when a skill is used (ADR-0119 §1) digests through
-// it, so what is compared is the tree Body and File read — not whatever
-// the skill's path resolves to at that moment.
-func (s Skill) WithRoot(fn func(root *os.Root) error) error {
-	root, release, err := s.openRoot()
-	if err != nil {
-		return err
-	}
-	defer release()
-	return fn(root)
-}
-
-// unsafeEntry reports a name or path that could write into a dialog or
-// a note that shows it: a control character (a line break above all), a
-// format character such as a bidirectional override, or bytes that are
-// not text at all. The name a skill declares is validated by
-// namePattern; its directory is not, and the trust question shows the
-// directory (ADR-0119 §11). Both spellings are checked: the entry under
-// the skills root, and the path it resolves to — an entry with a plain
-// name may be a link to a directory that has neither.
-func unsafeEntry(name string) bool {
-	if !utf8.ValidString(name) {
-		return true
-	}
-	for _, r := range name {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
-			return true
-		}
-	}
-	return false
 }
 
 // Close releases the skill's root. CloseAll does it for a discovered
@@ -197,9 +151,7 @@ func CloseAll(list []Skill) {
 // readCapped reads rel through root, at most cap bytes, reporting
 // whether more followed.
 func readCapped(root *os.Root, rel string, cap int) ([]byte, bool, error) {
-	// Not a plain open: a SKILL.md that is a FIFO held discovery, and
-	// so startup, until somebody wrote to it.
-	f, err := bounded.OpenRegular(root, rel)
+	f, err := root.Open(rel)
 	if err != nil {
 		return nil, false, err
 	}
@@ -235,12 +187,6 @@ func Discover(globalDir, projectDir string, lim Limits) ([]Skill, []string) {
 			notes = append(notes, fmt.Sprintf("%s holds more than %d entries; only the first %d were scanned for skills", root, skillScanCap, skillScanCap))
 		}
 		for _, e := range entries {
-			if unsafeEntry(e.Name()) {
-				// Before anything is read from it, and quoted: the note
-				// must not carry the characters it is about.
-				notes = append(notes, fmt.Sprintf("skill directory %q skipped: its name holds a control or format character, or is not valid text", e.Name()))
-				continue
-			}
 			dir := filepath.Join(root, e.Name())
 			// os.Stat, not e.IsDir(): a symlinked skill directory reports
 			// IsDir()=false on the DirEntry, and symlinks are exactly how
@@ -300,15 +246,10 @@ func readSkill(dir, scope string, lim Limits) (*Skill, error) {
 	if err != nil {
 		return nil, err
 	}
-	if unsafeEntry(realDir) {
-		// Dir is what the base-directory line and the trust question
-		// show. Quoted here too: the error becomes a note.
-		return nil, fmt.Errorf("it resolves to %q, which holds a control or format character", realDir)
-	}
 	// The root is opened first and SKILL.md read through it: the
 	// description enters the system prompt, and must come from inside
 	// the skill directory however the tree changes underneath.
-	root, err := bounded.OpenRoot(realDir)
+	root, err := os.OpenRoot(realDir)
 	if err != nil {
 		return nil, err
 	}
@@ -319,10 +260,7 @@ func readSkill(dir, scope string, lim Limits) (*Skill, error) {
 		}
 		return nil, err
 	}
-	data, more, err := readCapped(root, "SKILL.md", skillReadCap)
-	if err == nil && more {
-		err = ErrTooLarge
-	}
+	data, _, err := readCapped(root, "SKILL.md", skillReadCap)
 	if err != nil {
 		_ = root.Close()
 		return nil, err
@@ -518,8 +456,7 @@ func Find(list []Skill, name string) (Skill, bool) {
 
 // Body returns the skill's instructions: SKILL.md without its
 // frontmatter, clipped at the limit with an explicit truncation note (a
-// silently amputated procedure looks complete). The whole file is read:
-// a SKILL.md past ReadCap is an error, not a truncated body.
+// silently amputated procedure looks complete).
 func (s Skill) Body(lim Limits) (string, error) {
 	root, release, err := s.openRoot()
 	if err != nil {
@@ -530,14 +467,15 @@ func (s Skill) Body(lim Limits) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if more {
-		return "", ErrTooLarge // it outgrew the cap since discovery
-	}
 	_, body := splitFrontmatter(string(data))
 	body = strings.TrimSpace(body)
-	if len(body) > lim.MaxBody {
+	if len(body) > lim.MaxBody || more {
 		cut := cutRunes(body, lim.MaxBody)
-		body = cut + fmt.Sprintf("\n\n[skill truncated: %d of %d bytes shown]", len(cut), len(body))
+		total := fmt.Sprintf("%d", len(body))
+		if more {
+			total = fmt.Sprintf("more than %d", skillReadCap) // the file outgrew the read cap (review A-08)
+		}
+		body = cut + fmt.Sprintf("\n\n[skill truncated: %d of %s bytes shown]", len(cut), total)
 	}
 	return body, nil
 }
@@ -546,9 +484,7 @@ func (s Skill) Body(lim Limits) (string, error) {
 // (references/, scripts/, …). Reads are confined to that directory,
 // symlinks resolved and re-checked — this confinement is what bounds the
 // agent's unwrap exemption for this tool: without it, load_skill would
-// be "read any file on disk, unwrapped" (ADR-0010 §4). A file is read
-// whole or not at all: one past the limit is refused by size, and one
-// that grew past it between the size check and the read is refused too.
+// be "read any file on disk, unwrapped" (ADR-0010 §4).
 func (s Skill) File(rel string, lim Limits) (string, error) {
 	if filepath.IsAbs(rel) {
 		return "", fmt.Errorf("file must be a path relative to the skill directory")
@@ -576,7 +512,7 @@ func (s Skill) File(rel string, lim Limits) (string, error) {
 		return "", err
 	}
 	if info.IsDir() {
-		d, err := bounded.OpenDirIn(root, inside)
+		d, err := root.Open(inside)
 		if err != nil {
 			return "", err
 		}
@@ -604,9 +540,9 @@ func (s Skill) File(rel string, lim Limits) (string, error) {
 		return "", err
 	}
 	if more {
-		// It grew past the limit after the size check: refused like a
-		// file that was already past it, rather than served in part.
-		return "", fmt.Errorf("%s is larger than the skill file limit of %d bytes", rel, lim.MaxFile)
+		// Exactly MaxFile bytes: trim a rune the cut broke (review A-08).
+		cut := string(bounded.TrimIncompleteRune(data))
+		return cut + fmt.Sprintf("\n\n[file truncated: %d bytes shown of a file past the %d-byte limit]", len(cut), lim.MaxFile), nil
 	}
 	return string(data), nil
 }

@@ -192,10 +192,7 @@ kernel is what refuses, while the walks list them and name what they
 could not read,
 and a trusted project's
 instruction and configuration files are pinned by content so a changed
-one asks again before it is loaded, and a project skill is compared again
-every time it is used — one that changed asks you to trust it, disable it
-for the session, or leave it for now, before it loads: ADR-0119), shell
-commands judged by
+one asks again before it is loaded), shell commands judged by
 the Seatbelt lane they declare rather than by their text (a read-lane
 command runs unasked — compile, vet and test included, the toolchain
 cache riding the session scratch in every lane; the write lane cannot

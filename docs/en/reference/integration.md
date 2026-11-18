@@ -182,28 +182,6 @@ skill installed while the session runs becomes available without
 restarting; the system prompt's skill section follows, so the model
 sees the new set from the next round.
 
-**A project skill is compared each time it is used** (ADR-0119), not
-only when the list is built: its body and files are read from disk
-then. `skillGuard` (cmd/skilltrust.go) digests the skill through its own
-open root — the tree the loader reads, by the implementation that took
-the pin — and holds the read to that digest's manifest: the bytes read
-for a file are returned only if they are the bytes that tree holds for
-it. Nothing a pin does not cover is served (a `SKILL.md` over 1 MiB is
-not a skill; a skill with more than 2,000 files, more than 4,000
-files and directories in all, or directories nested more than 32 deep is
-not read). A skill
-that is not what the trust record holds becomes the operator's
-question: trust
-(that digest is recorded and the skill loaded), disable (off until
-`/clear` or `/skills reload` rebuilds the list) or not now (this read
-is refused, nothing changes; the dialog opens here, and Esc does the
-same). `load_skill` reaches the question by returning
-`tools.NeedsOperator`, which the agent resolves outside the floor and
-then runs the tool again; `/skill` asks from the turn's own goroutine
-before it injects. Where nobody is at a terminal nothing is asked, and
-the model is given a fixed sentence. Each outcome is a `skill_trust`
-record and a `skill.trust` audit event.
-
 Skill content is treated as *instructions*, not wrapped as untrusted
 data — it is a file you installed, the same trust tier as `AGENTS.md`.
 That exemption is bounded: `load_skill` can only read inside a

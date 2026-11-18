@@ -394,18 +394,6 @@ func (s *Sink) Reload(kind string, servers, tools int) {
 		attribute.Int("tools", tools))
 }
 
-// SkillTrust records the question about a project skill that is not
-// what the operator's trust record holds, and how it ended (ADR-0119
-// §12): question, trusted, disabled, unanswered, unattended, changing,
-// refused (a later use of a disabled skill) or gone. It is an event of
-// its own, not an approval: a trust answer is not the approval of a
-// call.
-func (s *Sink) SkillTrust(skill, event string) {
-	s.emit("skill.trust",
-		attribute.String("skill", skill),
-		attribute.String("event", event))
-}
-
 func (s *Sink) Compaction(replaced, kept int) {
 	s.emit("compaction",
 		attribute.Int("messages_summarised", replaced),

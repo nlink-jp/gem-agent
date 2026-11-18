@@ -420,8 +420,7 @@ Explorer でのログ名は `gem-agent`（`logging.googleapis.com` の有効化
 `tool.late_return`（放棄された呼び出しが結局戻った — ADR-0065。
 `origin_session_id` を持つ）・`approval.decision`（判定とどの層が
 決めたか、レーン）・`mode.change`（実行中に動いたセッション設定 —
-どの設定が、何に、誰の手で）・`skill.trust`（信頼の記録と食い違うプロジェクトスキルに
-ついての問いと、その結果 — ADR-0119）・`turn.end`・`model.usage`・`compaction`・`media.upload`・
+どの設定が、何に、誰の手で）・`turn.end`・`model.usage`・`compaction`・`media.upload`・
 `integration.reload`（セッション中の `/mcp reload` / `/skills reload`
 がツール面を変えた — ADR-0039）—
 サービス/セッション/プロジェクト/ホストのリソース属性付き。

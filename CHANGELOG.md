@@ -35,20 +35,22 @@
   names nobody can guess, and are made so that nothing already there is
   opened. The clipboard capture's file is made in the temporary folder
   again, under a name nobody can guess.
-- **A project skill's files are walked through the standard directory
-  handle again** (ADR-0122). v0.106.0 walked them through a type of its own,
-  so that a folder swapped for a named pipe during the walk could not
-  hold it. That needs a program racing the walk, and the type is
-  removed. Nothing you trusted changes: the same folders give the same
-  trust record before and after (compared on six kinds of tree).
-- **A project skill is compared before it is read, and what was read
-  is not checked a second time** (ADR-0122). v0.104.0 also checked the bytes
-  it had just read against the content it had compared, to catch a
-  file swapped between the two — which needs a program racing the
-  read — and matched file names by case and Unicode form so that this
-  check would not refuse a file the disk had found under another
-  spelling. Both are removed. A listing of a folder inside a project
-  skill shows every entry again, without the line "[not listed: …]".
+- **A project skill is no longer compared each time it is used, and
+  nothing asks you about it mid-session** (ADR-0123). v0.104.0 compared a
+  project skill with what you trusted at every use and, when it had
+  changed, asked whether to trust it, disable it for the session or
+  leave it for now. What changes a skill mid-session is mostly a
+  `git pull`, and whoever wrote the change already writes the project's
+  code, which you build and run; the commands the skill's text leads to
+  still go through the sandbox and your approval. A changed skill is now
+  left out and named at the next start, `/clear` or `/skills reload`,
+  as a changed `AGENTS.md` is. Gone with the question: the `skill.trust`
+  audit event, the limits of 4,000 files and folders and 32 levels on a
+  skill (the limit of 2,000 files stays), and the rule that kept a
+  skill folder whose name holds a control character out of the list.
+  Trust records stay valid: a skill digests as before, except one past
+  the 4,000-entry or 32-level limit, which v0.104.0–v0.106.0 cut short
+  and which now asks once at the next start.
 
 ## [0.106.0] - 2026-11-18
 
