@@ -304,8 +304,8 @@ whether you really want to start
 
 ### 3.2 Answer the trust question
 
-The first time you start in a directory, if the project has instruction files
-or a `.mcp.json`, it asks the following.
+The first time you start in a directory, if the project has instruction files,
+a `.mcp.json` or skills (`.claude/skills/`), it asks the following.
 
 ```
 new project: /Users/you/work/demo
@@ -323,7 +323,9 @@ contents of.
   does not ask again.
 - If you just press Enter (`N`), it starts without loading the project's files.
   In a repository you have only just fetched from somewhere else, it is safest
-  to start this way first and look at the contents.
+  to start this way first and look at the contents. This answer is recorded
+  too, and it does not ask again. How to trust the project after you have
+  looked is in [11.2](#112-the-trust-question).
 
 How this question works in detail is in
 [chapter 11](#11-project-instruction-files-and-trust).
@@ -628,7 +630,7 @@ drawn as a diagram on the spot.
 A diagram that cannot be drawn correctly is shown in the original notation,
 with one line giving the reason. Inside tmux or screen, pictures are not drawn.
 
-**Images.** In iTerm2 and kitty, images can be shown inside the terminal.
+**Images.** In iTerm2, kitty and Ghostty, images can be shown inside the terminal.
 
 - The model sometimes shows an image with a tool called `show_image`, for
   example when you have it make a chart.
@@ -667,7 +669,7 @@ window, you notice that gem-agent is waiting for you.
 | Enter | Dialog | Confirm the selected answer |
 | `y` `n` `N` `a` `p` | Approval dialog | Confirm that answer ([6.3](#63-the-five-answers)) |
 | 1–9 | Question dialog | Confirm the choice with that number |
-| Esc | Dialog | Deny, or decline to answer |
+| Esc / Ctrl+C | Dialog | Deny, or decline to answer. While a dialog is up, Ctrl+C means this rather than stopping the turn |
 | ↑↓ PgUp PgDn Home End | Approval dialog | Scroll long content |
 
 ### 4.8 Slash commands
@@ -682,7 +684,7 @@ request to the model. The commonly used ones are below. The full list is in
 | `/tools` | The available tools, and whether each one asks for approval |
 | `/settings` | Show every setting together with where it was decided. Some can be changed on the spot |
 | `/auto` | Toggle auto-approve mode |
-| `/readonly` | Toggle read-only mode |
+| `/readonly` | Read-only mode. `/readonly on` and `/readonly off` switch it; on its own it shows the current state |
 | `/usage` | The breakdown of tokens used in this session |
 | `/compact` | Summarise the older part of the conversation to shorten it |
 | `/clear` | Wipe the conversation and start a new session |
@@ -746,6 +748,9 @@ together with the request.
 
 - Pointing at a file sends its contents.
 - Pointing at a directory (a trailing `/`) sends a listing of it.
+- The path ends at the first space. For a file whose name has a space in it
+  (a macOS screenshot, for one), rename it, or attach an image with
+  `@clipboard`.
 - The path can be completed with Tab.
 - What can be attached is a file in the project, in the session's work
   directory, or in an added directory
@@ -921,11 +926,14 @@ When you use `a` and `p`, keep these two points in mind.
 An allow written with `p` can be reviewed and revoked in the `/settings` list
 ([7.2](#72-per-tool-policy)).
 
-The answer selected at first is normally "allow". In a dialog with a `⚠` line,
-it comes up with "deny" selected: the operations in
-[6.5](#65-what-only-you-can-answer), operations that came to you in auto-approve
-mode, the question about lifting read-only, and so on. This is so that a
-dangerous operation does not go through if you press Enter out of habit.
+The answer selected at first is normally "allow". In a dialog with a `⚠` line
+that says why it came to you, it comes up with "deny" selected: the operations
+in [6.5](#65-what-only-you-can-answer), operations that came to you in
+auto-approve mode, the question about lifting read-only, and so on. This is so
+that a dangerous operation does not go through if you press Enter out of
+habit. A tool you set to "always ask" (`always`) in the per-tool policy gets no
+such line, so its question comes up with "allow" selected. A `⚠` that gives
+the scroll position or the number of hidden lines is not a line of this kind.
 
 ### 6.4 The three lanes of a shell command
 
@@ -936,8 +944,8 @@ lane), and the macOS sandbox enforces the bounds of that privilege.
 | Lane | What it can do | What it cannot do | Approval |
 |---|---|---|---|
 | `read` | Read files. Write to the scratch directory dedicated to the session | Write to the project, use the network, control other apps, read credential files, read external and network disks (`/Volumes`, `/Network`) and most of `~/Library` (if the project or an added directory is there, it can be read) | Does not ask |
-| `write` | Write to the project, the work directory and the scratch directory. Use the network | Write to instruction files, configuration files, or the git configuration and hooks; read credential files; write outside the project | Asks |
-| `operator` | Everything `write` can, plus write to instruction files and the git configuration, and read credential files | Write outside the project | Always asks |
+| `write` | Write to the project, the work directory, the scratch directory and directories added for writing ([chapter 9](#9-working-in-directories-outside-the-project)). Use the network | Write to instruction files, configuration files, or the git configuration and hooks; read credential files; write anywhere else | Asks |
+| `operator` | Everything `write` can, plus write to instruction files and the git configuration, and read credential files | Write anywhere `write` cannot | Always asks |
 
 In the dialog and in the conversation, the command is prefixed with `[read]`,
 `[write]` or `[operator]`.
@@ -983,13 +991,17 @@ not ask".
 | Rewriting an instruction file or configuration file (`AGENTS.md`, `AGENT.md`, `CLAUDE.md`, `GEMINI.md`, `.mcp.json`, `.gem-agent.toml`, `.lagent.toml`, everything under `.claude/`) | What is written becomes the instructions and settings from the next session on |
 | Writing under `.git/` with a tool that writes files | The git configuration and hooks are executed outside the sandbox by the next git command |
 | Reading a credential file | The secret enters the conversation and is sent to Vertex AI |
-| Writing outside the project and the session's work directory | Out of scope |
+| Writing outside the project, the session's work directory and directories added for writing | Out of scope |
 | A request to make a directory outside the project usable | It widens the scope |
 | A tool whose per-tool policy is "always ask" (`always`) | You decided so |
 | Every shell command when the sandbox is not in effect | Nothing confines it |
 
-For these operations, the `a` and `p` choices either disappear from the dialog
-or, if chosen, it asks again the next time.
+For these operations themselves, it asks again the next time even if you
+answer `a` or `p`. But an `a` or `p` answer does apply to that tool's other
+calls. Answer `p` to a `git push` question, for example, and the write lane's
+other shell commands run without asking, in later sessions too (see the
+caution in [7.2](#72-per-tool-policy)). To allow just this operation, answer
+`y`.
 
 ### 6.6 Credential files
 
@@ -1049,8 +1061,8 @@ by a separate model call and asks you whether to continue.
 │   2) stop here
 ```
 
-- If you choose "continue", it goes on. It can go on up to 3 times
-  `max_turns`.
+- If you choose "continue", it goes on for half of `max_turns` more (25 rounds
+  by default) and then asks again. It can go on up to 3 times `max_turns`.
 - If you choose "stop here", the turn ends. The work so far is kept, so send
   "continue" and it resumes from there.
 - When the model makes exactly the same call 3 times in a row, the same check
@@ -1543,8 +1555,8 @@ that are not the project's deliverables go there.
 
 - Intermediate files the model made
 - Tool results and command output that were too large to carry in the
-  conversation (the output of `operator` lane commands and of commands typed
-  with `!` is not saved)
+  conversation (the output of `operator` lane commands, of commands typed
+  with `!`, and of commands run without the sandbox is not saved)
 - Saved copies of the results MCP servers returned, and images
 
 Its location is passed, as the environment variable `GEMAGENT_WORK_DIR`, to the
@@ -1557,7 +1569,7 @@ pile up (a work directory that nothing went into is cleared away on exit).
 ```sh
 gem-agent workdirs              # list this project's work directories
 gem-agent workdirs clean        # show what would be deleted, confirm, then delete
-gem-agent workdirs clean <ID>   # delete only the given session's
+gem-agent workdirs clean <ID>   # delete only the given session's (the full ID, not a prefix)
 ```
 
 - Before deleting, it shows the list of targets and their total size and asks
@@ -1644,13 +1656,16 @@ but you want to add it read-only, deny, and type `/read-dir <path>` yourself.
 If you try to add one of the following places, it is refused with the reason.
 When it was given by a flag, startup stops.
 
-- `/` and the home directory itself
+- `/`, the home directory, and any place that contains them (`/Users`, say)
 - A place that contains the project or the work directory
-- A place that contains somewhere credentials are kept, or gem-agent's
-  configuration or record directories
-- Inside the shared temporary directories or `/dev`, or a place that contains
-  them
-- `/Volumes` and `/Network` themselves (directories inside them can be added)
+- Somewhere credentials are kept, gem-agent's configuration or record
+  directories, a place that contains one of them, or a place inside one
+- Inside the shared temporary directories, or a place that contains them; a
+  place that contains `/dev`
+- `/Volumes`, `/Network` and `~/Library` themselves (directories inside
+  `/Volumes` and `/Network` can be added)
+- A place that contains the configuration file given with `--config` (as a
+  writable directory)
 - Anything under `~/Library` as a writable directory (except cloud sync
   folders)
 
@@ -1661,7 +1676,8 @@ added.
 Of the paths written in `[directories]` in the configuration file, those that
 do not exist at the moment (a disk that has been removed and so on), those
 that contain the current project, and those already covered by something else
-are skipped with a notice, without stopping startup.
+are skipped with a notice, without stopping startup. The same paths given with
+a flag stop startup.
 
 When an added directory becomes unusable partway through (the disk was removed
 and so on), only that directory is dropped at the next `/clear`, and you are
@@ -1945,6 +1961,10 @@ are only reported.
   next start.
 - Where it cannot ask, such as a one-shot run, `/clear` or `/mcp reload`, a
   changed file is not loaded and you are told so.
+- A project's skills are compared only when the list of skills is built (at
+  startup, `/clear` and `/skills reload`). A skill that changes partway
+  through a session (after a `git pull`, say) is used as it now is until you
+  do one of those.
 
 To update the record after editing a file yourself, without waiting to be
 asked, use the following commands.
@@ -1970,8 +1990,10 @@ then type `/clear` in that session. The new content of instruction files,
 skills and `.mcp.json` is loaded without a restart. `.gem-agent.toml` alone is
 read only at startup, so for that file, restart.
 
-When you approve the model editing an instruction file inside gem-agent, the
-record for that one file is updated automatically.
+When you approve the model editing a file in the record (an instruction file,
+`.mcp.json`, `.gem-agent.toml`, or a file inside a skill) inside gem-agent, the
+record for that one file is updated automatically. A file that had already
+changed before the edit is not updated, and you are told so.
 
 To stop this comparison and go back to trust per directory, set
 `[approval].pin_trusted_files = false`.
@@ -1979,7 +2001,8 @@ To stop this comparison and go back to trust per directory, set
 ### 11.4 Projects trusted without asking
 
 For projects you manage yourself, write them in the configuration and it does
-not ask.
+not ask the first trust question. The question when content changes
+([11.3](#113-asked-again-when-content-changes)) still comes up as before.
 
 ```toml
 [approval]
@@ -1992,7 +2015,7 @@ In a project written here, the following four things are allowed at once.
 2. The servers in `.mcp.json` are started
 3. The skills in `.claude/skills/` can be used
 4. `"never"` in `.gem-agent.toml` (policy that **reduces** approval) takes
-   effect
+   effect (while `.gem-agent.toml` is unchanged since it was trusted)
 
 The fourth is not allowed just by answering `y` to the question at startup.
 Only projects written in this setting get it. Note that if you write a project
@@ -2053,7 +2076,7 @@ are.
 ```json
 {
   "mcpServers": {
-    "tor-exit": {
+    "tor-exit-lookup": {
       "command": "tor-exit-lookup",
       "args": ["mcp"]
     },
@@ -2269,7 +2292,7 @@ each skill. The body is loaded when the skill is used.
 
 | Command | What it does |
 |---|---|
-| `/skills` | The list of installed skills, and where they are kept |
+| `/skills` | The list of installed skills, and whether each is global (`[global]`) or the project's (`[project]`) |
 | `/skills reload` | Look for skills again. A skill installed partway through a session can be used without restarting |
 
 ### 13.3 Put procedures you want followed in a skill
@@ -2354,7 +2377,7 @@ timeout_sec = 10
 
 | Key | What it is |
 |---|---|
-| `matcher` | The name of the tool to match. There are three forms: one name (`shell_exec`), several names separated by `\|` (`shell_exec\|write_file`), and every tool (`"*"`). Claude Code's names (`Bash`, `Write`, `Edit`, `Read`) also match the corresponding tools |
+| `matcher` | The name of the tool to match. Required for `pre_tool_use`; not allowed for `user_prompt_submit` or `session_end` (writing one stops startup). There are three forms: one name (`shell_exec`), several names separated by `\|` (`shell_exec\|write_file`), and every tool (`"*"`). Claude Code's names (`Bash`, `Write`, `Edit`, `Read`) also match the corresponding tools |
 | `command` | The command to run. It is run with `/bin/sh -c` |
 | `timeout_sec` | How long to wait. The default is 10 seconds |
 
@@ -2441,8 +2464,9 @@ day.
 - `session_start` runs when a session is started (`startup`), when one is
   resumed (`resume`), and at `/clear` (`clear`).
 - `user_prompt_submit` runs for every request sent to the model. It does not
-  run for slash commands or `!` commands. The text of the request is in
-  `prompt` in the JSON it receives.
+  run for slash commands or `!` commands, except `/skill`, which becomes a
+  request to the model: then `prompt` holds the text with the skill's body
+  expanded. The text of the request is in `prompt` in the JSON it receives.
 
 **Stopping a request.** A `user_prompt_submit` hook can stop the request
 itself, in the same way as denying a tool call (exit code 2, or the deny
@@ -2508,9 +2532,9 @@ In the tables below, "Default" is the value when nothing is written.
 | `thinking` | (the model's default) | How deeply the model thinks. `minimal`, `low`, `medium`, `high`, `xhigh`. The values available differ by model |
 | `summary` | (same as `name`) | A light model used for summarising files and fetching web pages |
 | `risk` | (same as `name`) | The model used for the auto-approve review, the assessment when a turn runs long, and the read-only watcher |
-| `risk_thinking` | (that model's default) | How deeply the model above thinks |
+| `risk_thinking` | (the same as `thinking` while neither `risk` nor `risk_thinking` is set; once either is, that model's default) | How deeply the model above thinks |
 | `librarian` | (same as `risk`) | The model that picks tools for `find_tools` ([12.5](#125-when-there-are-many-tools)) |
-| `librarian_thinking` | (that model's default) | How deeply the model above thinks |
+| `librarian_thinking` | (the same depth as the `risk` model while neither `librarian` nor `librarian_thinking` is set; once either is, that model's default. With only `librarian_thinking` set, the `name` model is used) | How deeply the model above thinks |
 | `context_window` | (automatic) | The size the model can handle at once (tokens). Normally not written |
 | `safety` | `default` | The strength of Vertex AI's content filter. `default`, `relaxed`, `off` ([Appendix F](#appendix-f-troubleshooting)) |
 
@@ -2636,7 +2660,8 @@ The other environment variables are in [Appendix E](#appendix-e-environment-vari
 ### 15.12 Viewing and changing settings on screen
 
 `/settings` shows every setting, with its current value and where that was
-decided.
+decided. In a terminal it opens a panel where you can select and change values;
+the sample below is the plain-text form printed when the input is piped.
 
 ```
 [session]
@@ -2686,6 +2711,7 @@ What is sent is a **summary** of each event.
 |---|---|
 | `session.start`, `session.end` | The start and end of a session |
 | `tool.call` | The tool's name, a short summary of the content, the time taken, the outcome (success, error, denied and so on), and for a shell command the lane |
+| `tool.late_return` | A call that was given up on came back later (the tool, the outcome, the time taken, the original session ID) |
 | `approval.decision` | The outcome of the approval and where it was decided (rule, review, you) |
 | `mode.change` | Auto-approve or read-only was switched |
 | `turn.end`, `model.usage` | The end of a turn, the number of tokens used |
@@ -2779,7 +2805,7 @@ so that the damage does not spread.
 | Approval | Shows you an operation that changes something before it runs | You |
 | Operations that always ask | Dangerous commands, rewriting instruction files, reading credentials and the like are passed to you under any configuration | gem-agent's rules (the model cannot change them) |
 | The distinction between data and instructions | What tools return, and attached files, are marked and passed to the model as "data". The marker is a string that differs for each session and cannot be forged from the data side | gem-agent |
-| Trust and the content comparison | A project's instruction files and `.mcp.json` are loaded only when you have answered that you trust them and the content has not changed since | gem-agent |
+| Trust and the content comparison | A project's instruction files, `.mcp.json` and skills are loaded only when you have answered that you trust them and the content has not changed since | gem-agent |
 | Watching for changes | When files that affect the next session, such as instruction files and the git configuration and hooks, are added or changed, you are told at startup, at `/clear`, and on exit | gem-agent (it only tells you; it does not stop it) |
 | Hooks | Deny particular operations mechanically, with your script | Your script |
 | Screen protection | The special characters that control a terminal are removed from the model's answers and tool results before they are displayed. Characters in an answer cannot change the window title, write to the clipboard, or fake an approval dialog | gem-agent |
@@ -2801,14 +2827,14 @@ lane commands without asking.
 | State | Shown at startup | How shell commands are handled |
 |---|---|---|
 | Verified | Nothing about the sandbox is shown | The `read` lane runs without asking; the `write` lane asks and then runs. The OS restricts the bounds of both |
-| The write restriction could not be verified | `sandbox unverified: …` and which check did not pass | Every command asks you, every time. This cannot be skipped with `a`, `"never"` or auto-approve |
-| The read-only restriction could not be verified | `read lane disabled: …` | `read` lane commands also ask before running. This can be skipped with `a`, `"never"` or auto-approve |
+| The write restriction could not be verified | `warning: sandbox unverified: …` and which check did not pass, followed by a `sandbox: DISABLED — …` line too | Every command asks you, every time. This cannot be skipped with `a`, `"never"` or auto-approve |
+| The read-only restriction could not be verified | `warning: read lane disabled: …` and a `sandbox: enabled (read lane unverified …)` line | `read` lane commands also ask before running. This can be skipped with `a`, `"never"` or auto-approve |
 | Disabled | `sandbox: DISABLED` | Every command asks you, every time. There is no restriction by the OS |
 
 The result of the check can also be seen in the `[safety]` section of
 `/settings`.
 
-For this check, at every start and every `/clear`, gem-agent tries to create
+For this check, at every start, every `/clear` and every time a directory is added, gem-agent tries to create
 small files whose names start with `.gem-agent-lane-probe-` in the project
 directory and elsewhere, and deletes them at once. If the project directory
 cannot be written to, the check does not pass and the "could not be verified"
@@ -2862,7 +2888,7 @@ how you use it.
 - Set MCP tools that can write or send to `"always"`. Exclude the ones you do
   not use.
 - Do not keep secrets in the project or in environment variables.
-- When a notice starting with `sandbox` or `note:` appears at startup, read
+- When a notice starting with `warning:`, `sandbox` or `note:` appears at startup, read
   it.
 
 ---
@@ -2880,7 +2906,7 @@ how you use it.
 | `gem-agent -p "<request>"` | Run one request and exit ([chapter 10](#10-one-shot-runs-and-pipelines)) |
 | `gem-agent sessions [--all]` | List the sessions that can be resumed. `--all` for every project |
 | `gem-agent trust [--accept]` | Show the trust state of the project. `--accept` records the current content afresh in a trusted project |
-| `gem-agent workdirs` | List the work directories of past sessions |
+| `gem-agent workdirs` | List this project's work directories of past sessions |
 | `gem-agent workdirs clean [ID…] [--yes]` | Delete work directories after confirming. `--yes` deletes without confirming |
 | `gem-agent completion <shell>` | Print a shell completion script |
 | `gem-agent --version` | Show the version |
@@ -3071,7 +3097,7 @@ These are passed to shell commands, MCP servers and hooks.
 | `GEMAGENT_SESSION_ID` | The ID of the session |
 | `GEMAGENT_PROJECT_DIR` | The project directory |
 | `GEMAGENT_WORK_DIR` | The session's work directory |
-| `TMPDIR` | For `read` lane commands, the scratch directory dedicated to the session |
+| `TMPDIR`, `TMP`, `TEMP` | For `read` lane commands, the scratch directory dedicated to the session |
 | `GOCACHE` and so on | The cache locations written in `[sandbox.scratch_caches]` (passed to shell commands only) |
 
 The environment variables of your shell are passed on as they are. Only the
@@ -3109,7 +3135,7 @@ variables for gem-agent's own configuration (`GEMAGENT_PROJECT`,
 |---|---|
 | Option+Enter sends the message | The terminal needs a setting. Use Ctrl+J ([4.3](#43-typing)) |
 | `y` does not work in a dialog | An input method (IME) is on. Choose with ←→ and confirm with Enter |
-| Diagrams do not become pictures, images do not appear | Pictures can be shown in iTerm2 and kitty. They are not shown inside tmux or screen. If the terminal is detected wrongly, set `[tui].images` to `iterm` or `kitty` |
+| Diagrams do not become pictures, images do not appear | Pictures can be shown in iTerm2, kitty and Ghostty. With `[tui].images` at `auto`, they are not shown inside tmux or screen. If the terminal is detected wrongly, set `[tui].images` to `iterm` or `kitty` |
 | The colours are hard to read | Set `[tui].theme` to one of `dark`, `light` and `plain` |
 | The frame lines are misaligned | Try setting the environment variable `RUNEWIDTH_EASTASIAN` to `0` or `1` |
 | What you typed while it was working is not sent | Input typed while it works is sent after the turn ends. If the turn ends in an error, it goes back to the input box |
@@ -3138,7 +3164,7 @@ variables for gem-agent's own configuration (`GEMAGENT_PROJECT`,
 | Symptom | Cause and what to do |
 |---|---|
 | It cannot be resumed | Check that you are starting in the same directory and with the same model as it was recorded with. If it says "in use", the same session is open in another terminal |
-| A one-shot run sits there printing nothing | It is waiting for the input to close. Add `< /dev/null` ([10.2](#102-pipe-data-in)) |
+| A one-shot run stops after printing `[stdin: waiting for piped input to end …]` | It is waiting for the input to close. Add `< /dev/null` ([10.2](#102-pipe-data-in)). With standard error thrown away (under cron, say), even that line is not seen |
 | It said "session transcript write failed" | Check the free disk space and whether `~/.local/state/gem-agent/` can be written to. A session whose recording stopped cannot be resumed in full. Restart gem-agent |
 | A session with audio or video attached gives an error later | The file placed in the bucket has been deleted. Start over with `/clear`, or summarise everything before that attachment with `/compact` |
 | Work directories have piled up | Delete them with `gem-agent workdirs clean` ([8.7](#87-work-directories)) |
