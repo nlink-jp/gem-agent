@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-11-18) — being implemented |
+| Status | **Accepted** (2026-11-18) — implemented (see the addendum) |
 | Date | 2026-11-18 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -202,3 +202,37 @@ lagent's `runREPL` has the same shape (1,587 lines, measured 2026-11-18). AGENTS
 | Move the wiring into a new `internal/app` package | `runREPL`'s helpers (`dirGranter`, `settingsStore`, the MCP wiring) are `cmd`'s; moving the function moves them, which is the previous row. |
 | A dependency-injection library (wire, fx) | Community tooling is not adopted (supply-chain rule), and plain function arguments enforce the order. |
 | A marker type for every ordering rule, instructions-before-MCP included | That rule is not a data dependency; a type for it would be ceremony. Adjacent statements with their comment are the proportionate control. |
+
+## Addendum: the implementation (2026-11-18)
+
+Implemented in seven commits on gem-agent `main`: the `/clear` panic fix (`4a4e88f`), then steps 0–5 (`b795451`, `66b0f32`, `ded4302`, `4000e3a`, `85f87b9`, `27b8c06`) and this record's step 6. Every step kept `make check` green and the characterization references byte-equal; none was rewritten.
+
+### Measured again
+
+| Measure | Before | After |
+|---|---|---|
+| `runREPL` | 1,893 lines, 255 branches | **67 lines** |
+| `cmd/root.go` | 3,193 lines | 1,385 lines (the rest in `startup.go` 1,239, `live.go` 546, `frontends.go` 362, `surface.go` 176, `cleanups.go` 41, `modelclient.go` 52) |
+| Largest function in the new files | — | `assembleSession`, 142 lines |
+| Functions over 150 lines (non-test, excluding `tools/`) | 9 | 8 — the remaining eight are the ones the Context set aside, plus `slashOutput` (unchanged, 231) |
+| `prog != nil` in `cmd/` outside `surface` | 13 | 0 |
+| Non-test / test Go | 45,166 / 51,232 | 45,774 / 52,301 |
+
+### Where the implementation differs from §1–§3, and why
+
+1. **The holders are created up front** by `newLiveSession` and filled by the phase that produces their content, instead of being created by that phase. The phases' results passed as arguments hold the order (`prepareWorkDir` takes `opened`, `buildConfinement` the `*workArea`, `assembleSession` the `toolsRegistered` only `registerTools` returns).
+2. **`surface` is one concrete type**, not an interface with two implementations: the program is late-bound, so the same value is the stream before it is the TUI.
+3. **`slashOutput` keeps its parameters.** Its twenty test call sites hand each command only the parts it needs; the two production calls with the same twelve arguments became `liveSession.slash`.
+4. **The exit sequence has twelve steps.** Step 13 of §2.5, clearing the direct-shell hook, is gone with the package variable: `runDirectShell` takes the note as an argument.
+5. **The receiver is `sess`**: `s` is a string parameter in a hundred places of the old `runREPL`.
+6. **The hooks moved** from between two tool registrations to the head of assembly (`assembleHooks`), as §2.2 placed them; `assembleSession` was further split into `assembleHooks`, `assembleAgent` and the rest to meet the 150-line bound.
+7. **§3 left out ADR-0089's and ADR-0090's line citations of `root.go`.** The citation test named them at every step that moved their code; each was retargeted in that step (ADR-0090's to `surface.go`, ADR-0089's to `frontends.go`).
+
+### What judged it
+
+- The two characterization tests of step 0, recorded on `b795451` before any restructure, and a third, recorded on the same commit (exported with `git archive`, not a worktree — gem-agent is a submodule): `/clear` between two `!env` commands with `session_start` and `session_end` hooks, so the environment a child sees and the payloads the hooks get are compared too.
+- The exit sequence on a full run (one-shot, plain REPL, TUI) and on a start failing in five different phases, each failing for the reason the case names.
+- `liveSession`-level tests replacing the two copies: the resume tests call `openTranscript`, the grant tests build their granter with `buildConfinement`.
+- The TUI in a real terminal: the characterization child with its scripted model, run under a private tmux server on `b795451` and on `27b8c06` — start, a turn, `/clear`, `/mcp reload`, the settings panel, a second turn, `/quit`. Transcripts and hook payloads identical; screens differing only in a temporary directory's random name and tmux's dead-pane time. A live Vertex session was not run: what the restructure moved does not reach the model client beyond the seam, and the declarations and prompt the model receives are compared byte for byte.
+
+The implementation-time `/code-review` of §4 runs before the release that ships this, as §4 says. "Found while reading" 2 (the exit summary's place) remains the maintainer's call.

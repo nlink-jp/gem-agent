@@ -124,7 +124,15 @@ config.example.toml  shipped config template (pinned by a loader test)
 gem-agent.example.project.toml  shipped <project>/.gem-agent.toml template
 mcp.example.json     shipped MCP server template (pinned by a loader test)
 main.go            entry point (package main, calls cmd.Execute(version))
-cmd/               cobra root command, REPL loop, wiring, system prompt
+cmd/               cobra root command, wiring, system prompt; runREPL (root.go) is
+                   the prologue, the ten startup phases and the front-end choice (ADR-0124)
+cmd/startup.go     the startup phases in order, each taking what earlier phases returned
+cmd/live.go        liveSession: the state holders and the post-startup mutators (clear,
+                   the reloads, the hooks, turn, slash); its methods run between turns only
+cmd/surface.go     where operator-facing output goes: the TUI program once set, else stderr
+cmd/frontends.go   runOneShot, buildBanner, runTUI, runPlain
+cmd/cleanups.go    the teardown stack: pushed as startup sets things up, run last-first once
+cmd/modelclient.go modelClient + newModelClient, the seam the characterization tests replace
 internal/config/   strict-decode TOML + env/flag precedence
 internal/llm/      Backend interface + Vertex AI impl (thought signatures, backoff)
 internal/agent/    tool-calling loop, approval dispatch, nonce wrapping, history,
@@ -260,6 +268,25 @@ a new hook) is an architecture change and takes the same rows as a
 
 ## Gotchas
 
+- **The session is assembled from parts; keep it so** (ADR-0124). A
+  startup step goes into the phase it belongs to in `cmd/startup.go`,
+  never back into `runREPL`; a phase that needs another's result takes
+  it as an argument. State that `/clear` or a reload replaces lives on
+  a holder in `cmd/live.go`, read through it, and what changes it after
+  startup is a `liveSession` method. Output to the operator goes
+  through `surface`, teardown through `cleanups.push`. **Tool
+  registration order is the order of the declarations the model
+  receives** — moving a registration changes the request.
+- **The characterization tests judge what a session does**
+  (`cmd/characterize_test.go`, ADR-0124 §2.6): the whole start run as a
+  child process against a scripted model, compared byte for byte with
+  `cmd/testdata/characterize/` — stdout, stderr, transcripts, the
+  system prompt and tool declarations the model received, the exit
+  sequence. A refactor never runs `-update`; a change that is meant to
+  alter a session records the new reference in its own commit, from
+  code known to be right. Tests that pin wiring by reading source read
+  `cmdSources` or `sessionWiringFiles` (`cmd/sources_test.go`), not one
+  file — a check of a file the code left passes on nothing.
 - **A project skill is compared when the list is built, not when it is
   used** (ADR-0123 §2, superseding ADR-0119). The list is built at
   startup, `/clear` and `/skills reload`, and that is where a changed
@@ -584,15 +611,15 @@ a new hook) is an architecture change and takes the same rows as a
   archived.
 - **Session ids are UUID v4 and `/clear` is a new session** (ADR-0071).
   `session.ValidID` accepts the legacy timestamp form too; never drop it
-  (old transcripts must resume). `/clear` goes through `onClear` in
-  `cmd/root.go`: the new transcript is opened FIRST (a failure leaves
+  (old transcripts must resume). `/clear` goes through `liveSession.clear`
+  in `cmd/live.go`: the new transcript is opened FIRST (a failure leaves
   the session it found — cleared in place, told), then `session_end`,
   `Agent.Restart(newLog)` (no clear record), the old logger closed,
-  `curLog` / `workDir` / `hookSession` reassigned (the deferred closers
-  read the variables), env re-exported, `rotateWorkDir`, then
+  `curLog` / `workDir` / `hookSession` reassigned (the cleanup stack
+  reads them through the holders), env re-exported, `rotateWorkDir`, then
   `sink.Restart` (telemetry re-resourced with the new id in place —
   every holder of the `*Sink`, `Sub` sinks included, follows), the MCP
-  servers reconnected through `reloadMCP` (a server started with
+  servers reconnected through `reconnectMCP` (a server started with
   `${GEMAGENT_SESSION_ID}` in its args must come back with the new id;
   measured: the board's child kept the old one), `session.start`, and
   `session_start` with source `clear` (ADR-0071 addendum).

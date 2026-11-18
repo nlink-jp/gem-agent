@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Internal: the session is assembled from parts** (ADR-0124). The
+  1,900-line function that started a session is ten startup phases, a
+  live session that owns what `/clear` and the reloads change, one
+  place that decides where output goes, and three front ends. Nothing
+  a session does changed; tests now run the whole start against a
+  scripted model and compare everything it leaves behind.
+
 ### Fixed
 
 - **`/clear` no longer crashes a session that started without a

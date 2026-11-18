@@ -77,6 +77,20 @@ disables auditing; the TUI implements the callbacks by sending Bubble
 Tea messages, and the plain REPL by writing to stderr. That is what lets
 the same loop run under a pty, a pipe, and `-p`.
 
+`cmd` assembles a session in phases (ADR-0124, `cmd/startup.go`): it
+resolves the run, admits the project (trust, pins, approval policy),
+opens the transcript, makes the work directory, builds the lanes and the
+registry, loads the project's instructions, skills, MCP servers and
+memory, builds the model tier, chooses the front end, registers the
+remaining tools and assembles the agent — each phase taking what the
+earlier ones returned. What `/clear` and the reloads change afterwards
+lives on one `liveSession` (`cmd/live.go`), whose methods run between
+turns only. Where the callbacks' output goes — the TUI program or
+stderr — is decided in one place, `surface`, and the session's teardown
+is one stack, run last-first when the session ends. The three front
+ends (`-p`, the TUI, the plain REPL) start every turn through
+`liveSession.turn`.
+
 ## The project directory
 
 The current working directory at startup is the project, resolved through
