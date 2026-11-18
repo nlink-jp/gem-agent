@@ -15,8 +15,9 @@
   project with no protected file in it could be replaced the same way.
   The places are now the ones found the first time. When the project
   or the work directory no longer leads there, the sandbox is not
-  built again: a notice names the directory, every shell command asks
-  from then on, and restarting gem-agent brings the sandbox back. A
+  built again: a notice names the directory and where
+  it leads now, and every shell command asks from then on. Put the
+  directory back, then restart gem-agent, to have the sandbox again. A
   large MCP result is not saved through a work directory that became
   a link either — it was written where the link led.
 

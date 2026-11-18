@@ -281,7 +281,14 @@ func (g *dirGranter) grant(ctx context.Context, path string, write bool, source 
 			// from here every shell command asks (ADR-0122 §2).
 			_ = root.Close()
 			g.registry.SetLaneExec(g.shellExec.run, sandbox.Enforcement{})
-			return "", g.tellLeftovers(source, leftovers, errors.New(replacedNote(err)), &notices)
+			note := replacedNote(err)
+			if source != "slash" && g.notice != nil {
+				// The model asked for the directory, and the error is its
+				// result: the operator is told as well why every command
+				// asks from here.
+				notices = append(notices, note)
+			}
+			return "", g.tellLeftovers(source, leftovers, errors.New(note), &notices)
 		}
 		if err != nil {
 			_ = root.Close()

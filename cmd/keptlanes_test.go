@@ -146,7 +146,7 @@ func TestARebuildThatFindsADirectoryReplacedPutsEveryCommandBeforeTheOperator(t 
 			t.Fatal(err)
 		}
 		notes := strings.Join(rotateWorkDir(registry, shellExec, true, proj, work2, nil, nil, false, nil, nil, nil, nil), "\n")
-		if !strings.Contains(notes, "no longer leads to") || !strings.Contains(notes, "every shell command asks you") {
+		if !strings.Contains(notes, "was replaced: it now leads to "+target) || !strings.Contains(notes, "every shell command asks you") {
 			t.Errorf("the notes after /clear: %q", notes)
 		}
 		if got := registry.Enforcement(); got != (sandbox.Enforcement{}) {
@@ -172,7 +172,7 @@ func TestARebuildThatFindsADirectoryReplacedPutsEveryCommandBeforeTheOperator(t 
 			t.Fatalf("the write lane could not replace its work directory (%v)", err)
 		}
 		_, err = g.grant(context.Background(), underHome(t, "notes"), true, "slash", g.currentEpoch(), nil)
-		if err == nil || !strings.Contains(err.Error(), "no longer leads to") || !strings.Contains(err.Error(), "every shell command asks you") {
+		if err == nil || !strings.Contains(err.Error(), "was replaced: it now leads to "+target) || !strings.Contains(err.Error(), "every shell command asks you") {
 			t.Errorf("the grant: %v, want it refused on the replaced work directory", err)
 		}
 		if got := g.registry.Enforcement(); got != (sandbox.Enforcement{}) {
@@ -282,5 +282,57 @@ func TestAResultIsNotSavedThroughAWorkDirectoryThatBecameALink(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
 		t.Errorf("a file was made where the link leads: %d entries", len(entries))
+	}
+}
+
+// An added directory that was replaced fails its own check: the grant
+// is refused, or /clear drops the directory, as for one that is gone.
+// It is not the project or the work directory, and does not put every
+// command before the operator.
+func TestAReplacedAddedDirectoryIsNotAReplacedProject(t *testing.T) {
+	replaced := &sandbox.ReplacedError{Dir: "/a", Was: "/a", Now: "/b"}
+	if !isReplaced(replaced) {
+		t.Error("a replaced project or work directory is not reported as one")
+	}
+	if isReplaced(&sandbox.AddedRootError{Root: sandbox.AddedRoot{Dir: "/a", Write: true}, Err: replaced}) {
+		t.Error("an added directory that was replaced is taken for the project or the work directory")
+	}
+	if got := replaced.Error(); got != "/a was replaced: it now leads to /b" {
+		t.Errorf("the note names the directory as %q", got)
+	}
+	if got := (&sandbox.ReplacedError{Dir: "/a", Was: "/a"}).Error(); got != "/a was replaced by something that leads nowhere" {
+		t.Errorf("a link to nowhere is named as %q", got)
+	}
+}
+
+// A grant the model asked for returns its error to the model. When the
+// rebuild finds the work directory replaced, every command asks from
+// there on, and the operator is told why as well: the note goes to the
+// notices, not only into the tool's result.
+func TestTheOperatorIsToldOfAReplacedDirectoryWhenTheModelAskedForTheGrant(t *testing.T) {
+	g, _, _ := newTestGranter(t, nil, false)
+	var told []string
+	g.notice = func(s string) { told = append(told, s) }
+	work, err := workdir.Ensure(g.projectDir, "sid1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.workDir = func() string { return work }
+	if notes := rotateWorkDir(g.registry, g.shellExec, true, g.projectDir, work, nil, nil, false, nil, nil, nil, nil); len(notes) != 0 {
+		t.Fatalf("giving the session its work directory: %v", notes)
+	}
+	target := underHome(t, "target")
+	if err := runLane(t, g, sandbox.LaneWrite, "cd / && rm -rf "+work+" && ln -s "+target+" "+work); err != nil {
+		t.Fatalf("the write lane could not replace its work directory (%v)", err)
+	}
+	_, err = g.grant(context.Background(), underHome(t, "notes"), true, "request", g.currentEpoch(), map[string]any{"reason": "r", "answer": "approved"})
+	if err == nil || !strings.Contains(err.Error(), "was replaced: it now leads to "+target) {
+		t.Errorf("the grant: %v, want it refused on the replaced work directory", err)
+	}
+	if len(told) != 1 || !strings.Contains(told[0], "was replaced: it now leads to "+target) || !strings.Contains(told[0], "every shell command asks you") {
+		t.Errorf("the operator was told %q, want the note about the replaced directory", told)
+	}
+	if got := g.registry.Enforcement(); got != (sandbox.Enforcement{}) {
+		t.Errorf("after the grant the session still runs commands unasked: %+v", got)
 	}
 }

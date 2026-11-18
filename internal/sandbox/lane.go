@@ -849,7 +849,7 @@ func VerifyReadLane(profile string, spec Spec) (leftovers []string, err error) {
 		// The control: the same thing succeeds outside the sandbox, so a
 		// failure inside is the sandbox's doing. For a write it is this
 		// process's own, into the file made above and no other
-		// (ADR-0121 §2); for the rest, the same command.
+		// (ADR-0122 §3); for the rest, the same command.
 		var err error
 		if m.file != nil {
 			err = m.file.in.write(m.file.name)
@@ -916,7 +916,7 @@ func VerifyWriteLane(profile string, spec Spec) (leftovers []string, err error) 
 	}
 	// mustFail is one probe the lane must refuse: its control — this
 	// process's own write through the directory it holds, never a
-	// shell outside the sandbox on a path (ADR-0121 §2) — and then the
+	// shell outside the sandbox on a path (ADR-0122 §3) — and then the
 	// lane's command.
 	mustFail := func(what string, in *probes, name string, made bool) error {
 		if err := in.write(name); err != nil {

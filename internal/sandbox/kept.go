@@ -14,10 +14,16 @@ import (
 type ReplacedError struct {
 	Dir string // the name
 	Was string // the real path it had
+	Now string // the real path it has, "" when it leads nowhere
 }
 
+// Error names the directory and where it leads now. Where it led is the
+// name itself more often than not, and says nothing.
 func (e *ReplacedError) Error() string {
-	return fmt.Sprintf("%s no longer leads to %s", e.Dir, e.Was)
+	if e.Now == "" {
+		return fmt.Sprintf("%s was replaced by something that leads nowhere", e.Dir)
+	}
+	return fmt.Sprintf("%s was replaced: it now leads to %s", e.Dir, e.Now)
 }
 
 // keptDirs holds, for a directory's name, the real path it resolved to the
@@ -54,7 +60,10 @@ func ResolveKept(dir string) (string, error) {
 		case err != nil && gone(abs):
 			return was.(string), nil
 		}
-		return was.(string), &ReplacedError{Dir: abs, Was: was.(string)}
+		if err != nil {
+			now = ""
+		}
+		return was.(string), &ReplacedError{Dir: abs, Was: was.(string), Now: now}
 	}
 	if err != nil {
 		return "", err

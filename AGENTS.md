@@ -349,8 +349,11 @@ a new hook) is an architecture change and takes the same rows as a
   replace its work directory, or a project with no protected name in
   it, by a link: resolved again, the name anchored the write lane on
   the link's target (measured). A directory a profile is anchored on
-  is resolved with `ResolveKept`, never `ResolveWriteDir`, wherever
-  the call can run after a lane has run. A `*sandbox.ReplacedError`
+  is resolved with `ResolveKept`, not `ResolveWriteDir`, wherever the
+  call can run after a lane has run (the scratch and cache directories
+  are made by the runtime and refused as links by an `Lstat` first). An
+  added directory that was replaced fails its own check and is dropped
+  or not added: `isReplaced` is false for an `AddedRootError`. A `*sandbox.ReplacedError`
   from the build is not "keep the previous profile": `rotateWorkDir`
   and `dirGranter.grant` put every command before the operator
   (`sandbox.Enforcement{}`) and say so (`replacedNote`). The same

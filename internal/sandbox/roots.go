@@ -307,7 +307,7 @@ func verifyAddedRoot(profiles map[Lane]string, a AddedRoot, readLane bool) (note
 	// mustFail is one probe a lane must refuse. Its control is this
 	// process's own — a write that makes the file, removed again before
 	// the lane's command, or a read of the file made above — never a
-	// shell outside the sandbox on a path (ADR-0121 §2).
+	// shell outside the sandbox on a path (ADR-0122 §3).
 	mustFail := func(lane Lane, command, name, probe, allowed string, read bool) error {
 		var err error
 		if read {
