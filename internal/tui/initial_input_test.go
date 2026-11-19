@@ -87,16 +87,16 @@ func TestFirstFrameCmdsCarryInitialMessageLast(t *testing.T) {
 		},
 	})
 	cmds := m.firstFrameCmds()
-	if len(cmds) != 4 { // clear + 2 banner lines + initial message
-		t.Fatalf("len(cmds) = %d, want 4", len(cmds))
+	if len(cmds) != 5 { // clear + 2 banner lines + framed + initial message
+		t.Fatalf("len(cmds) = %d, want 5", len(cmds))
 	}
 	last := cmds[len(cmds)-1]
 	if got, ok := last().(initialSubmit); !ok || string(got) != "go" {
 		t.Fatalf("last cmd yielded %#v, want initialSubmit(%q)", last(), "go")
 	}
 	m.initialInput = ""
-	if n := len(m.firstFrameCmds()); n != 3 {
-		t.Errorf("without initial input len = %d, want 3 (clear + banner)", n)
+	if n := len(m.firstFrameCmds()); n != 4 {
+		t.Errorf("without initial input len = %d, want 4 (clear + banner + framed)", n)
 	}
 }
 

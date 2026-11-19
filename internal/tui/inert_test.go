@@ -120,6 +120,8 @@ func inertModel(c *capture) Model {
 	m := New(Options{Printer: c.printer, Theme: "dark", StartTurn: func(context.Context, string) {}})
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m = next.(Model)
+	next, _ = m.Update(firstFramed{})
+	m = next.(Model)
 	m.phase = phaseRunning
 	return m
 }
@@ -469,6 +471,8 @@ func TestTheHeldRendererClosesWhatItLeavesOpen(t *testing.T) {
 			return func(s string) string { return "\x1b[8m" + s }
 		}})
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = next.(Model)
+	next, _ = m.Update(firstFramed{})
 	m = next.(Model)
 	m.phase = phaseRunning
 	next, _ = m.Update(TextDelta("reply"))

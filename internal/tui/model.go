@@ -386,6 +386,11 @@ type Model struct {
 	width  int
 	height int
 	sized  bool // first WindowSizeMsg received
+	// framed is set when the first frame's clear and banner are done
+	// (firstFramed); early holds the background notes that arrived
+	// between the first size report and it.
+	framed bool
+	early  []string
 	banner []string
 	// initialInput is the argv first message (ADR-0064); cleared when
 	// the first size report queues its submission, so a resize can
@@ -640,6 +645,12 @@ func (m Model) Init() tea.Cmd { return textarea.Blink }
 // typed-input path once the banner has printed.
 type initialSubmit string
 
+// firstFramed arrives after the first frame's clear and banner: a
+// background note raised between the first size report and it waits for
+// it, since the clear would wipe one printed before (ADR-0124 addendum,
+// Found 6).
+type firstFramed struct{}
+
 // initialCmd wraps the pending initial input as a message; nil when
 // there is none.
 func (m Model) initialCmd() tea.Cmd {
@@ -659,6 +670,7 @@ func (m Model) firstFrameCmds() []tea.Cmd {
 	for _, line := range m.banner {
 		cmds = append(cmds, m.emit(line))
 	}
+	cmds = append(cmds, func() tea.Msg { return firstFramed{} })
 	if c := m.initialCmd(); c != nil {
 		cmds = append(cmds, c)
 	}
@@ -914,13 +926,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			msg.Shown()
 		}
 		line := m.st.warn.Render("⚠ " + msg.Text)
-		if !m.sized {
+		switch {
+		case !m.sized:
 			// Before the first frame the screen is about to be cleared:
 			// the note joins the banner, printed after the clear.
 			m.banner = append(m.banner, line)
 			return m, nil
+		case !m.framed:
+			// The first frame's clear is on its way: printed now, the
+			// note would be wiped by it.
+			m.early = append(m.early, line)
+			return m, nil
 		}
 		return m, m.emitJoined(line)
+
+	case firstFramed:
+		m.framed = true
+		if len(m.early) == 0 {
+			return m, nil
+		}
+		early := m.early
+		m.early = nil
+		return m, m.emitJoined(early...)
 
 	case Attached:
 		var parts []string

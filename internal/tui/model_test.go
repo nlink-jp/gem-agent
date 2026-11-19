@@ -259,6 +259,8 @@ func TestBackgroundNoteIsVisibleAndAcknowledged(t *testing.T) {
 	m := newTestModel(c)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = sized.(Model)
+	framed, _ := m.Update(firstFramed{})
+	m = framed.(Model)
 	shown := false
 	m.Update(BackgroundNote{Text: "telemetry export failing (reported once): refused", Shown: func() { shown = true }})
 	if out := c.all(); !strings.Contains(out, "⚠") || !strings.Contains(out, "telemetry export failing") {
@@ -266,6 +268,28 @@ func TestBackgroundNoteIsVisibleAndAcknowledged(t *testing.T) {
 	}
 	if !shown {
 		t.Error("the sender was not told the note was taken")
+	}
+}
+
+// One that arrives after the first size report but before the first
+// frame is drawn waits for it: the frame's clear would wipe it.
+func TestBackgroundNoteBeforeTheFrameIsDrawnWaits(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = next.(Model)
+	next, cmd := m.Update(BackgroundNote{Text: "telemetry export failing (reported once): refused"})
+	m = next.(Model)
+	if cmd != nil || strings.Contains(c.all(), "telemetry export failing") {
+		t.Fatalf("printed before the first frame was drawn: %q", c.all())
+	}
+	next, _ = m.Update(firstFramed{})
+	m = next.(Model)
+	if !strings.Contains(c.all(), "telemetry export failing") {
+		t.Fatalf("the held note was not printed once the frame was drawn: %q", c.all())
+	}
+	if !m.framed || len(m.early) != 0 {
+		t.Fatalf("framed=%v early=%q", m.framed, m.early)
 	}
 }
 
