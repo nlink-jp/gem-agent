@@ -131,7 +131,7 @@ func buildBanner(sess *liveSession, cmd *cobra.Command, adm admission, op opened
 }
 
 // runTUI runs the interactive TUI until the operator leaves.
-func runTUI(sess *liveSession, cmd *cobra.Command, cl *cleanups, notes *startupNotes, rs runSettings, adm admission, ld loaded, md models, fe frontEnd, as assembled, bannerLines []string, picture diagram.Picture) error {
+func runTUI(sess *liveSession, cl *cleanups, notes *startupNotes, rs runSettings, adm admission, ld loaded, md models, fe frontEnd, as assembled, bannerLines []string, picture diagram.Picture) error {
 	// --- interactive TUI (ADR-0002/0003) ---
 	// prog is assigned before the TUI runs; the agent only executes
 	// inside prog.Run, so the callbacks below never see it half-set.

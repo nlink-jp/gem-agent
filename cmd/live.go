@@ -463,7 +463,6 @@ func (sess *liveSession) clear() string {
 	sess.grant.excluded, pinNotes = checkPins(sess.cfg, sess.policyFile, sess.policyPath, sess.projectDir, sess.projectTrusted, false, nil, io.Discard, sess.msgs)
 	notes = append(notes, pinNotes...)
 	sess.projectContext, sess.contextLabels, sess.contextNotes = loadInstructions(sess.projectDir, sess.grant)
-	_ = sess.contextLabels
 	notes = append(notes, sess.contextNotes...)
 	// The project skills follow the same grant (review F8): one
 	// that changed during the old session is left out with the

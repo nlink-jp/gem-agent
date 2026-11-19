@@ -193,7 +193,7 @@ func runREPL(cmd *cobra.Command, args []string) error {
 	}
 	bannerLines, picture := buildBanner(sess, cmd, adm, op, ld, fe)
 	if fe.useTUI {
-		return runTUI(sess, cmd, cl, notes, rs, adm, ld, md, fe, as, bannerLines, picture)
+		return runTUI(sess, cl, notes, rs, adm, ld, md, fe, as, bannerLines, picture)
 	}
 	return runPlain(sess, cmd, notes, rs, adm, ld, md, fe, as, bannerLines)
 }
