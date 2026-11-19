@@ -237,6 +237,10 @@ func runTUI(sess *liveSession, cmd *cobra.Command, cl *cleanups, notes *startupN
 		_ = liveLog{get: func() agent.SessionLog { return sess.sessionLog }}.Log("library_log", map[string]any{"line": line})
 	}))
 	_, err := prog.Run()
+	// What the exit says — the session_end hooks run in the cleanups —
+	// goes to the terminal: the ended program drops what it is sent
+	// (ADR-0124 addendum, Found 5).
+	sess.surf.setProgram(nil)
 	return err
 }
 

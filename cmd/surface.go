@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync/atomic"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -21,27 +22,32 @@ import (
 //
 // One type whose program field decides, rather than an interface with a
 // TUI and a stream implementation: the program is late-bound, so the same
-// value has to be the stream before it is the TUI.
+// value has to be the stream before the TUI runs and again after it ends.
 type surface struct {
 	w        io.Writer
 	msgs     *uitext.Messages
 	oneShot  bool
 	plainAsk askFunc
-	// prog is set once, before the program runs; the agent only executes
-	// inside prog.Run, so no caller sees it half-set.
-	prog *tea.Program
+	// prog is set before the program runs and cleared when it returns:
+	// a Send to a program that has ended is dropped without a word
+	// (Bubble Tea selects on its cancelled context), so what the exit
+	// says — a session_end hook's notice — went nowhere (ADR-0124
+	// addendum, Found 5). Atomic: a goroutine the session started may
+	// still report as the program ends.
+	prog atomic.Pointer[tea.Program]
 	// hookSink, while set, collects hook notices instead of showing them
 	// (collectHookNotices).
 	hookSink *[]string
 }
 
-func (s *surface) setProgram(p *tea.Program) { s.prog = p }
+// setProgram routes output to p; nil routes it back to the stream.
+func (s *surface) setProgram(p *tea.Program) { s.prog.Store(p) }
 
 // notice puts a one-line warning in front of the operator wherever they
 // are: the TUI's note strip, stderr otherwise.
 func (s *surface) notice(msg string) {
-	if s.prog != nil {
-		s.prog.Send(tui.Attached{Notes: []string{msg}})
+	if p := s.prog.Load(); p != nil {
+		p.Send(tui.Attached{Notes: []string{msg}})
 		return
 	}
 	fmt.Fprintf(s.w, "[⚠ %s]\n", msg)
@@ -72,8 +78,8 @@ func (s *surface) collectHookNotices(into *[]string) (stop func()) {
 // stdin) get the declared purpose on its own line too (ADR-0047 §5): the
 // transcript of a scripted run is the only record it leaves behind.
 func (s *surface) toolCall(name, detail, purpose string) {
-	if s.prog != nil {
-		s.prog.Send(tui.ToolCall{Name: name, Detail: detail, Purpose: purpose})
+	if p := s.prog.Load(); p != nil {
+		p.Send(tui.ToolCall{Name: name, Detail: detail, Purpose: purpose})
 		return
 	}
 	fmt.Fprintf(s.w, "\n[tool] %s %s\n", name, detail)
@@ -85,8 +91,8 @@ func (s *surface) toolCall(name, detail, purpose string) {
 // childToolCall shows a tool call of the agentic search child, so the
 // operator watches the delegation happen instead of a silent pause.
 func (s *surface) childToolCall(name, detail string) {
-	if s.prog != nil {
-		s.prog.Send(tui.ToolCall{Name: "↳ " + name, Detail: detail})
+	if p := s.prog.Load(); p != nil {
+		p.Send(tui.ToolCall{Name: "↳ " + name, Detail: detail})
 		return
 	}
 	fmt.Fprintf(s.w, "\n[tool ↳] %s %s\n", name, detail)
@@ -94,8 +100,8 @@ func (s *surface) childToolCall(name, detail string) {
 
 // toolDone is the tool-finished signal; only the TUI has state to leave.
 func (s *surface) toolDone(name string) {
-	if s.prog != nil {
-		s.prog.Send(tui.ToolDone{Name: name})
+	if p := s.prog.Load(); p != nil {
+		p.Send(tui.ToolDone{Name: name})
 	}
 }
 
@@ -103,8 +109,8 @@ func (s *surface) toolDone(name string) {
 func (s *surface) childToolDone(name string) { s.toolDone("↳ " + name) }
 
 func (s *surface) attached(lines, notes []string) {
-	if s.prog != nil {
-		s.prog.Send(tui.Attached{Lines: lines, Notes: notes})
+	if p := s.prog.Load(); p != nil {
+		p.Send(tui.Attached{Lines: lines, Notes: notes})
 		return
 	}
 	for _, l := range lines {
@@ -116,16 +122,16 @@ func (s *surface) attached(lines, notes []string) {
 }
 
 func (s *surface) autoApproved(tool, reason, tier string) {
-	if s.prog != nil {
-		s.prog.Send(tui.AutoApproved{Tool: tool, Reason: reason, Tier: tier})
+	if p := s.prog.Load(); p != nil {
+		p.Send(tui.AutoApproved{Tool: tool, Reason: reason, Tier: tier})
 		return
 	}
 	fmt.Fprintf(s.w, "[%s]\n", fmt.Sprintf(strings.TrimSpace(s.msgs.AutoApprovedFmt), tier, tool+": "+reason))
 }
 
 func (s *surface) output(lines []string) {
-	if s.prog != nil {
-		s.prog.Send(tui.Output{Lines: lines})
+	if p := s.prog.Load(); p != nil {
+		p.Send(tui.Output{Lines: lines})
 		return
 	}
 	for _, l := range lines {
@@ -136,21 +142,21 @@ func (s *surface) output(lines []string) {
 // usage, stream and contextWindow feed the TUI's footer and status line;
 // a session without one shows none of them.
 func (s *surface) usage(u llm.Usage) {
-	if s.prog != nil {
-		s.prog.Send(tui.Usage{Prompt: u.Prompt, Output: u.Output, Cached: u.Cached})
+	if p := s.prog.Load(); p != nil {
+		p.Send(tui.Usage{Prompt: u.Prompt, Output: u.Output, Cached: u.Cached})
 	}
 }
 
 func (s *surface) stream(ev llm.StreamEvent) {
-	if s.prog != nil {
-		s.prog.Send(tui.StreamUpdate{Kind: ev.Kind, Thought: ev.Thought,
+	if p := s.prog.Load(); p != nil {
+		p.Send(tui.StreamUpdate{Kind: ev.Kind, Thought: ev.Thought,
 			Attempt: ev.Attempt, Max: ev.Max, Cause: ev.Cause, DelayMS: ev.DelayMS})
 	}
 }
 
 func (s *surface) contextWindow(tokens int, assumed bool) {
-	if s.prog != nil {
-		s.prog.Send(tui.ContextWindow{Tokens: tokens, Assumed: assumed})
+	if p := s.prog.Load(); p != nil {
+		p.Send(tui.ContextWindow{Tokens: tokens, Assumed: assumed})
 	}
 }
 
@@ -163,9 +169,9 @@ func (s *surface) ask(ctx context.Context, question string, options []string) (i
 	if s.oneShot {
 		return oneShotAsk(ctx, question, options)
 	}
-	if s.prog != nil {
+	if p := s.prog.Load(); p != nil {
 		resp := make(chan int, 1)
-		s.prog.Send(tui.AskRequest{Question: question, Options: options, Resp: resp})
+		p.Send(tui.AskRequest{Question: question, Options: options, Resp: resp})
 		idx := <-resp
 		if idx < 0 {
 			return 0, errAskDeclined
