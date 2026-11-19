@@ -642,9 +642,14 @@ a new hook) is an architecture change and takes the same rows as a
   stream: under the TUI the next redraw covers it (ADR-0124 addendum,
   Found 4) — a reporter used at `/clear` and at exit takes its writer per
   call. A goroutine outside the session's own warns through
-  `surface.backgroundWarning`, never `os.Stderr` (Found 6), and after the
-  TUI ends `runTUI` clears the surface's program: an ended program drops
-  what it is sent (Found 5).
+  `surface.backgroundWarning`, never `os.Stderr` (Found 6): it replays
+  what the terminal showed before the TUI and prints what the TUI never
+  took. After the TUI ends `runTUI` calls `surface.endTUI`: an ended
+  program drops what it is sent, so the exit's notices go to the stream
+  and everything else is dropped — a turn left running must not print
+  after the exit summary (Found 5). Text an operator or a model reads
+  never names a variable: `TestNoStringLiteralNamesAWiringLocal` refuses
+  a literal naming a wiring local, which a rename once reached.
 - **`Restart` drops the old session's state** (ADR-0072 §2.3) —
   `pendingAtts`, `lateNotices`, the compaction failure count and its
   warning, and `logDead`; `Reset` keeps them (same session). The

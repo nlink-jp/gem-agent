@@ -261,3 +261,17 @@ lagent's restructure (its ADR-0054) measured what this record left as it was: th
 **Where this differs from §2.** The surface is built in `buildModels`, ahead of the telemetry exporter whose warnings it routes, not in `chooseFrontEnd` (§2.1's table); `chooseFrontEnd` adds the plain REPL's answer reader. §2.4's "set once before `Run`" is now "set before `Run`, cleared after".
 
 **What else was listed and left.** The MCP reloads and the grant's watch already return their notes; the interrupt ladder writes only outside the TUI; `GEMAGENT_MCP_STDERR=1` hands a server's stderr to the terminal on purpose, as a debugging switch.
+
+### The review before release (2026-11-19)
+
+Two bounded passes, as CONVENTIONS §Verify sets them: one over `v0.108.1..HEAD`, and the fix-diff pass over `90524ba` that v0.108.1 skipped. The latter found nothing: each fix did what its message says. The former found three low findings, and lagent's review of the same restructure (its ADR-0054) found more that hold here; every one was checked against this code.
+
+1. **Two refusal messages were changed by the restructure and shipped in v0.108.1** (medium, from lagent's review): the rewrite of locals into fields reached inside the strings, and `/show` and the model's `show_image` read "cannot draw inline fe.images" and "has no ld.screen". Fixed (`48a7b08`). Every string literal of `cmd` was compared between v0.108.0 and HEAD with a Go parser; these two were the only ones changed. `TestNoStringLiteralNamesAWiringLocal` refuses the class.
+2. **The window lookup raced the startup tee** (from lagent's review, present here before 0.108, in one-shot mode too). Fixed (`3a8b0cf`): the tee is locked, and the plain REPL starts the lookup after the banner.
+3. **Found 5's fix sent every surface method back to the stream** when the TUI ended. Fixed (`1c8d66d`): `surface.endTUI` lets the exit's notices through and drops the rest.
+4. **An export failure during the start was still wiped by the TUI's first clear**, so the CHANGELOG's "now a note in the TUI" did not hold there. Fixed (`1c8d66d`): the warning is kept and replayed; one that reaches the TUI before its first frame joins the banner.
+5. **One sent as the program ended was dropped**, and the once-only warning was then spent. Fixed (`1c8d66d`): the TUI acknowledges a `BackgroundNote`, and `endTUI` prints the ones never taken.
+6. **The inert-streams order check saw only `runREPL`'s own statements** (from lagent's review). A call handed `cmd` now counts (`04d06fe`).
+7. **An unused parameter and a no-op read** (`049e821`).
+
+**What the characterization does not cover**, recorded as the limit of what judged §1–§2 (lagent's review named it; the harness is the same here): every scenario runs unsandboxed, with no MCP server, no resume and no added directory. Those paths were checked by reading and by the resume and grant tests that call the phases, not by comparing output against v0.108.0.
