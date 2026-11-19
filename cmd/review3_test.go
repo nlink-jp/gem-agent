@@ -101,6 +101,9 @@ func TestNoSecondStdinReader(t *testing.T) {
 // The tee is written from goroutines the session starts (the context
 // window lookup) while the start writes and freezes it: run with -race.
 func TestStartupNotesConcurrentWrites(t *testing.T) {
+	if !raceEnabled {
+		t.Skip("only the race detector sees this: go test -race")
+	}
 	var out bytes.Buffer
 	n := &startupNotes{w: &lockedBuffer{b: &out}}
 	done := make(chan struct{})

@@ -69,7 +69,8 @@ func cmdSources(t *testing.T) (names []string, src map[string]string) {
 }
 
 // wiringLocal matches a field reached through one of the session
-// wiring's locals — runREPL's: the liveSession and the phases' results.
+// wiring's locals: the liveSession and the phases' results runREPL names,
+// the values a rename of locals into fields reaches.
 var wiringLocal = regexp.MustCompile(`\b(sess|adm|as|cf|cl|fe|fl|ld|md|notes|op|rg|rs|wa)\.[A-Za-z]`)
 
 // No string literal names a wiring local. The restructure rewrote locals
@@ -96,5 +97,42 @@ func TestNoStringLiteralNamesAWiringLocal(t *testing.T) {
 	}
 	if literals < 100 {
 		t.Fatalf("only %d string literals found — the scan is broken, not the tree", literals)
+	}
+}
+
+// funcBody is the source of one top-level function of the package.
+func funcBody(t *testing.T, name string) string {
+	t.Helper()
+	names, src := cmdSources(t)
+	for _, f := range names {
+		body := src[f]
+		i := strings.Index(body, "\nfunc "+name+"(")
+		if i < 0 {
+			continue
+		}
+		j := strings.Index(body[i+1:], "\n}\n")
+		if j < 0 {
+			t.Fatalf("the end of %s not found", name)
+		}
+		return body[i : i+1+j]
+	}
+	t.Fatalf("%s not found in cmd — the scan is broken, not the tree", name)
+	return ""
+}
+
+// The front ends' order, which no run shows: the surface is ended after
+// the program returns (ADR-0124 addendum, Found 5) — before, it routes nothing; not
+// at all, and the exit's hooks say nothing — and the plain REPL's window
+// lookup starts after the banner, which it could otherwise split.
+func TestFrontEndOrder(t *testing.T) {
+	for _, c := range []struct{ fn, first, then string }{
+		{"runTUI", "prog.Run()", "sess.surf.endTUI()"},
+		{"runPlain", `"/help for commands, Ctrl+D to quit`, "go sess.resolveWindow()"},
+	} {
+		body := funcBody(t, c.fn)
+		a, b := strings.Index(body, c.first), strings.Index(body, c.then)
+		if a < 0 || b < 0 || b < a {
+			t.Errorf("%s: want %q after %q (at %d, %d)", c.fn, c.then, c.first, b, a)
+		}
 	}
 }
