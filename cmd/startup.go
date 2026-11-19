@@ -1213,7 +1213,7 @@ func assembleSession(sess *liveSession, cmd *cobra.Command, cl *cleanups, rs run
 			}
 		})
 	}
-	cl.push("run the session-end hooks", func() { sess.sessionEndHooks("exit") })
+	cl.push("run the session-end hooks", func() { sess.surf.sayingExit(func() { sess.sessionEndHooks("exit") }) })
 	cl.push("report the project's persistent files", func() {
 		sess.reportPersistent("exit", sess.stderr, sess.log)
 	})

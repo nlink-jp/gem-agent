@@ -184,7 +184,8 @@ func TestSurfaceAfterTheTUIEnds(t *testing.T) {
 	if _, err := s.ask(context.Background(), "q", []string{"a", "b"}); err != errAskDeclined {
 		t.Errorf("ask after the end = %v, want declined", err)
 	}
-	s.hookNotice("session_end hook failed")
+	s.hookNotice("a wedged turn's pre_tool_use hook timed out")
+	s.sayingExit(func() { s.hookNotice("session_end hook failed") })
 	s.backgroundWarning("telemetry export failing (reported once): refused")
 	if got, want := w.String(), "[⚠ session_end hook failed]\n"; got != want {
 		t.Fatalf("stream after the end:\n%q\nwant:\n%q", got, want)

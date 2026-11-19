@@ -23,7 +23,8 @@ import (
 //
 // One type whose program field decides, rather than an interface with a
 // TUI and a stream implementation: the program is late-bound, so the same
-// value has to be the stream before the TUI runs and again after it ends.
+// value has to be the stream before the TUI runs. After it ends (endTUI)
+// only the exit speaks, to the stream; the rest is dropped.
 type surface struct {
 	w io.Writer
 	// term is the terminal itself, for warnings from goroutines the
@@ -33,23 +34,24 @@ type surface struct {
 	msgs     *uitext.Messages
 	oneShot  bool
 	plainAsk askFunc
-	// prog is set before the program runs and cleared when it ends:
-	// a Send to a program that has ended is dropped without a word
-	// (Bubble Tea selects on its cancelled context), so what the exit
-	// says — a session_end hook's notice — went nowhere (ADR-0124
-	// addendum, Found 5). Atomic: a goroutine the session started, or
+	// prog is set before the program runs and stays set: a Send to it
+	// after it has ended is dropped without a word (Bubble Tea selects on
+	// its cancelled context), which is what a late report should get —
+	// but what the exit says went nowhere too (ADR-0124 addendum, Found
+	// 5); ended routes that. Atomic: a goroutine the session started, or
 	// the telemetry exporter's, may still report as the program ends.
 	prog atomic.Pointer[tea.Program]
 	// hookSink, while set, collects hook notices instead of showing them
 	// (collectHookNotices).
 	hookSink *[]string
 	// ended is set when the TUI has ended (endTUI). The exit's own
-	// speakers — the session_end hooks, the exporter's flush — reach the
-	// stream then; what a turn still running reports (one left behind by
-	// the third Ctrl+C on a wedged tool, a late window lookup) is
-	// dropped, as the ended program dropped it: it would land after the
-	// exit summary.
-	ended atomic.Bool
+	// speakers — the session_end hooks while sayingExit runs them, the
+	// exporter's flush — reach the stream then; what a turn still running
+	// reports (one left behind by the third Ctrl+C on a wedged tool, its
+	// hooks) is dropped, as the ended program dropped it: it would land
+	// after the exit summary.
+	ended     atomic.Bool
+	exitHooks atomic.Bool
 
 	// bg guards the background warnings' bookkeeping. pending holds the
 	// ones written to the terminal before a TUI ran, which its first
@@ -86,15 +88,26 @@ func (s *surface) withoutTUI() {
 // program is dropped without a word, so the exit's notices go to the
 // stream, the background warnings the program never took are written
 // there, and the rest is dropped on purpose (ADR-0124 addendum, Found 5).
+//
+// The program stays set: a method that read ended a moment before still
+// sends to it, and the ended program drops that too, where a cleared one
+// would have sent it to the stream.
 func (s *surface) endTUI() {
 	s.bg.Lock()
 	defer s.bg.Unlock()
 	s.ended.Store(true)
-	s.prog.Store(nil)
 	for _, msg := range s.unshown {
 		fmt.Fprintf(s.term, "warning: %s\n", msg)
 	}
 	s.unshown = nil
+}
+
+// sayingExit runs the exit's session_end hooks: their notices reach the
+// stream after the TUI has ended; any other hook's are dropped then.
+func (s *surface) sayingExit(run func()) {
+	s.exitHooks.Store(true)
+	defer s.exitHooks.Store(false)
+	run()
 }
 
 // backgroundWarning is a warning from a goroutine outside the session's
@@ -107,7 +120,7 @@ func (s *surface) endTUI() {
 func (s *surface) backgroundWarning(msg string) {
 	s.bg.Lock()
 	defer s.bg.Unlock()
-	if p := s.prog.Load(); p != nil {
+	if p := s.prog.Load(); p != nil && !s.ended.Load() {
 		s.sendBackground(p, msg)
 		return
 	}
@@ -160,9 +173,12 @@ func (s *surface) hookNotice(msg string) {
 		return
 	}
 	if s.ended.Load() {
-		// The exit's session_end hooks: the program has ended, the
-		// stream is the operator's screen again.
-		fmt.Fprintf(s.w, "[⚠ %s]\n", msg)
+		// The program has ended: the exit's session_end hooks speak on
+		// the stream, the operator's screen again; a hook of a turn left
+		// running does not.
+		if s.exitHooks.Load() {
+			fmt.Fprintf(s.w, "[⚠ %s]\n", msg)
+		}
 		return
 	}
 	s.notice(msg)
