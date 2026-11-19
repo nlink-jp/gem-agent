@@ -129,7 +129,7 @@ cmd/               cobra root command, wiring, system prompt; runREPL (root.go) 
 cmd/startup.go     the startup phases in order, each taking what earlier phases returned
 cmd/live.go        liveSession: the state holders and the post-startup mutators (clear,
                    the reloads, the hooks, turn, slash); its methods run between turns only
-cmd/surface.go     where operator-facing output goes: the TUI program once set, else stderr
+cmd/surface.go     where operator-facing output goes: the TUI program while it runs, else stderr
 cmd/frontends.go   runOneShot, buildBanner, runTUI, runPlain
 cmd/cleanups.go    the teardown stack: pushed as startup sets things up, run last-first once
 cmd/modelclient.go modelClient + newModelClient, the seam the characterization tests replace
@@ -638,7 +638,13 @@ a new hook) is an architecture change and takes the same rows as a
   unbuffered and `Update` is its only consumer, so the call never
   returns. `hookNotify` appends to `uiNotes` while `onClear` runs and
   the notes ride back in the slash output; anything else raised from a
-  slash path must do the same.
+  slash path must do the same. So does anything written to a terminal
+  stream: under the TUI the next redraw covers it (ADR-0124 addendum,
+  Found 4) — a reporter used at `/clear` and at exit takes its writer per
+  call. A goroutine outside the session's own warns through
+  `surface.backgroundWarning`, never `os.Stderr` (Found 6), and after the
+  TUI ends `runTUI` clears the surface's program: an ended program drops
+  what it is sent (Found 5).
 - **`Restart` drops the old session's state** (ADR-0072 §2.3) —
   `pendingAtts`, `lateNotices`, the compaction failure count and its
   warning, and `logDead`; `Reset` keeps them (same session). The
