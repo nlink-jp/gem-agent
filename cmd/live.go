@@ -139,14 +139,19 @@ func newLiveSession() *liveSession {
 	}
 }
 
-func (sess *liveSession) reportPersistent(reason string, log func(kind string, data any) error) {
+// reportPersistent says on out what this session added, changed or
+// removed among the project's persistent files, and records it. The
+// caller names out: at exit the terminal, at /clear the command's
+// output — under the TUI a write to the startup stream is covered by
+// the next redraw (ADR-0124 addendum, Found 4).
+func (sess *liveSession) reportPersistent(reason string, out io.Writer, log func(kind string, data any) error) {
 	now, a, c, r, cut := persistentReport(sess.persistentSnap, func() (map[string]string, bool) { return trustpin.Snapshot(sess.projectDir) })
 	if cut {
-		fmt.Fprintf(sess.stderr, "note: change detection covers the first %d files under the project only\n", trustpin.WalkEntries)
+		fmt.Fprintf(out, "note: change detection covers the first %d files under the project only\n", trustpin.WalkEntries)
 	}
 	if len(a)+len(c)+len(r) > 0 || cut {
 		if len(a)+len(c)+len(r) > 0 {
-			fmt.Fprintf(sess.stderr, sess.msgs.PersistentSessionFmt+"\n", describeSnapshotDiff(a, c, r))
+			fmt.Fprintf(out, sess.msgs.PersistentSessionFmt+"\n", describeSnapshotDiff(a, c, r))
 		}
 		if log != nil {
 			_ = log("persistent_changes", map[string]any{"reason": reason, "added": a, "changed": c, "removed": r, "cut": cut})
@@ -441,8 +446,11 @@ func (sess *liveSession) clear() string {
 	// states and external consumers observe; the trail closes under
 	// the old id before the sink is re-resourced for the new one.
 	sess.sessionEndHooks("clear")
-	sess.reportPersistent("clear", sess.log)
-	sess.watch.report("clear", sess.log)
+	// The reports join the command's output: /clear runs inside the
+	// TUI, where a line written to the terminal is covered by the next
+	// redraw (ADR-0124 addendum, Found 4).
+	sess.reportPersistent("clear", &extra, sess.log)
+	sess.watch.report("clear", &extra, sess.log)
 	sess.sink.SessionEnd()
 	sess.ag.Restart(newLog)
 	// A new session: a new start day, and no longer a resumed one

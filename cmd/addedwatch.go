@@ -35,7 +35,10 @@ type addedWatch struct {
 	// roots this session watches and no others, so it does not grow
 	// with roots the operator stopped adding.
 	path string
-	out  io.Writer
+	// No writer is kept: the startup report goes to the one the
+	// constructor is given, and report and add say where each time —
+	// a writer held from startup was written at /clear, under the
+	// TUI, whose redraw covered it (ADR-0124 addendum, Found 4).
 	msgs *uitext.Messages
 	// projectDir locates the state file for a session that started
 	// with no write roots and gains one by a grant.
@@ -53,7 +56,7 @@ func newAddedWatch(added []addedDir, projectDir string, out io.Writer, msgs *uit
 }
 
 func newAddedWatchWith(added []addedDir, projectDir string, out io.Writer, msgs *uitext.Messages, snapshot func(string) (map[string]string, bool)) *addedWatch {
-	w := &addedWatch{base: map[string]map[string]string{}, out: out, msgs: msgs, snapshot: snapshot, projectDir: projectDir}
+	w := &addedWatch{base: map[string]map[string]string{}, msgs: msgs, snapshot: snapshot, projectDir: projectDir}
 	for _, a := range added {
 		if a.Write {
 			w.roots = append(w.roots, a.Dir)
@@ -90,7 +93,7 @@ func newAddedWatchWith(added []addedDir, projectDir string, out io.Writer, msgs 
 // report walks each write root again and says what this session added,
 // changed or removed since the last report, writing a
 // persistent_changes record with the root beside the project's own.
-func (w *addedWatch) report(reason string, log func(kind string, data any) error) {
+func (w *addedWatch) report(reason string, out io.Writer, log func(kind string, data any) error) {
 	if w == nil {
 		return
 	}
@@ -112,12 +115,12 @@ func (w *addedWatch) report(reason string, log func(kind string, data any) error
 			// A walk the session cut short — a command can fill the root
 			// past the cap — says so, and names nothing past the cut as
 			// removed: it is unknown, not gone (review of §10, #2).
-			_, _ = fmt.Fprintf(w.out, w.msgs.AddedPersistentCutFmt+"\n", trustpin.WalkEntries, root)
+			_, _ = fmt.Fprintf(out, w.msgs.AddedPersistentCutFmt+"\n", trustpin.WalkEntries, root)
 			r = nil
 		}
 		if len(a)+len(c)+len(r) > 0 || cut {
 			if len(a)+len(c)+len(r) > 0 {
-				_, _ = fmt.Fprintf(w.out, w.msgs.AddedPersistentSessionFmt+"\n", root, describeSnapshotDiff(a, c, r))
+				_, _ = fmt.Fprintf(out, w.msgs.AddedPersistentSessionFmt+"\n", root, describeSnapshotDiff(a, c, r))
 			}
 			if log != nil {
 				_ = log("persistent_changes", map[string]any{"reason": reason, "root": root, "added": a, "changed": c, "removed": r, "cut": cut})

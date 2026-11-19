@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **`/clear` in the TUI names the persistent files the session
+  changed.** The note "this session added or changed: …" — for the
+  project and for each directory added with write access — was written
+  to the terminal while the TUI held the screen, and the next redraw
+  covered it: it was in the transcript and nowhere on screen. It is now
+  part of `/clear`'s output.
+
 ## [0.108.1] - 2026-11-18
 
 ### Changed

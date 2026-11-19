@@ -1206,14 +1206,14 @@ func assembleSession(sess *liveSession, cmd *cobra.Command, cl *cleanups, rs run
 	}
 	cl.push("run the session-end hooks", func() { sess.sessionEndHooks("exit") })
 	cl.push("report the project's persistent files", func() {
-		sess.reportPersistent("exit", sess.log)
+		sess.reportPersistent("exit", sess.stderr, sess.log)
 	})
 	// Cleanups run last-first: at exit the roots are reported before the
 	// project and before the session-end hooks, so a change a hook makes
 	// shows at the next start — as the project's own report already
 	// does. /clear runs the hooks first.
 	cl.push("report the added roots' persistent files", func() {
-		sess.watch.report("exit", sess.log)
+		sess.watch.report("exit", sess.stderr, sess.log)
 	})
 
 	return assembled{rbRunner: rbRunner, reloads: reloads, settingsData: settingsData}

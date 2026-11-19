@@ -257,7 +257,7 @@ func TestGrantedWriteRootIsWatched(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(notes, "d", "AGENTS.md"), []byte("x\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	g.watch.report("clear", nil)
+	g.watch.report("clear", out, nil)
 	if !strings.Contains(out.String(), "d/AGENTS.md (added)") {
 		t.Errorf("the granted root was not watched: %q", out.String())
 	}
