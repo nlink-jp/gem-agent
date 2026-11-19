@@ -76,8 +76,21 @@ func TestThePlainStreamsAreMadeInertFirst(t *testing.T) {
 				ast.Inspect(st, func(n ast.Node) bool {
 					switch n := n.(type) {
 					case *ast.CallExpr:
-						if id, ok := n.Fun.(*ast.Ident); ok && id.Name == "inertStreams" && wired < 0 {
-							wired = i
+						if id, ok := n.Fun.(*ast.Ident); ok && id.Name == "inertStreams" {
+							if wired < 0 {
+								wired = i
+							}
+							return true
+						}
+						// A call handed cmd can read its streams: since
+						// ADR-0124 the startup phases do, inside their own
+						// bodies, where a check of runREPL's statements
+						// alone did not see them (lagent's pre-release
+						// review of the same restructure).
+						for _, a := range n.Args {
+							if id, ok := a.(*ast.Ident); ok && id.Name == "cmd" && firstUse < 0 {
+								firstUse = i
+							}
 						}
 					case *ast.SelectorExpr:
 						if n.Sel.Name == "ErrOrStderr" || n.Sel.Name == "OutOrStdout" {
