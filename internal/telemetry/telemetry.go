@@ -129,11 +129,13 @@ func (s *Sink) Sub(label string) *Sink {
 }
 
 // New builds an OTLP-backed sink. Telemetry must never hurt the
-// session (ADR-0035 §4): export failures reach stderr once via the
-// global error handler and degrade silently after.
-func New(ctx context.Context, cfg Config, gcpProject, version, sessionID, projectDir string) (*Sink, error) {
+// session (ADR-0035 §4): export failures reach warn once via the
+// global error handler and degrade silently after. warn is the
+// caller's: it runs on the exporter's goroutine, and inside a flush
+// the caller started, so it must not block; nil writes to stderr.
+func New(ctx context.Context, cfg Config, gcpProject, version, sessionID, projectDir string, warn func(msg string)) (*Sink, error) {
 	build := func(ctx context.Context, sessionID string) (otellog.Logger, *sdklog.LoggerProvider, error) {
-		return newProvider(ctx, cfg, gcpProject, version, sessionID, projectDir)
+		return newProvider(ctx, cfg, gcpProject, version, sessionID, projectDir, warn)
 	}
 	logger, provider, err := build(ctx, sessionID)
 	if err != nil {
@@ -160,7 +162,7 @@ func (s *Sink) SessionID() string {
 
 // newProvider builds the exporter and the resourced provider for one
 // session id — once at startup, and again on every /clear.
-func newProvider(ctx context.Context, cfg Config, gcpProject, version, sessionID, projectDir string) (otellog.Logger, *sdklog.LoggerProvider, error) {
+func newProvider(ctx context.Context, cfg Config, gcpProject, version, sessionID, projectDir string, warn func(msg string)) (otellog.Logger, *sdklog.LoggerProvider, error) {
 	var exp sdklog.Exporter
 	var err error
 	switch cfg.Backend {
@@ -214,17 +216,21 @@ func newProvider(ctx context.Context, cfg Config, gcpProject, version, sessionID
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(exp)),
 		sdklog.WithResource(res),
 	)
-	otel.SetErrorHandler(warnOnceHandler())
+	otel.SetErrorHandler(warnOnceHandler(warn))
 	return provider.Logger("gem-agent"), provider, nil
 }
 
-// warnOnceHandler prints the first export failure and swallows the
-// rest — an unreachable collector must not spam a working session.
-func warnOnceHandler() otel.ErrorHandlerFunc {
+// warnOnceHandler hands the first export failure to warn and swallows
+// the rest — an unreachable collector must not spam a working session.
+// A nil warn writes to stderr.
+func warnOnceHandler(warn func(msg string)) otel.ErrorHandlerFunc {
+	if warn == nil {
+		warn = func(msg string) { fmt.Fprintf(os.Stderr, "warning: %s\n", msg) }
+	}
 	var once sync.Once
 	return func(err error) {
 		once.Do(func() {
-			fmt.Fprintf(os.Stderr, "warning: telemetry export failing (reported once): %v\n", err)
+			warn(fmt.Sprintf("telemetry export failing (reported once): %v", err))
 		})
 	}
 }

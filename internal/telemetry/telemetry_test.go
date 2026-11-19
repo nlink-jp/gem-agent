@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -127,7 +128,7 @@ func TestOTLPHTTPWireFormat(t *testing.T) {
 	endpoint := strings.TrimPrefix(srv.URL, "http://")
 	sink, err := New(context.Background(), Config{
 		Enabled: true, Backend: "otlp-http", Endpoint: endpoint, Insecure: true,
-	}, "", "v-test", "sess-1", "/proj")
+	}, "", "v-test", "sess-1", "/proj", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +228,7 @@ func TestHeadersRideTheWire(t *testing.T) {
 		Enabled: true, Backend: "otlp-http",
 		Endpoint: strings.TrimPrefix(srv.URL, "http://"), Insecure: true,
 		HeadersFile: path,
-	}, "", "v", "s", "/p")
+	}, "", "v", "s", "/p", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,5 +262,18 @@ func TestUsageEventCarriesEveryBucket(t *testing.T) {
 		if attrs[k] != v {
 			t.Errorf("%s = %q, want %q", k, attrs[k], v)
 		}
+	}
+}
+
+// The first export failure goes to the caller's warn, once; later ones
+// are swallowed. The caller decides where it shows (ADR-0124 addendum,
+// Found 6): a direct write to the terminal landed under the TUI.
+func TestWarnOnceHandlerHandsTheFirstFailureToWarn(t *testing.T) {
+	var got []string
+	h := warnOnceHandler(func(msg string) { got = append(got, msg) })
+	h(errors.New("dial tcp: connection refused"))
+	h(errors.New("again"))
+	if len(got) != 1 || got[0] != "telemetry export failing (reported once): dial tcp: connection refused" {
+		t.Fatalf("warned %q", got)
 	}
 }

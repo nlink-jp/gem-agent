@@ -24,7 +24,11 @@ import (
 // TUI and a stream implementation: the program is late-bound, so the same
 // value has to be the stream before the TUI runs and again after it ends.
 type surface struct {
-	w        io.Writer
+	w io.Writer
+	// term is the terminal itself, for warnings from goroutines the
+	// session does not run (backgroundWarning): w is the startup tee,
+	// which records lines while the start is still going.
+	term     io.Writer
 	msgs     *uitext.Messages
 	oneShot  bool
 	plainAsk askFunc
@@ -32,8 +36,8 @@ type surface struct {
 	// a Send to a program that has ended is dropped without a word
 	// (Bubble Tea selects on its cancelled context), so what the exit
 	// says — a session_end hook's notice — went nowhere (ADR-0124
-	// addendum, Found 5). Atomic: a goroutine the session started may
-	// still report as the program ends.
+	// addendum, Found 5). Atomic: a goroutine the session started, or
+	// the telemetry exporter's, may still report as the program ends.
 	prog atomic.Pointer[tea.Program]
 	// hookSink, while set, collects hook notices instead of showing them
 	// (collectHookNotices).
@@ -42,6 +46,20 @@ type surface struct {
 
 // setProgram routes output to p; nil routes it back to the stream.
 func (s *surface) setProgram(p *tea.Program) { s.prog.Store(p) }
+
+// backgroundWarning is a warning from a goroutine outside the session's
+// own — the telemetry exporter's error handler. It never blocks its
+// caller: that handler also runs inside /clear's flush, in the TUI's
+// Update, where a Send never returns. Under the TUI it joins the note
+// strip; a direct write to the terminal landed on the input line and the
+// next redraw covered it (ADR-0124 addendum, Found 6).
+func (s *surface) backgroundWarning(msg string) {
+	if p := s.prog.Load(); p != nil {
+		go p.Send(tui.Attached{Notes: []string{msg}})
+		return
+	}
+	fmt.Fprintf(s.term, "warning: %s\n", msg)
+}
 
 // notice puts a one-line warning in front of the operator wherever they
 // are: the TUI's note strip, stderr otherwise.

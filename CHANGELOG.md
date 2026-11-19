@@ -15,6 +15,12 @@
   already ended, which drops what it is sent: nothing reached the
   screen. The plain REPL showed it. Output after the TUI ends now goes
   to the terminal, before the exit summary.
+- **A failing audit-log export no longer garbles the TUI.** When the
+  collector could not be reached, the warning was written to the
+  terminal from the exporter's own thread: it landed on the input row,
+  the next redraw covered it, and the input row and the status line were
+  left run together. It is now a note in the TUI, and still a warning
+  line without one.
 
 ## [0.108.1] - 2026-11-18
 

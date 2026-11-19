@@ -246,3 +246,43 @@ command = "exit 3"
 		t.Fatalf("want the exit summary after the hook's notice:\n%s", s)
 	}
 }
+
+// ADR-0124 addendum, Found 6: a telemetry export failure during a TUI
+// session is a note that stays on the screen. The exporter's error
+// handler wrote to the terminal from its own goroutine: the line landed
+// on the input row, and the next redraw covered it and left the input
+// row and the footer run together. Nothing listens at the collector's
+// address, so the export fails at its first attempt.
+func TestTUITelemetryFailureIsANote(t *testing.T) {
+	e := newCharEnvWith(t, `
+[telemetry]
+enabled = true
+backend = "otlp-http"
+endpoint = "127.0.0.1:9"
+insecure = true
+`)
+	r := startTUI(t, e, []scriptTurn{{Text: "Hello."}, {Text: "Again."}}, "--no-sandbox")
+	r.typeLine("hi")
+	if !r.waitFor("Hello.", 10*time.Second) {
+		t.Fatalf("the turn did not answer:\n%s", r.screen())
+	}
+	// The failure shows, by either route, once the export has run.
+	if !r.waitFor("connection refused", 10*time.Second) {
+		t.Fatalf("the export did not fail:\n%s", r.screen())
+	}
+	// A redraw after it: the note is still there, the screen whole.
+	r.typeLine("again")
+	if !r.waitFor("Again.", 10*time.Second) {
+		t.Fatalf("the second turn did not answer:\n%s", r.screen())
+	}
+	time.Sleep(300 * time.Millisecond)
+	screen := r.screen()
+	if !strings.Contains(screen, "telemetry export failing (reported once)") {
+		t.Fatalf("the export failure did not stay on the screen:\n%s", screen)
+	}
+	for _, line := range strings.Split(screen, "\n") {
+		if strings.Contains(line, "message…") && strings.Contains(line, "scripted-main") {
+			t.Fatalf("the input row and the footer ran together:\n%s", screen)
+		}
+	}
+}

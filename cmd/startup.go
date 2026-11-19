@@ -629,12 +629,17 @@ func buildModels(sess *liveSession, cmd *cobra.Command, cl *cleanups, rs runSett
 	// Default off. Failures never hurt the session: creation errors
 	// warn and fall back to the no-op sink.
 	sess.sink = telemetry.Nop()
+	// Where operator-facing output goes (ADR-0124 §2.4): the TUI while
+	// prog runs, stderr before, after and without one. Built here, ahead
+	// of the telemetry exporter, whose warnings it routes; the plain
+	// REPL's answer reader joins it with stdin (assembleSession).
+	sess.surf = &surface{w: sess.stderr, term: cmd.ErrOrStderr(), msgs: sess.msgs, oneShot: rs.oneShot}
 	if sess.cfg.Telemetry.Enabled {
 		if s, err := telemetry.New(sess.ctx, telemetry.Config{
 			Enabled: true, Backend: sess.cfg.Telemetry.Backend,
 			Endpoint: sess.cfg.Telemetry.Endpoint, Insecure: sess.cfg.Telemetry.Insecure,
 			HeadersFile: sess.cfg.Telemetry.HeadersFile,
-		}, sess.cfg.GCP.Project, cmd.Root().Version, sess.sessionID, sess.projectDir); err != nil {
+		}, sess.cfg.GCP.Project, cmd.Root().Version, sess.sessionID, sess.projectDir, sess.surf.backgroundWarning); err != nil {
 			fmt.Fprintf(sess.stderr, "warning: telemetry disabled: %v\n", err)
 		} else {
 			sess.sink = s
@@ -798,9 +803,9 @@ func chooseFrontEnd(sess *liveSession, cmd *cobra.Command, rs runSettings) front
 	}
 	reader := repl.NewReader(stdin, sess.stderr)
 
-	// Where operator-facing output goes (ADR-0124 §2.4): the TUI once
-	// prog runs, stderr until then and without one.
-	sess.surf = &surface{w: sess.stderr, msgs: sess.msgs, oneShot: rs.oneShot, plainAsk: plainAsk(stdin, cmd.ErrOrStderr())}
+	// The plain REPL's answer reader shares stdin with the line reader
+	// (the surface itself was built in buildModels).
+	sess.surf.plainAsk = plainAsk(stdin, cmd.ErrOrStderr())
 	// Turn observability (ADR-0033): stream heartbeat, retries, and
 	// thought summaries reach the TUI when one is running; the plain
 	// REPL and one-shot mode stay quiet — their output goes to pipes.
