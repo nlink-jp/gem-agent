@@ -202,10 +202,10 @@ var errInterrupted = errors.New("interrupted")
 
 // startupNotes tees startup-time stderr lines so the TUI can replay
 // them in the banner after its first ClearScreen (ADR-0021). Locked: a
-// goroutine the session started (the context-window lookup) can report
-// through it while the start still writes — the plain REPL and one-shot
-// mode raced on lines and frozen (lagent's pre-release review, measured
-// with -race; the same code here).
+// goroutine may write the session's stderr while the start still writes
+// and freezes the tee. lagent's context-window lookup did, and raced on
+// lines and frozen (its pre-release review, measured with -race); this
+// one reports nothing, and the tee is locked so that no writer can.
 type startupNotes struct {
 	mu     sync.Mutex
 	w      io.Writer

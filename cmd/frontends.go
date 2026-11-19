@@ -252,8 +252,8 @@ func runPlain(sess *liveSession, cmd *cobra.Command, notes *startupNotes, rs run
 		fmt.Fprintln(sess.stderr, line)
 	}
 	fmt.Fprintf(sess.stderr, "/help for commands, Ctrl+D to quit\n")
-	// After the banner: a lookup that fails says so below it, never
-	// between its lines.
+	// After the banner: nothing the lookup reports can split it (it
+	// reports nothing here; lagent's says when it fails).
 	go sess.resolveWindow()
 
 	// --- plain REPL loop (non-TTY fallback) ---
