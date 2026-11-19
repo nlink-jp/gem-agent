@@ -1144,13 +1144,13 @@ func assembleSession(sess *liveSession, cmd *cobra.Command, cl *cleanups, rs run
 	// something useful about it.
 	showImage := func(data []byte, mime string) error {
 		if fe.images == termimg.None {
-			return fmt.Errorf("this terminal cannot draw inline fe.images (see [tui].images and /settings)")
+			return fmt.Errorf("this terminal cannot draw inline images (see [tui].images and /settings)")
 		}
 		if _, _, ok := termimg.Measure(data); !ok {
 			return fmt.Errorf("not a drawable image, or larger than %d bytes decoded", termimg.MaxBytes)
 		}
 		if !ld.screen.Image(data, mime) {
-			return fmt.Errorf("this session has no ld.screen (one-shot or non-interactive)")
+			return fmt.Errorf("this session has no screen (one-shot or non-interactive)")
 		}
 		return nil
 	}

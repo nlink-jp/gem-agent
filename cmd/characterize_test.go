@@ -746,3 +746,21 @@ insecure = true
 		"print the exit summary",
 	})
 }
+
+// A refusal to show an image reads its reason. The restructure's rename
+// of locals into fields reached into these two strings ("inline
+// fe.images", "no ld.screen"), and no scenario called /show: the model
+// read the mangled text as show_image's result.
+func TestShowRefusalReadsItsReason(t *testing.T) {
+	e := newCharEnv(t)
+	// A 1×1 PNG: admitted as an image, refused because the plain REPL
+	// draws none.
+	png := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe\x02\xfe\xa7\x35\x81\x84\x00\x00\x00\x00IEND\xaeB`\x82")
+	if err := os.WriteFile(filepath.Join(e.project, "dot.png"), png, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := runCharacterize(t, e, nil, []string{"/show dot.png"}, "--no-sandbox")
+	if !strings.Contains(r.stderr, "this terminal cannot draw inline images (see [tui].images and /settings)") {
+		t.Fatalf("/show's refusal:\n%s", r.stderr)
+	}
+}

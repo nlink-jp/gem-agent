@@ -1,8 +1,12 @@
 package cmd
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -62,4 +66,35 @@ func cmdSources(t *testing.T) (names []string, src map[string]string) {
 		t.Fatal("no source files found — the scan is broken, not the tree")
 	}
 	return names, src
+}
+
+// wiringLocal matches a field reached through one of the session
+// wiring's locals — runREPL's: the liveSession and the phases' results.
+var wiringLocal = regexp.MustCompile(`\b(sess|adm|as|cf|cl|fe|fl|ld|md|notes|op|rg|rs|wa)\.[A-Za-z]`)
+
+// No string literal names a wiring local. The restructure rewrote locals
+// into fields and the rewrite reached two refusal messages ("inline
+// fe.images", "no ld.screen"), which the model then read; text an
+// operator or a model reads never names a variable.
+func TestNoStringLiteralNamesAWiringLocal(t *testing.T) {
+	names, src := cmdSources(t)
+	literals := 0
+	for _, name := range names {
+		f, err := parser.ParseFile(token.NewFileSet(), name, src[name], 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			if b, ok := n.(*ast.BasicLit); ok && b.Kind == token.STRING {
+				literals++
+				if wiringLocal.MatchString(b.Value) {
+					t.Errorf("%s: a string literal names a wiring local: %s", name, b.Value)
+				}
+			}
+			return true
+		})
+	}
+	if literals < 100 {
+		t.Fatalf("only %d string literals found — the scan is broken, not the tree", literals)
+	}
 }

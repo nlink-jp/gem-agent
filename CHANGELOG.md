@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- **An image that cannot be shown says why in plain words again.**
+  0.108.1's internal restructure changed two refusals, which both `/show`
+  and the model's `show_image` read, to "cannot draw inline fe.images"
+  and "has no ld.screen". They read "cannot draw inline images" and
+  "has no screen" again, and a test now refuses any message that names an
+  internal variable.
 - **`/clear` in the TUI names the persistent files the session
   changed.** The note "this session added or changed: …" — for the
   project and for each directory added with write access — was written
