@@ -275,3 +275,11 @@ Two bounded passes, as CONVENTIONS §Verify sets them: one over `v0.108.1..HEAD`
 7. **An unused parameter and a no-op read** (`049e821`).
 
 **What the characterization does not cover**, recorded as the limit of what judged §1–§2 (lagent's review named it; the harness is the same here): every scenario runs unsandboxed, with no MCP server, no resume and no added directory. Those paths were checked by reading and by the resume and grant tests that call the phases, not by comparing output against v0.108.0.
+
+**The fix-diff pass** (the second and last, over `7ffaf47..HEAD`) found nothing high or medium; its low findings were fixed or recorded:
+
+- Fixed: `endTUI` leaves the program set, so a method that read the flag a moment before sends to the ended program instead of the stream, and only the exit's `session_end` hooks and the exporter's warnings speak after the end (`f013402`); a background note raised between the first size report and the first frame's clear waits for the frame (`aec8c1b`); the front ends' order is pinned and the race-only test skips without the race detector (`2b8685f`); `3a8b0cf`'s CHANGELOG entry described lagent — gem-agent's window lookup prints nothing — and is gone (`58d9d46`).
+- Accepted and left, with the reason:
+  - **The TUI acknowledges a background note when it takes it, before the line is flushed.** A note taken in the milliseconds before the program quits can be lost. It needs the collector's first failure to coincide with the quit, it costs one warning about a collector that is already failing, and closing it would mean reaching into Bubble Tea's flush.
+  - **A `prog.Run` that fails before its first frame** leaves a warning written before the TUI on screen, and `endTUI` writes it again: a repeated line on a start that failed anyway.
+  - **A structured question asked through the TUI waits on its answer** with no other way out, so a turn left running when the program ends stays blocked. It holds nothing the exit needs, and the process ends with it.
