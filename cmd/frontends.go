@@ -140,11 +140,10 @@ func runTUI(sess *liveSession, cmd *cobra.Command, cl *cleanups, notes *startupN
 	// counts every printed line, and the startup clear would wipe a
 	// pre-printed banner anyway. Startup warnings join it for the
 	// same reason (ADR-0021).
-	bannerLines = append(bannerLines, notes.lines...)
-	// Nothing reads the tee after the banner; without this the
+	// Nothing reads the tee after the banner; without the freeze the
 	// stderr stream accumulated every line for the whole session
 	// (review round 3).
-	notes.freeze()
+	bannerLines = append(bannerLines, notes.freeze()...)
 	// The renderer writes through the sweep writer, which erases the
 	// rows a narrowing re-wrapped (ADR-0094); the model arms it.
 	sweep := tui.NewSweepWriter(os.Stdout)
@@ -247,14 +246,15 @@ func runTUI(sess *liveSession, cmd *cobra.Command, cl *cleanups, notes *startupN
 // runPlain is the plain line REPL, the fallback when stdin or stdout is
 // not a terminal.
 func runPlain(sess *liveSession, cmd *cobra.Command, notes *startupNotes, rs runSettings, adm admission, ld loaded, md models, fe frontEnd, as assembled, bannerLines []string) error {
-	go sess.resolveWindow()
-
 	// Plain REPL / one-shot: the banner is printed, the tee is done.
 	notes.freeze()
 	for _, line := range bannerLines {
 		fmt.Fprintln(sess.stderr, line)
 	}
 	fmt.Fprintf(sess.stderr, "/help for commands, Ctrl+D to quit\n")
+	// After the banner: a lookup that fails says so below it, never
+	// between its lines.
+	go sess.resolveWindow()
 
 	// --- plain REPL loop (non-TTY fallback) ---
 	// The argv first message (ADR-0064) runs before the first read,

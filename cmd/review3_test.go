@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"unicode/utf8"
 
@@ -69,7 +70,9 @@ func TestStartupNotesFreeze(t *testing.T) {
 	var out bytes.Buffer
 	n := &startupNotes{w: &out}
 	_, _ = n.Write([]byte("warning: one\n"))
-	n.freeze()
+	if got := n.freeze(); len(got) != 1 || got[0] != "warning: one" {
+		t.Errorf("freeze returned %q, want the one recorded line", got)
+	}
 	for i := 0; i < 100; i++ {
 		_, _ = n.Write([]byte("[tool] x\n"))
 	}
@@ -93,4 +96,34 @@ func TestNoSecondStdinReader(t *testing.T) {
 			t.Errorf("%s wraps os.Stdin in a second bufio.Reader — hand prompts the shared `stdin` instead", name)
 		}
 	}
+}
+
+// The tee is written from goroutines the session starts (the context
+// window lookup) while the start writes and freezes it: run with -race.
+func TestStartupNotesConcurrentWrites(t *testing.T) {
+	var out bytes.Buffer
+	n := &startupNotes{w: &lockedBuffer{b: &out}}
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 200; i++ {
+			_, _ = n.Write([]byte("[⚠ late]\n"))
+		}
+		close(done)
+	}()
+	for i := 0; i < 200; i++ {
+		_, _ = n.Write([]byte("banner\n"))
+	}
+	n.freeze()
+	<-done
+}
+
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  *bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
 }

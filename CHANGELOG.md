@@ -10,6 +10,11 @@
   and "has no ld.screen". They read "cannot draw inline images" and
   "has no screen" again, and a test now refuses any message that names an
   internal variable.
+- **The plain REPL's "context window unknown" warning comes after the
+  banner.** The lookup started before the banner was printed, so its
+  warning could land between the banner's lines, and two threads wrote
+  the startup record at once — in one-shot mode too (a data race, found
+  with the race detector; it predates 0.108).
 - **`/clear` in the TUI names the persistent files the session
   changed.** The note "this session added or changed: …" — for the
   project and for each directory added with write access — was written

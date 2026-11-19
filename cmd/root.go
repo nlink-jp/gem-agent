@@ -201,18 +201,31 @@ func runREPL(cmd *cobra.Command, args []string) error {
 var errInterrupted = errors.New("interrupted")
 
 // startupNotes tees startup-time stderr lines so the TUI can replay
-// them in the banner after its first ClearScreen (ADR-0021).
+// them in the banner after its first ClearScreen (ADR-0021). Locked: a
+// goroutine the session started (the context-window lookup) can report
+// through it while the start still writes — the plain REPL and one-shot
+// mode raced on lines and frozen (lagent's pre-release review, measured
+// with -race; the same code here).
 type startupNotes struct {
+	mu     sync.Mutex
 	w      io.Writer
 	lines  []string
 	frozen bool
 }
 
-// freeze stops recording: the banner has been built, and a session-long
-// tee would only grow.
-func (s *startupNotes) freeze() { s.frozen = true; s.lines = nil }
+// freeze stops recording and returns what was recorded: the banner has
+// been built, and a session-long tee would only grow.
+func (s *startupNotes) freeze() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	lines := s.lines
+	s.frozen, s.lines = true, nil
+	return lines
+}
 
 func (s *startupNotes) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if !s.frozen {
 		for _, line := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
 			if strings.TrimSpace(line) != "" {
