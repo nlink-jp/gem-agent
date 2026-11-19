@@ -57,6 +57,7 @@ func messageCases() map[string]msgCase {
 		"TurnDone":        {msg: TurnDone{}, shows: true},
 		"AutoApproved":    {msg: AutoApproved{}, shows: true},
 		"Attached":        {msg: Attached{}, shows: true},
+		"BackgroundNote":  {msg: BackgroundNote{}, shows: true},
 		"ShellDone":       {msg: ShellDone{}, shows: true},
 		"Usage":           {msg: Usage{}},
 		"ContextWindow":   {msg: ContextWindow{}},

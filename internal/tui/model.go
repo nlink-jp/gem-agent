@@ -909,6 +909,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case Image:
 		return m, m.drawImage(msg)
 
+	case BackgroundNote:
+		if msg.Shown != nil {
+			msg.Shown()
+		}
+		line := m.st.warn.Render("⚠ " + msg.Text)
+		if !m.sized {
+			// Before the first frame the screen is about to be cleared:
+			// the note joins the banner, printed after the clear.
+			m.banner = append(m.banner, line)
+			return m, nil
+		}
+		return m, m.emitJoined(line)
+
 	case Attached:
 		var parts []string
 		for _, line := range msg.Lines {

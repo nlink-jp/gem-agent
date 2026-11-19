@@ -73,6 +73,16 @@ type Attached struct {
 	Notes []string
 }
 
+// BackgroundNote is a warning raised outside the session's own work —
+// the audit-log exporter's error handler. Shown is called when the TUI
+// takes it, so the sender can print one the program never took: a
+// program that has ended drops what it is sent (ADR-0124 addendum,
+// Found 6).
+type BackgroundNote struct {
+	Text  string
+	Shown func()
+}
+
 // ShellDone signals completion of a direct (!-prefixed) shell command.
 // Interrupted marks a Ctrl+C'd run: a message queued during it is
 // handed back rather than auto-sent (ADR-0007's rule, which the shell

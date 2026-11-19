@@ -102,6 +102,9 @@ var walkKinds = map[reflect.Kind]bool{
 	reflect.String: true, reflect.Struct: true, reflect.Slice: true,
 	reflect.Bool: true, reflect.Int: true, reflect.Int64: true, reflect.Uint8: true,
 	reflect.Float64: true, reflect.Chan: true,
+	// A callback carries no text: BackgroundNote.Shown is the sender's
+	// acknowledgement, called, never shown.
+	reflect.Func: true,
 }
 
 // inertRenderer holds every renderer the factory builds to the escapes that

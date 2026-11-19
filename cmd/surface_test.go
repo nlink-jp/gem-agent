@@ -159,3 +159,105 @@ func TestSurfaceProgramRoute(t *testing.T) {
 		t.Fatalf("the stream got %q while a program ran", w.String())
 	}
 }
+
+// After the TUI has ended only the exit's notices reach the stream: a
+// turn still running (a wedged tool past the third Ctrl+C) or a late
+// window lookup reports nothing after the exit summary, and nothing
+// reads stdin for an answer.
+func TestSurfaceAfterTheTUIEnds(t *testing.T) {
+	var w, term bytes.Buffer
+	s := &surface{w: &w, term: &term, msgs: uitext.For(uitext.EN), plainAsk: func(context.Context, string, []string) (int, error) {
+		t.Error("an ended session asked on stdin")
+		return 0, nil
+	}}
+	s.endTUI()
+	s.notice("late lookup")
+	s.toolCall("shell_exec", "cmd=sleep", "why")
+	s.childToolCall("search_files", "q")
+	s.toolDone("shell_exec")
+	s.attached([]string{"a"}, []string{"b"})
+	s.autoApproved("write_file", "safe", "Allow")
+	s.output([]string{"o"})
+	s.usage(llm.Usage{Prompt: 1})
+	s.stream(llm.StreamEvent{})
+	s.contextWindow(10, true)
+	if _, err := s.ask(context.Background(), "q", []string{"a", "b"}); err != errAskDeclined {
+		t.Errorf("ask after the end = %v, want declined", err)
+	}
+	s.hookNotice("session_end hook failed")
+	s.backgroundWarning("telemetry export failing (reported once): refused")
+	if got, want := w.String(), "[⚠ session_end hook failed]\n"; got != want {
+		t.Fatalf("stream after the end:\n%q\nwant:\n%q", got, want)
+	}
+	if got, want := term.String(), "warning: telemetry export failing (reported once): refused\n"; got != want {
+		t.Fatalf("terminal after the end:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+// A background warning raised before the TUI runs is written to the
+// terminal — which the TUI's first clear wipes — and replayed as a note
+// when it starts; without a TUI coming, nothing is kept. One the program
+// never takes is written when the TUI ends (ADR-0124 addendum, Found 6).
+func TestSurfaceBackgroundWarningAcrossTheTUI(t *testing.T) {
+	var term bytes.Buffer
+	s := &surface{w: io.Discard, term: &term, msgs: uitext.For(uitext.EN)}
+	s.backgroundWarning("early")
+	if term.String() != "warning: early\n" {
+		t.Fatalf("before the TUI: %q", term.String())
+	}
+
+	rec := recorder{got: make(chan tea.Msg, 8)}
+	p := tea.NewProgram(rec, tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutRenderer())
+	done := make(chan struct{})
+	go func() { _, _ = p.Run(); close(done) }()
+	s.setProgram(p)
+	select {
+	case m := <-rec.got:
+		note, ok := m.(tui.BackgroundNote)
+		if !ok || note.Text != "early" {
+			t.Fatalf("replayed %#v, want the early warning as a note", m)
+		}
+		// The recorder takes it without acknowledging: as a program
+		// that ended before reaching it.
+	case <-time.After(5 * time.Second):
+		t.Fatal("the early warning was not replayed")
+	}
+	p.Quit()
+	<-done
+	term.Reset()
+	s.endTUI()
+	if term.String() != "warning: early\n" {
+		t.Fatalf("a note the TUI never took is not written at its end: %q", term.String())
+	}
+
+	none := &surface{w: io.Discard, term: io.Discard, msgs: uitext.For(uitext.EN)}
+	none.withoutTUI()
+	none.backgroundWarning("plain")
+	if len(none.pending) != 0 {
+		t.Fatalf("kept %q for a TUI that will not run", none.pending)
+	}
+}
+
+// A note the TUI takes is not written again at its end.
+func TestSurfaceBackgroundWarningTakenIsNotRepeated(t *testing.T) {
+	var term bytes.Buffer
+	s := &surface{w: io.Discard, term: &term, msgs: uitext.For(uitext.EN)}
+	rec := recorder{got: make(chan tea.Msg, 8)}
+	p := tea.NewProgram(rec, tea.WithInput(nil), tea.WithOutput(io.Discard), tea.WithoutRenderer())
+	done := make(chan struct{})
+	go func() { _, _ = p.Run(); close(done) }()
+	s.setProgram(p)
+	s.backgroundWarning("mid-session")
+	select {
+	case m := <-rec.got:
+		m.(tui.BackgroundNote).Shown()
+	case <-time.After(5 * time.Second):
+		t.Fatal("the warning was not sent")
+	}
+	p.Quit()
+	<-done
+	s.endTUI()
+	if term.Len() != 0 {
+		t.Fatalf("a note the TUI took was written again: %q", term.String())
+	}
+}

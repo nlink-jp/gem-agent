@@ -24,13 +24,17 @@
 - **Leaving the TUI shows what a `session_end` hook says.** A hook
   that failed or timed out at exit was reported to the TUI after it had
   already ended, which drops what it is sent: nothing reached the
-  screen. The plain REPL showed it. Output after the TUI ends now goes
-  to the terminal, before the exit summary.
+  screen. The plain REPL showed it. The hooks' notices now go to the
+  terminal, before the exit summary; anything else still reported after
+  the TUI ends (a turn left running past the third Ctrl+C) is dropped,
+  so the summary stays last.
 - **A failing audit-log export no longer garbles the TUI.** When the
   collector could not be reached, the warning was written to the
   terminal from the exporter's own thread: it landed on the input row,
   the next redraw covered it, and the input row and the status line were
-  left run together. It is now a note in the TUI, and still a warning
+  left run together. It is now a note in the TUI — one raised while the
+  session was still starting joins the banner, and one the TUI had no
+  time to show as it closed is printed after it — and still a warning
   line without one.
 
 ## [0.108.1] - 2026-11-18

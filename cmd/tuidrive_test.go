@@ -286,3 +286,24 @@ insecure = true
 		}
 	}
 }
+
+// ADR-0124 addendum, Found 6: an export failure during the start — a slow
+// session_start hook keeps the TUI from running past the exporter's first
+// attempt — is a note in the TUI too. It went to the terminal above the
+// TUI's first clear, and the clear wiped it.
+func TestTUITelemetryFailureDuringStartIsANote(t *testing.T) {
+	e := newCharEnvWith(t, `
+[telemetry]
+enabled = true
+backend = "otlp-http"
+endpoint = "127.0.0.1:9"
+insecure = true
+
+[[hooks.session_start]]
+command = "sleep 3"
+`)
+	r := startTUI(t, e, nil, "--no-sandbox")
+	if !r.waitFor("telemetry export failing (reported once)", 10*time.Second) {
+		t.Fatalf("the export failure during the start is not on the screen:\n%s", r.screen())
+	}
+}

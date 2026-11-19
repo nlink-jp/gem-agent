@@ -252,6 +252,34 @@ func TestAttachedNoticeIsVisible(t *testing.T) {
 	}
 }
 
+// A background warning shows as a note, and the sender hears that the
+// TUI took it.
+func TestBackgroundNoteIsVisibleAndAcknowledged(t *testing.T) {
+	c := &capture{}
+	m := newTestModel(c)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = sized.(Model)
+	shown := false
+	m.Update(BackgroundNote{Text: "telemetry export failing (reported once): refused", Shown: func() { shown = true }})
+	if out := c.all(); !strings.Contains(out, "⚠") || !strings.Contains(out, "telemetry export failing") {
+		t.Errorf("background note missing: %q", out)
+	}
+	if !shown {
+		t.Error("the sender was not told the note was taken")
+	}
+}
+
+// One that arrives before the first frame joins the banner: the first
+// frame clears the screen, and a note printed before it is wiped.
+func TestBackgroundNoteBeforeTheFirstFrameJoinsTheBanner(t *testing.T) {
+	m := New(Options{Banner: []string{"gem-agent vX"}})
+	next, _ := m.Update(BackgroundNote{Text: "telemetry export failing (reported once): refused"})
+	got := next.(Model).banner
+	if len(got) != 2 || !strings.Contains(got[1], "telemetry export failing") {
+		t.Fatalf("banner after an early note: %q", got)
+	}
+}
+
 func TestPlaceholderTeachesKeys(t *testing.T) {
 	m := newTestModel(&capture{})
 	if !strings.Contains(m.ta.Placeholder, "Ctrl+J") {

@@ -806,6 +806,10 @@ func chooseFrontEnd(sess *liveSession, cmd *cobra.Command, rs runSettings) front
 	// The plain REPL's answer reader shares stdin with the line reader
 	// (the surface itself was built in buildModels).
 	sess.surf.plainAsk = plainAsk(stdin, cmd.ErrOrStderr())
+	if !useTUI {
+		// No program will replay what the terminal already showed.
+		sess.surf.withoutTUI()
+	}
 	// Turn observability (ADR-0033): stream heartbeat, retries, and
 	// thought summaries reach the TUI when one is running; the plain
 	// REPL and one-shot mode stay quiet — their output goes to pipes.
