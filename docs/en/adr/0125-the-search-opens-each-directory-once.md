@@ -236,9 +236,10 @@ The five findings are one cause, not five accidents. The design restated one pro
 | What the sequential loop held | Now | How it is held |
 |---|---|---|
 | Output: counts, order, cap, footers | the same | the judge, at 1 and 8 workers, with deliberate breaks |
-| Every open does not wait (ADR-0072 §4.8) | broken by `OpenRoot`, fixed | `openDirRoot` (`name/.`); `TestFileToolOpensDoNotWait` admits an open only through `openRegular`, as an exclusive create, or in a listed function with its reason — it fails on the shape that shipped |
+| Every open does not wait (ADR-0072 §4.8) | broken by `OpenRoot`, fixed | `openDirRoot` (`name/.`). `TestFileToolOpensDoNotWait` judges every reference to an open over this package and `internal/ignore` (calls, method values, package-level functions). It admits only a call through `openRegular` that passes on its flag, a call with `O_NONBLOCK`, an exclusive create, or a listed file and function with its reason. It fails on the shape that shipped and on each gap the verification found |
 | A cancel returns within one system call or 1024 lines (ADR-0065 §1) | the same, given the row above | the call waits for goroutines that each stop within that; the cancellation tests |
-| One file's bytes in memory | broken by kept substrings, fixed | workers keep only the clipped lines; a test |
+| One file's bytes in memory | broken twice, fixed | kept lines were substrings of the file (review); each worker also held a string copy and a string per line (verification). `scanLines` matches over the file's bytes and copies out only the lines it keeps; a test bounds a scan's allocations below a quarter of its file |
+| Nothing is opened past the cap | broken, fixed (missing from the first version of this table) | the walk checked only the context, so a subtree with nothing to emit was walked to its end after the cap; it now also sees the call stop. A test caps in the first directory and counts what is listed after |
 | A few descriptors | grows with depth | accepted (§1): bounded by the path limit, and a loss is counted |
 | Every open resolved from the current root | the walk keeps its start root | accepted (finding 5) |
 | Only files that are counted are read | up to about 3 × workers files are read ahead past a cap or a cancel | accepted: they are in the project, and a search without the cap would read them; on an online-only file this can start a download |
@@ -248,3 +249,7 @@ The five findings are one cause, not five accidents. The design restated one pro
 | No goroutine outlives the call | the same | the call waits; the goroutine-count tests |
 
 Of these, only the open can come back with a later edit, so it is the one held by a test of the code's shape rather than by a test of behaviour.
+
+### The verification of the fixes (2026-11-23)
+
+One pass, bounded before it started: it was asked only whether the table above misses a property, and whether each row it claims is held. It found one missing row: nothing is opened past the cap. It found one row overstated: memory. And it found five gaps in the open test. All were in the table's class, and are fixed as the table now records. Each fix's test was shown to fail with the fix taken out. No finding was serious, so the design stands.
