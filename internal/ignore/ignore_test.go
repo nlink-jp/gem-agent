@@ -162,6 +162,37 @@ func TestNestedGitignorePrecedence(t *testing.T) {
 	}
 }
 
+// DescendWith reads only this level's .gitignore with the reader it is
+// given (ADR-0125 §1); the level below goes back to the rules' own.
+func TestDescendWithReadsThisLevelOnly(t *testing.T) {
+	dir := t.TempDir()
+	must(t, os.MkdirAll(filepath.Join(dir, "sub", "deeper"), 0o755))
+	must(t, os.WriteFile(filepath.Join(dir, "sub", "deeper", ".gitignore"), []byte("*.tmp\n"), 0o644))
+	var asked []string
+	via := func(path string, cap int64) ([]byte, error) {
+		asked = append(asked, path)
+		return []byte("*.log\n"), nil
+	}
+	sub := Root(dir, dir, false).DescendWith("sub", via)
+	if !sub.Ignored("x.log", false) {
+		t.Error("the given reader's .gitignore must apply at this level")
+	}
+	if want := filepath.Join(dir, "sub", ".gitignore"); len(asked) != 1 || asked[0] != want {
+		t.Errorf("reader asked for %v, want only %s", asked, want)
+	}
+	deeper := sub.Descend("deeper")
+	if !deeper.Ignored("y.tmp", false) || len(asked) != 1 {
+		t.Errorf("the level below must read with the rules' own reader (asked %v)", asked)
+	}
+	if !deeper.Ignored("z.log", false) {
+		t.Error("the level above still applies below it")
+	}
+	off := Root(dir, dir, true).DescendWith("sub", via)
+	if off.Ignored("x.log", false) || len(asked) != 1 {
+		t.Error("rules that are off read nothing and ignore nothing")
+	}
+}
+
 func TestBuiltinLayerIndependent(t *testing.T) {
 	dir := t.TempDir()
 	root := Root(dir, dir, false)

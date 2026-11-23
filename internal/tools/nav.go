@@ -369,8 +369,11 @@ func (r *Registry) searchFiles() *Tool {
 			skips := &searchSkips{}
 			capped := false
 			interrupted := false
-			var walk func(dir string, rules *ignore.Rules)
-			walk = func(dir string, rules *ignore.Rules) {
+			// The walk holds each directory open and reaches what is in
+			// it by one name (ADR-0125 §1): one open per file instead of
+			// one per directory above it. h is dir's own handle.
+			var walk func(h *os.Root, dir string, rules *ignore.Rules)
+			walk = func(h *os.Root, dir string, rules *ignore.Rules) {
 				if capped || interrupted {
 					return
 				}
@@ -382,7 +385,7 @@ func (r *Registry) searchFiles() *Tool {
 					interrupted = true
 					return
 				}
-				items, more, err := r.readDirIn(dir)
+				items, more, err := readDirOf(h)
 				if err != nil {
 					skips.dirs++
 					return
@@ -411,7 +414,17 @@ func (r *Registry) searchFiles() *Tool {
 							tally.dir(e.Name())
 							continue
 						}
-						walk(full, rules.Descend(e.Name()))
+						if ctx.Err() != nil {
+							interrupted = true
+							return
+						}
+						sub, err := h.OpenRoot(e.Name())
+						if err != nil {
+							skips.dirs++ // what a failed listing counted
+							continue
+						}
+						walk(sub, full, rules.DescendWith(e.Name(), gitignoreReaderIn(sub)))
+						_ = sub.Close()
 						continue
 					}
 					if rules.Ignored(e.Name(), false) {
@@ -437,7 +450,7 @@ func (r *Registry) searchFiles() *Tool {
 						skips.add(skipImage, "")
 						continue
 					}
-					data, skip, readErr := r.readForSearch(full)
+					data, skip, readErr := readForSearch(h, e.Name(), full)
 					if skip != skipNone {
 						// A file the cage refused is named, not hidden:
 						// the shape `grep -r` has, and the shape every
@@ -501,7 +514,15 @@ func (r *Registry) searchFiles() *Tool {
 					}
 				}
 			}
-			walk(abs, rules)
+			if ctx.Err() != nil {
+				interrupted = true
+			} else if start, release, err := r.openWalkStart(abs); err != nil {
+				skips.dirs++ // a start that cannot be listed, as before
+			} else {
+				walk(start, abs, rules)
+				_ = start.Close()
+				release()
+			}
 
 			extra := ""
 			if filteredOut > 0 {

@@ -132,9 +132,16 @@ func (r *Rules) Note() string { return r.note }
 
 // Descend enters the named subdirectory, picking up its .gitignore.
 func (r *Rules) Descend(name string) *Rules {
+	return r.DescendWith(name, r.read)
+}
+
+// DescendWith is Descend with this level's .gitignore read by read —
+// a walk that holds the subdirectory open reads it through that handle
+// (ADR-0125 §1). Deeper levels keep the reader the rules were made with.
+func (r *Rules) DescendWith(name string, read FileReader) *Rules {
 	child := &Rules{parent: r, dir: filepath.Join(r.dir, name), off: r.off, read: r.read}
 	if !r.off {
-		child.f = loadGitignore(child.dir, r.read)
+		child.f = loadGitignore(child.dir, read)
 	}
 	return child
 }

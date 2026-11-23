@@ -624,6 +624,89 @@ func (r *Registry) gitignoreReader(path string, cap int64) ([]byte, error) {
 	return data, nil
 }
 
+// gitignoreReaderIn is gitignoreReader for a walk that holds the
+// directory open (ADR-0125 §1): the same checks — not a link, a
+// regular file, within the cap — on the .gitignore in dir, by its one
+// name. The path the ignore package passes names that same file.
+func gitignoreReaderIn(dir *os.Root) ignore.FileReader {
+	return func(path string, cap int64) ([]byte, error) {
+		name := filepath.Base(path)
+		info, err := dir.Lstat(name)
+		if err != nil {
+			return nil, err
+		}
+		if !info.Mode().IsRegular() || info.Size() > cap {
+			return nil, fmt.Errorf("%s: not a regular file within %d bytes", path, cap)
+		}
+		f, err := openRegular(func(flag int) (*os.File, error) { return dir.OpenFile(name, flag, 0) })
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = f.Close() }()
+		data, more, err := readAllCapped(f, int(cap))
+		if err != nil {
+			return nil, err
+		}
+		if more {
+			return nil, fmt.Errorf("%s: larger than %d bytes", path, cap)
+		}
+		return data, nil
+	}
+}
+
+// readDirOf lists the directory dir holds open, at most DirEntryCap
+// entries; more reports that it had more (readDirIn's contract).
+func readDirOf(dir *os.Root) (entries []os.DirEntry, more bool, err error) {
+	f, err := dir.Open(".")
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = f.Close() }()
+	entries, err = f.ReadDir(DirEntryCap + 1)
+	if err != nil && err != io.EOF {
+		return nil, false, err
+	}
+	if len(entries) > DirEntryCap {
+		return entries[:DirEntryCap], true, nil
+	}
+	return entries, false, nil
+}
+
+// openWalkStart opens the directory a walk starts at as a root of its
+// own (ADR-0125 §1). It is opened first the way every file tool opens —
+// without waiting, a regular file or a directory only — because
+// OpenRoot has no O_NONBLOCK and the path argument may name a FIFO.
+// Only a directory is then opened as a root. release gives back the
+// session root the start was opened through; call it after closing the
+// returned root.
+func (r *Registry) openWalkStart(abs string) (dir *os.Root, release func(), err error) {
+	root, rel, release, err := r.rootFor(abs)
+	if err != nil {
+		return nil, nil, err
+	}
+	f, err := openRegular(func(flag int) (*os.File, error) { return root.OpenFile(rel, flag, 0) })
+	if err != nil {
+		release()
+		return nil, nil, err
+	}
+	st, err := f.Stat()
+	_ = f.Close()
+	if err != nil {
+		release()
+		return nil, nil, err
+	}
+	if !st.IsDir() {
+		release()
+		return nil, nil, fmt.Errorf("not a directory: %s", abs)
+	}
+	dir, err = root.OpenRoot(rel)
+	if err != nil {
+		release()
+		return nil, nil, err
+	}
+	return dir, release, nil
+}
+
 // readForSearch reads a file for search_files: whole, within
 // searchFileCap, text. A file that outgrew the cap between the
 // listing and the read is not searched at all — a match past the cap
@@ -643,11 +726,20 @@ func (r *Registry) gitignoreReader(path string, cap int64) ([]byte, error) {
 // skip says why a file was not searched, so the walk can count it
 // (ADR-0096 §4): a "no match" over files that were never read is not
 // the answer it looks like.
-func (r *Registry) readForSearch(abs string) ([]byte, searchSkip, error) {
+//
+// The file is opened by its one name through dir, its directory's own
+// handle (ADR-0125 §1): one open instead of one per directory above it.
+// abs is the same file's full path, for the credential judgement.
+func readForSearch(dir *os.Root, name, abs string) ([]byte, searchSkip, error) {
 	if sandbox.CredentialPath(abs) {
 		return nil, skipUnreadable, fs.ErrPermission
 	}
-	data, more, err := r.readFileCapped(abs, searchFileCap)
+	f, err := openRegular(func(flag int) (*os.File, error) { return dir.OpenFile(name, flag, 0) })
+	if err != nil {
+		return nil, skipUnreadable, err
+	}
+	data, more, err := readAllCapped(f, searchFileCap)
+	_ = f.Close()
 	if err != nil {
 		return nil, skipUnreadable, err
 	}
