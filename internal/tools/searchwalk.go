@@ -125,14 +125,21 @@ func (w *searchWalker) emit(it searchItem) bool {
 	}
 }
 
-// halted reports a cancel (ADR-0065 §1: consulted before every
-// directory read and every file).
+// halted reports that the walk must end, consulted before every
+// directory read and every entry: a cancel (ADR-0065 §1), or the call
+// having stopped — at the cap, the sequential loop opened nothing
+// more, and neither does the walk (verification of the fixes, ADR-0125).
 func (w *searchWalker) halted() bool {
 	if w.ctx.Err() != nil {
 		w.cancelled = true
 		return true
 	}
-	return false
+	select {
+	case <-w.stop:
+		return true
+	default:
+		return false
+	}
 }
 
 // dir walks one directory held open by d and releases d. It returns
@@ -225,7 +232,7 @@ func (w *searchWalker) dir(d *dirRef, dir string, rules *ignore.Rules) bool {
 // searchWorker reads and matches the files it is handed until the walk
 // closes jobs. After a cancel or a stop it reads nothing more, but
 // still releases each job's directory, so every handle is closed.
-func searchWorker(ctx context.Context, stop <-chan struct{}, jobs <-chan searchJob, re *regexp.Regexp, blocks bool, keep int) {
+func searchWorker(ctx context.Context, stop <-chan struct{}, jobs <-chan searchJob, re *regexp.Regexp, blocks bool) {
 	stopped := func() bool {
 		select {
 		case <-stop:
@@ -249,7 +256,7 @@ func searchWorker(ctx context.Context, stop <-chan struct{}, jobs <-chan searchJ
 			j.res <- fileResult{skip: skip, err: err}
 			continue
 		}
-		count, hits, cut := scanLines(string(data), re, blocks, keep, stopped)
+		count, hits, cut := scanLines(data, re, blocks, searchPerFileCap, stopped)
 		// A result may wait for the calling goroutine; it keeps the
 		// clipped lines it will print, copied, not the file's text the
 		// hits point into (pre-release review of ADR-0125).

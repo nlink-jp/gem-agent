@@ -460,10 +460,6 @@ func (r *Registry) searchFiles() *Tool {
 				skips.dirs++ // a start that cannot be listed, as before
 			} else {
 				workers := searchWorkers()
-				keep := searchPerFileCap // lines a worker keeps per file
-				if mode == "files" {
-					keep = 0 // only the count is printed
-				}
 				stop := make(chan struct{})
 				items := make(chan searchItem, 2*workers-1)
 				jobs := make(chan searchJob)
@@ -472,7 +468,7 @@ func (r *Registry) searchFiles() *Tool {
 				var wg sync.WaitGroup
 				wg.Go(func() { w.run(newDirRef(start), rules) })
 				for range workers {
-					wg.Go(func() { searchWorker(ctx, stop, jobs, re, blocks, keep) })
+					wg.Go(func() { searchWorker(ctx, stop, jobs, re, blocks) })
 				}
 				consume(items)
 				// The call ends here, finished, capped or cancelled: the

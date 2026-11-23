@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -250,9 +251,8 @@ func TestSearchDoesNotWaitOnADirectorySwappedForAFIFO(t *testing.T) {
 }
 
 // A worker keeps only the clipped lines it will print, copied out of
-// the file's text, and none in mode=files: a result waiting for the
-// calling goroutine does not hold the whole file (pre-release review of
-// ADR-0125).
+// the file's text: a result waiting for the calling goroutine does not
+// hold the whole file (pre-release review of ADR-0125).
 func TestSearchWorkerKeepsOnlyClippedCopies(t *testing.T) {
 	r := newRegistry(t)
 	dir := r.ProjectDir()
@@ -263,30 +263,53 @@ func TestSearchWorkerKeepsOnlyClippedCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = h.Close(); release() }()
-	re := regexp.MustCompile("needle")
-	for _, keep := range []int{searchPerFileCap, 0} {
-		jobs := make(chan searchJob, 1)
-		res := make(chan fileResult, 1)
-		d := newDirRef(h)
-		d.acquire() // the job's hold; the test keeps the first
-		jobs <- searchJob{dir: d, name: "f.txt", full: filepath.Join(dir, "f.txt"), res: res}
-		close(jobs)
-		searchWorker(context.Background(), make(chan struct{}), jobs, re, false, keep)
-		got := <-res
-		if got.count != 2 {
-			t.Fatalf("keep=%d: count %d, want 2", keep, got.count)
-		}
-		if keep == 0 {
-			if len(got.hits) != 0 {
-				t.Errorf("mode=files kept %d lines", len(got.hits))
+	jobs := make(chan searchJob, 1)
+	res := make(chan fileResult, 1)
+	d := newDirRef(h)
+	d.acquire() // the job's hold; the test keeps the first
+	jobs <- searchJob{dir: d, name: "f.txt", full: filepath.Join(dir, "f.txt"), res: res}
+	close(jobs)
+	searchWorker(context.Background(), make(chan struct{}), jobs, regexp.MustCompile("needle"), false)
+	got := <-res
+	if got.count != 2 || len(got.hits) != 2 || got.hits[0].text != clipRunes(long, searchLineClip) || got.hits[1].text != "needle short" {
+		t.Fatalf("result = %+v", got)
+	}
+}
+
+// At the cap the walk stops: the sequential loop opened nothing past
+// it. A subtree that gives the walk nothing to emit — empty directories
+// — must not be walked to its end after the cap (verification of the
+// fixes, ADR-0125).
+func TestSearchStopsWalkingAtTheCap(t *testing.T) {
+	withSearchWorkers(t, 8)
+	r := newRegistry(t)
+	dir := r.ProjectDir()
+	// a/ reaches the cap exactly at its last file (40 files of 5
+	// lines); b/ comes next and has nothing to emit.
+	for i := 0; i < 40; i++ {
+		judgeWrite(t, dir, fmt.Sprintf("a/f%02d.txt", i), strings.Repeat("hit\n", 5))
+	}
+	for i := 0; i < 30; i++ {
+		for j := 0; j < 30; j++ {
+			if err := os.MkdirAll(filepath.Join(dir, "b", fmt.Sprintf("d%02d", i), fmt.Sprintf("e%02d", j)), 0o755); err != nil {
+				t.Fatal(err)
 			}
-			continue
 		}
-		if len(got.hits) != 2 || got.hits[0].text != clipRunes(long, searchLineClip) || got.hits[1].text != "needle short" {
-			t.Fatalf("hits = %+v", got.hits)
+	}
+	var listed atomic.Int32
+	withSearchHook(t, func(event, path string) {
+		if event == "dir" {
+			listed.Add(1)
 		}
-		if len(got.hits[0].text) > len(long) || strings.HasPrefix(got.hits[0].text, " ") {
-			t.Errorf("the kept line is not the clipped, trimmed one: %q", got.hits[0].text)
-		}
+	})
+	out, err := run(t, r, "search_files", map[string]any{"pattern": "hit", "literal": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "stopped at the 200-line cap") {
+		t.Fatalf("the tree does not reach the cap:\n%s", out)
+	}
+	if n := listed.Load(); n > 300 {
+		t.Errorf("the walk listed %d of the tree's 933 directories; the cap was reached in a/", n)
 	}
 }

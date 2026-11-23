@@ -3,6 +3,7 @@ package tools
 import (
 	"math/rand"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -85,7 +86,7 @@ func TestScanLinesBlocksMatchLineByLine(t *testing.T) {
 				multiBlock++
 			}
 			wantCount, wantHits := referenceScan(text, re, 5)
-			gotCount, gotHits, cut := scanLines(text, re, true, 5, func() bool { return false })
+			gotCount, gotHits, cut := scanLines([]byte(text), re, true, 5, func() bool { return false })
 			if cut || gotCount != wantCount || !equalHits(gotHits, wantHits) {
 				t.Fatalf("pattern %q, text of %d bytes: got %d %v, want %d %v", p, len(text), gotCount, gotHits, wantCount, wantHits)
 			}
@@ -104,7 +105,7 @@ func TestScanLinesBlocksMatchLineByLine(t *testing.T) {
 		}
 	}
 	re := regexp.MustCompile("needle")
-	count, hits, _ := scanLines(b.String(), re, true, 5, func() bool { return false })
+	count, hits, _ := scanLines([]byte(b.String()), re, true, 5, func() bool { return false })
 	if count != 4 || len(hits) != 4 || hits[0].n != 1023 || hits[3].n != 1026 {
 		t.Errorf("block edge: count %d hits %v", count, hits)
 	}
@@ -129,14 +130,52 @@ func TestScanLinesStopsBetweenBlocks(t *testing.T) {
 	re := regexp.MustCompile("needle")
 	for _, blocks := range []bool{false, true} {
 		asked := 0
-		_, _, cut := scanLines(text, re, blocks, 5, func() bool { asked++; return asked == 2 })
+		_, _, cut := scanLines([]byte(text), re, blocks, 5, func() bool { asked++; return asked == 2 })
 		if !cut || asked != 2 {
 			t.Errorf("blocks=%v: cut=%v after %d asks, want a cut at the second ask", blocks, cut, asked)
 		}
 		asked = 0
-		count, _, cut := scanLines(text, re, blocks, 5, func() bool { asked++; return false })
+		count, _, cut := scanLines([]byte(text), re, blocks, 5, func() bool { asked++; return false })
 		if cut || count != 3*scanBlock || asked != 3 {
 			t.Errorf("blocks=%v: count %d cut %v asks %d", blocks, count, cut, asked)
+		}
+	}
+}
+
+// Every line of an empty file, a file without a trailing newline, and
+// one that ends in one: the lines strings.Split makes, line by line and
+// in blocks.
+func TestScanLinesEdges(t *testing.T) {
+	re := regexp.MustCompile("x*")
+	for _, text := range []string{"", "\n", "a", "a\n", "a\nb", "\n\n", strings.Repeat("x\n", 2*scanBlock)} {
+		want, wantHits := referenceScan(text, re, 3)
+		for _, blocks := range []bool{false, true} {
+			got, hits, _ := scanLines([]byte(text), re, blocks, 3, func() bool { return false })
+			if got != want || !equalHits(hits, wantHits) {
+				t.Errorf("%q blocks=%v: %d %v, want %d %v", text, blocks, got, hits, want, wantHits)
+			}
+		}
+	}
+}
+
+// A scan holds one file: it allocates far less than the file it reads,
+// however many lines the file has (verification of the fixes, ADR-0125).
+// Splitting the file into a string per line allocated several times its
+// size for a file of short lines.
+func TestScanLinesAllocatesLessThanItsFile(t *testing.T) {
+	if raceEnabled {
+		t.Skip("the race detector empties sync.Pool on purpose; allocations are measured without it")
+	}
+	data := []byte(strings.Repeat("a\n", 512*1024)) // 1 MiB, half a million lines
+	re := regexp.MustCompile("needle")
+	for _, blocks := range []bool{false, true} {
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		scanLines(data, re, blocks, 5, func() bool { return false })
+		runtime.ReadMemStats(&after)
+		if got := after.TotalAlloc - before.TotalAlloc; got > uint64(len(data))/4 {
+			t.Errorf("blocks=%v: a scan of %d bytes allocated %d", blocks, len(data), got)
 		}
 	}
 }

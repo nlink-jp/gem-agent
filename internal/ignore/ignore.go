@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // builtinDirs are directory basenames skipped at any depth: dependency
@@ -77,11 +78,16 @@ func osReader(path string, cap int64) ([]byte, error) {
 	if !info.Mode().IsRegular() || info.Size() > cap {
 		return nil, fmt.Errorf("%s: not a regular file within %d bytes", path, cap)
 	}
-	f, err := os.Open(path)
+	// Opened without waiting, and checked again on the descriptor:
+	// a FIFO swapped in after the Lstat must not hold the walk.
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
+	if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s: not a regular file", path)
+	}
 	data, more, err := bounded.ReadAll(f, int(cap))
 	if err != nil {
 		return nil, err

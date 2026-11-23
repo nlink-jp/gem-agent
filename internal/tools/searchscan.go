@@ -1,9 +1,9 @@
 package tools
 
 import (
+	"bytes"
 	"regexp"
 	"regexp/syntax"
-	"strings"
 )
 
 // scanBlock is how many lines are checked at once before they are
@@ -50,40 +50,56 @@ func anchorsText(re *syntax.Regexp) bool {
 	return false
 }
 
-// scanLines matches re against each line of text — the lines
-// strings.Split(text, "\n") makes — and returns how many match and the
-// first keep of them. With blocks, each run of scanBlock lines is
-// matched as a whole first and skipped when it does not match; the
-// result is the same (blockCheckable says when that holds). stop is
-// consulted before every block after the first; when it reports true
-// the scan ends with interrupted set and the count is not the file's.
-func scanLines(text string, re *regexp.Regexp, blocks bool, keep int, stop func() bool) (count int, hits []lineHit, interrupted bool) {
-	lines := strings.Split(text, "\n")
-	off := 0 // byte offset of lines[b] in text
-	for b := 0; b < len(lines); b += scanBlock {
-		if b > 0 && stop() {
+// scanLines matches re against each line of data — the lines
+// strings.Split(string(data), "\n") makes — and returns how many match
+// and the first keep of them, each copied out of data. With blocks, each
+// run of scanBlock lines is matched as a whole first and skipped when it
+// does not match; the result is the same (blockCheckable says when that
+// holds). It works on data's bytes: no copy of the file, no slice of
+// every line, so a scan holds one file (verification of the fixes,
+// ADR-0125). stop is consulted before every block after the first; when
+// it reports true the scan ends with interrupted set and the count is
+// not the file's.
+func scanLines(data []byte, re *regexp.Regexp, blocks bool, keep int, stop func() bool) (count int, hits []lineHit, interrupted bool) {
+	start, lineNo := 0, 0 // the block's first byte; lines before it
+	for {
+		if lineNo > 0 && stop() {
 			return count, hits, true
 		}
-		e := min(b+scanBlock, len(lines))
-		end := off // byte offset just past lines[e-1]
-		for _, l := range lines[b:e] {
-			end += len(l) + 1
-		}
-		end-- // the newline after the last line of the block is not in it
-		if blocks && !re.MatchString(text[off:end]) {
-			off = end + 1
-			continue
-		}
-		for i := b; i < e; i++ {
-			if !re.MatchString(lines[i]) {
-				continue
+		// The block: up to scanBlock lines from start. end is just past
+		// its last line's text; next is where the line after begins.
+		end, next, k, last := start, start, 0, false
+		for k < scanBlock {
+			k++
+			i := bytes.IndexByte(data[next:], '\n')
+			if i < 0 {
+				end, last = len(data), true
+				break
 			}
-			count++
-			if len(hits) < keep {
-				hits = append(hits, lineHit{n: i + 1, text: lines[i]})
+			end = next + i
+			next = end + 1
+		}
+		if !blocks || re.Match(data[start:end]) {
+			p := start
+			for j := 0; j < k; j++ {
+				e := end
+				if j < k-1 {
+					e = p + bytes.IndexByte(data[p:], '\n')
+				}
+				line := data[p:e]
+				if re.Match(line) {
+					count++
+					if len(hits) < keep {
+						hits = append(hits, lineHit{n: lineNo + j + 1, text: string(line)})
+					}
+				}
+				p = e + 1
 			}
 		}
-		off = end + 1
+		lineNo += k
+		if last {
+			return count, hits, false
+		}
+		start = next
 	}
-	return count, hits, false
 }
