@@ -1,0 +1,6 @@
+sub/deep/d.go:3: func NewDeep() {} // needle
+sub/deep/d.go:4: needle
+sub/secret-ok.txt:1: needle re-included by negation
+
+3 matches in 2 files (3 scanned)
+[ignored: 1 files — pass include_ignored=true to include them]

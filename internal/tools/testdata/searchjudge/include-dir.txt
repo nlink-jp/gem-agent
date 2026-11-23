@@ -1,0 +1,7 @@
+src/a.go:4: func New() *Registry { return newRegistry() } // needle
+src/a.go:6: needle
+src/crlf.txt:3: needle
+
+3 matches in 2 files (5 scanned, 20 filtered by include)
+[not searched: 1 unreadable; 1 directory could not be listed]
+[ignored: 2 dirs (build-out, node_modules), 2 files — pass include_ignored=true to include them]

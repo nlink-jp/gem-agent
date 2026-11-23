@@ -1,0 +1,6 @@
+src/crlf.txt:2: crlf-line
+
+1 matches in 1 files (19 scanned)
+[not read: closed.txt — reading one needs the operator's approval]
+[not searched: 1 over 2 MB (big/huge.txt), 1 binary, 2 images, 2 unreadable; 1 directory could not be listed]
+[ignored: 2 dirs (build-out, node_modules), 2 files — pass include_ignored=true to include them]

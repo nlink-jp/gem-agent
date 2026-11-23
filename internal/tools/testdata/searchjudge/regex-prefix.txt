@@ -1,0 +1,8 @@
+src/a.go:4: func New() *Registry { return newRegistry() } // needle
+src/a.go:5: func NewOther() {}
+sub/deep/d.go:3: func NewDeep() {} // needle
+
+3 matches in 2 files (19 scanned)
+[not read: closed.txt — reading one needs the operator's approval]
+[not searched: 1 over 2 MB (big/huge.txt), 1 binary, 2 images, 2 unreadable; 1 directory could not be listed]
+[ignored: 2 dirs (build-out, node_modules), 2 files — pass include_ignored=true to include them]

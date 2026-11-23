@@ -1,0 +1,227 @@
+a/f00.txt:1: hit 0.0
+a/f00.txt:2: hit 0.1
+a/f00.txt:3: hit 0.2
+a/f00.txt:4: hit 0.3
+a/f01.txt:1: hit 1.0
+a/f01.txt:2: hit 1.1
+a/f01.txt:3: hit 1.2
+a/f01.txt:4: hit 1.3
+a/f01.txt:5: hit 1.4
+a/f02.txt:1: hit 2.0
+a/f02.txt:2: hit 2.1
+a/f02.txt:3: hit 2.2
+a/f02.txt:4: hit 2.3
+a/f02.txt:5: hit 2.4
+  … +1 more in this file
+a/f03.txt:1: hit 3.0
+a/f03.txt:2: hit 3.1
+a/f03.txt:3: hit 3.2
+a/f03.txt:4: hit 3.3
+a/f03.txt:5: hit 3.4
+  … +2 more in this file
+a/f04.txt:1: hit 4.0
+a/f04.txt:2: hit 4.1
+a/f04.txt:3: hit 4.2
+a/f04.txt:4: hit 4.3
+a/f05.txt:1: hit 5.0
+a/f05.txt:2: hit 5.1
+a/f05.txt:3: hit 5.2
+a/f05.txt:4: hit 5.3
+a/f05.txt:5: hit 5.4
+a/f06.txt:1: hit 6.0
+a/f06.txt:2: hit 6.1
+a/f06.txt:3: hit 6.2
+a/f06.txt:4: hit 6.3
+a/f06.txt:5: hit 6.4
+  … +1 more in this file
+a/f07.txt:1: hit 7.0
+a/f07.txt:2: hit 7.1
+a/f07.txt:3: hit 7.2
+a/f07.txt:4: hit 7.3
+a/f07.txt:5: hit 7.4
+  … +2 more in this file
+a/f08.txt:1: hit 8.0
+a/f08.txt:2: hit 8.1
+a/f08.txt:3: hit 8.2
+a/f08.txt:4: hit 8.3
+a/f09.txt:1: hit 9.0
+a/f09.txt:2: hit 9.1
+a/f09.txt:3: hit 9.2
+a/f09.txt:4: hit 9.3
+a/f09.txt:5: hit 9.4
+a/f10.txt:1: hit 10.0
+a/f10.txt:2: hit 10.1
+a/f10.txt:3: hit 10.2
+a/f10.txt:4: hit 10.3
+a/f10.txt:5: hit 10.4
+  … +1 more in this file
+a/f11.txt:1: hit 11.0
+a/f11.txt:2: hit 11.1
+a/f11.txt:3: hit 11.2
+a/f11.txt:4: hit 11.3
+a/f11.txt:5: hit 11.4
+  … +2 more in this file
+a/f12.txt:1: hit 12.0
+a/f12.txt:2: hit 12.1
+a/f12.txt:3: hit 12.2
+a/f12.txt:4: hit 12.3
+a/f13.txt:1: hit 13.0
+a/f13.txt:2: hit 13.1
+a/f13.txt:3: hit 13.2
+a/f13.txt:4: hit 13.3
+a/f13.txt:5: hit 13.4
+a/f14.txt:1: hit 14.0
+a/f14.txt:2: hit 14.1
+a/f14.txt:3: hit 14.2
+a/f14.txt:4: hit 14.3
+a/f14.txt:5: hit 14.4
+  … +1 more in this file
+a/f15.txt:1: hit 15.0
+a/f15.txt:2: hit 15.1
+a/f15.txt:3: hit 15.2
+a/f15.txt:4: hit 15.3
+a/f15.txt:5: hit 15.4
+  … +2 more in this file
+a/f16.txt:1: hit 16.0
+a/f16.txt:2: hit 16.1
+a/f16.txt:3: hit 16.2
+a/f16.txt:4: hit 16.3
+a/f17.txt:1: hit 17.0
+a/f17.txt:2: hit 17.1
+a/f17.txt:3: hit 17.2
+a/f17.txt:4: hit 17.3
+a/f17.txt:5: hit 17.4
+a/f18.txt:1: hit 18.0
+a/f18.txt:2: hit 18.1
+a/f18.txt:3: hit 18.2
+a/f18.txt:4: hit 18.3
+a/f18.txt:5: hit 18.4
+  … +1 more in this file
+a/f19.txt:1: hit 19.0
+a/f19.txt:2: hit 19.1
+a/f19.txt:3: hit 19.2
+a/f19.txt:4: hit 19.3
+a/f19.txt:5: hit 19.4
+  … +2 more in this file
+a/f20.txt:1: hit 20.0
+a/f20.txt:2: hit 20.1
+a/f20.txt:3: hit 20.2
+a/f20.txt:4: hit 20.3
+a/f21.txt:1: hit 21.0
+a/f21.txt:2: hit 21.1
+a/f21.txt:3: hit 21.2
+a/f21.txt:4: hit 21.3
+a/f21.txt:5: hit 21.4
+a/f22.txt:1: hit 22.0
+a/f22.txt:2: hit 22.1
+a/f22.txt:3: hit 22.2
+a/f22.txt:4: hit 22.3
+a/f22.txt:5: hit 22.4
+  … +1 more in this file
+a/f23.txt:1: hit 23.0
+a/f23.txt:2: hit 23.1
+a/f23.txt:3: hit 23.2
+a/f23.txt:4: hit 23.3
+a/f23.txt:5: hit 23.4
+  … +2 more in this file
+a/f24.txt:1: hit 24.0
+a/f24.txt:2: hit 24.1
+a/f24.txt:3: hit 24.2
+a/f24.txt:4: hit 24.3
+a/f25.txt:1: hit 25.0
+a/f25.txt:2: hit 25.1
+a/f25.txt:3: hit 25.2
+a/f25.txt:4: hit 25.3
+a/f25.txt:5: hit 25.4
+a/f26.txt:1: hit 26.0
+a/f26.txt:2: hit 26.1
+a/f26.txt:3: hit 26.2
+a/f26.txt:4: hit 26.3
+a/f26.txt:5: hit 26.4
+  … +1 more in this file
+a/f27.txt:1: hit 27.0
+a/f27.txt:2: hit 27.1
+a/f27.txt:3: hit 27.2
+a/f27.txt:4: hit 27.3
+a/f27.txt:5: hit 27.4
+  … +2 more in this file
+a/f28.txt:1: hit 28.0
+a/f28.txt:2: hit 28.1
+a/f28.txt:3: hit 28.2
+a/f28.txt:4: hit 28.3
+a/f29.txt:1: hit 29.0
+a/f29.txt:2: hit 29.1
+a/f29.txt:3: hit 29.2
+a/f29.txt:4: hit 29.3
+a/f29.txt:5: hit 29.4
+a/f30.txt:1: hit 30.0
+a/f30.txt:2: hit 30.1
+a/f30.txt:3: hit 30.2
+a/f30.txt:4: hit 30.3
+a/f30.txt:5: hit 30.4
+  … +1 more in this file
+a/f31.txt:1: hit 31.0
+a/f31.txt:2: hit 31.1
+a/f31.txt:3: hit 31.2
+a/f31.txt:4: hit 31.3
+a/f31.txt:5: hit 31.4
+  … +2 more in this file
+a/f32.txt:1: hit 32.0
+a/f32.txt:2: hit 32.1
+a/f32.txt:3: hit 32.2
+a/f32.txt:4: hit 32.3
+a/f33.txt:1: hit 33.0
+a/f33.txt:2: hit 33.1
+a/f33.txt:3: hit 33.2
+a/f33.txt:4: hit 33.3
+a/f33.txt:5: hit 33.4
+a/f34.txt:1: hit 34.0
+a/f34.txt:2: hit 34.1
+a/f34.txt:3: hit 34.2
+a/f34.txt:4: hit 34.3
+a/f34.txt:5: hit 34.4
+  … +1 more in this file
+a/f35.txt:1: hit 35.0
+a/f35.txt:2: hit 35.1
+a/f35.txt:3: hit 35.2
+a/f35.txt:4: hit 35.3
+a/f35.txt:5: hit 35.4
+  … +2 more in this file
+a/f36.txt:1: hit 36.0
+a/f36.txt:2: hit 36.1
+a/f36.txt:3: hit 36.2
+a/f36.txt:4: hit 36.3
+a/f37.txt:1: hit 37.0
+a/f37.txt:2: hit 37.1
+a/f37.txt:3: hit 37.2
+a/f37.txt:4: hit 37.3
+a/f37.txt:5: hit 37.4
+a/f38.txt:1: hit 38.0
+a/f38.txt:2: hit 38.1
+a/f38.txt:3: hit 38.2
+a/f38.txt:4: hit 38.3
+a/f38.txt:5: hit 38.4
+  … +1 more in this file
+a/f39.txt:1: hit 39.0
+a/f39.txt:2: hit 39.1
+a/f39.txt:3: hit 39.2
+a/f39.txt:4: hit 39.3
+a/f39.txt:5: hit 39.4
+  … +2 more in this file
+a/f40.txt:1: hit 40.0
+a/f40.txt:2: hit 40.1
+a/f40.txt:3: hit 40.2
+a/f40.txt:4: hit 40.3
+a/f41.txt:1: hit 41.0
+a/f41.txt:2: hit 41.1
+a/f41.txt:3: hit 41.2
+a/f41.txt:4: hit 41.3
+a/f41.txt:5: hit 41.4
+a/f42.txt:1: hit 42.0
+a/f42.txt:2: hit 42.1
+a/f42.txt:3: hit 42.2
+a/f42.txt:4: hit 42.3
+a/f42.txt:5: hit 42.4
+  … +1 more in this file
+
+235 matches in 43 files (44 scanned) — stopped at the 200-line cap; narrow with path or include, or use mode="files"

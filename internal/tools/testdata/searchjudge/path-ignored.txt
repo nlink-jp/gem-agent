@@ -1,0 +1,4 @@
+note: node_modules is inside an ignored area — ignore rules are off for this walk
+node_modules/m.js:1: const needle = 1
+
+1 matches in 1 files (1 scanned)

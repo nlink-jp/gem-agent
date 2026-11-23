@@ -1,0 +1,46 @@
+keep.log:1: needle in a kept log
+many/f00.go:1: needle line
+many/f01.go:1: needle line
+many/f01.go:2: needle line
+many/f02.go:1: needle line
+many/f02.go:2: needle line
+many/f02.go:3: needle line
+many/f03.go:1: needle line
+many/f03.go:2: needle line
+many/f03.go:3: needle line
+many/f03.go:4: needle line
+many/f04.go:1: needle line
+many/f04.go:2: needle line
+many/f04.go:3: needle line
+many/f04.go:4: needle line
+many/f04.go:5: needle line
+many/f05.go:1: needle line
+many/f05.go:2: needle line
+many/f05.go:3: needle line
+many/f05.go:4: needle line
+many/f05.go:5: needle line
+  … +1 more in this file
+many/f06.go:1: needle line
+many/f06.go:2: needle line
+many/f06.go:3: needle line
+many/f06.go:4: needle line
+many/f06.go:5: needle line
+  … +2 more in this file
+many/f07.go:1: needle line
+many/f07.go:2: needle line
+many/f07.go:3: needle line
+many/f07.go:4: needle line
+many/f07.go:5: needle line
+  … +3 more in this file
+src/a.go:4: func New() *Registry { return newRegistry() } // needle
+src/a.go:6: needle
+src/crlf.txt:3: needle
+sub/deep/d.go:3: func NewDeep() {} // needle
+sub/deep/d.go:4: needle
+sub/secret-ok.txt:1: needle re-included by negation
+日本語/ファイル.txt:1: needle 日本語
+
+44 matches in 14 files (19 scanned)
+[not read: closed.txt — reading one needs the operator's approval]
+[not searched: 1 over 2 MB (big/huge.txt), 1 binary, 2 images, 2 unreadable; 1 directory could not be listed]
+[ignored: 2 dirs (build-out, node_modules), 2 files — pass include_ignored=true to include them]

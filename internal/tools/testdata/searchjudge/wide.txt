@@ -1,0 +1,15 @@
+wide/w00000.txt:1: needle
+wide/w00997.txt:1: needle
+wide/w01994.txt:1: needle
+wide/w02991.txt:1: needle
+wide/w03988.txt:1: needle
+wide/w04985.txt:1: needle
+wide/w05982.txt:1: needle
+wide/w06979.txt:1: needle
+wide/w07976.txt:1: needle
+wide/w08973.txt:1: needle
+wide/w09970.txt:1: needle
+z/after.txt:1: needle after the wide directory
+
+12 matches in 12 files (10001 scanned)
+[1 directory had more than 10000 entries — the rest of each was not searched]

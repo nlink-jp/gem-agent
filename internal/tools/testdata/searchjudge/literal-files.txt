@@ -1,0 +1,19 @@
+keep.log (1 matches)
+many/f00.go (1 matches)
+many/f01.go (2 matches)
+many/f02.go (3 matches)
+many/f03.go (4 matches)
+many/f04.go (5 matches)
+many/f05.go (6 matches)
+many/f06.go (7 matches)
+many/f07.go (8 matches)
+src/a.go (2 matches)
+src/crlf.txt (1 matches)
+sub/deep/d.go (2 matches)
+sub/secret-ok.txt (1 matches)
+日本語/ファイル.txt (1 matches)
+
+44 matches in 14 files (19 scanned)
+[not read: closed.txt — reading one needs the operator's approval]
+[not searched: 1 over 2 MB (big/huge.txt), 1 binary, 2 images, 2 unreadable; 1 directory could not be listed]
+[ignored: 2 dirs (build-out, node_modules), 2 files — pass include_ignored=true to include them]

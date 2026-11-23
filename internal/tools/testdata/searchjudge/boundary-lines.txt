@@ -1,0 +1,11 @@
+src/long.txt:1020: boundary-mark 1020
+src/long.txt:1021: boundary-mark 1021
+src/long.txt:1022: boundary-mark 1022
+src/long.txt:1023: boundary-mark 1023
+src/long.txt:1024: boundary-mark 1024
+  … +6 more in this file
+
+11 matches in 1 files (19 scanned)
+[not read: closed.txt — reading one needs the operator's approval]
+[not searched: 1 over 2 MB (big/huge.txt), 1 binary, 2 images, 2 unreadable; 1 directory could not be listed]
+[ignored: 2 dirs (build-out, node_modules), 2 files — pass include_ignored=true to include them]

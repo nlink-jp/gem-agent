@@ -1,0 +1,3 @@
+日本語/ファイル.txt:1: needle 日本語
+
+1 matches in 1 files (1 scanned)
