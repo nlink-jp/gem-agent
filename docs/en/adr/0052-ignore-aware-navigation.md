@@ -13,6 +13,11 @@ counted by reason — size, binary, image, unreadable, unlistable
 directory — and refusals past the named five are counted; size and
 image skips were silent.*
 
+*Amended by ADR-0125: §5's "parallel walk: measured unnecessary" no longer holds
+after ADR-0072 §4 and ADR-0086 raised the cost per open. `search_files` opens each
+directory once, reads its files side by side in walk order, and keeps its output
+unchanged.*
+
 ## Context
 
 ADR-0013 shipped `list_tree` and `search_files` on the premise that
