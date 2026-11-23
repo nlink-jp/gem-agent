@@ -62,6 +62,7 @@ func TestScanLinesBlocksMatchLineByLine(t *testing.T) {
 	}
 	pieces := []string{"needle", "end", "x", "\r", "\n", "\n", "\n", "\xff", "é", " ", "needlend", "word", ""}
 	rng := rand.New(rand.NewSource(1))
+	multiBlock := 0
 	for _, p := range patterns {
 		re := regexp.MustCompile(p)
 		if !blockCheckable(p, re) {
@@ -70,16 +71,28 @@ func TestScanLinesBlocksMatchLineByLine(t *testing.T) {
 		for iter := 0; iter < 300; iter++ {
 			var b strings.Builder
 			n := rng.Intn(4000)
+			if iter%4 == 0 {
+				// Thousands of lines: several blocks, so anchors, \b and
+				// matches meet block edges, not only the one text below
+				// (pre-release review).
+				n = 8000 + rng.Intn(12000)
+			}
 			for i := 0; i < n; i++ {
 				b.WriteString(pieces[rng.Intn(len(pieces))])
 			}
 			text := b.String()
+			if strings.Count(text, "\n") >= scanBlock {
+				multiBlock++
+			}
 			wantCount, wantHits := referenceScan(text, re, 5)
 			gotCount, gotHits, cut := scanLines(text, re, true, 5, func() bool { return false })
 			if cut || gotCount != wantCount || !equalHits(gotHits, wantHits) {
 				t.Fatalf("pattern %q, text of %d bytes: got %d %v, want %d %v", p, len(text), gotCount, gotHits, wantCount, wantHits)
 			}
 		}
+	}
+	if multiBlock < 500 {
+		t.Fatalf("only %d texts spanned more than one block", multiBlock)
 	}
 	// Matches on lines 1023–1026 straddle the first block edge.
 	var b strings.Builder
