@@ -88,11 +88,11 @@ The walk holds an `os.Root` for the directory it is in, opened from the director
 
 A directory's handle is closed when the walk has left it and the last of its files has been read.
 
-**The start of the walk is opened as now first.** `resolvePath` does not look at what the `path` argument names, and `OpenRoot` opens its last component without `O_NONBLOCK`, so a FIFO named as `path` would make the call wait. The start is first opened through the call's root (`rootFor`) with today's open, which does not wait and admits only a regular file or a directory. Only a directory is then opened with `OpenRoot`. A FIFO or a regular file named as `path` gets the answer it gets today.
+**A directory is opened through `name/.`.** `OpenRoot` opens its last component with neither `O_DIRECTORY` nor `O_NONBLOCK`, so a FIFO at the name would make the walk wait. That covers a FIFO named as `path`, and a FIFO put where the listing had returned a directory. Opened as `OpenRoot(name + "/.")`, the name is resolved as a directory on the way: anything else is refused at once (`ENOTDIR`), and a link is followed only where the root allows, as before. The start of the walk is opened the same way, through the call's root (`rootFor`). A FIFO or a regular file named as `path` gets the answer it gets today: one directory that could not be listed. *(Corrected by the review before release. The design opened the start with today's open first and accepted the swap as a residual; see the addendum.)*
 
 **Confinement does not change.** A handle opened by `OpenRoot` from inside a root is a root itself and cannot reach outside the directory it names; each step opens one name that the listing returned. Symlinks are skipped by their entry type, as now. A handle is in fact stricter than today's open: a link inside the project that climbs out of its own directory is refused, where today it is followed if it stays in the project; the walk only meets one by a race, since entries that are links are skipped. The credential refusal does not move: in the child the kernel refuses the open (ADR-0086), and in process `sandbox.CredentialPath` judges the full path before the open, as now. Display paths are built from the same lexical path as now.
 
-**What this gives up, on ADR-0123 §1's four answers.** A directory the listing returned can be swapped for a FIFO between the listing and its `OpenRoot`, and the walk then waits. *When and how often:* only when something replaces a directory with a FIFO in the moment between two system calls; never seen in use. *Who:* a program written to race the runtime (origin D). *What they already have:* write access to the project. *What it newly gives them:* a search that waits until the operator interrupts it — the same as the FIFO waits ADR-0123 §4 accepted. A FIFO that is simply there is listed as a FIFO, is never opened as a directory, and is opened as a file without waiting, as now.
+**Nothing is given up for the swap.** The first version of this design accepted a directory swapped for a FIFO between the listing and its open as a residual, on ADR-0123 §1's four answers. The review before release showed it was worse than it said: in process, an interrupt did not end the call, and the walk's goroutines, handles and session root stayed held. Opening through `name/.` removes the case. A FIFO that is simply there is listed as a FIFO, is never opened as a directory, and is opened as a file without waiting, as now.
 
 **Open descriptors grow with depth.** One handle is held per level of the walk, and a directory whose files are still being read keeps its handle until they are done (at most `2 × workers` of them, §2). Go raises the process's soft limit to its hard limit at start; on this machine that allows 245,760 descriptors per process (measured the same under the cage), so a tree would need to be that deep. If an `OpenRoot` fails for this or any other reason, the directory is counted as one that could not be listed, as an unlistable directory is today; the walk does not stop.
 
@@ -218,3 +218,33 @@ Each deliberate break was put in and taken out again:
 - **The walk runs at most `2 × workers` items ahead, counted with the one it is waiting to hand over.** The stream's buffer holds `2 × workers − 1`.
 - **A test hook.** `searchTestHook` lets a test act when the walk is about to list a directory or a worker is about to read a file. The cancellation and `/clear` tests use it. A FIFO can no longer hold a read, because the file open does not wait (ADR-0072 §4.8). The hook is nil outside tests.
 - **The descriptor test checks that the count does not rise.** The design said the process holds "no more" descriptors after the walk. One run counted one fewer after than before, because the runtime closed a descriptor of its own.
+
+## Addendum: the review before release (2026-11-23)
+
+One independent pass over the whole difference, and one over lagent's port of it (lagent ADR-0055). Each finding was checked against the other runtime, which has the same code.
+
+1. **Medium — a directory swapped for a FIFO held the call past an interrupt, in process.** `OpenRoot` sets neither `O_DIRECTORY` nor `O_NONBLOCK`, so the walker waited in `openat`. The calling goroutine waits on the stream in order, and the call waits for its goroutines. So in process (no cage, or an operator-approved read) the interrupt did not end it: the floor of ADR-0065 §2 abandoned the call, and its goroutines, its directory handles and the session root stayed held, so a root rotated by `/clear` never closed. In the child the parent kills the process. Both reviews reproduced it. → Directories, the start included, are opened through `name/.` (§1, corrected), which refuses a FIFO at once. A regression test swaps a listed directory for a FIFO and fails without the fix.
+2. **Medium–low — descriptors grow with depth, and a tree deeper than the limit loses a directory.** With the hard limit lowered to 128, a 200-deep tree counted one directory as unlistable where v0.108.2 found its match. Accepted, as §1 records it. Go raises the soft limit to the hard one: 245,760 on this machine, and macOS's 1,024-byte path limit keeps a tree to about 500 levels. A directory lost this way is counted, never silent.
+3. **Low — a result waiting in walk order held its whole file.** A kept line was a substring of the file's text, so up to about 24 files of up to 2 MB stayed alive. → A worker keeps the clipped line it will print, copied, and keeps none in `mode="files"`. Output unchanged, with a test.
+4. **Low — the random equivalence test rarely crossed a block edge.** → A quarter of the texts now run to thousands of lines, and the test requires at least 500 of them to span more than one block.
+5. **Low, accepted — a walk finishes on the root it started with.** v0.108.2 resolved every open from the current root, so a root rotated by `/clear` mid-walk refused the rest of the walk. Now the walk reads that directory to the end. The operator's own act starts it, and it reads nothing that was not readable a moment before. Item 1 bounds it.
+
+### Why the design missed these: what the sequential loop held without saying so
+
+The five findings are one cause, not five accidents. The design restated one property of the old loop, its output, and judged the change by it. The loop also held other properties because it was one loop in the calling goroutine, and moving its work onto goroutines the call waits for changed each of them silently. Every finding is one of those properties. So instead of a further review round, every property of the loop was listed and each was checked in the new code:
+
+| What the sequential loop held | Now | How it is held |
+|---|---|---|
+| Output: counts, order, cap, footers | the same | the judge, at 1 and 8 workers, with deliberate breaks |
+| Every open does not wait (ADR-0072 §4.8) | broken by `OpenRoot`, fixed | `openDirRoot` (`name/.`); `TestFileToolOpensDoNotWait` admits an open only through `openRegular`, as an exclusive create, or in a listed function with its reason — it fails on the shape that shipped |
+| A cancel returns within one system call or 1024 lines (ADR-0065 §1) | the same, given the row above | the call waits for goroutines that each stop within that; the cancellation tests |
+| One file's bytes in memory | broken by kept substrings, fixed | workers keep only the clipped lines; a test |
+| A few descriptors | grows with depth | accepted (§1): bounded by the path limit, and a loss is counted |
+| Every open resolved from the current root | the walk keeps its start root | accepted (finding 5) |
+| Only files that are counted are read | up to about 3 × workers files are read ahead past a cap or a cancel | accepted: they are in the project, and a search without the cap would read them; on an online-only file this can start a download |
+| The in-process credential refusal on every file | the same | `CredentialPath` on each full path; the child under the real profile |
+| Confinement to the roots | the same or stricter | each step opens one listed name through a root |
+| A panic in the tool ends the process | the same | no recover anywhere in the runtime, before or after |
+| No goroutine outlives the call | the same | the call waits; the goroutine-count tests |
+
+Of these, only the open can come back with a later edit, so it is the one held by a test of the code's shape rather than by a test of behaviour.
