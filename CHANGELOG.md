@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.109.0] - 2026-11-23
 
 ### Changed
 
@@ -11,7 +11,7 @@
   and matches up to eight files side by side, and, for a pattern with a
   literal prefix, checks each block of 1024 lines before matching its
   lines one by one. Measured through the sandbox on this repository
-  (757 files): 147 ms → 71 ms, and 272 ms → 89 ms for a `(?i)` pattern;
+  (757 files): 147 ms → 66 ms, and 272 ms → 86 ms for a `(?i)` pattern;
   the 40 ms each call costs to start is unchanged. The result is
   byte-for-byte what 0.108.2 returned, checked by a test against its
   output (ADR-0125).
