@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"regexp"
 	"regexp/syntax"
+	"strings"
+	"unicode/utf8"
 )
 
 // scanBlock is how many lines are checked at once before they are
@@ -52,7 +54,8 @@ func anchorsText(re *syntax.Regexp) bool {
 
 // scanLines matches re against each line of data — the lines
 // strings.Split(string(data), "\n") makes — and returns how many match
-// and the first keep of them, each copied out of data. With blocks, each
+// and the first keep of them, each as text(line) — text must copy what
+// it keeps, since line is data. With blocks, each
 // run of scanBlock lines is matched as a whole first and skipped when it
 // does not match; the result is the same (blockCheckable says when that
 // holds). It works on data's bytes: no copy of the file, no slice of
@@ -60,7 +63,7 @@ func anchorsText(re *syntax.Regexp) bool {
 // ADR-0125). stop is consulted before every block after the first; when
 // it reports true the scan ends with interrupted set and the count is
 // not the file's.
-func scanLines(data []byte, re *regexp.Regexp, blocks bool, keep int, stop func() bool) (count int, hits []lineHit, interrupted bool) {
+func scanLines(data []byte, re *regexp.Regexp, blocks bool, keep int, text func(line []byte) string, stop func() bool) (count int, hits []lineHit, interrupted bool) {
 	start, lineNo := 0, 0 // the block's first byte; lines before it
 	for {
 		if lineNo > 0 && stop() {
@@ -90,7 +93,7 @@ func scanLines(data []byte, re *regexp.Regexp, blocks bool, keep int, stop func(
 				if re.Match(line) {
 					count++
 					if len(hits) < keep {
-						hits = append(hits, lineHit{n: lineNo + j + 1, text: string(line)})
+						hits = append(hits, lineHit{n: lineNo + j + 1, text: text(line)})
 					}
 				}
 				p = e + 1
@@ -102,4 +105,31 @@ func scanLines(data []byte, re *regexp.Regexp, blocks bool, keep int, stop func(
 		}
 		start = next
 	}
+}
+
+// clipSearchLine is the text a search shows for a matching line:
+// clipRunes(strings.TrimSpace(string(line)), searchLineClip), computed
+// without copying the line — only the runes it keeps are decoded and
+// copied. A long matching line no longer costs its whole length, twice
+// (third verification of ADR-0125).
+func clipSearchLine(line []byte) string {
+	t := bytes.TrimSpace(line)
+	n, i := 0, 0 // runes counted, bytes they span; stop one past the limit
+	for i < len(t) && n <= searchLineClip {
+		_, size := utf8.DecodeRune(t[i:])
+		i += size
+		n++
+	}
+	if n <= searchLineClip {
+		return string(t) // fits: unchanged, as clipRunes returns it
+	}
+	// As []rune and back: an invalid byte becomes U+FFFD.
+	var b strings.Builder
+	for k, j := 0, 0; k < searchLineClip; k++ {
+		r, size := utf8.DecodeRune(t[j:])
+		b.WriteRune(r)
+		j += size
+	}
+	b.WriteString("…")
+	return b.String()
 }

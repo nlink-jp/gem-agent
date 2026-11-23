@@ -86,7 +86,7 @@ func TestScanLinesBlocksMatchLineByLine(t *testing.T) {
 				multiBlock++
 			}
 			wantCount, wantHits := referenceScan(text, re, 5)
-			gotCount, gotHits, cut := scanLines([]byte(text), re, true, 5, func() bool { return false })
+			gotCount, gotHits, cut := scanLines([]byte(text), re, true, 5, rawLine, func() bool { return false })
 			if cut || gotCount != wantCount || !equalHits(gotHits, wantHits) {
 				t.Fatalf("pattern %q, text of %d bytes: got %d %v, want %d %v", p, len(text), gotCount, gotHits, wantCount, wantHits)
 			}
@@ -105,7 +105,7 @@ func TestScanLinesBlocksMatchLineByLine(t *testing.T) {
 		}
 	}
 	re := regexp.MustCompile("needle")
-	count, hits, _ := scanLines([]byte(b.String()), re, true, 5, func() bool { return false })
+	count, hits, _ := scanLines([]byte(b.String()), re, true, 5, rawLine, func() bool { return false })
 	if count != 4 || len(hits) != 4 || hits[0].n != 1023 || hits[3].n != 1026 {
 		t.Errorf("block edge: count %d hits %v", count, hits)
 	}
@@ -130,12 +130,12 @@ func TestScanLinesStopsBetweenBlocks(t *testing.T) {
 	re := regexp.MustCompile("needle")
 	for _, blocks := range []bool{false, true} {
 		asked := 0
-		_, _, cut := scanLines([]byte(text), re, blocks, 5, func() bool { asked++; return asked == 2 })
+		_, _, cut := scanLines([]byte(text), re, blocks, 5, rawLine, func() bool { asked++; return asked == 2 })
 		if !cut || asked != 2 {
 			t.Errorf("blocks=%v: cut=%v after %d asks, want a cut at the second ask", blocks, cut, asked)
 		}
 		asked = 0
-		count, _, cut := scanLines([]byte(text), re, blocks, 5, func() bool { asked++; return false })
+		count, _, cut := scanLines([]byte(text), re, blocks, 5, rawLine, func() bool { asked++; return false })
 		if cut || count != 3*scanBlock || asked != 3 {
 			t.Errorf("blocks=%v: count %d cut %v asks %d", blocks, count, cut, asked)
 		}
@@ -150,7 +150,7 @@ func TestScanLinesEdges(t *testing.T) {
 	for _, text := range []string{"", "\n", "a", "a\n", "a\nb", "\n\n", strings.Repeat("x\n", 2*scanBlock)} {
 		want, wantHits := referenceScan(text, re, 3)
 		for _, blocks := range []bool{false, true} {
-			got, hits, _ := scanLines([]byte(text), re, blocks, 3, func() bool { return false })
+			got, hits, _ := scanLines([]byte(text), re, blocks, 3, rawLine, func() bool { return false })
 			if got != want || !equalHits(hits, wantHits) {
 				t.Errorf("%q blocks=%v: %d %v, want %d %v", text, blocks, got, hits, want, wantHits)
 			}
@@ -168,14 +168,47 @@ func TestScanLinesAllocatesLessThanItsFile(t *testing.T) {
 	}
 	data := []byte(strings.Repeat("a\n", 512*1024)) // 1 MiB, half a million lines
 	re := regexp.MustCompile("needle")
+	allocs(t, data, re)
+	// One matching line as long as the file: only the clipped text is
+	// copied (third verification of ADR-0125).
+	allocs(t, []byte("needle "+strings.Repeat("é", 512*1024)), re)
+}
+
+func allocs(t *testing.T, data []byte, re *regexp.Regexp) {
+	t.Helper()
 	for _, blocks := range []bool{false, true} {
 		var before, after runtime.MemStats
 		runtime.GC()
 		runtime.ReadMemStats(&before)
-		scanLines(data, re, blocks, 5, func() bool { return false })
+		scanLines(data, re, blocks, 5, clipSearchLine, func() bool { return false }) // what a worker keeps
 		runtime.ReadMemStats(&after)
 		if got := after.TotalAlloc - before.TotalAlloc; got > uint64(len(data))/4 {
 			t.Errorf("blocks=%v: a scan of %d bytes allocated %d", blocks, len(data), got)
+		}
+	}
+}
+
+// rawLine keeps a line as it is, for comparing with strings.Split.
+func rawLine(line []byte) string { return string(line) }
+
+// clipSearchLine is exactly clipRunes(strings.TrimSpace(...)), for lines
+// around the limit, with spaces at either end, multi-byte runes and
+// invalid UTF-8 (third verification of ADR-0125).
+func TestClipSearchLineMatchesClipRunes(t *testing.T) {
+	pieces := []string{"a", " ", "\t", "é", "日", "\xff", "\xe6\x97", "\u00a0", "\u2028", "x"}
+	rng := rand.New(rand.NewSource(2))
+	for iter := 0; iter < 20000; iter++ {
+		var b strings.Builder
+		n := rng.Intn(2 * searchLineClip)
+		if iter%10 == 0 {
+			n = searchLineClip - 2 + rng.Intn(5)
+		}
+		for i := 0; i < n; i++ {
+			b.WriteString(pieces[rng.Intn(len(pieces))])
+		}
+		line := b.String()
+		if got, want := clipSearchLine([]byte(line)), clipRunes(strings.TrimSpace(line), searchLineClip); got != want {
+			t.Fatalf("line %q:\n got %q\nwant %q", line, got, want)
 		}
 	}
 }

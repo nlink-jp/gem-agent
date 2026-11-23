@@ -389,6 +389,7 @@ func (r *Registry) searchFiles() *Tool {
 						return
 					}
 					switch it.kind {
+					case itemDirEntered: // counts nothing
 					case itemEnd:
 						if it.interrupted {
 							interrupted = true

@@ -298,8 +298,13 @@ func TestSearchStopsWalkingAtTheCap(t *testing.T) {
 	}
 	var listed atomic.Int32
 	withSearchHook(t, func(event, path string) {
-		if event == "dir" {
+		switch {
+		case event == "dir":
 			listed.Add(1)
+		case strings.HasSuffix(path, "f39.txt"):
+			// The file that reaches the cap is slow to read: the walk
+			// has all that time to run ahead.
+			time.Sleep(200 * time.Millisecond)
 		}
 	})
 	out, err := run(t, r, "search_files", map[string]any{"pattern": "hit", "literal": true})
@@ -309,7 +314,9 @@ func TestSearchStopsWalkingAtTheCap(t *testing.T) {
 	if !strings.Contains(out, "stopped at the 200-line cap") {
 		t.Fatalf("the tree does not reach the cap:\n%s", out)
 	}
-	if n := listed.Load(); n > 300 {
-		t.Errorf("the walk listed %d of the tree's 933 directories; the cap was reached in a/", n)
+	// The root and a/, then at most the read-ahead: 2 x workers steps,
+	// a directory counting as one (third verification of ADR-0125).
+	if n, most := listed.Load(), int32(2+2*searchWorkers()); n > most {
+		t.Errorf("the walk listed %d of the tree's 933 directories, more than %d; the cap was reached in a/", n, most)
 	}
 }
