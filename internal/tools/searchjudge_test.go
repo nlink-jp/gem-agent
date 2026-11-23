@@ -80,34 +80,47 @@ func TestSearchFilesJudge(t *testing.T) {
 		"cap":  judgeCapTree(t),
 		"wide": judgeWideTree(t),
 	}
-	for _, sc := range judgeScenarios {
-		t.Run(sc.name, func(t *testing.T) {
-			r := trees[sc.tree]
-			got := judgeRun(t, r, sc.args)
-			for i := 1; i < judgeRuns; i++ {
-				if again := judgeRun(t, r, sc.args); again != got {
-					t.Fatalf("run %d differs from run 0:\n--- run 0\n%s\n--- run %d\n%s", i, got, i, again)
-				}
-			}
-			ref := filepath.Join("testdata", "searchjudge", sc.name+".txt")
-			if *updateSearchJudge {
-				if err := os.MkdirAll(filepath.Dir(ref), 0o755); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(ref, []byte(got), 0o644); err != nil {
-					t.Fatal(err)
-				}
-				return
-			}
-			want, err := os.ReadFile(ref)
-			if err != nil {
-				t.Fatalf("no reference (run with -update at the commit before a change): %v", err)
-			}
-			if got != string(want) {
-				t.Errorf("output differs from the reference %s:\n--- want\n%s\n--- got\n%s", ref, want, got)
-			}
-		})
+	// The same references hold whether one worker reads or eight
+	// (ADR-0125 §2).
+	defer func(n int) { searchWorkerLimit = n }(searchWorkerLimit)
+	for _, workers := range []int{1, 8} {
+		searchWorkerLimit = workers
+		if *updateSearchJudge && workers != 1 {
+			break
+		}
+		for _, sc := range judgeScenarios {
+			judgeScenarioRun(t, trees, workers, sc)
+		}
 	}
+}
+
+func judgeScenarioRun(t *testing.T, trees map[string]*Registry, workers int, sc judgeScenario) {
+	t.Run(fmt.Sprintf("w%d/%s", workers, sc.name), func(t *testing.T) {
+		r := trees[sc.tree]
+		got := judgeRun(t, r, sc.args)
+		for i := 1; i < judgeRuns; i++ {
+			if again := judgeRun(t, r, sc.args); again != got {
+				t.Fatalf("run %d differs from run 0:\n--- run 0\n%s\n--- run %d\n%s", i, got, i, again)
+			}
+		}
+		ref := filepath.Join("testdata", "searchjudge", sc.name+".txt")
+		if *updateSearchJudge {
+			if err := os.MkdirAll(filepath.Dir(ref), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(ref, []byte(got), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+		want, err := os.ReadFile(ref)
+		if err != nil {
+			t.Fatalf("no reference (run with -update at the commit before a change): %v", err)
+		}
+		if got != string(want) {
+			t.Errorf("output differs from the reference %s:\n--- want\n%s\n--- got\n%s", ref, want, got)
+		}
+	})
 }
 
 // judgeRun runs search_files and replaces the project's absolute path,
@@ -150,7 +163,7 @@ func judgeMainTree(t *testing.T) *Registry {
 		"src/b.go":          "package src\n\n// NEEDLE upper\n// Needle mixed\nfunc helper() {}\n",
 		"src/c.txt":         "no trailing newline, ends with trailer",
 		"src/crlf.txt":      "first\r\ncrlf-line\r\nneedle\r\n",
-		"日本語/ファイル.txt":       "needle 日本語\n",
+		"日本語/ファイル.txt":      "needle 日本語\n",
 		"img/pic.png":       string(tinyPNG),
 		"img/needle.jpg":    "needle in an image by extension\n",
 		"bin/data.bin":      "needle\x00binary\n",

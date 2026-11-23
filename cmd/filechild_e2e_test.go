@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,6 +94,29 @@ func TestFileChildUnderTheRealProfile(t *testing.T) {
 	}
 	if strings.Contains(out, "hunter2") || strings.Contains(out, "no matches") {
 		t.Errorf("search_files read the credential file or reported an empty project:\n%s", out)
+	}
+
+	// ADR-0125 §2 under the real profile: a credential file in a
+	// subdirectory, among files the workers read side by side, is named,
+	// and every other file is still searched.
+	for i := 0; i < 40; i++ {
+		p := filepath.Join(proj, "pack", fmt.Sprintf("f%02d.txt", i))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("needle\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(proj, "pack", ".env"), []byte("needle SECRET=hunter3\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, code = run("search_files", map[string]any{"pattern": "needle", "path": "pack", "mode": "files"})
+	if code != 0 || !strings.Contains(out, "40 matches in 40 files (40 scanned)") || !strings.Contains(out, "[not read: pack/.env") {
+		t.Errorf("a credential file among the workers' files, exit %d:\n%s", code, out)
+	}
+	if strings.Contains(out, "hunter3") {
+		t.Errorf("search_files read the credential file:\n%s", out)
 	}
 
 	// A single-file read of credential material is the operator's

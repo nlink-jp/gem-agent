@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/nlink-jp/gem-agent/internal/ignore"
 )
@@ -370,142 +371,87 @@ func (r *Registry) searchFiles() *Tool {
 			skips := &searchSkips{}
 			capped := false
 			interrupted := false
-			// The walk holds each directory open and reaches what is in
-			// it by one name (ADR-0125 §1): one open per file instead of
-			// one per directory above it. h is dir's own handle.
-			var walk func(h *os.Root, dir string, rules *ignore.Rules)
-			walk = func(h *os.Root, dir string, rules *ignore.Rules) {
-				if capped || interrupted {
-					return
-				}
-				// Cancellation ends the walk (ADR-0065 §1): consulted
-				// before every directory read and every file read, so
-				// the partial result is back within one syscall of
-				// the cancel instead of after the remaining project.
-				if ctx.Err() != nil {
-					interrupted = true
-					return
-				}
-				items, more, err := readDirOf(h)
-				if err != nil {
-					skips.dirs++
-					return
-				}
-				if more {
-					unwalked++
-				}
-				sort.Slice(items, func(i, j int) bool { return items[i].Name() < items[j].Name() })
-				for _, e := range items {
-					if capped || interrupted {
-						return
-					}
+			// One goroutine walks, workers read and match the files it
+			// finds, and this goroutine takes every step in walk order
+			// and does what the sequential loop did (ADR-0125 §2). The
+			// walk holds each directory open and reaches what is in it
+			// by one name (§1).
+			consume := func(items <-chan searchItem) {
+				for {
+					// Cancellation ends the search (ADR-0065 §1),
+					// consulted before every step.
 					if ctx.Err() != nil {
 						interrupted = true
 						return
 					}
-					if e.Type()&os.ModeSymlink != 0 {
-						continue // never follow links out of the walk (ADR-0013 §3)
+					it, ok := <-items
+					if !ok {
+						return
 					}
-					if vcsDirs[e.Name()] {
-						continue // a submodule's .git is a file — skip by name either way
-					}
-					full := filepath.Join(dir, e.Name())
-					if e.IsDir() {
-						if rules.Ignored(e.Name(), true) {
-							tally.dir(e.Name())
-							continue
+					switch it.kind {
+					case itemEnd:
+						if it.interrupted {
+							interrupted = true
 						}
-						if ctx.Err() != nil {
+						return
+					case itemDirUnlisted:
+						skips.dirs++
+					case itemDirOverCap:
+						unwalked++
+					case itemIgnoredDir:
+						tally.dir(it.name)
+					case itemIgnoredFile:
+						tally.files++
+					case itemFiltered:
+						filteredOut++
+					case itemSkip:
+						skips.add(it.skip, it.name)
+					case itemFile:
+						res := <-it.res
+						if res.cut {
+							// Not read or scanned to the end: this
+							// file's partial count is dropped — the
+							// footer names the cut.
 							interrupted = true
 							return
 						}
-						sub, err := h.OpenRoot(e.Name())
-						if err != nil {
-							skips.dirs++ // what a failed listing counted
+						if res.skip != skipNone {
+							// A file the cage refused is named, not
+							// hidden: the shape `grep -r` has, and the
+							// shape every skip takes (ADR-0086 §3).
+							if errors.Is(res.err, fs.ErrPermission) {
+								refusedAll++
+								if len(refused) < searchPerFileCap {
+									refused = append(refused, it.name)
+								}
+							} else {
+								skips.add(res.skip, it.name)
+							}
 							continue
 						}
-						walk(sub, full, rules.DescendWith(e.Name(), gitignoreReaderIn(sub)))
-						_ = sub.Close()
-						continue
-					}
-					if rules.Ignored(e.Name(), false) {
-						tally.files++
-						continue
-					}
-					rel := relOrDot(abs, full)
-					if inc != nil && !inc.MatchFile(filepath.ToSlash(rel)) {
-						filteredOut++
-						continue
-					}
-					// Every file not searched is counted by reason
-					// (ADR-0096 §4); before, these were skipped silently.
-					info, err := e.Info()
-					switch {
-					case err != nil:
-						skips.add(skipUnreadable, "")
-						continue
-					case info.Size() > searchFileCap:
-						skips.add(skipSize, relOrDot(r.projectDir, full))
-						continue
-					case isImageExt(e.Name()):
-						skips.add(skipImage, "")
-						continue
-					}
-					data, skip, readErr := readForSearch(h, e.Name(), full)
-					if skip != skipNone {
-						// A file the cage refused is named, not hidden:
-						// the shape `grep -r` has, and the shape every
-						// skip takes (ADR-0086 §3).
-						if errors.Is(readErr, fs.ErrPermission) {
-							refusedAll++
-							if len(refused) < searchPerFileCap {
-								refused = append(refused, relOrDot(r.projectDir, full))
-							}
+						filesScanned++
+						if res.count == 0 {
+							continue
+						}
+						filesHit++
+						totalMatches += res.count
+						if mode == "files" {
+							fmt.Fprintf(&b, "%s (%d matches)\n", it.name, res.count)
+							shownLines++
 						} else {
-							skips.add(skip, relOrDot(r.projectDir, full))
+							for _, h := range res.hits {
+								fmt.Fprintf(&b, "%s:%d: %s\n",
+									it.name, h.n, clipRunes(strings.TrimSpace(h.text), searchLineClip))
+							}
+							shownLines += len(res.hits)
+							if res.count > len(res.hits) {
+								fmt.Fprintf(&b, "  … +%d more in this file\n", res.count-len(res.hits))
+							}
 						}
-						continue
-					}
-					filesScanned++
-					display := relOrDot(r.projectDir, full)
-					// A 2 MB file under a heavy pattern can outlast the
-					// abandon grace on its own (ADR-0065 §2); the scan
-					// consults the context every 1024 lines so a cancel
-					// lands mid-file too. This file's partial count is
-					// dropped — the footer names the cut.
-					count, hits, cut := scanLines(string(data), re, blocks, searchPerFileCap,
-						func() bool { return ctx.Err() != nil })
-					var shown []string
-					for _, h := range hits {
-						shown = append(shown, fmt.Sprintf("%s:%d: %s",
-							display, h.n, clipRunes(strings.TrimSpace(h.text), searchLineClip)))
-					}
-					if cut {
-						interrupted = true
-					}
-					if interrupted {
-						filesScanned-- // not scanned to the end: not counted
-						return
-					}
-					if count == 0 {
-						continue
-					}
-					filesHit++
-					totalMatches += count
-					if mode == "files" {
-						fmt.Fprintf(&b, "%s (%d matches)\n", display, count)
-						shownLines++
-					} else {
-						for _, l := range shown {
-							b.WriteString(l + "\n")
+						if shownLines >= searchMatchCap {
+							capped = true
+							return
 						}
-						shownLines += len(shown)
-						if count > len(shown) {
-							fmt.Fprintf(&b, "  … +%d more in this file\n", count-len(shown))
-						}
-					}
-					if shownLines >= searchMatchCap {
-						capped = true
 					}
 				}
 			}
@@ -514,8 +460,24 @@ func (r *Registry) searchFiles() *Tool {
 			} else if start, release, err := r.openWalkStart(abs); err != nil {
 				skips.dirs++ // a start that cannot be listed, as before
 			} else {
-				walk(start, abs, rules)
-				_ = start.Close()
+				workers := searchWorkers()
+				stop := make(chan struct{})
+				items := make(chan searchItem, 2*workers-1)
+				jobs := make(chan searchJob)
+				w := &searchWalker{ctx: ctx, stop: stop, items: items, jobs: jobs,
+					abs: abs, projectDir: r.projectDir, inc: inc}
+				var wg sync.WaitGroup
+				wg.Go(func() { w.run(newDirRef(start), rules) })
+				for range workers {
+					wg.Go(func() { searchWorker(ctx, stop, jobs, re, blocks) })
+				}
+				consume(items)
+				// The call ends here, finished, capped or cancelled: the
+				// walk and the workers stop, and no goroutine of the
+				// call outlives it. Every directory handle is closed by
+				// then; the session root is given back last.
+				close(stop)
+				wg.Wait()
 				release()
 			}
 
