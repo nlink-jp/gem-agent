@@ -339,6 +339,7 @@ func (r *Registry) searchFiles() *Tool {
 			if err != nil {
 				return "", fmt.Errorf("invalid pattern: %w (set literal=true to search for the exact string)", err)
 			}
+			blocks := blockCheckable(pattern, re) // ADR-0125 §3
 			mode, _ := args["mode"].(string)
 			if mode != "" && mode != "content" && mode != "files" {
 				return "", fmt.Errorf("unknown mode %q — valid: \"content\", \"files\"", mode)
@@ -467,26 +468,20 @@ func (r *Registry) searchFiles() *Tool {
 					}
 					filesScanned++
 					display := relOrDot(r.projectDir, full)
+					// A 2 MB file under a heavy pattern can outlast the
+					// abandon grace on its own (ADR-0065 §2); the scan
+					// consults the context every 1024 lines so a cancel
+					// lands mid-file too. This file's partial count is
+					// dropped — the footer names the cut.
+					count, hits, cut := scanLines(string(data), re, blocks, searchPerFileCap,
+						func() bool { return ctx.Err() != nil })
 					var shown []string
-					count := 0
-					for i, line := range strings.Split(string(data), "\n") {
-						// A 2 MB file under a heavy pattern can outlast
-						// the abandon grace on its own (ADR-0065 §2); the
-						// check is periodic so a cancel lands mid-file
-						// too. This file's partial count is dropped —
-						// the footer names the cut.
-						if i&1023 == 1023 && ctx.Err() != nil {
-							interrupted = true
-							break
-						}
-						if !re.MatchString(line) {
-							continue
-						}
-						count++
-						if len(shown) < searchPerFileCap {
-							shown = append(shown, fmt.Sprintf("%s:%d: %s",
-								display, i+1, clipRunes(strings.TrimSpace(line), searchLineClip)))
-						}
+					for _, h := range hits {
+						shown = append(shown, fmt.Sprintf("%s:%d: %s",
+							display, h.n, clipRunes(strings.TrimSpace(h.text), searchLineClip)))
+					}
+					if cut {
+						interrupted = true
 					}
 					if interrupted {
 						filesScanned-- // not scanned to the end: not counted
