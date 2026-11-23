@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-11-23) |
+| Status | **Accepted** (2026-11-23) — implemented (see the addendum) |
 | Date | 2026-11-23 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -184,3 +184,37 @@ One independent pass. It checked the design against the knowledge base, the work
 6. **Low, plausible — descriptors grow with depth.** → §1, "open descriptors grow with depth", with the limit and what a failed open does.
 
 The review also confirmed the §3 equivalence with 200,000 random inputs per pattern. The inputs mixed `\n`, `\r`, invalid UTF-8, U+FFFD, trailing newlines and empty files. The only misses came from `OpBeginText` and `OpEndText`. It found no other difference in the output under the ordered stream. It confirmed that confinement is the same or stricter.
+
+## Addendum: the implementation (2026-11-23)
+
+Implemented in the order of the development plan, one commit per step: the judge, §1, §3, §2.
+
+### Measured again (plan step 5)
+
+The same script, trees and profile as the Context's first table. Each figure is the median of five warm runs, both binaries measured in the same sitting.
+
+| Tree | Pattern | v0.108.2 | Now | §5 expected |
+|---|---|---|---|---|
+| gem-agent | literal, not found | 147 ms | 71 ms | about 60 ms |
+| gem-agent | `func New` | 142 ms | 68 ms | about 60 ms |
+| gem-agent | `func \w+Registry` | 160 ms | 72 ms | about 60 ms |
+| gem-agent | `(?i)thought signature` | 272 ms | 89 ms | under 100 ms |
+| cli-series | literal, not found | 361 ms | 112 ms | under 110 ms |
+| cli-series | `(?i)thought signature` | 561 ms | 149 ms | — |
+
+The fixed cost is unchanged (40–43 ms). Every figure is within half of the expected gain, so nothing more was tuned (§Verification). Two patterns without a literal prefix were run as well (three runs each), to see that they take the line-by-line path at no extra cost. `(\w+\s+){10}zzzz` went from 545 ms to 156 ms. `(?i)(\w{1,30}\W{1,5}){1,30}QQQ` went from 1,755 ms to 457 ms. Both now gain from the workers.
+
+### What the judge was shown to catch
+
+Each deliberate break was put in and taken out again:
+
+- §3 without the anchor exclusion: three scenarios failed (`^`, `$`, CRLF).
+- §2 counting past the cap: the cap scenarios failed at both worker counts.
+- The walk taking directories before files: ten scenarios failed.
+- A worker that does not release its directory handle: the descriptor test failed (8 before, 15 after).
+
+### Where the implementation differs from the design, and why
+
+- **The walk runs at most `2 × workers` items ahead, counted with the one it is waiting to hand over.** The stream's buffer holds `2 × workers − 1`.
+- **A test hook.** `searchTestHook` lets a test act when the walk is about to list a directory or a worker is about to read a file. The cancellation and `/clear` tests use it. A FIFO can no longer hold a read, because the file open does not wait (ADR-0072 §4.8). The hook is nil outside tests.
+- **The descriptor test checks that the count does not rise.** The design said the process holds "no more" descriptors after the walk. One run counted one fewer after than before, because the runtime closed a descriptor of its own.

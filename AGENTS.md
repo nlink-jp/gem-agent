@@ -287,6 +287,15 @@ a new hook) is an architecture change and takes the same rows as a
   code known to be right. Tests that pin wiring by reading source read
   `cmdSources` or `sessionWiringFiles` (`cmd/sources_test.go`), not one
   file — a check of a file the code left passes on nothing.
+- **`search_files` is judged by its own references**
+  (`internal/tools/searchjudge_test.go`, ADR-0125): its output over
+  generated trees equals `internal/tools/testdata/searchjudge/` byte for
+  byte, at one worker and at eight. Everything that reaches the output
+  is applied by the calling goroutine in walk order
+  (`internal/tools/searchwalk.go`): a new count travels in the stream
+  as an item, never kept by the walk or a worker, or a capped or
+  cancelled result counts what one reader would not. `-update` only
+  when the output is meant to change.
 - **A project skill is compared when the list is built, not when it is
   used** (ADR-0123 §2, superseding ADR-0119). The list is built at
   startup, `/clear` and `/skills reload`, and that is where a changed

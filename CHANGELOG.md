@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **`search_files` is about twice as fast, and its output does not
+  change.** Most of its time went into opening files: each open
+  resolved the path one directory at a time from the project root. The
+  search now opens each directory once and its files by one name, reads
+  and matches up to eight files side by side, and, for a pattern with a
+  literal prefix, checks each block of 1024 lines before matching its
+  lines one by one. Measured through the sandbox on this repository
+  (757 files): 147 ms → 71 ms, and 272 ms → 89 ms for a `(?i)` pattern;
+  the 40 ms each call costs to start is unchanged. The result is
+  byte-for-byte what 0.108.2 returned, checked by a test against its
+  output (ADR-0125).
+
 ## [0.108.2] - 2026-11-19
 
 ### Fixed
