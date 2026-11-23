@@ -673,38 +673,31 @@ func readDirOf(dir *os.Root) (entries []os.DirEntry, more bool, err error) {
 }
 
 // openWalkStart opens the directory a walk starts at as a root of its
-// own (ADR-0125 §1). It is opened first the way every file tool opens —
-// without waiting, a regular file or a directory only — because
-// OpenRoot has no O_NONBLOCK and the path argument may name a FIFO.
-// Only a directory is then opened as a root. release gives back the
-// session root the start was opened through; call it after closing the
-// returned root.
+// own (ADR-0125 §1). release gives back the session root the start was
+// opened through; call it after closing the returned root.
 func (r *Registry) openWalkStart(abs string) (dir *os.Root, release func(), err error) {
 	root, rel, release, err := r.rootFor(abs)
 	if err != nil {
 		return nil, nil, err
 	}
-	f, err := openRegular(func(flag int) (*os.File, error) { return root.OpenFile(rel, flag, 0) })
-	if err != nil {
-		release()
-		return nil, nil, err
-	}
-	st, err := f.Stat()
-	_ = f.Close()
-	if err != nil {
-		release()
-		return nil, nil, err
-	}
-	if !st.IsDir() {
-		release()
-		return nil, nil, fmt.Errorf("not a directory: %s", abs)
-	}
-	dir, err = root.OpenRoot(rel)
+	dir, err = openDirRoot(root, rel)
 	if err != nil {
 		release()
 		return nil, nil, err
 	}
 	return dir, release, nil
+}
+
+// openDirRoot opens name, inside parent, as a root of its own — only if
+// it is a directory, and without waiting. OpenRoot opens its last
+// component with neither O_DIRECTORY nor O_NONBLOCK, so a FIFO at the
+// name (named by the caller, or put where a directory was listed) would
+// hold the walk past any cancel. Through "name/." the name is resolved
+// as a directory on the way: anything else is refused at once
+// (ENOTDIR), and a link is followed only where the root allows, as
+// before (pre-release review of ADR-0125).
+func openDirRoot(parent *os.Root, name string) (*os.Root, error) {
+	return parent.OpenRoot(name + "/.")
 }
 
 // readForSearch reads a file for search_files: whole, within

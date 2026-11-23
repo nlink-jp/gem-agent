@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strings"
 	"sync/atomic"
 
 	"github.com/nlink-jp/gem-agent/internal/ignore"
@@ -173,7 +174,7 @@ func (w *searchWalker) dir(d *dirRef, dir string, rules *ignore.Rules) bool {
 			if w.halted() {
 				return false
 			}
-			sub, err := d.h.OpenRoot(e.Name())
+			sub, err := openDirRoot(d.h, e.Name())
 			if err != nil {
 				if !w.emit(searchItem{kind: itemDirUnlisted}) { // what a failed listing counted
 					return false
@@ -224,7 +225,7 @@ func (w *searchWalker) dir(d *dirRef, dir string, rules *ignore.Rules) bool {
 // searchWorker reads and matches the files it is handed until the walk
 // closes jobs. After a cancel or a stop it reads nothing more, but
 // still releases each job's directory, so every handle is closed.
-func searchWorker(ctx context.Context, stop <-chan struct{}, jobs <-chan searchJob, re *regexp.Regexp, blocks bool) {
+func searchWorker(ctx context.Context, stop <-chan struct{}, jobs <-chan searchJob, re *regexp.Regexp, blocks bool, keep int) {
 	stopped := func() bool {
 		select {
 		case <-stop:
@@ -248,7 +249,13 @@ func searchWorker(ctx context.Context, stop <-chan struct{}, jobs <-chan searchJ
 			j.res <- fileResult{skip: skip, err: err}
 			continue
 		}
-		count, hits, cut := scanLines(string(data), re, blocks, searchPerFileCap, stopped)
+		count, hits, cut := scanLines(string(data), re, blocks, keep, stopped)
+		// A result may wait for the calling goroutine; it keeps the
+		// clipped lines it will print, copied, not the file's text the
+		// hits point into (pre-release review of ADR-0125).
+		for i := range hits {
+			hits[i].text = strings.Clone(clipRunes(strings.TrimSpace(hits[i].text), searchLineClip))
+		}
 		j.res <- fileResult{count: count, hits: hits, cut: cut}
 	}
 }

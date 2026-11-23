@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -204,5 +206,87 @@ func TestSearchFinishesOnTheRootItStarted(t *testing.T) {
 	}
 	if !old.closed.Load() {
 		t.Error("the old root was not closed once the walk let it go")
+	}
+}
+
+// A directory swapped for a FIFO between its listing and its open is
+// refused at once, not waited on: OpenRoot alone would hold the walk
+// past any cancel (pre-release review of ADR-0125). Nothing is left
+// running.
+func TestSearchDoesNotWaitOnADirectorySwappedForAFIFO(t *testing.T) {
+	withSearchWorkers(t, 8)
+	r := newRegistry(t)
+	dir := r.ProjectDir()
+	judgeWrite(t, dir, "a/x.txt", "needle\n")
+	judgeWrite(t, dir, "b/y.txt", "needle\n")
+	judgeWrite(t, dir, "c/z.txt", "needle\n")
+	withSearchHook(t, func(event, path string) {
+		if event == "dir" && filepath.Base(path) == "a" {
+			b := filepath.Join(dir, "b")
+			if err := os.RemoveAll(b); err != nil {
+				t.Error(err)
+			}
+			if err := syscall.Mkfifo(b, 0o600); err != nil {
+				t.Error(err)
+			}
+		}
+	})
+	before := runtime.NumGoroutine()
+	tool, _ := r.Get("search_files")
+	done := make(chan string, 1)
+	go func() {
+		out, _ := tool.Run(context.Background(), map[string]any{"pattern": "needle", "literal": true})
+		done <- out
+	}()
+	select {
+	case out := <-done:
+		if !strings.Contains(out, "2 matches in 2 files") || !strings.Contains(out, "[1 directory could not be listed]") {
+			t.Errorf("the swapped directory was not counted as unlistable:\n%s", out)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the walk waited on a FIFO where a directory had been listed")
+	}
+	goroutinesSettleTo(t, before)
+}
+
+// A worker keeps only the clipped lines it will print, copied out of
+// the file's text, and none in mode=files: a result waiting for the
+// calling goroutine does not hold the whole file (pre-release review of
+// ADR-0125).
+func TestSearchWorkerKeepsOnlyClippedCopies(t *testing.T) {
+	r := newRegistry(t)
+	dir := r.ProjectDir()
+	long := "needle " + strings.Repeat("x", 3*searchLineClip)
+	judgeWrite(t, dir, "f.txt", "  "+long+"\nneedle short\n")
+	h, release, err := r.openWalkStart(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = h.Close(); release() }()
+	re := regexp.MustCompile("needle")
+	for _, keep := range []int{searchPerFileCap, 0} {
+		jobs := make(chan searchJob, 1)
+		res := make(chan fileResult, 1)
+		d := newDirRef(h)
+		d.acquire() // the job's hold; the test keeps the first
+		jobs <- searchJob{dir: d, name: "f.txt", full: filepath.Join(dir, "f.txt"), res: res}
+		close(jobs)
+		searchWorker(context.Background(), make(chan struct{}), jobs, re, false, keep)
+		got := <-res
+		if got.count != 2 {
+			t.Fatalf("keep=%d: count %d, want 2", keep, got.count)
+		}
+		if keep == 0 {
+			if len(got.hits) != 0 {
+				t.Errorf("mode=files kept %d lines", len(got.hits))
+			}
+			continue
+		}
+		if len(got.hits) != 2 || got.hits[0].text != clipRunes(long, searchLineClip) || got.hits[1].text != "needle short" {
+			t.Fatalf("hits = %+v", got.hits)
+		}
+		if len(got.hits[0].text) > len(long) || strings.HasPrefix(got.hits[0].text, " ") {
+			t.Errorf("the kept line is not the clipped, trimmed one: %q", got.hits[0].text)
+		}
 	}
 }

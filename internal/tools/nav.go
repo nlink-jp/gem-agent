@@ -440,8 +440,7 @@ func (r *Registry) searchFiles() *Tool {
 							shownLines++
 						} else {
 							for _, h := range res.hits {
-								fmt.Fprintf(&b, "%s:%d: %s\n",
-									it.name, h.n, clipRunes(strings.TrimSpace(h.text), searchLineClip))
+								fmt.Fprintf(&b, "%s:%d: %s\n", it.name, h.n, h.text) // clipped by the worker
 							}
 							shownLines += len(res.hits)
 							if res.count > len(res.hits) {
@@ -461,6 +460,10 @@ func (r *Registry) searchFiles() *Tool {
 				skips.dirs++ // a start that cannot be listed, as before
 			} else {
 				workers := searchWorkers()
+				keep := searchPerFileCap // lines a worker keeps per file
+				if mode == "files" {
+					keep = 0 // only the count is printed
+				}
 				stop := make(chan struct{})
 				items := make(chan searchItem, 2*workers-1)
 				jobs := make(chan searchJob)
@@ -469,7 +472,7 @@ func (r *Registry) searchFiles() *Tool {
 				var wg sync.WaitGroup
 				wg.Go(func() { w.run(newDirRef(start), rules) })
 				for range workers {
-					wg.Go(func() { searchWorker(ctx, stop, jobs, re, blocks) })
+					wg.Go(func() { searchWorker(ctx, stop, jobs, re, blocks, keep) })
 				}
 				consume(items)
 				// The call ends here, finished, capped or cancelled: the
