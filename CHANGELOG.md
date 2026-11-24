@@ -1,5 +1,30 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+
+- **OpenTelemetry is updated to v1.47.0** (`go.opentelemetry.io/otel`,
+  `otel/trace`, `otel/metric`, `otel/sdk` and `otel/sdk/metric` from v1.45.0;
+  `otel/log` and `otel/sdk/log` from v0.21.0, their first stable release; the
+  OTLP log exporters from v0.21.0 to v0.23.0, which require it).
+  `govulncheck` found GO-2026-6974 (CVE-2026-128085, published 2026-11-23:
+  attribute value length limits could be bypassed with U+FFFD runes) in two
+  places gem-agent reaches: the log SDK's attribute truncation, which runs on
+  every audit event gem-agent exports when `[telemetry]` is enabled
+  (ADR-0035), and the tracing path of the Vertex AI SDK and the Cloud Storage
+  client. The exporters' own
+  dependencies move with them (`otelgrpc` and `otelhttp` v0.70.0,
+  `grpc-gateway` v2.30.0, `protobuf` v1.36.12, `genproto`); the telemetry
+  code needed no change.
+  The same update fixes GO-2026-6975 (memory allocation amplification in W3C
+  baggage parsing in `go.opentelemetry.io/otel`), whose package gem-agent imports
+  but whose affected code it does not call.
+  Two advisories remain that gem-agent does not call: GO-2026-6278 in
+  `github.com/gorilla/websocket` (imported by the SDK; fixed only in an
+  untagged commit) and GO-2026-5932 against `x/crypto/openpgp`
+  (unmaintained, no fixed release).
+
 ## [0.109.0] - 2026-11-23
 
 ### Changed
