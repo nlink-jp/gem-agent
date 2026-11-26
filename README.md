@@ -104,8 +104,8 @@ reply — as pictures where the terminal draws images (flowchart / sequence /
 ER / pie / state / gantt / mindmap, CJK labels included), as box art elsewhere
 (flowchart / sequence / ER, CJK labels included, from the same engine; pie,
 state, gantt and mindmap stay source there); anything that cannot be
-drawn right stays source — nineteen slash commands (`/help`
-`/tools` `/mcp` `/auto` `/readonly` `/thinking` `/compact` `/settings` `/riskbook` `/usage`
+drawn right stays source — twenty slash commands (`/help`
+`/tools` `/mcp` `/auto` `/readonly` `/thinking` `/compact` `/settings` `/riskbook` `/show` `/usage`
 `/memory` `/skills` `/skill` `/add-dir` `/read-dir` `/dirs` `/version` `/clear` `/quit`), a provenance-first `/settings`
 panel, theme control, and a fully bilingual chrome
 (`[tui].language = auto|ja|en`). A positional argument is the first
@@ -161,7 +161,7 @@ configured, inline otherwise.
 you ask for one with `/show <path>` — PNG or JPEG, up to 2 MiB; the path may
 hold spaces, be quoted, or be a file dragged into the window; it is drawn in the terminal when the
 terminal can draw, as large as the screen above the input allows and never
-larger than the picture itself (`[tui].images`, `auto` by default; iTerm2 and kitty, off
+larger than the picture itself (`[tui].images`, `auto` by default; iTerm2, kitty and Ghostty, off
 inside tmux and screen). `view_image` is the other direction — that is the
 model looking at an image, not you
 ([ADR-0089](docs/en/adr/0089-inline-images-declare-their-height.md) /

@@ -44,7 +44,7 @@ pass through as source, note-free. Files the model writes are
 untouched.
 
 **Where the terminal draws images, a fence is a picture** (ADR-0092):
-on iTerm2 and kitty (`[tui].images`), mermaid-render draws the fence as
+on iTerm2, kitty and Ghostty (`[tui].images`), mermaid-render draws the fence as
 the model wrote it — flowchart / graph, sequenceDiagram and erDiagram,
 any labels a font has — and the picture is shown with one em of its text
 as one line of the terminal's, its width from the cell's own shape. A
@@ -233,6 +233,7 @@ in the input box as one message, never one LLM call per line.
 | `/compact` | summarise the older half of the conversation now |
 | `/settings` | every setting with its provenance; edit policy, session toggles, and which MCP servers and functions this session has (ADR-0077 — Enter opens a server, ←→ turns one on or off) |
 | `/riskbook` | the risk rules the auto-mode reviewer reads; `learn` drafts them from your answers (ADR-0050) |
+| `/show <path>` | draw an image in the terminal: PNG or JPEG, up to 2 MiB; the path may hold spaces, be quoted, or be a file dragged into the window (ADR-0091) |
 | `/usage` | the session's token statement (ADR-0019) |
 | `/memory` | persisted memories, global + this project |
 | `/skills` | installed skills; `/skills reload` re-discovers them (ADR-0039) |

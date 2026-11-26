@@ -91,8 +91,8 @@ syscall 1 回分で止まり、それ以外は有界の猶予後に放棄 — AD
 日本語 IME に優しい承認ダイアログ、`@` パス・`/` コマンド・スキル名の Tab 補完、
 `!コマンド` シェルエスケープ、回答中の mermaid フェンスのその場描画
 （画像を描ける端末では絵として、それ以外では罫線で。flowchart / sequence /
-ER / 円グラフ / 状態遷移図 / ガントチャート / マインドマップ、日本語のラベルも。罫線は同じエンジンで flowchart / sequence / ER を日本語のラベルも含めて描き、円グラフ・状態遷移図・ガントチャート・マインドマップは罫線では描かずソースのまま。正しく描けないものはソースのまま）、19 のスラッシュコマンド（`/help`
-`/tools` `/mcp` `/auto` `/readonly` `/thinking` `/compact` `/settings` `/riskbook` `/usage`
+ER / 円グラフ / 状態遷移図 / ガントチャート / マインドマップ、日本語のラベルも。罫線は同じエンジンで flowchart / sequence / ER を日本語のラベルも含めて描き、円グラフ・状態遷移図・ガントチャート・マインドマップは罫線では描かずソースのまま。正しく描けないものはソースのまま）、20 のスラッシュコマンド（`/help`
+`/tools` `/mcp` `/auto` `/readonly` `/thinking` `/compact` `/settings` `/riskbook` `/show` `/usage`
 `/memory` `/skills` `/skill` `/add-dir` `/read-dir` `/dirs` `/version` `/clear` `/quit`）、出所ファーストの `/settings`
 パネル、テーマ、完全二言語のクローム（`[tui].language = auto|ja|en`）。
 位置引数は対話セッションの第 1 ターン — `gem-agent "…"` はそれを
@@ -142,7 +142,7 @@ read・write・operator のレーンをカーネルが
 `/show <path>` で見たい画像を出す（PNG か JPEG、2 MiB まで。パスは空白を含んでも、
 引用符付きでも、ウィンドウへドラッグしたファイルでもよい）。端末が描けるときに、入力欄より上の画面に
 収まる最大の大きさで、ただし画像そのものより大きくはせずに描く（`[tui].images`、
-既定は `auto`。iTerm2 と kitty、tmux・screen の中では off）。`view_image` は
+既定は `auto`。iTerm2、kitty、Ghostty。tmux・screen の中では off）。`view_image` は
 逆向きで、**モデルが**画像を見るためのものである
 （[ADR-0089](docs/ja/adr/0089-inline-images-declare-their-height.ja.md) /
 [ADR-0090](docs/ja/adr/0090-an-images-bytes-never-become-a-path.ja.md) /
