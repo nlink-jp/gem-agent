@@ -645,8 +645,8 @@ a new hook) is an architecture change and takes the same rows as a
 - **Never `Program.Send` from a slash handler** (ADR-0072 §2.2) — it
   runs inside the TUI's `Update`, Bubble Tea's message channel is
   unbuffered and `Update` is its only consumer, so the call never
-  returns. `hookNotify` appends to `uiNotes` while `onClear` runs and
-  the notes ride back in the slash output; anything else raised from a
+  returns. `surface.hookNotice` collects into a list while `onClear` runs
+  (`collectHookNotices`) and the notes ride back in the slash output; anything else raised from a
   slash path must do the same. So does anything written to a terminal
   stream: under the TUI the next redraw covers it (ADR-0124 addendum,
   Found 4) — a reporter used at `/clear` and at exit takes its writer per
@@ -938,7 +938,13 @@ a new hook) is an architecture change and takes the same rows as a
 - **Read opens are `O_NONBLOCK` and admit regular files and
   directories only** (ADR-0072 §4.8) — `openRegular` in tools and
   mention; a FIFO or device is refused on the opened descriptor.
-  Never add a plain `Open` on a model- or operator-named path. HEIC
+  Never add a plain `Open` on a model- or operator-named path. A
+  directory the walks open as a root goes through `openDirRoot`
+  (`name/.`): `os.Root.OpenRoot` sets neither `O_DIRECTORY` nor
+  `O_NONBLOCK`, so a FIFO put where a directory was listed held a walk
+  past an interrupt (ADR-0125). `TestFileToolOpensDoNotWait`
+  (`internal/tools/opens_test.go`) judges every open in tools and
+  `internal/ignore`, and admits a new one only with its reason. HEIC
   is sniffed by `heifMIME` (ftyp box, length-checked) in both
   packages; keep them identical. `osascript` alone is Review by
   policy — only `with administrator privileges` is the Block.
@@ -1258,7 +1264,7 @@ a new hook) is an architecture change and takes the same rows as a
   bytes as they are. Adding a decoder to `measure.go` means a new format
   reaches `kittyPNG` — it converts anything `image.Decode` can read.
 - **An MCP time budget is stated once, by the work that owns it** —
-  `withBudget` in `internal/mcp/client.go`. The handshake runs under
+  `WithBudget` in `internal/mcp/client.go`. The handshake runs under
   `mcp.startup_timeout_sec`, an ordinary call under `mcp.call_timeout_sec`;
   `rawCall` and `send` take the budget their context already states instead
   of layering `c.timeout` on top. Layered, a startup budget longer than the
