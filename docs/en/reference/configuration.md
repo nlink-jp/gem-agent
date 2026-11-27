@@ -80,7 +80,7 @@ read_only_auto = false     # default; let the runtime raise the ceiling from wha
 enabled = true             # default; false disables ALL MCP servers
 call_timeout_sec = 60      # default
 startup_timeout_sec = 30   # default; how long a server may take to say hello
-#                          # (spawn + initialize + the first tools/list). Separate from the
+#                          # (spawn + opening it + the first tools/list). Separate from the
 #                          # call budget — a server slow to greet is slow because of something
 #                          # off this machine. Shortening it does not pay: a server cut off
 #                          # here has to be reconnected later, which costs more than waiting.

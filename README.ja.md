@@ -201,7 +201,9 @@ Claude Code 形式 `.mcp.json` の MCP サーバー（グローバル +
 （ロードした skill は Claude Code と同じく自分のディレクトリを名乗る
 ので自前のスクリプトが走る）— どちらもセッション中に再読込可能
 （`/mcp reload`・`/skills reload`）、
-`--mcp on|off` で実行単位の MCP 切替。`[mcp].exclude` は、そのセッションが
+`--mcp on|off` で実行単位の MCP 切替。MCP サーバーは、プロトコルの新旧
+どちらの時代でも開く（2026-07-28 は `server/discover`、それより前の
+サーバーは `initialize`。共通モジュール nlink-jp/mcp による。ADR-0126）。`[mcp].exclude` は、そのセッションが
 持たない MCP サーバー、あるいはその配下の個々のファンクションを名指す ——
 除外されたサーバーは起動されず、除外されたファンクションは宣言されないので、
 read と write が同居するサーバーを read 側だけで使える（ADR-0077）。

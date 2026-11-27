@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **MCP servers are opened in both eras of the protocol** (ADR-0126). The
+  hand-written stdio client is replaced by the shared module nlink-jp/mcp:
+  each start probes with `server/discover` (MCP 2026-07-28) and falls back
+  to `initialize` for an earlier server, now asking for `2025-11-25` (was
+  `2025-06-18`), so a server that speaks only the new revision is reachable
+  too. The probe added under 0.3 seconds to the start of each of the 30
+  servers measured. What the runtime relies on does not change: a server
+  starts when first needed, a timed-out call kills it and the next call
+  starts it again, an ended server is reaped at once, and failures keep
+  their types (`CallError.Sent`, `*RPCError`).
+- A server's `ping` is answered with `{}`, the specification's answer,
+  instead of being refused with -32601. Answers to a server's requests are
+  still written within the call deadline.
+- A server that fails to start names the phase `open` (the probe and the
+  handshake) instead of `initialize` or `initialized notification`.
+- One call budget covers a whole `tools/list`, all its pages, instead of one
+  budget per page.
+
 ## [0.109.1] - 2026-11-24
 
 ### Security

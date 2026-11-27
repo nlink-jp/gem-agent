@@ -284,8 +284,9 @@ type TelemetryConfig struct {
 type MCPConfig struct {
 	Enabled        bool `toml:"enabled"`
 	CallTimeoutSec int  `toml:"call_timeout_sec"`
-	// StartupTimeoutSec bounds a server's handshake — spawn, initialize,
-	// the initialized notification — separately from a tool call. They
+	// StartupTimeoutSec bounds a server's start — spawn and opening it
+	// (the server/discover probe and, for an earlier server, initialize)
+	// — separately from a tool call. They
 	// are different things: a call's budget is how long the work may
 	// take, a handshake's is how long a server may take to say hello,
 	// and the servers that are slow to greet are slow because of

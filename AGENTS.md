@@ -149,7 +149,7 @@ internal/bounded/  the one place a read, listing or process output is capped —
                    every primitive returns the `more` fact (ADR-0073 §4)
 internal/archtest/ AST tests pinning confined opens, bounded reads and the
                    single decision point (ADR-0073 §4)
-internal/mcp/      .mcp.json parsing + stdio JSON-RPC client (kill-and-respawn)
+internal/mcp/      .mcp.json parsing + stdio MCP client over nlink-jp/mcp (both eras; kill-and-respawn)
 internal/mcpfilter/ the one predicate behind `[mcp] exclude` (ADR-0077): is this
                    server, or this function of it, part of the session? Pure — the two
                    call sites are the connect loop (cmd/mcp.go) and the executor
@@ -448,9 +448,14 @@ a new hook) is an architecture change and takes the same rows as a
 - **signal.NotifyContext's stop() cancels the context** — capture ctx.Err()
   before stop() or every backend error reads as a user interrupt (regression
   test in cmd/turn_test.go).
-- **Never write from the MCP read loop** — a blocking write while the peer
-  is not reading deadlocks both directions (internal/mcp refuses server
-  requests from a goroutine; caught by the pipe-based tests).
+- **The MCP protocol is nlink-jp/mcp's, the process is ours** (ADR-0126,
+  organization ADR-030 §6). `internal/mcp` handles neither `initialize` nor
+  `server/discover`: it spawns, opens one module `Client` per start, kills on
+  a timeout, and reaps an ended start at once (the watcher — the module only
+  closes `Done`). The hand-written handshakes in `internal/mcp/*_test.go` are
+  stand-ins for misbehaving peers, exempt from ADR-030 §6 by name; they answer
+  `server/discover` with -32601, or the probe waits out its 5-second default
+  and eats the tests' start budget.
 - **MCP's `notifications/cancelled` is not sent** — the spec defines it
   (since 2024-11-05) but the receiver may ignore it and acknowledges
   nothing, so a timed-out or cancelled call is ended by kill-and-respawn
@@ -1264,10 +1269,10 @@ a new hook) is an architecture change and takes the same rows as a
   bytes as they are. Adding a decoder to `measure.go` means a new format
   reaches `kittyPNG` — it converts anything `image.Decode` can read.
 - **An MCP time budget is stated once, by the work that owns it** —
-  `WithBudget` in `internal/mcp/client.go`. The handshake runs under
-  `mcp.startup_timeout_sec`, an ordinary call under `mcp.call_timeout_sec`;
-  `rawCall` and `send` take the budget their context already states instead
-  of layering `c.timeout` on top. Layered, a startup budget longer than the
+  `WithBudget` in `internal/mcp/client.go`. The start (spawn and the module's
+  `Open`) runs under `mcp.startup_timeout_sec`, an ordinary call under
+  `mcp.call_timeout_sec`; each request takes the budget its context already
+  states instead of layering `c.timeout` on top. Layered, a startup budget longer than the
   call budget was silently cut at the call's, and every timeout — the
   handshake's included — was reported as `c.timeout`, sending the operator to
   the wrong setting. Error text names `budgetOf(ctx)`. Listing servers at
