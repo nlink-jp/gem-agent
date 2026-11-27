@@ -25,7 +25,7 @@ an image into the session work directory and hands the model
 there — and `write` short-circuits on `os.Stat`
 ([mcpresult.go:349](../../../cmd/mcpresult.go)) while every call hands the
 server the work directory as `_meta[workdir.MetaKey]`
-([client.go:465](../../../internal/mcp/client.go)). A local server child
+([client.go:497](../../../internal/mcp/client.go)). A local server child
 therefore knows its own name, its tool name, the bytes it will return and
 the directory, so it can plant a symlink at the content-addressed name
 before answering; the runtime then writes nothing and the path resolves
@@ -67,7 +67,7 @@ emit path uses (`physicalRows`, which strips ANSI and walks graphemes):
 Linear, about 3.6 ms per MiB, and that is one of three places the string
 lives at once — the emit path, Bubble Tea's queued-message buffer and the
 terminal's scrollback. Nothing bounds it today but the JSON-RPC frame cap
-(`scannerMax = 10 MiB`, [client.go:25](../../../internal/mcp/client.go)),
+(`scannerMax = 10 MiB`, [client.go:26](../../../internal/mcp/client.go)),
 which allows roughly 7.5 MiB decoded per block.
 
 ## Decision

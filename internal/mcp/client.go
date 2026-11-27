@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -150,9 +151,14 @@ type Client struct {
 	// nothing, which is what a session without a work directory wants.
 	workDir string
 
-	startMu sync.Mutex // one start at a time
-	mu      sync.Mutex // guards cur
-	cur     *incarnation
+	// startSem holds one start at a time. A channel rather than a mutex,
+	// so a second caller waiting on a start still answers to its own ctx.
+	startSem chan struct{}
+	mu       sync.Mutex // guards cur, starting
+	cur      *incarnation
+	// starting is the kill of a start still being opened, so that Close
+	// reaches a process that is not yet the current incarnation.
+	starting func()
 }
 
 // NewStdio creates a client that spawns command with args and extra env.
@@ -213,6 +219,7 @@ func newClient(name string, spawn spawnFunc, timeout, startupTimeout time.Durati
 		startupTimeout: startupTimeout,
 		version:        version,
 		workDir:        workDir,
+		startSem:       make(chan struct{}, 1),
 	}
 }
 
@@ -222,8 +229,12 @@ func (c *Client) Name() string { return c.name }
 // Close kills the server process if running.
 func (c *Client) Close() {
 	c.mu.Lock()
-	inc := c.cur
+	inc, starting := c.cur, c.starting
+	c.starting = nil
 	c.mu.Unlock()
+	if starting != nil {
+		starting() // its Open fails, and nothing becomes current
+	}
 	if inc != nil {
 		c.drop(inc)
 	}
@@ -273,8 +284,12 @@ func (c *Client) live() *incarnation {
 // ensureStarted returns the running incarnation, spawning and opening one
 // if there is none.
 func (c *Client) ensureStarted(ctx context.Context) (*incarnation, error) {
-	c.startMu.Lock()
-	defer c.startMu.Unlock()
+	select {
+	case c.startSem <- struct{}{}:
+	case <-ctx.Done():
+		return nil, &startError{Server: c.name, Err: fmt.Errorf("waiting for another start: %w", ctx.Err())}
+	}
+	defer func() { <-c.startSem }()
 	if inc := c.live(); inc != nil {
 		return inc, nil
 	}
@@ -282,6 +297,14 @@ func (c *Client) ensureStarted(ctx context.Context) (*incarnation, error) {
 	if err != nil {
 		return nil, &startError{Server: c.name, Err: err}
 	}
+	c.mu.Lock()
+	c.starting = kill
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.starting = nil
+		c.mu.Unlock()
+	}()
 
 	// One budget for the whole greeting, and the only one: the probe and, for
 	// a legacy server, the handshake all run under it (WithBudget), so the
@@ -308,6 +331,12 @@ func (c *Client) ensureStarted(ctx context.Context) (*incarnation, error) {
 	}
 	inc := &incarnation{cl: cl, kill: kill}
 	c.mu.Lock()
+	if c.starting == nil {
+		// Close ran while this start was being opened.
+		c.mu.Unlock()
+		kill()
+		return nil, &startError{Server: c.name, Phase: "open", Err: errors.New("closed while starting")}
+	}
 	c.cur = inc
 	c.mu.Unlock()
 	go c.watch(inc)
@@ -406,10 +435,13 @@ func (c *Client) ListTools(ctx context.Context) ([]Tool, error) {
 	if err != nil {
 		err = c.failure(tctx, inc, "tools/list", err)
 		var w *worded
-		if errors.As(err, &w) {
+		var rpc *RPCError
+		if errors.As(err, &w) || errors.As(err, &rpc) {
 			return nil, fmt.Errorf("mcp %s: tools/list: %w", c.name, err)
 		}
-		return nil, fmt.Errorf("mcp %s: %w", c.name, err)
+		// The module's own wording already names tools/list, under its
+		// "mcp: " prefix; the server's name takes that place.
+		return nil, &worded{fmt.Sprintf("mcp %s: %s", c.name, strings.TrimPrefix(err.Error(), "mcp: ")), err}
 	}
 	tools := make([]Tool, 0, len(list.Tools))
 	for _, t := range list.Tools {

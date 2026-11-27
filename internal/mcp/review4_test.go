@@ -69,6 +69,10 @@ func TestListToolsRefusesARepeatingCursor(t *testing.T) {
 				if json.Unmarshal(sc.Bytes(), &msg) != nil || msg.ID == nil {
 					continue
 				}
+				if msg.Method == "server/discover" {
+					refuseDiscover(outW, *msg.ID)
+					continue
+				}
 				var result any = map[string]any{"protocolVersion": "1", "capabilities": map[string]any{}, "serverInfo": map[string]any{"name": "t"}}
 				if msg.Method == "tools/list" {
 					result = map[string]any{"tools": []any{map[string]any{"name": "x", "description": "d"}}, "nextCursor": "again"}
@@ -102,6 +106,10 @@ func TestOverlongLineIsNamedAsTheCause(t *testing.T) {
 					Method string       `json:"method"`
 				}
 				if json.Unmarshal(sc.Bytes(), &msg) != nil || msg.ID == nil {
+					continue
+				}
+				if msg.Method == "server/discover" {
+					refuseDiscover(outW, *msg.ID)
 					continue
 				}
 				if msg.Method == "tools/list" {
