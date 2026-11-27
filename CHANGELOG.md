@@ -21,6 +21,9 @@
   handshake) instead of `initialize` or `initialized notification`.
 - One call budget covers a whole `tools/list`, all its pages, instead of one
   budget per page.
+- The protocol comes from nlink-jp/mcp v0.2.0, whose line reading ends at
+  the 10 MiB cap even against a server that never writes a newline: the start
+  ends and the server is killed at once, as with the hand-written reader.
 
 ## [0.109.1] - 2026-11-24
 

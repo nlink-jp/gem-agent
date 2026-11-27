@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| Status | **Accepted** (2026-11-27) |
+| Status | **Accepted** (2026-11-27) — implemented (see the addendum) |
 | Date | 2026-11-27 |
 | Binds | gem-agent |
 | Decision makers | nlink-jp maintainers |
@@ -206,9 +206,16 @@ call deadline (60 seconds by default).
 | Leave reaping an ended server to the next call | Brings back the zombie and orphan defects fixed in review round 4 |
 | Add the misbehaving stand-ins to the module's probe server | Puts the tests' convenience into the module's public parts; stand-ins are the kind of code §6 exempts in the first place |
 
+## Addendum (2026-11-27, implementation)
+
+- **Module version**: implemented on v0.2.0. The independent pre-release pass found that v0.1.0's `LineConn` read an over-long line through to its newline. Against a server writing without a newline, `Done` therefore stayed open and a call waited out its deadline — a step back from the promise of ADR-0072 §4.8. The module's detailed design §3.1 and §4.1 were amended (`wire.NewEndingReader`) and the fix released as v0.2.0. The test of an endless line without a newline fails on v0.1.0 after the 30-second deadline and ends at the cap at once on v0.2.0.
+- **Listing budget**: `ListTools` puts one budget on the whole listing rather than one per page (the module's `ListTools` reads every page under one `ctx`). The runtime sees no difference: the start-up listing in `cmd` already states a budget for the whole.
+- **Starts (findings of the independent pre-release pass)**: `Close` during a start kills the start being opened, and a second caller waiting on a start of the same server gives up at its own deadline.
+- **Real peers (2026-11-27)**: all 30 registered servers were opened through this client's `NewStdio` and listed. Obsidian (through mcp-bridge v0.4.1) opened in the modern era, 2026-07-28; the other 29 in the legacy era (versions 2025-11-25, 2025-06-18, 2024-11-05). Calls of read-only tools worked in both eras (Obsidian's `get_server_info`, asn-lookup's `db_status`). The same check for lagent ADR-0056 gave the same result. No model was called.
+
 ## References
 
 - Organization ADR-030 (§4, §6), ADR-025, ADR-021
-- nlink-jp/mcp v0.1.0: reference manual (`client`), detailed design §4
+- nlink-jp/mcp v0.1.0 (implemented on v0.2.0; see the addendum): reference manual (`client`), detailed design §3.1, §4
 - ADR-0072 (whole-code review, round 4), ADR-0075 (a remote fault is the server's state), review 2026-09-08 (F-01)
 - lagent ADR-0056 (the same migration)
