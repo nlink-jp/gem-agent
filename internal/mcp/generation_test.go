@@ -2,73 +2,102 @@ package mcp
 
 import (
 	"context"
-	"strings"
-	"sync"
+	"encoding/json"
+	"errors"
 	"testing"
+	"time"
 )
 
-// fakeStdin records what reaches one incarnation's stdin.
-type fakeStdin struct {
-	mu  sync.Mutex
-	buf strings.Builder
-}
+// ADR-0021, from outside (ADR-0126): a dead start's frame — the refusal
+// of a request that server sent just before it was killed — never reaches
+// the successor's stdin mid-handshake. Each start has a module Client of
+// its own, so this holds by construction; the test records what the
+// successor received to keep it so.
+func TestAStartsFramesNeverReachItsSuccessor(t *testing.T) {
+	f := &fakeServer{}
+	f.handler = func(f *fakeServer, method string, _ json.RawMessage) ([]string, any, bool) {
+		if method == "tools/call" && f.spawnCount() == 1 {
+			// A request of its own, then no answer to the call.
+			return []string{`{"jsonrpc":"2.0","id":999,"method":"sampling/createMessage","params":{}}`}, nil, false
+		}
+		r, ok := stdResult(method)
+		return nil, r, ok
+	}
+	c := newTestClient(f, 300*time.Millisecond)
+	defer c.Close()
 
-func (f *fakeStdin) Write(p []byte) (int, error) {
+	if _, err := callText(t, c, "check_ip", nil); err == nil {
+		t.Fatal("the first start's call must time out")
+	}
+	if _, err := callText(t, c, "check_ip", nil); err != nil {
+		t.Fatalf("the call after the restart: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond) // room for a late frame to land
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.buf.Write(p)
+	for i, m := range f.received {
+		if f.receivedBy[i] == 2 && m.Method == "" && m.ID != nil && m.ID.String() == "999" {
+			t.Errorf("the first start's answer to request 999 reached the second start: %+v", m)
+		}
+	}
 }
-func (f *fakeStdin) Close() error { return nil }
-func (f *fakeStdin) String() string {
+
+// A call made after the server ended is never written to the ended start:
+// the call starts the server again. When that start fails, the call was
+// not sent (ADR-0126 §3; today's "server not running").
+func TestACallAfterTheServerEndedStartsItAgain(t *testing.T) {
+	f := &fakeServer{handler: stdHandler}
+	c := newTestClient(f, 2*time.Second)
+	defer c.Close()
+
+	if _, err := callText(t, c, "check_ip", nil); err != nil {
+		t.Fatal(err)
+	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.buf.String()
-}
+	_ = f.outs[0].Close() // the server exits
+	f.mu.Unlock()
+	eventually(t, "reaping the ended start", func() bool { return f.wasKilled(1) })
 
-// ADR-0021: a stale incarnation's frame (the read loop's refusal of a
-// server-initiated request, racing a kill-and-respawn) is dropped, not
-// injected into the successor's stdin mid-handshake.
-func TestStaleGenerationSendIsDropped(t *testing.T) {
-	c := newClient("x", nil, 0, 0, "test", "")
-	gen1 := &fakeStdin{}
-	gen2 := &fakeStdin{}
-
-	c.mu.Lock()
-	c.stdin, c.alive, c.gen = gen1, true, 1
-	c.mu.Unlock()
-	if err := c.send(context.Background(), map[string]any{"id": 1, "from": "gen1"}, 1); err != nil {
-		t.Fatal(err)
+	if _, err := callText(t, c, "check_ip", nil); err != nil {
+		t.Fatalf("the call after the server ended: %v", err)
+	}
+	if f.spawnCount() != 2 {
+		t.Errorf("spawns = %d, want a second start", f.spawnCount())
 	}
 
-	// Respawn: generation 2 takes over.
-	c.mu.Lock()
-	c.stdin, c.gen = gen2, 2
-	c.mu.Unlock()
-
-	// A refusal produced by gen 1's read loop arrives late.
-	if err := c.send(context.Background(), map[string]any{"id": 7, "from": "stale-gen1"}, 1); err != nil {
-		t.Fatalf("stale send must be a silent drop, got %v", err)
-	}
-	// A current-generation frame still goes through.
-	if err := c.send(context.Background(), map[string]any{"id": 2, "from": "gen2"}, -1); err != nil {
-		t.Fatal(err)
-	}
-
-	if got := gen2.String(); strings.Contains(got, "stale-gen1") {
-		t.Errorf("stale frame reached the new incarnation's stdin: %q", got)
-	}
-	if !strings.Contains(gen2.String(), "gen2") {
-		t.Error("current-generation frame did not reach stdin")
-	}
-	if !strings.Contains(gen1.String(), `"from":"gen1"`) {
-		t.Errorf("gen1 frame missing: %q", gen1.String())
+	f.mu.Lock()
+	_ = f.outs[1].Close()
+	f.failSpawn = true
+	f.mu.Unlock()
+	eventually(t, "reaping the second start", func() bool { return f.wasKilled(2) })
+	_, _, err := c.CallTool(context.Background(), "check_ip", nil)
+	var ce *CallError
+	if !errors.As(err, &ce) || ce.Sent {
+		t.Errorf("err = %v — want a CallError with Sent=false when no server could be started", err)
 	}
 }
 
-// A send with no live server errors instead of dereferencing nil stdin.
-func TestSendWithoutServerFailsClosed(t *testing.T) {
-	c := newClient("x", nil, 0, 0, "test", "")
-	if err := c.send(context.Background(), map[string]any{"id": 1}, -1); err == nil {
-		t.Error("send with no server must error")
+// A call that ran out of time waiting for its answer may have reached the
+// server, and is reported as sent (ADR-0126 §3). The one whose write never
+// finished is pinned in send_stall_test.
+func TestACallThatTimedOutWaitingWasSent(t *testing.T) {
+	f := &fakeServer{}
+	f.handler = func(f *fakeServer, method string, params json.RawMessage) ([]string, any, bool) {
+		if method == "tools/call" {
+			return nil, nil, false
+		}
+		return stdHandler(f, method, params)
 	}
+	c := newTestClient(f, 200*time.Millisecond)
+	defer c.Close()
+	_, _, err := c.CallTool(context.Background(), "check_ip", nil)
+	var ce *CallError
+	if !errors.As(err, &ce) || !ce.Sent {
+		t.Fatalf("err = %v — want a sent CallError", err)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("err = %v — the deadline must stay reachable with errors.Is", err)
+	}
+	eventually(t, "killing the start whose call timed out", func() bool { return f.wasKilled(1) })
 }

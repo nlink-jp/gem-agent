@@ -4,58 +4,34 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nlink-jp/mcp/client"
 )
 
 // Review round 4: a server that ends its own stdout (exited on its own,
-// or an over-long line ended the scan) is reaped by the incarnation's
-// kill, not left as a zombie with both pipes open.
-func TestReadLoopEOFReapsTheIncarnation(t *testing.T) {
-	killed := make(chan struct{}, 1)
-	outR, outW := io.Pipe()
-	inR, inW := io.Pipe()
-	spawn := func() (io.WriteCloser, io.ReadCloser, func(), error) {
-		return inW, outR, func() {
-			select {
-			case killed <- struct{}{}:
-			default:
-			}
-			_ = inR.Close()
-		}, nil
+// or an over-long line ended the reading) is reaped by the incarnation's
+// kill at once, not left as a zombie with both pipes open until the next
+// call. The module only reports the end; the watcher kills (ADR-0126 §2).
+func TestAnEndedServerIsReapedWithoutAnotherCall(t *testing.T) {
+	f := &fakeServer{handler: stdHandler}
+	c := newTestClient(f, 2*time.Second)
+	defer c.Close()
+	if _, err := c.ListTools(context.Background()); err != nil {
+		t.Fatal(err)
 	}
-	c := newClient("t", spawn, time.Second, time.Second, "test", "")
-	// Drive the incarnation by hand: readLoop is what owns the EOF.
-	c.mu.Lock()
-	c.kill = func() {
-		select {
-		case killed <- struct{}{}:
-		default:
-		}
+	f.mu.Lock()
+	_ = f.outs[0].Close() // the server "exits"
+	f.mu.Unlock()
+	eventually(t, "reaping the exited server", func() bool { return f.wasKilled(1) })
+	if c.live() != nil {
+		t.Error("the client still holds the exited start")
 	}
-	c.alive = true
-	c.gen++
-	gen := c.gen
-	c.mu.Unlock()
-	done := make(chan struct{})
-	go func() { c.readLoop(outR, gen); close(done) }()
-	_ = outW.Close() // the server "exits"
-	select {
-	case <-killed:
-	case <-time.After(2 * time.Second):
-		t.Fatal("EOF did not reap the incarnation")
-	}
-	<-done
-	c.mu.Lock()
-	alive := c.alive
-	c.mu.Unlock()
-	if alive {
-		t.Fatal("client still marked alive after EOF")
-	}
-	_ = context.Background()
 }
 
 // Review round 4: ${VAR:-default} is Claude Code's .mcp.json grammar;
@@ -114,6 +90,7 @@ func TestListToolsRefusesARepeatingCursor(t *testing.T) {
 // ADR-0072 §4.8: a response line over the frame cap is reported as
 // that, not as "server exited".
 func TestOverlongLineIsNamedAsTheCause(t *testing.T) {
+	killed := make(chan struct{}, 1)
 	outR, outW := io.Pipe()
 	inR, inW := io.Pipe()
 	spawn := func() (io.WriteCloser, io.ReadCloser, func(), error) {
@@ -136,12 +113,29 @@ func TestOverlongLineIsNamedAsTheCause(t *testing.T) {
 				_, _ = outW.Write(append(resp, '\n'))
 			}
 		}()
-		return inW, outR, func() { _ = inR.Close(); _ = outW.Close() }, nil
+		return inW, outR, func() {
+			select {
+			case killed <- struct{}{}:
+			default:
+			}
+			_ = inR.Close()
+			_ = outW.Close()
+		}, nil
 	}
 	c := newClient("big", spawn, 10*time.Second, 10*time.Second, "test", "")
 	defer c.Close()
 	_, err := c.ListTools(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "frame cap") {
 		t.Fatalf("err = %v, want the frame-cap cause", err)
+	}
+	if !errors.Is(err, client.ErrLineTooLong) {
+		t.Errorf("err = %v — the line limit must be reachable with errors.Is", err)
+	}
+	// The server that sent the line is still running: it is killed, not
+	// left beside its successor.
+	select {
+	case <-killed:
+	case <-time.After(2 * time.Second):
+		t.Error("the server that sent an over-long line was not killed")
 	}
 }

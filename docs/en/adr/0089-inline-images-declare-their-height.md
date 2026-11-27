@@ -215,7 +215,7 @@ finding of its round:
 | draft | the source it named | why it failed |
 |---|---|---|
 | first | a local image path the model names | a view-layer file open is not a tool call: it never reaches `Agent.decide`, never runs in ADR-0086's sandboxed child, and is invisible to the credential list, which is keyed on built-in tool name ([risk.go:209](../../../internal/risk/risk.go)) — the class ADR-0085/0086 repaired |
-| second | the path the MCP intake wrote | `write` short-circuits on `os.Stat(path) == nil` ([mcpresult.go:349](../../../cmd/mcpresult.go)), and a server knows its own name, its tool name, the bytes it will return **and the work directory, which every call hands it** as `_meta[workdir.MetaKey]` ([client.go:610](../../../internal/mcp/client.go)) — so it can plant a symlink at the content-addressed path and the runtime writes nothing |
+| second | the path the MCP intake wrote | `write` short-circuits on `os.Stat(path) == nil` ([mcpresult.go:349](../../../cmd/mcpresult.go)), and a server knows its own name, its tool name, the bytes it will return **and the work directory, which every call hands it** as `_meta[workdir.MetaKey]` ([client.go:465](../../../internal/mcp/client.go)) — so it can plant a symlink at the content-addressed path and the runtime writes nothing |
 | third | the decoded bytes the intake holds | **there is no such carrier.** `render` returns a `string` ([mcpresult.go:60](../../../cmd/mcpresult.go)), `mcpIntake` retains no bytes, and `Tool.Run` is `func(ctx, args) (string, error)` ([tools.go:68](../../../internal/tools/tools.go)). The bytes are a local; after `Run` returns they are unreachable |
 
 Three drafts in the same place is not three mistakes, it is one: **the source
@@ -238,7 +238,7 @@ part of this question that is settled.
 Two things the deferred decision must also answer, found in the same passes
 and recorded so they are not rediscovered: nothing today bounds an image's
 size except the JSON-RPC frame cap (`scannerMax = 10 MiB`,
-[client.go:28](../../../internal/mcp/client.go)) — the response budget bounds
+[client.go:25](../../../internal/mcp/client.go)) — the response budget bounds
 the *note*, not the data — and a block whose `binaryNote` does not fit the
 response budget is neither saved nor described individually
 ([mcpresult.go:143](../../../cmd/mcpresult.go)), so whether it may still be

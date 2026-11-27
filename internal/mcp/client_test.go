@@ -15,24 +15,63 @@ import (
 	"time"
 )
 
+// message is a decoded JSON-RPC frame (request, response, or
+// notification), as a stand-in server reads what the client wrote.
+type message struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      *json.Number    `json:"id,omitempty"`
+	Method  string          `json:"method,omitempty"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *RPCError       `json:"error,omitempty"`
+}
+
+// legacyVersion is the revision the stand-in servers answer initialize with.
+const legacyVersion = "2025-11-25"
+
+// refuseDiscover answers server/discover the way every measured legacy
+// server does, with -32601 (ADR-0126 §7). A stand-in that stayed silent
+// would hold the probe for the module's 5-second default, longer than
+// the start budgets these tests give.
+func refuseDiscover(w io.Writer, id json.Number) {
+	_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"Method not found"}}`+"\n", id)
+}
+
 // fakeServer speaks newline-delimited JSON-RPC over pipes, standing in
-// for a spawned MCP server process.
+// for a spawned MCP server process: a legacy server, the handshake
+// written by hand so that a test can make it misbehave (organization
+// ADR-030 §6 exempts these files by name).
 type fakeServer struct {
 	mu       sync.Mutex
 	spawns   int
 	received []message
+	// receivedBy[i] is the start (1-based) whose stdin received[i] came in on.
+	receivedBy []int
+	// outs[n-1] is start n's stdout, for a test that makes the server exit;
+	// killed[n-1] says whether start n was killed.
+	outs   []io.WriteCloser
+	killed []bool
+	// failSpawn makes every later spawn fail.
+	failSpawn bool
 	// handler returns raw lines to emit before the response, the result
 	// payload, and whether to respond at all.
 	handler func(f *fakeServer, method string, params json.RawMessage) (pre []string, result any, respond bool)
 }
 
 func (f *fakeServer) spawn() (io.WriteCloser, io.ReadCloser, func(), error) {
-	f.mu.Lock()
-	f.spawns++
-	f.mu.Unlock()
-
 	inR, inW := io.Pipe()   // client stdin -> server
 	outR, outW := io.Pipe() // server -> client stdout
+
+	f.mu.Lock()
+	if f.failSpawn {
+		f.mu.Unlock()
+		return nil, nil, nil, errors.New("spawn refused")
+	}
+	f.spawns++
+	n := f.spawns
+	f.outs = append(f.outs, outW)
+	f.killed = append(f.killed, false)
+	f.mu.Unlock()
 
 	go func() {
 		scanner := bufio.NewScanner(inR)
@@ -44,9 +83,14 @@ func (f *fakeServer) spawn() (io.WriteCloser, io.ReadCloser, func(), error) {
 			}
 			f.mu.Lock()
 			f.received = append(f.received, msg)
+			f.receivedBy = append(f.receivedBy, n)
 			f.mu.Unlock()
 			if msg.ID == nil || msg.Method == "" {
 				continue // notification, or the client answering our request
+			}
+			if msg.Method == "server/discover" {
+				refuseDiscover(outW, *msg.ID)
+				continue
 			}
 			pre, result, respond := f.handler(f, msg.Method, msg.Params)
 			for _, line := range pre {
@@ -61,12 +105,35 @@ func (f *fakeServer) spawn() (io.WriteCloser, io.ReadCloser, func(), error) {
 	}()
 
 	kill := func() {
+		f.mu.Lock()
+		f.killed[n-1] = true
+		f.mu.Unlock()
 		_ = inW.Close()
 		_ = outW.Close()
 		_ = inR.Close()
 		_ = outR.Close()
 	}
 	return inW, outR, kill, nil
+}
+
+// wasKilled reports whether start n (1-based) was killed.
+func (f *fakeServer) wasKilled(n int) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return n <= len(f.killed) && f.killed[n-1]
+}
+
+// eventually polls cond for up to two seconds.
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("%s did not happen within 2s", what)
 }
 
 func (f *fakeServer) spawnCount() int {
@@ -79,7 +146,7 @@ func stdResult(method string) (any, bool) {
 	switch method {
 	case "initialize":
 		return map[string]any{
-			"protocolVersion": protocolVersion,
+			"protocolVersion": legacyVersion,
 			"capabilities":    map[string]any{},
 			"serverInfo":      map[string]any{"name": "fake", "version": "0"},
 		}, true
@@ -125,11 +192,13 @@ func TestListAndCall(t *testing.T) {
 		t.Errorf("out = %q", out)
 	}
 
-	// Handshake order: initialize request, then initialized notification.
+	// Opening order: the server/discover probe, then — this being a legacy
+	// server — the initialize request and the initialized notification.
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if len(f.received) < 2 || f.received[0].Method != "initialize" || f.received[1].Method != "notifications/initialized" {
-		t.Errorf("handshake frames wrong: %+v", f.received[:2])
+	if len(f.received) < 3 || f.received[0].Method != "server/discover" ||
+		f.received[1].Method != "initialize" || f.received[2].Method != "notifications/initialized" {
+		t.Errorf("opening frames wrong: %+v", f.received)
 	}
 }
 
@@ -433,8 +502,8 @@ func TestInitializeRefusalIsNotSent(t *testing.T) {
 	if ce.Sent {
 		t.Errorf("Sent = true for a call whose server never started: %+v", *ce)
 	}
-	if rpc.Code != -32600 || !strings.Contains(ce.Err.Error(), "initialize") {
-		t.Errorf("cause = %v — must name initialize and carry the server's code", ce.Err)
+	if rpc.Code != -32600 || !strings.HasPrefix(ce.Err.Error(), "open:") {
+		t.Errorf("cause = %v — must name the open phase and carry the server's code", ce.Err)
 	}
 	if strings.HasPrefix(ce.Err.Error(), "mcp fake:") {
 		t.Errorf("cause repeats the server name the adapter already shows: %q", ce.Err.Error())
@@ -455,7 +524,7 @@ func TestUndecodableResultIsSent(t *testing.T) {
 	defer c.Close()
 	_, _, err := c.CallTool(context.Background(), "q", nil)
 	var ce *CallError
-	if !errors.As(err, &ce) || !ce.Sent || !strings.HasPrefix(ce.Err.Error(), "result:") {
+	if !errors.As(err, &ce) || !ce.Sent || !strings.Contains(ce.Err.Error(), "malformed result") {
 		t.Errorf("err = %v — want a sent CallError whose cause is the decode failure", err)
 	}
 }

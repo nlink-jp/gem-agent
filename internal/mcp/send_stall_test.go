@@ -38,10 +38,14 @@ func (s *stallServer) spawn() (io.WriteCloser, io.ReadCloser, func(), error) {
 
 	go func() {
 		scanner := bufio.NewScanner(inR)
-		scanner.Buffer(make([]byte, scannerInitial), scannerMax)
+		scanner.Buffer(make([]byte, 64*1024), scannerMax)
 		for scanner.Scan() {
 			var msg message
 			if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
+				continue
+			}
+			if msg.Method == "server/discover" && msg.ID != nil {
+				refuseDiscover(outW, *msg.ID)
 				continue
 			}
 			if msg.Method == "initialize" && msg.ID != nil {

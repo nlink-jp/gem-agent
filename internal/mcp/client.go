@@ -1,11 +1,12 @@
 package mcp
 
 import (
-	"github.com/nlink-jp/gem-agent/internal/bounded"
 	"github.com/nlink-jp/gem-agent/internal/sandbox"
 	"github.com/nlink-jp/gem-agent/internal/workdir"
 
-	"bufio"
+	mcpproto "github.com/nlink-jp/mcp"
+	"github.com/nlink-jp/mcp/client"
+
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -19,14 +20,9 @@ import (
 	"time"
 )
 
-// protocolVersion is the MCP revision this client speaks. Servers
-// negotiate: we accept whatever version the server answers with.
-const protocolVersion = "2025-06-18"
-
-const (
-	scannerInitial = 64 * 1024
-	scannerMax     = 10 * 1024 * 1024
-)
+// scannerMax bounds one line from the server (ADR-0072 §4.8). The name is
+// kept from the hand-written reader because ADR-0090 cites it.
+const scannerMax = 10 * 1024 * 1024
 
 // RPCError is a JSON-RPC error object.
 type RPCError struct {
@@ -42,11 +38,11 @@ func (e *RPCError) Error() string {
 // Err is either the server's *RPCError — the server's own words,
 // delivered as a rejection — or a cause of gem-agent's own (transport,
 // timeout, exit, framing). Sent records whether the tools/call request
-// with the model's arguments was written to the server: false when the
-// server could not be started (its initialize may itself have been
+// with the model's arguments may have reached the server: false when the
+// server could not be started (its handshake may itself have been
 // refused with an RPCError — that is not a rejection of the call) or
-// the request could not be written. The adapter reads both facts by
-// type, never by matching text.
+// the request is known not to have been written (ADR-0126 §3). The
+// adapter reads both facts by type, never by matching text.
 type CallError struct {
 	Server string
 	Tool   string
@@ -55,9 +51,10 @@ type CallError struct {
 }
 
 // startError is an ensureStarted failure: the server could not be
-// spawned (Phase ""), or refused initialize or the initialized
-// notification. Its text is the one ListTools always showed; CallTool
-// hands the adapter the cause under the server's name instead.
+// spawned (Phase ""), or could not be opened (Phase "open": the
+// server/discover probe and, for a legacy server, initialize and the
+// initialized notification). Its text is the one ListTools always showed;
+// CallTool hands the adapter the cause under the server's name instead.
 type startError struct {
 	Server string
 	Phase  string
@@ -81,27 +78,22 @@ func (e *startError) cause() error {
 	return fmt.Errorf("%s: %w", e.Phase, e.Err)
 }
 
-// notSentError marks a request that never reached the server's stdin.
-type notSentError struct{ err error }
-
-func (e *notSentError) Error() string { return e.err.Error() }
-func (e *notSentError) Unwrap() error { return e.err }
-
 func (e *CallError) Error() string {
 	return fmt.Sprintf("mcp %s: %s: %v", e.Server, e.Tool, e.Err)
 }
 
 func (e *CallError) Unwrap() error { return e.Err }
 
-// message is a decoded JSON-RPC frame (request, response, or notification).
-type message struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      *json.Number    `json:"id,omitempty"`
-	Method  string          `json:"method,omitempty"`
-	Params  json.RawMessage `json:"params,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   *RPCError       `json:"error,omitempty"`
+// worded is a failure whose text this package writes — the budget that ran
+// out, the reason a server ended — over the module's error, which stays
+// reachable with errors.Is (ErrNotSent, ErrLineTooLong, a context error).
+type worded struct {
+	text string
+	err  error
 }
+
+func (e *worded) Error() string { return e.text }
+func (e *worded) Unwrap() error { return e.err }
 
 // Tool is one tool advertised by an MCP server.
 type Tool struct {
@@ -112,28 +104,43 @@ type Tool struct {
 
 // spawnFunc starts the server process and returns its stdin, stdout, and
 // a kill function. Injected so tests can run a fake server over pipes.
+// kill may be called more than once.
 type spawnFunc func() (io.WriteCloser, io.ReadCloser, func(), error)
+
+// incarnation is one start of the server: the module's Client opened on
+// it and the kill that ends its process (ADR-0126 §1). Nothing outlives
+// it — a successor gets a Client of its own, so a frame of a dead start
+// cannot reach a live one's stdin.
+type incarnation struct {
+	cl   *client.Client
+	kill func()
+}
 
 // Client is a stdio MCP client for one server. Calls are synchronous; a
 // timed-out or cancelled call kills the child and the next call respawns
-// it lazily. MCP does define notifications/cancelled (requestId, reason;
-// in the spec since 2024-11-05), but the receiver may ignore it — most
-// servers do — and nothing acknowledges it either way, so the kill is
-// what reliably unblocks the reader. gem-agent does not send it: the
-// kill follows in the same step, which leaves a cooperating server no
-// time to act, and a server that stopped reading its stdin would park
-// the write, and the kill behind it, for the send's whole deadline.
+// it lazily. The protocol — the server/discover probe, initialize for a
+// legacy server, framing, routing answers, refusing the server's
+// requests — is nlink-jp/mcp's (organization ADR-030); this type owns
+// the process: when it starts, when it is killed, and what its failures
+// mean to the runtime.
+//
+// MCP does define notifications/cancelled (requestId, reason; in the spec
+// since 2024-11-05), but the receiver may ignore it — most servers do —
+// and nothing acknowledges it either way, so the kill is what reliably
+// unblocks the reader. gem-agent does not send it: the kill follows in
+// the same step, which leaves a cooperating server no time to act, and a
+// server that stopped reading its stdin would park the write, and the
+// kill behind it, for the send's whole deadline.
 type Client struct {
 	name    string
 	spawn   spawnFunc
 	timeout time.Duration
-	// startupTimeout bounds the handshake — spawn, initialize, the
-	// initialized notification — separately from a tool call's budget.
-	// They are different things: a call's budget is how long the work may
-	// take, a handshake's is how long a server may take to say hello, and
-	// a server that is slow to greet is usually slow because of something
-	// outside this machine (a remote MCP over HTTPS). Cutting it short
-	// does not save time overall, because the session then has to
+	// startupTimeout bounds the start — spawn and the module's Open — separately
+	// from a tool call's budget. They are different things: a call's budget is
+	// how long the work may take, a start's is how long a server may take to
+	// say hello, and a server that is slow to greet is usually slow because of
+	// something outside this machine (a remote MCP over HTTPS). Cutting it
+	// short does not save time overall, because the session then has to
 	// reconnect it, so this is a separate number rather than a smaller one.
 	startupTimeout time.Duration
 	version        string
@@ -143,20 +150,9 @@ type Client struct {
 	// nothing, which is what a session without a work directory wants.
 	workDir string
 
-	mu    sync.Mutex // lifecycle state
-	wmu   sync.Mutex // stdin writes (reader goroutine also writes replies)
-	stdin io.WriteCloser
-	kill  func()
-	alive bool
-	gen   int // spawn generation; read loops of dead incarnations must not touch newer state
-	// endCause says why the current incarnation's read loop ended
-	// (scanner error — the frame cap — or plain EOF), for the waiters
-	// it fails (ADR-0072 §4.8).
-	endCause string
-	nextID   int64
-
-	pmu     sync.Mutex
-	pending map[int64]chan message
+	startMu sync.Mutex // one start at a time
+	mu      sync.Mutex // guards cur
+	cur     *incarnation
 }
 
 // NewStdio creates a client that spawns command with args and extra env.
@@ -192,8 +188,9 @@ func NewStdio(name string, cfg ServerConfig, timeout, startupTimeout time.Durati
 		}
 		var once sync.Once
 		kill := func() {
-			// Once: shutdown and the read loop's EOF both reach here,
-			// and Wait may run only once per process.
+			// Once: a timeout, the watcher and the module's abort of a
+			// stuck write can all reach here, and Wait may run only once
+			// per process.
 			once.Do(func() {
 				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 				_ = cmd.Process.Kill()
@@ -216,7 +213,6 @@ func newClient(name string, spawn spawnFunc, timeout, startupTimeout time.Durati
 		startupTimeout: startupTimeout,
 		version:        version,
 		workDir:        workDir,
-		pending:        map[int64]chan message{},
 	}
 }
 
@@ -224,212 +220,143 @@ func newClient(name string, spawn spawnFunc, timeout, startupTimeout time.Durati
 func (c *Client) Name() string { return c.name }
 
 // Close kills the server process if running.
-func (c *Client) Close() { c.shutdown() }
-
-func (c *Client) shutdown() { c.shutdownGen(-1) }
-
-// shutdownGen kills the incarnation numbered gen. gen < 0 means
-// "whatever is current" — the same convention send uses. A write that
-// timed out against a dead incarnation's pipe must not kill the
-// successor that replaced it.
-func (c *Client) shutdownGen(gen int) {
+func (c *Client) Close() {
 	c.mu.Lock()
-	if c.alive && (gen < 0 || gen == c.gen) {
-		c.alive = false
-		if c.kill != nil {
-			c.kill()
-		}
-	}
+	inc := c.cur
 	c.mu.Unlock()
+	if inc != nil {
+		c.drop(inc)
+	}
 }
 
-// ensureStarted spawns and handshakes if the server is not running.
-func (c *Client) ensureStarted(ctx context.Context) error {
+// drop ends one incarnation: it is no longer the current one, and its
+// process is killed and reaped. Dropping a start that a successor already
+// replaced leaves the successor alone.
+func (c *Client) drop(inc *incarnation) {
 	c.mu.Lock()
-	if c.alive {
-		c.mu.Unlock()
+	if c.cur == inc {
+		c.cur = nil
+	}
+	c.mu.Unlock()
+	inc.kill()
+}
+
+// watch reaps an incarnation as soon as reading from it ends — the server
+// exited, or sent a line over the cap — instead of leaving it to the next
+// call: an exited server stayed a zombie with both pipes open, and one
+// that sent an over-long line kept running beside its successor (review
+// round 4; ADR-0072 §4.8). The module only closes Done; the kill is ours.
+func (c *Client) watch(inc *incarnation) {
+	<-inc.cl.Done()
+	c.drop(inc)
+}
+
+// live is the current incarnation if reading from it has not ended. One
+// that has ended is dropped here, before anything is sent to it, so the
+// call starts the server again (ADR-0126 §2).
+func (c *Client) live() *incarnation {
+	c.mu.Lock()
+	inc := c.cur
+	c.mu.Unlock()
+	if inc == nil {
 		return nil
+	}
+	select {
+	case <-inc.cl.Done():
+		c.drop(inc)
+		return nil
+	default:
+		return inc
+	}
+}
+
+// ensureStarted returns the running incarnation, spawning and opening one
+// if there is none.
+func (c *Client) ensureStarted(ctx context.Context) (*incarnation, error) {
+	c.startMu.Lock()
+	defer c.startMu.Unlock()
+	if inc := c.live(); inc != nil {
+		return inc, nil
 	}
 	stdin, stdout, kill, err := c.spawn()
 	if err != nil {
-		c.mu.Unlock()
-		return &startError{Server: c.name, Err: err}
+		return nil, &startError{Server: c.name, Err: err}
 	}
-	c.stdin = stdin
-	c.kill = kill
-	c.alive = true
-	c.endCause = ""
-	c.gen++
-	gen := c.gen
-	c.mu.Unlock()
 
-	go c.readLoop(stdout, gen)
-
-	// One budget for the whole greeting, and the only one. rawCall and send
-	// run under the budget their context already states (WithBudget), so the
-	// per-call timeout neither shortens a handshake that was given longer nor
-	// puts its own number on the handshake's error.
+	// One budget for the whole greeting, and the only one: the probe and, for
+	// a legacy server, the handshake all run under it (WithBudget), so the
+	// per-call timeout neither shortens a start that was given longer nor puts
+	// its own number on the start's error.
 	hctx, hcancel := WithBudget(ctx, c.startupTimeout)
 	defer hcancel()
 
-	initParams := map[string]any{
-		"protocolVersion": protocolVersion,
-		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "gem-agent", "version": c.version},
+	conn, err := client.NewLineConn(stdout, stdin, kill, client.LineOptions{MaxLine: scannerMax})
+	if err != nil {
+		kill()
+		return nil, &startError{Server: c.name, Phase: "open", Err: err}
 	}
-	if _, err := c.rawCall(hctx, "initialize", initParams); err != nil {
-		c.shutdown()
-		return &startError{Server: c.name, Phase: "initialize", Err: err}
+	cl, err := client.Open(hctx, conn, client.Options{
+		Client: mcpproto.Implementation{Name: "gem-agent", Version: c.version},
+		// Answers to the server's requests are written within the call
+		// deadline, as the hand-written refusal was (ADR-0126 §5).
+		RefuseTimeout: c.timeout,
+		CancelNotice:  false,
+	})
+	if err != nil {
+		kill()
+		return nil, &startError{Server: c.name, Phase: "open", Err: c.failure(hctx, nil, "open", err)}
 	}
-	if err := c.send(hctx, map[string]any{
-		"jsonrpc": "2.0", "method": "notifications/initialized", "params": map[string]any{},
-	}, -1); err != nil {
-		c.shutdown()
-		return &startError{Server: c.name, Phase: "initialized notification", Err: err}
-	}
-	return nil
+	inc := &incarnation{cl: cl, kill: kill}
+	c.mu.Lock()
+	c.cur = inc
+	c.mu.Unlock()
+	go c.watch(inc)
+	return inc, nil
 }
 
-// readLoop routes responses to pending calls, drops notifications, and
-// politely refuses server-initiated requests (unanswered requests could
-// hang a server that waits for the reply).
-func (c *Client) readLoop(stdout io.ReadCloser, gen int) {
-	scanner := bounded.Scanner(stdout, scannerInitial, scannerMax)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
+// failure turns an error from the module into the one this package has
+// always returned: the server's JSON-RPC error as *RPCError, a deadline as
+// the budget that ran out (the incarnation killed, to restart on the next
+// call), the end of the server as its reason. ctx is the context the
+// request ran under; inc is nil for a start, which its caller kills.
+func (c *Client) failure(ctx context.Context, inc *incarnation, method string, err error) error {
+	var rpc *mcpproto.Error
+	if errors.As(err, &rpc) {
+		return &RPCError{Code: rpc.Code, Message: rpc.Message}
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) {
+		// Kill and respawn lazily. notifications/cancelled is not sent
+		// first — the receiver may ignore it and acknowledges nothing, so
+		// the kill would follow regardless (see the Client comment).
+		if inc != nil {
+			c.drop(inc)
 		}
-		var msg message
-		if err := json.Unmarshal(line, &msg); err != nil {
-			continue // non-JSON noise on stdout; ignore
+		if errors.Is(ctxErr, context.Canceled) {
+			return err // the caller gave up: its own cancellation, not a timeout report
 		}
-		switch {
-		case msg.Method != "" && msg.ID != nil:
-			// Refuse server-initiated requests — but never write from
-			// the read loop itself: a blocking write while the peer is
-			// not reading deadlocks both directions.
-			id := *msg.ID
-			go func() {
-				// gen-pinned: after a kill-and-respawn this refusal
-				// belongs to the dead incarnation and is dropped. The
-				// read loop has no call to inherit a deadline from, so
-				// the refusal gets its own — an unbounded one would park
-				// this goroutine, and wmu with it, for the process's life.
-				rctx, rcancel := context.WithTimeout(context.Background(), c.timeout)
-				defer rcancel()
-				_ = c.send(rctx, map[string]any{
-					"jsonrpc": "2.0", "id": id,
-					"error": map[string]any{"code": -32601, "message": "method not supported by gem-agent"},
-				}, gen)
-			}()
-		case msg.Method != "":
-			// notification — nothing to route
-		case msg.ID != nil:
-			if id, err := msg.ID.Int64(); err == nil {
-				c.pmu.Lock()
-				ch := c.pending[id]
-				delete(c.pending, id)
-				c.pmu.Unlock()
-				if ch != nil {
-					ch <- msg
-				}
+		budget := budgetOf(ctx, c.timeout)
+		if errors.Is(err, client.ErrNotSent) {
+			// The write never finished: a server that stops reading its
+			// stdin fills the pipe and parks the writer (review 2026-09-08,
+			// F-01). The module's LineConn killed the child to release it.
+			return &worded{fmt.Sprintf("writing to mcp %s timed out after %s "+
+				"(the server stopped reading its stdin; it was killed and restarts on the next call)",
+				c.name, budget), err}
+		}
+		return &worded{fmt.Sprintf("%s timed out after %s (server killed; it restarts on the next call)", method, budget), err}
+	}
+	if errors.Is(err, client.ErrClosed) {
+		cause := "server exited"
+		if errors.Is(err, client.ErrLineTooLong) {
+			cause = fmt.Sprintf("server sent a response line over the %d-byte frame cap", scannerMax)
+		} else if inc != nil {
+			if end := inc.cl.Err(); end != nil && !errors.Is(end, io.EOF) {
+				cause = "server stream ended: " + end.Error()
 			}
 		}
+		return &worded{fmt.Sprintf("%s during %s", cause, method), err}
 	}
-	// EOF: the server exited (or we killed it). Fail all waiters — but
-	// only if a newer incarnation has not already been spawned: a stale
-	// loop draining after kill-and-respawn must not close the pending
-	// channels (e.g. the fresh initialize) of its successor. Stale
-	// waiters of THIS incarnation are covered by their per-call timeouts.
-	cause := "server exited"
-	if err := scanner.Err(); err != nil {
-		cause = "server stream ended: " + err.Error()
-		if errors.Is(err, bufio.ErrTooLong) {
-			cause = fmt.Sprintf("server sent a response line over the %d-byte frame cap", scannerMax)
-		}
-	}
-	c.mu.Lock()
-	stale := c.gen != gen
-	var kill func()
-	if !stale {
-		c.alive = false
-		c.endCause = cause
-		kill = c.kill
-	}
-	c.mu.Unlock()
-	if stale {
-		return
-	}
-	// The incarnation is over whichever side ended it: reap the child
-	// (a server that exited on its own stayed a zombie with both pipes
-	// open — review round 4) and, for an over-long line that ended the
-	// scan, kill the still-running server rather than orphan it beside
-	// its successor. Idempotent for an exited child.
-	if kill != nil {
-		kill()
-	}
-	c.pmu.Lock()
-	for id, ch := range c.pending {
-		close(ch)
-		delete(c.pending, id)
-	}
-	c.pmu.Unlock()
-}
-
-// send writes one frame to the current incarnation's stdin. gen pins
-// the frame to the incarnation that produced it: a stale read loop's
-// refusal must be dropped, not injected into a successor's stdin
-// mid-handshake (a response with an id the fresh server never issued).
-// gen < 0 means "whatever is current". The stdin snapshot is taken
-// under mu — reading the field under wmu alone raced ensureStarted's
-// write of it (ADR-0021).
-//
-// The write is bounded by ctx, and so is the wait for wmu. Neither ends
-// on its own: a server that stops reading its stdin fills the pipe and
-// parks the writer forever, and every other caller then parks behind
-// wmu — one wedged server took every call to it, outside any deadline,
-// with nothing left to kill it (review 2026-09-08, F-01). On expiry the
-// child is killed, which closes the pipe's read end and returns the
-// blocked Write with EPIPE, releasing wmu.
-func (c *Client) send(ctx context.Context, v any, gen int) error {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	c.mu.Lock()
-	stdin, cur, alive := c.stdin, c.gen, c.alive
-	c.mu.Unlock()
-	if gen >= 0 && gen != cur {
-		return nil // stale incarnation's frame: drop
-	}
-	if stdin == nil || !alive {
-		return fmt.Errorf("mcp %s: server not running", c.name)
-	}
-	// Buffered: the goroutine must be able to finish and exit after ctx
-	// expired and this frame's caller has gone.
-	done := make(chan error, 1)
-	go func() {
-		c.wmu.Lock()
-		defer c.wmu.Unlock()
-		// Writing through the snapshot: if a respawn swapped stdin after
-		// it was taken, this hits the dead pipe and fails — the safe
-		// direction.
-		_, err := stdin.Write(append(data, '\n'))
-		done <- err
-	}()
-	select {
-	case err := <-done:
-		return err
-	case <-ctx.Done():
-		c.shutdownGen(cur)
-		if errors.Is(ctx.Err(), context.Canceled) {
-			return ctx.Err()
-		}
-		return fmt.Errorf("writing to mcp %s timed out after %s "+
-			"(the server stopped reading its stdin; it was killed and restarts on the next call)",
-			c.name, budgetOf(ctx, c.timeout))
-	}
+	return err
 }
 
 // budgetKey marks a context whose time budget a caller has already stated.
@@ -437,15 +364,15 @@ type budgetKey struct{}
 
 // WithBudget bounds ctx by d, unless the work is already running under a
 // stated budget — then that one stands. A budget is a property of the piece
-// of work, said once by whoever owns it: the handshake's is startupTimeout,
+// of work, said once by whoever owns it: the start's is startupTimeout,
 // an ordinary call's is timeout. Layering the second on the first did two
-// wrong things at once. A handshake given longer than a call was cut at the
+// wrong things at once. A start given longer than a call was cut at the
 // call's number, silently; and every timeout was reported under c.timeout,
-// so a handshake that gave up at its own 30 s said "timed out after 1m0s"
+// so a start that gave up at its own 30 s said "timed out after 1m0s"
 // and sent the operator to the wrong setting.
 //
 // Exported because the start-up listing in cmd states the budget for the whole
-// greeting — spawn, initialize and the first tools/list — from outside this
+// greeting — spawn, open and the first tools/list — from outside this
 // package. Stated with a plain context.WithTimeout it fired first, and the
 // tools/list that ran out of it still reported the per-call number.
 func WithBudget(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
@@ -463,112 +390,39 @@ func budgetOf(ctx context.Context, fallback time.Duration) time.Duration {
 	return fallback
 }
 
-// rawCall issues one request and waits for its response, bounded by the
-// per-call timeout. On timeout/cancel the child is killed — the next
-// call respawns it.
-func (c *Client) rawCall(ctx context.Context, method string, params any) (json.RawMessage, error) {
-	c.mu.Lock()
-	c.nextID++
-	id := c.nextID
-	c.mu.Unlock()
-
-	ch := make(chan message, 1)
-	c.pmu.Lock()
-	c.pending[id] = ch
-	c.pmu.Unlock()
-
-	// One deadline covers writing the request and waiting for its
-	// answer. It used to start after the write returned, so a write that
-	// never returned was supervised by nothing at all.
-	tctx, cancel := WithBudget(ctx, c.timeout)
-	defer cancel()
-
-	if err := c.send(tctx, map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}, -1); err != nil {
-		c.pmu.Lock()
-		delete(c.pending, id)
-		c.pmu.Unlock()
-		// Not sent: a frame cut short by the deadline carries no
-		// terminating newline, and the server it was going to is dead.
-		return nil, &notSentError{err: err}
-	}
-
-	select {
-	case msg, ok := <-ch:
-		if !ok {
-			c.mu.Lock()
-			cause := c.endCause
-			c.mu.Unlock()
-			if cause == "" {
-				cause = "server exited"
-			}
-			return nil, fmt.Errorf("%s during %s", cause, method)
-		}
-		if msg.Error != nil {
-			return nil, msg.Error
-		}
-		return msg.Result, nil
-	case <-tctx.Done():
-		c.pmu.Lock()
-		delete(c.pending, id)
-		c.pmu.Unlock()
-		// Kill and respawn lazily. notifications/cancelled is not sent
-		// first — the receiver may ignore it and acknowledges nothing, so
-		// the kill would follow regardless (see the Client comment).
-		c.shutdown()
-		return nil, fmt.Errorf("%s timed out after %s (server killed; it restarts on the next call)", method, budgetOf(tctx, c.timeout))
-	}
-}
-
-// ListTools fetches the server's tool list (following pagination).
+// ListTools fetches the server's tool list. The module follows the
+// pagination within its bounds, which are this client's (ADR-0072 §4.5):
+// a cursor that repeats, more than 100 pages, or more than 5000 tools ends
+// the listing with the server's name, not a 30-second wait. One budget
+// covers the whole listing.
 func (c *Client) ListTools(ctx context.Context) ([]Tool, error) {
-	if err := c.ensureStarted(ctx); err != nil {
+	inc, err := c.ensureStarted(ctx)
+	if err != nil {
 		return nil, err
 	}
-	var all []Tool
-	cursor := ""
-	seen := map[string]bool{}
-	for pages := 0; ; pages++ {
-		// Bounds on a foreign server's pagination (ADR-0072 §4.5): a
-		// cursor that repeats, too many pages, or too many tools ends
-		// the listing with the server's name, not a 30-second wait.
-		if pages >= maxToolListPages {
-			return nil, fmt.Errorf("mcp %s: tools/list ran past %d pages", c.name, maxToolListPages)
-		}
-		if cursor != "" && seen[cursor] {
-			return nil, fmt.Errorf("mcp %s: tools/list repeated cursor %q", c.name, cursor)
-		}
-		seen[cursor] = true
-		params := map[string]any{}
-		if cursor != "" {
-			params["cursor"] = cursor
-		}
-		res, err := c.rawCall(ctx, "tools/list", params)
-		if err != nil {
+	tctx, cancel := WithBudget(ctx, c.timeout)
+	defer cancel()
+	list, err := inc.cl.ListTools(tctx)
+	if err != nil {
+		err = c.failure(tctx, inc, "tools/list", err)
+		var w *worded
+		if errors.As(err, &w) {
 			return nil, fmt.Errorf("mcp %s: tools/list: %w", c.name, err)
 		}
-		var page struct {
-			Tools      []Tool `json:"tools"`
-			NextCursor string `json:"nextCursor"`
-		}
-		if err := json.Unmarshal(res, &page); err != nil {
-			return nil, fmt.Errorf("mcp %s: tools/list result: %w", c.name, err)
-		}
-		all = append(all, page.Tools...)
-		if len(all) > maxToolListTools {
-			return nil, fmt.Errorf("mcp %s: tools/list returned more than %d tools", c.name, maxToolListTools)
-		}
-		if page.NextCursor == "" {
-			return all, nil
-		}
-		cursor = page.NextCursor
+		return nil, fmt.Errorf("mcp %s: %w", c.name, err)
 	}
+	tools := make([]Tool, 0, len(list.Tools))
+	for _, t := range list.Tools {
+		tool := Tool{Name: t.Name, Description: t.Description}
+		if len(t.InputSchema) > 0 {
+			if err := json.Unmarshal(t.InputSchema, &tool.InputSchema); err != nil {
+				return nil, fmt.Errorf("mcp %s: tools/list result: tool %q: inputSchema: %w", c.name, t.Name, err)
+			}
+		}
+		tools = append(tools, tool)
+	}
+	return tools, nil
 }
-
-// maxToolListPages / maxToolListTools bound a server's tool listing.
-const (
-	maxToolListPages = 100
-	maxToolListTools = 5000
-)
 
 // Content is one block of a tool result. MCP servers may answer with
 // more than text — an image, audio, a resource — and this type carries
@@ -588,10 +442,11 @@ type Content struct {
 // block that is not text at all both have to land somewhere on disk,
 // and this package knows nothing about where that is.
 func (c *Client) CallTool(ctx context.Context, tool string, args map[string]any) ([]Content, bool, error) {
-	if err := c.ensureStarted(ctx); err != nil {
+	inc, err := c.ensureStarted(ctx)
+	if err != nil {
 		// Not sent: the call never left. The adapter shows the cause
 		// under the server's name, so the start failure is handed over
-		// without the name and with its phase (initialize, spawn).
+		// without the name and with its phase (open, spawn).
 		var se *startError
 		if errors.As(err, &se) {
 			err = se.cause()
@@ -601,51 +456,50 @@ func (c *Client) CallTool(ctx context.Context, tool string, args map[string]any)
 	if args == nil {
 		args = map[string]any{}
 	}
-	params := map[string]any{"name": tool, "arguments": args}
+	var meta map[string]any
 	if c.workDir != "" {
 		// Schema-blind: the key says where this session can read files
 		// back, and a server that does not know it ignores it. A server
 		// that does uses it only when the call left work_dir out, so the
 		// model's own argument always wins.
-		params["_meta"] = map[string]any{workdir.MetaKey: c.workDir}
+		meta = map[string]any{workdir.MetaKey: c.workDir}
 	}
-	res, err := c.rawCall(ctx, "tools/call", params)
+	tctx, cancel := WithBudget(ctx, c.timeout)
+	defer cancel()
+	res, err := inc.cl.CallTool(tctx, tool, args, meta)
 	if err != nil {
-		var ns *notSentError
-		if errors.As(err, &ns) {
-			return nil, false, &CallError{Server: c.name, Tool: tool, Err: ns.err}
-		}
-		return nil, false, &CallError{Server: c.name, Tool: tool, Err: err, Sent: true}
+		// ErrNotSent is the module's promise that the request never
+		// reached the server. Anything else may have: a server that ended
+		// mid-call is reported as sent, the safe side (ADR-0126 §3).
+		sent := !errors.Is(err, client.ErrNotSent)
+		return nil, false, &CallError{Server: c.name, Tool: tool, Err: c.failure(tctx, inc, "tools/call", err), Sent: sent}
 	}
-	var out struct {
-		Content []struct {
+	blocks := make([]Content, 0, len(res.Content))
+	for _, raw := range res.Content {
+		var item struct {
 			Type     string `json:"type"`
 			Text     string `json:"text"`
 			Data     string `json:"data"`
 			MimeType string `json:"mimeType"`
-		} `json:"content"`
-		IsError bool `json:"isError"`
-	}
-	if err := json.Unmarshal(res, &out); err != nil {
-		return nil, false, &CallError{Server: c.name, Tool: tool, Err: fmt.Errorf("result: %w", err), Sent: true}
-	}
-	blocks := make([]Content, 0, len(out.Content))
-	for _, item := range out.Content {
+		}
+		if err := json.Unmarshal(raw, &item); err != nil {
+			return nil, false, &CallError{Server: c.name, Tool: tool, Err: fmt.Errorf("result: %w", err), Sent: true}
+		}
 		b := Content{Type: item.Type, Text: item.Text, MIME: item.MimeType}
 		if item.Data != "" {
 			// A block that says it carries data and whose data will not
 			// decode is reported as text rather than dropped: silently
 			// losing a server's answer is the failure this whole change
 			// exists to stop.
-			raw, derr := base64.StdEncoding.DecodeString(item.Data)
+			decoded, derr := base64.StdEncoding.DecodeString(item.Data)
 			if derr != nil {
 				b.Type = "text"
 				b.Text = fmt.Sprintf("[%s content could not be decoded: %v]", item.Type, derr)
 			} else {
-				b.Data = raw
+				b.Data = decoded
 			}
 		}
 		blocks = append(blocks, b)
 	}
-	return blocks, out.IsError, nil
+	return blocks, res.IsError, nil
 }

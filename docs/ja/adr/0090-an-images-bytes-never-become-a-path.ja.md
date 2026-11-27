@@ -21,7 +21,7 @@ view 層が行う読み取りはツールコールではないので、`Agent.de
 書き出し、モデルには `[image saved at <path> … use view_image on that path]` を渡している
 （[mcpresult.go:302](../../../cmd/mcpresult.go)）。つまりパスはそこにある。しかし `write` は
 `os.Stat` で短絡し（[mcpresult.go:349](../../../cmd/mcpresult.go)）、毎回の呼び出しがサーバに
-work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:610](../../../internal/mcp/client.go)）。
+work dir を `_meta[workdir.MetaKey]` で渡している（[client.go:465](../../../internal/mcp/client.go)）。
 ローカルのサーバ子プロセスは自分の名前・ツール名・返すバイト列・ディレクトリを知るので、
 応答の前に content-addressed の名前へ symlink を置ける。するとランタイムは何も書かず、パスは
 サーバが選んだ先を指す。`view_image` 経由でそのファイルに到達する道は封じ込められている。
@@ -57,7 +57,7 @@ UI へ話しかけている — `prog.Send(tui.ToolCall{…})`（[surface.go:202
 
 線形で、1 MiB あたり約 3.6 ms。しかもそれは文字列が同時に存在する 3 箇所のうちの 1 つで
 ある — emit 経路、Bubble Tea のキュー、端末の scrollback。今日これを縛るものは JSON-RPC の
-フレーム上限だけで（`scannerMax = 10 MiB`、[client.go:28](../../../internal/mcp/client.go)）、
+フレーム上限だけで（`scannerMax = 10 MiB`、[client.go:25](../../../internal/mcp/client.go)）、
 ブロックあたりおよそ 7.5 MiB のデコード後バイト列を許す。
 
 ## Decision（決定）

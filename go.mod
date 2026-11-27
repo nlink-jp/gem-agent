@@ -13,6 +13,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/mattn/go-runewidth v0.0.19
 	github.com/muesli/termenv v0.16.0
+	github.com/nlink-jp/mcp v0.1.0
 	github.com/nlink-jp/mermaid-render v0.6.0
 	github.com/nlink-jp/nlk v0.5.2
 	github.com/nlink-jp/toml v0.1.1
