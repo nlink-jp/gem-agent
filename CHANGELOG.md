@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- The shared MCP protocol layer is updated to nlink-jp/mcp v0.3.0
+  (organization ADR-030 §6: the module at its latest tag). v0.3.0 changes only
+  the module's `ToolServer` — it answers the calls already received before it
+  returns at end of input, and refuses nil streams — which this runtime does
+  not use (it uses only the module's client), so its behaviour does not
+  change.
+
 ## [0.110.0] - 2026-11-27
 
 ### Changed
