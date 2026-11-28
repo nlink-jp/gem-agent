@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.110.1] - 2026-11-28
+
 ### Changed
 
 - The shared MCP protocol layer is updated to nlink-jp/mcp v0.3.0
